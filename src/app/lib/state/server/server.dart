@@ -147,9 +147,10 @@ class HomeServer extends ChangeNotifier {
   Stream<FoundServer> browse() => _ports.browse();
 
   /// The account may only look: no feeder takes a feed or a change from
-  /// this phone, through the server or its own key.
+  /// this phone, through the server or its own key. A role a newer server
+  /// added grants nothing here, so it only looks too.
   bool get viewer => switch (_state) {
-    ServerLinked(account: ServerAccount(role: ServerRole.viewer)) => true,
+    ServerLinked(account: ServerAccount(role: ServerRole.viewer || ServerRole.unknown)) => true,
     _ => false,
   };
 

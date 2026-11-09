@@ -318,9 +318,11 @@ class FeederSession:
             bridge.Skew.FeederBehind: UPDATE_FEEDER_ISSUE,
             bridge.Skew.FeederAhead: UPDATE_INTEGRATION_ISSUE,
             bridge.Skew.Legacy: LEGACY_FEEDER_ISSUE,
+            # A value this integration cannot name came from a newer build.
+            bridge.Skew.NewerBuild: UPDATE_INTEGRATION_ISSUE,
         }
         wanted = issues.get(skew) if skew is not None else None
-        for issue in issues.values():
+        for issue in set(issues.values()):
             if issue != wanted:
                 ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(issue))
         if wanted is not None:

@@ -92,6 +92,8 @@ pub const fn schedule(job: Job) -> Schedule {
         Job::Retention => Schedule::Daily(civil::time(3, 0, 0, 0)),
         Job::Backup => Schedule::Daily(civil::time(3, 30, 0, 0)),
         Job::ReleaseCheck => Schedule::Daily(civil::time(4, 0, 0, 0)),
+        // A newer server's job: not in `Job::ALL`, so never scheduled.
+        Job::Unknown => Schedule::Every(HOUR),
     }
 }
 

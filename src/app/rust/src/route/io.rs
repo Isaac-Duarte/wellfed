@@ -118,9 +118,11 @@ fn new_key() -> Result<Uuid, BridgeError> {
     Ok(uuid::Builder::from_random_bytes(random()?).into_uuid())
 }
 
-/// Viewers and accounts with an expiry hold no key of their own.
+/// Viewers, accounts with an expiry and roles a newer server added (which
+/// grant nothing here) hold no key of their own.
 fn keys_of(account: &ServerAccount) -> Keys {
-    if account.role == ServerRole::Viewer || account.expires_ms.is_some() {
+    let least = matches!(account.role, ServerRole::Viewer | ServerRole::Unknown);
+    if least || account.expires_ms.is_some() {
         Keys::ServerOnly
     } else {
         Keys::Own

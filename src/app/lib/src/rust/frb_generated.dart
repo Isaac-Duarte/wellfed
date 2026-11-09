@@ -5341,6 +5341,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return Bank0Check_Match();
       case 2:
         return Bank0Check_Blocked(dco_decode_bank_0_blocked(raw[1]));
+      case 3:
+        return Bank0Check_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -6087,12 +6089,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 0:
         return Desiccant_Unset();
       case 1:
-        return Desiccant_Unknown();
-      case 2:
         return Desiccant_Remaining(
           days: dco_decode_i_32(raw[1]),
           due: dco_decode_bool(raw[2]),
         );
+      case 2:
+        return Desiccant_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -7117,6 +7119,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return MealReminder_Off();
       case 1:
         return MealReminder_Before(minutes: dco_decode_u_8(raw[1]));
+      case 2:
+        return MealReminder_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -7185,6 +7189,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return MissedReason_Blocked(reason: dco_decode_blocked(raw[1]));
       case 2:
         return MissedReason_Interrupted();
+      case 3:
+        return MissedReason_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -7988,6 +7994,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           outcome: dco_decode_feed_outcome(raw[6]),
           reason: dco_decode_feed_reason(raw[7]),
         );
+      case 3:
+        return ServerAnomaly_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -8819,6 +8827,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           atMs: dco_decode_u_32(raw[1]),
           motor: dco_decode_trace_motor(raw[2]),
         );
+      case 5:
+        return TraceEntry_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -9044,6 +9054,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return UpdateRefusal_Battery();
       case 17:
         return UpdateRefusal_HeldAsSessionKey();
+      case 18:
+        return UpdateRefusal_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -9116,6 +9128,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           start: dco_decode_u_16(raw[1]),
           end: dco_decode_u_16(raw[2]),
         );
+      case 2:
+        return Window_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -9744,6 +9758,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 2:
         var var_field0 = sse_decode_bank_0_blocked(deserializer);
         return Bank0Check_Blocked(var_field0);
+      case 3:
+        return Bank0Check_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -10602,11 +10618,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 0:
         return Desiccant_Unset();
       case 1:
-        return Desiccant_Unknown();
-      case 2:
         var var_days = sse_decode_i_32(deserializer);
         var var_due = sse_decode_bool(deserializer);
         return Desiccant_Remaining(days: var_days, due: var_due);
+      case 2:
+        return Desiccant_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -11895,6 +11911,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 1:
         var var_minutes = sse_decode_u_8(deserializer);
         return MealReminder_Before(minutes: var_minutes);
+      case 2:
+        return MealReminder_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -11973,6 +11991,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return MissedReason_Blocked(reason: var_reason);
       case 2:
         return MissedReason_Interrupted();
+      case 3:
+        return MissedReason_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -13171,6 +13191,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           outcome: var_outcome,
           reason: var_reason,
         );
+      case 3:
+        return ServerAnomaly_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -14117,6 +14139,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_atMs = sse_decode_u_32(deserializer);
         var var_motor = sse_decode_trace_motor(deserializer);
         return TraceEntry_Motor(atMs: var_atMs, motor: var_motor);
+      case 5:
+        return TraceEntry_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -14370,6 +14394,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return UpdateRefusal_Battery();
       case 17:
         return UpdateRefusal_HeldAsSessionKey();
+      case 18:
+        return UpdateRefusal_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -14444,6 +14470,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_start = sse_decode_u_16(deserializer);
         var var_end = sse_decode_u_16(deserializer);
         return Window_Between(start: var_start, end: var_end);
+      case 2:
+        return Window_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -15173,6 +15201,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case Bank0Check_Blocked(field0: final field0):
         sse_encode_i_32(2, serializer);
         sse_encode_bank_0_blocked(field0, serializer);
+      case Bank0Check_Unknown():
+        sse_encode_i_32(3, serializer);
     }
   }
 
@@ -16091,12 +16121,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     switch (self) {
       case Desiccant_Unset():
         sse_encode_i_32(0, serializer);
-      case Desiccant_Unknown():
-        sse_encode_i_32(1, serializer);
       case Desiccant_Remaining(days: final days, due: final due):
-        sse_encode_i_32(2, serializer);
+        sse_encode_i_32(1, serializer);
         sse_encode_i_32(days, serializer);
         sse_encode_bool(due, serializer);
+      case Desiccant_Unknown():
+        sse_encode_i_32(2, serializer);
     }
   }
 
@@ -17206,6 +17236,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case MealReminder_Before(minutes: final minutes):
         sse_encode_i_32(1, serializer);
         sse_encode_u_8(minutes, serializer);
+      case MealReminder_Unknown():
+        sse_encode_i_32(2, serializer);
     }
   }
 
@@ -17262,6 +17294,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_blocked(reason, serializer);
       case MissedReason_Interrupted():
         sse_encode_i_32(2, serializer);
+      case MissedReason_Unknown():
+        sse_encode_i_32(3, serializer);
     }
   }
 
@@ -18359,6 +18393,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_u_8(completed, serializer);
         sse_encode_feed_outcome(outcome, serializer);
         sse_encode_feed_reason(reason, serializer);
+      case ServerAnomaly_Unknown():
+        sse_encode_i_32(3, serializer);
     }
   }
 
@@ -19117,6 +19153,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(4, serializer);
         sse_encode_u_32(atMs, serializer);
         sse_encode_trace_motor(motor, serializer);
+      case TraceEntry_Unknown():
+        sse_encode_i_32(5, serializer);
     }
   }
 
@@ -19323,6 +19361,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(16, serializer);
       case UpdateRefusal_HeldAsSessionKey():
         sse_encode_i_32(17, serializer);
+      case UpdateRefusal_Unknown():
+        sse_encode_i_32(18, serializer);
     }
   }
 
@@ -19385,6 +19425,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(1, serializer);
         sse_encode_u_16(start, serializer);
         sse_encode_u_16(end, serializer);
+      case Window_Unknown():
+        sse_encode_i_32(2, serializer);
     }
   }
 

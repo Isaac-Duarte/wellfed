@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'model.freezed.dart';
 
-enum Bank0Blocked { marker, unrecorded, key, extent, changed, read }
+enum Bank0Blocked { marker, unrecorded, key, extent, changed, read, unknown }
 
 @freezed
 sealed class Bank0Check with _$Bank0Check {
@@ -18,6 +18,7 @@ sealed class Bank0Check with _$Bank0Check {
   const factory Bank0Check.unchecked() = Bank0Check_Unchecked;
   const factory Bank0Check.match() = Bank0Check_Match;
   const factory Bank0Check.blocked(Bank0Blocked field0) = Bank0Check_Blocked;
+  const factory Bank0Check.unknown() = Bank0Check_Unknown;
 }
 
 enum Blocked {
@@ -51,7 +52,7 @@ sealed class CallClip with _$CallClip {
       CallClip_Stored;
 }
 
-enum ClientRole { owner, member, server, updateSigner }
+enum ClientRole { owner, member, server, updateSigner, unknown }
 
 class Counters {
   final Counts boot;
@@ -154,9 +155,9 @@ sealed class Desiccant with _$Desiccant {
   const Desiccant._();
 
   const factory Desiccant.unset() = Desiccant_Unset;
-  const factory Desiccant.unknown() = Desiccant_Unknown;
   const factory Desiccant.remaining({required int days, required bool due}) =
       Desiccant_Remaining;
+  const factory Desiccant.unknown() = Desiccant_Unknown;
 }
 
 enum Enrolled { new_, already }
@@ -342,6 +343,7 @@ sealed class MealReminder with _$MealReminder {
   const factory MealReminder.off() = MealReminder_Off;
   const factory MealReminder.before({required int minutes}) =
       MealReminder_Before;
+  const factory MealReminder.unknown() = MealReminder_Unknown;
 }
 
 class Memory {
@@ -383,6 +385,7 @@ sealed class MissedReason with _$MissedReason {
   const factory MissedReason.blocked({required Blocked reason}) =
       MissedReason_Blocked;
   const factory MissedReason.interrupted() = MissedReason_Interrupted;
+  const factory MissedReason.unknown() = MissedReason_Unknown;
 }
 
 enum NtpResult { used, bounded, lost, refused, unknown }
@@ -513,7 +516,7 @@ enum SetupRefusal { busy, unconfirmed, wrongCode, full, notWritable, invalid }
 /// How a feeder's API revision stands against this app's (or the server's):
 /// which side to update. Every op both know still goes, so neither side is
 /// ever offered an older build for it.
-enum Skew { same, feederBehind, feederAhead, legacy }
+enum Skew { same, feederBehind, feederAhead, legacy, unknown }
 
 @freezed
 sealed class Stats with _$Stats {
@@ -572,6 +575,7 @@ sealed class TraceEntry with _$TraceEntry {
     required int atMs,
     required TraceMotor motor,
   }) = TraceEntry_Motor;
+  const factory TraceEntry.unknown() = TraceEntry_Unknown;
 }
 
 enum TraceMotor { stop, drive0, drive1 }
@@ -695,6 +699,7 @@ sealed class UpdateRefusal with _$UpdateRefusal {
   const factory UpdateRefusal.battery() = UpdateRefusal_Battery;
   const factory UpdateRefusal.heldAsSessionKey() =
       UpdateRefusal_HeldAsSessionKey;
+  const factory UpdateRefusal.unknown() = UpdateRefusal_Unknown;
 }
 
 enum UpdateStop {
@@ -706,6 +711,7 @@ enum UpdateStop {
   hash,
   activate,
   store,
+  unknown,
 }
 
 enum Weekday { mon, tue, wed, thu, fri, sat, sun }
@@ -719,4 +725,5 @@ sealed class Window with _$Window {
   const factory Window.always() = Window_Always;
   const factory Window.between({required int start, required int end}) =
       Window_Between;
+  const factory Window.unknown() = Window_Unknown;
 }

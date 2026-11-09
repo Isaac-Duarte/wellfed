@@ -73,6 +73,10 @@ pub struct ServerStatus {
 pub enum StoreState {
     Ok,
     Failing,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -96,6 +100,10 @@ pub enum Job {
     Backup,
     /// Checks the project's releases, while the owner allows fetching.
     ReleaseCheck,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Job {
@@ -117,6 +125,7 @@ impl Job {
             Self::Expiry => "expiry",
             Self::Backup => "backup",
             Self::ReleaseCheck => "release_check",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -133,6 +142,10 @@ pub enum JobOutcome {
     Succeeded,
     /// Why is in the server's log, under the job's name.
     Failed,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl JobOutcome {
@@ -141,6 +154,7 @@ impl JobOutcome {
         match self {
             Self::Succeeded => "succeeded",
             Self::Failed => "failed",
+            Self::Unknown => "unknown",
         }
     }
 

@@ -99,6 +99,10 @@ pub enum TraceEntry {
         at_ms: u32,
         motor: TraceMotor,
     },
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A whole trace.

@@ -215,6 +215,10 @@ pub enum Invalid {
     Password,
     #[error("an owner's account does not expire: remove the expiry, or pick another role")]
     OwnerExpires,
+    #[error("the role is owner, member or viewer")]
+    Role,
+    #[error("the units are grams or ounces")]
+    Units,
     #[error("a home name is 1-64 characters")]
     HomeName,
     #[error("a feeder name is 1-64 characters")]

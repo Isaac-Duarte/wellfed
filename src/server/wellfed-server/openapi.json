@@ -6214,6 +6214,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "What happened. A change names the account it changed (`account`, with\nits `name`) and its new values."
@@ -6344,7 +6359,8 @@
           "key",
           "extent",
           "changed",
-          "read"
+          "read",
+          "unknown"
         ]
       },
       "Battery": {
@@ -6445,6 +6461,21 @@
                 "type": "string",
                 "enum": [
                   "stale"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -6718,6 +6749,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "Whose a feeder's client is, as the server knows it."
@@ -6729,7 +6775,8 @@
           "owner",
           "member",
           "server",
-          "update_signer"
+          "update_signer",
+          "unknown"
         ]
       },
       "Command": {
@@ -6836,7 +6883,8 @@
           "call_delete",
           "call_play",
           "skip",
-          "unskip"
+          "unskip",
+          "unknown"
         ]
       },
       "CommandOutcome": {
@@ -7117,8 +7165,8 @@
         "enum": [
           "sent",
           "answered",
-          "unknown",
-          "resolved"
+          "resolved",
+          "unknown"
         ]
       },
       "Connection": {
@@ -7464,21 +7512,6 @@
           },
           {
             "type": "object",
-            "description": "The feeder's clock is invalid, so the days cannot be counted.",
-            "required": [
-              "state"
-            ],
-            "properties": {
-              "state": {
-                "type": "string",
-                "enum": [
-                  "unknown"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "Days left of the period; `due` from 0 on, and the count goes on\nbelow zero.",
             "required": [
               "days",
@@ -7497,6 +7530,21 @@
                 "type": "string",
                 "enum": [
                   "remaining"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The feeder's clock is invalid, so the days cannot be counted. A\nstate a newer build added reads as this too: the days are not known\nhere either.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -7537,7 +7585,8 @@
           "setup",
           "invite",
           "recovery",
-          "press"
+          "press",
+          "unknown"
         ]
       },
       "ErrorCode": {
@@ -7775,6 +7824,21 @@
                 "type": "integer",
                 "format": "int32",
                 "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
               }
             }
           }
@@ -9601,6 +9665,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "Why an install failed. Nothing is offered again on the owner's behalf:\nanother install is another request."
@@ -9628,7 +9707,8 @@
           "running",
           "activated",
           "already_running",
-          "failed"
+          "failed",
+          "unknown"
         ]
       },
       "InstallTarget": {
@@ -9670,6 +9750,21 @@
               "sha256": {
                 "type": "string",
                 "description": "SHA-256 of the kept backup file."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
               }
             }
           }
@@ -9751,14 +9846,16 @@
           "rollups",
           "expiry",
           "backup",
-          "release_check"
+          "release_check",
+          "unknown"
         ]
       },
       "JobOutcome": {
         "type": "string",
         "enum": [
           "succeeded",
-          "failed"
+          "failed",
+          "unknown"
         ]
       },
       "JobRun": {
@@ -9819,6 +9916,21 @@
                 "type": "string",
                 "enum": [
                   "failed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -9895,6 +10007,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "One message of a followed debug log."
@@ -9904,7 +10031,8 @@
         "description": "Why a login failed after its password was checked.",
         "enum": [
           "bad_password",
-          "disabled"
+          "disabled",
+          "unknown"
         ]
       },
       "MealReminder": {
@@ -9940,6 +10068,21 @@
                 "type": "string",
                 "enum": [
                   "before"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -10048,6 +10191,21 @@
                 "type": "string",
                 "enum": [
                   "interrupted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -11174,7 +11332,8 @@
           "unknown_key",
           "signature",
           "refused",
-          "image"
+          "image",
+          "unknown"
         ]
       },
       "ReleaseSigner": {
@@ -11182,7 +11341,8 @@
         "description": "Whose key signed a release.",
         "enum": [
           "project",
-          "owner"
+          "owner",
+          "unknown"
         ]
       },
       "ReleaseSource": {
@@ -11221,6 +11381,21 @@
                 "type": "string",
                 "enum": [
                   "upload"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -11321,21 +11496,6 @@
           },
           {
             "type": "object",
-            "description": "No answer came in time: the feeder may have dropped the key.",
-            "required": [
-              "result"
-            ],
-            "properties": {
-              "result": {
-                "type": "string",
-                "enum": [
-                  "unknown"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "The feeder refused: `forbidden` when the server's key is not an\nowner's.",
             "required": [
               "refusal",
@@ -11372,6 +11532,21 @@
                 "format": "date-time"
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "No answer came in time: the feeder may have dropped the key. A\nresult a newer server added reads as this too.",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "Why an attempt to revoke a key, or the server's own, did not land."
@@ -11384,7 +11559,8 @@
           "demoted",
           "expiring",
           "token_revoked",
-          "replaced"
+          "replaced",
+          "unknown"
         ]
       },
       "Revoking": {
@@ -11421,7 +11597,8 @@
         "enum": [
           "owner",
           "member",
-          "viewer"
+          "viewer",
+          "unknown"
         ]
       },
       "SamplePage": {
@@ -11823,7 +12000,8 @@
           "same",
           "feeder_behind",
           "feeder_ahead",
-          "legacy"
+          "legacy",
+          "unknown"
         ]
       },
       "Source": {
@@ -11894,6 +12072,21 @@
                 "format": "int32",
                 "description": "The plan's slot.",
                 "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
               }
             }
           }
@@ -12351,7 +12544,8 @@
         "type": "string",
         "enum": [
           "verified",
-          "damaged"
+          "damaged",
+          "unknown"
         ]
       },
       "StockFeeder": {
@@ -12409,7 +12603,8 @@
         "description": "Where the kept copy came from.",
         "enum": [
           "feeder",
-          "upload"
+          "upload",
+          "unknown"
         ]
       },
       "StockState": {
@@ -12462,7 +12657,8 @@
         "description": "Whether the database answered a trivial query on both its writer and\nits readers. The failure itself is in the server's log, under the\nrequest's id.",
         "enum": [
           "ok",
-          "failing"
+          "failing",
+          "unknown"
         ]
       },
       "StreamEvent": {
@@ -12875,6 +13071,21 @@
                 "$ref": "#/components/schemas/TraceMotor"
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "One entry of a trace's body."
@@ -13071,7 +13282,8 @@
         "description": "How weights are shown.",
         "enum": [
           "grams",
-          "ounces"
+          "ounces",
+          "unknown"
         ]
       },
       "UpdateCandidate": {
@@ -13080,7 +13292,8 @@
         "enum": [
           "none",
           "pending",
-          "activated"
+          "activated",
+          "unknown"
         ]
       },
       "UpdateRefusal": {
@@ -13223,6 +13436,13 @@
             "enum": [
               "held_as_session_key"
             ]
+          },
+          {
+            "type": "string",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "enum": [
+              "unknown"
+            ]
           }
         ],
         "description": "Why an update op was refused."
@@ -13238,7 +13458,8 @@
           "write",
           "hash",
           "activate",
-          "store"
+          "store",
+          "unknown"
         ]
       },
       "User": {
@@ -13488,6 +13709,21 @@
                 "format": "int32",
                 "maximum": 1439,
                 "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
               }
             }
           }

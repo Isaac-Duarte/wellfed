@@ -40,7 +40,8 @@ pub fn sample_number(value: &SampleValue) -> Option<i64> {
             Battery::Absent
             | Battery::Implausible { .. }
             | Battery::Unread
-            | Battery::Stale { .. } => None,
+            | Battery::Stale { .. }
+            | Battery::Unknown => None,
         },
     }
 }

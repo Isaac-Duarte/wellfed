@@ -188,10 +188,12 @@ proptest! {
             _ => feed.completed < feed.requested,
         }).count();
         prop_assert_eq!(found.len(), wrong);
-        let times: Vec<Timestamp> = found.iter().map(|anomaly| match anomaly {
-            FeedAnomaly::Uncertain { at, .. } | FeedAnomaly::Short { at, .. } => *at,
-            FeedAnomaly::Missed { due, .. } => *due,
+        let times: Vec<Timestamp> = found.iter().filter_map(|anomaly| match anomaly {
+            FeedAnomaly::Uncertain { at, .. } | FeedAnomaly::Short { at, .. } => Some(*at),
+            FeedAnomaly::Missed { due, .. } => Some(*due),
+            FeedAnomaly::Unknown => None,
         }).collect();
+        prop_assert_eq!(times.len(), found.len(), "this server names every anomaly it finds");
         prop_assert!(times.is_sorted());
     }
 }

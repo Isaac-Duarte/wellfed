@@ -41,6 +41,10 @@ pub enum ReleaseSigner {
     Project,
     /// The owner's enrolled update key: a self-built image.
     Owner,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Where a release came from.
@@ -51,6 +55,10 @@ pub enum ReleaseSource {
     Github { tag: String, asset: String },
     /// A file an owner uploaded.
     Upload,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A page of releases, newest version first.
@@ -123,4 +131,8 @@ pub enum ReleaseRefusal {
     /// The image is not the one the manifest names (its length or its
     /// SHA-256 differ), or it lacks the bank's validity marker.
     Image,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }

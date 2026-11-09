@@ -191,6 +191,7 @@ pub(super) fn install(install: &Install) -> String {
     let target = match install.target {
         InstallTarget::Release { release } => format!("release {release}"),
         InstallTarget::Stock { sha256 } => format!("stock {sha256}"),
+        InstallTarget::Unknown => "a target unknown to this CLI".to_owned(),
     };
     let mut line = format!(
         "install {}  {target}  version {}  {}  {} of {} bytes",

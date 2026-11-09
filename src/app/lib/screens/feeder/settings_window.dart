@@ -14,6 +14,7 @@ import 'package:wellfed/widgets/when.dart';
 String windowText(BuildContext context, Window window) => switch (window) {
   Window_Always() => 'Any time',
   Window_Between(:final start, :final end) => '${minuteText(context, start)} to ${minuteText(context, end)}',
+  Window_Unknown() => 'Unknown to this app',
 };
 
 class SettingsWindowRow extends StatelessWidget {

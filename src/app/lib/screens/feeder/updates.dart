@@ -123,6 +123,9 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                   // checks itself in, so none is offered meanwhile.
                   final Bank0Blocked? blocked = switch (state?.bank0) {
                     Bank0Check_Blocked(:final Bank0Blocked field0) => field0,
+                    // A state a newer build added: nothing says bank 0 may
+                    // take an update, so none is offered.
+                    Bank0Check_Unknown() => Bank0Blocked.unknown,
                     _ => null,
                   };
                   // A pre-revision build sends no status this app reads, so

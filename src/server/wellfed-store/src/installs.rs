@@ -16,7 +16,11 @@ impl Store {
         let id = install.id.0;
         let feeder = install.feeder.0;
         let target = install.target.code();
-        let name = install.target.name();
+        // A target a newer server added is never one this server starts.
+        let name = install
+            .target
+            .name()
+            .ok_or(Error::Corrupt("install target"))?;
         let name = name.0.as_slice();
         let user = install.by.0;
         let started = millis(install.started);

@@ -101,6 +101,7 @@ fn entry_line(entry: &TraceEntry, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 TraceMotor::Drive1 => "drive1",
             }
         ),
+        TraceEntry::Unknown => writeln!(f, "         an entry unknown to this CLI"),
     }
 }
 

@@ -49,19 +49,18 @@ const PROSE: &[&str] = &[
 /// The HTTP methods a path item holds; a new one is a new operation.
 const METHODS: &[&str] = &["get", "put", "post", "delete", "patch", "head", "options"];
 
-/// The enums older clients need no catch-all for: what holds one is an
-/// entry `wellfed-server-client` leaves out when it cannot read it (an
-/// event in a history page or on the stream, a journal or audit entry, a
-/// statistics section, an update on the stream), so a newer variant costs
-/// an older client that entry alone. A command outside a page or the
-/// stream is one the client sent, whose kind it knows; a sample is read
-/// by a metric the client names.
+/// The enums older clients need no catch-all for, since what holds one is
+/// an entry `wellfed-server-client` leaves out when it cannot read it:
+///
+/// - an event's kind: `EventBody` is untagged over the core's events and a
+///   kind's own, so a catch-all on either would swallow the other's, and an
+///   event lives only in history pages and stream updates, both skipped;
+/// - a stream update's type, each update decoded on its own;
+/// - a statistics section, skipped from its page;
+/// - a sample, read by a metric the client names, or skipped on the stream.
 const SKIPPED: &[&str] = &[
-    "AuditAction",
-    "CommandKind",
     "CoreEvent",
     "FeederEvent",
-    "LoginFailure",
     "SampleValue",
     "Stats",
     "StatsSection",

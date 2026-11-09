@@ -5,9 +5,11 @@
 
 use serde::de::DeserializeOwned;
 use wellfed_api::{
-    Blocked, Bowl, CommandOutcome, Connection, CurrentUnit, ErrorCode, FeedOutcome, FeedReason,
-    FeederRefusal, FoodLevel, Phase, Problem, WifiSource,
+    Blocked, Bowl, ClientRole, CommandKind, CommandOutcome, CommandState, Connection, CurrentUnit,
+    Desiccant, ErrorCode, FeedOutcome, FeedReason, FeederRefusal, FoodLevel, InstallState,
+    MealReminder, Phase, Problem, Role, Source, Units, WifiSource, Window,
 };
+use wellfed_model::Skew;
 
 fn read<T: DeserializeOwned>(json: &str) -> T {
     serde_json::from_str(json).unwrap_or_else(|error| panic!("{json} does not read: {error}"))
@@ -27,9 +29,41 @@ fn a_value_a_newer_server_added_reads_as_the_catch_all() {
     assert_eq!(read::<CurrentUnit>(newer), CurrentUnit::Unknown);
     assert_eq!(read::<WifiSource>(newer), WifiSource::Unknown);
     assert_eq!(read::<Bowl>(newer), Bowl::Unknown);
+    assert_eq!(read::<Role>(newer), Role::Unknown);
+    assert_eq!(read::<ClientRole>(newer), ClientRole::Unknown);
+    assert_eq!(read::<CommandKind>(newer), CommandKind::Unknown);
+    assert_eq!(read::<InstallState>(newer), InstallState::Unknown);
+    assert_eq!(read::<Skew>(newer), Skew::Unknown);
+    assert_eq!(read::<Units>(newer), Units::Unknown);
+    // A state a newer server added is uncertain: the write may have run.
+    assert_eq!(read::<CommandState>(newer), CommandState::Unknown);
     // `unknown` is a resting place of its own; a newer one is `newer`.
     assert_eq!(read::<Phase>(newer), Phase::Newer);
     assert_eq!(read::<Phase>(r#""unknown""#), Phase::Unknown);
+}
+
+#[test]
+fn a_tagged_value_a_newer_build_added_reads_as_the_catch_all() {
+    assert_eq!(
+        read::<Source>(r#"{"kind":"a_newer_source","x":1}"#),
+        Source::Unknown
+    );
+    assert_eq!(
+        read::<Window>(r#"{"mode":"a_newer_mode"}"#),
+        Window::Unknown
+    );
+    assert_eq!(
+        read::<MealReminder>(r#"{"mode":"a_newer_mode"}"#),
+        MealReminder::Unknown
+    );
+    assert_eq!(
+        read::<Desiccant>(r#"{"state":"a_newer_state"}"#),
+        Desiccant::Unknown
+    );
+
+    // The known ones read as they always have.
+    assert_eq!(read::<Window>(r#"{"mode":"always"}"#), Window::Always);
+    assert_eq!(read::<Desiccant>(r#"{"state":"unset"}"#), Desiccant::Unset);
 }
 
 #[test]

@@ -215,7 +215,8 @@ sealed class FedBy with _$FedBy {
   const factory FedBy.feeder() = FedBy_Feeder;
   const factory FedBy.plan({required int slot}) = FedBy_Plan;
 
-  /// A feed a reset interrupted, whose requester the journal lost.
+  /// Not known: a feed a reset interrupted, whose requester the journal
+  /// lost, or a kind of requester a newer build added.
   const factory FedBy.unknown() = FedBy_Unknown;
 }
 

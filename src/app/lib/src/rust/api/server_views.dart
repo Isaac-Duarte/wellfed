@@ -34,9 +34,10 @@ enum CommandKind {
   callPlay,
   skip,
   unskip,
+  unknown,
 }
 
-enum CommandState { sent, answered, unknown, resolved }
+enum CommandState { sent, answered, resolved, unknown }
 
 class FeedRate {
   final int portions;
@@ -62,7 +63,7 @@ class FeedRate {
           gramsPerDay == other.gramsPerDay;
 }
 
-enum InstallState { running, activated, alreadyRunning, failed }
+enum InstallState { running, activated, alreadyRunning, failed, unknown }
 
 /// The server this phone logged in to, as the app's file keeps it: the link,
 /// and the feeders its last list gave, so a cold start with the server down
@@ -195,6 +196,9 @@ sealed class ServerAnomaly with _$ServerAnomaly {
     required FeedOutcome outcome,
     required FeedReason reason,
   }) = ServerAnomaly_Short;
+
+  /// A kind of anomaly a newer server added, which this app cannot show.
+  const factory ServerAnomaly.unknown() = ServerAnomaly_Unknown;
 }
 
 /// The server's link to one feeder.
@@ -778,7 +782,15 @@ class ServerRefillPage {
 }
 
 /// What an account may do in the home.
-enum ServerRole { owner, member, viewer }
+enum ServerRole {
+  owner,
+  member,
+  viewer,
+
+  /// A role a newer server added: it grants nothing here, so the app
+  /// offers no more than a viewer's.
+  unknown,
+}
 
 class ServerSinceRefill {
   final int portions;

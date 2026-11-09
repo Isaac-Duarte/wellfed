@@ -13,6 +13,10 @@ class By:
     A client; the event names its fingerprint.
     """
     Feeder: Final[By]
+    NewerBuild: Final[By]
+    """
+    A value a newer build added, which this integration cannot name.
+    """
     Panel: Final[By]
     Plan: Final[By]
     """
@@ -549,6 +553,10 @@ class Role:
     The role the feeder enrolled this client with.
     """
     Member: Final[Role]
+    NewerBuild: Final[Role]
+    """
+    A role a newer build added: it grants nothing here.
+    """
     Owner: Final[Role]
     Server: Final[Role]
     UpdateSigner: Final[Role]
@@ -581,7 +589,7 @@ class Settings:
     def meal_reminder_minutes(self, /) -> int | None:
         """
         Minutes ahead of each meal its `meal_soon` event comes; `None` when
-        off.
+        off, or when it is a kind of reminder a newer build added.
         """
     @property
     def sound(self, /) -> bool: ...
@@ -613,6 +621,10 @@ class Skew:
     The feeder runs a build from before API revisions, which takes
     nothing this integration reads or writes: it must be updated,
     from the app, before the session can serve it.
+    """
+    NewerBuild: Final[Skew]
+    """
+    A value a newer build added, which this integration cannot name.
     """
     Same: Final[Skew]
     def __eq__(self, value: object, /) -> bool: ...

@@ -6071,6 +6071,7 @@ const _: fn() = || {
         crate::api::model::Bank0Check::Blocked(field0) => {
             let _: crate::api::model::Bank0Blocked = field0;
         }
+        crate::api::model::Bank0Check::Unknown => {}
     }
     match None::<crate::api::model::CallClip>.unwrap() {
         crate::api::model::CallClip::None => {}
@@ -6112,11 +6113,11 @@ const _: fn() = || {
     }
     match None::<crate::api::model::Desiccant>.unwrap() {
         crate::api::model::Desiccant::Unset => {}
-        crate::api::model::Desiccant::Unknown => {}
         crate::api::model::Desiccant::Remaining { days, due } => {
             let _: i32 = days;
             let _: bool = due;
         }
+        crate::api::model::Desiccant::Unknown => {}
     }
     {
         let Erases = None::<crate::api::model::Erases>.unwrap();
@@ -6165,6 +6166,7 @@ const _: fn() = || {
         crate::api::model::MealReminder::Before { minutes } => {
             let _: u8 = minutes;
         }
+        crate::api::model::MealReminder::Unknown => {}
     }
     {
         let Memory = None::<crate::api::model::Memory>.unwrap();
@@ -6179,6 +6181,7 @@ const _: fn() = || {
             let _: crate::api::model::Blocked = reason;
         }
         crate::api::model::MissedReason::Interrupted => {}
+        crate::api::model::MissedReason::Unknown => {}
     }
     match None::<crate::api::server_views::NewRefill>.unwrap() {
         crate::api::server_views::NewRefill::Grams { grams } => {
@@ -6274,6 +6277,7 @@ const _: fn() = || {
             let _: u32 = at_ms;
             let _: crate::api::model::TraceMotor = motor;
         }
+        crate::api::model::TraceEntry::Unknown => {}
     }
     {
         let TraceSummary = None::<crate::api::model::TraceSummary>.unwrap();
@@ -6318,6 +6322,7 @@ const _: fn() = || {
         crate::api::model::UpdateRefusal::Unconfirmed => {}
         crate::api::model::UpdateRefusal::Battery => {}
         crate::api::model::UpdateRefusal::HeldAsSessionKey => {}
+        crate::api::model::UpdateRefusal::Unknown => {}
     }
     {
         let WeighedIntake = None::<crate::api::server_views::WeighedIntake>.unwrap();
@@ -6332,6 +6337,7 @@ const _: fn() = || {
             let _: u16 = start;
             let _: u16 = end;
         }
+        crate::api::model::Window::Unknown => {}
     }
 };
 
@@ -6818,6 +6824,7 @@ impl SseDecode for crate::api::model::Bank0Blocked {
             3 => crate::api::model::Bank0Blocked::Extent,
             4 => crate::api::model::Bank0Blocked::Changed,
             5 => crate::api::model::Bank0Blocked::Read,
+            6 => crate::api::model::Bank0Blocked::Unknown,
             _ => unreachable!("Invalid variant for Bank0Blocked: {}", inner),
         };
     }
@@ -6837,6 +6844,9 @@ impl SseDecode for crate::api::model::Bank0Check {
             2 => {
                 let mut var_field0 = <crate::api::model::Bank0Blocked>::sse_decode(deserializer);
                 return crate::api::model::Bank0Check::Blocked(var_field0);
+            }
+            3 => {
+                return crate::api::model::Bank0Check::Unknown;
             }
             _ => {
                 unimplemented!("");
@@ -7041,6 +7051,7 @@ impl SseDecode for crate::api::model::ClientRole {
             1 => crate::api::model::ClientRole::Member,
             2 => crate::api::model::ClientRole::Server,
             3 => crate::api::model::ClientRole::UpdateSigner,
+            4 => crate::api::model::ClientRole::Unknown,
             _ => unreachable!("Invalid variant for ClientRole: {}", inner),
         };
     }
@@ -7087,6 +7098,7 @@ impl SseDecode for crate::api::server_views::CommandKind {
             15 => crate::api::server_views::CommandKind::CallPlay,
             16 => crate::api::server_views::CommandKind::Skip,
             17 => crate::api::server_views::CommandKind::Unskip,
+            18 => crate::api::server_views::CommandKind::Unknown,
             _ => unreachable!("Invalid variant for CommandKind: {}", inner),
         };
     }
@@ -7099,8 +7111,8 @@ impl SseDecode for crate::api::server_views::CommandState {
         return match inner {
             0 => crate::api::server_views::CommandState::Sent,
             1 => crate::api::server_views::CommandState::Answered,
-            2 => crate::api::server_views::CommandState::Unknown,
-            3 => crate::api::server_views::CommandState::Resolved,
+            2 => crate::api::server_views::CommandState::Resolved,
+            3 => crate::api::server_views::CommandState::Unknown,
             _ => unreachable!("Invalid variant for CommandState: {}", inner),
         };
     }
@@ -7176,15 +7188,15 @@ impl SseDecode for crate::api::model::Desiccant {
                 return crate::api::model::Desiccant::Unset;
             }
             1 => {
-                return crate::api::model::Desiccant::Unknown;
-            }
-            2 => {
                 let mut var_days = <i32>::sse_decode(deserializer);
                 let mut var_due = <bool>::sse_decode(deserializer);
                 return crate::api::model::Desiccant::Remaining {
                     days: var_days,
                     due: var_due,
                 };
+            }
+            2 => {
+                return crate::api::model::Desiccant::Unknown;
             }
             _ => {
                 unimplemented!("");
@@ -8290,6 +8302,7 @@ impl SseDecode for crate::api::server_views::InstallState {
             1 => crate::api::server_views::InstallState::Activated,
             2 => crate::api::server_views::InstallState::AlreadyRunning,
             3 => crate::api::server_views::InstallState::Failed,
+            4 => crate::api::server_views::InstallState::Unknown,
             _ => unreachable!("Invalid variant for InstallState: {}", inner),
         };
     }
@@ -8841,6 +8854,9 @@ impl SseDecode for crate::api::model::MealReminder {
                     minutes: var_minutes,
                 };
             }
+            2 => {
+                return crate::api::model::MealReminder::Unknown;
+            }
             _ => {
                 unimplemented!("");
             }
@@ -8931,6 +8947,9 @@ impl SseDecode for crate::api::model::MissedReason {
             }
             2 => {
                 return crate::api::model::MissedReason::Interrupted;
+            }
+            3 => {
+                return crate::api::model::MissedReason::Unknown;
             }
             _ => {
                 unimplemented!("");
@@ -10295,6 +10314,9 @@ impl SseDecode for crate::api::server_views::ServerAnomaly {
                     reason: var_reason,
                 };
             }
+            3 => {
+                return crate::api::server_views::ServerAnomaly::Unknown;
+            }
             _ => {
                 unimplemented!("");
             }
@@ -10854,6 +10876,7 @@ impl SseDecode for crate::api::server_views::ServerRole {
             0 => crate::api::server_views::ServerRole::Owner,
             1 => crate::api::server_views::ServerRole::Member,
             2 => crate::api::server_views::ServerRole::Viewer,
+            3 => crate::api::server_views::ServerRole::Unknown,
             _ => unreachable!("Invalid variant for ServerRole: {}", inner),
         };
     }
@@ -11210,6 +11233,7 @@ impl SseDecode for crate::api::model::Skew {
             1 => crate::api::model::Skew::FeederBehind,
             2 => crate::api::model::Skew::FeederAhead,
             3 => crate::api::model::Skew::Legacy,
+            4 => crate::api::model::Skew::Unknown,
             _ => unreachable!("Invalid variant for Skew: {}", inner),
         };
     }
@@ -11525,6 +11549,9 @@ impl SseDecode for crate::api::model::TraceEntry {
                     at_ms: var_atMs,
                     motor: var_motor,
                 };
+            }
+            5 => {
+                return crate::api::model::TraceEntry::Unknown;
             }
             _ => {
                 unimplemented!("");
@@ -11864,6 +11891,9 @@ impl SseDecode for crate::api::model::UpdateRefusal {
             17 => {
                 return crate::api::model::UpdateRefusal::HeldAsSessionKey;
             }
+            18 => {
+                return crate::api::model::UpdateRefusal::Unknown;
+            }
             _ => {
                 unimplemented!("");
             }
@@ -11884,6 +11914,7 @@ impl SseDecode for crate::api::model::UpdateStop {
             5 => crate::api::model::UpdateStop::Hash,
             6 => crate::api::model::UpdateStop::Activate,
             7 => crate::api::model::UpdateStop::Store,
+            8 => crate::api::model::UpdateStop::Unknown,
             _ => unreachable!("Invalid variant for UpdateStop: {}", inner),
         };
     }
@@ -11983,6 +12014,9 @@ impl SseDecode for crate::api::model::Window {
                     start: var_start,
                     end: var_end,
                 };
+            }
+            2 => {
+                return crate::api::model::Window::Unknown;
             }
             _ => {
                 unimplemented!("");
@@ -12626,6 +12660,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Bank0Blocke
             crate::api::model::Bank0Blocked::Extent => 3.into_dart(),
             crate::api::model::Bank0Blocked::Changed => 4.into_dart(),
             crate::api::model::Bank0Blocked::Read => 5.into_dart(),
+            crate::api::model::Bank0Blocked::Unknown => 6.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -12650,6 +12685,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Bank0Check>
             crate::api::model::Bank0Check::Blocked(field0) => {
                 [2.into_dart(), field0.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::model::Bank0Check::Unknown => [3.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -12890,6 +12926,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::ClientRole>
             crate::api::model::ClientRole::Member => 1.into_dart(),
             crate::api::model::ClientRole::Server => 2.into_dart(),
             crate::api::model::ClientRole::UpdateSigner => 3.into_dart(),
+            crate::api::model::ClientRole::Unknown => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -12951,6 +12988,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::server_views::Comm
             crate::api::server_views::CommandKind::CallPlay => 15.into_dart(),
             crate::api::server_views::CommandKind::Skip => 16.into_dart(),
             crate::api::server_views::CommandKind::Unskip => 17.into_dart(),
+            crate::api::server_views::CommandKind::Unknown => 18.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -12972,8 +13010,8 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::server_views::Comm
         match self.0 {
             crate::api::server_views::CommandState::Sent => 0.into_dart(),
             crate::api::server_views::CommandState::Answered => 1.into_dart(),
-            crate::api::server_views::CommandState::Unknown => 2.into_dart(),
-            crate::api::server_views::CommandState::Resolved => 3.into_dart(),
+            crate::api::server_views::CommandState::Resolved => 2.into_dart(),
+            crate::api::server_views::CommandState::Unknown => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -13070,13 +13108,13 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Desiccant> 
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
             crate::api::model::Desiccant::Unset => [0.into_dart()].into_dart(),
-            crate::api::model::Desiccant::Unknown => [1.into_dart()].into_dart(),
             crate::api::model::Desiccant::Remaining { days, due } => [
-                2.into_dart(),
+                1.into_dart(),
                 days.into_into_dart().into_dart(),
                 due.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::model::Desiccant::Unknown => [2.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -14150,6 +14188,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::server_views::Inst
             crate::api::server_views::InstallState::Activated => 1.into_dart(),
             crate::api::server_views::InstallState::AlreadyRunning => 2.into_dart(),
             crate::api::server_views::InstallState::Failed => 3.into_dart(),
+            crate::api::server_views::InstallState::Unknown => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -14405,6 +14444,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::MealReminde
             crate::api::model::MealReminder::Before { minutes } => {
                 [1.into_dart(), minutes.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::model::MealReminder::Unknown => [2.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -14509,6 +14549,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::MissedReaso
                 [1.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
             crate::api::model::MissedReason::Interrupted => [2.into_dart()].into_dart(),
+            crate::api::model::MissedReason::Unknown => [3.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -15466,6 +15507,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerAnomaly {
                 reason.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::server_views::ServerAnomaly::Unknown => [3.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -16158,6 +16200,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerRole {
             Self::Owner => 0.into_dart(),
             Self::Member => 1.into_dart(),
             Self::Viewer => 2.into_dart(),
+            Self::Unknown => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -16560,6 +16603,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Skew> {
             crate::api::model::Skew::FeederBehind => 1.into_dart(),
             crate::api::model::Skew::FeederAhead => 2.into_dart(),
             crate::api::model::Skew::Legacy => 3.into_dart(),
+            crate::api::model::Skew::Unknown => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -16861,6 +16905,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::TraceEntry>
                 motor.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::model::TraceEntry::Unknown => [5.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -17172,6 +17217,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::UpdateRefus
             crate::api::model::UpdateRefusal::Unconfirmed => [15.into_dart()].into_dart(),
             crate::api::model::UpdateRefusal::Battery => [16.into_dart()].into_dart(),
             crate::api::model::UpdateRefusal::HeldAsSessionKey => [17.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Unknown => [18.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -17201,6 +17247,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::UpdateStop>
             crate::api::model::UpdateStop::Hash => 5.into_dart(),
             crate::api::model::UpdateStop::Activate => 6.into_dart(),
             crate::api::model::UpdateStop::Store => 7.into_dart(),
+            crate::api::model::UpdateStop::Unknown => 8.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -17342,6 +17389,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Window> {
                 end.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::model::Window::Unknown => [2.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -17838,6 +17886,7 @@ impl SseEncode for crate::api::model::Bank0Blocked {
                 crate::api::model::Bank0Blocked::Extent => 3,
                 crate::api::model::Bank0Blocked::Changed => 4,
                 crate::api::model::Bank0Blocked::Read => 5,
+                crate::api::model::Bank0Blocked::Unknown => 6,
                 _ => {
                     unimplemented!("");
                 }
@@ -17860,6 +17909,9 @@ impl SseEncode for crate::api::model::Bank0Check {
             crate::api::model::Bank0Check::Blocked(field0) => {
                 <i32>::sse_encode(2, serializer);
                 <crate::api::model::Bank0Blocked>::sse_encode(field0, serializer);
+            }
+            crate::api::model::Bank0Check::Unknown => {
+                <i32>::sse_encode(3, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -18028,6 +18080,7 @@ impl SseEncode for crate::api::model::ClientRole {
                 crate::api::model::ClientRole::Member => 1,
                 crate::api::model::ClientRole::Server => 2,
                 crate::api::model::ClientRole::UpdateSigner => 3,
+                crate::api::model::ClientRole::Unknown => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -18071,6 +18124,7 @@ impl SseEncode for crate::api::server_views::CommandKind {
                 crate::api::server_views::CommandKind::CallPlay => 15,
                 crate::api::server_views::CommandKind::Skip => 16,
                 crate::api::server_views::CommandKind::Unskip => 17,
+                crate::api::server_views::CommandKind::Unknown => 18,
                 _ => {
                     unimplemented!("");
                 }
@@ -18087,8 +18141,8 @@ impl SseEncode for crate::api::server_views::CommandState {
             match self {
                 crate::api::server_views::CommandState::Sent => 0,
                 crate::api::server_views::CommandState::Answered => 1,
-                crate::api::server_views::CommandState::Unknown => 2,
-                crate::api::server_views::CommandState::Resolved => 3,
+                crate::api::server_views::CommandState::Resolved => 2,
+                crate::api::server_views::CommandState::Unknown => 3,
                 _ => {
                     unimplemented!("");
                 }
@@ -18150,13 +18204,13 @@ impl SseEncode for crate::api::model::Desiccant {
             crate::api::model::Desiccant::Unset => {
                 <i32>::sse_encode(0, serializer);
             }
-            crate::api::model::Desiccant::Unknown => {
-                <i32>::sse_encode(1, serializer);
-            }
             crate::api::model::Desiccant::Remaining { days, due } => {
-                <i32>::sse_encode(2, serializer);
+                <i32>::sse_encode(1, serializer);
                 <i32>::sse_encode(days, serializer);
                 <bool>::sse_encode(due, serializer);
+            }
+            crate::api::model::Desiccant::Unknown => {
+                <i32>::sse_encode(2, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -19117,6 +19171,7 @@ impl SseEncode for crate::api::server_views::InstallState {
                 crate::api::server_views::InstallState::Activated => 1,
                 crate::api::server_views::InstallState::AlreadyRunning => 2,
                 crate::api::server_views::InstallState::Failed => 3,
+                crate::api::server_views::InstallState::Unknown => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -19548,6 +19603,9 @@ impl SseEncode for crate::api::model::MealReminder {
                 <i32>::sse_encode(1, serializer);
                 <u8>::sse_encode(minutes, serializer);
             }
+            crate::api::model::MealReminder::Unknown => {
+                <i32>::sse_encode(2, serializer);
+            }
             _ => {
                 unimplemented!("");
             }
@@ -19622,6 +19680,9 @@ impl SseEncode for crate::api::model::MissedReason {
             }
             crate::api::model::MissedReason::Interrupted => {
                 <i32>::sse_encode(2, serializer);
+            }
+            crate::api::model::MissedReason::Unknown => {
+                <i32>::sse_encode(3, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -20819,6 +20880,9 @@ impl SseEncode for crate::api::server_views::ServerAnomaly {
                 <crate::api::model::FeedOutcome>::sse_encode(outcome, serializer);
                 <crate::api::model::FeedReason>::sse_encode(reason, serializer);
             }
+            crate::api::server_views::ServerAnomaly::Unknown => {
+                <i32>::sse_encode(3, serializer);
+            }
             _ => {
                 unimplemented!("");
             }
@@ -21229,6 +21293,7 @@ impl SseEncode for crate::api::server_views::ServerRole {
                 crate::api::server_views::ServerRole::Owner => 0,
                 crate::api::server_views::ServerRole::Member => 1,
                 crate::api::server_views::ServerRole::Viewer => 2,
+                crate::api::server_views::ServerRole::Unknown => 3,
                 _ => {
                     unimplemented!("");
                 }
@@ -21517,6 +21582,7 @@ impl SseEncode for crate::api::model::Skew {
                 crate::api::model::Skew::FeederBehind => 1,
                 crate::api::model::Skew::FeederAhead => 2,
                 crate::api::model::Skew::Legacy => 3,
+                crate::api::model::Skew::Unknown => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -21811,6 +21877,9 @@ impl SseEncode for crate::api::model::TraceEntry {
                 <i32>::sse_encode(4, serializer);
                 <u32>::sse_encode(at_ms, serializer);
                 <crate::api::model::TraceMotor>::sse_encode(motor, serializer);
+            }
+            crate::api::model::TraceEntry::Unknown => {
+                <i32>::sse_encode(5, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -22123,6 +22192,9 @@ impl SseEncode for crate::api::model::UpdateRefusal {
             crate::api::model::UpdateRefusal::HeldAsSessionKey => {
                 <i32>::sse_encode(17, serializer);
             }
+            crate::api::model::UpdateRefusal::Unknown => {
+                <i32>::sse_encode(18, serializer);
+            }
             _ => {
                 unimplemented!("");
             }
@@ -22143,6 +22215,7 @@ impl SseEncode for crate::api::model::UpdateStop {
                 crate::api::model::UpdateStop::Hash => 5,
                 crate::api::model::UpdateStop::Activate => 6,
                 crate::api::model::UpdateStop::Store => 7,
+                crate::api::model::UpdateStop::Unknown => 8,
                 _ => {
                     unimplemented!("");
                 }
@@ -22247,6 +22320,9 @@ impl SseEncode for crate::api::model::Window {
                 <i32>::sse_encode(1, serializer);
                 <u16>::sse_encode(start, serializer);
                 <u16>::sse_encode(end, serializer);
+            }
+            crate::api::model::Window::Unknown => {
+                <i32>::sse_encode(2, serializer);
             }
             _ => {
                 unimplemented!("");

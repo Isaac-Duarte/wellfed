@@ -65,6 +65,10 @@ pub enum Error {
          nothing was sent: update the feeder"
     )]
     Legacy,
+    /// The op holds a value only a newer build names (a role or a window
+    /// read from a newer server), which has no wire form: nothing was sent.
+    #[error("the request holds a value this build cannot name; nothing was sent")]
+    NoWireForm(#[from] wellfed_model::convert::NoWireForm),
     #[error(transparent)]
     Setup(#[from] crate::setup::Error),
 }
@@ -418,7 +422,7 @@ impl Session {
         }
         self.send(&ClientMessage::Request {
             id,
-            op: op.to_proto(),
+            op: op.to_proto()?,
         })
     }
 

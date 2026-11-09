@@ -86,6 +86,9 @@ pub enum ServerRole {
     Owner,
     Member,
     Viewer,
+    /// A role a newer server added: it grants nothing here, so the app
+    /// offers no more than a viewer's.
+    Unknown,
 }
 
 /// The server's link to one feeder.
@@ -266,6 +269,8 @@ pub enum ServerAnomaly {
         outcome: FeedOutcome,
         reason: FeedReason,
     },
+    /// A kind of anomaly a newer server added, which this app cannot show.
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -368,14 +373,15 @@ pub enum _CommandKind {
     CallPlay,
     Skip,
     Unskip,
+    Unknown,
 }
 
 #[frb(mirror(CommandState))]
 pub enum _CommandState {
     Sent,
     Answered,
-    Unknown,
     Resolved,
+    Unknown,
 }
 
 #[frb(mirror(InstallState))]
@@ -384,4 +390,5 @@ pub enum _InstallState {
     Activated,
     AlreadyRunning,
     Failed,
+    Unknown,
 }

@@ -113,11 +113,14 @@ pub struct FeederStatus {
 pub enum Desiccant {
     /// No replacement is recorded yet: reset it once the pack is fresh.
     Unset,
-    /// The feeder's clock is invalid, so the days cannot be counted.
-    Unknown,
     /// Days left of the period; `due` from 0 on, and the count goes on
     /// below zero.
     Remaining { days: i32, due: bool },
+    /// The feeder's clock is invalid, so the days cannot be counted. A
+    /// state a newer build added reads as this too: the days are not known
+    /// here either.
+    #[serde(other)]
+    Unknown,
 }
 
 /// For a person: `not started`, `unknown (no clock)`, `5 days left`, `due
@@ -286,6 +289,10 @@ pub enum Battery {
     Unread,
     /// The last sample is this old, past the feeder's limit.
     Stale { age_ms: u32 },
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A device's settings, by its kind, tagged by the kind in JSON (`"kind":
@@ -421,6 +428,10 @@ pub enum MealReminder {
         #[schema(minimum = 1, maximum = 60)]
         minutes: u8,
     },
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 impl MealReminder {
@@ -431,6 +442,7 @@ impl MealReminder {
             Self::Before { minutes } => {
                 minutes >= MEAL_REMINDER_MINUTES_MIN && minutes <= MEAL_REMINDER_MINUTES_MAX
             }
+            Self::Unknown => false,
         }
     }
 }
@@ -445,6 +457,7 @@ impl fmt::Display for MealReminder {
         match *self {
             Self::Off => f.write_str("off"),
             Self::Before { minutes } => write!(f, "{minutes}"),
+            Self::Unknown => f.write_str("unknown"),
         }
     }
 }
@@ -484,6 +497,10 @@ pub enum Window {
         #[schema(maximum = 1439)]
         end: u16,
     },
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why a window's text did not parse.
@@ -502,6 +519,7 @@ impl Window {
         match self {
             Self::Always => true,
             Self::Between { start, end } => start < DAY_MINUTES && end < DAY_MINUTES,
+            Self::Unknown => false,
         }
     }
 }
@@ -521,6 +539,7 @@ impl fmt::Display for Window {
                 end / 60,
                 end % 60
             ),
+            Self::Unknown => f.write_str("unknown"),
         }
     }
 }

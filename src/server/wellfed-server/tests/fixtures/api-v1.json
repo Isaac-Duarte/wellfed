@@ -302,6 +302,20 @@
                 "kind"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -416,7 +430,8 @@
             "key",
             "extent",
             "changed",
-            "read"
+            "read",
+            "unknown"
           ],
           "type": "string"
         },
@@ -513,6 +528,20 @@
               },
               "required": [
                 "age_ms",
+                "state"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
                 "state"
               ],
               "type": "object"
@@ -768,6 +797,20 @@
                 "kind"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -776,7 +819,8 @@
             "owner",
             "member",
             "server",
-            "update_signer"
+            "update_signer",
+            "unknown"
           ],
           "type": "string"
         },
@@ -873,7 +917,8 @@
             "call_delete",
             "call_play",
             "skip",
-            "unskip"
+            "unskip",
+            "unknown"
           ],
           "type": "string"
         },
@@ -1137,8 +1182,8 @@
           "enum": [
             "sent",
             "answered",
-            "unknown",
-            "resolved"
+            "resolved",
+            "unknown"
           ],
           "type": "string"
         },
@@ -1467,20 +1512,6 @@
             },
             {
               "properties": {
-                "state": {
-                  "enum": [
-                    "unknown"
-                  ],
-                  "type": "string"
-                }
-              },
-              "required": [
-                "state"
-              ],
-              "type": "object"
-            },
-            {
-              "properties": {
                 "days": {
                   "format": "int32",
                   "type": "integer"
@@ -1498,6 +1529,20 @@
               "required": [
                 "days",
                 "due",
+                "state"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
                 "state"
               ],
               "type": "object"
@@ -1534,7 +1579,8 @@
             "setup",
             "invite",
             "recovery",
-            "press"
+            "press",
+            "unknown"
           ],
           "type": "string"
         },
@@ -1763,6 +1809,20 @@
                 "completed",
                 "outcome",
                 "reason",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
                 "kind"
               ],
               "type": "object"
@@ -3453,6 +3513,20 @@
                 "reason"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "reason": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -3476,7 +3550,8 @@
             "running",
             "activated",
             "already_running",
-            "failed"
+            "failed",
+            "unknown"
           ],
           "type": "string"
         },
@@ -3514,6 +3589,20 @@
               },
               "required": [
                 "sha256",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
                 "kind"
               ],
               "type": "object"
@@ -3586,14 +3675,16 @@
             "rollups",
             "expiry",
             "backup",
-            "release_check"
+            "release_check",
+            "unknown"
           ],
           "type": "string"
         },
         "JobOutcome": {
           "enum": [
             "succeeded",
-            "failed"
+            "failed",
+            "unknown"
           ],
           "type": "string"
         },
@@ -3652,6 +3743,20 @@
               },
               "required": [
                 "attempt",
+                "result"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "result": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
                 "result"
               ],
               "type": "object"
@@ -3723,13 +3828,28 @@
                 "kind"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
             }
           ]
         },
         "LoginFailure": {
           "enum": [
             "bad_password",
-            "disabled"
+            "disabled",
+            "unknown"
           ],
           "type": "string"
         },
@@ -3766,6 +3886,20 @@
               },
               "required": [
                 "minutes",
+                "mode"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
                 "mode"
               ],
               "type": "object"
@@ -3862,6 +3996,20 @@
                 "kind": {
                   "enum": [
                     "interrupted"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
                   ],
                   "type": "string"
                 }
@@ -4904,14 +5052,16 @@
             "unknown_key",
             "signature",
             "refused",
-            "image"
+            "image",
+            "unknown"
           ],
           "type": "string"
         },
         "ReleaseSigner": {
           "enum": [
             "project",
-            "owner"
+            "owner",
+            "unknown"
           ],
           "type": "string"
         },
@@ -4944,6 +5094,20 @@
                 "kind": {
                   "enum": [
                     "upload"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
                   ],
                   "type": "string"
                 }
@@ -5043,20 +5207,6 @@
             },
             {
               "properties": {
-                "result": {
-                  "enum": [
-                    "unknown"
-                  ],
-                  "type": "string"
-                }
-              },
-              "required": [
-                "result"
-              ],
-              "type": "object"
-            },
-            {
-              "properties": {
                 "refusal": {
                   "$ref": "#/components/schemas/FeederRefusal"
                 },
@@ -5091,6 +5241,20 @@
                 "result"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "result": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "result"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -5100,7 +5264,8 @@
             "demoted",
             "expiring",
             "token_revoked",
-            "replaced"
+            "replaced",
+            "unknown"
           ],
           "type": "string"
         },
@@ -5134,7 +5299,8 @@
           "enum": [
             "owner",
             "member",
-            "viewer"
+            "viewer",
+            "unknown"
           ],
           "type": "string"
         },
@@ -5512,7 +5678,8 @@
             "same",
             "feeder_behind",
             "feeder_ahead",
-            "legacy"
+            "legacy",
+            "unknown"
           ],
           "type": "string"
         },
@@ -5580,6 +5747,20 @@
               },
               "required": [
                 "plan",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
                 "kind"
               ],
               "type": "object"
@@ -6014,7 +6195,8 @@
         "StockBackupState": {
           "enum": [
             "verified",
-            "damaged"
+            "damaged",
+            "unknown"
           ],
           "type": "string"
         },
@@ -6063,7 +6245,8 @@
         "StockSource": {
           "enum": [
             "feeder",
-            "upload"
+            "upload",
+            "unknown"
           ],
           "type": "string"
         },
@@ -6111,7 +6294,8 @@
         "StoreState": {
           "enum": [
             "ok",
-            "failing"
+            "failing",
+            "unknown"
           ],
           "type": "string"
         },
@@ -6507,6 +6691,20 @@
                 "kind"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -6693,7 +6891,8 @@
         "Units": {
           "enum": [
             "grams",
-            "ounces"
+            "ounces",
+            "unknown"
           ],
           "type": "string"
         },
@@ -6701,7 +6900,8 @@
           "enum": [
             "none",
             "pending",
-            "activated"
+            "activated",
+            "unknown"
           ],
           "type": "string"
         },
@@ -6827,6 +7027,12 @@
                 "held_as_session_key"
               ],
               "type": "string"
+            },
+            {
+              "enum": [
+                "unknown"
+              ],
+              "type": "string"
             }
           ]
         },
@@ -6839,7 +7045,8 @@
             "write",
             "hash",
             "activate",
-            "store"
+            "store",
+            "unknown"
           ],
           "type": "string"
         },
@@ -7069,6 +7276,20 @@
               "required": [
                 "start",
                 "end",
+                "mode"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
                 "mode"
               ],
               "type": "object"

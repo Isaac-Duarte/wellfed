@@ -17,6 +17,10 @@ pub enum Role {
     Owner,
     Member,
     Viewer,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Role {
@@ -26,6 +30,7 @@ impl Role {
             Self::Owner => "owner",
             Self::Member => "member",
             Self::Viewer => "viewer",
+            Self::Unknown => "unknown",
         }
     }
 

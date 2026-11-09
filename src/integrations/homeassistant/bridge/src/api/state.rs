@@ -22,7 +22,7 @@ pub struct Settings {
     /// The desiccant reminder's period, 1-90 days.
     pub desiccant_days: u8,
     /// Minutes ahead of each meal its `meal_soon` event comes; `None` when
-    /// off.
+    /// off, or when it is a kind of reminder a newer build added.
     pub meal_reminder_minutes: Option<u8>,
 }
 
@@ -36,6 +36,9 @@ impl From<&model::FeederSettings> for Settings {
             meal_reminder_minutes: match settings.meal_reminder {
                 model::MealReminder::Off => None,
                 model::MealReminder::Before { minutes } => Some(minutes),
+                // A reminder a newer build added, which this one cannot
+                // read: no lead to show.
+                model::MealReminder::Unknown => None,
             },
         }
     }

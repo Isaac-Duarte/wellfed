@@ -12,7 +12,7 @@ pub(super) fn source_detail(source: &model::Source) -> (Option<String>, Option<u
     match source {
         model::Source::Client { client } => (Some(client.to_string()), None),
         model::Source::Schedule { plan } => (None, Some(*plan)),
-        model::Source::Panel | model::Source::Feeder => (None, None),
+        model::Source::Panel | model::Source::Feeder | model::Source::Unknown => (None, None),
     }
 }
 

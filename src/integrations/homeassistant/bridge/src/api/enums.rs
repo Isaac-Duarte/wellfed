@@ -49,6 +49,8 @@ view_enum! {
         Member => "member",
         Server => "server",
         UpdateSigner => "update_signer",
+        /// A role a newer build added: it grants nothing here.
+        NewerBuild => "newer_build",
     }
 }
 
@@ -59,6 +61,7 @@ impl From<model::ClientRole> for Role {
             model::ClientRole::Member => Self::Member,
             model::ClientRole::Server => Self::Server,
             model::ClientRole::UpdateSigner => Self::UpdateSigner,
+            model::ClientRole::Unknown => Self::NewerBuild,
         }
     }
 }
@@ -216,6 +219,8 @@ view_enum! {
         Feeder => "feeder",
         /// A feeding plan; the event names its slot.
         Plan => "plan",
+        /// A value a newer build added, which this integration cannot name.
+        NewerBuild => "newer_build",
     }
 }
 
@@ -226,6 +231,7 @@ impl From<&model::Source> for By {
             model::Source::Client { .. } => Self::Client,
             model::Source::Feeder => Self::Feeder,
             model::Source::Schedule { .. } => Self::Plan,
+            model::Source::Unknown => Self::NewerBuild,
         }
     }
 }
@@ -442,6 +448,8 @@ view_enum! {
         /// nothing this integration reads or writes: it must be updated,
         /// from the app, before the session can serve it.
         Legacy => "legacy",
+        /// A value a newer build added, which this integration cannot name.
+        NewerBuild => "newer_build",
     }
 }
 
@@ -452,6 +460,7 @@ impl From<model::Skew> for Skew {
             model::Skew::FeederBehind => Self::FeederBehind,
             model::Skew::FeederAhead => Self::FeederAhead,
             model::Skew::Legacy => Self::Legacy,
+            model::Skew::Unknown => Self::NewerBuild,
         }
     }
 }

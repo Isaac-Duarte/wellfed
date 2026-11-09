@@ -157,6 +157,8 @@ impl Service {
                 "restore of stock {STOCK_VERSION} started, as version {}",
                 install.version
             ),
+            // A newer server's target, which this one never starts.
+            InstallTarget::Unknown => {}
         }
         self.publish_install(install);
 
@@ -258,6 +260,7 @@ impl Service {
                     "activated: the feeder restarts into stock {STOCK_VERSION}, which serves no \
                      device API"
                 ),
+                InstallTarget::Unknown => {}
             },
         }
 

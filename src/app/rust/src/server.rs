@@ -149,6 +149,7 @@ impl From<Role> for ServerRole {
             Role::Owner => Self::Owner,
             Role::Member => Self::Member,
             Role::Viewer => Self::Viewer,
+            Role::Unknown => Self::Unknown,
         }
     }
 }
@@ -530,6 +531,7 @@ impl From<FeedAnomaly> for ServerAnomaly {
                 outcome,
                 reason,
             },
+            FeedAnomaly::Unknown => Self::Unknown,
         }
     }
 }

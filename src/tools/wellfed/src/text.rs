@@ -42,6 +42,7 @@ fn source(by: Option<Source>) -> String {
         Some(Source::Client { client }) => format!("client {client}"),
         Some(Source::Feeder) => "feeder".to_owned(),
         Some(Source::Schedule { plan }) => format!("plan {plan}"),
+        Some(Source::Unknown) => "a source unknown to this CLI".to_owned(),
         None => "unknown".to_owned(),
     }
 }
@@ -76,6 +77,9 @@ pub(crate) fn recovery(view: &UpdateView) -> Option<String> {
             reason.code(),
             wellfed_client::update::blocked_words(reason)
         ),
+        Bank0Check::Unknown => {
+            "Recovery copy (bank 0): in a state unknown to this CLI: update the CLI".to_owned()
+        }
     })
 }
 
@@ -224,6 +228,7 @@ fn battery(battery: Battery) -> String {
         Battery::Implausible { mv } => format!("battery reading implausible ({mv} mV)"),
         Battery::Unread => "batteries not read".to_owned(),
         Battery::Stale { age_ms } => format!("battery reading stale ({} s old)", age_ms / 1000),
+        Battery::Unknown => "batteries in a state unknown to this CLI".to_owned(),
     }
 }
 
@@ -289,6 +294,7 @@ fn reminder(reminder: MealReminder) -> String {
     match reminder {
         MealReminder::Off => "off".to_owned(),
         MealReminder::Before { minutes } => format!("{minutes} min ahead"),
+        MealReminder::Unknown => "unknown to this CLI".to_owned(),
     }
 }
 
@@ -383,6 +389,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                 EnrollPath::Invite => "an invite",
                 EnrollPath::Recovery => "recovery",
                 EnrollPath::Press => "a press on the panel",
+                EnrollPath::Unknown => "a way unknown to this CLI",
             };
             format!("client {client} enrolled as {} through {path}", role.code())
         }
@@ -423,6 +430,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                     format!("blocked for 15 minutes, {}", reason.code())
                 }
                 MissedReason::Interrupted => "interrupted before its feed was reserved".to_owned(),
+                MissedReason::Unknown => "for a reason unknown to this CLI".to_owned(),
             };
             format!(
                 "plan {plan}'s meal due {} missed: {why}",

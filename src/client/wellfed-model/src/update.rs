@@ -67,6 +67,10 @@ pub enum Bank0Check {
     Match,
     /// Bank 1 will not give way to it, so every update is refused.
     Blocked(Bank0Blocked),
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Bank0Check {
@@ -75,6 +79,8 @@ impl Bank0Check {
         match self {
             Self::Blocked(reason) => Some(reason),
             Self::Unchecked | Self::Match => None,
+            // A state a newer build added: nothing says bank 0 may give way.
+            Self::Unknown => Some(Bank0Blocked::Unknown),
         }
     }
 }
@@ -96,6 +102,10 @@ pub enum Bank0Blocked {
     Changed,
     /// Bank 0 could not be read.
     Read,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Bank0Blocked {
@@ -109,6 +119,7 @@ impl Bank0Blocked {
             Self::Extent => "extent",
             Self::Changed => "changed",
             Self::Read => "read",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -139,6 +150,10 @@ pub enum UpdateCandidate {
     Pending,
     /// Bank 0 activated one, and no build has confirmed it.
     Activated,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why an install stopped. Bank 1's marker was never written, so the
@@ -161,6 +176,10 @@ pub enum UpdateStop {
     Activate,
     /// The update store could not be written.
     Store,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why an update op was refused.
@@ -209,4 +228,8 @@ pub enum UpdateRefusal {
     /// The key is already enrolled as a session key, which is never an
     /// update signer too.
     HeldAsSessionKey,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }

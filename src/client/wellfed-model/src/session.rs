@@ -57,6 +57,10 @@ pub enum Skew {
     /// update path, the keepalive, invites), so the feeder is the side to
     /// update.
     Legacy,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The lowest value a pre-revision build's welcome can carry where the

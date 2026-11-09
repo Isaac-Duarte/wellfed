@@ -39,6 +39,7 @@ String roleWords(ServerRole role) => switch (role) {
   ServerRole.owner => 'Owner',
   ServerRole.member => 'Member',
   ServerRole.viewer => 'Viewer',
+  ServerRole.unknown => 'A role this app does not know',
 };
 
 /// A plain page of the server's screens: a back button and a title.

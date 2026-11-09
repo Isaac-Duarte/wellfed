@@ -64,6 +64,10 @@ pub enum CommandKind {
     Skip,
     /// Undoing a meal's skip before its time.
     Unskip,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl CommandKind {
@@ -88,6 +92,7 @@ impl CommandKind {
             Self::CallPlay => "call_play",
             Self::Skip => "skip",
             Self::Unskip => "unskip",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -127,13 +132,16 @@ pub enum CommandState {
     Sent,
     /// The feeder answered; `outcome` is its answer.
     Answered,
-    /// No answer came, or the server stopped before one did. The feeder
-    /// may have run it: only a retry under the same key may send it again.
-    Unknown,
     /// Settled from the feeder's history: a feed by its `Fed` event, or as
     /// `unrecorded` once the feeder restarted with no record of it. Final,
     /// except that a `Fed` event found after `unrecorded` replaces it.
     Resolved,
+    /// No answer came, or the server stopped before one did. The feeder
+    /// may have run it: only a retry under the same key may send it again.
+    /// A state a newer server added reads as this too, so a client takes
+    /// the write as uncertain and never sends it again.
+    #[serde(other)]
+    Unknown,
 }
 
 impl CommandState {
