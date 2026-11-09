@@ -1,0 +1,221 @@
+{
+  "hooked": [
+    {
+      "absent": null,
+      "delivery": "due",
+      "key": {
+        "epoch": 7,
+        "key": {
+          "key": "kind",
+          "kind": "food_low"
+        },
+        "notice": "alert"
+      },
+      "notice": {
+        "notice": "alert",
+        "open": {
+          "alert": {
+            "kind": "food_low"
+          },
+          "at": null
+        }
+      },
+      "seen": "2027-01-15T08:00:10Z"
+    },
+    {
+      "absent": null,
+      "delivery": "due",
+      "key": {
+        "epoch": 7,
+        "key": {
+          "key": "kind",
+          "kind": "no_clock"
+        },
+        "notice": "alert"
+      },
+      "notice": {
+        "notice": "alert",
+        "open": {
+          "alert": {
+            "kind": "no_clock"
+          },
+          "at": null
+        }
+      },
+      "seen": "2027-01-15T08:00:10Z"
+    }
+  ],
+  "table": {
+    "at": "2027-01-15T08:00:20Z",
+    "clock_valid": true,
+    "cursor": {
+      "boot": 3,
+      "epoch": 7,
+      "generation": 5
+    },
+    "view": {
+      "alerts": [
+        {
+          "alert": {
+            "client": "01020304",
+            "kind": "client_joined",
+            "path": "invite",
+            "role": "server"
+          },
+          "at": "2027-01-15T07:00:00Z"
+        },
+        {
+          "alert": {
+            "completed": 0,
+            "feed": 12,
+            "kind": "meal_failed",
+            "outcome": "failed",
+            "plan": 2,
+            "reason": "unknown",
+            "requested": 2
+          },
+          "at": "2027-01-15T08:00:00Z"
+        }
+      ],
+      "epoch": 7,
+      "generation": 5,
+      "more": false,
+      "settling": true,
+      "unread": 1
+    }
+  },
+  "watch": {
+    "cursor": {
+      "boot": 3,
+      "epoch": 7,
+      "generation": 5
+    },
+    "open": [
+      {
+        "absent": null,
+        "delivery": "quiet",
+        "key": {
+          "epoch": 7,
+          "key": {
+            "at": "2027-01-15T07:00:00Z",
+            "client": "01020304",
+            "key": "client",
+            "kind": "client_joined"
+          },
+          "notice": "alert"
+        },
+        "notice": {
+          "notice": "alert",
+          "open": {
+            "alert": {
+              "client": "01020304",
+              "kind": "client_joined",
+              "path": "invite",
+              "role": "server"
+            },
+            "at": "2027-01-15T07:00:00Z"
+          }
+        },
+        "seen": "2027-01-15T08:00:10Z"
+      },
+      {
+        "absent": {
+          "absence": "since",
+          "since": "2027-01-15T08:00:20Z"
+        },
+        "delivery": "posted",
+        "key": {
+          "epoch": 7,
+          "key": {
+            "key": "kind",
+            "kind": "food_low"
+          },
+          "notice": "alert"
+        },
+        "notice": {
+          "notice": "alert",
+          "open": {
+            "alert": {
+              "kind": "food_low"
+            },
+            "at": null
+          }
+        },
+        "seen": "2027-01-15T08:00:10Z"
+      },
+      {
+        "absent": {
+          "absence": "since",
+          "since": "2027-01-15T08:00:20Z"
+        },
+        "delivery": "posted",
+        "key": {
+          "epoch": 7,
+          "key": {
+            "key": "kind",
+            "kind": "no_clock"
+          },
+          "notice": "alert"
+        },
+        "notice": {
+          "notice": "alert",
+          "open": {
+            "alert": {
+              "kind": "no_clock"
+            },
+            "at": null
+          }
+        },
+        "seen": "2027-01-15T08:00:10Z"
+      },
+      {
+        "absent": null,
+        "delivery": "due",
+        "key": {
+          "epoch": 7,
+          "key": {
+            "feed": 12,
+            "key": "feed"
+          },
+          "notice": "alert"
+        },
+        "notice": {
+          "notice": "alert",
+          "open": {
+            "alert": {
+              "completed": 0,
+              "feed": 12,
+              "kind": "meal_failed",
+              "outcome": "failed",
+              "plan": 2,
+              "reason": "unknown",
+              "requested": 2
+            },
+            "at": "2027-01-15T08:00:00Z"
+          }
+        },
+        "seen": "2027-01-15T08:00:20Z"
+      },
+      {
+        "absent": null,
+        "delivery": "due",
+        "key": {
+          "notice": "unreachable"
+        },
+        "notice": {
+          "notice": "unreachable",
+          "since": "2027-01-15T08:00:25Z"
+        },
+        "seen": "2027-01-15T08:00:40Z"
+      }
+    ],
+    "reach": {
+      "failures": 1,
+      "first_failure": "2027-01-15T08:00:30Z",
+      "home": "server",
+      "reached": "2027-01-15T08:00:00Z"
+    },
+    "removing": [],
+    "unread": 1
+  }
+}

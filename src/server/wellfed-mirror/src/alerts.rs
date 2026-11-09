@@ -11,10 +11,14 @@
 //! command is for. Reads change nothing on the feeder.
 //!
 //! It also judges the feeder's reach by the phone's rule
-//! ([`wellfed_client::alerts`]): every failed connect counts, every session
-//! opened (or the feeder's own refusal) resets it, and after
-//! [`UNREACHABLE_AFTER`] failures in a row over [`UNREACHABLE_FOR`] the
-//! feeder is unreachable.
+//! ([`wellfed_client::alerts`]), from what each connect came to
+//! ([`Attempt`]): a connect nothing answered counts, and after
+//! [`UNREACHABLE_AFTER`] of them in a row over [`UNREACHABLE_FOR`] the
+//! feeder is unreachable. A feeder that answered resets it, even to say
+//! every session is taken or to welcome another model: it is there. A
+//! feeder that no longer knows the server's key is unreachable at once,
+//! since the server will not read it again until the owner adopts it
+//! anew: the table it served last stays, as old as its read time says.
 //!
 //! [`AlertReads::Read`]: crate::AlertReads::Read
 //! [`UNREACHABLE_AFTER`]: wellfed_client::alerts::UNREACHABLE_AFTER
@@ -35,7 +39,7 @@ use wellfed_model::{Answer, Hex, Op, Skew};
 use crate::command::{Command, send};
 use crate::kept::{self, Kept, ReadTable};
 use crate::task::Opened;
-use crate::{MirrorEvent, Shared};
+use crate::{ConnectError, MirrorEvent, Shared, Unreachable};
 
 /// Whether each feeder's alert table is read and kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,6 +72,45 @@ const AFTER_EVENT: Duration = Duration::from_secs(2);
 /// server has one, its own.
 const SERVER_NETWORK: &str = "server";
 
+/// What one connect to the feeder came to, as the connect loop tells it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Attempt {
+    /// The feeder answered: a session, or its own refusal of one.
+    Answered,
+    /// The feeder no longer knows the server's key.
+    ShutOut,
+    /// Nothing answered.
+    Failed,
+}
+
+impl Attempt {
+    /// What a connect came to, or `None` when it says nothing of the
+    /// feeder (the server's own random source failed).
+    pub(crate) const fn of<T>(opened: &Result<T, ConnectError>) -> Option<Self> {
+        match opened {
+            Ok(_) => Some(Self::Answered),
+            Err(ConnectError::Unreachable(Unreachable(wellfed_connect::Error::UnknownKey))) => {
+                Some(Self::ShutOut)
+            }
+            // The feeder answered, to turn this session away.
+            Err(
+                ConnectError::Unreachable(Unreachable(
+                    wellfed_connect::Error::Full | wellfed_connect::Error::Version(_),
+                ))
+                | ConnectError::Refused(_)
+                | ConnectError::InviteExpired,
+            ) => Some(Self::Answered),
+            Err(ConnectError::Random(_)) => None,
+            Err(
+                ConnectError::Unreachable(_)
+                | ConnectError::Address
+                | ConnectError::AddressRequired
+                | ConnectError::Lookup,
+            ) => Some(Self::Failed),
+        }
+    }
+}
+
 /// The two reads the reader may make: nothing it sends changes the feeder.
 #[derive(Clone, Copy, Debug)]
 enum Read {
@@ -93,6 +136,7 @@ pub(crate) struct Reader {
     pub(crate) commands: mpsc::Sender<Command>,
     pub(crate) link: watch::Receiver<Link>,
     pub(crate) opened: watch::Receiver<Option<Opened>>,
+    pub(crate) attempts: mpsc::UnboundedReceiver<Attempt>,
     pub(crate) updates: broadcast::Receiver<MirrorEvent>,
     pub(crate) publish: broadcast::Sender<MirrorEvent>,
     pub(crate) cancel: CancellationToken,
@@ -104,7 +148,6 @@ impl Reader {
         let poll = self.poll;
         let mut due: Option<Instant> = None;
         let mut next_poll = Instant::now() + poll;
-        let mut last = *self.link.borrow();
         loop {
             let online = *self.link.borrow() == Link::Online;
             let update = tokio::select! {
@@ -121,24 +164,18 @@ impl Reader {
                     self.read().await;
                     continue;
                 }
+                attempt = self.attempts.recv() => {
+                    match attempt {
+                        Some(attempt) => self.reach(attempt).await,
+                        None => return,
+                    }
+                    continue;
+                }
                 update = self.updates.recv() => update,
             };
             match update {
-                Ok(MirrorEvent::Link(link)) => {
-                    match (last, link) {
-                        (_, Link::Online) => {
-                            self.reach(Reach::Reached).await;
-                            due = Some(Instant::now());
-                        }
-                        // The feeder answered, if only to turn the key away.
-                        (_, Link::Refused) => self.reach(Reach::Reached).await,
-                        // A connect that failed. A session that ended is
-                        // judged by the connects after it.
-                        (Link::Connecting, Link::Offline) => self.reach(Reach::Failed).await,
-                        _ => {}
-                    }
-                    last = link;
-                }
+                Ok(MirrorEvent::Link(Link::Online)) => due = Some(Instant::now()),
+                Ok(MirrorEvent::Link(_)) => {}
                 Ok(MirrorEvent::Event(_) | MirrorEvent::Gap(_)) => {
                     let soon = Instant::now() + AFTER_EVENT;
                     due = Some(due.map_or(soon, |due| due.min(soon)));
@@ -198,25 +235,29 @@ impl Reader {
         };
         let at = self.shared.clock.now();
         self.keep(clock, |kept, context| {
-            kept.watch.apply(cursor, &view, context);
-            kept.table = Some(ReadTable {
+            let table = ReadTable {
                 cursor,
                 view: view.clone(),
                 clock_valid: clock == FeederClock::Known,
                 at,
-            });
+            };
+            kept.take(table, context);
         })
         .await;
         debug!(generation = %cursor.generation, alerts = view.alerts.len(), "alert table read");
     }
 
     /// Count a connect towards the feeder's reach.
-    async fn reach(&self, reach: Reach) {
+    async fn reach(&self, attempt: Attempt) {
         self.keep(FeederClock::Unknown, |kept, context| {
             let watch = &mut kept.watch;
-            match reach {
-                Reach::Reached => watch.reached(Some(SERVER_NETWORK.to_owned()), context.now),
-                Reach::Failed => {
+            match attempt {
+                Attempt::Answered => watch.reached(Some(SERVER_NETWORK.to_owned()), context.now),
+                Attempt::ShutOut => {
+                    let since = watch.reach.first_failure.unwrap_or(context.now);
+                    watch.relayed_reach(Some(since), context);
+                }
+                Attempt::Failed => {
                     // A feeder never reached since this server kept its
                     // alerts was still reached once, at its adoption.
                     watch
@@ -282,15 +323,34 @@ impl Reader {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Reach {
-    Reached,
-    Failed,
-}
-
 /// Sleep until `at`; `None` is never selected (its branch is disabled).
 async fn sleep_until_some(at: Option<Instant>) {
     if let Some(at) = at {
         tokio::time::sleep_until(at).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn of(error: wellfed_connect::Error) -> Option<Attempt> {
+        Attempt::of::<()>(&Err(ConnectError::Unreachable(Unreachable(error))))
+    }
+
+    #[test]
+    fn only_a_connect_nothing_answered_counts_against_the_feeder() {
+        assert_eq!(Attempt::of::<()>(&Ok(())), Some(Attempt::Answered));
+        // Every session taken: the feeder is there.
+        assert_eq!(of(wellfed_connect::Error::Full), Some(Attempt::Answered));
+        assert_eq!(
+            of(wellfed_connect::Error::UnknownKey),
+            Some(Attempt::ShutOut)
+        );
+        assert_eq!(of(wellfed_connect::Error::Timeout), Some(Attempt::Failed));
+        assert_eq!(
+            Attempt::of::<()>(&Err(ConnectError::Lookup)),
+            Some(Attempt::Failed)
+        );
     }
 }

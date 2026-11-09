@@ -16,6 +16,7 @@ use wellfed_connect::Connection;
 use wellfed_model::{DeviceKind, Model, Plans, Skew};
 use wellfed_session::noise::Keypair;
 
+use crate::alerts::Attempt;
 use crate::collect::Collector;
 use crate::command::Command;
 use crate::ingest::Batch;
@@ -152,6 +153,7 @@ pub(crate) fn spawn(
         Diagnostics::Off => None,
     };
     let public = *keys.public();
+    let (attempted, attempts) = mpsc::unbounded_channel();
     let alerts = match shared.config.alerts {
         AlertReads::Read { poll } => Some(alerts::Reader {
             shared: Arc::clone(&shared),
@@ -160,6 +162,7 @@ pub(crate) fn spawn(
             commands: commands.clone(),
             link: watching.clone(),
             opened: opens.clone(),
+            attempts,
             updates: updates.subscribe(),
             publish: updates.clone(),
             cancel: cancel.clone(),
@@ -175,6 +178,7 @@ pub(crate) fn spawn(
         keys: keys.clone(),
         address: feeder.address,
         reached: address,
+        attempted,
         log_stop: Arc::clone(&log_stop),
         commands: receiver,
         steps: step_receiver,
@@ -223,6 +227,8 @@ pub(crate) struct Task {
     address: Option<String>,
     /// Where the feeder was last reached, for the debug log's session.
     reached: watch::Sender<Option<String>>,
+    /// What each connect came to, for the alert reader (if any).
+    attempted: mpsc::UnboundedSender<Attempt>,
     /// Ends the debug log's tail when the feeder has no session left for
     /// this task's.
     log_stop: log::Stop,
@@ -260,6 +266,9 @@ impl Task {
             let Some(opened) = self.open().await else {
                 return;
             };
+            if let Some(attempt) = Attempt::of(&opened) {
+                let _ = self.attempted.send(attempt); // None with reads off.
+            }
 
             let link = match opened {
                 Ok((connection, address)) => {
