@@ -15,7 +15,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 pub use wellfed_core::settings::{
-    KindSettings, SettingsFields, SettingsResult, SettingsView, Window,
+    KindSettings, SaveOutcome, Saved, SettingsFields, SettingsResult, SettingsView, Window,
 };
 
 use crate::cell::TaskCell;
@@ -43,6 +43,10 @@ const fn view_before_load<K>(kind: K) -> SettingsView<K> {
         kind,
         generation: 0,
         writable: false,
+        saved: Saved {
+            finished: 0,
+            failed: 0,
+        },
     }
 }
 
@@ -148,13 +152,18 @@ impl<K: KindSettings> Mailbox<K> {
     }
 
     /// The writer's half: publish what NOR holds, the device's part for the
-    /// SDK's services too.
+    /// SDK's services too. The outcomes of the changes finished so far
+    /// stay as [`Self::finish`] left them, whatever `view` says.
     pub fn publish(&self, view: SettingsView<K>) {
         publish(view.device());
         {
             let _guard = IrqGuard::lock();
             // SAFETY: interrupts are masked, so this is the only reference.
-            unsafe { *self.view.get() = view };
+            let held = unsafe { &mut *self.view.get() };
+            *held = SettingsView {
+                saved: held.saved,
+                ..view
+            };
         }
         self.loaded.store(true, Ordering::Release);
     }
@@ -166,8 +175,16 @@ impl<K: KindSettings> Mailbox<K> {
             .then(|| unsafe { *self.pending.get() })
     }
 
-    /// The writer applied (or gave up on) the queued change.
-    pub fn finish(&self) {
+    /// The writer applied (or gave up on) the queued change: `failed`
+    /// when it saved none of it, or only part. The outcome is in the view
+    /// before the mailbox frees, so a client's write waiting on it finds
+    /// it as soon as nothing is pending ([`Saved::outcome`]).
+    pub fn finish(&self, failed: bool) {
+        {
+            let _guard = IrqGuard::lock();
+            // SAFETY: interrupts are masked, so this is the only reference.
+            unsafe { (*self.view.get()).saved.finish(failed) };
+        }
         self.state.store(Hand::Empty as u8, Ordering::Release);
     }
 

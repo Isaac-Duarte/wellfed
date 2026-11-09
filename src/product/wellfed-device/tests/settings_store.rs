@@ -31,7 +31,6 @@ fn custom(volume: u8) -> Settings {
         lights: false,
         sound: true,
         volume,
-        utc_offset_minutes: -420,
         lights_window: Window::Between {
             start: 1320,
             end: 420,
@@ -71,10 +70,6 @@ fn invalid_values_are_refused_without_writing() {
     for bad in [
         Settings {
             volume: 101,
-            ..Settings::default()
-        },
-        Settings {
-            utc_offset_minutes: 15 * 60,
             ..Settings::default()
         },
         Settings {
@@ -326,16 +321,13 @@ fn a_bad_field_makes_the_record_invalid() {
         // A flag bit past lights and sound.
         (28, 4),
         // An unknown window kind.
-        (32, 2),
+        (30, 2),
         // An always window with a bound.
-        (34, 1),
+        (32, 1),
         // A start past the last minute of the day (1440 = 0x05a0).
-        (39, 0x05),
-        // Padding before the spare room.
-        (42, 1),
-        (43, 1),
+        (37, 0x05),
         // The spare room, which this build's own minor keeps zero.
-        (44, 1),
+        (40, 1),
         (119, 1),
     ] {
         let mut f = FakeJournalFlash::default();
@@ -347,8 +339,8 @@ fn a_bad_field_makes_the_record_invalid() {
         };
         assert!(s.save(&settings));
         rewrite(&mut f, |record| {
-            if at == 39 {
-                record[38] = 0xa0;
+            if at == 37 {
+                record[36] = 0xa0;
             }
             record[at] = byte;
         });

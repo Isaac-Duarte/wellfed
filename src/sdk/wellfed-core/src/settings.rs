@@ -8,6 +8,26 @@
 //! reminder and desiccant reminder, `wellfed_core_feeder::settings`), in a
 //! record of its own: one request and one view carry both, the kind's part
 //! as [`KindSettings`] names it, so nothing here names a kind.
+//!
+//! **One generation for both records.** A client checks a write against
+//! the view's generation, so a generation must never name two different
+//! settings. Every save writes both records with the same new generation,
+//! one past the view's, the device's record first. A whole save leaves
+//! them equal, and the view reports that value. They differ only after a
+//! save that stopped between the two writes (a power cut, or the second
+//! write failing), or once a record's newest slot is lost and it falls
+//! back to its older one. The view then reports one past the larger
+//! ([`view_generation`]), and the next save, one past that, makes them
+//! equal again.
+//!
+//! Why that number is new: the device's record is always written first,
+//! and a save is published only once both writes landed. So the larger
+//! generation is the last any save committed, unless the device's newest
+//! slot was lost as well; one past it was never published, since only a
+//! view of records that differ reports it, and such a view is the same
+//! records each time it is read. With saves stopped at any point and one
+//! newest slot lost, no generation names two different settings. A second
+//! newest slot lost at the same time could repeat one.
 
 /// Minutes in a local day: a window's bounds are below it.
 pub const DAY_MINUTES: u16 = 24 * 60;
@@ -77,6 +97,73 @@ pub trait KindSettings: Copy + Default + PartialEq + Eq + core::fmt::Debug {
     /// These settings with `fields` applied.
     #[must_use]
     fn changed(self, fields: &Self::Fields) -> Self;
+
+    /// Whether the kind keeps a record of its own, saved beside the
+    /// device's at the same generation; false for `()`.
+    const OWN_RECORD: bool;
+}
+
+/// The generation a view reports, from the device's record's and, for a
+/// kind with a record of its own, the kind's: their shared value when
+/// they are equal, else one past the larger (the module's docs say why).
+pub const fn view_generation(device: u64, kind: Option<u64>) -> u64 {
+    match kind {
+        Some(kind) if kind != device => {
+            let larger = if kind > device { kind } else { device };
+            larger.saturating_add(1)
+        }
+        Some(_) | None => device,
+    }
+}
+
+/// How the writer finished the settings changes it took this boot, for a
+/// client's write waiting on its own: how many it finished, and which of
+/// the last 32 failed. A change finishes as the next number, since only
+/// one waits at a time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Saved {
+    /// Changes finished this boot.
+    pub finished: u32,
+    /// Bit `n` set when the change finished `n` before the latest failed:
+    /// nothing saved, or only part of it.
+    pub failed: u32,
+}
+
+/// What became of one settings change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveOutcome {
+    /// Not finished yet.
+    Pending,
+    /// Saved whole.
+    Done,
+    /// Not saved, or only part of it; also a change finished so long ago
+    /// that its bit is gone, which a client never waits that long for.
+    Failed,
+}
+
+impl Saved {
+    /// One more change finished.
+    pub fn finish(&mut self, failed: bool) {
+        self.finished = self.finished.wrapping_add(1);
+        self.failed = (self.failed << 1) | u32::from(failed);
+    }
+
+    /// The number the next change queued will finish as.
+    pub fn next(&self) -> u32 {
+        self.finished.wrapping_add(1)
+    }
+
+    /// What became of the change that finished as `change`.
+    pub fn outcome(&self, change: u32) -> SaveOutcome {
+        let age = self.finished.wrapping_sub(change);
+        if age > u32::MAX / 2 {
+            SaveOutcome::Pending
+        } else if age >= u32::BITS || self.failed & (1 << age) != 0 {
+            SaveOutcome::Failed
+        } else {
+            SaveOutcome::Done
+        }
+    }
 }
 
 impl KindSettings for () {
@@ -94,6 +181,8 @@ impl KindSettings for () {
     }
 
     fn changed(self, _: &()) -> Self {}
+
+    const OWN_RECORD: bool = false;
 }
 
 /// The fields of a `settings` request; none present reads the settings.
@@ -152,12 +241,15 @@ pub struct SettingsView<K = ()> {
     pub lights_window: Window,
     pub sound_window: Window,
     pub kind: K,
-    /// The stored records' generation, the device's and the kind's added:
-    /// every save of either raises it, so a write checked against it is
-    /// refused after any change; 0 for defaults never saved.
+    /// The records' shared generation ([`view_generation`]): every save
+    /// raises it, so a write checked against it is refused after any
+    /// change; 0 for defaults never saved.
     pub generation: u32,
-    /// Whether NOR holds records this firmware can update.
+    /// Whether NOR holds records this firmware can update: both, since one
+    /// request may change either.
     pub writable: bool,
+    /// How the writer finished the changes it took this boot.
+    pub saved: Saved,
 }
 
 impl<K> SettingsView<K> {
@@ -172,6 +264,7 @@ impl<K> SettingsView<K> {
             kind: (),
             generation: self.generation,
             writable: self.writable,
+            saved: self.saved,
         }
     }
 

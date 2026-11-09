@@ -61,7 +61,7 @@ impl<F: FlashOps> Product<F> for Bare {
         ().stored()
     }
 
-    fn save_settings(&mut self, (): &()) -> bool {
+    fn save_settings(&mut self, (): &(), _: u64) -> bool {
         true
     }
 

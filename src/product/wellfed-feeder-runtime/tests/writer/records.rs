@@ -5,7 +5,7 @@ use wellfed_core::record::{self, Event, Record as Line, Tag};
 use wellfed_device::store::net::NetStatus;
 use wellfed_device::store::settings::{Settings, SettingsStatus};
 use wellfed_device_runtime::writer::{
-    self as writer, ErrorStage, KeyChange, KeyResult, WriteEvent,
+    self as writer, ErrorStage, KeyChange, KeyResult, SettingsPart, WriteEvent,
 };
 use wellfed_feeder_runtime::writer::Record;
 
@@ -21,14 +21,18 @@ fn error_records_format_as_before() {
     writer::describe(
         Record::Error {
             stage: ErrorStage::Save,
-            status: SettingsStatus::Corrupt,
+            store: SettingsPart::Kind,
+            status: SettingsStatus::Io,
         },
         &mut text,
     )
     .unwrap();
     assert_eq!(
         text,
-        format!("error stage=save status={}", SettingsStatus::Corrupt.code())
+        format!(
+            "error stage=save store=kind status={}",
+            SettingsStatus::Io.code()
+        )
     );
 
     text.clear();

@@ -17,7 +17,7 @@ use wellfed_core::named_enum;
 use crate::KeyChange;
 use wellfed_proto::api::{EventBody, Source};
 
-pub use wellfed_core::settings::{KindSettings, MAX_VOLUME, Window};
+pub use wellfed_core::settings::{KindSettings, MAX_VOLUME, SaveOutcome, Saved, Window};
 pub use wellfed_core_feeder::settings::{FeederFields, FeederSettings, MealReminder};
 
 /// A `settings` request's fields: the device's and the feeder's.

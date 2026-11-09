@@ -12,8 +12,8 @@ use super::request::{Action, Reply};
 use super::{Server, Waiting};
 use crate::mailbox::{
     Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, FeederFields,
-    LockResult, MealReminder, MealSkip, PLANS, Plan, PlansResult, PlayResult, SettingsFields,
-    SettingsResult, Table, Weekdays, Window,
+    LockResult, MealReminder, MealSkip, PLANS, Plan, PlansResult, PlayResult, SaveOutcome,
+    SettingsFields, SettingsResult, Table, Weekdays, Window,
 };
 use crate::{FeederDevice, Reason};
 use wellfed_core::tone::Tune as CoreTune;
@@ -55,7 +55,12 @@ impl FeederReply {
 /// A feeder write the device is still completing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FeederWait {
-    Settings,
+    /// A settings change, which finishes as change `change` of this boot
+    /// (`Saved::next` when it was queued): done once the writer saved it
+    /// whole, refused if it saved none or only part.
+    Settings {
+        change: u32,
+    },
     /// The digest of the calibration asked for: the write succeeded if the
     /// store holds it once nothing is pending.
     Calibration {
@@ -333,15 +338,17 @@ impl Server {
             },
             FeederAction::PutSettings { base, fields } => {
                 match put_settings(base, Asked { change: fields, by }, device) {
-                    Ok(()) => {
-                        return self.wait(index, id, whole, Waiting::Feeder(FeederWait::Settings));
+                    Ok(change) => {
+                        let wait = FeederWait::Settings { change };
+                        return self.wait(index, id, whole, Waiting::Feeder(wait));
                     }
                     Err(refusal) => Reply::Refused(refusal),
                 }
             }
             FeederAction::ResetDesiccant => match reset_desiccant(now_ms, by, device) {
-                Ok(()) => {
-                    return self.wait(index, id, whole, Waiting::Feeder(FeederWait::Settings));
+                Ok(change) => {
+                    let wait = FeederWait::Settings { change };
+                    return self.wait(index, id, whole, Waiting::Feeder(wait));
                 }
                 Err(refusal) => Reply::Refused(refusal),
             },
@@ -549,19 +556,22 @@ impl Server {
     }
 }
 
+/// Queue a settings change if the settings are still at `base`; the number
+/// the change will finish as. Only the loop queues, and only into an empty
+/// mailbox, so nothing finishes between the read and the queue.
 fn put_settings<F: FeederDevice>(
     base: u32,
     change: Asked<SettingsFields>,
     device: &mut F,
-) -> Result<(), Refusal> {
+) -> Result<u32, Refusal> {
     match device.settings(None) {
         SettingsResult::Current { pending: true, .. } | SettingsResult::Busy => Err(Refusal::Busy),
         SettingsResult::ReadOnly => Err(Refusal::NotWritable),
         SettingsResult::Current { view, .. } if view.generation != base => Err(Refusal::Stale {
             current: view.generation,
         }),
-        SettingsResult::Current { .. } => match device.settings(Some(change)) {
-            SettingsResult::Current { pending: true, .. } => Ok(()),
+        SettingsResult::Current { view, .. } => match device.settings(Some(change)) {
+            SettingsResult::Current { pending: true, .. } => Ok(view.saved.next()),
             SettingsResult::Current { .. } | SettingsResult::Busy => Err(Refusal::Busy),
             SettingsResult::ReadOnly => Err(Refusal::NotWritable),
         },
@@ -594,16 +604,16 @@ fn reset_desiccant<F: FeederDevice>(
     now_ms: u32,
     by: Source,
     device: &mut F,
-) -> Result<(), Refusal> {
+) -> Result<u32, Refusal> {
     let today = device.today(now_ms).ok_or(Refusal::NoClock)?;
 
-    match device.settings(None) {
+    let change = match device.settings(None) {
         SettingsResult::Current { pending: true, .. } | SettingsResult::Busy => {
             return Err(Refusal::Busy);
         }
         SettingsResult::ReadOnly => return Err(Refusal::NotWritable),
-        SettingsResult::Current { .. } => {}
-    }
+        SettingsResult::Current { view, .. } => view.saved.next(),
+    };
     let fields = SettingsFields {
         kind: FeederFields {
             desiccant_reset: Some(today),
@@ -612,7 +622,7 @@ fn reset_desiccant<F: FeederDevice>(
         ..SettingsFields::default()
     };
     match device.settings(Some(Asked { change: fields, by })) {
-        SettingsResult::Current { pending: true, .. } => Ok(()),
+        SettingsResult::Current { pending: true, .. } => Ok(change),
         SettingsResult::Current { .. } | SettingsResult::Busy => Err(Refusal::Busy),
         SettingsResult::ReadOnly => Err(Refusal::NotWritable),
     }
@@ -817,12 +827,15 @@ impl Server {
 /// stayed to read this.
 pub(super) fn poll<F: FeederDevice>(wait: FeederWait, device: &mut F) -> Option<Reply> {
     Some(match wait {
-        FeederWait::Settings => match device.settings(None) {
-            SettingsResult::Current {
-                view,
-                pending: false,
-            } => Reply::Done(Some(view.generation)),
-            _ => return None,
+        // The writer's outcome for this change decides, never the
+        // generation alone: a change it saved only part of still moves it.
+        FeederWait::Settings { change } => match device.settings(None) {
+            SettingsResult::Current { view, .. } => match view.saved.outcome(change) {
+                SaveOutcome::Pending => return None,
+                SaveOutcome::Done => Reply::Done(Some(view.generation)),
+                SaveOutcome::Failed => Reply::Refused(Refusal::NotWritable),
+            },
+            SettingsResult::Busy | SettingsResult::ReadOnly => return None,
         },
         // No event: a calibration has its own generation.
         FeederWait::Calibration { digest } => match device.calibration(None) {

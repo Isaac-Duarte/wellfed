@@ -50,15 +50,16 @@ pub fn settings<K: KindSettings>(mailbox: &Mailbox<K>) -> Option<Stamp> {
     unsafe { *SETTINGS.get() }
 }
 
-/// The writer's half: [`Mailbox::finish`], clearing the stamp first. A
+/// The writer's half: [`Mailbox::finish`] with whether the change
+/// `failed`, clearing the stamp first. A
 /// stamp left behind would be read with the next change queued straight
 /// into the SDK's mailbox without one (a host test's), and name a client
 /// who never asked for it.
-pub fn finish_settings<K: KindSettings>(mailbox: &Mailbox<K>) {
+pub fn finish_settings<K: KindSettings>(mailbox: &Mailbox<K>, failed: bool) {
     if mailbox.pending().is_some() {
         // SAFETY: the change is still queued, so the loop does not touch
         // this until `finish` below frees the mailbox.
         unsafe { *SETTINGS.get() = None };
     }
-    mailbox.finish();
+    mailbox.finish(failed);
 }

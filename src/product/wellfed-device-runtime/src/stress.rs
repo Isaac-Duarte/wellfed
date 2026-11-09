@@ -58,7 +58,6 @@ pub fn stress_settings(generation: u64) -> Settings {
         lights: generation % 2 == 1,
         sound: true,
         volume: (generation % 100) as u8,
-        utc_offset_minutes: 0,
         ..Settings::default()
     }
 }

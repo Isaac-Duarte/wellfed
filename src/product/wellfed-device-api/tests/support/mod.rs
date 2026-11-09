@@ -353,8 +353,9 @@ impl FeederDevice for Fake {
             self.write_queued = true;
             let generation = self.settings.generation;
             self.record(0, EventBody::Settings { generation, by });
-        } else if !self.writes_held {
+        } else if !self.writes_held && self.write_queued {
             self.write_queued = false;
+            self.settings.saved.finish(false);
         }
         SettingsResult::Current {
             view: self.settings,

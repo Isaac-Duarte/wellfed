@@ -141,4 +141,6 @@ impl KindSettings for FeederSettings {
             ..self
         }
     }
+    /// The feeder's settings record, in sectors 48 and 49.
+    const OWN_RECORD: bool = true;
 }

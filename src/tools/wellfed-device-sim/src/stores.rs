@@ -24,7 +24,9 @@ use std::rc::Rc;
 
 use wellfed_board::storage::{self, Sectors};
 use wellfed_core::clock::wall::WallClock;
-use wellfed_core::settings::{KindSettings as _, SettingsFields, SettingsResult, SettingsView};
+use wellfed_core::settings::{
+    KindSettings, Saved, SettingsFields, SettingsResult, SettingsView, view_generation,
+};
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::{SlotIo, crc32};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
@@ -76,6 +78,9 @@ pub struct DeviceStores<S: KindStore = ()> {
     settings: SettingsStore<Region>,
     kind: S,
     settings_pending: Option<(SettingsFields<S::Settings>, Option<Stamp>)>,
+    /// How the settings changes taken this run finished, as the firmware's
+    /// mailbox keeps them for a client's write waiting on its own.
+    settings_saved: Saved,
     net: NetStore<Region>,
     wifi_pending: Option<(Option<Credentials>, Option<Stamp>)>,
     time: TimeStore<Region>,
@@ -156,6 +161,7 @@ impl<S: KindStore> DeviceStores<S> {
             settings,
             kind,
             settings_pending: None,
+            settings_saved: Saved::default(),
             net,
             wifi_pending: None,
             time,
@@ -220,10 +226,15 @@ impl<S: KindStore> DeviceStores<S> {
     }
 
     pub fn settings(&self) -> SettingsView<S::Settings> {
-        let writable = self.settings.status.writable();
-        self.settings
-            .settings
-            .view(self.settings.generation, writable, self.kind.stored())
+        let view = self.settings.settings.view(
+            self.settings.generation,
+            self.settings.writable(),
+            self.kind.stored(),
+        );
+        SettingsView {
+            saved: self.settings_saved,
+            ..view
+        }
     }
 
     pub fn settings_request(
@@ -427,30 +438,47 @@ impl<S: KindStore> DeviceStores<S> {
             .finish(after, batch, &self.read_batch[..], self.events.last_seq());
     }
 
+    /// Save one settings change, and record its event: whether it failed
+    /// (none of it saved, or only the device's part).
+    fn save_settings(
+        &mut self,
+        fields: &SettingsFields<S::Settings>,
+        asked: Option<Stamp>,
+    ) -> bool {
+        let device = self.settings.settings.changed(fields);
+        let kind_now = self.kind.stored().settings;
+        let kind = kind_now.changed(&fields.kind);
+        if device == self.settings.settings && kind == kind_now {
+            return false;
+        }
+
+        let kind_generation = S::Settings::OWN_RECORD.then(|| self.kind.stored().generation);
+        let next = view_generation(self.settings.generation, kind_generation) + 1;
+        let device_saved = self.settings.save_at(&device, next);
+        let kind_saved = device_saved && (!S::Settings::OWN_RECORD || self.kind.save(&kind, next));
+        if device_saved && let Some(asked) = asked {
+            let body = EventBody::Settings {
+                generation: self.settings().generation,
+                by: asked.by,
+            };
+            self.append_written(asked.at, &body);
+        }
+        !kind_saved
+    }
+
     /// The writer's turn for the settings, Wi-Fi and time settings queued:
-    /// each applied, a settings change to the device's record and then the
-    /// kind's, each only if it changes it. A failed save leaves the
-    /// generation where it was; the client sees no change, as on the device.
-    /// A client's save records its event in the same turn, after it, once
-    /// any part landed, as the firmware's writer does.
+    /// each applied. A settings change writes both records at the shared
+    /// generation one past the view's, the device's first, as the
+    /// firmware's writer does (`wellfed_device_runtime::writer`): a failed
+    /// device save lands nothing and records no event; a failed kind save
+    /// after it leaves the device's part changed, and the event names the
+    /// generation the view then reports. Either failure is the change's
+    /// outcome, which a client's write waiting on it is refused by. A
+    /// client's save records its event in the same turn, after both.
     pub fn apply_settings(&mut self) {
         if let Some((fields, asked)) = self.settings_pending.take() {
-            let device = self.settings.settings.changed(&fields);
-            let kind_now = self.kind.stored().settings;
-            let kind = kind_now.changed(&fields.kind);
-            let device_changed = device != self.settings.settings;
-            let kind_changed = kind != kind_now;
-
-            let device_saved = !device_changed || self.settings.save(&device);
-            let kind_saved = device_saved && (!kind_changed || self.kind.save(&kind));
-            let landed = (device_changed && device_saved) || (kind_changed && kind_saved);
-            if landed && let Some(asked) = asked {
-                let body = EventBody::Settings {
-                    generation: self.settings().generation,
-                    by: asked.by,
-                };
-                self.append_written(asked.at, &body);
-            }
+            let failed = self.save_settings(&fields, asked);
+            self.settings_saved.finish(failed);
         }
         if let Some((credentials, asked)) = self.wifi_pending.take()
             && self.net.save(credentials.as_ref())

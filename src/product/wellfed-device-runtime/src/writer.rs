@@ -64,6 +64,7 @@ use core::fmt;
 
 use wellfed_core::named_enum;
 
+use wellfed_core::settings::view_generation;
 use wellfed_core::store::handover;
 use wellfed_core::store::seed::{SeedStatus, SeedStore};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
@@ -136,6 +137,15 @@ named_enum! {
 }
 
 named_enum! {
+    /// Which settings record a settings error names (`store=`).
+    pub enum SettingsPart {
+        Device = "device",
+        /// The device kind's own record.
+        Kind = "kind",
+    }
+}
+
+named_enum! {
     /// What became of the device's identity secret this boot.
     pub enum Identity {
         Loaded = "loaded",
@@ -197,8 +207,11 @@ pub enum Record<R> {
         kind: Option<R>,
         event: WriteEvent,
     },
+    /// A settings change not saved, or only the device's part: the store
+    /// that refused or failed, and its status.
     Error {
         stage: ErrorStage,
+        store: SettingsPart,
         status: SettingsStatus,
     },
     /// Wi-Fi credentials (sectors 5 and 6): what the store holds.
@@ -350,9 +363,15 @@ pub fn describe<R: Describe>(record: Record<R>, f: &mut impl fmt::Write) -> fmt:
             }
             write!(f, " event={event}")
         }
-        Record::Error { stage, status } => {
-            write!(f, "error stage={stage} status={}", status.code())
-        }
+        Record::Error {
+            stage,
+            store,
+            status,
+        } => write!(
+            f,
+            "error stage={stage} store={store} status={}",
+            status.code()
+        ),
         // Never the SSID or passphrase.
         Record::NetOpen {
             status,
@@ -516,9 +535,10 @@ pub trait Product<F: FlashOps>: Default {
     /// ([`Self::open_cleared`]).
     fn settings(&self) -> Stored<Self::Settings>;
 
-    /// Save its settings, under the caller's write turn and attempt
-    /// marker; false when the save failed or was refused.
-    fn save_settings(&mut self, settings: &Self::Settings) -> bool;
+    /// Save its settings at `generation`, the one the device's record was
+    /// just saved at, under the caller's write turn and attempt marker;
+    /// false when the save failed or was refused.
+    fn save_settings(&mut self, settings: &Self::Settings, generation: u64) -> bool;
 
     /// Its settings as its own record says them, for the writer's settings
     /// lines (`None` for a kind with none).
@@ -997,13 +1017,13 @@ impl<F: FlashOps> Core<F> {
         status
     }
 
-    /// The generation the device API reports for the settings: the
-    /// device's record's and the kind's added, so a save of either raises
-    /// it ([`Settings::view`]).
+    /// The generation the device API reports for the settings, which
+    /// both records share (`wellfed_core::settings::view_generation`).
     fn settings_generation<P: Product<F>>(&self, product: &P) -> u64 {
-        self.store
-            .generation
-            .saturating_add(product.settings().generation)
+        view_generation(
+            self.store.generation,
+            P::Settings::OWN_RECORD.then(|| product.settings().generation),
+        )
     }
 
     /// The reset cannot go on this boot. A boot that serves nothing has no
@@ -1529,64 +1549,75 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             }
             return self.events_step(writable);
         };
-        let record = self.save_settings::<H>(&fields);
-        let Some(record) = record else {
+        let Some((record, failed)) = self.save_settings::<H>(&fields) else {
             return self.core.waiting();
         };
         self.publish();
-        asked::finish_settings(mailbox);
+        asked::finish_settings(mailbox, failed);
         next(POLL_MS, Some(record))
     }
 
-    /// Save a queued settings change: the device's part to its record and
-    /// the kind's to the kind's, each only if it changes it, both in one
-    /// write turn and attempt marker. `None` while the turn is not ours.
+    /// Save a queued settings change, and whether it failed: nothing saved,
+    /// or only part. `None` while the turn is not ours.
     ///
-    /// The device's record goes first. A failed save stops there, so a
-    /// change is never half saved the other way round; one that saved the
-    /// device's part but not the kind's logs the error, and its event is
-    /// still recorded, since part of the change landed.
+    /// Both records are written at the shared generation one past the
+    /// view's, the device's first, in one write turn and attempt marker,
+    /// whichever of them the change touches (`wellfed_core::settings`
+    /// says why both). A failed device save stops there: nothing landed
+    /// and no event is recorded. A device save whose kind save then fails
+    /// leaves the device's part changed and the records apart; the view
+    /// then names that state with a generation of its own, and the event
+    /// records it, so the history says what the feeder holds. Either way
+    /// the client's write is refused, never `Done`.
+    ///
+    /// A power cut between the two saves leaves the same state as a
+    /// failed kind save, with no event (it is appended after both) and the
+    /// client's write unanswered, so uncertain: the next boot's view reads
+    /// the device's part changed, at a generation no save published.
     fn save_settings<H: Hooks>(
         &mut self,
         fields: &wellfed_hal::settings::SettingsFields<P::Settings>,
-    ) -> Option<Record<P::Record>> {
+    ) -> Option<(Record<P::Record>, bool)> {
         let core = &mut self.core;
         let device = core.store.settings.changed(fields);
         let kind_now = self.product.settings().settings;
         let kind = kind_now.changed(&fields.kind);
 
         if core.unarmed::<H>() {
-            return Some(Record::Error {
+            let record = Record::Error {
                 stage: ErrorStage::Unarmed,
+                store: SettingsPart::Device,
                 status: core.store.status,
-            });
+            };
+            return Some((record, true));
         }
         if device == core.store.settings && kind == kind_now {
-            return Some(Record::Saved {
+            let record = Record::Saved {
                 generation: core.settings_generation(&self.product),
                 settings: device,
                 kind: self.product.settings_record(),
                 event: WriteEvent::None,
-            });
+            };
+            return Some((record, false));
         }
 
-        let device_changed = device != core.store.settings;
-        let kind_changed = kind != kind_now;
+        let next = core.settings_generation(&self.product) + 1;
         let _turn = core.take_turn()?;
         arming::set_attempt();
-        let device_saved = !device_changed || core.store.save(&device);
-        let kind_saved = device_saved && (!kind_changed || self.product.save_settings(&kind));
+        let device_saved = core.store.save_at(&device, next);
+        let kind_saved =
+            device_saved && (!P::Settings::OWN_RECORD || self.product.save_settings(&kind, next));
         arming::clear_attempt();
 
-        // The client's event in the same turn, after the saves, once any
-        // part of the change landed. The stamp is read only now, with the
-        // turn held, and stays queued through any wait for it.
-        let landed = (device_changed && device_saved) || (kind_changed && kind_saved);
-        let total = core.settings_generation(&self.product);
+        // The client's event in the same turn, after the saves, once the
+        // device's part landed, at the generation the view now reports.
+        // The stamp is read only now, with the turn held, and stays queued
+        // through any wait for it.
+        let now = core.settings_generation(&self.product);
         let event = match asked::settings(P::settings_mailbox()) {
-            Some(asked) if landed => {
+            Some(asked) if device_saved => {
                 let body = EventBody::Settings {
-                    generation: generation(total),
+                    generation: generation(now),
                     by: asked.by,
                 };
                 core.append_written::<P>(asked.at, &body)
@@ -1594,18 +1625,26 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             Some(_) | None => WriteEvent::None,
         };
 
-        Some(if device_saved && kind_saved {
+        let record = if !device_saved {
+            Record::Error {
+                stage: ErrorStage::Save,
+                store: SettingsPart::Device,
+                status: core.store.status,
+            }
+        } else if !kind_saved {
+            Record::Error {
+                stage: ErrorStage::Save,
+                store: SettingsPart::Kind,
+                status: self.product.settings().status,
+            }
+        } else {
             Record::Saved {
-                generation: total,
+                generation: now,
                 settings: core.store.settings,
                 kind: self.product.settings_record(),
                 event,
             }
-        } else {
-            Record::Error {
-                stage: ErrorStage::Save,
-                status: core.store.status,
-            }
-        })
+        };
+        Some((record, !(device_saved && kind_saved)))
     }
 }

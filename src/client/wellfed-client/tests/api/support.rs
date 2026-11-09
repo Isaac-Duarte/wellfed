@@ -175,6 +175,7 @@ impl Fake {
             self.settings.sound_window = fields.sound_window.unwrap_or(self.settings.sound_window);
             self.settings.kind = self.settings.kind.changed(&fields.kind);
             self.settings.generation += 1;
+            self.settings.saved.finish(false);
             let generation = self.settings.generation;
             self.record(0, EventBody::Settings { generation, by });
         }

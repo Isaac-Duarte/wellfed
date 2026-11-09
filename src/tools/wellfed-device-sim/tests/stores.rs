@@ -1,12 +1,14 @@
 //! The stores every device keeps, on a simulated device with no kind's
 //! policy linked: a settings change waits for the writer's turn, a client
-//! change answers its ticket, and an event reaches a subscriber only
-//! through the firmware's read turns, answered between passes.
+//! change answers its ticket, an event reaches a subscriber only through
+//! the firmware's read turns, answered between passes, and a kind's
+//! settings save that fails fails the change.
 
-use wellfed_core::settings::{SettingsFields, SettingsResult};
+use wellfed_core::settings::{KindSettings, SaveOutcome, SettingsFields, SettingsResult};
 use wellfed_device::store::events::{BODY_BYTES, Read};
+use wellfed_device::store::settings::{KindStore, SettingsStatus, Stored};
 use wellfed_device_api::clients::{Label, Role};
-use wellfed_device_api::mailbox::{ClientChange, KeyResult, Requested};
+use wellfed_device_api::mailbox::{ClientChange, KeyResult, Requested, Stamp};
 use wellfed_device_api::{KeyChange, Reader};
 use wellfed_device_sim::flash::Flash;
 use wellfed_device_sim::stores::{DeviceError, DeviceStores};
@@ -108,4 +110,90 @@ fn an_event_reaches_a_subscriber_through_the_read_turns() {
     };
     assert_eq!(record.body, [7; BODY_BYTES]);
     assert_eq!(device.last_event(), Some(record.seq));
+}
+
+/// A kind's settings for the test below: one byte.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Tray(u8);
+
+impl KindSettings for Tray {
+    type Fields = Option<u8>;
+
+    const DEFAULT: Self = Self(0);
+    const NO_FIELDS: Option<u8> = None;
+    const OWN_RECORD: bool = true;
+
+    fn changes(fields: &Option<u8>) -> bool {
+        fields.is_some()
+    }
+
+    fn valid(_: &Option<u8>) -> bool {
+        true
+    }
+
+    fn changed(self, fields: &Option<u8>) -> Self {
+        Self(fields.unwrap_or(self.0))
+    }
+}
+
+/// A kind's record whose every save fails.
+struct Failing;
+
+impl KindStore for Failing {
+    type Settings = Tray;
+
+    fn stored(&self) -> Stored<Tray> {
+        Stored {
+            settings: Tray(0),
+            generation: 0,
+            writable: true,
+            status: SettingsStatus::Empty,
+        }
+    }
+
+    fn save(&mut self, _: &Tray, _: u64) -> bool {
+        false
+    }
+}
+
+/// As the firmware's writer: a kind save failing after the device's is
+/// the change's failure, which a waiting client is refused by, and its
+/// event names the generation the view then reports (one past the
+/// device's), with the device's part changed.
+#[test]
+fn a_kind_save_that_fails_after_the_device_s_fails_the_change() {
+    let mut next = 0u8;
+    let random = Box::new(move || {
+        next = next.wrapping_add(1);
+        Some([next; 32])
+    });
+    let mut device =
+        DeviceStores::open(&Flash::memory(), random, Failing).expect("a blank image opens");
+
+    let change = SettingsFields {
+        volume: Some(20),
+        kind: Some(3),
+        ..SettingsFields::default()
+    };
+    let number = device.settings().saved.next();
+    let stamp = Stamp {
+        by: proto::Source::Client([9; 4]),
+        at: Some(1_700_000_000),
+    };
+    device.settings_request(change, Some(stamp));
+    device.apply_settings();
+
+    let view = device.settings();
+    assert_eq!(view.saved.outcome(number), SaveOutcome::Failed);
+    assert_eq!((view.volume, view.kind, view.generation), (20, Tray(0), 2));
+    let Read::Record(record) = device.ring_after(None) else {
+        panic!("the change's event is in the ring");
+    };
+    assert_eq!(
+        wellfed_proto::decode_padded::<EventBody>(&record.body),
+        Some(EventBody::Settings {
+            generation: 2,
+            by: stamp.by,
+        })
+    );
 }

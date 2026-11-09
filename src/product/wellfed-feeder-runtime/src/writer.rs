@@ -648,8 +648,8 @@ impl<F: FlashOps> Product<F> for FeederStores<F> {
         self.settings.stored()
     }
 
-    fn save_settings(&mut self, settings: &FeederSettings) -> bool {
-        self.settings.save(settings)
+    fn save_settings(&mut self, settings: &FeederSettings, generation: u64) -> bool {
+        self.settings.save_at(settings, generation)
     }
 
     fn settings_record(&self) -> Option<FeederRecord> {

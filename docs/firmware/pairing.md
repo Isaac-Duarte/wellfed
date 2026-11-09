@@ -127,7 +127,7 @@ A store never writes over a record of its own it can't read, with four exception
 | Store | Major | Size | Spare room |
 | --- | --- | --- | --- |
 | Feed journal | 1 | 128 B | bytes 48–120, of which 48–80 are kept for a durable request id and its feed's id |
-| Settings, the device's (`PLFSET01`) | 5 | 128 B | bytes 44–120 |
+| Settings, the device's (`PLFSET01`) | 5 | 128 B | bytes 40–120 |
 | Settings, the feeder's (`PLFFDS01`) | 1 | 128 B | bytes 36–120 |
 | Clients | 1 | 584 B | past the record's end |
 | Update store | 2 | 384 B | bytes 336–376 |

@@ -207,7 +207,7 @@ fn a_change_queued_just_before_a_feed_goes_first() {
             assert!(!interlock.outputs_claimed(), "the writer can go on");
             now.set(now.get() + 10);
             if now.get() == 200 {
-                SETTINGS.finish();
+                SETTINGS.finish(false);
                 network::finish();
                 keys::finish(keys::KeyResult::Done);
             }

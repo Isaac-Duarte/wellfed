@@ -3,7 +3,10 @@
 //! ([`DeviceRecord`], sectors 2 and 3), and beside it a device kind's
 //! (the feeder's is `wellfed_feeder::store::settings`, sectors 48 and 49),
 //! each a [`SettingsStore`] over its own [`SettingsRecord`]. One `settings`
-//! request and one view carry both ([`Settings::view`]).
+//! request and one view carry both ([`Settings::view`]), and every save
+//! writes both at one shared generation, the device's first
+//! ([`SettingsStore::save_at`]; the rule and why it never names two
+//! different settings are in `wellfed_core::settings`).
 //!
 //! Every record is 128 bytes: the slot header (magic, major, minor, record
 //! size), the generation (u64 at 12), the binding (u64 at 20), the record's
@@ -11,13 +14,13 @@
 //! 120 and the `CMIT` commit marker at 124.
 //!
 //! The device's record, major 5, magic `PLFSET01`: flags at 28 (bit 0
-//! lights, bit 1 sound), volume at 29, the UTC offset in minutes (i16 at
-//! 30), the lights and sound windows (a kind byte each at 32 and 33, 0
-//! always and 1 between, then each window's start and end minute as u16 at
-//! 34..38 and 38..42), two zero bytes, and spare room from 44. Major 4 held
-//! the feeder's fields too (bowl mode, meal reminder, desiccant reminder);
-//! they moved to the feeder's record, so a major-4 record is superseded and
-//! counts as erased.
+//! lights, bit 1 sound), volume at 29, the lights and sound windows (a kind
+//! byte each at 30 and 31, 0 always and 1 between, then each window's start
+//! and end minute as u16 at 32..36 and 36..40), and spare room from 40.
+//! Major 4 held the feeder's fields too (bowl mode, meal reminder,
+//! desiccant reminder), which moved to the feeder's record, and an unused
+//! UTC offset, which the time settings' zone replaced; a major-4 record is
+//! superseded and counts as erased.
 //!
 //! **Room to grow.** Bank 0 keeps the build it was written with for the
 //! life of the feeder, so it reads these records as they are written now:
@@ -25,7 +28,7 @@
 //! bank 0 carries unread through its own saves. The store reads its units
 //! whole, so its length never changes within a major, and a change that is
 //! not additive is a new store in new sectors. So each record keeps its
-//! fields short and leaves the rest of the 120 bytes spare: 76 bytes in the
+//! fields short and leaves the rest of the 120 bytes spare: 80 bytes in the
 //! device's, 84 in the feeder's.
 //!
 //! Unlike the journal, losing the newest settings change is safe, so a torn
@@ -39,7 +42,9 @@
 
 use core::ffi::c_uint;
 
-use wellfed_core::settings::{KindSettings, SettingsFields, SettingsView, Window};
+use wellfed_core::settings::{
+    KindSettings, Saved, SettingsFields, SettingsView, Window, view_generation,
+};
 use wellfed_core::store::slot::{
     DualSlot, Extent, Found, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u16, get_u64, newest,
     put_u16, put_u64, seal, target,
@@ -49,7 +54,7 @@ use wellfed_core::store::slot::{
 pub const VERSION: Version = Version::new(5, 0);
 /// Settings read their whole units, as the journal does, so data another
 /// writer left is never taken for empty settings and overwritten.
-const DEVICE_LAYOUT: Layout = Layout::new(*b"PLFSET01", VERSION, 44, Extent::Unit);
+const DEVICE_LAYOUT: Layout = Layout::new(*b"PLFSET01", VERSION, 40, Extent::Unit);
 const _: () = assert!(DEVICE_LAYOUT.fits(RECORD_BYTES));
 const GENERATION_AT: usize = 12;
 const BINDING_AT: usize = 20;
@@ -61,8 +66,6 @@ pub const FIELDS_AT: usize = 28;
 pub const WEAR_LIMIT: u64 = 100_000;
 
 pub use wellfed_core::settings::MAX_VOLUME;
-pub const MIN_UTC_OFFSET: i16 = -12 * 60;
-pub const MAX_UTC_OFFSET: i16 = 14 * 60;
 
 /// One settings record's own fields: its layout, and its values to and
 /// from the bytes from [`FIELDS_AT`]. The store owns the header, the
@@ -88,7 +91,6 @@ pub struct Settings {
     pub lights: bool,
     pub sound: bool,
     pub volume: u8,
-    pub utc_offset_minutes: i16,
     pub lights_window: Window,
     pub sound_window: Window,
 }
@@ -99,7 +101,6 @@ impl Default for Settings {
             lights: true,
             sound: true,
             volume: 50,
-            utc_offset_minutes: 0,
             lights_window: Window::Always,
             sound_window: Window::Always,
         }
@@ -108,10 +109,7 @@ impl Default for Settings {
 
 impl Settings {
     pub fn valid(&self) -> bool {
-        self.volume <= MAX_VOLUME
-            && (MIN_UTC_OFFSET..=MAX_UTC_OFFSET).contains(&self.utc_offset_minutes)
-            && self.lights_window.valid()
-            && self.sound_window.valid()
+        self.volume <= MAX_VOLUME && self.lights_window.valid() && self.sound_window.valid()
     }
 
     /// These settings with a request's device fields applied; the writer's
@@ -123,20 +121,27 @@ impl Settings {
             volume: fields.volume.unwrap_or(self.volume),
             lights_window: fields.lights_window.unwrap_or(self.lights_window),
             sound_window: fields.sound_window.unwrap_or(self.sound_window),
-            ..self
         }
     }
 
-    /// The view the writer publishes for these settings, with the kind's
-    /// beside them: their generations added, so a save of either raises
-    /// it, and writable only when both are.
+    /// The view the writer publishes for these settings, at `generation`
+    /// in the device's record, with the kind's beside them: the shared
+    /// generation the two records name (`view_generation`), and writable
+    /// only when both are. The outcomes of finished changes are the
+    /// mailbox's, which keeps its own.
     ///
     /// One read-only record makes the whole view read-only, refusing even a
     /// change to the other record's fields. That is deliberate: a record
     /// opens read-only only when it is a newer major or corrupt, and no
     /// client offers a feeder an older build, so neither happens in use, and
     /// a single writable flag keeps one request's answer whole.
-    pub fn view<K>(&self, generation: u64, writable: bool, kind: Stored<K>) -> SettingsView<K> {
+    pub fn view<K: KindSettings>(
+        &self,
+        generation: u64,
+        writable: bool,
+        kind: Stored<K>,
+    ) -> SettingsView<K> {
+        let generation = view_generation(generation, K::OWN_RECORD.then_some(kind.generation));
         SettingsView {
             lights: self.lights,
             sound: self.sound,
@@ -145,9 +150,9 @@ impl Settings {
             sound_window: self.sound_window,
             kind: kind.settings,
             // Reported as 32 bits; saturate rather than wrap to an old value.
-            generation: u32::try_from(generation.saturating_add(kind.generation))
-                .unwrap_or(u32::MAX),
+            generation: u32::try_from(generation).unwrap_or(u32::MAX),
             writable: writable && kind.writable,
+            saved: Saved::default(),
         }
     }
 }
@@ -164,28 +169,26 @@ impl SettingsRecord for DeviceRecord {
     fn encode(s: &Settings, p: &mut [u8; RECORD_BYTES]) {
         p[28] = u8::from(s.lights) | (u8::from(s.sound) << 1);
         p[29] = s.volume;
-        put_u16::<30, _>(p, s.utc_offset_minutes.cast_unsigned());
         let (kind, start, end) = window_fields(s.lights_window);
-        p[32] = kind;
-        put_u16::<34, _>(p, start);
-        put_u16::<36, _>(p, end);
+        p[30] = kind;
+        put_u16::<32, _>(p, start);
+        put_u16::<34, _>(p, end);
         let (kind, start, end) = window_fields(s.sound_window);
-        p[33] = kind;
-        put_u16::<38, _>(p, start);
-        put_u16::<40, _>(p, end);
+        p[31] = kind;
+        put_u16::<36, _>(p, start);
+        put_u16::<38, _>(p, end);
     }
 
     fn decode(p: &[u8; RECORD_BYTES]) -> Option<Settings> {
-        if p[28] & !3 != 0 || p[42..44].iter().any(|&b| b != 0) {
+        if p[28] & !3 != 0 {
             return None;
         }
         Some(Settings {
             lights: p[28] & 1 != 0,
             sound: p[28] & 2 != 0,
             volume: p[29],
-            utc_offset_minutes: get_u16::<30, _>(p).cast_signed(),
-            lights_window: window(p[32], get_u16::<34, _>(p), get_u16::<36, _>(p))?,
-            sound_window: window(p[33], get_u16::<38, _>(p), get_u16::<40, _>(p))?,
+            lights_window: window(p[30], get_u16::<32, _>(p), get_u16::<34, _>(p))?,
+            sound_window: window(p[31], get_u16::<36, _>(p), get_u16::<38, _>(p))?,
         })
     }
 
@@ -202,6 +205,9 @@ pub struct Stored<V> {
     pub generation: u64,
     /// Whether NOR holds a record this firmware can update.
     pub writable: bool,
+    /// How the store opened, or its last save's failure, as the writer's
+    /// records report it.
+    pub status: SettingsStatus,
 }
 
 /// A device kind's own settings record, kept beside the device's: the
@@ -213,8 +219,9 @@ pub trait KindStore {
 
     /// What it holds.
     fn stored(&self) -> Stored<Self::Settings>;
-    /// Save `settings`; false when the save failed or was refused.
-    fn save(&mut self, settings: &Self::Settings) -> bool;
+    /// Save `settings` at `generation`, the one the device's record was
+    /// just saved at; false when the save failed or was refused.
+    fn save(&mut self, settings: &Self::Settings, generation: u64) -> bool;
 }
 
 impl KindStore for () {
@@ -225,10 +232,11 @@ impl KindStore for () {
             settings: (),
             generation: 0,
             writable: true,
+            status: SettingsStatus::Loaded,
         }
     }
 
-    fn save(&mut self, _: &()) -> bool {
+    fn save(&mut self, _: &(), _: u64) -> bool {
         true
     }
 }
@@ -240,15 +248,11 @@ where
     type Settings = R::Value;
 
     fn stored(&self) -> Stored<R::Value> {
-        Stored {
-            settings: self.settings,
-            generation: self.generation,
-            writable: self.writable(),
-        }
+        SettingsStore::stored(self)
     }
 
-    fn save(&mut self, settings: &R::Value) -> bool {
-        SettingsStore::save(self, settings)
+    fn save(&mut self, settings: &R::Value, generation: u64) -> bool {
+        self.save_at(settings, generation)
     }
 }
 
@@ -366,6 +370,7 @@ impl<I, R: SettingsRecord> SettingsStore<I, R> {
             settings: self.settings,
             generation: self.generation,
             writable: self.writable(),
+            status: self.status,
         }
     }
 }
@@ -452,16 +457,22 @@ impl<I: SlotIo, R: SettingsRecord> SettingsStore<I, R> {
     /// keeps the previous settings in memory; the slot it touched may be
     /// torn, which the next open falls back from.
     pub fn save(&mut self, settings: &R::Value) -> bool {
-        if !self.writable || !R::valid(settings) {
+        self.save_at(settings, self.generation + 1)
+    }
+
+    /// [`Self::save`] at `generation`, which must be past the record's own:
+    /// the settings' shared generation, which a save of both records gives
+    /// each.
+    pub fn save_at(&mut self, settings: &R::Value, generation: u64) -> bool {
+        if !self.writable || !R::valid(settings) || generation <= self.generation {
             return false;
         }
 
-        if self.generation >= WEAR_LIMIT {
+        if generation > WEAR_LIMIT {
             self.status = SettingsStatus::Worn;
             return false;
         }
 
-        let generation = self.generation + 1;
         let slot = target(self.generation, self.slot);
         let from = (self.generation > 0).then_some(self.slot);
         if !self
