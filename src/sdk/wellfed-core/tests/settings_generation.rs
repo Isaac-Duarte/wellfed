@@ -1,10 +1,13 @@
 //! The settings' shared generation and the writer's outcomes: records that
-//! agree report their generation, clean records apart one past the larger,
-//! a record that fell back four past it, a kind with no record of its own
-//! the device's alone, and each finished change keeps its outcome for the
-//! client waiting on it.
+//! read cleanly at one generation report it, anything else reports none,
+//! a boot's repair goes two past the larger, a kind with no record of its
+//! own counts the device's alone, and each finished change keeps its
+//! outcome for the client waiting on it. The rule's model is
+//! `wellfed_device`'s `settings_model` test.
 
-use wellfed_core::settings::{RecordRead, SaveOutcome, Saved, Slots, view_generation};
+use wellfed_core::settings::{
+    RecordRead, SaveOutcome, Saved, Slots, repair_generation, view_generation,
+};
 
 fn clean(generation: u64) -> RecordRead {
     RecordRead {
@@ -13,58 +16,46 @@ fn clean(generation: u64) -> RecordRead {
     }
 }
 
-fn fell_back(generation: u64) -> RecordRead {
+fn unclean(generation: u64) -> RecordRead {
     RecordRead {
         generation,
-        slots: Slots::FellBack,
+        slots: Slots::Unclean,
     }
 }
 
 #[test]
 fn records_that_agree_report_their_generation() {
-    assert_eq!(view_generation(clean(0), Some(clean(0))), 0);
-    assert_eq!(view_generation(clean(7), Some(clean(7))), 7);
+    assert_eq!(view_generation(clean(0), Some(clean(0))), Some(0));
+    assert_eq!(view_generation(clean(7), Some(clean(7))), Some(7));
     assert_eq!(
         view_generation(clean(7), None),
-        7,
+        Some(7),
         "no record of the kind's"
     );
 }
 
-/// A save that stopped between the two writes: one past the larger.
+/// Apart, or either not clean, whether or not they agree: no generation.
 #[test]
-fn clean_records_apart_report_one_past_the_larger() {
-    assert_eq!(view_generation(clean(6), Some(clean(5))), 7);
-    assert_eq!(view_generation(clean(6), Some(clean(0))), 7, "never saved");
-    assert_eq!(view_generation(clean(u64::MAX), Some(clean(0))), u64::MAX);
+fn records_apart_or_unclean_report_none() {
+    assert_eq!(view_generation(clean(6), Some(clean(5))), None);
+    assert_eq!(
+        view_generation(clean(6), Some(clean(0))),
+        None,
+        "never saved"
+    );
+    assert_eq!(view_generation(clean(4), Some(unclean(4))), None);
+    assert_eq!(view_generation(unclean(4), Some(clean(4))), None);
+    assert_eq!(view_generation(unclean(4), None), None);
 }
 
-/// A record that fell back to its older slot: four past the larger,
-/// whether the records then agree or not.
+/// Two past the larger: a newest slot lost on each record can hide the
+/// generation both last held, one past what they read.
 #[test]
-fn a_record_that_fell_back_reports_four_past_the_larger() {
-    assert_eq!(view_generation(clean(2), Some(fell_back(1))), 6);
-    assert_eq!(view_generation(fell_back(1), Some(clean(2))), 6);
-    assert_eq!(view_generation(fell_back(4), Some(clean(4))), 8);
-    assert_eq!(view_generation(fell_back(4), None), 8);
-}
-
-/// The reviewer's sequence. Two whole saves publish 1 and 2; a cut right
-/// after save 3's device write leaves (3, 2), published as 4; the kind's
-/// newest slot (2) then lost leaves (3, 1), other settings, which must not
-/// read as 4 again, nor as anything published, and the next save writes
-/// past it all. Under one past the larger it read 4; under the sum it read
-/// 5, and the next save then wrote 6, the sum the cut's view had named.
-#[test]
-fn a_cut_then_a_lost_slot_never_repeats_a_generation() {
-    let published = [1, 2, view_generation(clean(3), Some(clean(2)))];
-    assert_eq!(published[2], 4);
-
-    let after = view_generation(clean(3), Some(fell_back(1)));
-    assert_eq!(after, 7);
-    assert!(published.iter().all(|&p| p < after));
-    let next_save = after + 1;
-    assert!(published.iter().all(|&p| p < next_save));
+fn a_repair_goes_two_past_the_larger() {
+    assert_eq!(repair_generation(3, 2), 5);
+    assert_eq!(repair_generation(1, 4), 6);
+    assert_eq!(repair_generation(0, 0), 2);
+    assert_eq!(repair_generation(u64::MAX, 0), u64::MAX);
 }
 
 #[test]

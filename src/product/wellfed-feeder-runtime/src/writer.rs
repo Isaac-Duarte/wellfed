@@ -652,6 +652,10 @@ impl<F: FlashOps> Product<F> for FeederStores<F> {
         self.settings.save_at(settings, generation)
     }
 
+    fn reopen_settings(&mut self) {
+        self.settings.reopen();
+    }
+
     fn settings_record(&self) -> Option<FeederRecord> {
         Some(FeederRecord::Settings {
             status: self.settings.status,

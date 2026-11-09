@@ -6,7 +6,8 @@
 //! `wellfed_hal::settings::Mailbox`), arms the flash-lock hooks once as the
 //! confirmation does, and then saves each change the device API queues: the
 //! device's part to its record and the kind's to the kind's, in one write
-//! turn.
+//! turn. A boot that finds the two records apart saves both again once,
+//! before it takes any change (`wellfed_device::store::settings::repair`).
 //! Each save sets the arming attempt marker and clears it after, so a hang
 //! inside a save resets at most once per power cycle.
 //!
@@ -72,7 +73,8 @@ use wellfed_device::store::events::{self as ring, EMPTY, EventLog, EventsFill};
 use wellfed_device::store::net::{NetStatus, NetStore};
 use wellfed_device::store::reset as reset_marker;
 use wellfed_device::store::settings::{
-    Settings, SettingsStatus, SettingsStore, Stored, shared_generation,
+    self as settings_store, KindStore, Part, Repair, SaveBoth, Settings, SettingsStatus,
+    SettingsStore, Stored, shared_generation,
 };
 use wellfed_device::store::time::{TimeStatus, TimeStore};
 use wellfed_hal::board::storage::{
@@ -134,6 +136,11 @@ named_enum! {
         Save = "save",
         /// A factory reset's erase failed.
         Erase = "erase",
+        /// The boot's repair of the settings records failed.
+        Repair = "repair",
+        /// The settings records share no generation, so no change is
+        /// taken until a boot repairs them.
+        Apart = "apart",
     }
 }
 
@@ -143,6 +150,15 @@ named_enum! {
         Device = "device",
         /// The device kind's own record.
         Kind = "kind",
+    }
+}
+
+impl From<Part> for SettingsPart {
+    fn from(part: Part) -> Self {
+        match part {
+            Part::Device => Self::Device,
+            Part::Kind => Self::Kind,
+        }
     }
 }
 
@@ -192,9 +208,9 @@ pub trait Describe: Copy + fmt::Debug + PartialEq + Eq {
 /// product's (`R`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record<R> {
-    /// The settings as opened: the device's record's status, the
-    /// generation the device API reports (the device's and the kind's
-    /// added), the device's values and the kind's as its record says them.
+    /// The settings as opened: the device's record's status and
+    /// generation, the device's values and the kind's as its record says
+    /// them (with its own status and generation).
     Open {
         status: SettingsStatus,
         generation: u64,
@@ -208,8 +224,14 @@ pub enum Record<R> {
         kind: Option<R>,
         event: WriteEvent,
     },
-    /// A settings change not saved, or only the device's part: the store
-    /// that refused or failed, and its status.
+    /// The boot found the settings records apart and saved both again at
+    /// `generation`, which they now share.
+    Repaired {
+        generation: u64,
+    },
+    /// A settings change not saved, or only the device's part, or the
+    /// boot's repair failed: the store that refused or failed, and its
+    /// status as the failure left it.
     Error {
         stage: ErrorStage,
         store: SettingsPart,
@@ -364,6 +386,7 @@ pub fn describe<R: Describe>(record: Record<R>, f: &mut impl fmt::Write) -> fmt:
             }
             write!(f, " event={event}")
         }
+        Record::Repaired { generation } => write!(f, "repaired generation={generation}"),
         Record::Error {
             stage,
             store,
@@ -541,6 +564,10 @@ pub trait Product<F: FlashOps>: Default {
     /// false when the save failed or was refused.
     fn save_settings(&mut self, settings: &Self::Settings, generation: u64) -> bool;
 
+    /// Read its settings record again from flash, after a save of either
+    /// record failed.
+    fn reopen_settings(&mut self);
+
     /// Its settings as its own record says them, for the writer's settings
     /// lines (`None` for a kind with none).
     fn settings_record(&self) -> Option<Self::Record>;
@@ -662,6 +689,9 @@ pub struct Core<F> {
     reset_attempted: bool,
     /// Arming skipped this boot: the boot before reset inside a write.
     skipped: bool,
+    /// This boot checked the settings records share a generation, and
+    /// repaired them if it could.
+    settings_checked: bool,
 }
 
 impl<F> Default for Core<F> {
@@ -689,6 +719,7 @@ impl<F> Default for Core<F> {
             handing_over: None,
             reset_attempted: false,
             skipped: false,
+            settings_checked: false,
         }
     }
 }
@@ -1018,9 +1049,10 @@ impl<F: FlashOps> Core<F> {
         status
     }
 
-    /// The generation the device API reports for the settings, which
-    /// both records share (`wellfed_device::store::settings::shared_generation`).
-    fn settings_generation<P: Product<F>>(&self, product: &P) -> u64 {
+    /// The generation both settings records share, which the device API
+    /// reports; `None` while they share none
+    /// (`wellfed_device::store::settings::shared_generation`).
+    fn settings_generation<P: Product<F>>(&self, product: &P) -> Option<u64> {
         shared_generation(self.store.read(), &product.settings())
     }
 
@@ -1331,7 +1363,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                     let status = self.open_cleared();
                     Record::Open {
                         status,
-                        generation: self.core.settings_generation(&self.product),
+                        generation: self.core.store.generation,
                         settings: self.core.store.settings,
                         kind: self.product.settings_record(),
                     }
@@ -1407,6 +1439,28 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 }),
             );
         }
+        if !core.settings_checked {
+            let writable = core.stage == Stage::Idle && H::armed();
+            let apart = core.settings_generation(&self.product).is_none();
+            let turn = if writable && apart {
+                let Some(turn) = core.take_turn() else {
+                    return core.waiting();
+                };
+                Some(turn)
+            } else {
+                None
+            };
+            core.settings_checked = true;
+            if let Some(turn) = turn {
+                let record = self.repair_settings();
+                drop(turn);
+                self.publish();
+                if let Some(record) = record {
+                    return next(POLL_MS, Some(record));
+                }
+            }
+        }
+        let core = &mut self.core;
         if !core.keys_opened {
             let writable = core.stage == Stage::Idle && H::armed();
             // The seed and, on a first boot, the identity: one turn.
@@ -1555,23 +1609,41 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         next(POLL_MS, Some(record))
     }
 
+    /// The boot's repair of settings records found apart, under the
+    /// caller's write turn and one attempt marker: its record, if it wrote.
+    /// Until a repair lands the view is read-only, so no change is taken.
+    fn repair_settings(&mut self) -> Option<Record<P::Record>> {
+        let core = &mut self.core;
+        arming::set_attempt();
+        let repair = settings_store::repair(&mut core.store, &mut KindOf::new(&mut self.product));
+        arming::clear_attempt();
+
+        match repair {
+            Repair::Agreed | Repair::Refused => None,
+            Repair::Repaired(generation) => Some(Record::Repaired { generation }),
+            Repair::Failed { part, status } => Some(Record::Error {
+                stage: ErrorStage::Repair,
+                store: part.into(),
+                status,
+            }),
+        }
+    }
+
     /// Save a queued settings change, and whether it failed: nothing saved,
-    /// or only part. `None` while the turn is not ours.
+    /// or only part, or (a write may land and still report failure) all of
+    /// it. `None` while the turn is not ours.
     ///
-    /// Both records are written at the shared generation one past the
-    /// view's, the device's first, in one write turn and attempt marker,
-    /// whichever of them the change touches (`wellfed_core::settings`
-    /// says why both). A failed device save stops there: nothing landed
-    /// and no event is recorded. A device save whose kind save then fails
-    /// leaves the device's part changed and the records apart; the view
-    /// then names that state with a generation of its own, and the event
-    /// records it, so the history says what the feeder holds. Either way
-    /// the client's write is refused, never `Done`.
+    /// Both records are written at one past the generation they share, the
+    /// device's first, in one write turn and attempt marker, whichever of
+    /// them the change touches (`wellfed_core::settings` says why both).
+    /// When either save fails, both are read again from flash and the view
+    /// names what they then hold: a generation they share, or none,
+    /// read-only, until the next boot's repair. A failed save records no
+    /// history event, and the client's write is refused, never `Done`.
     ///
-    /// A power cut between the two saves leaves the same state as a
-    /// failed kind save, with no event (it is appended after both) and the
-    /// client's write unanswered, so uncertain: the next boot's view reads
-    /// the device's part changed, at a generation no save published.
+    /// A power cut between the two saves leaves the records apart, with no
+    /// event (it is appended after both) and the client's write unanswered,
+    /// so uncertain: the next boot repairs them.
     fn save_settings<H: Hooks>(
         &mut self,
         fields: &wellfed_hal::settings::SettingsFields<P::Settings>,
@@ -1589,9 +1661,17 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             };
             return Some((record, true));
         }
+        let Some(shared) = core.settings_generation(&self.product) else {
+            let record = Record::Error {
+                stage: ErrorStage::Apart,
+                store: SettingsPart::Device,
+                status: core.store.status,
+            };
+            return Some((record, true));
+        };
         if device == core.store.settings && kind == kind_now {
             let record = Record::Saved {
-                generation: core.settings_generation(&self.product),
+                generation: shared,
                 settings: device,
                 kind: self.product.settings_record(),
                 event: WriteEvent::None,
@@ -1599,50 +1679,83 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             return Some((record, false));
         }
 
-        let next = core.settings_generation(&self.product) + 1;
         let _turn = core.take_turn()?;
         arming::set_attempt();
-        let device_saved = core.store.save_at(&device, next);
-        let kind_saved =
-            device_saved && (!P::Settings::OWN_RECORD || self.product.save_settings(&kind, next));
+        let saved = settings_store::save_both(
+            &mut core.store,
+            &mut KindOf::new(&mut self.product),
+            &device,
+            &kind,
+        );
         arming::clear_attempt();
 
-        // The client's event in the same turn, after the saves, once the
-        // device's part landed, at the generation the view now reports.
-        // The stamp is read only now, with the turn held, and stays queued
-        // through any wait for it.
-        let now = core.settings_generation(&self.product);
-        let event = match asked::settings(P::settings_mailbox()) {
-            Some(asked) if device_saved => {
-                let body = EventBody::Settings {
-                    generation: generation(now),
-                    by: asked.by,
+        // The client's event in the same turn, after both saves landed, at
+        // the generation they now share. The stamp is read only now, with
+        // the turn held, and stays queued through any wait for it.
+        let asked = asked::settings(P::settings_mailbox());
+        let record = match saved {
+            SaveBoth::Saved(generation) => {
+                let event = match asked {
+                    Some(asked) => {
+                        let body = EventBody::Settings {
+                            generation: self::generation(generation),
+                            by: asked.by,
+                        };
+                        core.append_written::<P>(asked.at, &body)
+                    }
+                    None => WriteEvent::None,
                 };
-                core.append_written::<P>(asked.at, &body)
+                let record = Record::Saved {
+                    generation,
+                    settings: core.store.settings,
+                    kind: self.product.settings_record(),
+                    event,
+                };
+                return Some((record, false));
             }
-            Some(_) | None => WriteEvent::None,
-        };
-
-        let record = if !device_saved {
-            Record::Error {
-                stage: ErrorStage::Save,
+            SaveBoth::Apart => Record::Error {
+                stage: ErrorStage::Apart,
                 store: SettingsPart::Device,
                 status: core.store.status,
-            }
-        } else if !kind_saved {
-            Record::Error {
+            },
+            SaveBoth::Failed { part, status } => Record::Error {
                 stage: ErrorStage::Save,
-                store: SettingsPart::Kind,
-                status: self.product.settings().status,
-            }
-        } else {
-            Record::Saved {
-                generation: now,
-                settings: core.store.settings,
-                kind: self.product.settings_record(),
-                event,
-            }
+                store: part.into(),
+                status,
+            },
         };
-        Some((record, !(device_saved && kind_saved)))
+        Some((record, true))
+    }
+}
+
+/// A product's settings record as the settings store's [`KindStore`], for
+/// the repair and the save of both records.
+struct KindOf<'a, F, P> {
+    product: &'a mut P,
+    flash: core::marker::PhantomData<fn() -> F>,
+}
+
+impl<'a, F, P> KindOf<'a, F, P> {
+    fn new(product: &'a mut P) -> Self {
+        Self {
+            product,
+            flash: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<F: FlashOps, P: Product<F>> KindStore for KindOf<'_, F, P> {
+    type Settings = P::Settings;
+
+    fn stored(&self) -> Stored<P::Settings> {
+        self.product.settings()
+    }
+
+    fn save(&mut self, settings: &P::Settings, generation: u64) -> bool {
+        self.product.save_settings(settings, generation)
+    }
+
+    fn reopen(&mut self) {
+        self.product.reopen_settings();
     }
 }

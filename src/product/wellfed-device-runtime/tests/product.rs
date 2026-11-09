@@ -65,6 +65,8 @@ impl<F: FlashOps> Product<F> for Bare {
         true
     }
 
+    fn reopen_settings(&mut self) {}
+
     fn settings_record(&self) -> Option<Never> {
         None
     }

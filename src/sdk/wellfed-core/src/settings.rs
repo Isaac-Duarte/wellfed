@@ -11,36 +11,46 @@
 //!
 //! **One generation for both records.** A client checks a write against
 //! the view's generation, so a generation must never name two different
-//! settings. Every save writes both records with the same new generation,
-//! one past the view's, the device's record first, and the view reports
-//! ([`view_generation`]):
+//! settings. The view reports a generation only when both records read
+//! their newest slot cleanly (the other valid or erased, nothing torn) at
+//! the same generation ([`view_generation`]); a kind with no record of its
+//! own counts the device's alone. Otherwise the view reports
+//! [`NO_GENERATION`], read-only, and writes are refused.
 //!
-//! - the records' generation, when they agree and each read its newest
-//!   slot cleanly;
-//! - one past the larger, when they read cleanly but differ: a save that
-//!   stopped between the two writes (a power cut, or the second write
-//!   failing);
-//! - four past the larger, when either record fell back to its older slot
-//!   (its other slot unreadable: a newest slot lost, or a write cut short).
+//! Records that do not agree come from a save that stopped partway (a
+//! power cut, or a write that failed or reported failure after it landed)
+//! or from a newest slot lost. The writer mends them once per boot, before
+//! it takes a change: it saves both records again with what they hold, at
+//! [`repair_generation`], two past the larger, a record that read cleanly
+//! first. Until that lands, the view stays read-only for the boot, and the
+//! lights and the speaker go by what the records hold. After a failed save
+//! the writer reads both records again and publishes what they then say,
+//! which is a shared generation only if both landed; a save that failed
+//! records no history event. Every save of a change writes both records at
+//! one past the shared generation, the device's first.
 //!
-//! The next save, one past that, makes them agree again. The steps stay
-//! small because a record's wear limit counts its generation.
+//! Why two past the larger: a newest slot lost on each record hides the
+//! generation both last held, one past what they read, and a repair at one
+//! past would publish it again with other contents. Why the clean record
+//! first: a write to a record that fell back erases its torn slot, the only
+//! sign that it held more, so a repair that fails there could leave both
+//! records reading clean at an old generation, and the next save would
+//! repeat the one after it; a repair landing on the clean record first
+//! keeps its generation in a valid slot.
 //!
-//! Why no generation names two different settings, with power cuts and
-//! failed writes at any point and at most one record without its newest
-//! slot at a time. Let S be the generation the last save wrote to the
-//! device's record. First, every save writes past everything published
-//! before it, so values published before that save are below S, and after
-//! it the records either agree (S) or differ (S + 1). Second, a fallback:
-//! if the device's record is whole, the larger is S, and S + 4 is past
-//! S + 1; if the device's record fell back and the kind's holds S, the
-//! larger is S again; if the device's fell back and the kind's never got S
-//! (a cut), the larger is the device's previous generation P, the save
-//! that wrote S started from a view of P or P + 1, so S is at most P + 2,
-//! everything published is at most P + 3, and P + 4 is new. A view of
-//! clean records names the records themselves, so reading them again
-//! reports the same settings. Two records each without their newest slot
-//! at once (two losses no save mended between) could repeat a generation.
+//! The `settings_model` test of `wellfed_device` checks this by brute
+//! force: the stores' own code over a flash whose writes stop at every
+//! step (an erase refused or cut short, a body half programmed, a marker
+//! missing, a write that landed and reported failure, each one the writer
+//! goes on from or a power cut) and newest slots lost, in every order. No
+//! generation is ever published for two different settings, through 9
+//! events (1.2 million states). Repairing the device's record first fails
+//! at 8 (three slots lost and two repairs failing), and repairing one past
+//! the larger at 5. Longer sequences are unchecked.
+//!
+//! The cost is wear: a repair spends two generations of the wear limit's
+//! count on each record, once per boot that finds the records apart, which
+//! only a cut or failed save or a lost slot causes.
 
 /// Minutes in a local day: a window's bounds are below it.
 pub const DAY_MINUTES: u16 = 24 * 60;
@@ -116,8 +126,8 @@ pub trait KindSettings: Copy + Default + PartialEq + Eq + core::fmt::Debug {
     const OWN_RECORD: bool;
 }
 
-/// How a settings record read: its generation, and whether it fell back
-/// to its older slot.
+/// How a settings record read: its generation, and whether it read
+/// cleanly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RecordRead {
     pub generation: u64,
@@ -127,37 +137,42 @@ pub struct RecordRead {
 /// Whether a record read its newest slot with the other in order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slots {
-    /// Both slots valid, or the other erased.
+    /// Both slots valid, or the other erased; or both erased.
     Clean,
-    /// The other slot unreadable: a newest slot lost, or a write of this
-    /// record cut short.
-    FellBack,
+    /// Anything else: the other slot torn or invalid (a newest slot lost,
+    /// or a write cut short), no valid record, a read or write that failed,
+    /// or a record not yet opened.
+    Unclean,
 }
 
-/// The generation a view reports, from the device's record and, for a
-/// kind with a record of its own, the kind's (the module's docs give the
-/// rule and why it never names two different settings).
-pub const fn view_generation(device: RecordRead, kind: Option<RecordRead>) -> u64 {
-    let (larger, apart, fell_back) = match kind {
-        Some(kind) => (
-            if kind.generation > device.generation {
-                kind.generation
-            } else {
-                device.generation
-            },
-            kind.generation != device.generation,
-            matches!(kind.slots, Slots::FellBack),
-        ),
-        None => (device.generation, false, false),
-    };
+/// The generation a view reports while the records do not share one, read
+/// only. No record ever holds it, since saves stop at the wear limit far
+/// below, so a client that sends it back as a write's base is refused.
+pub const NO_GENERATION: u32 = u32::MAX;
 
-    if fell_back || matches!(device.slots, Slots::FellBack) {
-        larger.saturating_add(4)
-    } else if apart {
-        larger.saturating_add(1)
-    } else {
-        larger
+/// The generation both records share, from the device's record and, for a
+/// kind with a record of its own, the kind's: `None` unless each read
+/// cleanly and they agree (the module's docs give the rule).
+pub const fn view_generation(device: RecordRead, kind: Option<RecordRead>) -> Option<u64> {
+    if !matches!(device.slots, Slots::Clean) {
+        return None;
     }
+    match kind {
+        None => Some(device.generation),
+        Some(kind)
+            if matches!(kind.slots, Slots::Clean) && kind.generation == device.generation =>
+        {
+            Some(device.generation)
+        }
+        Some(_) => None,
+    }
+}
+
+/// The generation a boot's repair saves both records at: two past the
+/// larger of their generations (the module's docs say why two).
+pub const fn repair_generation(device: u64, kind: u64) -> u64 {
+    let larger = if kind > device { kind } else { device };
+    larger.saturating_add(2)
 }
 
 /// How the writer finished the settings changes it took this boot, for a
@@ -287,10 +302,11 @@ pub struct SettingsView<K = ()> {
     pub kind: K,
     /// The records' shared generation ([`view_generation`]): every save
     /// raises it, so a write checked against it is refused after any
-    /// change; 0 for defaults never saved.
+    /// change; 0 for defaults never saved, and [`NO_GENERATION`] while the
+    /// records do not share one.
     pub generation: u32,
     /// Whether NOR holds records this firmware can update: both, since one
-    /// request may change either.
+    /// request may change either, and sharing a generation.
     pub writable: bool,
     /// How the writer finished the changes it took this boot.
     pub saved: Saved,

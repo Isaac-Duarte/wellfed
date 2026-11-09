@@ -17,7 +17,8 @@
 //! before any store opens ([`finish_reset`], [`finish_handover`]), with the
 //! device kind's own part of each given by the caller. So is the kind's own
 //! settings record ([`KindStore`], `()` for none), which a settings request
-//! saves beside the device's.
+//! saves beside the device's; when the two records share no generation the
+//! boot repairs them first, as the writer does.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -33,7 +34,7 @@ use wellfed_device::store::events::{BODY_BYTES, EMPTY, EventLog, EventsFill, Rea
 use wellfed_device::store::net::NetStore;
 use wellfed_device::store::reads::{READ_BATCH, Reads};
 use wellfed_device::store::reset;
-use wellfed_device::store::settings::{KindStore, SettingsStore, shared_generation};
+use wellfed_device::store::settings::{KindStore, SaveBoth, SettingsStore, repair, save_both};
 use wellfed_device::store::time::TimeStore;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
@@ -116,9 +117,12 @@ impl<S: KindStore> DeviceStores<S> {
     /// Open every store on `flash`, creating the identity on first use as
     /// the writer does, beside the kind's settings record `kind`, opened
     /// on the same flash.
-    pub fn open(flash: &Rc<Flash>, mut random: Random, kind: S) -> Result<Self, DeviceError> {
+    pub fn open(flash: &Rc<Flash>, mut random: Random, mut kind: S) -> Result<Self, DeviceError> {
         let mut settings = SettingsStore::default();
         settings.open(Region::new(flash, storage::SETTINGS), BINDING);
+        // Records apart are saved again before any change is taken; one
+        // that fails leaves the view read-only for this run.
+        repair(&mut settings, &mut kind);
         let mut net = NetStore::default();
         net.open(Region::new(flash, storage::NET));
         let mut time = TimeStore::default();
@@ -437,7 +441,8 @@ impl<S: KindStore> DeviceStores<S> {
     }
 
     /// Save one settings change, and record its event: whether it failed
-    /// (none of it saved, or only the device's part).
+    /// (none of it saved, only part, or all of it while a write reported
+    /// failure).
     fn save_settings(
         &mut self,
         fields: &SettingsFields<S::Settings>,
@@ -450,26 +455,26 @@ impl<S: KindStore> DeviceStores<S> {
             return false;
         }
 
-        let next = shared_generation(self.settings.read(), &self.kind.stored()) + 1;
-        let device_saved = self.settings.save_at(&device, next);
-        let kind_saved = device_saved && (!S::Settings::OWN_RECORD || self.kind.save(&kind, next));
-        if device_saved && let Some(asked) = asked {
+        let SaveBoth::Saved(generation) =
+            save_both(&mut self.settings, &mut self.kind, &device, &kind)
+        else {
+            return true;
+        };
+        if let Some(asked) = asked {
             let body = EventBody::Settings {
-                generation: self.settings().generation,
+                generation: u32::try_from(generation).unwrap_or(u32::MAX),
                 by: asked.by,
             };
             self.append_written(asked.at, &body);
         }
-        !kind_saved
+        false
     }
 
     /// The writer's turn for the settings, Wi-Fi and time settings queued:
-    /// each applied. A settings change writes both records at the shared
-    /// generation one past the view's, the device's first, as the
-    /// firmware's writer does (`wellfed_device_runtime::writer`): a failed
-    /// device save lands nothing and records no event; a failed kind save
-    /// after it leaves the device's part changed, and the event names the
-    /// generation the view then reports. Either failure is the change's
+    /// each applied. A settings change writes both records at one past the
+    /// generation they share, the device's first, as the firmware's writer
+    /// does (`wellfed_device::store::settings::save_both`): a save that
+    /// fails reads both again, records no event, and is the change's
     /// outcome, which a client's write waiting on it is refused by. A
     /// client's save records its event in the same turn, after both.
     pub fn apply_settings(&mut self) {

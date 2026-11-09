@@ -15,7 +15,7 @@ use crate::support::changed;
 #[test]
 fn error_records_format_as_before() {
     let words: Vec<_> = ErrorStage::ALL.iter().map(|s| s.as_str()).collect();
-    assert_eq!(words, ["unarmed", "save", "erase"]);
+    assert_eq!(words, ["unarmed", "save", "erase", "repair", "apart"]);
 
     let mut text = String::new();
     writer::describe(

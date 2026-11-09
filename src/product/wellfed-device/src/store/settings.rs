@@ -5,8 +5,9 @@
 //! each a [`SettingsStore`] over its own [`SettingsRecord`]. One `settings`
 //! request and one view carry both ([`Settings::view`]), and every save
 //! writes both at one shared generation, the device's first
-//! ([`SettingsStore::save_at`]; the rule and why it never names two
-//! different settings are in `wellfed_core::settings`).
+//! ([`save_both`]); a boot that finds them apart saves both again first
+//! ([`repair`]). The rule, and why it never names two different settings,
+//! are in `wellfed_core::settings`.
 //!
 //! Every record is 128 bytes: the slot header (magic, major, minor, record
 //! size), the generation (u64 at 12), the binding (u64 at 20), the record's
@@ -43,7 +44,8 @@
 use core::ffi::c_uint;
 
 use wellfed_core::settings::{
-    KindSettings, RecordRead, Saved, SettingsFields, SettingsView, Slots, Window, view_generation,
+    KindSettings, NO_GENERATION, RecordRead, Saved, SettingsFields, SettingsView, Slots, Window,
+    repair_generation, view_generation,
 };
 use wellfed_core::store::slot::{
     DualSlot, Extent, Found, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u16, get_u64, newest,
@@ -127,8 +129,10 @@ impl Settings {
     /// The view the writer publishes for these settings, as the device's
     /// record read (`device`), with the kind's beside them: the shared
     /// generation the two records name ([`shared_generation`]), and
-    /// writable only when both are. The outcomes of finished changes are
-    /// the mailbox's, which keeps its own.
+    /// writable only when both are and share one; while they do not, the
+    /// view reports [`NO_GENERATION`], read-only, with what each record
+    /// holds, which the lights and the speaker still go by. The outcomes of
+    /// finished changes are the mailbox's, which keeps its own.
     ///
     /// One read-only record makes the whole view read-only, refusing even a
     /// change to the other record's fields. That is deliberate: a record
@@ -141,7 +145,8 @@ impl Settings {
         writable: bool,
         kind: Stored<K>,
     ) -> SettingsView<K> {
-        let generation = shared_generation(device, &kind);
+        // Saves stop at the wear limit, far below 32 bits.
+        let generation = shared_generation(device, &kind).and_then(|g| u32::try_from(g).ok());
         SettingsView {
             lights: self.lights,
             sound: self.sound,
@@ -149,29 +154,161 @@ impl Settings {
             lights_window: self.lights_window,
             sound_window: self.sound_window,
             kind: kind.settings,
-            // Reported as 32 bits; saturate rather than wrap to an old value.
-            generation: u32::try_from(generation).unwrap_or(u32::MAX),
-            writable: writable && kind.writable,
+            generation: generation.unwrap_or(NO_GENERATION),
+            writable: writable && kind.writable && generation.is_some(),
             saved: Saved::default(),
         }
     }
 }
 
-/// The generation both records name, the device's as it read and the
+/// The generation both records share, the device's as it read and the
 /// kind's (none for a kind without a record): what the view reports, and
-/// one below what the next save writes to both
-/// (`wellfed_core::settings::view_generation`).
-pub fn shared_generation<K: KindSettings>(device: RecordRead, kind: &Stored<K>) -> u64 {
+/// one below what the next save writes to both; `None` while they do not
+/// share one (`wellfed_core::settings::view_generation`).
+pub fn shared_generation<K: KindSettings>(device: RecordRead, kind: &Stored<K>) -> Option<u64> {
     view_generation(device, K::OWN_RECORD.then(|| kind.read()))
 }
 
-/// How a store's status says its record read: fallen back when it opened
-/// [`SettingsStatus::Recovered`], its other slot unreadable.
+/// How a store's status says its record read: clean only when it opened
+/// [`SettingsStatus::Loaded`] or [`SettingsStatus::Empty`], or its last
+/// save landed. A record that fell back from a torn slot, holds nothing
+/// valid, failed a read or a write, or is worn or unopened is not: its
+/// generation names nothing a client may write against.
 const fn slots(status: SettingsStatus) -> Slots {
     match status {
-        SettingsStatus::Recovered => Slots::FellBack,
-        _ => Slots::Clean,
+        SettingsStatus::Loaded | SettingsStatus::Empty => Slots::Clean,
+        _ => Slots::Unclean,
     }
+}
+
+/// Which of the two records a save stopped at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
+    Device,
+    /// The device kind's own record.
+    Kind,
+}
+
+/// What a boot's [`repair`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Repair {
+    /// The records already shared a generation: nothing written.
+    Agreed,
+    /// Both saved again at this generation, which they now share.
+    Repaired(u64),
+    /// A record may not be written (no valid record, a newer major, a
+    /// failed read, or flash this boot may not write): nothing written,
+    /// and the view stays read-only for the boot.
+    Refused,
+    /// The save of `part` failed, with `status`; both were read again.
+    Failed { part: Part, status: SettingsStatus },
+}
+
+/// What [`save_both`] did with a change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveBoth {
+    /// Both saved at this generation, which they now share.
+    Saved(u64),
+    /// The records share no generation: nothing written.
+    Apart,
+    /// The save of `part` failed, with `status`; both were read again.
+    Failed { part: Part, status: SettingsStatus },
+}
+
+/// The boot's repair: when the records do not share a generation, save
+/// both again with what each holds at
+/// [`wellfed_core::settings::repair_generation`], two past the larger, the
+/// device's first; the caller holds the write turn and the attempt marker.
+/// A failed save reads both again, as [`save_both`] does.
+pub fn repair<I: SlotIo + Clone, K: KindStore>(
+    device: &mut SettingsStore<I>,
+    kind: &mut K,
+) -> Repair {
+    let stored = kind.stored();
+    if shared_generation(device.read(), &stored).is_some() {
+        return Repair::Agreed;
+    }
+    if !device.writable() || !stored.writable {
+        return Repair::Refused;
+    }
+
+    let generation = repair_generation(device.generation, stored.generation);
+    let settings = device.settings;
+    let first = if matches!(device.read().slots, Slots::Clean) {
+        Part::Device
+    } else {
+        Part::Kind
+    };
+    match write_both(device, kind, &settings, &stored.settings, generation, first) {
+        Ok(()) => Repair::Repaired(generation),
+        Err((part, status)) => Repair::Failed { part, status },
+    }
+}
+
+/// Save a change to both records at one past the generation they share,
+/// the device's first; the caller holds the write turn and the attempt
+/// marker. Nothing is written while they share none. When either save
+/// fails (which may mean it landed, a write being able to complete and
+/// still report failure), both records are read again from flash, so the
+/// view names only what they hold: a generation they share, or none.
+pub fn save_both<I: SlotIo + Clone, K: KindStore>(
+    device: &mut SettingsStore<I>,
+    kind: &mut K,
+    settings: &Settings,
+    kind_settings: &K::Settings,
+) -> SaveBoth {
+    let Some(shared) = shared_generation(device.read(), &kind.stored()) else {
+        return SaveBoth::Apart;
+    };
+
+    let generation = shared + 1;
+    match write_both(
+        device,
+        kind,
+        settings,
+        kind_settings,
+        generation,
+        Part::Device,
+    ) {
+        Ok(()) => SaveBoth::Saved(generation),
+        Err((part, status)) => SaveBoth::Failed { part, status },
+    }
+}
+
+/// Save both records at `generation`, `first` first; on a failure, read
+/// both again and name the record that failed, with its status before the
+/// reading.
+fn write_both<I: SlotIo + Clone, K: KindStore>(
+    device: &mut SettingsStore<I>,
+    kind: &mut K,
+    settings: &Settings,
+    kind_settings: &K::Settings,
+    generation: u64,
+    first: Part,
+) -> Result<(), (Part, SettingsStatus)> {
+    let mut save = |part| match part {
+        Part::Device => device
+            .save_at(settings, generation)
+            .then_some(())
+            .ok_or((part, device.status)),
+        Part::Kind if K::Settings::OWN_RECORD => kind
+            .save(kind_settings, generation)
+            .then_some(())
+            .ok_or_else(|| (part, kind.stored().status)),
+        Part::Kind => Ok(()),
+    };
+    let second = match first {
+        Part::Device => Part::Kind,
+        Part::Kind => Part::Device,
+    };
+    let failed = save(first).and_then(|()| save(second)).err();
+
+    let Some(failed) = failed else {
+        return Ok(());
+    };
+    device.reopen();
+    kind.reopen();
+    Err(failed)
 }
 
 /// The device's record (sectors 2 and 3).
@@ -249,6 +386,8 @@ pub trait KindStore {
     /// Save `settings` at `generation`, the one the device's record was
     /// just saved at; false when the save failed or was refused.
     fn save(&mut self, settings: &Self::Settings, generation: u64) -> bool;
+    /// Read the record again from flash, after a save failed.
+    fn reopen(&mut self);
 }
 
 impl KindStore for () {
@@ -266,9 +405,11 @@ impl KindStore for () {
     fn save(&mut self, _: &(), _: u64) -> bool {
         true
     }
+
+    fn reopen(&mut self) {}
 }
 
-impl<I: SlotIo, R: SettingsRecord> KindStore for SettingsStore<I, R>
+impl<I: SlotIo + Clone, R: SettingsRecord> KindStore for SettingsStore<I, R>
 where
     R::Value: KindSettings,
 {
@@ -280,6 +421,10 @@ where
 
     fn save(&mut self, settings: &R::Value, generation: u64) -> bool {
         self.save_at(settings, generation)
+    }
+
+    fn reopen(&mut self) {
+        SettingsStore::reopen(self);
     }
 }
 
@@ -488,6 +633,18 @@ impl<I: SlotIo, R: SettingsRecord> SettingsStore<I, R> {
         self.status
     }
 
+    /// Open again on the I/O and binding it was opened with: read the
+    /// record from flash as a boot would, after a save failed.
+    pub fn reopen(&mut self) -> SettingsStatus
+    where
+        I: Clone,
+    {
+        let Some(io) = self.units.io().cloned() else {
+            return self.status;
+        };
+        self.open(io, self.binding)
+    }
+
     /// Write `settings` to the other slot by the torn-write rule. A failure
     /// keeps the previous settings in memory; the slot it touched may be
     /// torn, which the next open falls back from.
@@ -496,8 +653,8 @@ impl<I: SlotIo, R: SettingsRecord> SettingsStore<I, R> {
     }
 
     /// [`Self::save`] at `generation`, which must be past the record's own:
-    /// the settings' shared generation, which a save of both records gives
-    /// each.
+    /// the settings' shared generation, which [`save_both`] and [`repair`]
+    /// give each record.
     pub fn save_at(&mut self, settings: &R::Value, generation: u64) -> bool {
         if !self.writable || !R::valid(settings) || generation <= self.generation {
             return false;

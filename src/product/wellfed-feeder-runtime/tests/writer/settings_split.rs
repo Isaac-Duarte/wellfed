@@ -1,14 +1,15 @@
 //! The two settings records, the device's (sectors 2 and 3) and the
 //! feeder's (48 and 49), saved from one change at one shared generation:
-//! a save that fails on either is refused, never `Done`, and records an
-//! event only once the device's part landed, naming the generation the
-//! view then reports; a power cut between the two saves leaves the device's
-//! part changed with no event; a record that loses its newest slot never
-//! brings back a generation that named other settings; and either record
-//! unreadable makes the whole view read-only.
+//! a save that fails on either is refused, never `Done`, records no event,
+//! and leaves the view read-only with no generation while the records are
+//! apart; the next boot saves both again two past the larger, and until a
+//! repair lands the view stays read-only; a record that loses its newest
+//! slot never brings back a generation that named other settings; and
+//! either record unreadable makes the whole view read-only.
 
 use std::sync::MutexGuard;
 
+use wellfed_core::settings::NO_GENERATION;
 use wellfed_core::store::slot::crc32;
 use wellfed_device::store::events::Read;
 use wellfed_device::store::settings::SettingsStatus;
@@ -108,6 +109,27 @@ fn restart(provider: &mut Provider) -> Writer<Armed> {
     boot(provider).0
 }
 
+/// A restart, and the settings records among its first steps' (the open,
+/// a repair, or a repair's error).
+fn restart_logged(provider: &mut Provider) -> (Writer<Armed>, Vec<Record>) {
+    restart_mailboxes();
+    let mut writer = Writer::default();
+    let records = (0..8)
+        .filter_map(|_| step(&mut writer, provider))
+        .filter(|record| {
+            matches!(
+                record,
+                Record::Repaired { .. }
+                    | Record::Error {
+                        stage: ErrorStage::Repair,
+                        ..
+                    }
+            )
+        })
+        .collect();
+    (writer, records)
+}
+
 /// The byte at `at` of `sectors`' slot `slot` (0 or 1).
 fn byte(sectors: Sectors, slot: u32, at: usize) -> usize {
     (sectors.first + slot) as usize * 0x1000 + at
@@ -120,12 +142,13 @@ fn lose(sectors: Sectors, slot: u32) {
 }
 
 /// The device's part saved, the feeder's save failing after it: the
-/// client is refused, the view reports the device's part changed at a
-/// generation of its own and read-only (the feeder's store failed), and
-/// the event names that generation, so the history says what the feeder
-/// holds. The error record names the feeder's store.
+/// client is refused and no event is recorded. Both records read again are
+/// apart (the device's part changed), so the view names no generation and
+/// is read-only; the next boot saves both again at 3, two past the
+/// device's 1, and the view is writable there. The error record names the
+/// feeder's store.
 #[test]
-fn a_feeder_save_that_fails_after_the_device_s_is_refused_and_told_truly() {
+fn a_feeder_save_that_fails_after_the_device_s_is_refused_and_publishes_no_generation() {
     let (_guard, mut writer, mut provider) = opened();
     PROGRAMS_FAIL_IN.with(|f| f.set(Some(storage::FEEDER_SETTINGS)));
 
@@ -139,19 +162,33 @@ fn a_feeder_save_that_fails_after_the_device_s_is_refused_and_told_truly() {
         })
     );
 
-    let view = view();
-    assert_eq!(view.saved.outcome(change), SaveOutcome::Failed);
+    let failed = view();
+    assert_eq!(failed.saved.outcome(change), SaveOutcome::Failed);
     assert_eq!(
-        (view.volume, view.kind.meal_reminder),
+        (failed.volume, failed.kind.meal_reminder),
         (20, MealReminder::Off),
         "the device's part landed, the feeder's did not"
     );
+    assert_eq!((failed.generation, failed.writable), (NO_GENERATION, false));
     assert_eq!(
-        (view.generation, view.writable),
-        (2, false),
-        "one past the device's 1: no save published it"
+        asked::settings_request(&SETTINGS, both(30, 15), Some(ASKED)),
+        SettingsResult::ReadOnly
     );
-    assert_eq!(settings_events(&mut writer, &mut provider), [2]);
+    assert_eq!(settings_events(&mut writer, &mut provider), []);
+
+    PROGRAMS_FAIL_IN.with(|f| f.set(None));
+    let (_writer, records) = restart_logged(&mut provider);
+    assert_eq!(records, [Record::Repaired { generation: 3 }]);
+    let repaired = view();
+    assert_eq!(
+        (
+            repaired.volume,
+            repaired.kind.meal_reminder,
+            repaired.generation,
+            repaired.writable
+        ),
+        (20, MealReminder::Off, 3, true)
+    );
 }
 
 /// The device's save failing first: nothing lands, nothing is recorded,
@@ -171,11 +208,17 @@ fn a_device_save_that_fails_lands_nothing_and_records_no_event() {
         })
     );
 
+    // Read again, both records are still empty: they share 0.
     let view = view();
     assert_eq!(view.saved.outcome(change), SaveOutcome::Failed);
     assert_eq!(
-        (view.volume, view.kind.meal_reminder, view.generation),
-        (50, MealReminder::Off, 0)
+        (
+            view.volume,
+            view.kind.meal_reminder,
+            view.generation,
+            view.writable
+        ),
+        (50, MealReminder::Off, 0, true)
     );
     assert_eq!(settings_events(&mut writer, &mut provider), []);
 }
@@ -217,12 +260,13 @@ fn a_whole_save_is_done_and_both_records_hold_its_generation() {
 }
 
 /// A power cut between the two saves: the device's record is written, the
-/// feeder's and the event are not (the event is appended after both). The
-/// next boot reads the device's part changed, with no event, at a
-/// generation no save published; the client's write was never answered,
-/// so it is uncertain. The next save brings the records together again.
+/// feeder's and the event are not (the event is appended after both); the
+/// client's write was never answered, so it is uncertain. The next boot
+/// finds the records apart and saves both again at 3, two past the
+/// device's 1, with the device's part changed and no event; the next save
+/// goes on from there.
 #[test]
-fn a_power_cut_between_the_two_saves_leaves_the_device_s_part_and_no_event() {
+fn a_power_cut_between_the_two_saves_is_repaired_at_the_next_boot() {
     let (_guard, mut writer, mut provider) = opened();
     PROGRAMS_FAIL_IN.with(|f| f.set(Some(storage::FEEDER_SETTINGS)));
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(true));
@@ -231,7 +275,8 @@ fn a_power_cut_between_the_two_saves_leaves_the_device_s_part_and_no_event() {
     PROGRAMS_FAIL_IN.with(|f| f.set(None));
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
 
-    let mut writer = restart(&mut provider);
+    let (mut writer, records) = restart_logged(&mut provider);
+    assert_eq!(records, [Record::Repaired { generation: 3 }]);
     let after = view();
     assert_eq!(
         (
@@ -240,25 +285,61 @@ fn a_power_cut_between_the_two_saves_leaves_the_device_s_part_and_no_event() {
             after.generation,
             after.writable
         ),
-        (20, MealReminder::Off, 2, true)
+        (20, MealReminder::Off, 3, true)
     );
     assert_eq!(settings_events(&mut writer, &mut provider), []);
 
     let change = ask(both(30, 15));
     assert!(matches!(
         step(&mut writer, &mut provider),
-        Some(Record::Saved { generation: 3, .. })
+        Some(Record::Saved { generation: 4, .. })
     ));
     assert_eq!(view().saved.outcome(change), SaveOutcome::Done);
     restart(&mut provider);
-    assert_eq!(view().generation, 3, "the records agree again");
+    assert_eq!(view().generation, 4, "the records agree");
+}
+
+/// A repair that fails leaves the view read-only, with no generation, for
+/// the boot: no change is taken until a later boot's repair lands.
+#[test]
+fn a_failed_repair_keeps_the_view_read_only_until_one_lands() {
+    let (_guard, mut writer, mut provider) = opened();
+    PROGRAMS_FAIL_IN.with(|f| f.set(Some(storage::FEEDER_SETTINGS)));
+    ask(both(20, 15));
+    step(&mut writer, &mut provider);
+
+    // The feeder's record still fails: the device's lands at 3, the
+    // feeder's does not, and the two stay apart.
+    let (_writer, records) = restart_logged(&mut provider);
+    assert_eq!(
+        records,
+        [Record::Error {
+            stage: ErrorStage::Repair,
+            store: SettingsPart::Kind,
+            status: SettingsStatus::Io,
+        }]
+    );
+    assert_eq!((view().generation, view().writable), (NO_GENERATION, false));
+    assert_eq!(
+        asked::settings_request(&SETTINGS, both(30, 15), Some(ASKED)),
+        SettingsResult::ReadOnly
+    );
+
+    // The device's record now holds 3: the next repair goes to 5.
+    PROGRAMS_FAIL_IN.with(|f| f.set(None));
+    let (_writer, records) = restart_logged(&mut provider);
+    assert_eq!(records, [Record::Repaired { generation: 5 }]);
+    assert_eq!(
+        (view().volume, view().generation, view().writable),
+        (20, 5, true)
+    );
 }
 
 /// A record that loses its newest slot falls back to its older one, and
 /// the view never reports a generation that named other settings. Saves
-/// publish 1 and 2; a lost newest slot in either record reads as 6, four
-/// past the larger, and the next save brings the records together past
-/// it.
+/// publish 1 and 2; with either record's newest slot lost the records are
+/// apart, and the boot saves both again at 4, two past the larger, with
+/// what each then holds; the next save goes on from there.
 #[test]
 fn a_lost_newest_slot_never_brings_back_a_generation_that_named_other_settings() {
     for (lost, volume, minutes) in [
@@ -276,31 +357,36 @@ fn a_lost_newest_slot_never_brings_back_a_generation_that_named_other_settings()
 
         // The second save went to each record's slot 1.
         lose(lost, 1);
-        let mut writer = restart(&mut provider);
+        let (mut writer, records) = restart_logged(&mut provider);
+        assert_eq!(records, [Record::Repaired { generation: 4 }], "{lost:?}");
         let decayed = view();
         assert_eq!(
             (decayed.volume, decayed.kind.meal_reminder),
             (volume, MealReminder::Before { minutes }),
             "{lost:?}"
         );
-        assert_eq!(decayed.generation, 6, "{lost:?}: neither 1 nor 2");
+        assert_eq!(
+            (decayed.generation, decayed.writable),
+            (4, true),
+            "{lost:?}: neither 1 nor 2"
+        );
 
         ask(both(40, 15));
         assert!(matches!(
             step(&mut writer, &mut provider),
-            Some(Record::Saved { generation: 7, .. })
+            Some(Record::Saved { generation: 5, .. })
         ));
         restart(&mut provider);
-        assert_eq!(view().generation, 7, "{lost:?}: the records agree again");
+        assert_eq!(view().generation, 5, "{lost:?}: the records agree");
     }
 }
 
-/// The reviewer's sequence: two whole saves (generation 2), then a cut
-/// right after save 3's device write, before the feeder's record is
-/// touched, so the boot reads 4 (volume 40, reminder 45). The feeder's
-/// newest slot then lost, the next boot reads other settings (reminder
-/// 15), which must not read as 4, the generation a client may hold, nor
-/// as anything published; the next save writes past it all.
+/// The earlier review's sequence, which a rule reading the records as they
+/// stood got wrong. Two whole saves publish 1 and 2; save 3's feeder write
+/// fails at its erase, so the device holds 3 and the feeder 2, and nothing
+/// is published. The boot saves both again at 5 (volume 40, reminder 45).
+/// The feeder's newest slot then lost, it reads 2 again, and the next boot
+/// saves both at 7: never 1, 2 or 5 again.
 #[test]
 fn a_cut_then_a_lost_feeder_slot_never_repeats_a_generation() {
     let (_guard, mut writer, mut provider) = opened();
@@ -309,33 +395,42 @@ fn a_cut_then_a_lost_feeder_slot_never_repeats_a_generation() {
     ask(both(30, 45));
     step(&mut writer, &mut provider);
 
-    // The cut: the feeder's save fails at its erase, before any byte of
-    // its record changes, and the event is never written.
+    // The feeder's save fails at its erase, before any byte of its record
+    // changes, and the event is never written.
     ERASE_FAILS.with(|f| f.set(Some(storage::FEEDER_SETTINGS.first)));
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(true));
     ask(both(40, 15));
     step(&mut writer, &mut provider);
+    assert_eq!(view().generation, NO_GENERATION);
     ERASE_FAILS.with(|f| f.set(None));
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
 
-    restart(&mut provider);
-    let cut = view();
+    let (_writer, records) = restart_logged(&mut provider);
+    assert_eq!(records, [Record::Repaired { generation: 5 }]);
+    let repaired = view();
     assert_eq!(
-        (cut.volume, cut.kind.meal_reminder, cut.generation),
-        (40, MealReminder::Before { minutes: 45 }, 4)
+        (
+            repaired.volume,
+            repaired.kind.meal_reminder,
+            repaired.generation
+        ),
+        (40, MealReminder::Before { minutes: 45 }, 5)
     );
 
-    // The feeder's newest slot, generation 2, is slot 1.
-    lose(storage::FEEDER_SETTINGS, 1);
-    let mut writer = restart(&mut provider);
+    // The repair went to the feeder's slot 0, its save 3 having failed.
+    lose(storage::FEEDER_SETTINGS, 0);
+    let (mut writer, records) = restart_logged(&mut provider);
+    assert_eq!(records, [Record::Repaired { generation: 7 }]);
     let lost = view();
     assert_eq!(
-        (lost.volume, lost.kind.meal_reminder, lost.writable),
-        (40, MealReminder::Before { minutes: 15 }, true)
-    );
-    assert_eq!(
-        lost.generation, 7,
-        "past 1, 2 and 4: a client holding 4 is stale"
+        (
+            lost.volume,
+            lost.kind.meal_reminder,
+            lost.generation,
+            lost.writable
+        ),
+        (40, MealReminder::Before { minutes: 45 }, 7, true),
+        "past 1, 2 and 5: a client holding 5 is stale"
     );
 
     ask(both(50, 30));

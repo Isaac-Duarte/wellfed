@@ -4,7 +4,9 @@
 //! the firmware's read turns, answered between passes, and a kind's
 //! settings save that fails fails the change.
 
-use wellfed_core::settings::{KindSettings, SaveOutcome, SettingsFields, SettingsResult};
+use wellfed_core::settings::{
+    KindSettings, NO_GENERATION, SaveOutcome, SettingsFields, SettingsResult,
+};
 use wellfed_device::store::events::{BODY_BYTES, Read};
 use wellfed_device::store::settings::{KindStore, SettingsStatus, Stored};
 use wellfed_device_api::clients::{Label, Role};
@@ -154,12 +156,14 @@ impl KindStore for Failing {
     fn save(&mut self, _: &Tray, _: u64) -> bool {
         false
     }
+
+    fn reopen(&mut self) {}
 }
 
 /// As the firmware's writer: a kind save failing after the device's is
-/// the change's failure, which a waiting client is refused by, and its
-/// event names the generation the view then reports (one past the
-/// device's), with the device's part changed.
+/// the change's failure, which a waiting client is refused by. The records
+/// read again are apart (the device's part changed), so the view reports
+/// no generation, read-only, and no event is recorded.
 #[test]
 fn a_kind_save_that_fails_after_the_device_s_fails_the_change() {
     let mut next = 0u8;
@@ -185,15 +189,9 @@ fn a_kind_save_that_fails_after_the_device_s_fails_the_change() {
 
     let view = device.settings();
     assert_eq!(view.saved.outcome(number), SaveOutcome::Failed);
-    assert_eq!((view.volume, view.kind, view.generation), (20, Tray(0), 2));
-    let Read::Record(record) = device.ring_after(None) else {
-        panic!("the change's event is in the ring");
-    };
     assert_eq!(
-        wellfed_proto::decode_padded::<EventBody>(&record.body),
-        Some(EventBody::Settings {
-            generation: 2,
-            by: stamp.by,
-        })
+        (view.volume, view.kind, view.generation, view.writable),
+        (20, Tray(0), NO_GENERATION, false)
     );
+    assert!(matches!(device.ring_after(None), Read::End));
 }
