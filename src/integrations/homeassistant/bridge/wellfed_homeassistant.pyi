@@ -1014,7 +1014,8 @@ class Update:
     @property
     def pending(self, /) -> Pending | None:
         """
-        For [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`] and
+        For [`UpdateKind::Pending`]: the feed to keep. For
+        [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`] and
         [`UpdateKind::StillUnknown`]: the pending feed it accounts for.
         """
     @property
@@ -1063,6 +1064,11 @@ class UpdateKind:
     """
     Events this session never received: what happened meanwhile is
     not known.
+    """
+    Pending: Final[UpdateKind]
+    """
+    A feed's answer never came: it is pending until a later update
+    settles it, and comes before any update that does.
     """
     Revoked: Final[UpdateKind]
     """

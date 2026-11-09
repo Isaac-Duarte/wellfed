@@ -50,7 +50,7 @@ The invite works once. If pairing fails, make a new one rather than trying the o
 3. Choose the feeder. You should see the feeder's device with its entities. Add each further feeder the same way: each is its own entry.
 
 > [!NOTE]
-> Home Assistant checks the server's certificate against the certificates its own system trusts. A server with a self-signed certificate is refused unless its certificate authority is installed on the Home Assistant host. Plain `http://` works, but the password and the token then cross your network unencrypted, so Home Assistant asks you to confirm such an address unless the server runs on the Home Assistant host itself.
+> Home Assistant checks the server's certificate against the certificates its own system trusts. A server with a self-signed certificate is refused unless its certificate authority is installed on the Home Assistant host. Plain `http://` works, but the password and the token then cross your network unencrypted, so Home Assistant asks you to confirm such an address unless you give it as `localhost` or a loopback address such as `127.0.0.1`.
 
 ## Switch to the other route
 

@@ -192,8 +192,21 @@ async def test_switching_routes_keeps_the_entities_and_drops_the_old_route(
     assert entry.data[CONF_ROUTE] == ROUTE_DIRECT
     assert CONF_TOKEN not in entry.data
     assert _unique_ids(hass, entry) == direct
-    # The server's token for Home Assistant is revoked.
+    # The server's token for Home Assistant is revoked, after its session
+    # stopped, so the refusal started no reauth.
     assert server.call("GET", "/tokens") == []
+    await asyncio.sleep(3)
+    await hass.async_block_till_done()
+    assert _reauth_flows(hass) == []
+
+    # Back to the server, then server to server: the old token goes after
+    # its session stopped too.
+    await _reconfigure(hass, entry, "reconfigure_server", _sign_in(server))
+    await _reconfigure(hass, entry, "reconfigure_server", _sign_in(server))
+    await asyncio.sleep(3)
+    await hass.async_block_till_done()
+    assert _reauth_flows(hass) == []
+    assert len(server.call("GET", "/tokens")) == 1
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

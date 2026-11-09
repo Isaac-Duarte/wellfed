@@ -776,6 +776,9 @@ impl<'a> Session<'a> {
             sent_ms: now_ms(),
             after: None,
         };
+        // Announced on the updates before anything can settle it, so the
+        // integration keeps it first; a handle gone has no one to tell.
+        let _ = self.updates.send(Update::pending(pending.clone()));
         self.memory.uncertain.push(Uncertain {
             key,
             pending: pending.clone(),

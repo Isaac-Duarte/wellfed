@@ -172,7 +172,7 @@ async def test_a_lost_feed_opens_a_repair_its_settlement_clears(
     with pytest.raises(HomeAssistantError) as raised:
         await session.feed(1)
     assert raised.value.translation_key == "write_uncertain"
-    assert _issue(hass, "uncertain_feed") is not None
+    await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
 
     feeder.push(fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=lost))
     await _until(hass, lambda: _issue(hass, "uncertain_feed") is None)
@@ -184,11 +184,16 @@ async def test_a_lost_feed_is_kept_across_a_reload_and_settled_by_the_next_sessi
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
     entry = await _ready(hass, feeder)
+    # Answered with nothing pending: kept all the same, since its `Fed` may
+    # come after a feed lost next.
+    feeder.feed_result = fake.written(bridge.WriteResult.Feeding, feed=41)
+    assert await entry.runtime_data.feed(1) == 41
     lost = fake.pending()
     feeder.feed_result = fake.uncertain(lost)
     with pytest.raises(HomeAssistantError):
         await entry.runtime_data.feed(1)
-    # Answered while it was pending: the next session must know.
+    await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
+    # Answered after it went out: the next session must know.
     feeder.feed_result = fake.written(bridge.WriteResult.Feeding, feed=9)
     assert await entry.runtime_data.feed(1) == 9
 
@@ -199,12 +204,58 @@ async def test_a_lost_feed_is_kept_across_a_reload_and_settled_by_the_next_sessi
 
     # The fixture put its maker in the bridge's place.
     made = cast(_Make, bridge.Feeder)
-    assert made.handed[-1] == ([lost.id], [9])
-    assert _issue(hass, "uncertain_feed") is not None
+    assert made.handed[-1] == ([lost.id], [41, 9])
+    await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
     feeder.push(fake.update(bridge.UpdateKind.SettledUnfed, pending=lost))
     await _until(hass, lambda: _issue(hass, "uncertain_feed") is None)
     assert entry.runtime_data.kept.pending == []
-    assert entry.runtime_data.kept.answered == []
+    assert entry.runtime_data.kept.answered == [41, 9]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_lost_feed_settled_before_its_write_returns_is_not_kept(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    lost = fake.pending()
+    # The bridge announces it and the journal settles it before the write's
+    # own answer reaches the event loop.
+    feeder.push(
+        fake.update(bridge.UpdateKind.Pending, pending=lost),
+        fake.update(bridge.UpdateKind.SettledUnfed, pending=lost),
+    )
+    await _until(hass, lambda: feeder.updates.empty())
+    await hass.async_block_till_done()
+    # Its pending update came already; the write's answer carries no other.
+    feeder.feed_result = fake.written(bridge.WriteResult.Uncertain)
+    with pytest.raises(HomeAssistantError):
+        await session.feed(1)
+    await hass.async_block_till_done()
+
+    assert session.kept.pending == []
+    assert _issue(hass, "uncertain_feed") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_store_in_another_shape_is_set_aside_and_setup_goes_on(
+    hass: HomeAssistant,
+    feeder: fake.FakeFeeder,
+    hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    entry = _entry(hass)
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": f"{DOMAIN}.{entry.entry_id}",
+        "data": {"pending": [{"id": "x"}]},
+    }
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.kept.pending == []
+    assert "not in the shape it writes" in caplog.text
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
@@ -409,7 +460,7 @@ async def test_a_lost_feed_refused_after_all_clears_its_repair(
     feeder.feed_result = fake.uncertain(lost)
     with pytest.raises(HomeAssistantError):
         await entry.runtime_data.feed(1)
-    assert _issue(hass, "uncertain_feed") is not None
+    await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
 
     # The server's journal found the feeder refused it: nothing ran.
     feeder.push(fake.update(bridge.UpdateKind.SettledUnfed, pending=lost))

@@ -164,6 +164,9 @@ class FakeFeeder:
 
     def feed(self, portions: int) -> SimpleNamespace:
         self.calls.append(("feed", (portions,)))
+        # As the bridge does: a lost feed is announced before its answer.
+        if self.feed_result.pending is not None:
+            self.push(update(bridge.UpdateKind.Pending, pending=self.feed_result.pending))
         return self.feed_result
 
     def cancel_feed(self, number: int) -> SimpleNamespace:

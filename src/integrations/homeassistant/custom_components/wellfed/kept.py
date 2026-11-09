@@ -4,18 +4,24 @@
   settles it. The next session is handed them, so a feed lost just before a
   restart is still settled (or found unknown) rather than forgotten, and
   the repair that names them stays in step.
-- **Answered feeds:** the feed numbers this Home Assistant was answered
-  for since the oldest pending feed. Directly, a `Fed` event of one of
-  them settles nothing, so the next session must know them too.
+- **Answered feeds:** the last feed numbers this Home Assistant was
+  answered for, pending or not. Directly, a `Fed` event of one of them
+  settles nothing, so the next session must know them too: a feed answered
+  just before a lost one went out may end after it.
 - **A leftover key:** the client key an entry held directly before it moved
   to the server route, while the feeder may still list it.
 
 One instance per entry, so a reload and a config flow write the same one.
+A file that does not read as this shape is set aside, never deleted, and
+the entry starts empty.
 """
 
 from __future__ import annotations
 
-from typing import TypedDict
+import logging
+import os
+import time
+from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -25,12 +31,13 @@ import wellfed_homeassistant as bridge
 
 from .const import DOMAIN
 
+_LOGGER = logging.getLogger(__name__)
+
 STORAGE_VERSION = 1
 
 STORES: HassKey[dict[str, Kept]] = HassKey(f"{DOMAIN}_kept")
 
-# Answered feed numbers kept while a feed is pending: far more than a
-# settle window holds.
+# Answered feed numbers kept: far more than a settle window holds.
 ANSWERED_KEPT = 64
 
 
@@ -51,10 +58,37 @@ def _empty() -> KeptData:
     return {"pending": [], "answered": [], "leftover_key": None}
 
 
+def _int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _pending(item: Any) -> bool:
+    return (
+        isinstance(item, dict)
+        and isinstance(item.get("id"), str)
+        and _int(item.get("portions"))
+        and _int(item.get("sent_ms"))
+        and (item.get("after") is None or _int(item.get("after")))
+    )
+
+
+def _valid(data: Any) -> bool:
+    """Whether `data` is the store's shape, every field typed."""
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get("pending"), list)
+        and all(_pending(item) for item in data["pending"])
+        and isinstance(data.get("answered"), list)
+        and all(_int(feed) for feed in data["answered"])
+        and (data.get("leftover_key") is None or isinstance(data["leftover_key"], str))
+    )
+
+
 class Kept:
     """One entry's store; changes are written at once, and again at shutdown."""
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+        self._hass = hass
         self._store: Store[KeptData] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
         self._data: KeptData = _empty()
         self._loaded = False
@@ -63,7 +97,23 @@ class Kept:
         """Read the store once; later calls keep what is in memory."""
         if self._loaded:
             return
-        self._data = await self._store.async_load() or _empty()
+        data: Any = await self._store.async_load()
+        if data is None:
+            self._data = _empty()
+        elif _valid(data):
+            self._data = data
+        else:
+            aside = f"{self._store.path}.bad-{int(time.time())}"
+            try:
+                await self._hass.async_add_executor_job(os.replace, self._store.path, aside)
+            except OSError as error:
+                _LOGGER.warning("Could not set Wellfed's store aside as %s: %s", aside, error)
+            _LOGGER.warning(
+                "Wellfed's store for this entry is not in the shape it writes; kept as %s, "
+                "and the entry starts with no lost feeds on record",
+                aside,
+            )
+            self._data = _empty()
         self._loaded = True
 
     @property
@@ -83,6 +133,8 @@ class Kept:
         return bytes.fromhex(key) if key is not None else None
 
     def add_pending(self, pending: bridge.Pending) -> None:
+        if any(item["id"] == pending.id for item in self._data["pending"]):
+            return
         self._data["pending"].append(
             {
                 "id": pending.id,
@@ -94,16 +146,12 @@ class Kept:
         self._save()
 
     def settle(self, pending: bridge.Pending) -> None:
-        """`pending` is accounted for; the answered feeds go with the last."""
+        """`pending` is accounted for."""
         self._data["pending"] = [p for p in self._data["pending"] if p["id"] != pending.id]
-        if not self._data["pending"]:
-            self._data["answered"] = []
         self._save()
 
     def answered_feed(self, feed: int) -> None:
-        """A feed this Home Assistant was answered for, kept while any is pending."""
-        if not self._data["pending"]:
-            return
+        """A feed this Home Assistant was answered for: the last ones are kept."""
         self._data["answered"] = [*self._data["answered"], feed][-ANSWERED_KEPT:]
         self._save()
 

@@ -260,6 +260,9 @@ fn a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_settled_by_the_journal
 
         relay.cut();
         relay.resume();
+        // Announced as pending before anything settles it.
+        let announced = next(&session, UpdateKind::Pending).await;
+        assert_eq!(announced.pending.as_ref(), Some(&pending));
         let settled = next(&session, UpdateKind::Settled).await;
         assert_eq!(settled.pending, Some(pending));
         let fed = settled.feed.expect("the feed the journal settled");

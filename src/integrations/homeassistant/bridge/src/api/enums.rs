@@ -427,6 +427,9 @@ view_enum! {
         /// Events this session never received: what happened meanwhile is
         /// not known.
         Gap => "gap",
+        /// A feed's answer never came: it is pending until a later update
+        /// settles it, and comes before any update that does.
+        Pending => "pending",
         /// A feed whose answer never came ran: its `Fed` event, or the
         /// server's journal, says how.
         Settled => "settled",

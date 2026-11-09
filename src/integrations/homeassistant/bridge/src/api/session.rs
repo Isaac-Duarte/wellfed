@@ -126,7 +126,8 @@ pub struct Update {
     pub feed: Option<Feed>,
     /// For [`UpdateKind::StillUnknown`]: the portions that feed asked for.
     pub portions: Option<u8>,
-    /// For [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`] and
+    /// For [`UpdateKind::Pending`]: the feed to keep. For
+    /// [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`] and
     /// [`UpdateKind::StillUnknown`]: the pending feed it accounts for.
     pub pending: Option<Pending>,
     /// The first and last event lost, for a [`UpdateKind::Gap`] the feeder
@@ -204,6 +205,16 @@ impl Update {
             gap_from: gap.map(|gap| gap.from),
             gap_to: gap.map(|gap| gap.to),
             ..Self::kind(UpdateKind::Gap)
+        }
+    }
+
+    /// A feed whose answer never came, to keep until an update settles
+    /// it: sent before the write's own answer, so before any such update.
+    pub fn pending(pending: Pending) -> Self {
+        Self {
+            portions: Some(pending.portions),
+            pending: Some(pending),
+            ..Self::kind(UpdateKind::Pending)
         }
     }
 

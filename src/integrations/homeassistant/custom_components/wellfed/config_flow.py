@@ -419,9 +419,14 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             joined = await self._rejoin(entry, user_input, address, errors)
             if joined is not None:
                 secret, identity = joined
+                # The server session stops before its token goes, so the
+                # refusal starts no reauth.
+                await self._stop_session(entry)
                 await self._forget(dict(entry.data))
                 # Back on the direct route: no key is left over.
-                kept(self.hass, entry.entry_id).set_leftover_key(None)
+                store = kept(self.hass, entry.entry_id)
+                await store.load()
+                store.set_leftover_key(None)
                 ir.async_delete_issue(self.hass, DOMAIN, f"{LEFTOVER_KEY_ISSUE}_{identity.hex()}")
                 return self.async_update_reload_and_abort(
                     entry, data=_direct_data(secret, identity, address)
@@ -434,18 +439,18 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
     async def _moved_to_server(
         self, entry: ConfigEntry, feeder: bridge.ServerFeeder
     ) -> ConfigFlowResult:
-        """Write the server route over `entry`, and drop what the old route held."""
-        login = self._keep_login()
+        """Write the server route over `entry`, and drop what the old route held.
+        The sign-in stays the flow's until the entry is written, so a failure on
+        the way still revokes it."""
+        login = self._login
+        assert login is not None
         old = dict(entry.data)
+        # The old session stops first: the token or key it holds is about to
+        # go, and its refusal must not start a reauth.
+        await self._stop_session(entry)
         if old[CONF_ROUTE] == ROUTE_SERVER:
             await self._forget(old)
         else:
-            # The direct session stops first: the key it holds is about to
-            # go, and its refusal must not start a reauth.
-            if entry.state is ConfigEntryState.LOADED:
-                session = entry.runtime_data
-                session.on_revoked = None
-                await self.hass.async_add_executor_job(session.stop)
             # A member may not remove its own key, so the server removes it
             # when it can (an owner's account, on a server the feeder made
             # an owner); otherwise the owner removes it in the app.
@@ -471,8 +476,16 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
                     },
                 )
         return self.async_update_reload_and_abort(
-            entry, data=_server_data(self._url, login, feeder)
+            entry, data=_server_data(self._url, self._keep_login(), feeder)
         )
+
+    async def _stop_session(self, entry: ConfigEntry) -> None:
+        """Stop `entry`'s session, if it runs, with no reauth on its way out;
+        the reload that follows starts the new route's."""
+        if entry.state is ConfigEntryState.LOADED:
+            session = entry.runtime_data
+            session.on_revoked = None
+            await self.hass.async_add_executor_job(session.stop)
 
     # Shared steps.
 

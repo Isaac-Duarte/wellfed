@@ -302,10 +302,8 @@ class FeederSession:
             return written
         if result == bridge.WriteResult.Uncertain:
             # It may have run. The feeder's event settles it; sending it
-            # again could feed twice. A feed is kept until then.
-            if written.pending is not None:
-                self.kept.add_pending(written.pending)
-                self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
+            # again could feed twice. A feed was kept already, from the
+            # pending update the bridge sends before anything settles it.
             raise WriteNotDone("write_uncertain")
         if result == bridge.WriteResult.NotSent:
             reason = written.not_sent or bridge.NotSent.Disconnected
@@ -352,6 +350,9 @@ class FeederSession:
             _LOGGER.info(
                 "Some feeder events were not received: %s to %s", update.gap_from, update.gap_to
             )
+        elif kind == bridge.UpdateKind.Pending and update.pending is not None:
+            self.kept.add_pending(update.pending)
+            self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
         elif kind == bridge.UpdateKind.Settled:
             if update.feed is not None:
                 _LOGGER.info(
