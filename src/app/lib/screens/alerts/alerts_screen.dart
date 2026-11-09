@@ -32,14 +32,19 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> {
   late final FeederAlertsController _alerts = widget.newController();
 
+  // Back from Android's settings, notifications may be on now.
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(onResume: () => unawaited(_alerts.resumed()));
     unawaited(_alerts.load());
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _alerts.dispose();
     super.dispose();
   }

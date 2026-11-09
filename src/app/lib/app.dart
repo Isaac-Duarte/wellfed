@@ -332,7 +332,7 @@ class _WellfedAppState extends State<WellfedApp> {
         fleet: _fleet,
         adopt: _adopt,
         pinsProblem: widget.app.pinsProblem,
-        askToNotify: _alerts ? () => unawaited(offerNotifications(widget.app.feeders)) : null,
+        askToNotify: _alerts ? () => offerNotifications(widget.app.feeders) : null,
         earlierInstall: () async {
           final ports = AppInstallPorts(widget.app.key);
           return ports.pending(await ports.paths());

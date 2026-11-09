@@ -114,6 +114,27 @@ void main() {
       expect(find.textContaining('Notifications are off.', findRichText: true), findsNothing);
     });
 
+    testWidgets("back from Android's settings with notifications on, the notice goes and alerts post", (tester) async {
+      final ports = FakeAlertPorts()
+        ..notices = [failedMeal()]
+        ..allowed = false;
+      await _showAlerts(tester, ports);
+      expect(find.textContaining('Notifications are off.', findRichText: true), findsOneWidget);
+
+      ports.allowed = true;
+      [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ].forEach(tester.binding.handleAppLifecycleStateChanged);
+      await settle(tester);
+      expect(find.textContaining('Notifications are off.', findRichText: true), findsNothing);
+      expect(ports.postedOpen.single.single.identity, 'ab');
+    });
+
     testWidgets('nothing wrong, and alerts too new for this app, say so', (tester) async {
       final ports = FakeAlertPorts()..unread = 2;
       await _showAlerts(tester, ports);
@@ -157,6 +178,22 @@ void main() {
       final shown = settings.state as AlertSettingsShown;
       expect(shown.instant, isFalse);
       expect(shown.problem, contains("Android didn't let it start"));
+    });
+
+    test('back in front with notifications turned on, the open alerts post', () async {
+      final ports = FakeAlertPorts()..allowed = false;
+      final settings = AlertSettingsController(ports, FakeBook()..feeders = [kitchen]);
+      addTearDown(settings.dispose);
+      await settings.load();
+
+      await settings.resumed();
+      expect(ports.postedOpen, isEmpty, reason: 'still off');
+      ports.allowed = true;
+      await settings.resumed();
+      expect(ports.postedOpen.single.single.identity, 'ab');
+      expect((settings.state as AlertSettingsShown).notificationsAllowed, isTrue);
+      await settings.resumed();
+      expect(ports.postedOpen, hasLength(1), reason: 'only when they were just turned on');
     });
 
     test('instant mode on but stopped starts again, and says so when Android refuses', () async {

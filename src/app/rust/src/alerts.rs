@@ -41,9 +41,13 @@ pub(crate) struct AlertState {
     /// first to open it, long before the app shows anything.
     pub(crate) set_aside: Option<SetAside>,
     /// The file was set aside, so notifications its watches posted may still
-    /// be up with nothing that knows their ids: the app clears every alert
-    /// notification, then [`AlertState::sweep`] goes back to `false`.
+    /// be up with nothing that knows their ids: the app takes those off,
+    /// then [`AlertState::sweep`] goes back to `false`.
     pub(crate) sweep: bool,
+    /// The ids the sweep chose to take off, until it says they are off. A
+    /// post of one meanwhile isn't confirmed, so the next catch-up hands it
+    /// over again after the sweep took it down.
+    pub(crate) sweeping: Vec<i32>,
 }
 
 impl Versioned for AlertState {
@@ -304,12 +308,15 @@ pub(crate) fn held() -> bool {
 #[cfg(test)]
 mod tests {
     use jiff::Timestamp;
+    use std::collections::BTreeSet;
     use wellfed_client::alerts::{
         Absence, Cursor, Delivery, Notice, NoticeKey, NoticeKind, Reach, Tracked,
     };
+
+    use serde::Serialize;
     use wellfed_model::{
-        Alert, AlertKind, AlertLevel, Blocked, ClientRole, EnrollPath, FeedOutcome, FeedReason,
-        Generation, Hex, MissedReason, OpenAlert, Source, UpdateStop,
+        Alert, AlertKey, AlertKind, AlertLevel, Blocked, ClientRole, EnrollPath, FeedOutcome,
+        FeedReason, Generation, Hex, MissedReason, OpenAlert, Source, UpdateStop,
     };
 
     use super::*;
@@ -542,21 +549,119 @@ mod tests {
                 at_ms: 1_800_000_000_000,
             }),
             sweep: true,
+            sweeping: vec![0x4000_0abc],
         }
     }
 
+    /// The name an `AlertKey` variant is written under. The match is
+    /// exhaustive, so a new variant doesn't compile until it is named here,
+    /// and [`KEY_NAMES`] beside it lists the same names.
+    const fn key_name(key: &AlertKey) -> &'static str {
+        match key {
+            AlertKey::Feed { .. } => "feed",
+            AlertKey::Meal { .. } => "meal",
+            AlertKey::Client { .. } => "client",
+            AlertKey::Timed { .. } => "timed",
+            AlertKey::Kind { .. } => "kind",
+        }
+    }
+
+    const KEY_NAMES: [&str; 5] = ["feed", "meal", "client", "timed", "kind"];
+
+    /// Every value `T`'s schema names, as written: the model derives the
+    /// schema from the enum itself, so a new variant is named here as soon
+    /// as it exists. `Unknown` stands for a newer build's value and is never
+    /// written.
+    fn every_name<T: utoipa::PartialSchema>() -> BTreeSet<String> {
+        fn walk(value: &serde_json::Value, names: &mut BTreeSet<String>) {
+            match value {
+                serde_json::Value::Object(map) => {
+                    if let Some(serde_json::Value::Array(values)) = map.get("enum") {
+                        names.extend(values.iter().filter_map(|v| v.as_str().map(str::to_owned)));
+                    }
+                    map.values().for_each(|value| walk(value, names));
+                }
+                serde_json::Value::Array(values) => {
+                    values.iter().for_each(|value| walk(value, names))
+                }
+                _ => {}
+            }
+        }
+        let mut names = BTreeSet::new();
+        walk(&serde_json::to_value(T::schema()).unwrap(), &mut names);
+        names.remove("unknown");
+        names
+    }
+
+    /// The name `value` is written under: a string, or a tagged object's
+    /// `kind`.
+    fn name_of(value: impl Serialize) -> String {
+        match serde_json::to_value(value).unwrap() {
+            serde_json::Value::String(name) => name,
+            serde_json::Value::Object(map) => map["kind"].as_str().unwrap().to_owned(),
+            other => panic!("{other}"),
+        }
+    }
+
+    /// Every alert kind and key, and every value of each enum inside an
+    /// alert, is in the sample, so a change to how any of them is written
+    /// fails [`version_1_reads_and_writes_as_its_sample`].
     #[test]
-    fn the_sample_has_every_alert_kind_and_key() {
-        let kinds: std::collections::BTreeSet<_> = every_alert()
-            .iter()
-            .map(|open| format!("{:?}", open.alert.kind()))
-            .collect();
-        assert_eq!(kinds.len(), AlertKind::ALL.len());
-        let keys: HashSet<_> = every_alert()
-            .iter()
-            .map(|open| std::mem::discriminant(&open.key()))
-            .collect();
-        assert_eq!(keys.len(), 5, "feed, meal, client, timed and kind");
+    fn the_sample_has_every_value() {
+        let alerts = every_alert();
+        let kinds: BTreeSet<_> = alerts.iter().map(|open| open.alert.kind()).collect();
+        assert_eq!(kinds, AlertKind::ALL.into_iter().collect());
+        let keys: BTreeSet<_> = alerts.iter().map(|open| key_name(&open.key())).collect();
+        assert_eq!(keys, KEY_NAMES.into_iter().collect());
+
+        let mut found: [BTreeSet<String>; 8] = Default::default();
+        for open in &alerts {
+            match open.alert {
+                Alert::MealFailed {
+                    outcome, reason, ..
+                } => {
+                    found[0].insert(name_of(outcome));
+                    found[1].insert(name_of(reason));
+                }
+                Alert::MealUncertain { reason, .. } => {
+                    found[1].insert(name_of(reason));
+                }
+                Alert::MealMissed { reason, .. } => {
+                    if let MissedReason::Blocked { reason } = reason {
+                        found[2].insert(name_of(reason));
+                    }
+                    found[3].insert(name_of(reason));
+                }
+                Alert::UpdateFailed { stop } => {
+                    found[4].insert(name_of(stop));
+                }
+                Alert::ClientJoined { role, path, .. } => {
+                    found[5].insert(name_of(role));
+                    found[6].insert(name_of(path));
+                }
+                Alert::ClientRevoked { by, .. } => {
+                    found[7].insert(name_of(by));
+                }
+                Alert::CannotFeed { reason } => {
+                    found[2].insert(name_of(reason));
+                }
+                _ => {}
+            }
+        }
+        let every = [
+            every_name::<FeedOutcome>(),
+            every_name::<FeedReason>(),
+            every_name::<Blocked>(),
+            every_name::<MissedReason>(),
+            every_name::<UpdateStop>(),
+            every_name::<ClientRole>(),
+            every_name::<EnrollPath>(),
+            every_name::<Source>(),
+        ];
+        for (found, every) in found.iter().zip(&every) {
+            assert!(!every.is_empty());
+            assert_eq!(found, every);
+        }
     }
 
     #[test]
@@ -656,6 +761,62 @@ mod tests {
                 .await
                 .unwrap();
             assert!(sweep().await.unwrap().is_empty(), "done");
+            assert!(read(dir.path()).await.unwrap().sweeping.is_empty());
+        });
+    }
+
+    /// A catch-up that tracks a notice the sweep is about to take off: its
+    /// post isn't confirmed until the sweep is done, so it posts again.
+    #[test]
+    fn a_post_the_sweep_takes_down_is_handed_over_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_name = dir.path().display().to_string();
+        run(async {
+            let mut state = every_field();
+            let feeder =
+                wellfed_session::hex::decode_array_either_case::<32>(KITCHEN.as_bytes()).unwrap();
+            let watch = &mut state.feeders[0].watch;
+            let due = watch
+                .open
+                .iter()
+                .find(|tracked| tracked.delivery == Delivery::Due)
+                .unwrap()
+                .key;
+            let id = due.notification_id(&feeder);
+            // Chosen while the file did not know it yet.
+            state.sweeping = vec![id];
+            change(dir.path(), |stored| *stored = state).await.unwrap();
+
+            crate::api::alerts::confirm_notices(dir_name.clone(), KITCHEN.into(), vec![id], vec![])
+                .await
+                .unwrap();
+            let still = read(dir.path()).await.unwrap();
+            let tracked = still.feeders[0]
+                .watch
+                .open
+                .iter()
+                .find(|t| t.key == due)
+                .unwrap();
+            assert_eq!(
+                tracked.delivery,
+                Delivery::Due,
+                "posted again after the sweep"
+            );
+
+            crate::api::alerts::alerts_swept(dir_name.clone())
+                .await
+                .unwrap();
+            crate::api::alerts::confirm_notices(dir_name, KITCHEN.into(), vec![id], vec![])
+                .await
+                .unwrap();
+            let after = read(dir.path()).await.unwrap();
+            let tracked = after.feeders[0]
+                .watch
+                .open
+                .iter()
+                .find(|t| t.key == due)
+                .unwrap();
+            assert_eq!(tracked.delivery, Delivery::Posted);
         });
     }
 

@@ -102,6 +102,23 @@ class FeederAlertsController extends ChangeNotifier {
     _set(next);
   }
 
+  /// The app is back in front: notifications may have been turned on in
+  /// Android's settings meanwhile, and then this feeder's open alerts post.
+  Future<void> resumed() async {
+    final AlertsState before = _state;
+    await load();
+    final AlertsState now = _state;
+    final bool turnedOn = before is AlertsShown && !before.notificationsAllowed;
+    if (!turnedOn || now is! AlertsShown || !now.notificationsAllowed) return;
+    try {
+      await _ports.postOpen([_feeder]);
+    } on BridgeError catch (error) {
+      _set(now.copyWith(checking: false, problem: "Couldn't post its alerts: ${error.message}."));
+    } on PlatformException catch (error) {
+      _set(now.copyWith(checking: false, problem: "Couldn't post its alerts: ${error.message ?? error.code}."));
+    }
+  }
+
   /// Ask Android to let alerts through; this feeder's alerts still open are
   /// posted once it does.
   Future<void> allowNotifications() async {

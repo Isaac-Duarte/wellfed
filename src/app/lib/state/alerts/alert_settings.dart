@@ -117,6 +117,32 @@ class AlertSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The app is back in front: notifications may have been turned on in
+  /// Android's settings meanwhile, and then the open alerts post.
+  Future<void> resumed() async {
+    final AlertSettingsState before = _state;
+    final bool turnedOn = before is AlertSettingsShown && !before.notificationsAllowed;
+    String? problem;
+    if (turnedOn && await _allowed()) {
+      try {
+        await _ports.postOpen(_book.feeders);
+      } on BridgeError catch (error) {
+        problem = "Couldn't post the open alerts: ${error.message}.";
+      } on PlatformException catch (error) {
+        problem = "Couldn't post the open alerts: ${error.message ?? error.code}.";
+      }
+    }
+    await load(problem: problem);
+  }
+
+  Future<bool> _allowed() async {
+    try {
+      return await _ports.notificationsAllowed();
+    } on PlatformException {
+      return false;
+    }
+  }
+
   /// Ask Android to let alerts through; alerts still open are posted once
   /// it does.
   Future<void> allowNotifications() async {

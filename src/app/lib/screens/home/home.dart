@@ -45,9 +45,11 @@ class HomeScreen extends StatefulWidget {
   /// feeder on bank 0 answers Ready with its stock not yet saved.
   final Future<PendingInstall> Function() earlierInstall;
 
-  /// Asks Android once to let alerts through, as Home first shows a feeder:
-  /// the moment the owner sees what they would hear from. Where alerts run.
-  final VoidCallback? askToNotify;
+  /// Asks Android once to let alerts through, as Home shows a feeder of the
+  /// phone's own: the moment the owner sees what they would hear from. Home
+  /// offers it as it opens and as its feeders change, until it says the
+  /// offer is settled. Where alerts run.
+  final Future<bool> Function()? askToNotify;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -60,9 +62,33 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     unawaited(_readEarlier());
-    if (widget.askToNotify case final VoidCallback ask) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => ask());
+    if (widget.askToNotify != null) {
+      widget.fleet.addListener(_offer);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _offer());
     }
+  }
+
+  @override
+  void dispose() {
+    widget.fleet.removeListener(_offer);
+    super.dispose();
+  }
+
+  /// Settled once the callback says so, and never two at once.
+  bool _offered = false;
+  bool _offering = false;
+
+  void _offer() {
+    final Future<bool> Function()? ask = widget.askToNotify;
+    if (ask == null || _offered || _offering) return;
+    _offering = true;
+    unawaited(
+      ask().then((settled) {
+        _offering = false;
+        _offered = settled;
+        if (settled) widget.fleet.removeListener(_offer);
+      }),
+    );
   }
 
   Future<void> _readEarlier() async {

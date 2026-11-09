@@ -56,6 +56,7 @@ class FakeAlertPorts implements AlertPorts {
   bool running = false;
   bool resumes = true;
   final asked = <List<KnownFeeder>>[];
+  final postedOpen = <List<KnownFeeder>>[];
 
   /// What the next read or change throws, as a damaged store would.
   BridgeError? fails;
@@ -127,6 +128,9 @@ class FakeAlertPorts implements AlertPorts {
 
   @override
   Future<bool> notificationsAllowed() async => allowed;
+
+  @override
+  Future<void> postOpen(List<KnownFeeder> feeders) async => postedOpen.add(feeders);
 
   @override
   Future<bool> askForNotifications(List<KnownFeeder> feeders) async {

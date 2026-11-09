@@ -268,13 +268,18 @@ pub async fn confirm_notices(
 ) -> Result<Vec<i32>, BridgeError> {
     let feeder = identity_of(&identity)?;
     alerts::change(Path::new(&dir), |state| {
+        let sweeping = state.sweeping.clone();
         let Some(watched) = state.watched_mut(&identity) else {
             return posted;
         };
         let watch = &mut watched.watch;
         for change in watch.changes() {
             let made = match &change {
-                Change::Post(tracked) => posted.contains(&tracked.key.notification_id(&feeder)),
+                // The sweep may take it down after it went up.
+                Change::Post(tracked) => {
+                    let id = tracked.key.notification_id(&feeder);
+                    posted.contains(&id) && !sweeping.contains(&id)
+                }
                 Change::Remove(key) => removed.contains(&key.notification_id(&feeder)),
             };
             if made {
@@ -467,8 +472,9 @@ pub async fn alerts_set_aside(dir: String) -> Result<Option<SetAside>, BridgeErr
 /// which nothing would ever take off. None once the sweep is done. Chosen
 /// under the file's lock, and a catch-up writes a notice's key before Dart
 /// posts it, so a notification another engine posts meanwhile is known and
-/// kept. Taking off one of those ids again is harmless, so the sweep is done
-/// only with [`alerts_swept`], once they are off.
+/// kept. One a catch-up tracks after this is not confirmed posted until
+/// [`alerts_swept`] says they are off, so it is handed over again. Taking
+/// off one of those ids again is harmless, so the sweep is done only then.
 pub async fn alerts_to_sweep(dir: String, showing: Vec<i32>) -> Result<Vec<i32>, BridgeError> {
     alerts::change(Path::new(&dir), |state| {
         if !state.sweep {
@@ -484,17 +490,23 @@ pub async fn alerts_to_sweep(dir: String, showing: Vec<i32>) -> Result<Vec<i32>,
                     .map(|key| key.notification_id(&feeder)),
             );
         }
-        Ok(showing
+        let stale: Vec<i32> = showing
             .into_iter()
             .filter(|id| !known.contains(id))
-            .collect())
+            .collect();
+        state.sweeping.clone_from(&stale);
+        Ok(stale)
     })
     .await?
 }
 
 /// The notifications [`alerts_to_sweep`] chose are off.
 pub async fn alerts_swept(dir: String) -> Result<(), BridgeError> {
-    alerts::change(Path::new(&dir), |state| state.sweep = false).await
+    alerts::change(Path::new(&dir), |state| {
+        state.sweep = false;
+        state.sweeping.clear();
+    })
+    .await
 }
 
 /// The owner read the notice of a set-aside `alerts.json`.

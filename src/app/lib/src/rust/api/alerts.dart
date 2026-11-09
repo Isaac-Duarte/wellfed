@@ -138,8 +138,9 @@ Future<SetAside?> alertsSetAside({required String dir}) =>
 /// which nothing would ever take off. None once the sweep is done. Chosen
 /// under the file's lock, and a catch-up writes a notice's key before Dart
 /// posts it, so a notification another engine posts meanwhile is known and
-/// kept. Taking off one of those ids again is harmless, so the sweep is done
-/// only with [`alerts_swept`], once they are off.
+/// kept. One a catch-up tracks after this is not confirmed posted until
+/// [`alerts_swept`] says they are off, so it is handed over again. Taking
+/// off one of those ids again is harmless, so the sweep is done only then.
 Future<Int32List> alertsToSweep({
   required String dir,
   required List<int> showing,

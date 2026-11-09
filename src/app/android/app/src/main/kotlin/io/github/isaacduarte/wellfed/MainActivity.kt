@@ -136,10 +136,14 @@ class MainActivity : FlutterActivity() {
 
     // Whether Android would show its dialog for notifications again after a
     // denial. Before the first ask and after a lasting denial it says no, so
-    // the app reads it before and after asking to tell those apart.
-    private fun notificationRationale(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+    // the app reads it before and after asking to tell those apart. Null
+    // below Android 13, which has no dialog: only the settings turn them on.
+    private fun notificationRationale(): Boolean? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            null
+        }
 
     // The app's own page in Android's notification settings: where the owner
     // turns them on once Android no longer asks.

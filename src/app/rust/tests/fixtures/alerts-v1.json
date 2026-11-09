@@ -1769,6 +1769,9 @@
       "reason": "version 2, where this build reads 1",
       "at_ms": 1800000000000
     },
-    "sweep": true
+    "sweep": true,
+    "sweeping": [
+      1073744572
+    ]
   }
 }
