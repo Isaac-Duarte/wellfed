@@ -19,11 +19,14 @@
 //! attending.
 //!
 //! A key is the bench key in `private/ota-key.json` ([`KeyScope::Bench`]),
-//! whose public half the firmware builds embed, or an owner's own key
+//! whose public half the bench builds embed, an owner's own key
 //! ([`KeyScope::Owner`]), which a feeder trusts only once the owner has
-//! enrolled it there with a Dispense press. Both are the same file and sign
-//! the same manifests. A public release needs an offline release key that
-//! never sits in a checkout; this tool does not create or hold one.
+//! enrolled it there with a Dispense press, or the project release key
+//! ([`KeyScope::Release`]), whose public half consumer builds embed from
+//! `private/release-key.pub.json`. All three are the same file and sign the
+//! same manifests. The release key is written once onto offline media by
+//! [`release_keygen`], never into a checkout, and is loaded from there only
+//! to sign.
 //!
 //! The manifest bytes are `wellfed_signed::offer`'s version 2 format,
 //! which the firmware verifies and the device API takes: it names its key
@@ -32,8 +35,8 @@
 //! A statement binds what it allows: a downgrade names the feeder's identity
 //! key, the exact manifest and the floor it was made at; a key statement
 //! names the key it retires or adds. Only a key built into the firmware may
-//! sign a key statement, and the bench key is the only one built in: an
-//! owner's key signs manifests and nothing else a feeder accepts.
+//! sign a key statement, and the bench and release keys are the ones built
+//! in: an owner's key signs manifests and nothing else a feeder accepts.
 
 #![forbid(unsafe_code)]
 
@@ -59,8 +62,10 @@ use wellfed_session::hex;
 use wellfed_signed::{MARKER, Manifest};
 
 mod error;
+mod release;
 
 pub use error::{Error, FrozenError, ImageError, KeyError, Result};
+pub use release::{ReleaseKey, release_keygen};
 
 fn require_built_in_signer(built_in: &str, build_id: &[u8; 32], manifest: &[u8]) -> Result<()> {
     let signed = offer::parse_manifest(manifest).map_err(Error::NotManifest)?;
@@ -123,10 +128,21 @@ pub fn highest_signed(directory: &Path) -> Option<(u32, PathBuf)> {
 /// The OTA container's header precedes the bank contents.
 pub const CONTAINER_HEADER: usize = 32;
 
-/// Create a new signing key for `scope` at `output`; refuses to replace
-/// one. Returns the public key (hex): firmware builds embed a bench key's,
-/// and an owner enrolls theirs on each feeder.
+/// Create a new bench or owner key at `output`; refuses to replace one.
+/// Returns the public key (hex): firmware builds embed a bench key's, and an
+/// owner enrolls theirs on each feeder. The release key is refused here:
+/// only [`release_keygen`] writes one, since only it keeps the key out of a
+/// checkout.
 pub fn keygen(output: &Path, scope: KeyScope) -> Result<String> {
+    match scope {
+        KeyScope::Bench | KeyScope::Owner => write_key(output, scope),
+        KeyScope::Release => Err(KeyError::ReleaseKeygen.into()),
+    }
+}
+
+/// Write a new key of any scope at `output`, whole, mode 600, never
+/// replacing one; the public key, as hex.
+fn write_key(output: &Path, scope: KeyScope) -> Result<String> {
     let seed: [u8; 32] = random(Path::new(SYSTEM_RANDOM))?;
     let public_key =
         hex::Lower(&SigningKey::from_bytes(&seed).verifying_key().to_bytes()).to_string();
@@ -204,18 +220,27 @@ impl Key {
         Ok(self.signed(&offer::downgrade_body(&self.id(), device, &digest, floor)))
     }
 
-    /// A key statement retiring `id` for good. Only the bench key signs
-    /// one: a feeder refuses an owner's, so one is never written.
+    /// A key statement retiring `id` for good. Only a key an image builds
+    /// in signs one, the bench or the release key: a feeder refuses an
+    /// owner's, so one is never written.
     pub fn revoke(&self, id: &KeyId) -> Result<Vec<u8>> {
-        require(self.scope == KeyScope::Bench, || KeyError::OwnerRevoke)?;
+        self.require_built_in(KeyError::OwnerRevoke)?;
         Ok(self.signed(&offer::revoke_body(&self.id(), id)))
     }
 
-    /// A key statement filling the release slot with `public`. Only the
-    /// bench key signs one, as for [`Self::revoke`].
+    /// A key statement filling the release slot with `public`, signed only
+    /// by a key an image builds in, as for [`Self::revoke`].
     pub fn add_key(&self, public: &[u8; 32]) -> Result<Vec<u8>> {
-        require(self.scope == KeyScope::Bench, || KeyError::OwnerAddKey)?;
+        self.require_built_in(KeyError::OwnerAddKey)?;
         Ok(self.signed(&offer::key_add_body(&self.id(), public)))
+    }
+
+    /// Refuse, as `refusal`, a key no image builds in.
+    fn require_built_in(&self, refusal: KeyError) -> Result<()> {
+        match self.scope {
+            KeyScope::Bench | KeyScope::Release => Ok(()),
+            KeyScope::Owner => Err(refusal.into()),
+        }
     }
 }
 
@@ -740,10 +765,46 @@ mod tests {
         // A scope the format does not name is no key at all.
         let mut text: serde_json::Value =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        text["scope"] = json!("release");
-        let other = dir.path().join("release.json");
+        text["scope"] = json!("vendor");
+        let other = dir.path().join("vendor.json");
         fs::write(&other, text.to_string()).unwrap();
         assert!(matches!(Key::load(&other), Err(Error::Formats(_))));
+    }
+
+    /// A stand-in made with `keygen` and moved offline becomes the release
+    /// key by changing its one `scope` word, and then signs key statements.
+    #[test]
+    fn a_bench_key_relabelled_release_loads_as_the_release_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stand-in.json");
+        let public = keygen(&path, KeyScope::Bench).unwrap();
+
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text.matches(r#""scope": "bench""#).count(), 1, "{text}");
+        fs::write(
+            &path,
+            text.replace(r#""scope": "bench""#, r#""scope": "release""#),
+        )
+        .unwrap();
+
+        let key = Key::load(&path).unwrap();
+        assert_eq!(key.scope(), KeyScope::Release);
+        assert_eq!(hex::Lower(&key.public()).to_string(), public);
+        assert!(key.revoke(&[7; 8]).is_ok());
+        assert!(key.add_key(&[8; 32]).is_ok());
+    }
+
+    /// `keygen` writes bench and owner keys only: the release key comes
+    /// from `release_keygen`, which keeps it out of a checkout.
+    #[test]
+    fn keygen_refuses_the_release_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("release.json");
+        assert!(matches!(
+            keygen(&path, KeyScope::Release),
+            Err(Error::Key(KeyError::ReleaseKeygen))
+        ));
+        assert!(!path.exists());
     }
 
     #[test]

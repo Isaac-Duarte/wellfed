@@ -98,6 +98,45 @@ A set-aside `wellfed.json` loses the server's link, so the start also deletes th
 
 The versions start at 1 with this build, and an earlier build's unversioned files are set aside like any other. No phone outside the bench ran one.
 
+## Release signing
+
+A release APK is signed with the owner's own Android keystore, which never sits in the repository. Debug builds keep Android's debug key and need none of this. A release build, `make app-release-apk` or any `flutter build apk --release`, reads `WELLFED_ANDROID_KEY_PROPERTIES`: the absolute path of a `key.properties` file outside the repository. Without it, or with a file that lacks a field, names a keystore that isn't there, or sits inside the repository, Gradle stops before building and says which.
+
+> [!WARNING]
+> Android installs an update only if it is signed by the same key as the installed app. If you lose the keystore, every phone must uninstall the app to take a build signed with a new one, and uninstalling deletes the phone's key, so each feeder must take the phone back through Recover a feeder or an invite. Keep two copies, offline.
+
+You create the keystore once, offline, onto removable media, as with the [firmware release key](../../docs/development/firmware-builds.md#the-release-key):
+
+1. Unplug the network. Insert a removable drive, for example at `/run/media/$USER/KEY1`.
+2. Create the keystore with the JDK's `keytool`:
+
+   ```sh
+   keytool -genkeypair -v -storetype PKCS12 -keystore /run/media/$USER/KEY1/wellfed-android.jks \
+     -alias wellfed -keyalg RSA -keysize 4096 -validity 10000
+   ```
+
+   It asks for a password and for the name fields. A PKCS12 keystore has one password, for the store and the key alike.
+3. Write `/run/media/$USER/KEY1/key.properties` beside it:
+
+   ```properties
+   storeFile=/run/media/<you>/KEY1/wellfed-android.jks
+   storePassword=<the password>
+   keyAlias=wellfed
+   keyPassword=<the same password>
+   ```
+
+   Both paths must be absolute.
+4. Note the certificate's SHA-256 on paper: `keytool -list -v -keystore /run/media/$USER/KEY1/wellfed-android.jks`.
+5. Copy both files to a second drive, check the copies with `cmp`, and keep the drives in two different places. Keep the password in a password manager too.
+
+To build the signed APK, insert one drive and run, from the repository root:
+
+```sh
+WELLFED_ANDROID_KEY_PROPERTIES=/run/media/$USER/KEY1/key.properties make app-release-apk
+```
+
+It builds `build/app/outputs/flutter-apk/app-release.apk` for arm64 phones, verifies it with `apksigner` and prints the certificate it was signed with. Check its SHA-256 digest against the one you noted: `apksigner` prints it in lowercase without colons. Unmount the drive afterwards.
+
 ## Toolchain
 
 The versions this was built with:

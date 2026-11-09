@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-release-apk app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -12,6 +12,7 @@ help:
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "guide-screenshots: redraw the owner guide's app screenshots in docs/guide/ from the app's test fixtures"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
+	@echo "app-release-apk: the release APK, signed with the owner's keystore named by WELLFED_ANDROID_KEY_PROPERTIES (never in the repository)"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
 	@echo "server-dist / server-image: the server's static release binaries in dist/server/ and its container image (docker or podman)"
 	@echo "check-server-release: the release check against dist/server/ and the image"
@@ -150,6 +151,23 @@ check-app:
 		{ echo "the APK lacks rustls-platform-verifier's Kotlin half"; exit 1; }
 	@if [ "$$(uname)" = Linux ]; then cd $(APP) && flutter build linux --debug; fi
 	@if [ "$$(uname)" = Darwin ]; then cd $(APP) && LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 flutter build macos --debug; fi
+
+# The release APK for phones, signed with the owner's own keystore, which
+# never sits in the repository (src/app/README.md#release-signing). Gradle
+# refuses a release build without WELLFED_ANDROID_KEY_PROPERTIES; checking it
+# here first saves the Rust build. apksigner then verifies the APK and prints
+# the certificate it was signed with: with minSdk 31 it carries only the v2
+# and v3 signatures, which keytool cannot read.
+APP_RELEASE_APK = $(APP)/build/app/outputs/flutter-apk/app-release.apk
+ANDROID_SDK = $(or $(shell flutter config --list 2>/dev/null | sed -n 's/^ *android-sdk: //p'),$(ANDROID_HOME))
+APKSIGNER = $(ANDROID_SDK)/build-tools/36.0.0/apksigner
+app-release-apk:
+	@test -n "$$WELLFED_ANDROID_KEY_PROPERTIES" || \
+		{ echo "set WELLFED_ANDROID_KEY_PROPERTIES to the absolute path of the release key.properties"; exit 1; }
+	@test -x "$(APKSIGNER)" || \
+		{ echo "no apksigner at '$(APKSIGNER)': install build-tools 36.0.0, and set ANDROID_HOME or flutter config --android-sdk"; exit 1; }
+	cd $(APP) && flutter build apk --release --target-platform android-arm64
+	$(APKSIGNER) verify --print-certs $(APP_RELEASE_APK)
 
 # The image the APK installs is a build-time input, from a frozen review and
 # its signed update manifest under private/. This copies them in (they are

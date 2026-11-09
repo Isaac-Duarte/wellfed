@@ -36,6 +36,13 @@ pub enum IdentityError {
     /// statements.
     #[error("{} is an owner's update key; images embed only the bench key", path.display())]
     OwnerKey { path: PathBuf },
+    /// The release key never sits in a checkout, and a consumer image takes
+    /// its public half from [`RELEASE_KEY_PATH`] alone.
+    #[error(
+        "{} is the release key, which stays offline; consumer images embed it from {RELEASE_KEY_PATH}",
+        path.display()
+    )]
+    ReleaseKey { path: PathBuf },
     /// A consumer image trusts only the release key, never the bench key.
     #[error(
         "A consumer first-boot build needs the release key's public half in {}",
@@ -181,10 +188,11 @@ pub(crate) fn ota_public_key(
                 return Ok(None);
             }
             let key: OtaKeyFile = wellfed_formats::load(&path)?;
-            require(key.scope == KeyScope::Bench, || IdentityError::OwnerKey {
-                path: path.clone(),
-            })?;
-            key.public_key
+            match key.scope {
+                KeyScope::Bench => key.public_key,
+                KeyScope::Owner => return Err(IdentityError::OwnerKey { path }.into()),
+                KeyScope::Release => return Err(IdentityError::ReleaseKey { path }.into()),
+            }
         }
         Provisioning::Consumer => {
             let path = repo.path(RELEASE_KEY_PATH);
@@ -376,6 +384,29 @@ mod tests {
         );
     }
 
+    /// A release key copied into the bench key's place is refused: it
+    /// belongs offline, and reaches an image only as its public half.
+    #[test]
+    fn a_bench_image_refuses_the_release_key_file() {
+        let (_root, repo) = scratch();
+        let path = repo.path(wellfed_signing::KEY_PATH);
+        fs::write(
+            &path,
+            format!(
+                r#"{{"version": 1, "scope": "release", "seed": "{}", "public_key": "{}"}}"#,
+                "11".repeat(32),
+                "22".repeat(32)
+            ),
+        )
+        .unwrap();
+
+        let refused = ota_public_key(&repo, Profile::Firstboot, Provisioning::Bench).unwrap_err();
+        assert!(
+            matches!(&refused, Error::Identity(IdentityError::ReleaseKey { path: named }) if *named == path),
+            "{refused:?}"
+        );
+    }
+
     #[test]
     fn a_consumer_build_trusts_only_the_release_key() {
         let (_root, repo) = scratch();
@@ -421,6 +452,99 @@ mod tests {
             None,
             "only a first-boot image embeds a key"
         );
+    }
+
+    /// The public half `release_keygen` writes, copied in as it is, is the
+    /// key a consumer image builds in. That image takes the manifests and
+    /// key statements the release key signs, at the installer's check and
+    /// through the firmware's own admission, and refuses the bench key's.
+    #[test]
+    fn a_consumer_image_takes_what_the_release_key_signs_and_not_the_bench_key() {
+        use wellfed_core::record::Tag;
+        use wellfed_signed::offer::{
+            self, Context, KeyError as RingError, KeyRing, KeyStatement, OfferError, StatementError,
+        };
+        use wellfed_signing::{FrozenError, Key, Motion};
+
+        const BUILD: &str = "8a13e59efa15e56b5f5e32825909dc45e381a2027abc65d8de6658c40b302447";
+
+        let media = tempfile::tempdir().unwrap();
+        let release = wellfed_signing::release_keygen(&media.path().join("release.json")).unwrap();
+        let (root, repo) = scratch();
+        fs::copy(&release.public, repo.path(RELEASE_KEY_PATH)).unwrap();
+        let bench_path = repo.path(wellfed_signing::KEY_PATH);
+        wellfed_signing::keygen(&bench_path, KeyScope::Bench).unwrap();
+        let (release_key, bench_key) = (
+            Key::load(&release.private).unwrap(),
+            Key::load(&bench_path).unwrap(),
+        );
+
+        let built_in = ota_public_key(&repo, Profile::Firstboot, Provisioning::Consumer)
+            .unwrap()
+            .unwrap();
+        assert_eq!(built_in, release.public_key);
+
+        // A frozen consumer build that records the key, as a real build's
+        // manifest does.
+        let image = wellfed_image::fixtures::image_carrying(
+            format!("{} start build={BUILD} bank=", Tag::Start).as_bytes(),
+        );
+        let review = root.path().join("private/review");
+        let fields = serde_json::json!({"startup_identity": BUILD, "firmware": "feeder",
+                                        "provisioning": "consumer", "ota_public_key": built_in});
+        wellfed_image::fixtures::freeze_build(root.path(), &review, &image, &fields).unwrap();
+        let frozen = wellfed_signing::Frozen::open(root.path(), &review).unwrap();
+        let by_release = frozen.offer(&release_key, 9, Motion::Refused).unwrap();
+        let by_bench = frozen.offer(&bench_key, 9, Motion::Refused).unwrap();
+
+        frozen.require_installable(&by_release).unwrap();
+        let refused = frozen.require_installable(&by_bench).unwrap_err();
+        assert!(
+            matches!(
+                refused,
+                wellfed_signing::Error::Frozen(FrozenError::NotBuiltInSigner { .. })
+            ),
+            "{refused:?}"
+        );
+
+        let built_in = [hex::decode_array::<32>(built_in.as_bytes()).unwrap()];
+        let ring = KeyRing {
+            built_in: &built_in,
+            added: None,
+            enrolled: &[],
+            revoked: &[],
+        };
+        let context = Context {
+            model: wellfed_proto::device::Model::Plaf103.code(),
+            ring,
+            floor: 0,
+            device: [0x42; 32],
+            running: None,
+        };
+        assert!(offer::admit_offer(&by_release, None, &context).is_ok());
+        assert_eq!(
+            offer::admit_offer(&by_bench, None, &context),
+            Err(OfferError::Key(RingError::Unknown))
+        );
+
+        let added = [0x08; 32];
+        assert_eq!(
+            offer::admit_statement(&release_key.add_key(&added).unwrap(), &ring),
+            Ok(KeyStatement::Add(added))
+        );
+        assert_eq!(
+            offer::admit_statement(&release_key.revoke(&bench_key.id()).unwrap(), &ring),
+            Ok(KeyStatement::Revoke(bench_key.id()))
+        );
+        for statement in [
+            bench_key.add_key(&added).unwrap(),
+            bench_key.revoke(&release_key.id()).unwrap(),
+        ] {
+            assert_eq!(
+                offer::admit_statement(&statement, &ring),
+                Err(StatementError::Key(RingError::Unknown))
+            );
+        }
     }
 
     #[test]

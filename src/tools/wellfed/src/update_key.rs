@@ -101,6 +101,14 @@ pub(crate) async fn command(args: UpdateKeyArgs) -> Result<()> {
 /// feeder answers sent at most once.
 async fn enroll(connection: &mut Connection, file: &Path, label: &str) -> Result<()> {
     let key = Key::load(file).with_context(|| format!("load {}", file.display()))?;
+    // The release key already signs for every consumer feeder and stays on
+    // offline media; enrolling it would bring it onto an online machine.
+    if key.scope() == KeyScope::Release {
+        bail!(
+            "{} is the release key; enroll an owner key instead",
+            file.display()
+        );
+    }
     let id = hex::Lower(&key.id()).to_string();
     let outcome = wellfed_install::update_key::enroll(
         connection,
