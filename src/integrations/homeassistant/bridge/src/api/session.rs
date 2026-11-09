@@ -3,7 +3,7 @@
 
 use wellfed_model as model;
 
-use super::enums::{NotSent, RefusalKind, Role, UpdateKind, WriteResult};
+use super::enums::{NotSent, RefusalKind, Role, Skew, UpdateKind, WriteResult};
 use super::state::{Capabilities, State};
 use super::views::{Event, Feed};
 
@@ -72,11 +72,12 @@ impl Written {
 pub struct Update {
     pub kind: UpdateKind,
     /// For [`UpdateKind::Connected`]: the build that answered, this
-    /// client's role and what the feeder serves. For
-    /// [`UpdateKind::OtherBuild`], the build alone.
+    /// client's role, what the feeder serves and how its API revision
+    /// stands against this integration's.
     pub build: Option<String>,
     pub role: Option<Role>,
     pub capabilities: Option<Capabilities>,
+    pub skew: Option<Skew>,
     /// For [`UpdateKind::State`].
     pub state: Option<State>,
     /// For [`UpdateKind::Event`].
@@ -103,6 +104,7 @@ impl Update {
             build: None,
             role: None,
             capabilities: None,
+            skew: None,
             state: None,
             event: None,
             replayed: false,
@@ -118,11 +120,13 @@ impl Update {
         build: impl Into<String>,
         role: model::ClientRole,
         capabilities: Capabilities,
+        skew: model::Skew,
     ) -> Self {
         Self {
             build: Some(build.into()),
             role: Some(role.into()),
             capabilities: Some(capabilities),
+            skew: Some(skew.into()),
             ..Self::kind(UpdateKind::Connected)
         }
     }
@@ -166,13 +170,6 @@ impl Update {
 
     pub fn revoked() -> Self {
         Self::kind(UpdateKind::Revoked)
-    }
-
-    pub fn other_build(build: impl Into<String>) -> Self {
-        Self {
-            build: Some(build.into()),
-            ..Self::kind(UpdateKind::OtherBuild)
-        }
     }
 
     pub fn disconnected(reason: impl Into<String>) -> Self {

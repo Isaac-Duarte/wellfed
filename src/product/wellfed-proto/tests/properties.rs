@@ -157,7 +157,7 @@ fn op() -> impl Strategy<Value = Op<'static>> {
             .prop_map(|(offset, data)| Op::Feeder(FeederOp::CallChunk { offset, data })),
         Just(Op::Feeder(FeederOp::DeleteCall)),
         Just(Op::Feeder(FeederOp::PlayCall)),
-        Just(Op::Feeder(FeederOp::GetAlerts)),
+        Just(Op::GetAlerts),
         (any::<u8>(), any::<u32>())
             .prop_map(|(slot, due_s)| Op::Feeder(FeederOp::SkipMeal { slot, due_s })),
         (any::<u8>(), any::<u32>())
@@ -179,6 +179,7 @@ fn plans() -> impl Strategy<Value = [Option<Plan>; PLANS_MAX]> {
             days,
             enabled,
             call,
+            ext: Tail::EMPTY,
         });
     proptest::array::uniform10(proptest::option::of(plan))
 }
@@ -380,7 +381,8 @@ proptest! {
         stable!(Reply, &bytes);
 
         // A batch's bytes are read only when it is walked: any bytes as a
-        // batch walk to an end, and every event they yield re-encodes.
+        // batch walk to an end, and every event they yield re-encodes to
+        // the same event, known body or not.
         let mut message = vec![1u8];
         let mut len = bytes.len();
         while len >= 0x80 {
@@ -395,8 +397,10 @@ proptest! {
                 walked += 1;
                 let Ok(event) = event else { break };
                 let mut out = [0u8; FRAME_MAX];
-                let len = encode(&event, &mut out).unwrap();
-                prop_assert_eq!(decode::<Event>(&out[..len]), Ok(event));
+                let mut writer = EventBatchWriter::new(&mut out);
+                writer.push(&event).unwrap();
+                let again: Vec<_> = writer.batch().iter().collect();
+                prop_assert_eq!(again, vec![Ok(event)]);
             }
             prop_assert!(walked <= bytes.len());
         }

@@ -68,10 +68,6 @@ enum ErrorKind {
   /// goes to it from this app.
   version,
 
-  /// The feeder runs a build of another schema revision: it takes only
-  /// an update, which this app still sends.
-  otherBuild,
-
   /// Every session slot on the feeder is taken.
   full,
 

@@ -15,7 +15,7 @@ pub use wellfed_api::{
     WeighedIntake,
 };
 
-pub use crate::api::model::{ClientRole, FeedOutcome, FeedReason, MissedReason};
+pub use crate::api::model::{ClientRole, FeedOutcome, FeedReason, MissedReason, Skew};
 use crate::api::session::{Card, HistoryEntry};
 
 /// What the app keeps of a server in its own file: where it is, and which
@@ -96,9 +96,6 @@ pub enum ServerConnection {
     Online,
     /// The feeder refused the server's key: removed or reset.
     Refused,
-    /// The feeder runs a different build than the server, so it takes
-    /// nothing but an update, which the Firmware screen still sends.
-    OtherBuild,
 }
 
 /// One adopted feeder, as `GET /feeders` lists it.
@@ -113,6 +110,9 @@ pub struct ServerFeeder {
     pub role: ClientRole,
     pub address: Option<String>,
     pub connection: ServerConnection,
+    /// How the feeder's API revision stands against the server's, from its
+    /// last welcome: `FeederAhead` asks for the server to be updated.
+    pub skew: Option<Skew>,
     /// The newest event sequence the server holds.
     pub synced: Option<u64>,
     pub epoch: Option<u32>,

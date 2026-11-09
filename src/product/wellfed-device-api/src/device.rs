@@ -37,11 +37,10 @@ pub trait Device {
     fn build(&self) -> &'static str;
     /// The device's model, for the welcome; its kind follows from it.
     fn model(&self) -> Model;
-    /// The revision of the protocol outside the frozen update path, for
-    /// the welcome. Every build sends its own; a simulator may play an
-    /// older one.
-    fn schema(&self) -> u32 {
-        wellfed_proto::api::SCHEMA
+    /// The API revision, for the welcome. Every build sends its own; a
+    /// simulator may play an older or a newer one.
+    fn revision(&self) -> u32 {
+        wellfed_proto::api::REVISION
     }
     /// The feeder's module of this device: [`NoFeeder`] for another kind,
     /// whose [`Self::feeder`] is always `None`. Generic rather than `dyn`,
@@ -84,6 +83,11 @@ pub trait Device {
     /// bank's end. Asked only for an owner.
     fn bank1_page(&mut self, _offset: u32) -> Result<Bank1Page<'_>, Refusal> {
         Err(Refusal::Unavailable)
+    }
+    /// The table of open alerts, some any device's and some its kind's. A
+    /// device that keeps none answers `None`, refused `Unavailable`.
+    fn alerts(&mut self) -> Option<AlertsView> {
+        None
     }
 
     /// Queue an update request for the installer: its ticket, or why it
@@ -206,11 +210,6 @@ pub trait FeederDevice: Device {
     /// Queue the stored meal call to play once, so its owner can hear it.
     fn play_call(&mut self) -> CallPlay {
         CallPlay::Unserved
-    }
-    /// The table of open alerts. A feeder that keeps none answers `None`,
-    /// refused `Unavailable`.
-    fn alerts(&mut self) -> Option<AlertsView> {
-        None
     }
     /// Today's local calendar day (days since 1970-01-01, UTC when the
     /// clock knows no offset) while the clock is valid: the day a desiccant
@@ -385,12 +384,12 @@ impl Reader {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventRead {
-    Event(proto::Event),
+    /// The event as the ring keeps it: a body this build cannot read (a
+    /// newer build's, met by a bank 0 that kept an older one) goes to the
+    /// client as it is, which reads it or skips it by its length.
+    Event(proto::RawEvent),
     /// Events `from..=to` are gone from the ring.
-    Gap {
-        from: u64,
-        to: u64,
-    },
+    Gap { from: u64, to: u64 },
     /// Nothing newer yet.
     None,
     /// Ask again on a later pass (the writer is reading flash).

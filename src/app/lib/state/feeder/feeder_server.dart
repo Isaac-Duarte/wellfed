@@ -2,7 +2,7 @@ part of 'feeder.dart';
 
 /// The feeder as the owner's server last told it.
 final class _ServerSide {
-  const _ServerSide({required this.id, this.link, this.card, this.at, this.live = false, this.role});
+  const _ServerSide({required this.id, this.link, this.card, this.at, this.live = false, this.role, this.skew});
 
   /// The server's id for it.
   final String id;
@@ -23,14 +23,19 @@ final class _ServerSide {
   /// for a viewer.
   final ClientRole? role;
 
-  _ServerSide copyWith({ServerConnection? link, Card? card, DateTime? at, bool? live, ClientRole? role}) => _ServerSide(
-    id: id,
-    link: link ?? this.link,
-    card: card ?? this.card,
-    at: at ?? this.at,
-    live: live ?? this.live,
-    role: role ?? this.role,
-  );
+  /// How the feeder's API revision stands against the server's.
+  final Skew? skew;
+
+  _ServerSide copyWith({ServerConnection? link, Card? card, DateTime? at, bool? live, ClientRole? role, Skew? skew}) =>
+      _ServerSide(
+        id: id,
+        link: link ?? this.link,
+        card: card ?? this.card,
+        at: at ?? this.at,
+        live: live ?? this.live,
+        role: role ?? this.role,
+        skew: skew ?? this.skew,
+      );
 }
 
 /// What the fleet hears of this feeder from the owner's server and the path
@@ -48,7 +53,15 @@ extension FeederServerSide on FeederController {
     _server = id == null
         ? null
         : before != null && before.id == id
-        ? _ServerSide(id: id, link: before.link, card: before.card, at: before.at, live: before.live, role: role)
+        ? _ServerSide(
+            id: id,
+            link: before.link,
+            card: before.card,
+            at: before.at,
+            live: before.live,
+            role: role,
+            skew: before.skew,
+          )
         : _ServerSide(id: id, role: role);
     _setState(_state);
   }
@@ -61,6 +74,7 @@ extension FeederServerSide on FeederController {
     final bool online = detail.feeder.connection == ServerConnection.online;
     _server = server.copyWith(
       link: detail.feeder.connection,
+      skew: detail.feeder.skew,
       card: status?.card,
       at: status == null ? null : DateTime.fromMillisecondsSinceEpoch(status.atMs),
       live: online && (status?.live ?? false),
@@ -92,13 +106,12 @@ extension FeederServerSide on FeederController {
   /// and the server's link is up.
   FeederState _reached(FeederState next) {
     final _ServerSide? server = _server;
-    final FeederState listed = next.copyWith(serverId: () => server?.id, viewer: _viewer);
+    final FeederState listed = next.copyWith(
+      serverId: () => server?.id,
+      viewer: _viewer,
+      serverSkew: () => server?.skew,
+    );
     final Card? card = server?.card;
-    // The server reaches a feeder of another build, which takes only an
-    // update: reachable, and the Firmware screen's update still goes.
-    if (_connection != Connection.online && server?.link == ServerConnection.otherBuild) {
-      return listed.copyWith(connection: Connection.otherBuild);
-    }
     if (_connection == Connection.online || server == null || !server.live || card == null) {
       return listed.copyWith(connection: _connection);
     }

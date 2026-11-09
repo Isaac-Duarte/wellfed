@@ -119,8 +119,8 @@ impl Operation {
             }
             Err(
                 error @ (AskError::Offline
-                | AskError::OtherBuild
                 | AskError::NotRunning
+                | AskError::Legacy
                 | AskError::Unsendable),
             ) if !*sent => Err(CallError::Unsent(error)),
             Err(error) => {

@@ -41,7 +41,7 @@ use wellfed_client::today::Facts;
 use wellfed_connect::{Connection, Cursor, Received, Timing};
 use wellfed_model::{
     Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
-    FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Source, Status,
+    FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Skew, Source, Status,
 };
 
 use crate::Error;
@@ -268,10 +268,6 @@ async fn run(
                 stopped(Update::revoked(), &mut commands, &updates).await;
                 return;
             }
-            Ended::OtherBuild(build) => {
-                stopped(Update::other_build(build), &mut commands, &updates).await;
-                return;
-            }
             Ended::Lost(reason) => reason,
         };
         if updates.send(Update::disconnected(reason)).is_err() {
@@ -299,9 +295,7 @@ async fn run(
 }
 
 /// The session cannot go on: say why once, then refuse every write until
-/// the handle is dropped. A revoked key needs a new invite; a feeder of
-/// another build needs an update from the app, which a new session (the
-/// integration's retried setup) then finds.
+/// the handle is dropped. A revoked key needs a new invite.
 async fn stopped(
     why: Update,
     commands: &mut mpsc::UnboundedReceiver<Command>,
@@ -327,10 +321,6 @@ enum Ended {
     /// The handle is gone.
     Dropped,
     Revoked,
-    /// The feeder's build speaks another schema revision, so only the
-    /// frozen update path reaches it: nothing this integration reads or
-    /// writes. Reconnecting would only meet the same build.
-    OtherBuild(String),
     Lost(String),
 }
 
@@ -421,11 +411,20 @@ impl<'a> Session<'a> {
 
     /// Announce the session, read the facts and subscribe.
     async fn open(&mut self) -> Step {
-        if !self.connection.same_schema() {
-            return Err(Ended::OtherBuild(self.connection.build().to_owned()));
-        }
-        let connected = Update::connected(self.connection.build(), self.role, self.capabilities);
+        let connected = Update::connected(
+            self.connection.build(),
+            self.role,
+            self.capabilities,
+            self.connection.skew(),
+        );
         self.send(connected)?;
+        // A pre-revision build takes only the frozen update path: nothing
+        // this session reads or writes. Its connect update says so; the
+        // session ends and tries again later, by which time the app may
+        // have updated it.
+        if self.connection.skew() == Skew::Legacy {
+            return Err(Ended::Lost(wellfed_connect::Error::Legacy.to_string()));
+        }
 
         let status = match self
             .connection
@@ -580,7 +579,7 @@ impl<'a> Session<'a> {
 
     /// How the write of `kind` ended, by its answer.
     fn written(&mut self, kind: Kind, op: &Op, answer: Option<&Answer>) -> Result<Written, Ended> {
-        let Some(answer) = answer else {
+        let Some(answer) = readable(answer) else {
             self.unanswered(kind);
             return Ok(Written::uncertain());
         };
@@ -602,7 +601,10 @@ impl<'a> Session<'a> {
                         Written::done()
                     }
                     Landed::Stale | Landed::Refused(_) => once(answer),
-                    Landed::Unknown => Written::uncertain(),
+                    Landed::Unknown => {
+                        self.unanswered(kind);
+                        Written::uncertain()
+                    }
                 })
             }
         }
@@ -684,7 +686,7 @@ impl<'a> Session<'a> {
             Pushed::Event(event) => self
                 .backlog
                 .is_some_and(|backlog| backlog.newest.is_some_and(|newest| event.seq <= newest)),
-            Pushed::Gap(_) => self.backlog.is_some(),
+            Pushed::Gap(_) | Pushed::Unknown(_) => self.backlog.is_some(),
             Pushed::Sample(_) | Pushed::Log(_) => return Ok(()),
         };
         self.memory.cursor = self.connection.cursor();
@@ -701,7 +703,9 @@ impl<'a> Session<'a> {
                 }
             }
             Pushed::Gap(gap) => self.send(Update::gap(Some(gap)))?,
-            Pushed::Sample(_) | Pushed::Log(_) => {}
+            // A newer feeder build's event, which this integration cannot
+            // show: it only moves the cursor and may end the backlog.
+            Pushed::Unknown(_) | Pushed::Sample(_) | Pushed::Log(_) => {}
         }
 
         match self.backlog {
@@ -801,6 +805,13 @@ const fn store_read(store: Store) -> Read {
     }
 }
 
+/// The answer a write is judged by. One this build cannot read (a newer
+/// feeder's) says no more than none: the write may have run, so it takes
+/// the unanswered path, and a feed so answered waits for its `Fed` event.
+fn readable(answer: Option<&Answer>) -> Option<&Answer> {
+    answer.filter(|answer| !matches!(answer, Answer::Unreadable))
+}
+
 /// How a write whose answer is its whole result ended.
 fn once(answer: &Answer) -> Written {
     match answer {
@@ -815,4 +826,19 @@ fn once(answer: &Answer) -> Written {
 
 fn lost(error: impl std::fmt::Display) -> Ended {
     Ended::Lost(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An answer a newer feeder sent that this build cannot read is no
+    /// answer: the write is judged unanswered, never done or refused.
+    #[test]
+    fn an_unreadable_answer_is_judged_as_none() {
+        assert_eq!(readable(Some(&Answer::Unreadable)), None);
+        assert_eq!(readable(None), None);
+        let done = Answer::Done { generation: None };
+        assert_eq!(readable(Some(&done)), Some(&done));
+    }
 }

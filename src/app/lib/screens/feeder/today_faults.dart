@@ -26,6 +26,7 @@ String faultTitle(BuildContext context, FeedReason reason, int? atMs) {
     FeedReason.timeout => 'A feed ran past its limit',
     FeedReason.cancelled => 'A feed was stopped',
     FeedReason.done => 'A feed ended',
+    FeedReason.unknown => 'A feed stopped for a reason this app does not know',
   };
   return atMs == null ? what : '$what ${atMomentTextMs(context, atMs)}';
 }

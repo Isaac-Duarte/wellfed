@@ -94,7 +94,7 @@ impl Service {
         }
         // A feeder of another build takes an install: the update path is
         // frozen, and the install is what brings it to this one.
-        if !matches!(self.mirror.link(id), Some(Link::Online | Link::OtherBuild)) {
+        if !matches!(self.mirror.link(id), Some(Link::Online)) {
             return Err(CommandError::Offline.into());
         }
         self.keeps_stock(id, row.identity).await?;

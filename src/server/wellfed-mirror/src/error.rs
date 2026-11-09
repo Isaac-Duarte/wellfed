@@ -12,13 +12,13 @@ pub enum AskError {
     NotRunning,
     #[error("the server has no session with the feeder")]
     Offline,
-    /// The feeder runs a build of another schema revision: its session
-    /// carries the frozen update path alone, so nothing else was sent.
+    /// The feeder runs a build from before API revisions, which takes only
+    /// the frozen update path: nothing was sent.
     #[error(
-        "the feeder runs a different build than this server: only an update is sent to it; \
-         update the feeder, or update the server"
+        "the feeder runs a build from before API revisions, which takes only an update; \
+         nothing was sent: update the feeder"
     )]
-    OtherBuild,
+    Legacy,
     #[error("no answer in time: retry with the same key")]
     Unknown,
     /// Refused before anything was sent (a reserved id, or an op that does

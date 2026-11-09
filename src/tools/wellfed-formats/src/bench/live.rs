@@ -431,6 +431,13 @@ pub enum Unavailable {
     NotOpen { error: Option<String> },
     #[error("the bench server's feeder session has ended")]
     Ended,
+    /// The feeder runs a pre-revision build, which takes the frozen update
+    /// path alone; the request was refused before it was sent.
+    #[error(
+        "the feeder runs a build from before API revisions and takes only an update; update the \
+         feeder"
+    )]
+    Legacy,
     /// A request under this id is still out; `id` is hex.
     #[error("request {id} is already out on the bench server's feeder session")]
     DuplicateId { id: String },

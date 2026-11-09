@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/screens/home/feeder_card.dart' show skewWords;
 import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/src/rust/api/model.dart' show Skew;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
@@ -41,39 +43,20 @@ void main() {
     expect(ports.sessions, hasLength(3));
   });
 
-  testWidgets('a feeder of another build reads as needing an update, and backs off', (tester) async {
+  testWidgets('a feeder of a newer revision opens as any other, and names this app to update', (tester) async {
     final book = FakeBook()..feeders = [feederKitchen];
     final ports = FakeFeederPorts();
     final fleet = FeederFleet(book, ports);
     addTearDown(fleet.dispose);
     await tester.pump();
 
-    // Each session opens, then takes nothing but an update: its first read
-    // ends it.
-    Future<void> otherBuild() async {
-      ports.session.opened();
-      await tester.pump();
-      ports.session.updates.add(
-        const SessionUpdate.closed(
-          error: BridgeError(kind: ErrorKind.otherBuild, message: 'a different build'),
-        ),
-      );
-      await ports.session.updates.close();
-      await tester.pump();
-    }
+    ports.session.opened(skew: Skew.feederAhead);
+    await tester.pump();
 
-    await otherBuild();
-    expect(fleet[feederIdentity]?.state.connection, Connection.otherBuild);
-    expect(fleet[feederIdentity]?.state.canFeed, isFalse);
-
-    // Opened all the same, the wait still doubles: 3 s, then 6 s.
-    await tester.pump(const Duration(seconds: 3));
-    expect(ports.sessions, hasLength(2));
-    await otherBuild();
-    await tester.pump(const Duration(seconds: 3));
-    expect(ports.sessions, hasLength(2));
-    await tester.pump(const Duration(seconds: 3));
-    expect(ports.sessions, hasLength(3));
+    final FeederState? state = fleet[feederIdentity]?.state;
+    expect(state?.connection, Connection.online);
+    expect(state?.skew, Skew.feederAhead);
+    expect(skewWords(state!), 'Update this app: the feeder runs newer firmware');
   });
 
   testWidgets('a feeder of another major reads as needing another app, until a new try clears it', (tester) async {

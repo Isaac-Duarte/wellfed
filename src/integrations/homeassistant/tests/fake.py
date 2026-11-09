@@ -65,6 +65,7 @@ def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
         "build": None,
         "role": None,
         "capabilities": None,
+        "skew": None,
         "state": None,
         "event": None,
         "replayed": False,
@@ -78,12 +79,18 @@ def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
-def connected(role: bridge.Role = bridge.Role.Member) -> SimpleNamespace:
+def connected(
+    role: bridge.Role = bridge.Role.Member, skew: bridge.Skew = bridge.Skew.Same
+) -> SimpleNamespace:
     capabilities = SimpleNamespace(
         feed=True, plans=True, desiccant=True, calibration=True, time=True, update=True
     )
     return update(
-        bridge.UpdateKind.Connected, build="ab" * 32, role=role, capabilities=capabilities
+        bridge.UpdateKind.Connected,
+        build="ab" * 32,
+        role=role,
+        capabilities=capabilities,
+        skew=skew,
     )
 
 

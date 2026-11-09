@@ -16,10 +16,9 @@
 //!   [`KEEPALIVE_ID`] when this side has been quiet for
 //!   [`Timing::keepalive`]; its answer is swallowed. Being frozen, it keeps
 //!   a session with a feeder of another build alive too.
-//! - **Another build.** A feeder whose welcome names another schema
-//!   revision ([`Opened::same_schema`]) is sent only the frozen update path:
-//!   any other request, and a subscription, is refused here with
-//!   [`Error::OtherSchema`] and never sent.
+//! - **Another build.** The API only grows, so a feeder of any revision is
+//!   sent every op this client knows: one its build lacks comes back
+//!   `Unavailable`, and [`Opened::skew`] says which side to update.
 //! - **Silence.** A live feeder answers every keepalive, so hearing nothing
 //!   for [`Timing::silence`] ends the session with [`Error::Silent`]: a
 //!   feeder that lost power sends no reset, and the kernel would keep the
@@ -34,7 +33,8 @@
 //!   event a mirror holds as a [`Cursor`], and resumes after it only when
 //!   it counts in the feeder's current epoch; a cursor from a re-created
 //!   ring starts over from the oldest event kept ([`Resume::Restarted`]).
-//!   [`Connection::cursor`] follows every event and gap pushed since.
+//!   [`Connection::cursor`] follows every event and gap pushed since, a
+//!   newer build's event this client cannot read among them.
 //!
 //! LAN recovery, the button-hold window's setup exchange over the device
 //! API's port, is [`Recovery`].
@@ -283,6 +283,12 @@ impl Connection {
             Incoming::Pushed(pushed) => {
                 match &pushed {
                     Pushed::Event(event) => {
+                        self.cursor = Some(Cursor {
+                            epoch: event.epoch,
+                            seq: event.seq,
+                        });
+                    }
+                    Pushed::Unknown(event) => {
                         self.cursor = Some(Cursor {
                             epoch: event.epoch,
                             seq: event.seq,

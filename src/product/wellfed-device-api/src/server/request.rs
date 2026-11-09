@@ -200,6 +200,7 @@ impl Server {
             } if self.feeding || device.operating() => Reply::Refused(Refusal::Busy),
             Action::Stats { section } => return Some(Reply::Stats(section)),
             Action::ReadBank1 { offset } => return Some(Reply::Bank1 { offset }),
+            Action::GetAlerts => return Some(Reply::Alerts),
         };
         Some(self.remember(memory, id, action, outcome))
     }
@@ -426,6 +427,7 @@ pub(super) enum Action {
     ReadBank1 {
         offset: u32,
     },
+    GetAlerts,
     Feeder(FeederAction),
     /// A field failed the stores' checks before anything ran.
     Invalid,
@@ -486,6 +488,7 @@ impl From<Op<'_>> for Action {
             Op::TailLog { after } => Self::TailLog { after },
             Op::Stats { section } => Self::Stats { section },
             Op::ReadBank1 { offset } => Self::ReadBank1 { offset },
+            Op::GetAlerts => Self::GetAlerts,
             Op::Feeder(op) => feeder::action(op),
         }
     }
@@ -537,6 +540,7 @@ impl Action {
                     | Self::TailLog { .. }
                     | Self::Stats { .. }
                     | Self::ReadBank1 { .. }
+                    | Self::GetAlerts
             ),
         }
     }
@@ -562,6 +566,7 @@ impl Action {
             Self::TailLog { .. } => "tail-log",
             Self::Stats { .. } => "stats",
             Self::ReadBank1 { .. } => "read-bank1",
+            Self::GetAlerts => "get-alerts",
             Self::Feeder(action) => action.name(),
             Self::Invalid => "invalid",
         }
@@ -585,6 +590,8 @@ pub(super) enum Reply {
     Bank1 {
         offset: u32,
     },
+    /// The table of open alerts, read when the answer is sealed.
+    Alerts,
     /// A feeder request's answer.
     Feeder(FeederReply),
 }
@@ -609,6 +616,7 @@ impl Name for Reply {
             Self::Time => "time",
             Self::Stats(_) => "stats",
             Self::Bank1 { .. } => "bank1",
+            Self::Alerts => "alerts",
             Self::Feeder(reply) => reply.name(),
             Self::Refused(refusal) => match refusal {
                 Refusal::Forbidden => "forbidden",

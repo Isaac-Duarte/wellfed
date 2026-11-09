@@ -95,7 +95,7 @@ fn widest(section: StatsSection) -> Stats<'static> {
     match section {
         StatsSection::Counters => Stats::Counters(proto::Counters {
             boot: counts,
-            reset: proto::ResetCause::Brownout,
+            reset: proto::ResetCause::Brownout.into(),
             lifetime: Some(counts),
             resets: Some(proto::Resets {
                 power_on: u32::MAX,
@@ -142,7 +142,7 @@ fn widest(section: StatsSection) -> Stats<'static> {
             traced: u32::MAX,
             drive_ms: u32::MAX,
             samples: u32::MAX,
-            unit: proto::CurrentUnit::MilliAmps,
+            unit: proto::CurrentUnit::MilliAmps.into(),
             current_peak: u32::MAX,
             current_mean: Some(u32::MAX),
             rising: u32::MAX,
@@ -170,11 +170,11 @@ fn widest_summary() -> proto::TraceSummary {
         feed: u32::MAX,
         requested: u8::MAX,
         completed: u8::MAX,
-        outcome: proto::FeedOutcome::Uncertain,
-        reason: proto::FeedReason::Output,
+        outcome: proto::FeedOutcome::Uncertain.into(),
+        reason: proto::FeedReason::Output.into(),
         drive_ms: u32::MAX,
         samples: u32::MAX,
-        unit: proto::CurrentUnit::MilliAmps,
+        unit: proto::CurrentUnit::MilliAmps.into(),
         current_peak: u32::MAX,
         current_mean: Some(u32::MAX),
         rising: u16::MAX,
@@ -222,7 +222,7 @@ impl Device for Fake {
             reset_flags: 0,
             faults: 0,
             rssi: -50,
-            wifi: proto::WifiSource::Stored,
+            wifi: proto::WifiSource::Stored.into(),
             link_losses: 0,
             dns_losses: 0,
             clock_ms: None,
@@ -230,25 +230,27 @@ impl Device for Fake {
             wifi_generation: self.wifi_generation,
             last_event: self.events.last().map(|e| e.seq),
             sessions: 0,
+            alerts_generation: 0,
             device: proto::DeviceStatus::Feeder(proto::FeederStatus {
                 locked: Some(false),
                 settings_generation: self.settings.generation,
                 // The widest count, so a frame that holds it holds any.
                 desiccant: proto::Desiccant::Remaining { days: i32::MIN },
-                food: FoodLevel::Unread,
+                food: FoodLevel::Unread.into(),
                 feed_fault: Some(proto::FeedFault {
                     feed: u32::MAX,
-                    outcome: proto::FeedOutcome::Uncertain,
-                    reason: proto::FeedReason::MarkStuck,
+                    outcome: proto::FeedOutcome::Uncertain.into(),
+                    reason: proto::FeedReason::MarkStuck.into(),
                 }),
-                readiness: self.readiness(),
+                blocked: self.readiness().blocked(),
                 supply: proto::Supply {
                     adapter: None,
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
-                alerts_generation: 0,
+                ext: wellfed_proto::api::Tail::EMPTY,
             }),
+            ext: wellfed_proto::api::Tail::EMPTY,
         }
     }
 
@@ -318,7 +320,9 @@ impl Device for Fake {
         self.events
             .iter()
             .find(|e| e.seq > after)
-            .map_or(EventRead::None, |e| EventRead::Event(*e))
+            .map_or(EventRead::None, |e| {
+                EventRead::Event(proto::RawEvent::encode(e).expect("a body fits the ring"))
+            })
     }
 
     fn epoch(&self) -> Option<u32> {

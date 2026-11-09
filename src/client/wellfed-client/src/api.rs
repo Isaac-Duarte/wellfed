@@ -19,12 +19,14 @@
 //! [`Session`]: the clients use it, and the bench and tests use
 //! [`Session`] directly to send what a well-behaved client never would.
 
+pub use wellfed_model::Skew;
 use wellfed_model::{
-    Answer, ClientRole, DeviceKind, Gap, Hello, Joined, Model, Op, OpenRefusal, Pushed, convert,
+    Answer, ClientRole, DeviceKind, Gap, Hello, Joined, Model, Op, OpenRefusal, Pushed, Refusal,
+    convert,
 };
 use wellfed_proto::api::{
-    ClientMessage, DeviceMessage, FRAME_MAX, Join as JoinRequest, Op as WireOp, Open, PROLOGUE,
-    RequestId, SCHEMA, Samples, Welcome,
+    ClientMessage, DEVICE_MESSAGES, DeviceMessage, FRAME_MAX, Join as JoinRequest, Op as WireOp,
+    Open, PROLOGUE, REVISION, RequestId, Samples, Welcome,
 };
 use wellfed_session::frame::{self, PREFIX};
 use wellfed_session::hex::{self, Lower};
@@ -56,12 +58,13 @@ pub enum Error {
     ReservedId,
     #[error("the session is not open yet")]
     NotOpen,
+    /// The feeder runs a build from before the API revision
+    /// ([`Skew::Legacy`]): only frozen ops go to it, so nothing was sent.
     #[error(
-        "the feeder runs a different build than this client (schema {feeder:#010x}, this \
-         client {client:#010x}); update the feeder from the app or the CLI, or update this \
-         client"
+        "the feeder runs a build from before API revisions, which takes only an update; \
+         nothing was sent: update the feeder"
     )]
-    OtherSchema { feeder: u32, client: u32 },
+    Legacy,
     #[error(transparent)]
     Setup(#[from] crate::setup::Error),
 }
@@ -177,17 +180,18 @@ pub struct Opened {
     pub role: ClientRole,
     /// The epoch the feeder's event numbers count in.
     pub epoch: u32,
-    /// The feeder's build's revision of everything outside the frozen
-    /// update path ([`wellfed_proto::api::SCHEMA`]).
+    /// The feeder's build's API revision ([`REVISION`]), which the
+    /// welcome's frozen `schema` field carries.
     pub schema: u32,
 }
 
 impl Opened {
-    /// Whether the feeder's build speaks this client's revision. When it
-    /// does not, only the frozen update path and the keepalive go to it:
-    /// another op may decode there as something else.
-    pub fn same_schema(&self) -> bool {
-        self.schema == SCHEMA
+    /// Which side is the older build. The API only grows, so either way
+    /// every op this client knows may go: a feeder behind it refuses what
+    /// its build lacks `Unavailable`, and one ahead of it has more than this
+    /// client can show.
+    pub fn skew(&self) -> Skew {
+        Skew::of(self.schema, REVISION)
     }
 }
 
@@ -216,8 +220,9 @@ pub struct Session {
     /// The welcome's epoch, once it has arrived: what pushed events count
     /// in.
     epoch: Option<u32>,
-    /// The welcome's schema revision, once it has arrived.
-    schema: Option<u32>,
+    /// The welcome named a pre-revision build ([`Skew::Legacy`]): every op
+    /// outside the frozen part, and a subscription, is refused unsent.
+    legacy: bool,
 }
 
 impl std::fmt::Debug for Session {
@@ -269,7 +274,7 @@ impl Session {
             inbox: std::collections::VecDeque::new(),
             events: std::collections::VecDeque::new(),
             epoch: None,
-            schema: None,
+            legacy: false,
         };
         Ok((session, out))
     }
@@ -323,8 +328,16 @@ impl Session {
         if let Some(event) = self.events.pop_front() {
             return Ok(Some(Incoming::Pushed(event)));
         }
-        let Some(plain) = self.inbox.pop_front() else {
-            return Ok(None);
+        // A message kind a newer build added comes in a frame of its own,
+        // so it is skipped whole and the next one read. Its tag is past
+        // every variant this build decodes, so no message it knows is lost.
+        let plain = loop {
+            let Some(plain) = self.inbox.pop_front() else {
+                return Ok(None);
+            };
+            if self.epoch.is_none() || !newer_message(&plain) {
+                break plain;
+            }
         };
         let Some(epoch) = self.epoch else {
             let welcome: Welcome<'_> =
@@ -339,7 +352,7 @@ impl Session {
                     schema,
                 } => {
                     self.epoch = Some(epoch);
-                    self.schema = Some(schema);
+                    self.legacy = Skew::of(schema, REVISION) == Skew::Legacy;
                     Incoming::Opened(Opened {
                         kind: model.kind(),
                         model,
@@ -357,20 +370,25 @@ impl Session {
             }));
         };
 
-        let message: DeviceMessage<'_> =
-            wellfed_proto::decode(&plain).map_err(|_| Error::Malformed(Garbled::of(&plain)))?;
+        let Ok(message) = wellfed_proto::decode::<DeviceMessage<'_>>(&plain) else {
+            return unreadable(&plain)
+                .map(Some)
+                .ok_or_else(|| Error::Malformed(Garbled::of(&plain)));
+        };
         Ok(Some(match message {
             DeviceMessage::Response { id, result } => Incoming::Answer {
                 id,
                 answer: result.into(),
             },
-            // One batch, one event at a time: the whole batch decodes
+            // One batch, one event at a time: the whole batch frames
             // before any of it is handed on, so a garbled one is refused
-            // whole, as any other malformed message is.
+            // whole, as any other malformed message is. A body this build
+            // does not know is no fault: it comes out unknown, numbered, so
+            // the cursor moves past it.
             DeviceMessage::Events(batch) => {
                 let events = batch
                     .iter()
-                    .map(|event| event.map(|event| Pushed::Event(convert::event(epoch, event))))
+                    .map(|event| event.map(|event| convert::raw_event(epoch, event)))
                     .collect::<Result<std::collections::VecDeque<_>, _>>()
                     .map_err(|_| Error::Malformed(Garbled::of(&plain)))?;
                 self.events = events;
@@ -389,15 +407,19 @@ impl Session {
         }))
     }
 
-    /// One request under `id`, sealed and framed. A feeder of another
-    /// schema revision is sent only frozen ops: anything else is refused
-    /// here, never sent, since it may decode there as another op.
+    /// One request under `id`, sealed and framed. It goes to a feeder of
+    /// any revision: the API only grows, so an op means the same to every
+    /// build that knows it, and one that does not answers `Unavailable`. A
+    /// pre-revision build takes frozen ops alone: any other is
+    /// [`Error::Legacy`], unsent, since its bytes mean something else there.
     pub fn request(&mut self, id: RequestId, op: &Op) -> Result<Vec<u8>, Error> {
-        let op = op.to_proto();
-        if !op.is_frozen() {
-            self.same_schema()?;
+        if self.legacy && !op.is_frozen() {
+            return Err(Error::Legacy);
         }
-        self.send(&ClientMessage::Request { id, op })
+        self.send(&ClientMessage::Request {
+            id,
+            op: op.to_proto(),
+        })
     }
 
     /// The keepalive under `id`: frozen, so it goes to a feeder of any
@@ -410,25 +432,16 @@ impl Session {
     }
 
     /// Ask for every event after `after` and then each new one, and the
-    /// live samples if `samples`. Not to a feeder of another schema
-    /// revision, whose events this client may not read.
+    /// live samples if `samples`. A newer feeder's bodies this client does
+    /// not know come out as [`Pushed::Unknown`].
     pub fn subscribe(&mut self, after: Option<u64>, samples: bool) -> Result<Vec<u8>, Error> {
-        self.same_schema()?;
+        // A pre-revision build frames its events without lengths: they
+        // would read as junk.
+        if self.legacy {
+            return Err(Error::Legacy);
+        }
         let samples = if samples { Samples::On } else { Samples::Off };
         self.send(&ClientMessage::Subscribe { after, samples })
-    }
-
-    /// Whether the welcome named this client's schema revision; before the
-    /// welcome, the request is refused as not open.
-    fn same_schema(&self) -> Result<(), Error> {
-        match self.schema {
-            Some(SCHEMA) => Ok(()),
-            Some(feeder) => Err(Error::OtherSchema {
-                feeder,
-                client: SCHEMA,
-            }),
-            None => Err(Error::NotOpen),
-        }
     }
 
     fn send(&mut self, message: &ClientMessage<'_>) -> Result<Vec<u8>, Error> {
@@ -441,6 +454,46 @@ impl Session {
         let sealed_len = transport.seal(&plain[..len], &mut sealed)?;
         frame(&sealed[..sealed_len])
     }
+}
+
+/// Whether `plain` is a device message of a kind a newer build added: its
+/// tag, postcard's leading `u32` varint, is at or past [`DEVICE_MESSAGES`].
+/// Bytes whose tag is no `u32` varint at all are garbled, not newer, and
+/// end the session like any other message that does not decode.
+fn newer_message(plain: &[u8]) -> bool {
+    // A `u32` varint takes at most five bytes, seven bits each.
+    let mut tag: u64 = 0;
+    for (index, &byte) in plain.iter().take(5).enumerate() {
+        tag |= u64::from(byte & 0x7f) << (7 * index);
+        if byte & 0x80 == 0 {
+            return u32::try_from(tag).is_ok_and(|tag| tag >= DEVICE_MESSAGES);
+        }
+    }
+    false
+}
+
+/// A response this build cannot decode, which a newer build sent: its id
+/// sits right after the message's tag, so the request it answers is still
+/// known, and the session goes on. An outcome tagged as a refusal is one this
+/// build cannot name: a device refuses before it acts, so the request did
+/// not run. Anything else is unreadable: the request may have run, so its
+/// caller treats a write answered so as uncertain and never resends it.
+/// `None` for bytes that are no response at all, which end the session.
+fn unreadable(plain: &[u8]) -> Option<Incoming> {
+    // Postcard writes `DeviceMessage::Response` and `Outcome::Refused`, both
+    // frozen, as their one-byte indices.
+    const RESPONSE: u8 = 0;
+    const REFUSED: u8 = 1;
+
+    let (&RESPONSE, rest) = plain.split_first()? else {
+        return None;
+    };
+    let (id, outcome) = rest.split_first_chunk::<16>()?;
+    let answer = match outcome.first() {
+        Some(&REFUSED) => Answer::Refused(Refusal::Unknown),
+        _ => Answer::Unreadable,
+    };
+    Some(Incoming::Answer { id: *id, answer })
 }
 
 /// An invite as the issuing client shows it.
@@ -674,7 +727,7 @@ mod tests {
             build: "b",
             role: WireRole::Owner,
             epoch: 1,
-            schema: SCHEMA,
+            schema: REVISION,
         };
         let bytes = feeder_says(&hello, &Welcome::Refused(WireRefusal::Unknown), &[open]);
 
@@ -686,6 +739,37 @@ mod tests {
         );
         assert_eq!(session.next_incoming().unwrap(), None);
         assert!(!session.is_open());
+    }
+
+    /// A response a newer build sent that this one cannot decode still
+    /// answers its request: an unknown refusal by its tag, anything else
+    /// unreadable. Bytes that are no response at all are no answer, and
+    /// end the session as malformed.
+    #[test]
+    fn an_undecodable_response_answers_its_request() {
+        let id = [0x42; 16];
+        let mut refusal = vec![0];
+        refusal.extend_from_slice(&id);
+        refusal.extend_from_slice(&[1, 0x70]);
+        let mut outcome = vec![0];
+        outcome.extend_from_slice(&id);
+        outcome.extend_from_slice(&[0x70, 0x01, 0x02]);
+        assert_eq!(
+            unreadable(&refusal),
+            Some(Incoming::Answer {
+                id,
+                answer: Answer::Refused(Refusal::Unknown)
+            })
+        );
+        assert_eq!(
+            unreadable(&outcome),
+            Some(Incoming::Answer {
+                id,
+                answer: Answer::Unreadable
+            })
+        );
+        assert_eq!(unreadable(&[0x7f, 1, 2]), None);
+        assert_eq!(unreadable(&[0, 1, 2]), None);
     }
 
     #[test]
@@ -729,5 +813,21 @@ mod tests {
         ] {
             assert_eq!(Invite::parse(&text), Err(error), "{text}");
         }
+    }
+
+    /// A tag past the known kinds is a newer build's message, whatever its
+    /// varint's length; bytes that are no `u32` varint are garbled.
+    #[test]
+    fn a_newer_tag_is_told_from_garbled_bytes() {
+        let past = u8::try_from(DEVICE_MESSAGES).expect("a one-byte tag");
+
+        assert!(!newer_message(&[0, 1, 2]));
+        assert!(!newer_message(&[past - 1]));
+        assert!(newer_message(&[past, 0]));
+        assert!(newer_message(&[0x80, 0x01]));
+
+        assert!(!newer_message(&[0xff; 24]));
+        assert!(!newer_message(&[0xff, 0xff]));
+        assert!(!newer_message(&[]));
     }
 }

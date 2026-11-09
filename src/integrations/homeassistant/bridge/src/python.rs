@@ -172,8 +172,8 @@ mod wellfed_homeassistant {
     #[pymodule_export]
     use crate::api::{
         By, Capabilities, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel,
-        NextMeal, NotSent, Plan, PortionsToday, Readiness, RefusalKind, Role, Settings, State,
-        Status, Tune, Update, UpdateKind, WriteResult, Written,
+        NextMeal, NotSent, Plan, PortionsToday, Readiness, RefusalKind, Role, Settings, Skew,
+        State, Status, Tune, Update, UpdateKind, WriteResult, Written,
     };
     #[pymodule_export]
     use crate::key::Joined;

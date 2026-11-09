@@ -56,7 +56,13 @@ async def test_a_text_that_is_not_an_invite_is_refused(hass: HomeAssistant) -> N
 
 async def test_a_spent_invite_asks_for_a_new_one(hass: HomeAssistant, simulator: Simulator) -> None:
     invite = simulator.invite()
-    subprocess_join = simulator.cli, "join", "--keys", simulator.keys.with_name("other.json")
+    subprocess_join = (
+        simulator.cli,
+        "join",
+        "--create-key",
+        "--keys",
+        simulator.keys.with_name("other.json"),
+    )
     proc = await asyncio.create_subprocess_exec(
         *subprocess_join, "--address", simulator.address, invite
     )

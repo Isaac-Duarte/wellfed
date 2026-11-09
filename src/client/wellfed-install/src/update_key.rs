@@ -36,10 +36,10 @@ pub async fn enroll(
     report: &impl Report,
 ) -> Result<Result<Enrolled, EnrollError>, Error> {
     let mut enroll = match Enroll::new(public, label, session.role()) {
-        Ok(enroll) if session.same_schema() => enroll,
-        // Another build's client list cannot be read: enroll directly, and
-        // let the feeder's own checks answer.
-        Ok(enroll) => enroll.unlisted(),
+        // A pre-revision build's client list is not frozen: enroll
+        // directly, and let the feeder's own checks answer.
+        Ok(enroll) if session.legacy() => enroll.unlisted(),
+        Ok(enroll) => enroll,
         Err(error) => return Ok(Err(error)),
     };
 
@@ -92,11 +92,11 @@ async fn pressed(
     }
 }
 
-/// The feeder's enrolled clients; [`Error::OtherBuild`] from a feeder of
-/// another schema revision, whose list is not frozen.
+/// The feeder's enrolled clients; [`Error::Legacy`] from a pre-revision
+/// build, whose list is not frozen and is never asked for.
 pub async fn clients(session: &mut impl Session) -> Result<Vec<Client>, Error> {
-    if !session.same_schema() {
-        return Err(Error::OtherBuild);
+    if session.legacy() {
+        return Err(Error::Legacy);
     }
     match session
         .ask(&Op::ListClients)

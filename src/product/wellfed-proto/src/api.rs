@@ -41,27 +41,24 @@
 //!   ([`Op::Update`]), the keepalive ([`Op::Alive`]), invites
 //!   ([`Op::CreateInvite`], [`Join`], [`Joined`]), the recovery window's
 //!   setup exchange ([`crate::setup`]) and every answer they get never
-//!   change: no field is added, removed, reordered or retyped,
-//!   and an enum only gains variants at its end. The frozen variants of
-//!   [`ClientMessage`], [`DeviceMessage`], [`Op`], [`Outcome`] and
-//!   [`Refusal`] come first, so the rest can change behind them. Only a
-//!   new major changes the frozen part, and a device keeps serving major
-//!   1's for good. So does every client, even once a new major exists: a
-//!   feeder never updated since speaks nothing else.
+//!   change. Only a new major changes the frozen part, and a device keeps
+//!   serving major 1's for good. So does every client, even once a new
+//!   major exists: a feeder never updated since speaks nothing else.
 //!   `tests/fixtures/update-v1.txt` pins it, and its test only appends.
-//! - Everything else is positional too, but changes in place while the
-//!   research unit is the only device running Wellfed: the firmware and
-//!   every client are built from this repository together. The change
-//!   rewrites the message's lines in `tests/fixtures/v1.txt` by hand
-//!   (blessing only appends). Any change to a type changes [`SCHEMA`],
-//!   which the welcome carries: a client of another revision sends that
-//!   build only frozen ops.
-
+//! - **Everything else is append-only.** Feeders, phones, the server and
+//!   Home Assistant run different builds, so no field is added, removed,
+//!   reordered or retyped, an enum gains variants only at its end, a
+//!   changed op becomes a new op, and a retired op keeps its index and is
+//!   refused `Unavailable`. `tests/fixtures/api.json` holds the traced
+//!   structure of every message, and `tests/api.rs` refuses a trace that is
+//!   not a superset of it. Each growth raises [`REVISION`], which the
+//!   welcome carries, so a client knows which side to update.
 use core::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
 
 use crate::device::Model;
+pub use crate::grow::{Lenient, Tail, Unit};
 pub use crate::setup::Wifi;
 
 /// Frozen. Bound into the IK and invite handshakes, so a session meant
@@ -75,13 +72,14 @@ pub const PROTOCOL_MAJOR: u16 = 1;
 /// The oldest major this device still serves.
 pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 
-/// The revision of everything outside the frozen part: a hash of every
-/// message type's structure, traced variant by variant and field by field
-/// (`tests/schema.rs`), so any change to a type, fixture or no fixture,
-/// makes a new revision. The test fails, naming the new value, until this
-/// is updated. The welcome carries it ([`Welcome::Open::schema`]), and a
-/// client of another revision sends that build only frozen ops.
-pub const SCHEMA: u32 = 0x2af2_8cd8;
+/// The API revision this build speaks: a count that rises by one each
+/// time the messages grow (`tests/api.rs` refuses a grown trace without
+/// it). The welcome carries it ([`Welcome::Open::schema`]). Since the API
+/// only grows, a client at or above the feeder's revision may send any op
+/// it knows, and reads a refused `Unavailable` as one the feeder's build
+/// lacks; a client below it still uses every op it knows, and only what
+/// the newer build added is out of its reach.
+pub const REVISION: u32 = 1;
 
 /// Frozen. The largest frame either way, Noise tag included.
 pub const FRAME_MAX: usize = 1024;
@@ -133,10 +131,9 @@ pub enum Welcome<'a> {
         /// so a cursor from another epoch means nothing here: the client
         /// starts again from the oldest event kept.
         epoch: u32,
-        /// The build's [`SCHEMA`]: which revision of everything outside the
-        /// frozen update path it speaks. A client of another revision sends
-        /// only frozen ops on this session, since its other ops may decode
-        /// here as something else.
+        /// The build's [`REVISION`]: an ordered count, so a client knows
+        /// whether the feeder or the client is the older build. The name
+        /// is the frozen field's.
         schema: u32,
     },
     Refused(OpenRefusal),
@@ -214,8 +211,8 @@ pub enum Samples {
 ///
 /// The first three variants are frozen ([`Self::is_frozen`]): the update
 /// ops, the keepalive and the invite, which every build of major 1 serves
-/// at these indices for good. The rest is the shared core, then one variant per device
-/// kind's module, and changes freely.
+/// at these indices for good. The rest is the shared core, then one variant
+/// per device kind's module, and only grows: a new op goes at the end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Op<'a> {
     /// Frozen at index 0: an update, and the keys that sign one.
@@ -285,6 +282,10 @@ pub enum Op<'a> {
     ReadBank1 {
         offset: u32,
     },
+    /// The device's table of open alerts, answered [`Outcome::Alerts`].
+    /// Owner, member and server sessions. [`Status::alerts_generation`]
+    /// says when to read it again.
+    GetAlerts,
     /// The feeder's module; refused `Unavailable` by another kind.
     #[serde(borrow)]
     Feeder(FeederOp<'a>),
@@ -487,10 +488,6 @@ pub enum FeederOp<'a> {
         slot: u8,
         due_s: u32,
     },
-    /// The feeder's table of open alerts, answered
-    /// [`FeederOutcome::Alerts`]. Owner, member and server sessions.
-    /// [`FeederStatus::alerts_generation`] says when to read it again.
-    GetAlerts,
 }
 
 /// The meal call's stream: 8 kHz mono, 4-bit IMA ADPCM, two samples a
@@ -546,25 +543,31 @@ pub const PORTION_MG_MAX: u32 = 50_000;
 pub struct Calibration {
     /// The mean weight of one portion, `None` until measured.
     pub portion_mg: Option<u32>,
-    /// The bowl mode the feeder runs.
-    pub bowl: Bowl,
+    /// The bowl mode the feeder runs. In [`FeederOp::PutCalibration`] a
+    /// device refuses any but its own `Unverified`, a mode it does not know
+    /// among them.
+    pub bowl: Lenient<Bowl>,
 }
 
-/// A single bowl turns one way and drops every compartment into one bowl;
-/// a double bowl alternates directions between two.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Bowl {
-    Single,
-    Double,
+unit_enum! {
+    /// A single bowl turns one way and drops every compartment into one bowl;
+    /// a double bowl alternates directions between two.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Bowl {
+        Single,
+        Double,
+    }
 }
 
-/// Where the rotor rests between feeds, as the feeding owner knows it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Phase {
-    /// Just past a mark, where a completed feed stops.
-    AtMark,
-    /// Anywhere between two marks: the next feed homes it first.
-    Unknown,
+unit_enum! {
+    /// Where the rotor rests between feeds, as the feeding owner knows it.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Phase {
+        /// Just past a mark, where a completed feed stops.
+        AtMark,
+        /// Anywhere between two marks: the next feed homes it first.
+        Unknown,
+    }
 }
 
 /// [`FeederOp::GetCalibration`]'s answer.
@@ -574,7 +577,7 @@ pub struct CalibrationView {
     pub writable: bool,
     pub calibration: Calibration,
     /// `None` from a feeder with no feeding owner, or before it opens.
-    pub phase: Option<Phase>,
+    pub phase: Option<Lenient<Phase>>,
 }
 
 /// Plan slots a feeder keeps, as stock keeps at most ten plans.
@@ -600,6 +603,10 @@ pub struct Plan {
     /// [`CALL_PLAYS_MAX`]; 0 plays none. It plays only with a clip stored
     /// and sound allowed, and never delays the feed.
     pub call: u8,
+    /// Room for what a later build adds. In [`FeederOp::PutPlans`] a
+    /// device refuses a plan whose tail it cannot read `Invalid`, and keeps
+    /// the slot's stored extension when the tail is empty.
+    pub ext: Tail,
 }
 
 /// [`FeederOp::GetPlans`]'s answer: the plan in each slot.
@@ -634,7 +641,8 @@ impl Op<'_> {
             | Self::GetTime
             | Self::TailLog { .. }
             | Self::Stats { .. }
-            | Self::ReadBank1 { .. } => false,
+            | Self::ReadBank1 { .. }
+            | Self::GetAlerts => false,
             Self::PutWifi { .. }
             | Self::TimeSync(_)
             | Self::CreateInvite { .. }
@@ -681,8 +689,7 @@ impl FeederOp<'_> {
             | Self::GetCalibration
             | Self::GetPlans
             | Self::GetCall
-            | Self::CallChunk { .. }
-            | Self::GetAlerts => false,
+            | Self::CallChunk { .. } => false,
             Self::PutSettings { .. }
             | Self::SetLock { .. }
             | Self::Play { .. }
@@ -785,28 +792,32 @@ pub enum NtpServer {
     },
 }
 
-/// Who last set the clock.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TimeSource {
-    /// An owner's session, which may step the clock freely.
-    Owner,
-    /// A member's or the server's session, which may only narrow it.
-    Client,
-    Ntp,
+unit_enum! {
+    /// Who last set the clock.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum TimeSource {
+        /// An owner's session, which may step the clock freely.
+        Owner,
+        /// A member's or the server's session, which may only narrow it.
+        Client,
+        Ntp,
+    }
 }
 
-/// What the last NTP exchange came to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NtpResult {
-    /// The clock took the answer.
-    Used,
-    /// The answer disagreed with a valid clock beyond both error bounds.
-    Bounded,
-    /// No answer in time.
-    Lost,
-    /// An answer that could not be used (unsynchronized, kiss-o'-death,
-    /// too loose or malformed).
-    Refused,
+unit_enum! {
+    /// What the last NTP exchange came to.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum NtpResult {
+        /// The clock took the answer.
+        Used,
+        /// The answer disagreed with a valid clock beyond both error bounds.
+        Bounded,
+        /// No answer in time.
+        Lost,
+        /// An answer that could not be used (unsynchronized, kiss-o'-death,
+        /// too loose or malformed).
+        Refused,
+    }
 }
 
 /// The time settings and the clock.
@@ -830,10 +841,10 @@ pub struct TimeView<'a> {
     pub rate_bound_ppb: u32,
     pub learned: bool,
     pub syncs: u32,
-    pub last: Option<TimeSource>,
+    pub last: Option<Lenient<TimeSource>>,
     /// Seconds since the last fix.
     pub last_age_s: Option<u32>,
-    pub ntp_last: Option<NtpResult>,
+    pub ntp_last: Option<Lenient<NtpResult>>,
 }
 
 /// The wall clock and the zone's next change, as the wall clock takes them.
@@ -882,6 +893,11 @@ pub enum DeviceMessage<'a> {
     },
 }
 
+/// How many [`DeviceMessage`] variants this build knows. Each is its own
+/// sealed frame, so a client skips one tagged at or past this, which a
+/// newer build added, and reads on.
+pub const DEVICE_MESSAGES: u32 = 5;
+
 /// The most text one [`DeviceMessage::Log`] carries: a frame, less the
 /// message's tag, numbers and the text's length prefix.
 pub const LOG_TEXT_MAX: usize = MESSAGE_MAX - 16;
@@ -889,18 +905,73 @@ pub const LOG_TEXT_MAX: usize = MESSAGE_MAX - 16;
 /// The most bytes an [`EventBody`] encodes to: what the event ring keeps
 /// of one.
 pub const EVENT_BODY_MAX: usize = 16;
-/// The most bytes an [`Event`] encodes to: a `u64` varint's 10, an
-/// `Option<u32>`'s 6 and the body.
-pub const EVENT_BYTES_MAX: usize = 10 + 6 + EVENT_BODY_MAX;
+/// The most bytes an [`EncodedEvent`] takes in a batch: a `u64` varint's
+/// 10, an `Option<u32>`'s 6, the body's one-byte length and the body.
+pub const EVENT_BYTES_MAX: usize = 10 + 6 + 1 + EVENT_BODY_MAX;
 /// The most encoded events one [`DeviceMessage::Events`] carries: a
 /// frame's message, less the message's tag and the bytes' two-byte length.
 pub const EVENTS_BYTES_MAX: usize = MESSAGE_MAX - 3;
 
-/// Events as [`DeviceMessage::Events`] carries them: each [`Event`]
-/// encoded in turn, borrowed from the message as [`DeviceMessage::Log`]'s
-/// text is. The feeder fills one with an [`EventBatchWriter`] in a buffer
-/// it already holds, so it never keeps an array of events; a client reads
-/// it with [`Self::iter`].
+/// A body as the event ring keeps it: the [`EventBody`]'s encoding, padded
+/// with zeros to [`EVENT_BODY_MAX`].
+pub type RawBody = [u8; EVENT_BODY_MAX];
+
+/// One durable event as the ring keeps it and a batch carries it, its body
+/// still encoded. A device passes on bodies it cannot read itself (a newer
+/// build's, met by a bank 0 that kept an older one), and a client decodes
+/// each with [`Self::body`]: one it cannot read is still numbered, so its
+/// cursor moves past it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RawEvent {
+    pub seq: u64,
+    pub at: Option<u32>,
+    pub body: RawBody,
+}
+
+impl RawEvent {
+    /// `event`, its body encoded as the ring keeps it.
+    pub fn encode(event: &Event) -> Result<Self, crate::Error> {
+        let mut body = [0; EVENT_BODY_MAX];
+        crate::encode(&event.body, &mut body)?;
+        Ok(Self {
+            seq: event.seq,
+            at: event.at,
+            body,
+        })
+    }
+
+    /// The body, `None` when this build does not know it.
+    pub fn body(&self) -> Option<EventBody> {
+        crate::decode_padded(&self.body)
+    }
+
+    /// The event, `None` when this build does not know its body.
+    pub fn event(&self) -> Option<Event> {
+        Some(Event {
+            seq: self.seq,
+            at: self.at,
+            body: self.body()?,
+        })
+    }
+}
+
+/// One event as [`EventBatch`] carries it: the ring's body with its
+/// trailing zeros trimmed, behind its length. The length is what lets a
+/// reader skip a body it does not know and read the next event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EncodedEvent<'a> {
+    pub seq: u64,
+    pub at: Option<u32>,
+    /// At most [`EVENT_BODY_MAX`] bytes.
+    #[serde(borrow)]
+    pub body: &'a [u8],
+}
+
+/// Events as [`DeviceMessage::Events`] carries them: each an
+/// [`EncodedEvent`] in turn, borrowed from the message as
+/// [`DeviceMessage::Log`]'s text is. The feeder fills one with an
+/// [`EventBatchWriter`] in a buffer it already holds, so it never keeps an
+/// array of events; a client reads it with [`Self::iter`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventBatch<'a> {
     #[serde(borrow)]
@@ -908,8 +979,9 @@ pub struct EventBatch<'a> {
 }
 
 impl<'a> EventBatch<'a> {
-    /// The events in order. A batch whose bytes do not decode as events
-    /// yields one error and then nothing.
+    /// The events in order, bodies still encoded. A batch whose bytes do
+    /// not frame as events yields one error and then nothing; a body the
+    /// reader does not know is no error here.
     pub const fn iter(&self) -> EventBatchIter<'a> {
         EventBatchIter { rest: self.encoded }
     }
@@ -925,7 +997,7 @@ impl<'a> EventBatch<'a> {
 }
 
 impl<'a> IntoIterator for &EventBatch<'a> {
-    type Item = Result<Event, crate::Error>;
+    type Item = Result<RawEvent, crate::Error>;
     type IntoIter = EventBatchIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -940,18 +1012,33 @@ pub struct EventBatchIter<'a> {
 }
 
 impl Iterator for EventBatchIter<'_> {
-    type Item = Result<Event, crate::Error>;
+    type Item = Result<RawEvent, crate::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.rest.is_empty() {
             return None;
         }
-        match postcard::take_from_bytes::<Event>(self.rest) {
-            Ok((event, rest)) => {
+        let read = postcard::take_from_bytes::<EncodedEvent<'_>>(self.rest)
+            .ok()
+            .and_then(|(event, rest)| {
+                let mut body = [0; EVENT_BODY_MAX];
+                body.get_mut(..event.body.len())?
+                    .copy_from_slice(event.body);
+                Some((
+                    RawEvent {
+                        seq: event.seq,
+                        at: event.at,
+                        body,
+                    },
+                    rest,
+                ))
+            });
+        match read {
+            Some((event, rest)) => {
                 self.rest = rest;
                 Some(Ok(event))
             }
-            Err(_) => {
+            None => {
                 self.rest = &[];
                 Some(Err(crate::Error::Malformed))
             }
@@ -960,7 +1047,7 @@ impl Iterator for EventBatchIter<'_> {
 }
 
 /// [`EventBatchWriter::push`]'s refusal: the event does not fit the room
-/// left. Encoding an [`Event`] fails for no other reason.
+/// left. Encoding an [`EncodedEvent`] fails for no other reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("the event does not fit the batch")]
 pub struct BatchFull;
@@ -991,11 +1078,21 @@ impl<'b> EventBatchWriter<'b> {
         self.len == 0
     }
 
-    /// Append `event`; an event that does not fit leaves the batch as it
-    /// was.
-    pub fn push(&mut self, event: &Event) -> Result<(), BatchFull> {
+    /// Append `event`, its body's trailing zeros trimmed (the reader pads
+    /// them back); an event that does not fit leaves the batch as it was.
+    pub fn push(&mut self, event: &RawEvent) -> Result<(), BatchFull> {
+        let used = event
+            .body
+            .iter()
+            .rposition(|&byte| byte != 0)
+            .map_or(0, |last| last + 1);
+        let encoded = EncodedEvent {
+            seq: event.seq,
+            at: event.at,
+            body: event.body.get(..used).unwrap_or_default(),
+        };
         let rest = self.buf.get_mut(self.len..).ok_or(BatchFull)?;
-        self.len += crate::encode(event, rest).map_err(|_| BatchFull)?;
+        self.len += crate::encode(&encoded, rest).map_err(|_| BatchFull)?;
         Ok(())
     }
 
@@ -1034,6 +1131,8 @@ pub enum Outcome<'a> {
     /// One page of bank 1, after [`Op::ReadBank1`].
     #[serde(borrow)]
     Bank1(Bank1Page<'a>),
+    /// The table of open alerts, after [`Op::GetAlerts`].
+    Alerts(AlertsView),
     /// The answer to an [`Op::Feeder`].
     #[serde(borrow)]
     Feeder(FeederOutcome<'a>),
@@ -1050,6 +1149,7 @@ impl Outcome<'_> {
             | Self::Time(_)
             | Self::Stats(_)
             | Self::Bank1(_)
+            | Self::Alerts(_)
             | Self::Feeder(_) => false,
         }
     }
@@ -1074,8 +1174,6 @@ pub enum FeederOutcome<'a> {
     /// The meal call, after [`FeederOp::GetCall`] or
     /// [`FeederOp::CallChunk`].
     Call(CallView),
-    /// The table of open alerts, after [`FeederOp::GetAlerts`].
-    Alerts(AlertsView),
 }
 
 /// One page of bank 1: `bytes` from `offset`, of the `total` the feeder
@@ -1098,39 +1196,51 @@ pub enum Readiness {
     Blocked(Blocked),
 }
 
-/// Why a feed cannot start now.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Blocked {
-    /// The feeding owner has not opened yet (it opens once the boot's
-    /// storage is ready), or a newly installed build has not confirmed
-    /// itself yet.
-    Starting,
-    /// The feed journal could not be opened: no feed this boot.
-    Journal,
-    /// The feeding owner stopped on a fault: no feed until the feeder
-    /// restarts.
-    Fault,
-    /// A feed a reset interrupted is being resolved as uncertain.
-    Resolving,
-    /// A feed is queued or runs.
-    Feeding,
-    /// A Wi-Fi join runs or waits for the outputs.
-    Joining,
-    /// An install holds the flash.
-    Updating,
-    /// BLE setup mode runs, which ends in a restart.
-    Setup,
-    /// This firmware has no feeding owner.
-    Unserved,
-    /// The feeder runs on its batteries and they are below the floor a
-    /// feed needs, or unread; or this boot followed a brownout and the
-    /// adapter has not been seen since. It clears when the adapter returns
-    /// or the pack recovers past the floor's hysteresis.
-    Battery,
-    /// A restart was asked for (a client's reboot, setup mode's end, the
-    /// factory reset) and comes within seconds: a feed started now would be
-    /// cut, so none starts.
-    Restarting,
+unit_enum! {
+    /// Why a feed cannot start now.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Blocked {
+        /// The feeding owner has not opened yet (it opens once the boot's
+        /// storage is ready), or a newly installed build has not confirmed
+        /// itself yet.
+        Starting,
+        /// The feed journal could not be opened: no feed this boot.
+        Journal,
+        /// The feeding owner stopped on a fault: no feed until the feeder
+        /// restarts.
+        Fault,
+        /// A feed a reset interrupted is being resolved as uncertain.
+        Resolving,
+        /// A feed is queued or runs.
+        Feeding,
+        /// A Wi-Fi join runs or waits for the outputs.
+        Joining,
+        /// An install holds the flash.
+        Updating,
+        /// BLE setup mode runs, which ends in a restart.
+        Setup,
+        /// This firmware has no feeding owner.
+        Unserved,
+        /// The feeder runs on its batteries and they are below the floor a
+        /// feed needs, or unread; or this boot followed a brownout and the
+        /// adapter has not been seen since. It clears when the adapter returns
+        /// or the pack recovers past the floor's hysteresis.
+        Battery,
+        /// A restart was asked for (a client's reboot, setup mode's end, the
+        /// factory reset) and comes within seconds: a feed started now would be
+        /// cut, so none starts.
+        Restarting,
+    }
+}
+
+impl Readiness {
+    /// As [`FeederStatus::blocked`] carries it.
+    pub const fn blocked(self) -> Option<Lenient<Blocked>> {
+        match self {
+            Self::Ready => None,
+            Self::Blocked(blocked) => Some(Lenient::Known(blocked)),
+        }
+    }
 }
 
 impl Blocked {
@@ -1448,7 +1558,7 @@ pub struct Status<'a> {
     pub reset_flags: u32,
     pub faults: u32,
     pub rssi: i32,
-    pub wifi: WifiSource,
+    pub wifi: Lenient<WifiSource>,
     /// Every time this boot a joined link was lost and the device went on
     /// to rejoin, whatever noticed it.
     pub link_losses: u32,
@@ -1463,7 +1573,13 @@ pub struct Status<'a> {
     /// The newest event's sequence number, `None` before the first.
     pub last_event: Option<u64>,
     pub sessions: u8,
+    /// Changes when the table of open alerts does
+    /// ([`AlertsView::generation`]), so a session sees a change on its next
+    /// status. Counts from 0 at each boot.
+    pub alerts_generation: u32,
     pub device: DeviceStatus,
+    /// Room for what a later build adds.
+    pub ext: Tail,
 }
 
 /// The part of [`Status`] only one kind of device reports.
@@ -1478,21 +1594,20 @@ pub struct FeederStatus {
     pub locked: Option<bool>,
     pub settings_generation: u32,
     /// The hopper as the food beam last read it.
-    pub food: FoodLevel,
+    pub food: Lenient<FoodLevel>,
     /// The last feed this boot that ended on a fault (`Failed` or
     /// `Uncertain`), until a later feed completes: a jam, a blocked outlet
     /// or a sensor that still wants seeing to. Its `Fed` event has the rest.
     pub feed_fault: Option<FeedFault>,
     pub desiccant: Desiccant,
-    /// Whether a feed can start now.
-    pub readiness: Readiness,
+    /// Why a feed cannot start now, `None` when it can: the device's
+    /// [`Readiness`], with a reason a newer build added left readable.
+    pub blocked: Option<Lenient<Blocked>>,
     /// The supply as the feeder judges it: an unread or stale one says
     /// so ([`Battery`]).
     pub supply: Supply,
-    /// Changes when the table of open alerts does
-    /// ([`AlertsView::generation`]), so a session sees a change on its next
-    /// status. Counts from 0 at each boot.
-    pub alerts_generation: u32,
+    /// Room for what a later build adds.
+    pub ext: Tail,
 }
 
 /// The desiccant reminder, counted in the feeder's local calendar days.
@@ -1517,14 +1632,16 @@ impl Desiccant {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WifiSource {
-    /// The build's credentials. An image without build Wi-Fi (a consumer
-    /// image) also reports `Build` while nothing is stored, when it joins
-    /// nothing at all.
-    Build,
-    Stored,
-    Fallback,
+unit_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum WifiSource {
+        /// The build's credentials. An image without build Wi-Fi (a consumer
+        /// image) also reports `Build` while nothing is stored, when it joins
+        /// nothing at all.
+        Build,
+        Stored,
+        Fallback,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1580,6 +1697,8 @@ pub struct Settings {
     pub desiccant_reset: Option<i32>,
     pub meal_reminder: MealReminder,
     pub writable: bool,
+    /// Room for what a later build adds.
+    pub ext: Tail,
 }
 
 /// The enrolled clients, in store order.
@@ -1610,8 +1729,9 @@ pub struct Invite {
     pub seconds: u16,
 }
 
-/// One durable record of the feeder's history.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One durable record of the feeder's history, its body decoded. On the
+/// wire and in the ring it is a [`RawEvent`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Event {
     /// Monotonic across reboots; a client's cursor.
     pub seq: u64,
@@ -1754,32 +1874,36 @@ pub enum EventBody {
     UpdateConfirmed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FeedOutcome {
-    Done,
-    Cancelled,
-    /// It never started: the feeder could not get ready in time.
-    Expired,
-    Failed,
-    /// The feeder stopped without recording a result: it may have
-    /// dispensed anything up to `requested`. Never retried automatically.
-    /// When a power cut lost the reservation itself, `requested` is the
-    /// feeder's cap on one feed, not what was asked.
-    Uncertain,
+unit_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum FeedOutcome {
+        Done,
+        Cancelled,
+        /// It never started: the feeder could not get ready in time.
+        Expired,
+        Failed,
+        /// The feeder stopped without recording a result: it may have
+        /// dispensed anything up to `requested`. Never retried automatically.
+        /// When a power cut lost the reservation itself, `requested` is the
+        /// feeder's cap on one feed, not what was asked.
+        Uncertain,
+    }
 }
 
 /// A feed that ended on a fault, as [`Status::feed_fault`] names it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeedFault {
     pub feed: u32,
-    pub outcome: FeedOutcome,
-    pub reason: FeedReason,
+    pub outcome: Lenient<FeedOutcome>,
+    pub reason: Lenient<FeedReason>,
 }
 
-/// The most open alerts the feeder holds.
+/// The most open alerts a device holds.
 pub const ALERTS_MAX: usize = 12;
 
-/// The feeder's table of open alerts, whole: a read is one frame.
+/// The device's table of open alerts, whole: a read is one frame. Some
+/// alerts are any device's (the power, an update, a client), the rest its
+/// kind's, all in one flat [`Alert`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlertsView {
     /// The ring's epoch, which a feed's number counts in. It holds for a
@@ -1793,8 +1917,97 @@ pub struct AlertsView {
     /// The feeder can't vouch for an absent condition yet: its thresholds are
     /// running again after a boot, or a reading one needs is unknown.
     pub settling: bool,
+    /// Oldest first.
+    pub alerts: AlertTable,
+}
+
+/// The open alerts as [`AlertsView`] carries them: each entry an
+/// [`EncodedAlert`], its alert behind its length, so a reader skips one a
+/// newer build added and reads the rest.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AlertTable {
     /// Oldest first, the free slots last.
-    pub alerts: [Option<OpenAlert>; ALERTS_MAX],
+    pub entries: [Option<OpenAlert>; ALERTS_MAX],
+    /// Entries this build could not read, skipped: a newer build's alerts.
+    /// Only a reader counts them; a device sends none.
+    pub skipped: u8,
+}
+
+/// The most bytes one [`Alert`] encodes to.
+pub const ALERT_BYTES_MAX: usize = 24;
+
+/// One entry of an [`AlertTable`] on the wire.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EncodedAlert<'a> {
+    pub at: Option<NonZeroU32>,
+    /// The [`Alert`]'s encoding.
+    #[serde(borrow)]
+    pub alert: &'a [u8],
+}
+
+impl Serialize for AlertTable {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{Error, SerializeSeq};
+
+        let open = self.entries.iter().flatten();
+        let mut seq = serializer.serialize_seq(Some(open.clone().count()))?;
+        for entry in open {
+            let mut alert = [0; ALERT_BYTES_MAX];
+            let len = crate::encode(&entry.alert, &mut alert)
+                .map_err(|_| S::Error::custom("an alert past its bound"))?;
+            seq.serialize_element(&EncodedAlert {
+                at: entry.at,
+                alert: alert.get(..len).unwrap_or_default(),
+            })?;
+        }
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for AlertTable {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Entries;
+
+        impl<'de> serde::de::Visitor<'de> for Entries {
+            type Value = AlertTable;
+
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("at most ALERTS_MAX alerts")
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<AlertTable, A::Error> {
+                use serde::de::Error;
+
+                let mut table = AlertTable::default();
+                let mut slots = table.entries.iter_mut();
+                while let Some(entry) = seq.next_element::<EncodedAlert<'de>>()? {
+                    // Any entry that does not decode counts as a newer
+                    // build's: an alert kind added at the enum's end, or
+                    // one that grew. A garbled entry cannot be told apart
+                    // from those, and the frame around it authenticated,
+                    // so it is counted the same rather than failing the
+                    // whole table.
+                    let Ok(alert) = crate::decode::<Alert>(entry.alert) else {
+                        table.skipped = table.skipped.saturating_add(1);
+                        continue;
+                    };
+                    let slot = slots
+                        .next()
+                        .ok_or_else(|| A::Error::invalid_length(ALERTS_MAX + 1, &self))?;
+                    *slot = Some(OpenAlert {
+                        at: entry.at,
+                        alert,
+                    });
+                }
+                Ok(table)
+            }
+        }
+
+        deserializer.deserialize_seq(Entries)
+    }
 }
 
 /// One entry of the feeder's table of open alerts: what its rules say is
@@ -2034,62 +2247,66 @@ pub enum AlertLevel {
     Security,
 }
 
-/// What the food beam across the hopper reads, filtered as stock filters
-/// its `surplusGrain`: one reading with food shows food at once, and the
-/// hopper reads low only after a run of readings without. Stock counts 20
-/// readings; its poll rate is not recovered, and the firmware assumes the
-/// nominal 50 ms its outlet filter implies, so a second. The beam is lit
-/// during feeds and in a short window at rest, so the level is the latest of
-/// either's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FoodLevel {
-    /// No qualified reading: nothing has read the beam this boot, or this
-    /// feed ended before the beam settled.
-    Unread,
-    Present,
-    /// The beam read no food, which leaves about five portions, since it sits
-    /// above the rotor (at any time during a feed, for a `Fed`).
-    Low,
+unit_enum! {
+    /// What the food beam across the hopper reads, filtered as stock filters
+    /// its `surplusGrain`: one reading with food shows food at once, and the
+    /// hopper reads low only after a run of readings without. Stock counts 20
+    /// readings; its poll rate is not recovered, and the firmware assumes the
+    /// nominal 50 ms its outlet filter implies, so a second. The beam is lit
+    /// during feeds and in a short window at rest, so the level is the latest of
+    /// either's.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum FoodLevel {
+        /// No qualified reading: nothing has read the beam this boot, or this
+        /// feed ended before the beam settled.
+        Unread,
+        Present,
+        /// The beam read no food, which leaves about five portions, since it sits
+        /// above the rotor (at any time during a feed, for a `Fed`).
+        Low,
+    }
 }
 
-/// Why a feed ended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FeedReason {
-    Done,
-    Cancelled,
-    /// The feeder's clock jumped.
-    Clock,
-    /// The feeder could not watch the motor often enough.
-    ObservationGap,
-    /// The whole feed ran past its limit.
-    Timeout,
-    /// No rotor mark for too long: the mark sensor lost, or a rotor stalled
-    /// with no current to show it.
-    NoFeedback,
-    Power,
-    /// A sensor could not be read: the ADC, the beams, or current at rest
-    /// over the jam limit.
-    Sensor,
-    /// The outlet beam read blocked. Mid-feed, the feed ends with the
-    /// portions delivered so far and is never resumed (stock pauses up to
-    /// about 10 minutes instead); at the start it ends with no motion.
-    OutletBlocked,
-    /// One current reading over the ceiling, or the limit held while the
-    /// motor is stopped (a pause): stopped at once, no reversal.
-    Overcurrent,
-    /// The feedback sensor's edges could not be trusted.
-    FeedbackStream,
-    /// An output failed to apply or verify.
-    Output,
-    /// A jam no reversal freed: the motor backed off three times, as
-    /// stock's does (its code 2031), or the jam held while backing off.
-    /// The feed ends, never retried; stock counts it done.
-    Jammed,
-    /// The mark sensor read a mark for longer than any mark lasts.
-    MarkStuck,
-    /// A reset (power cut, watchdog, fault) cut the feed short, and the
-    /// next boot resolved it: always `Uncertain`.
-    Interrupted,
+unit_enum! {
+    /// Why a feed ended.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum FeedReason {
+        Done,
+        Cancelled,
+        /// The feeder's clock jumped.
+        Clock,
+        /// The feeder could not watch the motor often enough.
+        ObservationGap,
+        /// The whole feed ran past its limit.
+        Timeout,
+        /// No rotor mark for too long: the mark sensor lost, or a rotor stalled
+        /// with no current to show it.
+        NoFeedback,
+        Power,
+        /// A sensor could not be read: the ADC, the beams, or current at rest
+        /// over the jam limit.
+        Sensor,
+        /// The outlet beam read blocked. Mid-feed, the feed ends with the
+        /// portions delivered so far and is never resumed (stock pauses up to
+        /// about 10 minutes instead); at the start it ends with no motion.
+        OutletBlocked,
+        /// One current reading over the ceiling, or the limit held while the
+        /// motor is stopped (a pause): stopped at once, no reversal.
+        Overcurrent,
+        /// The feedback sensor's edges could not be trusted.
+        FeedbackStream,
+        /// An output failed to apply or verify.
+        Output,
+        /// A jam no reversal freed: the motor backed off three times, as
+        /// stock's does (its code 2031), or the jam held while backing off.
+        /// The feed ends, never retried; stock counts it done.
+        Jammed,
+        /// The mark sensor read a mark for longer than any mark lasts.
+        MarkStuck,
+        /// A reset (power cut, watchdog, fault) cut the feed short, and the
+        /// next boot resolved it: always `Uncertain`.
+        Interrupted,
+    }
 }
 
 /// The first 4 bytes of a client's key: enough to tell clients apart in
@@ -2215,7 +2432,7 @@ pub enum Stats<'a> {
 pub struct Counters {
     pub boot: Counts,
     /// Why this boot started.
-    pub reset: ResetCause,
+    pub reset: Lenient<ResetCause>,
     /// Over the feeder's life, this boot's included, from a feeder that
     /// keeps its totals in storage; `None` from one that keeps none (no
     /// storage sectors hold them yet).
@@ -2252,18 +2469,20 @@ pub struct Counts {
     pub battery_s: u32,
 }
 
-/// Why a boot started, from the ROM's reset flags.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ResetCause {
-    /// No reset flag: the supply came up.
-    #[default]
-    PowerOn,
-    Watchdog,
-    /// A system reset the firmware asked for (a restart, an update).
-    Software,
-    Brownout,
-    /// A flag none of the above names.
-    Other,
+unit_enum! {
+    /// Why a boot started, from the ROM's reset flags.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum ResetCause {
+        /// No reset flag: the supply came up.
+        #[default]
+        PowerOn,
+        Watchdog,
+        /// A system reset the firmware asked for (a restart, an update).
+        Software,
+        Brownout,
+        /// A flag none of the above names.
+        Other,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -2356,15 +2575,17 @@ pub struct Food {
     pub feeds_since_refill: Option<u32>,
 }
 
-/// What a trace's current readings count in.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CurrentUnit {
-    /// The current channel scaled as stock scales it (the ADC's millivolts
-    /// at the sense input): proportional to the motor current, but not yet
-    /// calibrated to milliamps.
-    #[default]
-    Scaled,
-    MilliAmps,
+unit_enum! {
+    /// What a trace's current readings count in.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum CurrentUnit {
+        /// The current channel scaled as stock scales it (the ADC's millivolts
+        /// at the sense input): proportional to the motor current, but not yet
+        /// calibrated to milliamps.
+        #[default]
+        Scaled,
+        MilliAmps,
+    }
 }
 
 /// One feed's trace, summed up: what the drive measured, from every poll,
@@ -2374,13 +2595,13 @@ pub struct TraceSummary {
     pub feed: u32,
     pub requested: u8,
     pub completed: u8,
-    pub outcome: FeedOutcome,
-    pub reason: FeedReason,
+    pub outcome: Lenient<FeedOutcome>,
+    pub reason: Lenient<FeedReason>,
     /// How long the motor was commanded to move; 0 when it never started.
     pub drive_ms: u32,
     /// Polls that read the current while the motor was driven.
     pub samples: u32,
-    pub unit: CurrentUnit,
+    pub unit: Lenient<CurrentUnit>,
     pub current_peak: u32,
     pub current_mean: Option<u32>,
     /// Feedback edges, rising and falling, and the first one's time from
@@ -2428,7 +2649,7 @@ pub struct FeedStats {
     /// Their drive time, polls and current, as each summary counts them.
     pub drive_ms: u32,
     pub samples: u32,
-    pub unit: CurrentUnit,
+    pub unit: Lenient<CurrentUnit>,
     pub current_peak: u32,
     pub current_mean: Option<u32>,
     pub rising: u32,
@@ -2495,23 +2716,26 @@ mod tests {
 
         let alerts = DeviceMessage::Response {
             id: [0xff; 16],
-            result: Outcome::Feeder(FeederOutcome::Alerts(AlertsView {
+            result: Outcome::Alerts(AlertsView {
                 epoch: u32::MAX,
                 generation: u32::MAX,
                 more: true,
                 settling: true,
-                alerts: [Some(OpenAlert {
-                    at: NonZeroU32::new(u32::MAX),
-                    alert: Alert::MealFailed {
-                        feed: u32::MAX,
-                        plan: Some(u8::MAX),
-                        requested: u8::MAX,
-                        completed: u8::MAX,
-                        outcome: FeedOutcome::Failed,
-                        reason: FeedReason::Interrupted,
-                    },
-                }); ALERTS_MAX],
-            })),
+                alerts: AlertTable {
+                    entries: [Some(OpenAlert {
+                        at: NonZeroU32::new(u32::MAX),
+                        alert: Alert::MealFailed {
+                            feed: u32::MAX,
+                            plan: Some(u8::MAX),
+                            requested: u8::MAX,
+                            completed: u8::MAX,
+                            outcome: FeedOutcome::Failed,
+                            reason: FeedReason::Interrupted,
+                        },
+                    }); ALERTS_MAX],
+                    skipped: 0,
+                },
+            }),
         };
         let len = encode(&alerts, &mut out).unwrap();
         assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(alerts));
@@ -2626,6 +2850,7 @@ mod tests {
             days: u8::MAX,
             enabled: true,
             call: u8::MAX,
+            ext: Tail::EMPTY,
         });
         let put = ClientMessage::Request {
             id: [0xff; 16],
@@ -2672,17 +2897,116 @@ mod tests {
         assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(call));
     }
 
+    /// Every alert at its widest fits the bound a table entry is encoded
+    /// in.
+    #[test]
+    fn every_alert_fits_its_entry() {
+        let client = [0xff; 4];
+        for alert in [
+            Alert::MealFailed {
+                feed: u32::MAX,
+                plan: Some(u8::MAX),
+                requested: u8::MAX,
+                completed: u8::MAX,
+                outcome: FeedOutcome::Uncertain,
+                reason: FeedReason::Interrupted,
+            },
+            Alert::MealUncertain {
+                feed: u32::MAX,
+                plan: Some(u8::MAX),
+                requested: u8::MAX,
+                completed: u8::MAX,
+                reason: FeedReason::Interrupted,
+            },
+            Alert::MealMissed {
+                plan: u8::MAX,
+                due: u32::MAX,
+                reason: MissedReason::Blocked(Blocked::Restarting),
+            },
+            Alert::ClientJoined {
+                client,
+                role: Role::UpdateSigner,
+                path: Path::Press,
+            },
+            Alert::ClientRevoked {
+                client,
+                by: Source::Client(client),
+            },
+            Alert::DesiccantDue { days: i32::MIN },
+        ] {
+            let mut out = [0; ALERT_BYTES_MAX];
+            assert!(encode(&alert, &mut out).is_ok(), "{alert:?}");
+        }
+    }
+
+    /// The last variant's tag is one short of [`DEVICE_MESSAGES`], so a
+    /// variant added at the end is the first tag a client skips.
+    #[test]
+    fn device_messages_counts_every_variant() {
+        let mut out = [0; 32];
+        let len = crate::encode(
+            &DeviceMessage::Log {
+                seq: 0,
+                dropped: 0,
+                text: "",
+            },
+            &mut out,
+        )
+        .unwrap();
+        assert!(len > 0);
+        assert_eq!(u32::from(out[0]) + 1, DEVICE_MESSAGES);
+    }
+
+    /// An entry a newer build added is skipped and counted, and the
+    /// entries around it still read.
+    #[test]
+    fn a_newer_alert_is_skipped_and_counted() {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            epoch: u32,
+            generation: u32,
+            more: bool,
+            settling: bool,
+            alerts: &'a [EncodedAlert<'a>],
+        }
+        let food_low = [12];
+        let newer = [0x70, 0x01];
+        let at = NonZeroU32::new(5);
+        let entry = |alert| EncodedAlert { at, alert };
+        let mut out = [0; 64];
+        let len = encode(
+            &Wire {
+                epoch: 1,
+                generation: 2,
+                more: false,
+                settling: false,
+                alerts: &[entry(&food_low), entry(&newer), entry(&food_low)],
+            },
+            &mut out,
+        )
+        .unwrap();
+
+        let view: AlertsView = decode(&out[..len]).unwrap();
+
+        let open = OpenAlert {
+            at,
+            alert: Alert::FoodLow,
+        };
+        assert_eq!(view.alerts.skipped, 1);
+        assert_eq!(view.alerts.entries[..3], [Some(open), Some(open), None]);
+    }
+
     /// A summary with every field at its largest encoding.
     fn largest_summary() -> TraceSummary {
         TraceSummary {
             feed: u32::MAX,
             requested: u8::MAX,
             completed: u8::MAX,
-            outcome: FeedOutcome::Uncertain,
-            reason: FeedReason::Output,
+            outcome: FeedOutcome::Uncertain.into(),
+            reason: FeedReason::Output.into(),
             drive_ms: u32::MAX,
             samples: u32::MAX,
-            unit: CurrentUnit::MilliAmps,
+            unit: CurrentUnit::MilliAmps.into(),
             current_peak: u32::MAX,
             current_mean: Some(u32::MAX),
             rising: u16::MAX,
@@ -2738,7 +3062,7 @@ mod tests {
         [
             Stats::Counters(Counters {
                 boot: counts,
-                reset: ResetCause::Brownout,
+                reset: ResetCause::Brownout.into(),
                 lifetime: Some(counts),
                 resets: Some(resets),
                 handshake_max_ms: u32::MAX,
@@ -2776,7 +3100,7 @@ mod tests {
                 traced: u32::MAX,
                 drive_ms: u32::MAX,
                 samples: u32::MAX,
-                unit: CurrentUnit::MilliAmps,
+                unit: CurrentUnit::MilliAmps.into(),
                 current_peak: u32::MAX,
                 current_mean: Some(u32::MAX),
                 rising: u32::MAX,
@@ -2826,7 +3150,9 @@ mod tests {
         let mut writer = EventBatchWriter::new(&mut buf);
         let mut seq = u64::MAX - 100;
         while writer.has_room() {
-            writer.push(&event(seq)).unwrap();
+            writer
+                .push(&RawEvent::encode(&event(seq)).unwrap())
+                .unwrap();
             seq += 1;
         }
         let written = seq - (u64::MAX - 100);
@@ -2838,9 +3164,93 @@ mod tests {
         let Ok(DeviceMessage::Events(batch)) = decode::<DeviceMessage<'_>>(&out[..len]) else {
             panic!("not a batch");
         };
-        let read: Vec<_> = batch.iter().map(Result::unwrap).collect();
+        let read: Vec<_> = batch
+            .iter()
+            .map(|raw| raw.unwrap().event().unwrap())
+            .collect();
         let expected: Vec<_> = (u64::MAX - 100..seq).map(event).collect();
         assert_eq!(read, expected);
+    }
+
+    /// A body this build does not know (a newer build's) keeps its number,
+    /// and the events after it still read.
+    #[test]
+    fn an_unknown_body_is_skipped_by_its_length() {
+        let mut unknown = [0; EVENT_BODY_MAX];
+        unknown[0] = 0xf0;
+        unknown[1] = 0x01;
+        unknown[2] = 0x07;
+        let next = Event {
+            seq: 3,
+            at: None,
+            body: EventBody::Lost { count: 1 },
+        };
+        let mut buf = [0; 128];
+        let mut writer = EventBatchWriter::new(&mut buf);
+        writer
+            .push(&RawEvent {
+                seq: 2,
+                at: Some(5),
+                body: unknown,
+            })
+            .unwrap();
+        writer.push(&RawEvent::encode(&next).unwrap()).unwrap();
+
+        let read: Vec<RawEvent> = writer.batch().iter().map(Result::unwrap).collect();
+
+        assert_eq!(read.len(), 2);
+        assert_eq!(
+            (read[0].seq, read[0].at, read[0].body),
+            (2, Some(5), unknown)
+        );
+        assert_eq!(read[0].event(), None);
+        assert_eq!(read[1].event(), Some(next));
+    }
+
+    /// Trailing zeros are trimmed on the wire and padded back: a body that
+    /// encodes to zeros alone costs only its length byte.
+    #[test]
+    fn a_body_s_trailing_zeros_are_trimmed_and_restored() {
+        let event = Event {
+            seq: 1,
+            at: None,
+            body: EventBody::Boot {
+                bank: 0,
+                reset_flags: 0,
+            },
+        };
+        let mut buf = [0; 64];
+        let mut writer = EventBatchWriter::new(&mut buf);
+        writer.push(&RawEvent::encode(&event).unwrap()).unwrap();
+
+        assert_eq!(writer.batch().as_bytes(), [1, 0, 0]);
+        let read: Vec<_> = writer.batch().iter().collect();
+        assert_eq!(read, [Ok(RawEvent::encode(&event).unwrap())]);
+        assert_eq!(read[0].unwrap().event(), Some(event));
+    }
+
+    /// A body longer than the ring keeps is no event: the batch is
+    /// malformed from there.
+    #[test]
+    fn a_body_past_the_ring_s_size_is_malformed() {
+        let long = [0x01; EVENT_BODY_MAX + 1];
+        let mut out = [0; 64];
+        let len = encode(
+            &EncodedEvent {
+                seq: 1,
+                at: None,
+                body: &long,
+            },
+            &mut out,
+        )
+        .unwrap();
+        let batch = EventBatch {
+            encoded: &out[..len],
+        };
+
+        let read: Vec<_> = batch.iter().collect();
+
+        assert_eq!(read, [Err(crate::Error::Malformed)]);
     }
 
     /// Bytes that are not events yield one error, then nothing.
@@ -2848,13 +3258,12 @@ mod tests {
     fn a_garbled_batch_fails_once() {
         let mut buf = [0; 64];
         let mut writer = EventBatchWriter::new(&mut buf);
-        writer
-            .push(&Event {
-                seq: 1,
-                at: None,
-                body: EventBody::Lost { count: 1 },
-            })
-            .unwrap();
+        let lost = Event {
+            seq: 1,
+            at: None,
+            body: EventBody::Lost { count: 1 },
+        };
+        writer.push(&RawEvent::encode(&lost).unwrap()).unwrap();
         let mut bytes = writer.batch().as_bytes().to_vec();
         bytes.push(0xff);
         let batch = EventBatch { encoded: &bytes };
@@ -2982,15 +3391,18 @@ mod tests {
             let len = encode(&body, &mut out).unwrap();
             assert_eq!(decode::<EventBody>(&out[..len]), Ok(body));
 
-            // The largest event around the largest body.
+            // The largest event around the largest body fits its bound.
             let event = Event {
                 seq: u64::MAX,
                 at: Some(u32::MAX),
                 body,
             };
             let mut out = [0; EVENT_BYTES_MAX];
-            let len = encode(&event, &mut out).unwrap();
-            assert_eq!(decode::<Event>(&out[..len]), Ok(event));
+            let mut writer = EventBatchWriter::new(&mut out);
+            writer.push(&RawEvent::encode(&event).unwrap()).unwrap();
+            let read: Vec<_> = writer.batch().iter().collect();
+            assert_eq!(read.len(), 1);
+            assert_eq!(read[0].unwrap().event(), Some(event));
         }
     }
 }

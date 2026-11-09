@@ -16,6 +16,8 @@ pub enum CurrentUnit {
     #[default]
     Scaled,
     MilliAmps,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 /// What a feed's drive measured, from every poll.

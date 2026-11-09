@@ -47,7 +47,7 @@ INSERT INTO samples (id, feeder_id, received_ms, uptime_ms, metric, number, valu
     VALUES (8, x'0192c5d0000070008000000000000003', 16, 17, 'power', NULL, x'06');
 INSERT INTO sample_rollups VALUES (x'0192c5d0000070008000000000000003', 'rssi', 0, 1, -60, -60, -60);
 UPDATE sample_marks SET rolled = 7, version = 1;
-INSERT INTO projection_version VALUES (0, 3);
+INSERT INTO projection_version VALUES (0, 3, 1);
 INSERT INTO feeds VALUES (x'0192c5d0000070008000000000000003', 9, 1, 2, 'client', x'0a0b0c0d',
     2, 2, 'done', 'requested', 100, 12);
 INSERT INTO feeds VALUES (x'0192c5d0000070008000000000000003', 9, 2, 3, 'panel', NULL,

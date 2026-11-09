@@ -56,8 +56,8 @@ use super::CLAIM_WAIT_MS;
 use wellfed_core::clock::wall::MAX_UNIX_MS;
 use wellfed_device_api::mailbox::PLANS;
 use wellfed_proto::api::{
-    ALERTS_MAX, Alert, AlertKind, AlertLevel, AlertsView, Battery, Blocked, Desiccant, EventBody,
-    FeedOutcome, FoodLevel, OpenAlert, Source, Supply, UpdateCandidate, UpdateStop,
+    ALERTS_MAX, Alert, AlertKind, AlertLevel, AlertTable, AlertsView, Battery, Blocked, Desiccant,
+    EventBody, FeedOutcome, FoodLevel, OpenAlert, Source, Supply, UpdateCandidate, UpdateStop,
 };
 
 /// Slots in the table. A read and the frame carry at most this many.
@@ -328,7 +328,10 @@ impl Alerts {
             generation: self.generation,
             more: self.more(),
             settling: self.settling,
-            alerts: self.table,
+            alerts: AlertTable {
+                entries: self.table,
+                skipped: 0,
+            },
         }
     }
 

@@ -49,7 +49,8 @@ pub const WAIT: Duration = Duration::from_secs(10);
 /// for a test that writes history into the store with no feeder behind it.
 pub fn stored_body(body: EventBody) -> Vec<u8> {
     let mut raw = [0; 64];
-    let body = wellfed_proto::api::EventBody::from(body);
+    let body = wellfed_proto::api::EventBody::try_from(body)
+        .expect("a test's body names only what this build knows");
     let len = wellfed_proto::encode(&body, &mut raw).expect("an event body fits 64 bytes");
     raw[..len].to_vec()
 }

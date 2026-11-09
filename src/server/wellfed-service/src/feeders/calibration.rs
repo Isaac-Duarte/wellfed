@@ -74,7 +74,7 @@ impl Service {
                     .read_calibration(id)
                     .await
                     .map_err(|error| match error {
-                        Error::Command(CommandError::Offline | CommandError::OtherBuild) => {
+                        Error::Command(CommandError::Offline | CommandError::Legacy) => {
                             CommandError::Unknown.into()
                         }
                         other => other,

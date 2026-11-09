@@ -14,9 +14,10 @@
 //!    before anyone is asked to press.
 //! 2. The feeder's client list: a key already an update signer needs
 //!    nothing sent, and a key the feeder holds under another role is a
-//!    session key, never an update signer ([`Enroll::listed`]). A feeder of
-//!    another build has no readable list ([`Enroll::unlisted`]): the
-//!    enrollment goes straight on, and the feeder's own checks answer.
+//!    session key, never an update signer ([`Enroll::listed`]). A
+//!    pre-revision build's list is not frozen, so is never asked for
+//!    ([`Enroll::unlisted`]): the enrollment goes straight on, and the
+//!    feeder's own checks answer.
 //! 3. `EnrollUpdateKey`, answered once Dispense is pressed or the window
 //!    closes. It is sent once: a second offer would need a second press,
 //!    and an unanswered one may already have enrolled the key (a press
@@ -72,8 +73,8 @@ pub enum EnrollError {
     #[error("the feeder holds this key as a {role:?}; an update key must be a key of its own")]
     SessionKey { role: ClientRole },
     /// The same, as the feeder itself refuses it after the press
-    /// (`UpdateRefusal::HeldAsSessionKey`): on a feeder of another build,
-    /// whose list was not read, or one enrolled since the list was read.
+    /// (`UpdateRefusal::HeldAsSessionKey`): on a pre-revision build, whose
+    /// list was not read, or for a key enrolled since the list was read.
     #[error(
         "the feeder holds this key as a client that opens sessions; an update key must be a key of its own"
     )]
@@ -146,8 +147,8 @@ impl Enroll {
         self.key
     }
 
-    /// Enroll without reading the client list first: for a feeder of
-    /// another schema revision, which takes only frozen ops. The feeder's
+    /// Enroll without reading the client list first: for a pre-revision
+    /// build (`Skew::Legacy`), which takes only frozen ops. The feeder's
     /// own checks then answer for the list: a key it already holds as a
     /// signer is `Done` after the press, and one it holds as a session key
     /// is refused [`EnrollError::HeldAsSessionKey`].
@@ -368,7 +369,7 @@ mod tests {
         }
     }
 
-    /// A feeder of another build has no readable list: the enrollment goes
+    /// A pre-revision build's list is never asked for: the enrollment goes
     /// straight out, and its refusal of a session key says so.
     #[test]
     fn an_unlisted_enrollment_skips_the_list() {

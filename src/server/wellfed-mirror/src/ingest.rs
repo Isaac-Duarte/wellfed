@@ -51,7 +51,8 @@ impl Batch {
 }
 
 /// A stored event of `epoch` as the feeder sent it, or `None` when its
-/// body does not decode.
+/// body does not decode. The raw bytes decide, not the stored kind: a row
+/// stored unread by an older server is read by any build that knows it.
 pub fn stored_event(epoch: u32, row: &EventRow) -> Option<HistoryEvent> {
     let event = Event {
         epoch,
@@ -63,9 +64,12 @@ pub fn stored_event(epoch: u32, row: &EventRow) -> Option<HistoryEvent> {
 }
 
 /// A stored body as the event it encodes, or `None` when it does not
-/// decode.
+/// decode. A body that came unread is stored as the feeder's ring keeps it,
+/// trailing zeros trimmed, so it is read padded back to the ring's size.
 pub(crate) fn stored_body(raw: &[u8]) -> Option<EventBody> {
-    let body: proto::EventBody = wellfed_proto::decode(raw).ok()?;
+    let mut padded = [0; proto::EVENT_BODY_MAX];
+    padded.get_mut(..raw.len())?.copy_from_slice(raw);
+    let body: proto::EventBody = wellfed_proto::decode_padded(&padded)?;
     Some(EventBody::from(body))
 }
 
@@ -81,15 +85,28 @@ impl Mirror {
     /// projection code changed since they were built. Call it before
     /// starting any feeder, so ingest never writes beside a stale build.
     pub async fn refresh_projections(&self) -> wellfed_store::Result<Refresh> {
-        let refresh = self.shared.store.refresh_projections(stored_body).await?;
-        if let Refresh::Rebuilt { events, undecoded } = refresh {
-            info!(events, "projections rebuilt from the stored events");
-            if undecoded > 0 {
-                warn!(
-                    undecoded,
-                    "stored events that do not decode project nothing"
+        let refresh = self
+            .shared
+            .store
+            .refresh_projections(stored_body, proto::REVISION)
+            .await?;
+        match refresh {
+            Refresh::Rebuilt { events, undecoded } => {
+                info!(events, "projections rebuilt from the stored events");
+                if undecoded > 0 {
+                    warn!(
+                        undecoded,
+                        "stored events that do not decode project nothing"
+                    );
+                }
+            }
+            Refresh::Reread { read, unread } => {
+                info!(
+                    read,
+                    unread, "events stored unread were read again by this device API revision"
                 );
             }
+            Refresh::Current => {}
         }
         Ok(refresh)
     }
@@ -126,7 +143,9 @@ impl Task {
         let mut raw = [0u8; RAW];
         let update = match pushed {
             Pushed::Event(event) => {
-                let len = wellfed_proto::encode(&proto::EventBody::from(event.body), &mut raw)
+                let body = proto::EventBody::try_from(event.body)
+                    .map_err(|_| End::Failed(Failure::Encode))?;
+                let len = wellfed_proto::encode(&body, &mut raw)
                     .map_err(|_| Failure::Encode)
                     .map_err(End::Failed)?;
                 let new = store
@@ -137,7 +156,7 @@ impl Task {
                             seq: event.seq,
                             at: event.at,
                             received,
-                            body: event.body,
+                            body: Some(event.body),
                             raw: &raw[..len],
                         },
                     )
@@ -152,6 +171,32 @@ impl Task {
                     self.plans_stale = true;
                 }
                 MirrorEvent::Event(HistoryEvent::new(event, received))
+            }
+            // A newer build's event, which this server cannot read: kept
+            // as the ring holds it, so a later server reads it, and the
+            // cursor moves past it. Nothing is broadcast: no client of this
+            // server's build could show it.
+            Pushed::Unknown(event) => {
+                let used = event
+                    .raw
+                    .0
+                    .iter()
+                    .rposition(|&b| b != 0)
+                    .map_or(0, |last| last + 1);
+                store
+                    .record_event(
+                        self.id,
+                        NewEvent {
+                            epoch: event.epoch,
+                            seq: event.seq,
+                            at: event.at,
+                            received,
+                            body: None,
+                            raw: event.raw.0.get(..used).unwrap_or_default(),
+                        },
+                    )
+                    .await?;
+                return Ok(());
             }
             Pushed::Gap(gap) => {
                 let (epoch, from, to) = (gap.epoch, gap.from, gap.to);
@@ -203,5 +248,21 @@ impl Task {
             .record_samples(self.id, &batch.samples)
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stored body longer than the ring's 16 bytes is no body the feeder
+    /// sent: it reads as undecodable rather than panicking or truncating.
+    #[test]
+    fn a_stored_body_past_the_ring_s_size_does_not_decode() {
+        let mut raw = vec![0; proto::EVENT_BODY_MAX + 1];
+        let len = wellfed_proto::encode(&proto::EventBody::Restarting, &mut raw).unwrap();
+        assert!(stored_body(&raw[..len]).is_some(), "the short form reads");
+
+        assert_eq!(stored_body(&raw), None);
     }
 }

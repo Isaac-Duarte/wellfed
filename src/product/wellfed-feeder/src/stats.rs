@@ -519,7 +519,7 @@ impl Keeper {
             traced: traces.traced,
             drive_ms: traces.drive_ms,
             samples: traces.samples,
-            unit: CurrentUnit::Scaled,
+            unit: CurrentUnit::Scaled.into(),
             current_peak: traces.current_peak,
             current_mean: mean,
             rising: traces.rising,
@@ -551,8 +551,8 @@ impl Keeper {
             FeedOutcome::Failed | FeedOutcome::Uncertain => {
                 self.feed_fault = Some(FeedFault {
                     feed,
-                    outcome,
-                    reason,
+                    outcome: outcome.into(),
+                    reason: reason.into(),
                 });
             }
             FeedOutcome::Done => self.feed_fault = None,
@@ -670,7 +670,7 @@ impl Keeper {
         let boot = self.counts(now_ms);
         Counters {
             boot,
-            reset: self.reset,
+            reset: self.reset.into(),
             lifetime: stored.map(|stored| add_counts(&stored.counts, &boot)),
             resets: stored.map(|stored| stored.resets),
             handshake_max_ms: self.handshake_max_ms,

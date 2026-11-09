@@ -8,7 +8,7 @@ Every kind of device serves these.
 
 | Op | Notes |
 | --- | --- |
-| `Status` | Answered `Status`: the shared fields and the kind's part. A feeder's is `DeviceStatus::Feeder(FeederStatus)`: the lock, the settings' generation, the food beam, the last feed fault, the desiccant count, the readiness, the judged supply and the alert table's generation |
+| `Status` | Answered `Status`: the shared fields and the kind's part. A feeder's is `DeviceStatus::Feeder(FeederStatus)`: the lock, the settings' generation, the food beam, the last feed fault, the desiccant count, what blocks feeding, and the judged supply. Every kind's carries `alerts_generation`, which changes whenever its alert table does |
 | `Alive` | Answered `Done`, to any role. The keepalive: frozen, so a client keeps a session with a feeder of any build alive ([evolution](device-api.md#evolution)) |
 | `PutWifi { base, wifi }` | `None` clears. Owners only |
 | `TimeSync` | An owner's may step the clock. Anyone else's may only narrow it, and is refused `Time` when it disagrees with a valid clock beyond both error bounds |
@@ -19,6 +19,7 @@ Every kind of device serves these.
 | `Stats { section }` | One section of the statistics. The food, feeds and portions sections are a feeder's ([statistics](device-api-diagnostics.md#statistics)) |
 | `ReadBank1 { offset }` | Answered `Bank1(Bank1Page)`. Owners only, served only from bank 0 ([stock backup](device-api-diagnostics.md#stock-backup)) |
 | `TailLog { after }` | Owners only, answered with `Log` batches ([debug log](device-api-diagnostics.md#debug-log)) |
+| `GetAlerts` | Answered `Alerts(AlertsView)`: the device's table of open alerts, whole, or `Unavailable` from a kind that keeps none. Owners, members and the server may read it. `Status::alerts_generation` changes whenever it does ([alerts](alerts.md)) |
 
 ## The feeder's module
 
@@ -32,11 +33,10 @@ Every kind of device serves these.
 | `CancelFeed { feed }` | `Done` while that feed runs, `NotFound` once it has ended |
 | `FeedTrace { feed, offset }` | Answered `FeedTrace(TracePage)` ([feed traces](device-api-diagnostics.md#feed-traces)) |
 | `GetCalibration`, `PutCalibration` | `PutCalibration` is owners and members only |
-| `GetPlans`, `PutPlans { base, plans }` | `GetPlans` is answered `Plans { generation, writable, plans, skipped }`, where `skipped` names each slot's skipped meal (Unix seconds) while its skip stands. `PutPlans` replaces all ten slots. A plan's `call` is how many times the meal call plays before it, 0 to 5 |
+| `GetPlans`, `PutPlans { base, plans }` | `GetPlans` is answered `Plans { generation, writable, plans, skipped }`, where `skipped` names each slot's skipped meal (Unix seconds) while its skip stands. `PutPlans` replaces all ten slots; a plan whose extension tail the build can't read is refused `Invalid` ([whole-replace writes](device-api.md#everything-else)). A plan's `call` is how many times the meal call plays before it, 0 to 5 |
 | `SkipMeal { slot, due_s }`, `UnskipMeal { slot, due_s }` | Skip one of today's meals still to come, or undo the skip until it is due |
 | `ResetDesiccant` | Records a desiccant replacement today by the feeder's clock |
 | `GetCall`, `StartCall { bytes, crc }`, `CallChunk { offset, data }`, `DeleteCall`, `PlayCall` | The meal call's clip. `GetCall` is answered `Call(CallView)`. The writes are owners only; `PlayCall` is any client's |
-| `GetAlerts` | Answered `Alerts(AlertsView)`: the feeder's table of open alerts, whole. Owners, members and the server may read it. `FeederStatus::alerts_generation` changes whenever it does ([alerts](alerts.md)) |
 
 ## What a feed records
 

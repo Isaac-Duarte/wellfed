@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE projection_version SET api_revision = ? WHERE id = 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "15a071e773e1abfeae3045e21d5e133842817bde3c16de4bd327dd67d4f63099"
+}

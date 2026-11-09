@@ -56,7 +56,7 @@ extension FeederRefusalPatterns on FeederRefusal {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FeederRefusal_Forbidden value)?  forbidden,TResult Function( FeederRefusal_Stale value)?  stale,TResult Function( FeederRefusal_Busy value)?  busy,TResult Function( FeederRefusal_Unavailable value)?  unavailable,TResult Function( FeederRefusal_Invalid value)?  invalid,TResult Function( FeederRefusal_NotWritable value)?  notWritable,TResult Function( FeederRefusal_Full value)?  full,TResult Function( FeederRefusal_NotFound value)?  notFound,TResult Function( FeederRefusal_Muted value)?  muted,TResult Function( FeederRefusal_Time value)?  time,TResult Function( FeederRefusal_Fault value)?  fault,TResult Function( FeederRefusal_Update value)?  update,TResult Function( FeederRefusal_Unverified value)?  unverified,TResult Function( FeederRefusal_Portions value)?  portions,TResult Function( FeederRefusal_NoClock value)?  noClock,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FeederRefusal_Forbidden value)?  forbidden,TResult Function( FeederRefusal_Stale value)?  stale,TResult Function( FeederRefusal_Busy value)?  busy,TResult Function( FeederRefusal_Unavailable value)?  unavailable,TResult Function( FeederRefusal_Invalid value)?  invalid,TResult Function( FeederRefusal_NotWritable value)?  notWritable,TResult Function( FeederRefusal_Full value)?  full,TResult Function( FeederRefusal_NotFound value)?  notFound,TResult Function( FeederRefusal_Muted value)?  muted,TResult Function( FeederRefusal_Time value)?  time,TResult Function( FeederRefusal_Fault value)?  fault,TResult Function( FeederRefusal_Update value)?  update,TResult Function( FeederRefusal_Unverified value)?  unverified,TResult Function( FeederRefusal_Portions value)?  portions,TResult Function( FeederRefusal_NoClock value)?  noClock,TResult Function( FeederRefusal_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden() when forbidden != null:
@@ -74,7 +74,8 @@ return fault(_that);case FeederRefusal_Update() when update != null:
 return update(_that);case FeederRefusal_Unverified() when unverified != null:
 return unverified(_that);case FeederRefusal_Portions() when portions != null:
 return portions(_that);case FeederRefusal_NoClock() when noClock != null:
-return noClock(_that);case _:
+return noClock(_that);case FeederRefusal_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -92,7 +93,7 @@ return noClock(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FeederRefusal_Forbidden value)  forbidden,required TResult Function( FeederRefusal_Stale value)  stale,required TResult Function( FeederRefusal_Busy value)  busy,required TResult Function( FeederRefusal_Unavailable value)  unavailable,required TResult Function( FeederRefusal_Invalid value)  invalid,required TResult Function( FeederRefusal_NotWritable value)  notWritable,required TResult Function( FeederRefusal_Full value)  full,required TResult Function( FeederRefusal_NotFound value)  notFound,required TResult Function( FeederRefusal_Muted value)  muted,required TResult Function( FeederRefusal_Time value)  time,required TResult Function( FeederRefusal_Fault value)  fault,required TResult Function( FeederRefusal_Update value)  update,required TResult Function( FeederRefusal_Unverified value)  unverified,required TResult Function( FeederRefusal_Portions value)  portions,required TResult Function( FeederRefusal_NoClock value)  noClock,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FeederRefusal_Forbidden value)  forbidden,required TResult Function( FeederRefusal_Stale value)  stale,required TResult Function( FeederRefusal_Busy value)  busy,required TResult Function( FeederRefusal_Unavailable value)  unavailable,required TResult Function( FeederRefusal_Invalid value)  invalid,required TResult Function( FeederRefusal_NotWritable value)  notWritable,required TResult Function( FeederRefusal_Full value)  full,required TResult Function( FeederRefusal_NotFound value)  notFound,required TResult Function( FeederRefusal_Muted value)  muted,required TResult Function( FeederRefusal_Time value)  time,required TResult Function( FeederRefusal_Fault value)  fault,required TResult Function( FeederRefusal_Update value)  update,required TResult Function( FeederRefusal_Unverified value)  unverified,required TResult Function( FeederRefusal_Portions value)  portions,required TResult Function( FeederRefusal_NoClock value)  noClock,required TResult Function( FeederRefusal_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden():
@@ -110,7 +111,8 @@ return fault(_that);case FeederRefusal_Update():
 return update(_that);case FeederRefusal_Unverified():
 return unverified(_that);case FeederRefusal_Portions():
 return portions(_that);case FeederRefusal_NoClock():
-return noClock(_that);}
+return noClock(_that);case FeederRefusal_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -124,7 +126,7 @@ return noClock(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FeederRefusal_Forbidden value)?  forbidden,TResult? Function( FeederRefusal_Stale value)?  stale,TResult? Function( FeederRefusal_Busy value)?  busy,TResult? Function( FeederRefusal_Unavailable value)?  unavailable,TResult? Function( FeederRefusal_Invalid value)?  invalid,TResult? Function( FeederRefusal_NotWritable value)?  notWritable,TResult? Function( FeederRefusal_Full value)?  full,TResult? Function( FeederRefusal_NotFound value)?  notFound,TResult? Function( FeederRefusal_Muted value)?  muted,TResult? Function( FeederRefusal_Time value)?  time,TResult? Function( FeederRefusal_Fault value)?  fault,TResult? Function( FeederRefusal_Update value)?  update,TResult? Function( FeederRefusal_Unverified value)?  unverified,TResult? Function( FeederRefusal_Portions value)?  portions,TResult? Function( FeederRefusal_NoClock value)?  noClock,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FeederRefusal_Forbidden value)?  forbidden,TResult? Function( FeederRefusal_Stale value)?  stale,TResult? Function( FeederRefusal_Busy value)?  busy,TResult? Function( FeederRefusal_Unavailable value)?  unavailable,TResult? Function( FeederRefusal_Invalid value)?  invalid,TResult? Function( FeederRefusal_NotWritable value)?  notWritable,TResult? Function( FeederRefusal_Full value)?  full,TResult? Function( FeederRefusal_NotFound value)?  notFound,TResult? Function( FeederRefusal_Muted value)?  muted,TResult? Function( FeederRefusal_Time value)?  time,TResult? Function( FeederRefusal_Fault value)?  fault,TResult? Function( FeederRefusal_Update value)?  update,TResult? Function( FeederRefusal_Unverified value)?  unverified,TResult? Function( FeederRefusal_Portions value)?  portions,TResult? Function( FeederRefusal_NoClock value)?  noClock,TResult? Function( FeederRefusal_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden() when forbidden != null:
@@ -142,7 +144,8 @@ return fault(_that);case FeederRefusal_Update() when update != null:
 return update(_that);case FeederRefusal_Unverified() when unverified != null:
 return unverified(_that);case FeederRefusal_Portions() when portions != null:
 return portions(_that);case FeederRefusal_NoClock() when noClock != null:
-return noClock(_that);case _:
+return noClock(_that);case FeederRefusal_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -159,7 +162,7 @@ return noClock(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  forbidden,TResult Function( int current)?  stale,TResult Function()?  busy,TResult Function()?  unavailable,TResult Function()?  invalid,TResult Function()?  notWritable,TResult Function()?  full,TResult Function()?  notFound,TResult Function()?  muted,TResult Function()?  time,TResult Function()?  fault,TResult Function( UpdateRefusal reason)?  update,TResult Function()?  unverified,TResult Function( int asked)?  portions,TResult Function()?  noClock,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  forbidden,TResult Function( int current)?  stale,TResult Function()?  busy,TResult Function()?  unavailable,TResult Function()?  invalid,TResult Function()?  notWritable,TResult Function()?  full,TResult Function()?  notFound,TResult Function()?  muted,TResult Function()?  time,TResult Function()?  fault,TResult Function( UpdateRefusal reason)?  update,TResult Function()?  unverified,TResult Function( int asked)?  portions,TResult Function()?  noClock,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden() when forbidden != null:
 return forbidden();case FeederRefusal_Stale() when stale != null:
@@ -176,7 +179,8 @@ return fault();case FeederRefusal_Update() when update != null:
 return update(_that.reason);case FeederRefusal_Unverified() when unverified != null:
 return unverified();case FeederRefusal_Portions() when portions != null:
 return portions(_that.asked);case FeederRefusal_NoClock() when noClock != null:
-return noClock();case _:
+return noClock();case FeederRefusal_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -194,7 +198,7 @@ return noClock();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  forbidden,required TResult Function( int current)  stale,required TResult Function()  busy,required TResult Function()  unavailable,required TResult Function()  invalid,required TResult Function()  notWritable,required TResult Function()  full,required TResult Function()  notFound,required TResult Function()  muted,required TResult Function()  time,required TResult Function()  fault,required TResult Function( UpdateRefusal reason)  update,required TResult Function()  unverified,required TResult Function( int asked)  portions,required TResult Function()  noClock,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  forbidden,required TResult Function( int current)  stale,required TResult Function()  busy,required TResult Function()  unavailable,required TResult Function()  invalid,required TResult Function()  notWritable,required TResult Function()  full,required TResult Function()  notFound,required TResult Function()  muted,required TResult Function()  time,required TResult Function()  fault,required TResult Function( UpdateRefusal reason)  update,required TResult Function()  unverified,required TResult Function( int asked)  portions,required TResult Function()  noClock,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden():
 return forbidden();case FeederRefusal_Stale():
@@ -211,7 +215,8 @@ return fault();case FeederRefusal_Update():
 return update(_that.reason);case FeederRefusal_Unverified():
 return unverified();case FeederRefusal_Portions():
 return portions(_that.asked);case FeederRefusal_NoClock():
-return noClock();}
+return noClock();case FeederRefusal_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -225,7 +230,7 @@ return noClock();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  forbidden,TResult? Function( int current)?  stale,TResult? Function()?  busy,TResult? Function()?  unavailable,TResult? Function()?  invalid,TResult? Function()?  notWritable,TResult? Function()?  full,TResult? Function()?  notFound,TResult? Function()?  muted,TResult? Function()?  time,TResult? Function()?  fault,TResult? Function( UpdateRefusal reason)?  update,TResult? Function()?  unverified,TResult? Function( int asked)?  portions,TResult? Function()?  noClock,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  forbidden,TResult? Function( int current)?  stale,TResult? Function()?  busy,TResult? Function()?  unavailable,TResult? Function()?  invalid,TResult? Function()?  notWritable,TResult? Function()?  full,TResult? Function()?  notFound,TResult? Function()?  muted,TResult? Function()?  time,TResult? Function()?  fault,TResult? Function( UpdateRefusal reason)?  update,TResult? Function()?  unverified,TResult? Function( int asked)?  portions,TResult? Function()?  noClock,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden() when forbidden != null:
 return forbidden();case FeederRefusal_Stale() when stale != null:
@@ -242,7 +247,8 @@ return fault();case FeederRefusal_Update() when update != null:
 return update(_that.reason);case FeederRefusal_Unverified() when unverified != null:
 return unverified();case FeederRefusal_Portions() when portions != null:
 return portions(_that.asked);case FeederRefusal_NoClock() when noClock != null:
-return noClock();case _:
+return noClock();case FeederRefusal_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -848,6 +854,38 @@ String toString() {
 
 
 /// @nodoc
+
+
+class FeederRefusal_Unknown extends FeederRefusal {
+  const FeederRefusal_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is FeederRefusal_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'FeederRefusal.unknown()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$FeederReply {
 
 
@@ -891,7 +929,7 @@ extension FeederReplyPatterns on FeederReply {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FeederReply_Done value)?  done,TResult Function( FeederReply_Settings value)?  settings,TResult Function( FeederReply_Time value)?  time,TResult Function( FeederReply_Plans value)?  plans,TResult Function( FeederReply_Clients value)?  clients,TResult Function( FeederReply_Invite value)?  invite,TResult Function( FeederReply_Calibration value)?  calibration,TResult Function( FeederReply_Call value)?  call,TResult Function( FeederReply_Stats value)?  stats,TResult Function( FeederReply_Trace value)?  trace,TResult Function( FeederReply_Update value)?  update,TResult Function( FeederReply_Refused value)?  refused,TResult Function( FeederReply_NotAsked value)?  notAsked,TResult Function( FeederReply_Unanswered value)?  unanswered,TResult Function( FeederReply_NotSent value)?  notSent,TResult Function( FeederReply_Unexpected value)?  unexpected,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FeederReply_Done value)?  done,TResult Function( FeederReply_Settings value)?  settings,TResult Function( FeederReply_Time value)?  time,TResult Function( FeederReply_Plans value)?  plans,TResult Function( FeederReply_Clients value)?  clients,TResult Function( FeederReply_Invite value)?  invite,TResult Function( FeederReply_Calibration value)?  calibration,TResult Function( FeederReply_Call value)?  call,TResult Function( FeederReply_Stats value)?  stats,TResult Function( FeederReply_Trace value)?  trace,TResult Function( FeederReply_Update value)?  update,TResult Function( FeederReply_Refused value)?  refused,TResult Function( FeederReply_NotAsked value)?  notAsked,TResult Function( FeederReply_Unanswered value)?  unanswered,TResult Function( FeederReply_NotSent value)?  notSent,TResult Function( FeederReply_Unexpected value)?  unexpected,TResult Function( FeederReply_Unreadable value)?  unreadable,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case FeederReply_Done() when done != null:
@@ -910,7 +948,8 @@ return refused(_that);case FeederReply_NotAsked() when notAsked != null:
 return notAsked(_that);case FeederReply_Unanswered() when unanswered != null:
 return unanswered(_that);case FeederReply_NotSent() when notSent != null:
 return notSent(_that);case FeederReply_Unexpected() when unexpected != null:
-return unexpected(_that);case _:
+return unexpected(_that);case FeederReply_Unreadable() when unreadable != null:
+return unreadable(_that);case _:
   return orElse();
 
 }
@@ -928,7 +967,7 @@ return unexpected(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FeederReply_Done value)  done,required TResult Function( FeederReply_Settings value)  settings,required TResult Function( FeederReply_Time value)  time,required TResult Function( FeederReply_Plans value)  plans,required TResult Function( FeederReply_Clients value)  clients,required TResult Function( FeederReply_Invite value)  invite,required TResult Function( FeederReply_Calibration value)  calibration,required TResult Function( FeederReply_Call value)  call,required TResult Function( FeederReply_Stats value)  stats,required TResult Function( FeederReply_Trace value)  trace,required TResult Function( FeederReply_Update value)  update,required TResult Function( FeederReply_Refused value)  refused,required TResult Function( FeederReply_NotAsked value)  notAsked,required TResult Function( FeederReply_Unanswered value)  unanswered,required TResult Function( FeederReply_NotSent value)  notSent,required TResult Function( FeederReply_Unexpected value)  unexpected,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FeederReply_Done value)  done,required TResult Function( FeederReply_Settings value)  settings,required TResult Function( FeederReply_Time value)  time,required TResult Function( FeederReply_Plans value)  plans,required TResult Function( FeederReply_Clients value)  clients,required TResult Function( FeederReply_Invite value)  invite,required TResult Function( FeederReply_Calibration value)  calibration,required TResult Function( FeederReply_Call value)  call,required TResult Function( FeederReply_Stats value)  stats,required TResult Function( FeederReply_Trace value)  trace,required TResult Function( FeederReply_Update value)  update,required TResult Function( FeederReply_Refused value)  refused,required TResult Function( FeederReply_NotAsked value)  notAsked,required TResult Function( FeederReply_Unanswered value)  unanswered,required TResult Function( FeederReply_NotSent value)  notSent,required TResult Function( FeederReply_Unexpected value)  unexpected,required TResult Function( FeederReply_Unreadable value)  unreadable,}){
 final _that = this;
 switch (_that) {
 case FeederReply_Done():
@@ -947,7 +986,8 @@ return refused(_that);case FeederReply_NotAsked():
 return notAsked(_that);case FeederReply_Unanswered():
 return unanswered(_that);case FeederReply_NotSent():
 return notSent(_that);case FeederReply_Unexpected():
-return unexpected(_that);}
+return unexpected(_that);case FeederReply_Unreadable():
+return unreadable(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -961,7 +1001,7 @@ return unexpected(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FeederReply_Done value)?  done,TResult? Function( FeederReply_Settings value)?  settings,TResult? Function( FeederReply_Time value)?  time,TResult? Function( FeederReply_Plans value)?  plans,TResult? Function( FeederReply_Clients value)?  clients,TResult? Function( FeederReply_Invite value)?  invite,TResult? Function( FeederReply_Calibration value)?  calibration,TResult? Function( FeederReply_Call value)?  call,TResult? Function( FeederReply_Stats value)?  stats,TResult? Function( FeederReply_Trace value)?  trace,TResult? Function( FeederReply_Update value)?  update,TResult? Function( FeederReply_Refused value)?  refused,TResult? Function( FeederReply_NotAsked value)?  notAsked,TResult? Function( FeederReply_Unanswered value)?  unanswered,TResult? Function( FeederReply_NotSent value)?  notSent,TResult? Function( FeederReply_Unexpected value)?  unexpected,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FeederReply_Done value)?  done,TResult? Function( FeederReply_Settings value)?  settings,TResult? Function( FeederReply_Time value)?  time,TResult? Function( FeederReply_Plans value)?  plans,TResult? Function( FeederReply_Clients value)?  clients,TResult? Function( FeederReply_Invite value)?  invite,TResult? Function( FeederReply_Calibration value)?  calibration,TResult? Function( FeederReply_Call value)?  call,TResult? Function( FeederReply_Stats value)?  stats,TResult? Function( FeederReply_Trace value)?  trace,TResult? Function( FeederReply_Update value)?  update,TResult? Function( FeederReply_Refused value)?  refused,TResult? Function( FeederReply_NotAsked value)?  notAsked,TResult? Function( FeederReply_Unanswered value)?  unanswered,TResult? Function( FeederReply_NotSent value)?  notSent,TResult? Function( FeederReply_Unexpected value)?  unexpected,TResult? Function( FeederReply_Unreadable value)?  unreadable,}){
 final _that = this;
 switch (_that) {
 case FeederReply_Done() when done != null:
@@ -980,7 +1020,8 @@ return refused(_that);case FeederReply_NotAsked() when notAsked != null:
 return notAsked(_that);case FeederReply_Unanswered() when unanswered != null:
 return unanswered(_that);case FeederReply_NotSent() when notSent != null:
 return notSent(_that);case FeederReply_Unexpected() when unexpected != null:
-return unexpected(_that);case _:
+return unexpected(_that);case FeederReply_Unreadable() when unreadable != null:
+return unreadable(_that);case _:
   return null;
 
 }
@@ -997,7 +1038,7 @@ return unexpected(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int? generation)?  done,TResult Function( SettingsView settings)?  settings,TResult Function( TimeInfo time)?  time,TResult Function( PlansView plans)?  plans,TResult Function( List<ClientView> clients)?  clients,TResult Function( InviteView invite)?  invite,TResult Function( CalibrationInfo calibration)?  calibration,TResult Function( CallInfo call)?  call,TResult Function( Stats stats)?  stats,TResult Function( TraceView trace)?  trace,TResult Function( UpdateInfo update)?  update,TResult Function( FeederRefusal refusal)?  refused,TResult Function( NotAsked reason)?  notAsked,TResult Function()?  unanswered,TResult Function()?  notSent,TResult Function()?  unexpected,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int? generation)?  done,TResult Function( SettingsView settings)?  settings,TResult Function( TimeInfo time)?  time,TResult Function( PlansView plans)?  plans,TResult Function( List<ClientView> clients)?  clients,TResult Function( InviteView invite)?  invite,TResult Function( CalibrationInfo calibration)?  calibration,TResult Function( CallInfo call)?  call,TResult Function( Stats stats)?  stats,TResult Function( TraceView trace)?  trace,TResult Function( UpdateInfo update)?  update,TResult Function( FeederRefusal refusal)?  refused,TResult Function( NotAsked reason)?  notAsked,TResult Function()?  unanswered,TResult Function()?  notSent,TResult Function()?  unexpected,TResult Function()?  unreadable,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case FeederReply_Done() when done != null:
 return done(_that.generation);case FeederReply_Settings() when settings != null:
@@ -1015,7 +1056,8 @@ return refused(_that.refusal);case FeederReply_NotAsked() when notAsked != null:
 return notAsked(_that.reason);case FeederReply_Unanswered() when unanswered != null:
 return unanswered();case FeederReply_NotSent() when notSent != null:
 return notSent();case FeederReply_Unexpected() when unexpected != null:
-return unexpected();case _:
+return unexpected();case FeederReply_Unreadable() when unreadable != null:
+return unreadable();case _:
   return orElse();
 
 }
@@ -1033,7 +1075,7 @@ return unexpected();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int? generation)  done,required TResult Function( SettingsView settings)  settings,required TResult Function( TimeInfo time)  time,required TResult Function( PlansView plans)  plans,required TResult Function( List<ClientView> clients)  clients,required TResult Function( InviteView invite)  invite,required TResult Function( CalibrationInfo calibration)  calibration,required TResult Function( CallInfo call)  call,required TResult Function( Stats stats)  stats,required TResult Function( TraceView trace)  trace,required TResult Function( UpdateInfo update)  update,required TResult Function( FeederRefusal refusal)  refused,required TResult Function( NotAsked reason)  notAsked,required TResult Function()  unanswered,required TResult Function()  notSent,required TResult Function()  unexpected,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int? generation)  done,required TResult Function( SettingsView settings)  settings,required TResult Function( TimeInfo time)  time,required TResult Function( PlansView plans)  plans,required TResult Function( List<ClientView> clients)  clients,required TResult Function( InviteView invite)  invite,required TResult Function( CalibrationInfo calibration)  calibration,required TResult Function( CallInfo call)  call,required TResult Function( Stats stats)  stats,required TResult Function( TraceView trace)  trace,required TResult Function( UpdateInfo update)  update,required TResult Function( FeederRefusal refusal)  refused,required TResult Function( NotAsked reason)  notAsked,required TResult Function()  unanswered,required TResult Function()  notSent,required TResult Function()  unexpected,required TResult Function()  unreadable,}) {final _that = this;
 switch (_that) {
 case FeederReply_Done():
 return done(_that.generation);case FeederReply_Settings():
@@ -1051,7 +1093,8 @@ return refused(_that.refusal);case FeederReply_NotAsked():
 return notAsked(_that.reason);case FeederReply_Unanswered():
 return unanswered();case FeederReply_NotSent():
 return notSent();case FeederReply_Unexpected():
-return unexpected();}
+return unexpected();case FeederReply_Unreadable():
+return unreadable();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -1065,7 +1108,7 @@ return unexpected();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int? generation)?  done,TResult? Function( SettingsView settings)?  settings,TResult? Function( TimeInfo time)?  time,TResult? Function( PlansView plans)?  plans,TResult? Function( List<ClientView> clients)?  clients,TResult? Function( InviteView invite)?  invite,TResult? Function( CalibrationInfo calibration)?  calibration,TResult? Function( CallInfo call)?  call,TResult? Function( Stats stats)?  stats,TResult? Function( TraceView trace)?  trace,TResult? Function( UpdateInfo update)?  update,TResult? Function( FeederRefusal refusal)?  refused,TResult? Function( NotAsked reason)?  notAsked,TResult? Function()?  unanswered,TResult? Function()?  notSent,TResult? Function()?  unexpected,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int? generation)?  done,TResult? Function( SettingsView settings)?  settings,TResult? Function( TimeInfo time)?  time,TResult? Function( PlansView plans)?  plans,TResult? Function( List<ClientView> clients)?  clients,TResult? Function( InviteView invite)?  invite,TResult? Function( CalibrationInfo calibration)?  calibration,TResult? Function( CallInfo call)?  call,TResult? Function( Stats stats)?  stats,TResult? Function( TraceView trace)?  trace,TResult? Function( UpdateInfo update)?  update,TResult? Function( FeederRefusal refusal)?  refused,TResult? Function( NotAsked reason)?  notAsked,TResult? Function()?  unanswered,TResult? Function()?  notSent,TResult? Function()?  unexpected,TResult? Function()?  unreadable,}) {final _that = this;
 switch (_that) {
 case FeederReply_Done() when done != null:
 return done(_that.generation);case FeederReply_Settings() when settings != null:
@@ -1083,7 +1126,8 @@ return refused(_that.refusal);case FeederReply_NotAsked() when notAsked != null:
 return notAsked(_that.reason);case FeederReply_Unanswered() when unanswered != null:
 return unanswered();case FeederReply_NotSent() when notSent != null:
 return notSent();case FeederReply_Unexpected() when unexpected != null:
-return unexpected();case _:
+return unexpected();case FeederReply_Unreadable() when unreadable != null:
+return unreadable();case _:
   return null;
 
 }
@@ -2087,6 +2131,38 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
     return 'FeederReply.unexpected()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class FeederReply_Unreadable extends FeederReply {
+  const FeederReply_Unreadable(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is FeederReply_Unreadable);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'FeederReply.unreadable()';
 }
 
 

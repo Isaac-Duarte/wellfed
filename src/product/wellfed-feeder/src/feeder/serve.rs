@@ -34,7 +34,7 @@ use wellfed_core::tone::Tune;
 use wellfed_proto::api::{
     self as proto, AlertsView, BANK1_PAGE_MAX, Bank1Page, Battery, Desiccant, DeviceStatus,
     EventBody, FeederStatus, FrozenRefusal, Metric, PORT, Power, Readiness, Refusal, Sample,
-    Source, Stats, StatsSection, Status, Supply, TASKS_MAX, TaskStack as WireTask, TracePage,
+    Source, Stats, StatsSection, Status, Supply, TASKS_MAX, Tail, TaskStack as WireTask, TracePage,
     UpdateRefusal, UpdateView,
 };
 use wellfed_proto::device::Model;
@@ -856,7 +856,8 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
                 WifiSource::Build => proto::WifiSource::Build,
                 WifiSource::Stored => proto::WifiSource::Stored,
                 WifiSource::Fallback => proto::WifiSource::Fallback,
-            },
+            }
+            .into(),
             link_losses: link.link_losses,
             dns_losses: link.check_losses,
             clock_ms: self.platform.wall_ms(now_ms),
@@ -867,16 +868,18 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
             wifi_generation,
             last_event: self.platform.last_event(),
             sessions: 0,
+            alerts_generation: self.platform.alerts().generation(),
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: self.locked,
                 settings_generation,
                 desiccant,
-                food: crate::feed::food_level(self.feeds.food()),
+                food: crate::feed::food_level(self.feeds.food()).into(),
                 feed_fault: self.stats.feed_fault(),
-                readiness: FeederDevice::readiness(self),
+                blocked: FeederDevice::readiness(self).blocked(),
                 supply: self.supply,
-                alerts_generation: self.platform.alerts().generation(),
+                ext: Tail::EMPTY,
             }),
+            ext: Tail::EMPTY,
         }
     }
 
@@ -946,26 +949,21 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
             None => EventRead::Wait,
             Some(Read::End) => EventRead::None,
             Some(Read::Gap { from, to }) => EventRead::Gap { from, to },
-            Some(Read::Record(record)) => {
-                match wellfed_proto::decode_padded::<EventBody>(&record.body) {
-                    Some(body) => EventRead::Event(proto::Event {
-                        seq: record.seq,
-                        at: record.at,
-                        body,
-                    }),
-                    // A body this build cannot read (a newer one's): skip it
-                    // as lost rather than stall the subscriber.
-                    None => EventRead::Gap {
-                        from: record.seq,
-                        to: record.seq,
-                    },
-                }
-            }
+            Some(Read::Record(record)) => EventRead::Event(proto::RawEvent {
+                seq: record.seq,
+                at: record.at,
+                body: record.body,
+            }),
         }
     }
 
     fn reader_left(&mut self, reader: Reader) {
         self.platform.reader_left(reader);
+    }
+
+    fn alerts(&mut self) -> Option<AlertsView> {
+        let epoch = self.platform.epoch()?;
+        Some(self.platform.alerts().view(epoch))
     }
 
     fn epoch(&self) -> Option<u32> {
@@ -1109,11 +1107,6 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
 impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
     fn today(&mut self, now_ms: u32) -> Option<i32> {
         today(self.platform, now_ms)
-    }
-
-    fn alerts(&mut self) -> Option<AlertsView> {
-        let epoch = self.platform.epoch()?;
-        Some(self.platform.alerts().view(epoch))
     }
 
     fn settings(&mut self, change: SettingsFields) -> SettingsResult {

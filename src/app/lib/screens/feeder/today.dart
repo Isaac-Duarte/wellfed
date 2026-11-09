@@ -166,7 +166,6 @@ class _Summary extends StatelessWidget {
       Connection.looking => (c.textMuted, 'Looking…'),
       Connection.connecting => (c.textMuted, 'Connecting…'),
       Connection.offline => (c.textMuted, "Can't reach it"),
-      Connection.otherBuild => (c.warning, 'Different build: update the feeder or this app'),
       Connection.otherVersion => (c.warning, 'This feeder needs a different app version'),
       Connection.online when feeder.state.feed.active => (c.accent, 'Feeding'),
       Connection.online when card?.ready ?? false => (c.ok, 'Ready to feed'),
@@ -224,6 +223,7 @@ class _Summary extends StatelessWidget {
                       FoodLevel.present => 'Food in',
                       FoodLevel.low => 'Food low',
                       FoodLevel.unread || null => 'Food not read',
+                      FoodLevel.unknown => 'Food level unknown to this app',
                     },
                     color: read?.food == FoodLevel.low ? c.warning : null,
                   ),
@@ -325,7 +325,7 @@ String clockWords(BuildContext context, api.Card card) {
     (TimeSource.ntp, NtpView_Gateway()) => 'Set by your router',
     (TimeSource.ntp, _) => 'Set by a time server',
     (TimeSource.owner || TimeSource.client, _) => 'Set by a paired device',
-    (null, _) => 'Set',
+    (TimeSource.unknown || null, _) => 'Set',
   };
   final PlatformInt64? at = time.lastAtMs;
   return at == null ? by : '$by ${atMomentTextMs(context, at)}';

@@ -37,8 +37,6 @@ pub(super) enum FeederReply {
     Plans,
     /// The meal call.
     Call,
-    /// The table of open alerts, read when the answer is sealed.
-    Alerts,
 }
 
 impl FeederReply {
@@ -50,7 +48,6 @@ impl FeederReply {
             Self::Calibration => "calibration",
             Self::Plans => "plans",
             Self::Call => "call",
-            Self::Alerts => "alerts",
         }
     }
 }
@@ -132,7 +129,9 @@ pub(super) enum FeederAction {
     PutCalibration {
         base: u32,
         calibration: Calibration,
-        bowl: Bowl,
+        /// Refused `Unverified` unless it is the build's own mode, which a
+        /// mode this build does not know never is.
+        bowl: proto::Lenient<Bowl>,
     },
     GetPlans,
     /// The table stays in the plaintext buffer, read again when the op
@@ -158,7 +157,6 @@ pub(super) enum FeederAction {
     },
     DeleteCall,
     PlayCall,
-    GetAlerts,
 }
 
 /// A feeder op as the server runs it: [`Action::Invalid`] for one whose
@@ -234,7 +232,6 @@ pub(super) fn action(op: FeederOp<'_>) -> Action {
             due_s,
             skip: MealSkip::Unskip,
         },
-        FeederOp::GetAlerts => FeederAction::GetAlerts,
     };
     Action::Feeder(action)
 }
@@ -253,7 +250,6 @@ impl FeederAction {
                 | Self::GetPlans
                 | Self::GetCall
                 | Self::CallChunk { .. }
-                | Self::GetAlerts
         )
     }
 
@@ -286,7 +282,6 @@ impl FeederAction {
             Self::CallChunk { .. } => Self::CALL_CHUNK,
             Self::DeleteCall => "delete-call",
             Self::PlayCall => "play-call",
-            Self::GetAlerts => "get-alerts",
             Self::SkipMeal {
                 skip: MealSkip::Skip,
                 ..
@@ -328,6 +323,7 @@ impl Server {
                         desiccant_reset: view.desiccant_reset,
                         meal_reminder: wire_reminder(view.meal_reminder),
                         writable: view.writable,
+                        ext: proto::Tail::EMPTY,
                     }))
                 }
                 SettingsResult::Busy => Reply::Refused(Refusal::Busy),
@@ -376,7 +372,7 @@ impl Server {
             },
             // A build runs the one bowl mode it was verified for: another
             // would turn the rotor a way no bench run has checked.
-            FeederAction::PutCalibration { bowl, .. } if bowl != device.bowl() => {
+            FeederAction::PutCalibration { bowl, .. } if bowl != device.bowl().into() => {
                 Reply::Refused(Refusal::Unverified)
             }
             FeederAction::PutCalibration {
@@ -454,7 +450,6 @@ impl Server {
                 Ok(()) => Reply::Feeder(FeederReply::Call),
                 Err(refusal) => Reply::Refused(refusal),
             },
-            FeederAction::GetAlerts => Reply::Feeder(FeederReply::Alerts),
             // Named before anything else is checked, so the refusal says
             // what to change rather than when to try again.
             FeederAction::Feed { portions } if !(1..=proto::PORTIONS_MAX).contains(&portions) => {
@@ -700,6 +695,9 @@ fn table(plans: &[Option<proto::Plan>; PLANS]) -> Result<Table, Refusal> {
     for (slot, plan) in table.iter_mut().zip(plans) {
         *slot = match *plan {
             None => None,
+            // A plan's tail holds what a later build added: this one cannot
+            // store it, so it refuses rather than drop what was asked.
+            Some(plan) if !plan.ext.is_empty() => return Err(Refusal::Invalid),
             Some(plan) => {
                 let plan = Plan {
                     minute: plan.minute,
@@ -732,6 +730,7 @@ pub(super) fn wire_plans(table: &Table) -> [Option<proto::Plan>; PLANS] {
             days: plan.days.0,
             enabled: plan.enabled,
             call: plan.call,
+            ext: proto::Tail::EMPTY,
         })
     })
 }
@@ -766,9 +765,9 @@ impl Server {
                         writable: view.writable,
                         calibration: proto::Calibration {
                             portion_mg: view.calibration.portion_mg,
-                            bowl: feeder.bowl(),
+                            bowl: feeder.bowl().into(),
                         },
-                        phase: feeder.phase(),
+                        phase: feeder.phase().map(Into::into),
                     }))
                 }
                 _ => unavailable,
@@ -792,10 +791,6 @@ impl Server {
             FeederReply::FeedTrace { feed, offset } => match feeder.feed_trace(feed, offset) {
                 Ok(page) => Outcome::Feeder(FeederOutcome::FeedTrace(page)),
                 Err(refusal) => Outcome::Refused(refusal),
-            },
-            FeederReply::Alerts => match feeder.alerts() {
-                Some(view) => Outcome::Feeder(FeederOutcome::Alerts(view)),
-                None => unavailable,
             },
         };
         self.seal_and_send(index, &DeviceMessage::Response { id, result })

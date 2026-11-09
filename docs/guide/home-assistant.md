@@ -108,7 +108,8 @@ Home Assistant doesn't install firmware: that takes an owner, and Home Assistant
 - **The invite ran out.** An invite lasts 10 minutes, and works once. Make a new one.
 - **Home Assistant doesn't find the feeder.** Discovery uses mDNS, which doesn't cross a Docker bridge network. Run Home Assistant with host networking, or give the feeder's IP address when you pair. If the feeder's address changes, choose **Reconfigure** on its entry.
 - **"The feeder no longer knows this Home Assistant".** Its key was revoked. Home Assistant asks you to pair again: make a new invite and paste it.
-- **"The feeder runs a different build than this integration".** The feeder runs firmware this integration does not speak, often an older one after an update that did not take. Home Assistant sends it nothing. Update the feeder from the Wellfed app (or update the integration). Home Assistant tries again on its own and picks the feeder up once it answers.
+- **"Feeder runs older firmware" or "Update the Wellfed integration".** The feeder and the integration are different releases. Everything both know keeps working: what an older feeder lacks is refused, and what a newer one added shows as "Unknown to this integration". Update the side the repair names: the feeder from the Wellfed app, or the integration in HACS. The repair clears once they match.
+- **"Feeder needs a firmware update".** The feeder runs firmware from before this integration's device API, so Home Assistant can't read or change anything on it. Update the feeder from the Wellfed app. Home Assistant tries again on its own and picks the feeder up once it answers.
 - **Desiccant replaced is refused.** The feeder needs its clock set first. The app sets it when it connects.
 
 ## Next steps

@@ -134,6 +134,9 @@ sealed class FeederRefusal with _$FeederRefusal {
   const factory FeederRefusal.portions({required int asked}) =
       FeederRefusal_Portions;
   const factory FeederRefusal.noClock() = FeederRefusal_NoClock;
+
+  /// A refusal a newer feeder build added, which this app cannot name.
+  const factory FeederRefusal.unknown() = FeederRefusal_Unknown;
 }
 
 @freezed
@@ -175,6 +178,11 @@ sealed class FeederReply with _$FeederReply {
 
   /// The feeder answered something else.
   const factory FeederReply.unexpected() = FeederReply_Unexpected;
+
+  /// A newer feeder build answered in a way this app cannot read. The
+  /// request may have run: a write answered so is uncertain, shown so,
+  /// and never sent again.
+  const factory FeederReply.unreadable() = FeederReply_Unreadable;
 }
 
 @freezed

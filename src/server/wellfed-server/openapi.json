@@ -6466,7 +6466,8 @@
           "setup",
           "unserved",
           "battery",
-          "restarting"
+          "restarting",
+          "unknown"
         ]
       },
       "Bowl": {
@@ -6474,7 +6475,8 @@
         "description": "The bowl mode a feeder runs.",
         "enum": [
           "single",
-          "double"
+          "double",
+          "unknown"
         ]
       },
       "Calibration": {
@@ -7111,8 +7113,7 @@
           "offline",
           "connecting",
           "online",
-          "refused",
-          "other_build"
+          "refused"
         ]
       },
       "CoreEvent": {
@@ -7424,7 +7425,8 @@
         "description": "What a trace's current readings count in.",
         "enum": [
           "scaled",
-          "milli_amps"
+          "milli_amps",
+          "unknown"
         ]
       },
       "Desiccant": {
@@ -7559,7 +7561,7 @@
           "invite_expired",
           "unreachable",
           "feeder_offline",
-          "feeder_other_build",
+          "feeder_legacy",
           "feeder_refused",
           "outcome_unknown",
           "key_reused",
@@ -7791,7 +7793,8 @@
           "cancelled",
           "expired",
           "failed",
-          "uncertain"
+          "uncertain",
+          "unknown"
         ]
       },
       "FeedRate": {
@@ -7841,7 +7844,8 @@
           "output",
           "jammed",
           "mark_stuck",
-          "interrupted"
+          "interrupted",
+          "unknown"
         ]
       },
       "FeedRequest": {
@@ -8063,6 +8067,17 @@
           "role": {
             "$ref": "#/components/schemas/ClientRole",
             "description": "The role the feeder enrolled the server's key with."
+          },
+          "skew": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Skew",
+                "description": "How the feeder's device API revision stands against this server's,\nfrom its last welcome: `feeder_behind` asks for the feeder to be\nupdated, `feeder_ahead` for the server. Either way it is mirrored and\nsent every command: what one side lacks is refused or read as\nunknown. `None` before a session has opened since the server started."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "synced": {
             "type": [
@@ -8629,7 +8644,8 @@
           "fault",
           "portions",
           "no_clock",
-          "unverified"
+          "unverified",
+          "unknown"
         ]
       },
       "FeederSample": {
@@ -8809,14 +8825,9 @@
           "food",
           "readiness",
           "desiccant",
-          "supply",
-          "alerts_generation"
+          "supply"
         ],
         "properties": {
-          "alerts_generation": {
-            "$ref": "#/components/schemas/Generation",
-            "description": "Changes when the feeder's table of open alerts does: read it again\nthen. Counts from 0 at each boot."
-          },
           "desiccant": {
             "$ref": "#/components/schemas/Desiccant",
             "description": "The desiccant reminder."
@@ -9028,7 +9039,8 @@
         "enum": [
           "unread",
           "present",
-          "low"
+          "low",
+          "unknown"
         ]
       },
       "FoodPatch": {
@@ -10388,7 +10400,8 @@
         "description": "Where the rotor rests between feeds.",
         "enum": [
           "at_mark",
-          "unknown"
+          "unknown",
+          "newer"
         ]
       },
       "PhoneClaim": {
@@ -11224,7 +11237,8 @@
           "watchdog",
           "software",
           "brownout",
-          "other"
+          "other",
+          "unknown"
         ]
       },
       "Resets": {
@@ -11778,6 +11792,16 @@
           }
         }
       },
+      "Skew": {
+        "type": "string",
+        "description": "How a feeder's API revision stands against a client's: what to tell the\nperson when something is missing. The API only grows, so either way every\nop the client knows still goes ([device API evolution]); this only says\nwhich side to update.\n\n[device API evolution]: ../../../../docs/firmware/device-api.md#evolution",
+        "enum": [
+          "same",
+          "feeder_behind",
+          "feeder_ahead",
+          "legacy"
+        ]
+      },
       "Source": {
         "oneOf": [
           {
@@ -12139,9 +12163,14 @@
           "dns_losses",
           "wifi_generation",
           "sessions",
+          "alerts_generation",
           "device"
         ],
         "properties": {
+          "alerts_generation": {
+            "$ref": "#/components/schemas/Generation",
+            "description": "Changes when the device's table of open alerts does: read it again\nthen. Counts from 0 at each boot."
+          },
           "bank": {
             "type": "integer",
             "format": "int32",
@@ -13390,7 +13419,8 @@
         "enum": [
           "build",
           "stored",
-          "fallback"
+          "fallback",
+          "unknown"
         ]
       },
       "Window": {

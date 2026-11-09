@@ -40,6 +40,7 @@ fn summary_lines(s: &TraceSummary, stored: bool, f: &mut fmt::Formatter<'_>) -> 
     let unit = match s.unit {
         CurrentUnit::Scaled => "scaled, not yet mA",
         CurrentUnit::MilliAmps => "mA",
+        CurrentUnit::Unknown => "a unit a newer feeder build added",
     };
     write!(f, "current: peak {}, mean ", s.current_peak)?;
     optional(s.current_mean, f)?;

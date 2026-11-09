@@ -16,13 +16,14 @@
 
 use wellfed_core::store::slot::crc32;
 use wellfed_proto::api::{
-    Blocked, CurrentUnit, Desiccant, DeviceStatus, Event, EventBody, FeedOutcome, FeedReason,
+    Blocked, CurrentUnit, Desiccant, DeviceStatus, EventBody, FeedOutcome, FeedReason,
     FeederStatus, FoodLevel, FrozenRefusal, Readiness, Refusal, Resets, Source, Stats,
     StatsSection, Status, TraceSummary,
 };
 use wellfed_proto::device::{DeviceKind, Model};
 
 use crate::feeder::owner::{self, ResetRefusal};
+use crate::feeder::platform::EventSlot;
 use crate::feeder::{DeviceView, Feeder, Feeds, NoFeeds, Platform, Record};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_device_api::clients::{Label, Role};
@@ -641,13 +642,11 @@ pub fn a_recorded_event_reads_back(rig: &mut impl Rig) {
     let mut found = None;
     for _ in 0..TURNS {
         match device(rig, 0, |device| device.event_after(Reader::slot(0), after)) {
-            EventRead::Event(Event {
-                seq, body: read, ..
-            }) if read == body => {
-                found = Some(seq);
+            EventRead::Event(read) if read.body() == Some(body) => {
+                found = Some(read.seq);
                 break;
             }
-            EventRead::Event(Event { seq, .. }) => after = Some(seq),
+            EventRead::Event(read) => after = Some(read.seq),
             EventRead::Wait | EventRead::None => rig.write(),
             EventRead::Gap { from, to } => panic!("events {from}..={to} lost"),
         }
@@ -655,6 +654,38 @@ pub fn a_recorded_event_reads_back(rig: &mut impl Rig) {
     let seq = found.expect("the event reads back");
     let status = device(rig, 0, |device| device.status(0));
     assert_eq!(status.last_event, Some(seq));
+}
+
+/// A body this build cannot decode (a newer build's, as a bank 0 that kept
+/// an older one meets after a fall) goes to the client as the ring keeps
+/// it, numbered: the client reads it or skips it by its length, rather than
+/// being told the event is gone.
+pub fn a_body_this_build_cannot_read_goes_out_as_kept(rig: &mut impl Rig) {
+    let mut newer = [0; wellfed_proto::api::EVENT_BODY_MAX];
+    newer[..3].copy_from_slice(&[0xf0, 0x01, 0x07]);
+    assert!(
+        rig.feeder()
+            .platform_mut()
+            .queue_event(Some(9), newer, EventSlot::Shared),
+        "the queue takes it"
+    );
+
+    let mut after = None;
+    let mut found = None;
+    for _ in 0..TURNS {
+        match device(rig, 0, |device| device.event_after(Reader::slot(0), after)) {
+            EventRead::Event(read) if read.body == newer => {
+                found = Some(read);
+                break;
+            }
+            EventRead::Event(read) => after = Some(read.seq),
+            EventRead::Wait | EventRead::None => rig.write(),
+            EventRead::Gap { from, to } => panic!("events {from}..={to} reported gone"),
+        }
+    }
+    let read = found.expect("the event reads back");
+    assert_eq!(read.at, Some(9));
+    assert_eq!(read.body(), None, "no build of today reads it");
 }
 
 /// Status names the build the welcome does, and the time it was asked at.
@@ -782,11 +813,11 @@ pub fn traces_are_served_beside_the_statistics(rig: &mut impl Rig) {
         feed: 77,
         requested: 1,
         completed: 1,
-        outcome: FeedOutcome::Done,
-        reason: FeedReason::Done,
+        outcome: FeedOutcome::Done.into(),
+        reason: FeedReason::Done.into(),
         drive_ms: 9_072,
         samples: 300,
-        unit: CurrentUnit::Scaled,
+        unit: CurrentUnit::Scaled.into(),
         current_peak: 164,
         current_mean: Some(60),
         rising: 1,
@@ -868,9 +899,9 @@ pub fn a_lasting_reason_not_to_feed_is_recorded_once(rig: &mut impl Rig) {
     let mut seen = 0;
     for _ in 0..TURNS {
         match device(rig, 0, |device| device.event_after(Reader::slot(0), after)) {
-            EventRead::Event(Event { seq, body, .. }) => {
-                seen += usize::from(body == blocked);
-                after = Some(seq);
+            EventRead::Event(read) => {
+                seen += usize::from(read.body() == Some(blocked));
+                after = Some(read.seq);
             }
             EventRead::Wait => rig.write(),
             EventRead::None => break,
@@ -1049,6 +1080,7 @@ macro_rules! conformance {
             a_meal_call_uploads_in_chunks_and_deletes,
             the_desiccant_count_follows_the_clock_and_its_reset,
             a_recorded_event_reads_back,
+            a_body_this_build_cannot_read_goes_out_as_kept,
             status_reports_the_build_and_the_time,
             a_feeder_without_a_feeding_owner_refuses_feeds,
             the_statistics_follow_the_loop,

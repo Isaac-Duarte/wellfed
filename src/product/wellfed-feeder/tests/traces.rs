@@ -121,7 +121,7 @@ fn a_three_portion_feed_fits_with_every_mark_and_change() {
             summary.outcome,
             summary.unit
         ),
-        (9, 3, FeedOutcome::Done, CurrentUnit::Scaled)
+        (9, 3, FeedOutcome::Done.into(), CurrentUnit::Scaled.into())
     );
     assert_eq!((summary.drive_ms, summary.current_peak), (27_225, 333));
     assert_eq!(

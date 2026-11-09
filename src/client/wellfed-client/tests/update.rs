@@ -384,7 +384,7 @@ impl Device for Feeder {
             reset_flags: 0,
             faults: 0,
             rssi: -40,
-            wifi: proto::WifiSource::Stored,
+            wifi: proto::WifiSource::Stored.into(),
             link_losses: 0,
             dns_losses: 0,
             clock_ms: None,
@@ -392,20 +392,22 @@ impl Device for Feeder {
             wifi_generation: 1,
             last_event: None,
             sessions: 0,
+            alerts_generation: 0,
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: Some(false),
                 settings_generation: 1,
                 desiccant: proto::Desiccant::Unset,
-                food: FoodLevel::Unread,
+                food: FoodLevel::Unread.into(),
                 feed_fault: None,
-                readiness: self.readiness(),
+                blocked: self.readiness().blocked(),
                 supply: proto::Supply {
                     adapter: None,
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
-                alerts_generation: 0,
+                ext: wellfed_proto::api::Tail::EMPTY,
             }),
+            ext: wellfed_proto::api::Tail::EMPTY,
         }
     }
 

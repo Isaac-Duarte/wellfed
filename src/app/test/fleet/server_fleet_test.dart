@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/screens/home/feeder_card.dart' show skewWords;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
@@ -107,16 +108,27 @@ void main() {
     expect(server.session.logouts, 0);
   });
 
-  test('a feeder the server reaches on another build reads as needing an update, and feeds no one', () async {
-    final ServerFeeder hall = _listed('id-h', 'cc', 'Hall', link: ServerConnection.otherBuild);
-    final (FeederFleet fleet, _, _, _) = await _fleet([
-      hall,
-    ], setUp: (server) => server.session.details['id-h'] = ServerFeederDetail(feeder: hall));
+  test('a feeder the server reaches on a newer revision is served, and names the server to update', () async {
+    const ServerFeeder hall = ServerFeeder(
+      id: 'id-h',
+      name: 'Hall',
+      identity: 'cc',
+      role: ClientRole.owner,
+      connection: ServerConnection.online,
+      skew: Skew.feederAhead,
+    );
+    final (FeederFleet fleet, _, _, _) = await _fleet(
+      [hall],
+      setUp: (server) => server.session.details['id-h'] = ServerFeederDetail(
+        feeder: hall,
+        status: ServerSnapshot(atMs: 1000, live: true, card: fakeCard()),
+      ),
+    );
     await pumpEventQueue();
 
     final FeederState? state = fleet['cc']?.state;
-    expect(state?.connection, Connection.otherBuild);
-    expect(state?.cardIsCurrent, isFalse);
-    expect(state?.canFeed, isFalse);
+    expect(state?.connection, Connection.online);
+    expect(state?.serverSkew, Skew.feederAhead);
+    expect(skewWords(state!), 'Update the Wellfed server: the feeder runs newer firmware');
   });
 }

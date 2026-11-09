@@ -152,44 +152,53 @@ async def test_a_key_revoked_before_setup_asks_to_pair_again(
     assert [flow["context"]["source"] for flow in flows] == ["reauth"]
 
 
-async def test_a_feeder_of_another_build_is_retried_until_it_is_updated(
+async def test_a_feeder_of_another_revision_is_served_and_names_the_side_to_update(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
-    feeder.push(fake.update(bridge.UpdateKind.OtherBuild, build="old"))
+    feeder.push(
+        fake.connected(skew=bridge.Skew.FeederBehind),
+        fake.update(bridge.UpdateKind.State, state=fake.state()),
+    )
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert _entry_state(entry) is ConfigEntryState.LOADED
+    issue = _issue(hass, "update_feeder")
+    assert issue is not None and issue.translation_placeholders is not None
+    assert issue.translation_placeholders["build"] == "ab" * 32
+    assert _issue(hass, "update_integration") is None
+
+    # A newer feeder build names this integration instead.
+    feeder.push(fake.connected(skew=bridge.Skew.FeederAhead))
+    await _until(hass, lambda: _issue(hass, "update_integration") is not None)
+    assert _issue(hass, "update_feeder") is None
+
+    # Once both match, neither stands.
+    feeder.push(fake.connected())
+    await _until(hass, lambda: _issue(hass, "update_integration") is None)
+    assert _issue(hass, "update_feeder") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_pre_revision_feeder_asks_for_a_feeder_update_and_is_retried(
+    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("custom_components.wellfed.READY_WAIT", 0.2)
+    # The bridge says so on connect, then reads nothing: no state comes.
+    feeder.push(fake.connected(skew=bridge.Skew.Legacy))
     entry = _entry(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.SETUP_RETRY
-    assert entry.error_reason_translation_key == "other_build"
-    issue = _issue(hass, "other_build")
-    assert issue is not None and issue.translation_placeholders is not None
-    assert issue.translation_placeholders["build"] == "old"
-    assert not hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert _issue(hass, "legacy_feeder") is not None
+    assert _issue(hass, "update_feeder") is None
 
-    # The feeder is updated: Home Assistant's own retry sets it up, as this
-    # reload does, and the repair goes.
+    # Updated from the app, it is set up as any other and the repair goes.
     feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     assert _entry_state(entry) is ConfigEntryState.LOADED
-    assert _issue(hass, "other_build") is None
-    assert await hass.config_entries.async_unload(entry.entry_id)
-
-
-async def test_a_feeder_that_turns_out_another_build_is_set_up_again(
-    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("custom_components.wellfed.READY_WAIT", 0.2)
-    entry = await _ready(hass, feeder)
-    feeder.push(fake.update(bridge.UpdateKind.OtherBuild, build="old"))
-    await _until(hass, lambda: entry.state is ConfigEntryState.SETUP_RETRY)
-    assert _issue(hass, "other_build") is not None
-
-    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
-    assert await hass.config_entries.async_reload(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.LOADED
-    assert _issue(hass, "other_build") is None
+    assert _issue(hass, "legacy_feeder") is None
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

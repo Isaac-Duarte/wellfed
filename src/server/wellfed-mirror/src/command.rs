@@ -119,12 +119,8 @@ async fn send(
     request: RequestId,
     op: Op,
 ) -> Result<Answer, AskError> {
-    // A feeder of another build is sent the frozen update path alone: any
-    // other op may decode there as something else.
     match link {
         Link::Online => {}
-        Link::OtherBuild if op.is_frozen() => {}
-        Link::OtherBuild => return Err(AskError::OtherBuild),
         Link::Offline | Link::Connecting | Link::Refused => return Err(AskError::Offline),
     }
 
