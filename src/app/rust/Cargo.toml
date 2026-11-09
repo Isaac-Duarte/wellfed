@@ -43,6 +43,7 @@ wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 wellfed-install = { workspace = true, features = ["fixtures"] }
 wellfed-signing.workspace = true
 wellfed-server-testkit.workspace = true
+wellfed-service.workspace = true
 
 [lints]
 workspace = true

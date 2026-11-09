@@ -784,3 +784,54 @@ fn a_watch_reads_back_as_written() {
     let json = serde_json::to_string(&watch).unwrap();
     assert_eq!(serde_json::from_str::<Watch>(&json).unwrap(), watch);
 }
+
+#[test]
+fn a_table_read_at_home_and_then_through_the_server_posts_once() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let table = view(1, &[failed(3)]);
+
+    // At home, straight from the feeder.
+    watch.apply(cursor(1, 4, 0), &table, &context(at(0), &mutes));
+    watch.reached(Some("home".into()), at(0));
+    let posted = watch.changes();
+    assert_eq!(posted.len(), 1);
+    for change in &posted {
+        watch.confirm(change);
+    }
+
+    // Away, the server's copy of the same table, under the same cursor.
+    let away = context(at(600), &mutes);
+    assert!(!watch.needs_read(cursor(1, 4, 0)));
+    watch.lapse(&away);
+    watch.relayed_reach(None, &away);
+    assert!(watch.changes().is_empty());
+
+    // A newer table through the server keeps the alert's notice.
+    watch.apply(cursor(1, 4, 1), &table, &away);
+    assert!(watch.changes().is_empty());
+    assert_eq!(watch.reach.home.as_deref(), Some("home"));
+}
+
+#[test]
+fn an_unreachable_feeder_posts_once_whoever_judged_it() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    watch.reached(Some("home".into()), at(0));
+    for minute in [1, 6, 12] {
+        watch.unanswered(Some("home"), &context(at(minute * 60), &mutes));
+    }
+    let posted = watch.changes();
+    assert!(
+        matches!(posted.as_slice(), [Change::Post(tracked)] if tracked.key == NoticeKey::Unreachable)
+    );
+    watch.confirm(&posted[0]);
+
+    // Away, the server says the same: no second post.
+    watch.relayed_reach(Some(at(30)), &context(at(900), &mutes));
+    assert!(watch.changes().is_empty());
+
+    // The server reaches it again: the notice comes off.
+    watch.relayed_reach(None, &context(at(1200), &mutes));
+    assert_eq!(watch.changes(), [Change::Remove(NoticeKey::Unreachable)]);
+}

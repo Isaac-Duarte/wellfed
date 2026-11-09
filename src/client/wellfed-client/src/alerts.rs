@@ -79,8 +79,9 @@ pub enum NoticeKind {
     DesiccantDue,
     BatteryBelowFloor,
     PlansStuck,
-    /// The phone, at home, has not reached the feeder for a while: power or
-    /// Wi-Fi. The one notice the phone decides.
+    /// The feeder has not been reached for a while: power or Wi-Fi. The
+    /// one notice a client decides, the phone at home, or the owner's
+    /// server while the phone is away.
     Unreachable,
 }
 
@@ -219,7 +220,8 @@ impl NoticeKey {
 pub enum Notice {
     /// The feeder's alert, as its table last showed it.
     Alert { open: OpenAlert },
-    /// Not reached at home since `since`, the first failure in the run.
+    /// Not reached since `since`, the first failure in the run: by this
+    /// phone at home, or by the owner's server.
     Unreachable { since: Timestamp },
 }
 
@@ -382,6 +384,23 @@ impl Watch {
                 Notice::Unreachable { since },
                 context,
             );
+        }
+    }
+
+    /// Away from home, the owner's server judges the feeder's reach in the
+    /// phone's place, by the same rule: `unreachable` is since when it has
+    /// not reached the feeder, or `None` while it does. The notice is the
+    /// phone's own, under the same key, so a feeder found unreachable at
+    /// home and then by the server posts once. Nothing here moves what the
+    /// phone counts at home.
+    pub fn relayed_reach(&mut self, unreachable: Option<Timestamp>, context: &Context<'_>) {
+        match unreachable {
+            Some(since) => self.track(
+                NoticeKey::Unreachable,
+                Notice::Unreachable { since },
+                context,
+            ),
+            None => self.end(|key| *key == NoticeKey::Unreachable),
         }
     }
 

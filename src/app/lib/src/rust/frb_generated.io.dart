@@ -344,6 +344,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AlertLevel dco_decode_alert_level(dynamic raw);
 
   @protected
+  AlertServer dco_decode_alert_server(dynamic raw);
+
+  @protected
   AlertSettingsView dco_decode_alert_settings_view(dynamic raw);
 
   @protected
@@ -375,6 +378,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Bowl dco_decode_bowl(dynamic raw);
+
+  @protected
+  AlertServer dco_decode_box_autoadd_alert_server(dynamic raw);
 
   @protected
   AppStore dco_decode_box_autoadd_app_store(dynamic raw);
@@ -1003,6 +1009,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  AlertServer? dco_decode_opt_box_autoadd_alert_server(dynamic raw);
 
   @protected
   Blocked? dco_decode_opt_box_autoadd_blocked(dynamic raw);
@@ -1744,6 +1753,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AlertLevel sse_decode_alert_level(SseDeserializer deserializer);
 
   @protected
+  AlertServer sse_decode_alert_server(SseDeserializer deserializer);
+
+  @protected
   AlertSettingsView sse_decode_alert_settings_view(
     SseDeserializer deserializer,
   );
@@ -1777,6 +1789,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Bowl sse_decode_bowl(SseDeserializer deserializer);
+
+  @protected
+  AlertServer sse_decode_box_autoadd_alert_server(SseDeserializer deserializer);
 
   @protected
   AppStore sse_decode_box_autoadd_app_store(SseDeserializer deserializer);
@@ -2489,6 +2504,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  AlertServer? sse_decode_opt_box_autoadd_alert_server(
+    SseDeserializer deserializer,
+  );
 
   @protected
   Blocked? sse_decode_opt_box_autoadd_blocked(SseDeserializer deserializer);
@@ -3348,6 +3368,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_alert_level(AlertLevel self, SseSerializer serializer);
 
   @protected
+  void sse_encode_alert_server(AlertServer self, SseSerializer serializer);
+
+  @protected
   void sse_encode_alert_settings_view(
     AlertSettingsView self,
     SseSerializer serializer,
@@ -3382,6 +3405,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bowl(Bowl self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_alert_server(
+    AlertServer self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_app_store(
@@ -4327,6 +4356,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_alert_server(
+    AlertServer? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_blocked(

@@ -88,7 +88,7 @@ NoticeWords noticeWords(NoticeView notice, String feeder) {
     ),
     NoticeKind.unreachable => (
       title: "Can't reach $feeder",
-      body: "This phone is home and hasn't reached it for a while. Check its power and your Wi-Fi.",
+      body: "It hasn't been reached for a while. Check its power and your Wi-Fi.",
     ),
   };
 }
@@ -135,7 +135,7 @@ String kindName(NoticeKind kind) => switch (kind) {
   NoticeKind.desiccantDue => 'Desiccant is due',
   NoticeKind.batteryBelowFloor => 'Batteries are low',
   NoticeKind.plansStuck => "Can't read its meals",
-  NoticeKind.unreachable => "Can't reach it at home",
+  NoticeKind.unreachable => "Can't reach it",
 };
 
 /// The words on the button that lets alerts through while notifications are

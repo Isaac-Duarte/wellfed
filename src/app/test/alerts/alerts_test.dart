@@ -272,12 +272,17 @@ void main() {
       );
     });
 
-    testWidgets('the page says alerts work only at home, and asks for notifications', (tester) async {
+    testWidgets('the page says alerts come through the server away from home, and asks for notifications', (
+      tester,
+    ) async {
       final ports = FakeAlertPorts()..allowed = false;
       await _showSettings(tester, ports);
 
-      expect(find.textContaining('Alerts work only at home.', findRichText: true), findsOneWidget);
-      expect(find.textContaining('Without a home server or a relay', findRichText: true), findsOneWidget);
+      expect(
+        find.textContaining('Away from home, alerts come through your server.', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining("without one you won't get alerts away", findRichText: true), findsOneWidget);
       await tester.tap(find.text('Allow notifications'));
       await settle(tester);
       expect(find.text('Allow notifications'), findsNothing);

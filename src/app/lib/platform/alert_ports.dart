@@ -4,9 +4,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/notices.dart';
 import 'package:wellfed/platform/run_holds.dart';
+import 'package:wellfed/platform/secure_storage.dart';
+import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 
 /// What the alert screens reach outside Dart.
@@ -76,14 +79,25 @@ PhoneNetwork phoneNetwork(Map<Object?, Object?>? found) => switch (found) {
 /// long enough to hear it, short enough for a background job.
 const _locateWait = Duration(seconds: 6);
 
+/// The owner's server this phone is logged in to, for catch-ups away from
+/// home: `null` with none, or with no token kept.
+Future<AlertServer?> alertServer(String dir) async {
+  final KnownServer? server = (await loadStore(path: '$dir/wellfed.json')).server;
+  if (server == null) return null;
+  final String? secret = await secureStorage.read(key: serverSecretName);
+  return secret == null ? null : AlertServer(server: server, secret: secret);
+}
+
 /// One round of catch-ups with `feeders`, as `key`, with the app's files in
-/// `dir`, on the network `network` says the phone is on. Each feeder's
-/// changes are posted and confirmed before the next.
+/// `dir`, on the network `network` says the phone is on. Away from home, a
+/// feeder `server` holds is read through it. Each feeder's changes are
+/// posted and confirmed before the next.
 Future<void> catchUpRound({
   required ClientKey key,
   required String dir,
   required List<KnownFeeder> feeders,
   required Future<PhoneNetwork> Function() network,
+  AlertServer? server,
 }) async {
   await Notices.sweep(dir);
   final PhoneNetwork here = await network();
@@ -96,6 +110,7 @@ Future<void> catchUpRound({
       known: feeder.address,
       attempt: attempt,
       network: here,
+      server: server,
     );
     CatchUp done = await attempt(const Attempt.first());
     if (done.end == CatchUpEnd.unanswered) {
@@ -125,12 +140,16 @@ class AppAlertPorts implements AlertPorts {
   Future<FeederAlerts> alerts(String identity) async => feederAlerts(dir: await _dir(), identity: identity);
 
   @override
-  Future<void> check(List<KnownFeeder> feeders) async => catchUpRound(
-    key: _key,
-    dir: await _dir(),
-    feeders: feeders,
-    network: () async => phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network')),
-  );
+  Future<void> check(List<KnownFeeder> feeders) async {
+    final String dir = await _dir();
+    await catchUpRound(
+      key: _key,
+      dir: dir,
+      feeders: feeders,
+      network: () async => phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network')),
+      server: await alertServer(dir),
+    );
+  }
 
   @override
   Future<void> dismiss(KnownFeeder feeder, NoticeView notice) async {

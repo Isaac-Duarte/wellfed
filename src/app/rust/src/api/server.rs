@@ -632,6 +632,13 @@ impl ServerHandle {
 }
 
 /// A client of the server at `url`, with no credentials yet.
+/// A client of the server in `link` under the phone token `secret`, for a
+/// catch-up's one read of a feeder's alerts.
+pub(crate) fn alert_client(link: &ServerLink, secret: &str) -> Result<Client, ServerError> {
+    let client = open(&link.url, TIMEOUTS)?;
+    Ok(client.with_auth(Some(Auth::Token(secret.to_owned()))))
+}
+
 fn open(url: &str, timeouts: Timeouts) -> Result<Client, ServerError> {
     let base = Url::parse(url.trim())
         .map_err(|error| ServerError::new(ServerErrorKind::Address, error))?;
