@@ -131,9 +131,11 @@ Under systemd, install `server.toml` as root with `sudo install -m 0644 server.t
 
 ```sh
 sudo install -m 0600 /dev/null /etc/wellfed-server.env
-sudo sh -c 'echo WELLFED_SERVER_WEBHOOK_URL=https://… > /etc/wellfed-server.env'
+sudoedit /etc/wellfed-server.env     # one line: WELLFED_SERVER_WEBHOOK_URL=https://…
 sudo systemctl edit wellfed-server   # add under [Service]: EnvironmentFile=/etc/wellfed-server.env
 ```
+
+The URL goes in through the editor, so it never lands in a shell's history.
 
 The next start reads it, and `--help` never shows its value. Other `WELLFED_SERVER_*` variables, which hold no secret, can go in the same drop-in with `Environment=`.
 

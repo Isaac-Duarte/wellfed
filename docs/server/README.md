@@ -74,7 +74,7 @@ Some conventions hold across the API:
 
 ## Alerts
 
-The feeder decides every alert ([alerts](../firmware/alerts.md)). The server reads each feeder's table over its own session whenever the status shows the table moved: a moment after each event, and every minute while the feeder is online. It keeps the latest table and what it made of it, and judges one thing itself: a feeder it has failed to reach three times in a row, over at least ten minutes, is unreachable. That is the rule the phone uses at home. A feeder that answers counts as reached, even when it turns the session away because every session is taken. One that no longer knows the server's key (an owner revoked it) is unreachable at once: the server can't read it again until it is adopted anew, and the table it serves stays as old as its `read.at`.
+The feeder decides every alert ([alerts](../firmware/alerts.md)). The server reads each feeder's table over its own session whenever the status shows the table moved: a moment after each event, and every minute while the feeder is online. It keeps the latest table and what it made of it, and judges one thing itself: a feeder it has failed to reach three times in a row, over at least ten minutes, is unreachable. That is the rule the phone uses at home. A feeder that answers counts as reached, even when it turns the session away because every session is taken. One that no longer knows the server's key (an owner revoked it, or a factory reset) is unreachable at once: the server can't read it again until it is adopted anew, and the table it serves stays as old as its `read.at`. A phone that has reached the feeder itself since then opens nothing from it.
 
 **`GET /api/v1/feeders/{id}/alerts`** answers, for any role:
 
@@ -95,7 +95,7 @@ The feeder decides every alert ([alerts](../firmware/alerts.md)). The server rea
 }
 ```
 
-`read` is `null` before the server's first read. `epoch`, `boot` and `generation` are the cursor a phone's own read carries, so the app applies the server's copy and the feeder's to one tracker and never shows an alert twice. An entry a client can't read, a kind a newer feeder added, is left out and counted in `unread`. `unreachable` is since when the server hasn't reached the feeder. The stream's `alerts` update says the table or the reach changed.
+`read` is `null` before the server's first read. `epoch`, `boot` and `generation` are the cursor a phone's own read carries, so the app applies the server's copy and the feeder's to one tracker and never shows an alert twice. The app takes a copy only when `read.at` is at least 5 minutes after its own last contact with the feeder, and not while `unreachable` is set: the boot count starts again after a power loss, so cursors alone can't say which table is newer, and the margin keeps a server clock that runs ahead from passing a stale copy off as fresh. An entry a client can't read, a kind a newer feeder added, is left out and counted in `unread`. `unreachable` is since when the server hasn't reached the feeder. The stream's `alerts` update says the table or the reach changed.
 
 ### Alert webhook
 
@@ -130,7 +130,7 @@ Delivery is at least once, under one `id` per change:
 - **Pairing.** Pair events by `key`: for each key, the latest event is the alert's state. An alert whose kind changes while it is open (an uncertain meal found failed) comes as `opened` again under the same key, with a new `id`.
 - **Order.** A feeder's next change waits behind one that is being retried, so a clear never comes before its open. Delivery runs on its own, never in a feeder's session, and a stopped server resumes the deliveries it hadn't finished at its next start.
 - **Clears.** A clear goes only for an alert whose opening the receiver took with a `2xx`, or one already open when the server first read the feeder. An opening refused or given up is never followed by its clear.
-- **What isn't sent.** The alerts open when the server first reads a feeder are taken quietly: just adopted, after an import (kept alerts aren't exported), or after the server's copy was reset (a row of another layout). So are alerts open while no webhook is set: an alert already open when you set the webhook isn't sent until it opens again. A feeder you remove is sent nothing more, not even the clears of what was open.
+- **What isn't sent.** The alerts open when the server first reads a feeder are taken quietly: just adopted, after an import (kept alerts aren't exported), or after the server's copy was reset (a row of another layout). So are alerts open while no webhook is set: an alert already open when you set the webhook isn't sent until it opens again. A feeder you remove is sent nothing more, not even the clears of what was open: its kept alerts are dropped as it is archived, and again when it is adopted anew, so it starts afresh.
 
 The URL may be `https://` anywhere, checked by the server's own TLS stack. Plain `http://` goes only to this computer or the home network (a loopback, private or link-local address, `localhost`, or a `.local` name), unless you set `webhook.allow_plain_http`. The server never logs the URL, since a webhook's path is often its secret.
 
