@@ -14,6 +14,13 @@ ignore = [
     # that drops it. Firmware touches it only through the token
     # `cortex_m::interrupt::free` passes (the flash peer), which carries no data.
     { id = "RUSTSEC-2026-0110", reason = "archived, pulled in by cortex-m 0.7 with no upgrade" },
+    # SQLite before 3.54 can return stale memory when it opens a database
+    # with a crafted `-wal` file beside it. sqlx 0.9 (the latest) caps
+    # libsqlite3-sys below the patched 0.39. Only the owner's server opens a
+    # database, its own, in a data directory nobody else writes: a party who
+    # could plant the `-wal` file could already read and write the database.
+    # Drop this once sqlx allows libsqlite3-sys 0.39.
+    { id = "RUSTSEC-2026-0459", reason = "sqlx 0.9 caps libsqlite3-sys below the fix; the server opens only its own database" },
 ]
 
 [licenses]
