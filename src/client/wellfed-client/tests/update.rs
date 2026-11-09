@@ -1,10 +1,11 @@
 //! An update end to end on the host: the owner's client
 //! (`wellfed_client::update` over a `Connection`) against the feeder's
 //! `Server`, with a fake feeder that keeps two banks, the update store and
-//! the attempt flag, installs through the real `ota::install::Install` and
-//! checks offers with the real `ota::offer::admit_offer`. Restarts drop the
-//! server's RAM, as the feeder's do; a power cut also clears the attempt
-//! flag, as it clears the backup register.
+//! the attempt flag, installs through the real
+//! `wellfed_core::ota::install::Install` and checks offers with the real
+//! `wellfed_signed::offer::admit_offer`. Restarts drop the server's RAM, as
+//! the feeder's do; a power cut also clears the attempt flag, as it clears
+//! the backup register.
 //!
 //! Every failure before activation must leave bank 1's marker clear, so the
 //! feeder keeps booting bank 0, which still answers.
