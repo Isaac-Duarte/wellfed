@@ -55,9 +55,9 @@ use wellfed_device::io::{Accepted, Datagram, Received};
 use wellfed_device::store::events::Read;
 use wellfed_device::update as wire;
 use wellfed_device_api::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallClip, CallPlay, CallResult, CallView,
+    Asked, Calibration, CalibrationResult, CallChange, CallClip, CallPlay, CallResult, CallView,
     ClientChange, KeyResult, LockFields, LockResult, MealSkip, NtpResult, Origin, PlansChange,
-    PlansResult, PlayResult, Requested, SettingsFields, SettingsResult, Table, TimeFields,
+    PlansResult, PlayResult, Requested, SettingsFields, SettingsResult, Stamp, Table, TimeFields,
     TimeResult, TimeSettings, TimeSettingsResult, TimeState, WifiResult, WifiSource,
 };
 use wellfed_device_api::pairing::{self, Pairing};
@@ -101,6 +101,12 @@ pub enum Record {
         ip: u32,
     },
     Time(time::Record),
+    /// Enrollments and revocations the settings writer recorded that the
+    /// alert rules never heard of, its outbox being full: in the history,
+    /// their alerts missed until the next boot's replay.
+    Unheard {
+        count: u32,
+    },
     /// Once a minute: the heap, and the mDNS datagrams seen and answered.
     Stats {
         free: u32,
@@ -126,6 +132,7 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
             write!(f, "mdns address={a}.{b}.{c}.{d} port={PORT}")
         }
         Record::Time(record) => time::describe(record, f),
+        Record::Unheard { count } => write!(f, "alerts unheard={count}"),
         Record::Stats {
             free,
             min,
@@ -421,6 +428,10 @@ impl<S: Copy> Serve<S> {
         if lost > 0 {
             let count = u16::try_from(lost).unwrap_or(u16::MAX);
             events::record(platform, now_ms, EventBody::Lost { count });
+        }
+        let unheard = events::written(platform, now_ms);
+        if unheard > 0 {
+            record(Record::Unheard { count: unheard });
         }
         self.keep_stats(platform, feeds, now_ms);
 
@@ -767,6 +778,15 @@ impl TaskCache {
 }
 
 impl<P: Platform, F: Feeds> DeviceView<'_, P, F> {
+    /// A client's change, stamped with the wall time now: what its history
+    /// event, which the writer records as it saves the change, carries.
+    fn stamp(&mut self, by: Source) -> Stamp {
+        Stamp {
+            by,
+            at: events::wall_s(self.platform, self.now_ms),
+        }
+    }
+
     /// Whether a change that writes must be refused as during a feed: the
     /// outputs are claimed, or a feed waits for the writes ahead of it, which
     /// this write would join.
@@ -883,11 +903,14 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
         }
     }
 
-    fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult {
+    fn wifi(&mut self, change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         match change {
             None => self.platform.wifi(),
             Some(_) if self.outputs_claimed() => WifiResult::Busy,
-            Some(credentials) => self.platform.wifi_change(credentials),
+            Some(Asked { change, by }) => {
+                let asked = self.stamp(by);
+                self.platform.wifi_change(change, Some(asked))
+            }
         }
     }
 
@@ -917,10 +940,8 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
         if self.outputs_claimed() {
             return None;
         }
-        let change = match change {
-            KeyChange::Enroll { key, label, role } => ClientChange::Enroll { key, label, role },
-            KeyChange::Revoke { key } => ClientChange::Revoke { key },
-        };
+        let at = events::wall_s(self.platform, self.now_ms);
+        let change = ClientChange::Key { change, at };
         (self.platform.keys_request(change) == Requested::Queued)
             .then(|| self.platform.keys_ticket().max(1))
     }
@@ -1109,11 +1130,17 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
         today(self.platform, now_ms)
     }
 
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
+    fn settings(&mut self, change: Option<Asked<SettingsFields>>) -> SettingsResult {
+        let Some(Asked { change, by }) = change else {
+            return self
+                .platform
+                .settings_request(SettingsFields::default(), None);
+        };
         if change.changes() && self.outputs_claimed() {
             return SettingsResult::Busy;
         }
-        self.platform.settings_request(change)
+        let asked = self.stamp(by);
+        self.platform.settings_request(change, Some(asked))
     }
 
     fn lock(&mut self, locked: bool) -> LockResult {
@@ -1159,17 +1186,17 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
 
     /// A client's table is saved at the wall time now, so a plan it adds
     /// or moves never runs an occurrence already past.
-    fn plans(&mut self, change: Option<Table>) -> PlansResult {
+    fn plans(&mut self, change: Option<Asked<Table>>) -> PlansResult {
         match change {
             None => self.platform.plans(),
             Some(_) if self.outputs_claimed() => PlansResult::Busy,
-            Some(table) => {
-                let at_s = self
-                    .platform
-                    .wall_ms(self.now_ms)
-                    .and_then(|ms| u32::try_from(ms / 1000).ok());
-                self.platform
-                    .plans_change(PlansChange::Replace { table, at_s })
+            Some(Asked { change: table, by }) => {
+                let asked = self.stamp(by);
+                let change = PlansChange::Replace {
+                    table,
+                    at_s: asked.at,
+                };
+                self.platform.plans_change(change, Some(asked))
             }
         }
     }
@@ -1182,9 +1209,10 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
         &mut self,
         slot: u8,
         due_s: u32,
-        skip: MealSkip,
+        skip: Asked<MealSkip>,
         now_ms: u32,
     ) -> Result<(), Refusal> {
+        let Asked { change: skip, by } = skip;
         if self.outputs_claimed() || self.meal {
             return Err(Refusal::Busy);
         }
@@ -1205,7 +1233,8 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
             platform.offset_at(ms)
         })?;
 
-        match self.platform.plans_change(change) {
+        let asked = self.stamp(by);
+        match self.platform.plans_change(change, Some(asked)) {
             PlansResult::Current { pending: true, .. } => Ok(()),
             PlansResult::Current { .. } | PlansResult::Busy => Err(Refusal::Busy),
             PlansResult::ReadOnly => Err(Refusal::NotWritable),

@@ -11,9 +11,9 @@ use super::memory::Remembered;
 use super::request::{Action, Reply};
 use super::{Server, Waiting};
 use crate::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealReminder,
-    MealSkip, PLANS, Plan, PlansResult, PlayResult, SettingsFields, SettingsResult, Table,
-    Weekdays, Window,
+    Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult,
+    MealReminder, MealSkip, PLANS, Plan, PlansResult, PlayResult, SettingsFields, SettingsResult,
+    Table, Weekdays, Window,
 };
 use crate::{FeederDevice, Reason};
 use wellfed_core::tone::Tune as CoreTune;
@@ -61,8 +61,8 @@ pub(super) enum FeederWait {
     Calibration {
         digest: u32,
     },
-    /// The revision a client's table written over `base` produces; a
-    /// `Plans` event once the writer reports it saved.
+    /// The revision a client's table written over `base` produces, which
+    /// the writer's `Plans` event names once it is saved.
     Plans {
         revision: u32,
     },
@@ -310,7 +310,7 @@ impl Server {
     ) -> Option<Reply> {
         let whole = Action::Feeder(action);
         let outcome = match action {
-            FeederAction::GetSettings => match device.settings(SettingsFields::default()) {
+            FeederAction::GetSettings => match device.settings(None) {
                 SettingsResult::Current { view, .. } => {
                     Reply::Feeder(FeederReply::Settings(proto::Settings {
                         generation: view.generation,
@@ -330,14 +330,14 @@ impl Server {
                 SettingsResult::ReadOnly => Reply::Refused(Refusal::NotWritable),
             },
             FeederAction::PutSettings { base, fields } => {
-                match put_settings(base, fields, device) {
+                match put_settings(base, Asked { change: fields, by }, device) {
                     Ok(()) => {
                         return self.wait(index, id, whole, Waiting::Feeder(FeederWait::Settings));
                     }
                     Err(refusal) => Reply::Refused(refusal),
                 }
             }
-            FeederAction::ResetDesiccant => match reset_desiccant(now_ms, device) {
+            FeederAction::ResetDesiccant => match reset_desiccant(now_ms, by, device) {
                 Ok(()) => {
                     return self.wait(index, id, whole, Waiting::Feeder(FeederWait::Settings));
                 }
@@ -395,7 +395,7 @@ impl Server {
                     Reply::Refused(Refusal::Unavailable)
                 }
             },
-            FeederAction::PutPlans { base } => match self.put_plans(base, device) {
+            FeederAction::PutPlans { base } => match self.put_plans(base, by, device) {
                 Ok(revision) => {
                     return self.wait(
                         index,
@@ -407,7 +407,7 @@ impl Server {
                 Err(refusal) => Reply::Refused(refusal),
             },
             FeederAction::SkipMeal { slot, due_s, skip } => {
-                match device.skip_meal(slot, due_s, skip, now_ms) {
+                match device.skip_meal(slot, due_s, Asked { change: skip, by }, now_ms) {
                     Ok(()) => {
                         let wait = FeederWait::Skip { slot, due_s, skip };
                         return self.wait(index, id, whole, Waiting::Feeder(wait));
@@ -507,7 +507,12 @@ impl Server {
     /// table is read again from the plaintext rather than carried in the
     /// action.
     #[inline(never)]
-    fn put_plans<F: FeederDevice>(&self, base: u32, device: &mut F) -> Result<u32, Refusal> {
+    fn put_plans<F: FeederDevice>(
+        &self,
+        base: u32,
+        by: Source,
+        device: &mut F,
+    ) -> Result<u32, Refusal> {
         let message: ClientMessage<'_> =
             wellfed_proto::decode(&self.plain[..self.plain_len]).map_err(|_| Refusal::Invalid)?;
         let ClientMessage::Request {
@@ -533,7 +538,7 @@ impl Server {
             });
         }
 
-        match device.plans(Some(table)) {
+        match device.plans(Some(Asked { change: table, by })) {
             PlansResult::Current { pending: true, .. } => Ok(base.wrapping_add(1)),
             PlansResult::Current { .. } | PlansResult::Busy => Err(Refusal::Busy),
             PlansResult::ReadOnly => Err(Refusal::NotWritable),
@@ -544,16 +549,16 @@ impl Server {
 
 fn put_settings<F: FeederDevice>(
     base: u32,
-    fields: SettingsFields,
+    change: Asked<SettingsFields>,
     device: &mut F,
 ) -> Result<(), Refusal> {
-    match device.settings(SettingsFields::default()) {
+    match device.settings(None) {
         SettingsResult::Current { pending: true, .. } | SettingsResult::Busy => Err(Refusal::Busy),
         SettingsResult::ReadOnly => Err(Refusal::NotWritable),
         SettingsResult::Current { view, .. } if view.generation != base => Err(Refusal::Stale {
             current: view.generation,
         }),
-        SettingsResult::Current { .. } => match device.settings(fields) {
+        SettingsResult::Current { .. } => match device.settings(Some(change)) {
             SettingsResult::Current { pending: true, .. } => Ok(()),
             SettingsResult::Current { .. } | SettingsResult::Busy => Err(Refusal::Busy),
             SettingsResult::ReadOnly => Err(Refusal::NotWritable),
@@ -581,12 +586,16 @@ fn put_call<F: FeederDevice>(change: CallChange, device: &mut F) -> Result<(), R
 /// Queue a desiccant replacement dated today. The day comes from the clock
 /// alone: with no valid clock the request is refused rather than dated by
 /// a guess. No `base`: a replacement is a fact about today, whatever the
-/// settings hold, and the settings event it records names their new
+/// settings hold, and the settings event the writer records names their new
 /// generation.
-fn reset_desiccant<F: FeederDevice>(now_ms: u32, device: &mut F) -> Result<(), Refusal> {
+fn reset_desiccant<F: FeederDevice>(
+    now_ms: u32,
+    by: Source,
+    device: &mut F,
+) -> Result<(), Refusal> {
     let today = device.today(now_ms).ok_or(Refusal::NoClock)?;
 
-    match device.settings(SettingsFields::default()) {
+    match device.settings(None) {
         SettingsResult::Current { pending: true, .. } | SettingsResult::Busy => {
             return Err(Refusal::Busy);
         }
@@ -597,7 +606,7 @@ fn reset_desiccant<F: FeederDevice>(now_ms: u32, device: &mut F) -> Result<(), R
         desiccant_reset: Some(today),
         ..SettingsFields::default()
     };
-    match device.settings(fields) {
+    match device.settings(Some(Asked { change: fields, by })) {
         SettingsResult::Current { pending: true, .. } => Ok(()),
         SettingsResult::Current { .. } | SettingsResult::Busy => Err(Refusal::Busy),
         SettingsResult::ReadOnly => Err(Refusal::NotWritable),
@@ -798,23 +807,16 @@ impl Server {
 }
 
 /// A pending feeder write's answer once the feeder has finished it; `None`
-/// while it is still under way.
-pub(super) fn poll<F: FeederDevice>(
-    wait: FeederWait,
-    now_ms: u32,
-    by: Source,
-    device: &mut F,
-) -> Option<Reply> {
+/// while it is still under way. Each write's history event is the
+/// writer's, recorded as it saved the change, whether or not the session
+/// stayed to read this.
+pub(super) fn poll<F: FeederDevice>(wait: FeederWait, device: &mut F) -> Option<Reply> {
     Some(match wait {
-        FeederWait::Settings => match device.settings(SettingsFields::default()) {
+        FeederWait::Settings => match device.settings(None) {
             SettingsResult::Current {
                 view,
                 pending: false,
-            } => {
-                let generation = view.generation;
-                device.record(now_ms, EventBody::Settings { generation, by });
-                Reply::Done(Some(generation))
-            }
+            } => Reply::Done(Some(view.generation)),
             _ => return None,
         },
         // No event: a calibration has its own generation.
@@ -840,11 +842,7 @@ pub(super) fn poll<F: FeederDevice>(
             PlansResult::Current {
                 view,
                 pending: false,
-            } if view.replaced == revision => {
-                let generation = revision;
-                device.record(now_ms, EventBody::Plans { generation, by });
-                Reply::Done(Some(generation))
-            }
+            } if view.replaced == revision => Reply::Done(Some(revision)),
             PlansResult::Current { pending: false, .. } => Reply::Refused(Refusal::NotWritable),
             PlansResult::Current { pending: true, .. } | PlansResult::Busy => return None,
             PlansResult::ReadOnly | PlansResult::Unserved => Reply::Refused(Refusal::NotWritable),
@@ -862,26 +860,11 @@ pub(super) fn poll<F: FeederDevice>(
                 pending: false,
             } => {
                 let held = view.skipped(usize::from(slot)) == Some(due_s);
-                let (landed, body) = match skip {
-                    MealSkip::Skip => (
-                        held,
-                        EventBody::Skipped {
-                            plan: slot,
-                            due: due_s,
-                            by,
-                        },
-                    ),
-                    MealSkip::Unskip => (
-                        !held,
-                        EventBody::Unskipped {
-                            plan: slot,
-                            due: due_s,
-                            by,
-                        },
-                    ),
+                let landed = match skip {
+                    MealSkip::Skip => held,
+                    MealSkip::Unskip => !held,
                 };
                 if landed {
-                    device.record(now_ms, body);
                     Reply::Done(None)
                 } else {
                     Reply::Refused(Refusal::NotWritable)

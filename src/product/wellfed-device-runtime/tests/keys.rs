@@ -3,8 +3,10 @@
 
 use std::sync::{Mutex, MutexGuard};
 
+use wellfed_device_api::KeyChange;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_runtime::keys::{self, Change, KEYS_FINISHED, KeyResult, Requested};
+use wellfed_proto::api::{Path, Source};
 
 /// The module's state is process-wide.
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -21,10 +23,14 @@ fn one_change_waits_for_the_writer() {
     assert_eq!(keys::pending(), None);
 
     assert_eq!(keys::request(Change::Reset), Requested::Queued);
-    let enroll = Change::Enroll {
-        key: [7; 32],
-        label: Label::new(b"phone").unwrap(),
-        role: Role::Member,
+    let enroll = Change::Key {
+        change: KeyChange::Enroll {
+            key: [7; 32],
+            label: Label::new(b"phone").unwrap(),
+            role: Role::Member,
+            path: Path::Invite,
+        },
+        at: None,
     };
     assert_eq!(
         keys::request(enroll),
@@ -48,7 +54,13 @@ fn one_change_waits_for_the_writer() {
 #[test]
 fn earlier_results_outlive_later_changes() {
     let _guard = start();
-    let revoke = |key| Change::Revoke { key: [key; 32] };
+    let revoke = |key| Change::Key {
+        change: KeyChange::Revoke {
+            key: [key; 32],
+            by: Source::Panel,
+        },
+        at: None,
+    };
 
     assert_eq!(keys::request(revoke(1)), Requested::Queued);
     let first = keys::ticket();

@@ -32,8 +32,8 @@ use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client};
 use wellfed_device_api::mailbox::{
     Calibration, CalibrationResult, CallChange, CallResult, ClientChange, KeyResult, PlansChange,
-    PlansResult, PlayResult, Requested, SettingsFields, SettingsResult, SettingsView, TimeSettings,
-    TimeSettingsResult, WifiResult, WifiSource,
+    PlansResult, PlayResult, Requested, SettingsFields, SettingsResult, SettingsView, Stamp,
+    TimeSettings, TimeSettingsResult, WifiResult, WifiSource,
 };
 use wellfed_device_api::wifi::Credentials;
 
@@ -225,12 +225,16 @@ pub trait Platform {
 
     /// The settings as the writer last published them.
     fn settings(&mut self) -> Option<SettingsView>;
-    /// The settings, or one change queued for the writer.
-    fn settings_request(&mut self, change: SettingsFields) -> SettingsResult;
+    /// The settings, or one change queued for the writer with who asked
+    /// for it, whose `Settings` event the writer records as it saves it.
+    fn settings_request(&mut self, change: SettingsFields, asked: Option<Stamp>) -> SettingsResult;
     /// The Wi-Fi store as the writer last published it.
     fn wifi(&mut self) -> WifiResult;
-    /// Queue a Wi-Fi save (`None` clears) for the writer.
-    fn wifi_change(&mut self, credentials: Option<Credentials>) -> WifiResult;
+    /// Queue a Wi-Fi save (`None` clears) for the writer, with who asked
+    /// for it (`None`: BLE setup's own), whose `Wifi` event the writer
+    /// records as it saves it.
+    fn wifi_change(&mut self, credentials: Option<Credentials>, asked: Option<Stamp>)
+    -> WifiResult;
     /// Whether a Wi-Fi change waits for the writer.
     fn wifi_saving(&self) -> bool;
     /// Which credentials this boot's joins use.
@@ -254,8 +258,10 @@ pub trait Platform {
     fn calibration_change(&mut self, calibration: Calibration) -> CalibrationResult;
     /// The feeding plans as the writer last published them.
     fn plans(&mut self) -> PlansResult;
-    /// Queue one change to the plans for the writer.
-    fn plans_change(&mut self, change: PlansChange) -> PlansResult;
+    /// Queue one change to the plans for the writer, with who asked for it
+    /// (`None`: the schedule's own), whose event the writer records as it
+    /// saves it.
+    fn plans_change(&mut self, change: PlansChange, asked: Option<Stamp>) -> PlansResult;
     /// The meal call as the writer last published it.
     fn call(&mut self) -> CallResult;
     /// Queue an upload's start or a delete for the writer.
@@ -270,6 +276,13 @@ pub trait Platform {
     fn queue_event(&mut self, at: Option<u32>, body: [u8; BODY_BYTES], slot: EventSlot) -> bool;
     /// Records the queue dropped since the last call.
     fn take_lost(&mut self) -> u32;
+    /// The oldest event the settings writer appended itself (a client store
+    /// change's) that the loop has not yet taken: its time and body, for
+    /// the alert rules.
+    fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])>;
+    /// Enrollments and revocations the writer appended but had no room to
+    /// hand back since the last call: in the ring, their alerts missed.
+    fn take_written_lost(&mut self) -> u32;
     /// The ring's answer for `after`, for the subscriber in slot `reader`;
     /// `None` while the writer reads it, or while it waits its turn.
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read>;

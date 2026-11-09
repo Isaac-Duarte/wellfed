@@ -32,15 +32,16 @@ use wellfed_device::store::reads::{READ_BATCH, Reads};
 use wellfed_device::store::reset;
 use wellfed_device::store::settings::{SettingsStatus, SettingsStore};
 use wellfed_device::store::time::TimeStore;
-use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     ClientChange, KEYS_FINISHED, KeyResult, Requested, SettingsFields, SettingsResult,
-    SettingsView, TimeSettings, TimeSettingsResult, TimeSettingsView, WifiResult, WifiSource,
-    WifiView,
+    SettingsView, Stamp, TimeSettings, TimeSettingsResult, TimeSettingsView, WifiResult,
+    WifiSource, WifiView, tells_alerts,
 };
 use wellfed_device_api::wifi::Credentials;
+use wellfed_device_api::{KeyChange, Reader};
 use wellfed_hal::ota::signers;
+use wellfed_proto::api::EventBody;
 
 use crate::flash::{Flash, Region};
 
@@ -70,9 +71,9 @@ pub struct DeviceStores {
     random: Random,
     flash: Rc<Flash>,
     settings: SettingsStore<Region>,
-    settings_pending: Option<SettingsFields>,
+    settings_pending: Option<(SettingsFields, Option<Stamp>)>,
     net: NetStore<Region>,
-    wifi_pending: Option<Option<Credentials>>,
+    wifi_pending: Option<(Option<Credentials>, Option<Stamp>)>,
     time: TimeStore<Region>,
     time_pending: Option<TimeSettings>,
     clients: ClientStore<Region>,
@@ -84,6 +85,8 @@ pub struct DeviceStores {
     /// The last finished changes, newest last, as many as the firmware's
     /// mailbox remembers.
     keys_done: VecDeque<(u32, KeyResult)>,
+    /// Events the writer appended itself, until the loop takes them.
+    written: VecDeque<(Option<u32>, [u8; BODY_BYTES])>,
     ticket: u32,
     events: EventLog<Region>,
     /// The turns subscribers read the ring in, the firmware's own, and
@@ -156,6 +159,7 @@ impl DeviceStores {
             identity_generation: 1,
             keys_pending: None,
             keys_done: VecDeque::with_capacity(KEYS_FINISHED),
+            written: VecDeque::new(),
             ticket: 0,
             events,
             reads: Reads::new(),
@@ -219,7 +223,11 @@ impl DeviceStores {
             .view(self.settings.generation, writable)
     }
 
-    pub fn settings_request(&mut self, change: SettingsFields) -> SettingsResult {
+    pub fn settings_request(
+        &mut self,
+        change: SettingsFields,
+        asked: Option<Stamp>,
+    ) -> SettingsResult {
         let view = self.settings();
         if !change.changes() {
             let pending = self.settings_pending.is_some();
@@ -231,7 +239,7 @@ impl DeviceStores {
         if self.settings_pending.is_some() {
             return SettingsResult::Busy;
         }
-        self.settings_pending = Some(change);
+        self.settings_pending = Some((change, asked));
         SettingsResult::Current {
             view,
             pending: true,
@@ -245,7 +253,11 @@ impl DeviceStores {
         }
     }
 
-    pub fn wifi_change(&mut self, credentials: Option<Credentials>) -> WifiResult {
+    pub fn wifi_change(
+        &mut self,
+        credentials: Option<Credentials>,
+        asked: Option<Stamp>,
+    ) -> WifiResult {
         let view = self.wifi_view();
         if !view.writable {
             return WifiResult::ReadOnly;
@@ -253,7 +265,7 @@ impl DeviceStores {
         if self.wifi_pending.is_some() {
             return WifiResult::Busy;
         }
-        self.wifi_pending = Some(credentials);
+        self.wifi_pending = Some((credentials, asked));
         WifiResult::Current {
             view,
             pending: true,
@@ -352,6 +364,25 @@ impl DeviceStores {
         self.events.append(at, body).is_ok()
     }
 
+    /// Append an event the writer records itself, for a change it just
+    /// made, and keep an enrollment or revocation for the loop's alert
+    /// rules ([`Self::take_written`]), as the firmware's writer does.
+    pub fn append_written(&mut self, at: Option<u32>, body: &EventBody) {
+        let mut bytes = [0; BODY_BYTES];
+        if wellfed_proto::encode(body, &mut bytes).is_ok()
+            && self.events.append(at, &bytes).is_ok()
+            && tells_alerts(body)
+        {
+            self.written.push_back((at, bytes));
+        }
+    }
+
+    /// The oldest event the writer appended itself that the loop has not
+    /// yet taken.
+    pub fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])> {
+        self.written.pop_front()
+    }
+
     /// A subscriber's read, through the firmware's turns.
     pub fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {
         self.reads.result(reader, after, self.events.last_seq())
@@ -395,17 +426,34 @@ impl DeviceStores {
 
     /// The writer's turn for the settings, Wi-Fi and time settings queued:
     /// each applied. A failed save leaves the generation where it was; the
-    /// client sees no change, as on the device.
+    /// client sees no change, as on the device. A client's save records its
+    /// event in the same turn, after it, as the firmware's writer does.
     pub fn apply_settings(&mut self) {
-        if let Some(fields) = self.settings_pending.take() {
+        if let Some((fields, asked)) = self.settings_pending.take() {
             let current = self.settings.settings;
             let target = current.changed(fields);
-            if target != current {
-                self.settings.save(&target);
+            if target != current
+                && self.settings.save(&target)
+                && let Some(asked) = asked
+            {
+                let generation = u32::try_from(self.settings.generation).unwrap_or(u32::MAX);
+                let body = EventBody::Settings {
+                    generation,
+                    by: asked.by,
+                };
+                self.append_written(asked.at, &body);
             }
         }
-        if let Some(credentials) = self.wifi_pending.take() {
-            self.net.save(credentials.as_ref());
+        if let Some((credentials, asked)) = self.wifi_pending.take()
+            && self.net.save(credentials.as_ref())
+            && let Some(asked) = asked
+        {
+            let generation = u32::try_from(self.net.generation).unwrap_or(u32::MAX);
+            let body = EventBody::Wifi {
+                generation,
+                by: asked.by,
+            };
+            self.append_written(asked.at, &body);
         }
         if let Some(settings) = self.time_pending.take() {
             self.time.save(&settings);
@@ -418,10 +466,17 @@ impl DeviceStores {
     pub fn apply_keys(&mut self) -> Option<KeyResult> {
         let (ticket, change) = self.keys_pending.take()?;
         let result = match change {
-            ClientChange::Enroll { key, label, role } => {
-                applied(self.clients.enroll(key, label, role))
-            }
-            ClientChange::Revoke { key } => applied(self.clients.revoke(&key)),
+            ClientChange::Key {
+                change:
+                    KeyChange::Enroll {
+                        key, label, role, ..
+                    },
+                ..
+            } => applied(self.clients.enroll(key, label, role)),
+            ClientChange::Key {
+                change: KeyChange::Revoke { key, .. },
+                ..
+            } => applied(self.clients.revoke(&key)),
             // The factory reset, as the writer's: it draws its identity from
             // the generator or does not happen, marks the reset, then
             // forgets every client; the loop restarts and the next boot
@@ -439,6 +494,13 @@ impl DeviceStores {
                 None => KeyResult::NoGenerator,
             },
         };
+        // The event in the same turn as the store write, before the result
+        // is published, as the firmware's writer appends it.
+        if let ClientChange::Key { change, at } = change
+            && result == KeyResult::Done
+        {
+            self.append_written(at, &change.event());
+        }
         if self.keys_done.len() == KEYS_FINISHED {
             self.keys_done.pop_front();
         }

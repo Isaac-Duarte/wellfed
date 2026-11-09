@@ -138,6 +138,8 @@ A store never writes over a record of its own it can't read, with four exception
 
 The roles are owner, member, server and update signer ([what each may do](device-api.md#writes-roles-and-generations)). An update signer is an owner's Ed25519 update-signing key, enrolled with `EnrollUpdateKey` and a Dispense press ([OTA design](ota-design.md#keys-and-anti-rollback)), recorded as `Enrolled { path: Press }`. It never opens a session.
 
+Every enrollment and revocation that changes the table is in the history as `Enrolled { path }` (`Setup`, `Invite`, `Recovery` or `Press`) or `Revoked { by }`. The settings writer appends that event in the same turn as the store write, before anyone can read the result, so it lands whether or not the asking client is still connected. A change that changes nothing (a key already enrolled, a revocation that finds nothing) records nothing. The store write goes first: a power cut between the two writes loses the event but never records one for a change that didn't land. The factory reset records nothing, since the next boot starts a new history.
+
 > [!NOTE]
 > The identity secret and the RNG seed sit in plain flash. The board has no secure element, so anyone who reads the flash chip can impersonate the feeder until its next reset. The seed matters less, since every boot mixes fresh input in.
 

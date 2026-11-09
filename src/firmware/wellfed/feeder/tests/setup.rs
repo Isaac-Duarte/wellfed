@@ -21,6 +21,7 @@ use wellfed_core::schedule::{Plan, Weekdays};
 use wellfed_core::tone::Tune;
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device::store::net::NetStore;
+use wellfed_device_api::KeyChange;
 use wellfed_device_api::clients::Role;
 use wellfed_device_api::mailbox::Lock;
 use wellfed_device_api::mailbox::SettingsView;
@@ -307,13 +308,25 @@ fn a_proven_ask_enrolls_saves_the_wifi_and_reboots() {
     bench.confirm(&mut session);
 
     // The settings writer enrolls the key.
-    let Some(Change::Enroll { key, label, role }) = keys::pending() else {
+    let Some(Change::Key {
+        change:
+            KeyChange::Enroll {
+                key,
+                label,
+                role,
+                path,
+            },
+        ..
+    }) = keys::pending()
+    else {
         panic!("an enrollment is queued")
     };
     assert_eq!(
         (key, label.as_bytes(), role),
         (*client.public(), &b"phone"[..], Role::Owner)
     );
+    // The writer records it as BLE setup's, whether or not the link stays.
+    assert_eq!(path, wellfed_proto::api::Path::Setup);
     keys::finish(KeyResult::Done);
     bench.step(None);
     assert!(bench.records.contains(&Record::Enroll {
@@ -460,7 +473,13 @@ fn a_proven_ask_completes_even_if_the_client_leaves_and_returns() {
     let mut bench = Bench::start();
     let mut session = bench.ask(&Keypair::from_secret([2; 32]));
     bench.confirm(&mut session);
-    assert!(matches!(keys::pending(), Some(Change::Enroll { .. })));
+    assert!(matches!(
+        keys::pending(),
+        Some(Change::Key {
+            change: KeyChange::Enroll { .. },
+            ..
+        })
+    ));
 
     // The client leaves and a new one connects while the writer works.
     ble_record(BleEvent::DISCONNECT, 0x13, 0);

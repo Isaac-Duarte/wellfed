@@ -39,11 +39,13 @@ use wellfed_session::setup_code::Code;
 
 use super::platform::Platform;
 use wellfed_device::io::{BleDrop, BleLink};
+use wellfed_device_api::KeyChange;
 use wellfed_device_api::clients::Role;
 use wellfed_device_api::mailbox::{ClientChange, KeyResult, PlayResult, Requested, WifiResult};
 use wellfed_device_api::pairing::{self, Pairing, Path};
 use wellfed_device_api::setup::{self as session, MAX_MESSAGE, Offer, Received, Responder};
 use wellfed_device_api::wifi::Credentials;
+use wellfed_proto::api as proto;
 
 /// After `Done`, long enough for the reply to reach the client.
 pub const REBOOT_MS: u32 = 3_000;
@@ -565,10 +567,16 @@ impl Setup {
         };
         match self.stage {
             Stage::Enrolling { ticket: 0 } => {
-                let enroll = ClientChange::Enroll {
-                    key: offer.key,
-                    label: offer.label,
-                    role: Role::Owner,
+                // The writer records the owner's `Enrolled` event as it
+                // enrolls the key, link or no link.
+                let enroll = ClientChange::Key {
+                    change: KeyChange::Enroll {
+                        key: offer.key,
+                        label: offer.label,
+                        role: Role::Owner,
+                        path: proto::Path::Setup,
+                    },
+                    at: super::events::wall_s(platform, now),
                 };
                 // A busy mailbox (another change waits): ask again next step.
                 if platform.keys_request(enroll) == Requested::Queued {
@@ -615,7 +623,7 @@ impl Setup {
             return self.done(platform, now, Reply::Done { enrolled, wifi }, record);
         };
         let before = generation(platform).unwrap_or(0);
-        match platform.wifi_change(Some(credentials)) {
+        match platform.wifi_change(Some(credentials), None) {
             WifiResult::Current { .. } => self.stage = Stage::Saving { enrolled, before },
             WifiResult::Invalid => self.finish(platform, Reply::Refused(Refusal::Invalid), record),
             WifiResult::Busy | WifiResult::ReadOnly => {

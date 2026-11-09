@@ -2,19 +2,17 @@
 //! request, else push a frame of events, a sample or log lines. A redeemed invite's key is
 //! enrolled here before its connection closes.
 
-use super::handshake::fingerprint;
 use super::recovery::Rescue;
 use super::request::{Action, Reply, proto_role};
 use super::{Phase, Server, proto_encode, slot_id};
-use crate::clients::Role;
 use crate::pairing::Pairing;
 use crate::{
     Device, EventRead, HANDSHAKE_MS, IDLE_MS, KeyChange, KeyOutcome, Reader, Reason, Record,
 };
 use wellfed_core::deadline_passed;
 use wellfed_proto::api::{
-    self as proto, ClientMessage, Clients, DeviceMessage, EventBatchWriter, EventBody, Joined,
-    LOG_TEXT_MAX, Open, Outcome, Refusal, RequestId,
+    self as proto, ClientMessage, Clients, DeviceMessage, EventBatchWriter, Joined, LOG_TEXT_MAX,
+    Open, Outcome, Refusal, RequestId,
 };
 
 /// The most events one pass reads for a session. A batch fills a frame in
@@ -111,7 +109,7 @@ impl Server {
                 }
                 Ok(false)
             }
-            Phase::Joining { .. } => self.joining(index, now_ms, device, record),
+            Phase::Joining { .. } => self.joining(index, device, record),
             Phase::Open { .. } => self.open(index, now_ms, device, pairing, record),
             Phase::Recovery(Rescue::Handshake) => {
                 if deadline_passed(now_ms, slot.since_ms.wrapping_add(HANDSHAKE_MS)) {
@@ -127,7 +125,6 @@ impl Server {
     fn joining<D: Device>(
         &mut self,
         index: usize,
-        now_ms: u32,
         device: &mut D,
         record: &mut impl FnMut(Record),
     ) -> Result<bool, Reason> {
@@ -147,14 +144,16 @@ impl Server {
                 key: *key,
                 label: *label,
                 role: *role,
+                path: proto::Path::Invite,
             });
             return Ok(false);
         };
         let Some(outcome) = device.keys_outcome(ticket_id) else {
             return Ok(false);
         };
-        // Read: an end from here on (a failed seal) must not leave the
-        // enrollment to `Server::settle_left` as well.
+        // The writer recorded the enrollment as it made it: the answer is
+        // all that is left, and a connection that dropped before it loses
+        // only the answer.
         *ticket = None;
 
         let joined = match outcome {
@@ -165,9 +164,6 @@ impl Server {
             KeyOutcome::Full => Joined::Refused(Refusal::Full),
             KeyOutcome::NotFound | KeyOutcome::NotWritable => Joined::Refused(Refusal::NotWritable),
         };
-        if matches!(joined, Joined::Enrolled { .. }) {
-            joined_event(now_ms, device, key, *role);
-        }
         let len = proto_encode(&joined, &mut self.plain)?;
         let sealed = transport
             .seal(&self.plain[..len], &mut self.out)
@@ -194,7 +190,7 @@ impl Server {
         if !self.slots[index].wire.tx_idle() {
             return Ok(false);
         }
-        if let Some((id, op, reply)) = self.poll_pending(index, now_ms, device, record)? {
+        if let Some((id, op, reply)) = self.poll_pending(index, device, record)? {
             return self
                 .answer(index, id, op, reply, now_ms, device, record)
                 .map(|()| true);
@@ -418,16 +414,6 @@ impl Server {
         }
         self.seal_plain(index, len).map(|()| true)
     }
-}
-
-/// An invite's key was enrolled, with its joining session or after it.
-pub(super) fn joined_event<D: Device>(now_ms: u32, device: &mut D, key: &[u8; 32], role: Role) {
-    let body = EventBody::Enrolled {
-        client: fingerprint(key),
-        role: proto_role(role),
-        path: proto::Path::Invite,
-    };
-    device.record(now_ms, body);
 }
 
 /// The id of an undecodable request: the frozen request's tag (0), then

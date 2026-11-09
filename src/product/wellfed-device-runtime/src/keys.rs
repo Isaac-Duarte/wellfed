@@ -13,10 +13,10 @@
 //! [`KEYS_FINISHED`] results, so a ticket stays readable after newer
 //! changes finish behind it.
 //!
-//! The result reaches the history only when the loop reads it: the writer
-//! applies a change, and the device API records its event (a revocation's)
-//! on a later pass. A restart in between applies the change with no event;
-//! that window is not closed here.
+//! The history does not wait for anyone to read the result: the writer
+//! appends an enrollment's or revocation's event in the turn that makes
+//! the change (`writer::Core::change`), so a waiter that has gone, or a
+//! restart before any pass reads the ring of results, costs no event.
 //!
 //! The other way, the writer publishes the identity secret it holds with
 //! [`publish_identity`], each time with a new generation, and the loop

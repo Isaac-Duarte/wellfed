@@ -28,11 +28,11 @@ use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client};
 use wellfed_device_api::mailbox::{
     Calibration, CalibrationResult, CallChange, CallResult, ClientChange, KeyResult, PlansChange,
-    PlansResult, PlayResult, Requested, SettingsFields, SettingsResult, SettingsView, TimeSettings,
-    TimeSettingsResult, WifiResult, WifiSource,
+    PlansResult, PlayResult, Requested, SettingsFields, SettingsResult, SettingsView, Stamp,
+    TimeSettings, TimeSettingsResult, WifiResult, WifiSource,
 };
 use wellfed_device_api::wifi::Credentials;
-use wellfed_device_runtime::{events, keys, network, time};
+use wellfed_device_runtime::{asked, events, keys, network, time};
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::alerts::Alerts;
 use wellfed_feeder::feeder::platform::{
@@ -278,16 +278,20 @@ impl Platform for Plaf103 {
         settings::current()
     }
 
-    fn settings_request(&mut self, change: SettingsFields) -> SettingsResult {
-        settings::request(change)
+    fn settings_request(&mut self, change: SettingsFields, asked: Option<Stamp>) -> SettingsResult {
+        asked::settings_request(change, asked)
     }
 
     fn wifi(&mut self) -> WifiResult {
         network::current()
     }
 
-    fn wifi_change(&mut self, credentials: Option<Credentials>) -> WifiResult {
-        network::change(credentials)
+    fn wifi_change(
+        &mut self,
+        credentials: Option<Credentials>,
+        asked: Option<Stamp>,
+    ) -> WifiResult {
+        network::change(credentials, asked)
     }
 
     fn wifi_saving(&self) -> bool {
@@ -334,8 +338,8 @@ impl Platform for Plaf103 {
         plans::current()
     }
 
-    fn plans_change(&mut self, change: PlansChange) -> PlansResult {
-        plans::change(change)
+    fn plans_change(&mut self, change: PlansChange, asked: Option<Stamp>) -> PlansResult {
+        plans::change(change, asked)
     }
 
     fn call(&mut self) -> CallResult {
@@ -359,6 +363,14 @@ impl Platform for Plaf103 {
 
     fn take_lost(&mut self) -> u32 {
         events::take_lost()
+    }
+
+    fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])> {
+        events::take_written().map(|written| (written.at, written.body))
+    }
+
+    fn take_written_lost(&mut self) -> u32 {
+        events::take_written_lost()
     }
 
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {

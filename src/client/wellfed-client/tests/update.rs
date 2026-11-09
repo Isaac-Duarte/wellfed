@@ -25,8 +25,8 @@ use wellfed_core::tone::Tune;
 use wellfed_device::update as wire;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
-    LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
-    TimeResult, WifiResult, WifiSource, WifiView,
+    Asked, LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView,
+    TimeFields, TimeResult, WifiResult, WifiSource, WifiView,
 };
 use wellfed_device_api::pairing::{Config, Pairing};
 use wellfed_device_api::wifi::Credentials;
@@ -411,7 +411,7 @@ impl Device for Feeder {
         }
     }
 
-    fn wifi(&mut self, _change: Option<Option<Credentials>>) -> WifiResult {
+    fn wifi(&mut self, _change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         WifiResult::Current {
             view: WifiView {
                 stored_ssid_crc: None,
@@ -504,7 +504,7 @@ impl Device for Feeder {
 }
 
 impl FeederDevice for Feeder {
-    fn settings(&mut self, _change: SettingsFields) -> SettingsResult {
+    fn settings(&mut self, _change: Option<Asked<SettingsFields>>) -> SettingsResult {
         SettingsResult::Current {
             view: SettingsView::default(),
             pending: false,

@@ -16,7 +16,7 @@ use wellfed_core::desiccant::Count;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
-use wellfed_device_api::mailbox::{KEYS_FINISHED, Lock};
+use wellfed_device_api::mailbox::{Asked, KEYS_FINISHED, Lock};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
     TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult,
@@ -55,11 +55,11 @@ fn public(secret: [u8; 32]) -> [u8; 32] {
 struct Fake {
     counter: u8,
     settings: SettingsView,
-    settings_pending: Option<SettingsFields>,
+    settings_pending: Option<Asked<SettingsFields>>,
     /// Today's local calendar day; `None` while the clock is invalid.
     today: Option<i32>,
     wifi_generation: u32,
-    wifi_pending: Option<Option<Credentials>>,
+    wifi_pending: Option<Asked<Option<Credentials>>>,
     locked: Option<bool>,
     clients: Vec<Client>,
     keys_pending: Option<(u32, KeyChange)>,
@@ -213,9 +213,10 @@ impl Fake {
         self.update_done = self.held.take();
     }
 
-    /// The settings writer's turn: apply what is queued.
+    /// The settings writer's turn: apply what is queued, and record each
+    /// client change's event as it saves it.
     fn write(&mut self) {
-        if let Some(fields) = self.settings_pending.take() {
+        if let Some(Asked { change: fields, by }) = self.settings_pending.take() {
             self.settings.lights = fields.lights.unwrap_or(self.settings.lights);
             self.settings.sound = fields.sound.unwrap_or(self.settings.sound);
             self.settings.volume = fields.volume.unwrap_or(self.settings.volume);
@@ -228,9 +229,13 @@ impl Fake {
             self.settings.desiccant_reset =
                 fields.desiccant_reset.or(self.settings.desiccant_reset);
             self.settings.generation += 1;
+            let generation = self.settings.generation;
+            self.record(0, EventBody::Settings { generation, by });
         }
-        if self.wifi_pending.take().is_some() {
+        if let Some(Asked { by, .. }) = self.wifi_pending.take() {
             self.wifi_generation += 1;
+            let generation = self.wifi_generation;
+            self.record(0, EventBody::Wifi { generation, by });
         }
         if let Some(settings) = self.time_pending.take()
             && !std::mem::take(&mut self.time_fails)
@@ -249,7 +254,7 @@ impl Fake {
                         KeyOutcome::Done
                     }
                 }
-                KeyChange::Revoke { key } => {
+                KeyChange::Revoke { key, .. } => {
                     let before = self.clients.len();
                     self.clients.retain(|c| c.key != key);
                     if self.clients.len() < before {
@@ -259,6 +264,10 @@ impl Fake {
                     }
                 }
             };
+            // The writer's event, in the turn that made the change.
+            if outcome == KeyOutcome::Done {
+                self.record(0, change.event());
+            }
             if self.keys_done.len() == KEYS_FINISHED {
                 self.keys_done.remove(0);
             }
@@ -339,7 +348,7 @@ impl Device for Fake {
         }
     }
 
-    fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult {
+    fn wifi(&mut self, change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         if let Some(change) = change {
             if self.wifi_pending.is_some() {
                 return WifiResult::Busy;
@@ -590,13 +599,13 @@ impl FeederDevice for Fake {
         self.today
     }
 
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
-        if !change.changes() {
+    fn settings(&mut self, change: Option<Asked<SettingsFields>>) -> SettingsResult {
+        let Some(change) = change.filter(|asked| asked.change.changes()) else {
             return SettingsResult::Current {
                 view: self.settings,
                 pending: self.settings_pending.is_some(),
             };
-        }
+        };
         if self.settings_pending.is_some() {
             return SettingsResult::Busy;
         }
@@ -942,6 +951,74 @@ fn a_stale_settings_write_is_refused_and_a_current_one_applies() {
             .iter()
             .any(|e| matches!(e.body, EventBody::Settings { generation: 8, .. }))
     );
+}
+
+/// The history's settings and Wi-Fi events: each generation and who asked.
+fn store_events(rig: &Rig) -> Vec<EventBody> {
+    rig.device
+        .events
+        .iter()
+        .map(|e| e.body)
+        .filter(|body| matches!(body, EventBody::Settings { .. } | EventBody::Wifi { .. }))
+        .collect()
+}
+
+/// The owner's settings change or Wi-Fi clear, sent and left for the
+/// writer; the event it records.
+fn send_store_write(rig: &mut Rig, owner: &mut Client_, wifi: bool) -> EventBody {
+    let by = proto::Source::Client(fingerprint(OWNER));
+    if wifi {
+        let base = rig.device.wifi_generation;
+        let op = Op::PutWifi {
+            base: Generation(base),
+            wifi: None,
+        };
+        send_unwritten(rig, owner, 1, op);
+        assert!(rig.device.wifi_pending.is_some(), "queued");
+        let generation = base + 1;
+        return EventBody::Wifi { generation, by };
+    }
+    let changes = FeederSettingsPatch {
+        volume: Some(60),
+        ..FeederSettingsPatch::default()
+    };
+    let op = Op::PutSettings {
+        base: Generation(7),
+        changes,
+    };
+    send_unwritten(rig, owner, 1, op);
+    assert!(rig.device.settings_pending.is_some(), "queued");
+    EventBody::Settings { generation: 8, by }
+}
+
+/// A session that goes once its settings or Wi-Fi change is queued: the
+/// writer saves it and records its event, once and naming who asked, as it
+/// does for a session that stays to read the answer, which adds nothing of
+/// its own.
+#[test]
+fn store_writes_whose_session_left_are_still_in_the_history() {
+    for wifi in [false, true] {
+        let mut rig = Rig::new();
+        let mut owner = open(&mut rig, OWNER);
+        let expected = send_store_write(&mut rig, &mut owner, wifi);
+        let records = &mut rig.records;
+        rig.server.closed(owner.slot, |r| records.push(r));
+        rig.pass();
+        assert_eq!(store_events(&rig), [], "not before the writer has saved");
+        rig.device.write();
+        rig.pass();
+        rig.pass();
+        assert_eq!(store_events(&rig), [expected]);
+
+        let mut rig = Rig::new();
+        let mut owner = open(&mut rig, OWNER);
+        send_store_write(&mut rig, &mut owner, wifi);
+        rig.device.write();
+        let answer = poll_answer(&mut rig, &mut owner, 1, 5);
+        assert!(matches!(answer, Some(Answer::Done { .. })), "{answer:?}");
+        rig.pass();
+        assert_eq!(store_events(&rig), [expected]);
+    }
 }
 
 /// A window crosses the wire both ways, and a bound past the last minute
@@ -1615,7 +1692,10 @@ fn a_change_finished_behind_another_still_answers_its_session() {
     send_unwritten(&mut rig, &mut owner, 1, revoke);
     rig.device.write();
 
-    let other = rig.device.keys(KeyChange::Revoke { key: [0x99; 32] });
+    let other = rig.device.keys(KeyChange::Revoke {
+        key: [0x99; 32],
+        by: proto::Source::Client([0x99; 4]),
+    });
     rig.device.write();
     assert_eq!(
         rig.device.keys_outcome(other.unwrap()),
@@ -2120,6 +2200,26 @@ fn recover(
     code: Code,
     keyed: Code,
 ) -> Option<wellfed_model::setup::Reply> {
+    recover_until(rig, secret, code, keyed, Leave::Never)
+}
+
+/// When a recovery client hangs up.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Leave {
+    /// It stays for the last reply.
+    Never,
+    /// As soon as its enrollment is queued, before the writer takes it.
+    OnceQueued,
+}
+
+/// [`recover`], with the client hanging up as `leave` says.
+fn recover_until(
+    rig: &mut Rig,
+    secret: [u8; 32],
+    code: Code,
+    keyed: Code,
+    leave: Leave,
+) -> Option<wellfed_model::setup::Reply> {
     use wellfed_client::setup::{Ask, Session as Setup};
     use wellfed_model::setup::Reply;
 
@@ -2139,6 +2239,11 @@ fn recover(
         }
         rig.deliver(slot, &mut outbox);
         rig.pass();
+        if leave == Leave::OnceQueued && rig.device.keys_pending.is_some() {
+            let records = &mut rig.records;
+            rig.server.closed(slot, |r| records.push(r));
+            return None;
+        }
         let received = rig.collect(slot);
         rig.device.write();
         match recovery.handle_input(&received) {
@@ -2261,13 +2366,13 @@ fn the_recovery_window_admits_one_owner_who_proves_the_code() {
             .iter()
             .any(|c| c.key == public(STRANGER) && c.role == Role::Owner)
     );
-    assert!(rig.device.events.iter().any(|e| matches!(
-        e.body,
-        EventBody::Enrolled {
-            path: proto::Path::Recovery,
-            ..
-        }
-    )));
+    // Once: the writer's event, and nothing from the session that read it.
+    let enrolled = (
+        fingerprint(STRANGER),
+        proto::Role::Owner,
+        proto::Path::Recovery,
+    );
+    assert_eq!(enrollments(&rig), [enrolled]);
 
     // The offer closed the window: the next client is turned away.
     assert_eq!(
@@ -2277,6 +2382,36 @@ fn the_recovery_window_admits_one_owner_who_proves_the_code() {
     );
     rig.publish();
     let _owner = open(&mut rig, STRANGER);
+}
+
+/// A recovery client that hangs up once its enrollment is queued is still
+/// enrolled, and the history says so once: the writer records it with the
+/// store write, not the session that has gone.
+#[test]
+fn a_recovery_whose_client_left_is_still_in_the_history() {
+    let mut rig = Rig::new();
+    open_recovery(&mut rig);
+    let code = Code::from_bits(0x0abc);
+    let reply = recover_until(&mut rig, STRANGER, code, code, Leave::OnceQueued);
+    assert_eq!(reply, None, "gone before its answer");
+    assert!(rig.ended(Reason::Closed));
+    assert_eq!(enrollments(&rig), [], "not before the writer has made it");
+
+    rig.device.write();
+    rig.pass();
+    rig.pass();
+    assert!(
+        rig.device
+            .clients
+            .iter()
+            .any(|c| c.key == public(STRANGER) && c.role == Role::Owner)
+    );
+    let enrolled = (
+        fingerprint(STRANGER),
+        proto::Role::Owner,
+        proto::Path::Recovery,
+    );
+    assert_eq!(enrollments(&rig), [enrolled]);
 }
 
 #[test]
