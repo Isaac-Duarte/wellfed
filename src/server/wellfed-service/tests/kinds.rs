@@ -56,8 +56,8 @@ async fn a_feeder_op_to_a_device_of_another_kind_is_refused_unjournaled() {
         .find(|device| device.id == FOUNTAIN)
         .expect("the device is listed");
     assert_eq!(device.home, home.id);
-    assert_eq!(device.kind, DeviceKind::Fountain);
-    assert_eq!(device.model, Model::Plwf106);
+    assert_eq!(device.kind, DeviceKind::Fountain.into());
+    assert_eq!(device.model, Model::Plwf106.into());
 
     // A read and a write of the feeder's module are refused by the kind,
     // not by the missing session.

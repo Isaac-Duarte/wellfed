@@ -11,6 +11,10 @@ use crate::HomeId;
 pub enum Units {
     Grams,
     Ounces,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Units {
@@ -19,6 +23,7 @@ impl Units {
         match self {
             Self::Grams => "grams",
             Self::Ounces => "ounces",
+            Self::Unknown => "unknown",
         }
     }
 

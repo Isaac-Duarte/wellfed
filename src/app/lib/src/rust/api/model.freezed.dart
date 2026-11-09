@@ -56,13 +56,14 @@ extension Bank0CheckPatterns on Bank0Check {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Bank0Check_Unchecked value)?  unchecked,TResult Function( Bank0Check_Match value)?  match,TResult Function( Bank0Check_Blocked value)?  blocked,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Bank0Check_Unchecked value)?  unchecked,TResult Function( Bank0Check_Match value)?  match,TResult Function( Bank0Check_Blocked value)?  blocked,TResult Function( Bank0Check_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case Bank0Check_Unchecked() when unchecked != null:
 return unchecked(_that);case Bank0Check_Match() when match != null:
 return match(_that);case Bank0Check_Blocked() when blocked != null:
-return blocked(_that);case _:
+return blocked(_that);case Bank0Check_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -80,13 +81,14 @@ return blocked(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Bank0Check_Unchecked value)  unchecked,required TResult Function( Bank0Check_Match value)  match,required TResult Function( Bank0Check_Blocked value)  blocked,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Bank0Check_Unchecked value)  unchecked,required TResult Function( Bank0Check_Match value)  match,required TResult Function( Bank0Check_Blocked value)  blocked,required TResult Function( Bank0Check_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case Bank0Check_Unchecked():
 return unchecked(_that);case Bank0Check_Match():
 return match(_that);case Bank0Check_Blocked():
-return blocked(_that);}
+return blocked(_that);case Bank0Check_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -100,13 +102,14 @@ return blocked(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Bank0Check_Unchecked value)?  unchecked,TResult? Function( Bank0Check_Match value)?  match,TResult? Function( Bank0Check_Blocked value)?  blocked,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Bank0Check_Unchecked value)?  unchecked,TResult? Function( Bank0Check_Match value)?  match,TResult? Function( Bank0Check_Blocked value)?  blocked,TResult? Function( Bank0Check_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case Bank0Check_Unchecked() when unchecked != null:
 return unchecked(_that);case Bank0Check_Match() when match != null:
 return match(_that);case Bank0Check_Blocked() when blocked != null:
-return blocked(_that);case _:
+return blocked(_that);case Bank0Check_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -123,12 +126,13 @@ return blocked(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  unchecked,TResult Function()?  match,TResult Function( Bank0Blocked field0)?  blocked,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  unchecked,TResult Function()?  match,TResult Function( Bank0Blocked field0)?  blocked,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case Bank0Check_Unchecked() when unchecked != null:
 return unchecked();case Bank0Check_Match() when match != null:
 return match();case Bank0Check_Blocked() when blocked != null:
-return blocked(_that.field0);case _:
+return blocked(_that.field0);case Bank0Check_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -146,12 +150,13 @@ return blocked(_that.field0);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  unchecked,required TResult Function()  match,required TResult Function( Bank0Blocked field0)  blocked,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  unchecked,required TResult Function()  match,required TResult Function( Bank0Blocked field0)  blocked,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case Bank0Check_Unchecked():
 return unchecked();case Bank0Check_Match():
 return match();case Bank0Check_Blocked():
-return blocked(_that.field0);}
+return blocked(_that.field0);case Bank0Check_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -165,12 +170,13 @@ return blocked(_that.field0);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  unchecked,TResult? Function()?  match,TResult? Function( Bank0Blocked field0)?  blocked,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  unchecked,TResult? Function()?  match,TResult? Function( Bank0Blocked field0)?  blocked,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case Bank0Check_Unchecked() when unchecked != null:
 return unchecked();case Bank0Check_Match() when match != null:
 return match();case Bank0Check_Blocked() when blocked != null:
-return blocked(_that.field0);case _:
+return blocked(_that.field0);case Bank0Check_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -309,6 +315,38 @@ as Bank0Blocked,
 
 
 }
+
+/// @nodoc
+
+
+class Bank0Check_Unknown extends Bank0Check {
+  const Bank0Check_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Bank0Check_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'Bank0Check.unknown()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 mixin _$CallClip {
@@ -694,13 +732,13 @@ extension DesiccantPatterns on Desiccant {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Desiccant_Unset value)?  unset,TResult Function( Desiccant_Unknown value)?  unknown,TResult Function( Desiccant_Remaining value)?  remaining,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Desiccant_Unset value)?  unset,TResult Function( Desiccant_Remaining value)?  remaining,TResult Function( Desiccant_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case Desiccant_Unset() when unset != null:
-return unset(_that);case Desiccant_Unknown() when unknown != null:
-return unknown(_that);case Desiccant_Remaining() when remaining != null:
-return remaining(_that);case _:
+return unset(_that);case Desiccant_Remaining() when remaining != null:
+return remaining(_that);case Desiccant_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -718,13 +756,13 @@ return remaining(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Desiccant_Unset value)  unset,required TResult Function( Desiccant_Unknown value)  unknown,required TResult Function( Desiccant_Remaining value)  remaining,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Desiccant_Unset value)  unset,required TResult Function( Desiccant_Remaining value)  remaining,required TResult Function( Desiccant_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case Desiccant_Unset():
-return unset(_that);case Desiccant_Unknown():
-return unknown(_that);case Desiccant_Remaining():
-return remaining(_that);}
+return unset(_that);case Desiccant_Remaining():
+return remaining(_that);case Desiccant_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -738,13 +776,13 @@ return remaining(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Desiccant_Unset value)?  unset,TResult? Function( Desiccant_Unknown value)?  unknown,TResult? Function( Desiccant_Remaining value)?  remaining,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Desiccant_Unset value)?  unset,TResult? Function( Desiccant_Remaining value)?  remaining,TResult? Function( Desiccant_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case Desiccant_Unset() when unset != null:
-return unset(_that);case Desiccant_Unknown() when unknown != null:
-return unknown(_that);case Desiccant_Remaining() when remaining != null:
-return remaining(_that);case _:
+return unset(_that);case Desiccant_Remaining() when remaining != null:
+return remaining(_that);case Desiccant_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -761,12 +799,12 @@ return remaining(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  unset,TResult Function()?  unknown,TResult Function( int days,  bool due)?  remaining,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  unset,TResult Function( int days,  bool due)?  remaining,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case Desiccant_Unset() when unset != null:
-return unset();case Desiccant_Unknown() when unknown != null:
-return unknown();case Desiccant_Remaining() when remaining != null:
-return remaining(_that.days,_that.due);case _:
+return unset();case Desiccant_Remaining() when remaining != null:
+return remaining(_that.days,_that.due);case Desiccant_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -784,12 +822,12 @@ return remaining(_that.days,_that.due);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  unset,required TResult Function()  unknown,required TResult Function( int days,  bool due)  remaining,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  unset,required TResult Function( int days,  bool due)  remaining,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case Desiccant_Unset():
-return unset();case Desiccant_Unknown():
-return unknown();case Desiccant_Remaining():
-return remaining(_that.days,_that.due);}
+return unset();case Desiccant_Remaining():
+return remaining(_that.days,_that.due);case Desiccant_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -803,12 +841,12 @@ return remaining(_that.days,_that.due);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  unset,TResult? Function()?  unknown,TResult? Function( int days,  bool due)?  remaining,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  unset,TResult? Function( int days,  bool due)?  remaining,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case Desiccant_Unset() when unset != null:
-return unset();case Desiccant_Unknown() when unknown != null:
-return unknown();case Desiccant_Remaining() when remaining != null:
-return remaining(_that.days,_that.due);case _:
+return unset();case Desiccant_Remaining() when remaining != null:
+return remaining(_that.days,_that.due);case Desiccant_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -840,38 +878,6 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
     return 'Desiccant.unset()';
-}
-
-
-}
-
-
-
-
-/// @nodoc
-
-
-class Desiccant_Unknown extends Desiccant {
-  const Desiccant_Unknown(): super._();
-  
-
-
-
-
-
-
-@override
-bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Desiccant_Unknown);
-}
-
-
-@override
-int get hashCode => runtimeType.hashCode;
-
-@override
-String toString() {
-    return 'Desiccant.unknown()';
 }
 
 
@@ -951,6 +957,38 @@ as bool,
 }
 
 /// @nodoc
+
+
+class Desiccant_Unknown extends Desiccant {
+  const Desiccant_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Desiccant_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'Desiccant.unknown()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$MealReminder {
 
 
@@ -994,12 +1032,13 @@ extension MealReminderPatterns on MealReminder {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MealReminder_Off value)?  off,TResult Function( MealReminder_Before value)?  before,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MealReminder_Off value)?  off,TResult Function( MealReminder_Before value)?  before,TResult Function( MealReminder_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case MealReminder_Off() when off != null:
 return off(_that);case MealReminder_Before() when before != null:
-return before(_that);case _:
+return before(_that);case MealReminder_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -1017,12 +1056,13 @@ return before(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MealReminder_Off value)  off,required TResult Function( MealReminder_Before value)  before,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MealReminder_Off value)  off,required TResult Function( MealReminder_Before value)  before,required TResult Function( MealReminder_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case MealReminder_Off():
 return off(_that);case MealReminder_Before():
-return before(_that);}
+return before(_that);case MealReminder_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -1036,12 +1076,13 @@ return before(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MealReminder_Off value)?  off,TResult? Function( MealReminder_Before value)?  before,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MealReminder_Off value)?  off,TResult? Function( MealReminder_Before value)?  before,TResult? Function( MealReminder_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case MealReminder_Off() when off != null:
 return off(_that);case MealReminder_Before() when before != null:
-return before(_that);case _:
+return before(_that);case MealReminder_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -1058,11 +1099,12 @@ return before(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  off,TResult Function( int minutes)?  before,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  off,TResult Function( int minutes)?  before,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case MealReminder_Off() when off != null:
 return off();case MealReminder_Before() when before != null:
-return before(_that.minutes);case _:
+return before(_that.minutes);case MealReminder_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -1080,11 +1122,12 @@ return before(_that.minutes);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  off,required TResult Function( int minutes)  before,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  off,required TResult Function( int minutes)  before,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case MealReminder_Off():
 return off();case MealReminder_Before():
-return before(_that.minutes);}
+return before(_that.minutes);case MealReminder_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -1098,11 +1141,12 @@ return before(_that.minutes);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  off,TResult? Function( int minutes)?  before,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  off,TResult? Function( int minutes)?  before,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case MealReminder_Off() when off != null:
 return off();case MealReminder_Before() when before != null:
-return before(_that.minutes);case _:
+return before(_that.minutes);case MealReminder_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -1211,6 +1255,38 @@ as int,
 }
 
 /// @nodoc
+
+
+class MealReminder_Unknown extends MealReminder {
+  const MealReminder_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is MealReminder_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'MealReminder.unknown()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$MissedReason {
 
 
@@ -1254,13 +1330,14 @@ extension MissedReasonPatterns on MissedReason {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MissedReason_Late value)?  late_,TResult Function( MissedReason_Blocked value)?  blocked,TResult Function( MissedReason_Interrupted value)?  interrupted,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MissedReason_Late value)?  late_,TResult Function( MissedReason_Blocked value)?  blocked,TResult Function( MissedReason_Interrupted value)?  interrupted,TResult Function( MissedReason_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case MissedReason_Late() when late_ != null:
 return late_(_that);case MissedReason_Blocked() when blocked != null:
 return blocked(_that);case MissedReason_Interrupted() when interrupted != null:
-return interrupted(_that);case _:
+return interrupted(_that);case MissedReason_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -1278,13 +1355,14 @@ return interrupted(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MissedReason_Late value)  late_,required TResult Function( MissedReason_Blocked value)  blocked,required TResult Function( MissedReason_Interrupted value)  interrupted,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MissedReason_Late value)  late_,required TResult Function( MissedReason_Blocked value)  blocked,required TResult Function( MissedReason_Interrupted value)  interrupted,required TResult Function( MissedReason_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case MissedReason_Late():
 return late_(_that);case MissedReason_Blocked():
 return blocked(_that);case MissedReason_Interrupted():
-return interrupted(_that);}
+return interrupted(_that);case MissedReason_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -1298,13 +1376,14 @@ return interrupted(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MissedReason_Late value)?  late_,TResult? Function( MissedReason_Blocked value)?  blocked,TResult? Function( MissedReason_Interrupted value)?  interrupted,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MissedReason_Late value)?  late_,TResult? Function( MissedReason_Blocked value)?  blocked,TResult? Function( MissedReason_Interrupted value)?  interrupted,TResult? Function( MissedReason_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case MissedReason_Late() when late_ != null:
 return late_(_that);case MissedReason_Blocked() when blocked != null:
 return blocked(_that);case MissedReason_Interrupted() when interrupted != null:
-return interrupted(_that);case _:
+return interrupted(_that);case MissedReason_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -1321,12 +1400,13 @@ return interrupted(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  late_,TResult Function( Blocked reason)?  blocked,TResult Function()?  interrupted,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  late_,TResult Function( Blocked reason)?  blocked,TResult Function()?  interrupted,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case MissedReason_Late() when late_ != null:
 return late_();case MissedReason_Blocked() when blocked != null:
 return blocked(_that.reason);case MissedReason_Interrupted() when interrupted != null:
-return interrupted();case _:
+return interrupted();case MissedReason_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -1344,12 +1424,13 @@ return interrupted();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  late_,required TResult Function( Blocked reason)  blocked,required TResult Function()  interrupted,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  late_,required TResult Function( Blocked reason)  blocked,required TResult Function()  interrupted,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case MissedReason_Late():
 return late_();case MissedReason_Blocked():
 return blocked(_that.reason);case MissedReason_Interrupted():
-return interrupted();}
+return interrupted();case MissedReason_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -1363,12 +1444,13 @@ return interrupted();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  late_,TResult? Function( Blocked reason)?  blocked,TResult? Function()?  interrupted,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  late_,TResult? Function( Blocked reason)?  blocked,TResult? Function()?  interrupted,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case MissedReason_Late() when late_ != null:
 return late_();case MissedReason_Blocked() when blocked != null:
 return blocked(_that.reason);case MissedReason_Interrupted() when interrupted != null:
-return interrupted();case _:
+return interrupted();case MissedReason_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -1500,6 +1582,38 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
     return 'MissedReason.interrupted()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class MissedReason_Unknown extends MissedReason {
+  const MissedReason_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is MissedReason_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'MissedReason.unknown()';
 }
 
 
@@ -2182,66 +2296,30 @@ as Portions,
 /// @nodoc
 mixin _$TraceEntry {
 
- int get atMs;
-/// Create a copy of TraceEntry
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$TraceEntryCopyWith<TraceEntry> get copyWith => _$TraceEntryCopyWithImpl<TraceEntry>(this as TraceEntry, _$identity);
+
 
 
 
 @override
 bool operator ==(Object other) {
-  final _this = this as TraceEntry;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TraceEntry&&(identical(other.atMs, _this.atMs) || other.atMs == _this.atMs));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TraceEntry);
 }
 
 
 @override
-int get hashCode {
-  final _this = this as TraceEntry;
-  return Object.hash(runtimeType,_this.atMs);
-}
+int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  final _this = this as TraceEntry;
-  return 'TraceEntry(atMs: ${_this.atMs})';
+    return 'TraceEntry()';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $TraceEntryCopyWith<$Res>  {
-  factory $TraceEntryCopyWith(TraceEntry value, $Res Function(TraceEntry) _then) = _$TraceEntryCopyWithImpl;
-@useResult
-$Res call({
- int atMs
-});
-
-
-
-
-}
-/// @nodoc
-class _$TraceEntryCopyWithImpl<$Res>
-    implements $TraceEntryCopyWith<$Res> {
-  _$TraceEntryCopyWithImpl(this._self, this._then);
-
-  final TraceEntry _self;
-  final $Res Function(TraceEntry) _then;
-
-/// Create a copy of TraceEntry
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? atMs = null,}) {
-  return _then(_self.copyWith(
-atMs: null == atMs ? _self.atMs : atMs // ignore: cast_nullable_to_non_nullable
-as int,
-  ));
-}
-
+class $TraceEntryCopyWith<$Res>  {
+$TraceEntryCopyWith(TraceEntry _, $Res Function(TraceEntry) __);
 }
 
 
@@ -2259,7 +2337,7 @@ extension TraceEntryPatterns on TraceEntry {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( TraceEntry_Current value)?  current,TResult Function( TraceEntry_Mark value)?  mark,TResult Function( TraceEntry_Beams value)?  beams,TResult Function( TraceEntry_Battery value)?  battery,TResult Function( TraceEntry_Motor value)?  motor,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( TraceEntry_Current value)?  current,TResult Function( TraceEntry_Mark value)?  mark,TResult Function( TraceEntry_Beams value)?  beams,TResult Function( TraceEntry_Battery value)?  battery,TResult Function( TraceEntry_Motor value)?  motor,TResult Function( TraceEntry_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case TraceEntry_Current() when current != null:
@@ -2267,7 +2345,8 @@ return current(_that);case TraceEntry_Mark() when mark != null:
 return mark(_that);case TraceEntry_Beams() when beams != null:
 return beams(_that);case TraceEntry_Battery() when battery != null:
 return battery(_that);case TraceEntry_Motor() when motor != null:
-return motor(_that);case _:
+return motor(_that);case TraceEntry_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -2285,7 +2364,7 @@ return motor(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( TraceEntry_Current value)  current,required TResult Function( TraceEntry_Mark value)  mark,required TResult Function( TraceEntry_Beams value)  beams,required TResult Function( TraceEntry_Battery value)  battery,required TResult Function( TraceEntry_Motor value)  motor,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( TraceEntry_Current value)  current,required TResult Function( TraceEntry_Mark value)  mark,required TResult Function( TraceEntry_Beams value)  beams,required TResult Function( TraceEntry_Battery value)  battery,required TResult Function( TraceEntry_Motor value)  motor,required TResult Function( TraceEntry_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case TraceEntry_Current():
@@ -2293,7 +2372,8 @@ return current(_that);case TraceEntry_Mark():
 return mark(_that);case TraceEntry_Beams():
 return beams(_that);case TraceEntry_Battery():
 return battery(_that);case TraceEntry_Motor():
-return motor(_that);}
+return motor(_that);case TraceEntry_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -2307,7 +2387,7 @@ return motor(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( TraceEntry_Current value)?  current,TResult? Function( TraceEntry_Mark value)?  mark,TResult? Function( TraceEntry_Beams value)?  beams,TResult? Function( TraceEntry_Battery value)?  battery,TResult? Function( TraceEntry_Motor value)?  motor,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( TraceEntry_Current value)?  current,TResult? Function( TraceEntry_Mark value)?  mark,TResult? Function( TraceEntry_Beams value)?  beams,TResult? Function( TraceEntry_Battery value)?  battery,TResult? Function( TraceEntry_Motor value)?  motor,TResult? Function( TraceEntry_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case TraceEntry_Current() when current != null:
@@ -2315,7 +2395,8 @@ return current(_that);case TraceEntry_Mark() when mark != null:
 return mark(_that);case TraceEntry_Beams() when beams != null:
 return beams(_that);case TraceEntry_Battery() when battery != null:
 return battery(_that);case TraceEntry_Motor() when motor != null:
-return motor(_that);case _:
+return motor(_that);case TraceEntry_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -2332,14 +2413,15 @@ return motor(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int atMs,  int value)?  current,TResult Function( int atMs,  int edges,  bool high)?  mark,TResult Function( int atMs,  bool outletClear,  bool food)?  beams,TResult Function( int atMs,  int mv)?  battery,TResult Function( int atMs,  TraceMotor motor)?  motor,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int atMs,  int value)?  current,TResult Function( int atMs,  int edges,  bool high)?  mark,TResult Function( int atMs,  bool outletClear,  bool food)?  beams,TResult Function( int atMs,  int mv)?  battery,TResult Function( int atMs,  TraceMotor motor)?  motor,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case TraceEntry_Current() when current != null:
 return current(_that.atMs,_that.value);case TraceEntry_Mark() when mark != null:
 return mark(_that.atMs,_that.edges,_that.high);case TraceEntry_Beams() when beams != null:
 return beams(_that.atMs,_that.outletClear,_that.food);case TraceEntry_Battery() when battery != null:
 return battery(_that.atMs,_that.mv);case TraceEntry_Motor() when motor != null:
-return motor(_that.atMs,_that.motor);case _:
+return motor(_that.atMs,_that.motor);case TraceEntry_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -2357,14 +2439,15 @@ return motor(_that.atMs,_that.motor);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int atMs,  int value)  current,required TResult Function( int atMs,  int edges,  bool high)  mark,required TResult Function( int atMs,  bool outletClear,  bool food)  beams,required TResult Function( int atMs,  int mv)  battery,required TResult Function( int atMs,  TraceMotor motor)  motor,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int atMs,  int value)  current,required TResult Function( int atMs,  int edges,  bool high)  mark,required TResult Function( int atMs,  bool outletClear,  bool food)  beams,required TResult Function( int atMs,  int mv)  battery,required TResult Function( int atMs,  TraceMotor motor)  motor,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case TraceEntry_Current():
 return current(_that.atMs,_that.value);case TraceEntry_Mark():
 return mark(_that.atMs,_that.edges,_that.high);case TraceEntry_Beams():
 return beams(_that.atMs,_that.outletClear,_that.food);case TraceEntry_Battery():
 return battery(_that.atMs,_that.mv);case TraceEntry_Motor():
-return motor(_that.atMs,_that.motor);}
+return motor(_that.atMs,_that.motor);case TraceEntry_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2378,14 +2461,15 @@ return motor(_that.atMs,_that.motor);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int atMs,  int value)?  current,TResult? Function( int atMs,  int edges,  bool high)?  mark,TResult? Function( int atMs,  bool outletClear,  bool food)?  beams,TResult? Function( int atMs,  int mv)?  battery,TResult? Function( int atMs,  TraceMotor motor)?  motor,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int atMs,  int value)?  current,TResult? Function( int atMs,  int edges,  bool high)?  mark,TResult? Function( int atMs,  bool outletClear,  bool food)?  beams,TResult? Function( int atMs,  int mv)?  battery,TResult? Function( int atMs,  TraceMotor motor)?  motor,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case TraceEntry_Current() when current != null:
 return current(_that.atMs,_that.value);case TraceEntry_Mark() when mark != null:
 return mark(_that.atMs,_that.edges,_that.high);case TraceEntry_Beams() when beams != null:
 return beams(_that.atMs,_that.outletClear,_that.food);case TraceEntry_Battery() when battery != null:
 return battery(_that.atMs,_that.mv);case TraceEntry_Motor() when motor != null:
-return motor(_that.atMs,_that.motor);case _:
+return motor(_that.atMs,_that.motor);case TraceEntry_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -2400,12 +2484,12 @@ class TraceEntry_Current extends TraceEntry {
   const TraceEntry_Current({required this.atMs, required this.value}): super._();
   
 
-@override final  int atMs;
+ final  int atMs;
  final  int value;
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $TraceEntry_CurrentCopyWith<TraceEntry_Current> get copyWith => _$TraceEntry_CurrentCopyWithImpl<TraceEntry_Current>(this, _$identity);
 
@@ -2433,7 +2517,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $TraceEntry_CurrentCopyWith<$Res> implements $TraceEntryCopyWith<$Res> {
   factory $TraceEntry_CurrentCopyWith(TraceEntry_Current value, $Res Function(TraceEntry_Current) _then) = _$TraceEntry_CurrentCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  int atMs, int value
 });
@@ -2452,7 +2536,7 @@ class _$TraceEntry_CurrentCopyWithImpl<$Res>
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? value = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? value = null,}) {
   return _then(TraceEntry_Current(
 atMs: null == atMs ? _self.atMs : atMs // ignore: cast_nullable_to_non_nullable
 as int,value: null == value ? _self.value : value // ignore: cast_nullable_to_non_nullable
@@ -2470,13 +2554,13 @@ class TraceEntry_Mark extends TraceEntry {
   const TraceEntry_Mark({required this.atMs, required this.edges, required this.high}): super._();
   
 
-@override final  int atMs;
+ final  int atMs;
  final  int edges;
  final  bool high;
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $TraceEntry_MarkCopyWith<TraceEntry_Mark> get copyWith => _$TraceEntry_MarkCopyWithImpl<TraceEntry_Mark>(this, _$identity);
 
@@ -2504,7 +2588,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $TraceEntry_MarkCopyWith<$Res> implements $TraceEntryCopyWith<$Res> {
   factory $TraceEntry_MarkCopyWith(TraceEntry_Mark value, $Res Function(TraceEntry_Mark) _then) = _$TraceEntry_MarkCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  int atMs, int edges, bool high
 });
@@ -2523,7 +2607,7 @@ class _$TraceEntry_MarkCopyWithImpl<$Res>
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? edges = null,Object? high = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? edges = null,Object? high = null,}) {
   return _then(TraceEntry_Mark(
 atMs: null == atMs ? _self.atMs : atMs // ignore: cast_nullable_to_non_nullable
 as int,edges: null == edges ? _self.edges : edges // ignore: cast_nullable_to_non_nullable
@@ -2542,13 +2626,13 @@ class TraceEntry_Beams extends TraceEntry {
   const TraceEntry_Beams({required this.atMs, required this.outletClear, required this.food}): super._();
   
 
-@override final  int atMs;
+ final  int atMs;
  final  bool outletClear;
  final  bool food;
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $TraceEntry_BeamsCopyWith<TraceEntry_Beams> get copyWith => _$TraceEntry_BeamsCopyWithImpl<TraceEntry_Beams>(this, _$identity);
 
@@ -2576,7 +2660,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $TraceEntry_BeamsCopyWith<$Res> implements $TraceEntryCopyWith<$Res> {
   factory $TraceEntry_BeamsCopyWith(TraceEntry_Beams value, $Res Function(TraceEntry_Beams) _then) = _$TraceEntry_BeamsCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  int atMs, bool outletClear, bool food
 });
@@ -2595,7 +2679,7 @@ class _$TraceEntry_BeamsCopyWithImpl<$Res>
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? outletClear = null,Object? food = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? outletClear = null,Object? food = null,}) {
   return _then(TraceEntry_Beams(
 atMs: null == atMs ? _self.atMs : atMs // ignore: cast_nullable_to_non_nullable
 as int,outletClear: null == outletClear ? _self.outletClear : outletClear // ignore: cast_nullable_to_non_nullable
@@ -2614,12 +2698,12 @@ class TraceEntry_Battery extends TraceEntry {
   const TraceEntry_Battery({required this.atMs, required this.mv}): super._();
   
 
-@override final  int atMs;
+ final  int atMs;
  final  int mv;
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $TraceEntry_BatteryCopyWith<TraceEntry_Battery> get copyWith => _$TraceEntry_BatteryCopyWithImpl<TraceEntry_Battery>(this, _$identity);
 
@@ -2647,7 +2731,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $TraceEntry_BatteryCopyWith<$Res> implements $TraceEntryCopyWith<$Res> {
   factory $TraceEntry_BatteryCopyWith(TraceEntry_Battery value, $Res Function(TraceEntry_Battery) _then) = _$TraceEntry_BatteryCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  int atMs, int mv
 });
@@ -2666,7 +2750,7 @@ class _$TraceEntry_BatteryCopyWithImpl<$Res>
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? mv = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? mv = null,}) {
   return _then(TraceEntry_Battery(
 atMs: null == atMs ? _self.atMs : atMs // ignore: cast_nullable_to_non_nullable
 as int,mv: null == mv ? _self.mv : mv // ignore: cast_nullable_to_non_nullable
@@ -2684,12 +2768,12 @@ class TraceEntry_Motor extends TraceEntry {
   const TraceEntry_Motor({required this.atMs, required this.motor}): super._();
   
 
-@override final  int atMs;
+ final  int atMs;
  final  TraceMotor motor;
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $TraceEntry_MotorCopyWith<TraceEntry_Motor> get copyWith => _$TraceEntry_MotorCopyWithImpl<TraceEntry_Motor>(this, _$identity);
 
@@ -2717,7 +2801,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $TraceEntry_MotorCopyWith<$Res> implements $TraceEntryCopyWith<$Res> {
   factory $TraceEntry_MotorCopyWith(TraceEntry_Motor value, $Res Function(TraceEntry_Motor) _then) = _$TraceEntry_MotorCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  int atMs, TraceMotor motor
 });
@@ -2736,7 +2820,7 @@ class _$TraceEntry_MotorCopyWithImpl<$Res>
 
 /// Create a copy of TraceEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? motor = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? atMs = null,Object? motor = null,}) {
   return _then(TraceEntry_Motor(
 atMs: null == atMs ? _self.atMs : atMs // ignore: cast_nullable_to_non_nullable
 as int,motor: null == motor ? _self.motor : motor // ignore: cast_nullable_to_non_nullable
@@ -2746,6 +2830,38 @@ as TraceMotor,
 
 
 }
+
+/// @nodoc
+
+
+class TraceEntry_Unknown extends TraceEntry {
+  const TraceEntry_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TraceEntry_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'TraceEntry.unknown()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 mixin _$UpdateRefusal {
@@ -2791,7 +2907,7 @@ extension UpdateRefusalPatterns on UpdateRefusal {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateRefusal_Manifest value)?  manifest,TResult Function( UpdateRefusal_Key value)?  key,TResult Function( UpdateRefusal_Revoked value)?  revoked,TResult Function( UpdateRefusal_Signature value)?  signature,TResult Function( UpdateRefusal_Target value)?  target,TResult Function( UpdateRefusal_Same value)?  same,TResult Function( UpdateRefusal_Downgrade value)?  downgrade,TResult Function( UpdateRefusal_Statement value)?  statement,TResult Function( UpdateRefusal_Pending value)?  pending,TResult Function( UpdateRefusal_Failed value)?  failed,TResult Function( UpdateRefusal_Fallback value)?  fallback,TResult Function( UpdateRefusal_Attempt value)?  attempt,TResult Function( UpdateRefusal_Installing value)?  installing,TResult Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult Function( UpdateRefusal_Store value)?  store,TResult Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult Function( UpdateRefusal_Battery value)?  battery,TResult Function( UpdateRefusal_HeldAsSessionKey value)?  heldAsSessionKey,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateRefusal_Manifest value)?  manifest,TResult Function( UpdateRefusal_Key value)?  key,TResult Function( UpdateRefusal_Revoked value)?  revoked,TResult Function( UpdateRefusal_Signature value)?  signature,TResult Function( UpdateRefusal_Target value)?  target,TResult Function( UpdateRefusal_Same value)?  same,TResult Function( UpdateRefusal_Downgrade value)?  downgrade,TResult Function( UpdateRefusal_Statement value)?  statement,TResult Function( UpdateRefusal_Pending value)?  pending,TResult Function( UpdateRefusal_Failed value)?  failed,TResult Function( UpdateRefusal_Fallback value)?  fallback,TResult Function( UpdateRefusal_Attempt value)?  attempt,TResult Function( UpdateRefusal_Installing value)?  installing,TResult Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult Function( UpdateRefusal_Store value)?  store,TResult Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult Function( UpdateRefusal_Battery value)?  battery,TResult Function( UpdateRefusal_HeldAsSessionKey value)?  heldAsSessionKey,TResult Function( UpdateRefusal_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest() when manifest != null:
@@ -2812,7 +2928,8 @@ return notInstalling(_that);case UpdateRefusal_Store() when store != null:
 return store(_that);case UpdateRefusal_Unconfirmed() when unconfirmed != null:
 return unconfirmed(_that);case UpdateRefusal_Battery() when battery != null:
 return battery(_that);case UpdateRefusal_HeldAsSessionKey() when heldAsSessionKey != null:
-return heldAsSessionKey(_that);case _:
+return heldAsSessionKey(_that);case UpdateRefusal_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -2830,7 +2947,7 @@ return heldAsSessionKey(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateRefusal_Manifest value)  manifest,required TResult Function( UpdateRefusal_Key value)  key,required TResult Function( UpdateRefusal_Revoked value)  revoked,required TResult Function( UpdateRefusal_Signature value)  signature,required TResult Function( UpdateRefusal_Target value)  target,required TResult Function( UpdateRefusal_Same value)  same,required TResult Function( UpdateRefusal_Downgrade value)  downgrade,required TResult Function( UpdateRefusal_Statement value)  statement,required TResult Function( UpdateRefusal_Pending value)  pending,required TResult Function( UpdateRefusal_Failed value)  failed,required TResult Function( UpdateRefusal_Fallback value)  fallback,required TResult Function( UpdateRefusal_Attempt value)  attempt,required TResult Function( UpdateRefusal_Installing value)  installing,required TResult Function( UpdateRefusal_NotInstalling value)  notInstalling,required TResult Function( UpdateRefusal_Store value)  store,required TResult Function( UpdateRefusal_Unconfirmed value)  unconfirmed,required TResult Function( UpdateRefusal_Battery value)  battery,required TResult Function( UpdateRefusal_HeldAsSessionKey value)  heldAsSessionKey,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateRefusal_Manifest value)  manifest,required TResult Function( UpdateRefusal_Key value)  key,required TResult Function( UpdateRefusal_Revoked value)  revoked,required TResult Function( UpdateRefusal_Signature value)  signature,required TResult Function( UpdateRefusal_Target value)  target,required TResult Function( UpdateRefusal_Same value)  same,required TResult Function( UpdateRefusal_Downgrade value)  downgrade,required TResult Function( UpdateRefusal_Statement value)  statement,required TResult Function( UpdateRefusal_Pending value)  pending,required TResult Function( UpdateRefusal_Failed value)  failed,required TResult Function( UpdateRefusal_Fallback value)  fallback,required TResult Function( UpdateRefusal_Attempt value)  attempt,required TResult Function( UpdateRefusal_Installing value)  installing,required TResult Function( UpdateRefusal_NotInstalling value)  notInstalling,required TResult Function( UpdateRefusal_Store value)  store,required TResult Function( UpdateRefusal_Unconfirmed value)  unconfirmed,required TResult Function( UpdateRefusal_Battery value)  battery,required TResult Function( UpdateRefusal_HeldAsSessionKey value)  heldAsSessionKey,required TResult Function( UpdateRefusal_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest():
@@ -2851,7 +2968,8 @@ return notInstalling(_that);case UpdateRefusal_Store():
 return store(_that);case UpdateRefusal_Unconfirmed():
 return unconfirmed(_that);case UpdateRefusal_Battery():
 return battery(_that);case UpdateRefusal_HeldAsSessionKey():
-return heldAsSessionKey(_that);}
+return heldAsSessionKey(_that);case UpdateRefusal_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -2865,7 +2983,7 @@ return heldAsSessionKey(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateRefusal_Manifest value)?  manifest,TResult? Function( UpdateRefusal_Key value)?  key,TResult? Function( UpdateRefusal_Revoked value)?  revoked,TResult? Function( UpdateRefusal_Signature value)?  signature,TResult? Function( UpdateRefusal_Target value)?  target,TResult? Function( UpdateRefusal_Same value)?  same,TResult? Function( UpdateRefusal_Downgrade value)?  downgrade,TResult? Function( UpdateRefusal_Statement value)?  statement,TResult? Function( UpdateRefusal_Pending value)?  pending,TResult? Function( UpdateRefusal_Failed value)?  failed,TResult? Function( UpdateRefusal_Fallback value)?  fallback,TResult? Function( UpdateRefusal_Attempt value)?  attempt,TResult? Function( UpdateRefusal_Installing value)?  installing,TResult? Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult? Function( UpdateRefusal_Store value)?  store,TResult? Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult? Function( UpdateRefusal_Battery value)?  battery,TResult? Function( UpdateRefusal_HeldAsSessionKey value)?  heldAsSessionKey,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateRefusal_Manifest value)?  manifest,TResult? Function( UpdateRefusal_Key value)?  key,TResult? Function( UpdateRefusal_Revoked value)?  revoked,TResult? Function( UpdateRefusal_Signature value)?  signature,TResult? Function( UpdateRefusal_Target value)?  target,TResult? Function( UpdateRefusal_Same value)?  same,TResult? Function( UpdateRefusal_Downgrade value)?  downgrade,TResult? Function( UpdateRefusal_Statement value)?  statement,TResult? Function( UpdateRefusal_Pending value)?  pending,TResult? Function( UpdateRefusal_Failed value)?  failed,TResult? Function( UpdateRefusal_Fallback value)?  fallback,TResult? Function( UpdateRefusal_Attempt value)?  attempt,TResult? Function( UpdateRefusal_Installing value)?  installing,TResult? Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult? Function( UpdateRefusal_Store value)?  store,TResult? Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult? Function( UpdateRefusal_Battery value)?  battery,TResult? Function( UpdateRefusal_HeldAsSessionKey value)?  heldAsSessionKey,TResult? Function( UpdateRefusal_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest() when manifest != null:
@@ -2886,7 +3004,8 @@ return notInstalling(_that);case UpdateRefusal_Store() when store != null:
 return store(_that);case UpdateRefusal_Unconfirmed() when unconfirmed != null:
 return unconfirmed(_that);case UpdateRefusal_Battery() when battery != null:
 return battery(_that);case UpdateRefusal_HeldAsSessionKey() when heldAsSessionKey != null:
-return heldAsSessionKey(_that);case _:
+return heldAsSessionKey(_that);case UpdateRefusal_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -2903,7 +3022,7 @@ return heldAsSessionKey(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  manifest,TResult Function()?  key,TResult Function()?  revoked,TResult Function()?  signature,TResult Function()?  target,TResult Function()?  same,TResult Function()?  downgrade,TResult Function()?  statement,TResult Function()?  pending,TResult Function()?  failed,TResult Function( Bank0Blocked reason)?  fallback,TResult Function()?  attempt,TResult Function()?  installing,TResult Function()?  notInstalling,TResult Function()?  store,TResult Function()?  unconfirmed,TResult Function()?  battery,TResult Function()?  heldAsSessionKey,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  manifest,TResult Function()?  key,TResult Function()?  revoked,TResult Function()?  signature,TResult Function()?  target,TResult Function()?  same,TResult Function()?  downgrade,TResult Function()?  statement,TResult Function()?  pending,TResult Function()?  failed,TResult Function( Bank0Blocked reason)?  fallback,TResult Function()?  attempt,TResult Function()?  installing,TResult Function()?  notInstalling,TResult Function()?  store,TResult Function()?  unconfirmed,TResult Function()?  battery,TResult Function()?  heldAsSessionKey,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest() when manifest != null:
 return manifest();case UpdateRefusal_Key() when key != null:
@@ -2923,7 +3042,8 @@ return notInstalling();case UpdateRefusal_Store() when store != null:
 return store();case UpdateRefusal_Unconfirmed() when unconfirmed != null:
 return unconfirmed();case UpdateRefusal_Battery() when battery != null:
 return battery();case UpdateRefusal_HeldAsSessionKey() when heldAsSessionKey != null:
-return heldAsSessionKey();case _:
+return heldAsSessionKey();case UpdateRefusal_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -2941,7 +3061,7 @@ return heldAsSessionKey();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  manifest,required TResult Function()  key,required TResult Function()  revoked,required TResult Function()  signature,required TResult Function()  target,required TResult Function()  same,required TResult Function()  downgrade,required TResult Function()  statement,required TResult Function()  pending,required TResult Function()  failed,required TResult Function( Bank0Blocked reason)  fallback,required TResult Function()  attempt,required TResult Function()  installing,required TResult Function()  notInstalling,required TResult Function()  store,required TResult Function()  unconfirmed,required TResult Function()  battery,required TResult Function()  heldAsSessionKey,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  manifest,required TResult Function()  key,required TResult Function()  revoked,required TResult Function()  signature,required TResult Function()  target,required TResult Function()  same,required TResult Function()  downgrade,required TResult Function()  statement,required TResult Function()  pending,required TResult Function()  failed,required TResult Function( Bank0Blocked reason)  fallback,required TResult Function()  attempt,required TResult Function()  installing,required TResult Function()  notInstalling,required TResult Function()  store,required TResult Function()  unconfirmed,required TResult Function()  battery,required TResult Function()  heldAsSessionKey,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest():
 return manifest();case UpdateRefusal_Key():
@@ -2961,7 +3081,8 @@ return notInstalling();case UpdateRefusal_Store():
 return store();case UpdateRefusal_Unconfirmed():
 return unconfirmed();case UpdateRefusal_Battery():
 return battery();case UpdateRefusal_HeldAsSessionKey():
-return heldAsSessionKey();}
+return heldAsSessionKey();case UpdateRefusal_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2975,7 +3096,7 @@ return heldAsSessionKey();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  manifest,TResult? Function()?  key,TResult? Function()?  revoked,TResult? Function()?  signature,TResult? Function()?  target,TResult? Function()?  same,TResult? Function()?  downgrade,TResult? Function()?  statement,TResult? Function()?  pending,TResult? Function()?  failed,TResult? Function( Bank0Blocked reason)?  fallback,TResult? Function()?  attempt,TResult? Function()?  installing,TResult? Function()?  notInstalling,TResult? Function()?  store,TResult? Function()?  unconfirmed,TResult? Function()?  battery,TResult? Function()?  heldAsSessionKey,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  manifest,TResult? Function()?  key,TResult? Function()?  revoked,TResult? Function()?  signature,TResult? Function()?  target,TResult? Function()?  same,TResult? Function()?  downgrade,TResult? Function()?  statement,TResult? Function()?  pending,TResult? Function()?  failed,TResult? Function( Bank0Blocked reason)?  fallback,TResult? Function()?  attempt,TResult? Function()?  installing,TResult? Function()?  notInstalling,TResult? Function()?  store,TResult? Function()?  unconfirmed,TResult? Function()?  battery,TResult? Function()?  heldAsSessionKey,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest() when manifest != null:
 return manifest();case UpdateRefusal_Key() when key != null:
@@ -2995,7 +3116,8 @@ return notInstalling();case UpdateRefusal_Store() when store != null:
 return store();case UpdateRefusal_Unconfirmed() when unconfirmed != null:
 return unconfirmed();case UpdateRefusal_Battery() when battery != null:
 return battery();case UpdateRefusal_HeldAsSessionKey() when heldAsSessionKey != null:
-return heldAsSessionKey();case _:
+return heldAsSessionKey();case UpdateRefusal_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -3616,6 +3738,38 @@ String toString() {
 
 
 /// @nodoc
+
+
+class UpdateRefusal_Unknown extends UpdateRefusal {
+  const UpdateRefusal_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.unknown()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$Window {
 
 
@@ -3659,12 +3813,13 @@ extension WindowPatterns on Window {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Window_Always value)?  always,TResult Function( Window_Between value)?  between,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Window_Always value)?  always,TResult Function( Window_Between value)?  between,TResult Function( Window_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case Window_Always() when always != null:
 return always(_that);case Window_Between() when between != null:
-return between(_that);case _:
+return between(_that);case Window_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -3682,12 +3837,13 @@ return between(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Window_Always value)  always,required TResult Function( Window_Between value)  between,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Window_Always value)  always,required TResult Function( Window_Between value)  between,required TResult Function( Window_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case Window_Always():
 return always(_that);case Window_Between():
-return between(_that);}
+return between(_that);case Window_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -3701,12 +3857,13 @@ return between(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Window_Always value)?  always,TResult? Function( Window_Between value)?  between,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Window_Always value)?  always,TResult? Function( Window_Between value)?  between,TResult? Function( Window_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case Window_Always() when always != null:
 return always(_that);case Window_Between() when between != null:
-return between(_that);case _:
+return between(_that);case Window_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -3723,11 +3880,12 @@ return between(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  always,TResult Function( int start,  int end)?  between,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  always,TResult Function( int start,  int end)?  between,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case Window_Always() when always != null:
 return always();case Window_Between() when between != null:
-return between(_that.start,_that.end);case _:
+return between(_that.start,_that.end);case Window_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -3745,11 +3903,12 @@ return between(_that.start,_that.end);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  always,required TResult Function( int start,  int end)  between,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  always,required TResult Function( int start,  int end)  between,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case Window_Always():
 return always();case Window_Between():
-return between(_that.start,_that.end);}
+return between(_that.start,_that.end);case Window_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -3763,11 +3922,12 @@ return between(_that.start,_that.end);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  always,TResult? Function( int start,  int end)?  between,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  always,TResult? Function( int start,  int end)?  between,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case Window_Always() when always != null:
 return always();case Window_Between() when between != null:
-return between(_that.start,_that.end);case _:
+return between(_that.start,_that.end);case Window_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -3876,5 +4036,37 @@ as int,
 
 
 }
+
+/// @nodoc
+
+
+class Window_Unknown extends Window {
+  const Window_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Window_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'Window.unknown()';
+}
+
+
+}
+
+
+
 
 // dart format on

@@ -58,7 +58,11 @@ pub struct UpdateView {
 /// Bank 0, the recovery copy, as bank 1 last checked it (once per boot,
 /// and at every offer). Bank 1 gives way for an update only to a bank 0
 /// that booted, recorded its own image and still holds exactly that image.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+///
+/// Read by hand: serde's catch-all on an adjacently tagged enum fails on a
+/// newer state that carries a `reason`, and any newer state reads as
+/// [`Self::Unknown`] here, whatever it carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(tag = "state", content = "reason", rename_all = "snake_case")]
 pub enum Bank0Check {
     /// Not checked yet this boot.
@@ -67,6 +71,47 @@ pub enum Bank0Check {
     Match,
     /// Bank 1 will not give way to it, so every update is refused.
     Blocked(Bank0Blocked),
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
+}
+
+impl<'de> Deserialize<'de> for Bank0Check {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum State {
+            Unchecked,
+            Match,
+            Blocked,
+            #[serde(other)]
+            Unknown,
+        }
+
+        #[derive(Deserialize)]
+        struct Raw {
+            state: State,
+            reason: Option<Reason>,
+        }
+
+        /// A known state's reason, or whatever a newer state carries.
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Reason {
+            Blocked(Bank0Blocked),
+            Other(serde::de::IgnoredAny),
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        Ok(match (raw.state, raw.reason) {
+            (State::Unchecked, _) => Self::Unchecked,
+            (State::Match, _) => Self::Match,
+            (State::Blocked, Some(Reason::Blocked(reason))) => Self::Blocked(reason),
+            (State::Blocked, _) => return Err(serde::de::Error::missing_field("reason")),
+            (State::Unknown, _) => Self::Unknown,
+        })
+    }
 }
 
 impl Bank0Check {
@@ -75,6 +120,8 @@ impl Bank0Check {
         match self {
             Self::Blocked(reason) => Some(reason),
             Self::Unchecked | Self::Match => None,
+            // A state a newer build added: nothing says bank 0 may give way.
+            Self::Unknown => Some(Bank0Blocked::Unknown),
         }
     }
 }
@@ -96,6 +143,10 @@ pub enum Bank0Blocked {
     Changed,
     /// Bank 0 could not be read.
     Read,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Bank0Blocked {
@@ -109,6 +160,7 @@ impl Bank0Blocked {
             Self::Extent => "extent",
             Self::Changed => "changed",
             Self::Read => "read",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -139,6 +191,10 @@ pub enum UpdateCandidate {
     Pending,
     /// Bank 0 activated one, and no build has confirmed it.
     Activated,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why an install stopped. Bank 1's marker was never written, so the
@@ -161,6 +217,10 @@ pub enum UpdateStop {
     Activate,
     /// The update store could not be written.
     Store,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why an update op was refused.
@@ -209,4 +269,8 @@ pub enum UpdateRefusal {
     /// The key is already enrolled as a session key, which is never an
     /// update signer too.
     HeldAsSessionKey,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }

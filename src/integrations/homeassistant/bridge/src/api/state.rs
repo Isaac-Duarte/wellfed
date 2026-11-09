@@ -22,7 +22,7 @@ pub struct Settings {
     /// The desiccant reminder's period, 1-90 days.
     pub desiccant_days: u8,
     /// Minutes ahead of each meal its `meal_soon` event comes; `None` when
-    /// off.
+    /// off, or when it is a kind of reminder a newer build added.
     pub meal_reminder_minutes: Option<u8>,
 }
 
@@ -36,6 +36,9 @@ impl From<&model::FeederSettings> for Settings {
             meal_reminder_minutes: match settings.meal_reminder {
                 model::MealReminder::Off => None,
                 model::MealReminder::Before { minutes } => Some(minutes),
+                // A reminder a newer build added, which this one cannot
+                // read: no lead to show.
+                model::MealReminder::Unknown => None,
             },
         }
     }
@@ -116,6 +119,17 @@ impl Capabilities {
     /// What a device of `kind` serves: the shared core (time, updates) for
     /// any kind, and the feeder's module (feeds, plans, the desiccant and
     /// the calibration) for a feeder.
+    /// What a device of a kind this build does not know serves here:
+    /// nothing.
+    pub(crate) const NONE: Self = Self {
+        feed: false,
+        plans: false,
+        desiccant: false,
+        calibration: false,
+        time: false,
+        update: false,
+    };
+
     pub(crate) const fn of(kind: model::DeviceKind) -> Self {
         let feeder = matches!(kind, model::DeviceKind::Feeder);
         Self {
@@ -154,11 +168,17 @@ pub struct State {
 
 impl State {
     /// The state `facts` come to, once the status is in. The day is the
-    /// feeder's, in its own zone, with this host's as the fallback before
-    /// the time is read.
-    pub fn of(facts: &Facts, calibration: Option<&model::CalibrationView>) -> Option<Self> {
-        let status = facts.status.as_ref()?;
-        let today = facts.today(TimeZone::system());
+    /// feeder's, in its own zone, with `fallback` before the time is read:
+    /// this host's directly, the home's through the owner's server, which
+    /// keeps every feeder on the home's zone.
+    pub fn of(
+        facts: &Facts,
+        calibration: Option<&model::CalibrationView>,
+        fallback: &TimeZone,
+    ) -> Option<Self> {
+        // A device this integration cannot read has no state to show.
+        let status = Status::of(facts.status.as_ref()?)?;
+        let today = facts.today(fallback.clone());
         let plans = facts.plans.as_ref().map(|plans| {
             plans
                 .plans
@@ -178,7 +198,7 @@ impl State {
         });
 
         Some(Self {
-            status: status.into(),
+            status,
             settings: facts.settings.as_ref().map(Settings::from),
             plans,
             next_meal: today.next.map(|meal| NextMeal {
@@ -189,7 +209,7 @@ impl State {
             }),
             last_fed: facts.last_fed().map(Feed::from),
             portions_today: facts
-                .portions_today(TimeZone::system())
+                .portions_today(fallback.clone())
                 .map(PortionsToday::from),
             portion_mg: calibration.and_then(|view| view.calibration.portion_mg),
         })

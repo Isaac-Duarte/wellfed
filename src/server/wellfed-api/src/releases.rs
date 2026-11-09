@@ -4,7 +4,7 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
-use wellfed_model::{Hex, Model};
+use wellfed_model::{Hex, MaybeKnown, Model};
 
 /// A verified release in the server's cache.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -24,9 +24,10 @@ pub struct Release {
     #[schema(value_type = String)]
     pub key_id: Hex<8>,
     /// The device model the image is built for: the server installs it on
-    /// a device of that model only.
-    #[schema(schema_with = wellfed_model::schema::model)]
-    pub model: Model,
+    /// a device of that model only. `unknown` is a model a newer server
+    /// added.
+    #[schema(schema_with = wellfed_model::schema::maybe_model)]
+    pub model: MaybeKnown<Model>,
     pub signer: ReleaseSigner,
     pub source: ReleaseSource,
     /// When the server took it in.
@@ -41,6 +42,10 @@ pub enum ReleaseSigner {
     Project,
     /// The owner's enrolled update key: a self-built image.
     Owner,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Where a release came from.
@@ -51,6 +56,10 @@ pub enum ReleaseSource {
     Github { tag: String, asset: String },
     /// A file an owner uploaded.
     Upload,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A page of releases, newest version first.
@@ -123,4 +132,8 @@ pub enum ReleaseRefusal {
     /// The image is not the one the manifest names (its length or its
     /// SHA-256 differ), or it lacks the bank's validity marker.
     Image,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }

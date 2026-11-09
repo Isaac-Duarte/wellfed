@@ -18,6 +18,35 @@ use crate::feeders::Connection;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Health {
     pub version: String,
+    /// The server's API revision ([`crate::REVISION`]): a client compares
+    /// it with its own to say which side to update ([`ServerSkew`]).
+    pub revision: u32,
+}
+
+/// How a server's API revision stands against this client's. The API only
+/// grows, so either way everything both know keeps working: what an older
+/// server lacks is refused, and what a newer one added reads as unknown.
+/// This says which side to update for the rest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServerSkew {
+    Same,
+    /// The server is older than this client: update the server.
+    ServerBehind,
+    /// The server is newer than this client: update the client.
+    ServerAhead,
+}
+
+impl ServerSkew {
+    /// How a server answering `revision` stands against [`crate::REVISION`].
+    pub const fn of(revision: u32) -> Self {
+        if revision < crate::REVISION {
+            Self::ServerBehind
+        } else if revision > crate::REVISION {
+            Self::ServerAhead
+        } else {
+            Self::Same
+        }
+    }
 }
 
 /// Readiness, for an owner.
@@ -44,6 +73,10 @@ pub struct ServerStatus {
 pub enum StoreState {
     Ok,
     Failing,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -67,6 +100,10 @@ pub enum Job {
     Backup,
     /// Checks the project's releases, while the owner allows fetching.
     ReleaseCheck,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Job {
@@ -88,6 +125,7 @@ impl Job {
             Self::Expiry => "expiry",
             Self::Backup => "backup",
             Self::ReleaseCheck => "release_check",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -104,6 +142,10 @@ pub enum JobOutcome {
     Succeeded,
     /// Why is in the server's log, under the job's name.
     Failed,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl JobOutcome {
@@ -112,6 +154,7 @@ impl JobOutcome {
         match self {
             Self::Succeeded => "succeeded",
             Self::Failed => "failed",
+            Self::Unknown => "unknown",
         }
     }
 

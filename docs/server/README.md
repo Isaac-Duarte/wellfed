@@ -58,17 +58,61 @@ The API lives under `/api/v1`, as JSON. The complete reference is [`openapi.json
 | Server data | `/backups`, `/export`, `/import`, `/status` | Backups, a full export, import onto a fresh server, readiness |
 | Live | `/stream` | Server-Sent Events for every feeder you can see |
 
-`GET /health` sits outside `/api/v1`. It needs no login and answers the version.
+`GET /health` sits outside `/api/v1`. It needs no login and answers the version and the API's revision.
 
 Some conventions hold across the API:
 
-- **Errors** are RFC 9457 `application/problem+json`, with a typed `code` from a closed set. There is no free-text error.
+- **Errors** are RFC 9457 `application/problem+json`, with a typed `code`. There is no free-text error. A client reads a code it doesn't know as `unknown`, still a refusal.
 - **Writes** carry an `Idempotency-Key` header (a UUID). A feed requires one.
 - **Edits** carry `If-Match` with the generation of the settings, plans or calibration they change. A stale one gets `412` with the current settings, plans or calibration.
 - **The meal call** goes up as the feeder's own stream (`PUT /feeders/{id}/call`, `application/octet-stream`), converted on the client. The server converts nothing and checks only its length, as the feeder does. It sends the clip a chunk at a time beside feeds and status reads, and answers once the feeder stores it.
   - A retry under the same key after `outcome_unknown` sends only what the feeder lacks.
   - A retry never undoes a later change. It is `409 superseded`, and sends nothing, if the feeder holds another clip than its first send found. The same goes for an upload the feeder had begun, once the feeder no longer holds its clip.
 - **The stream** resumes from `Last-Event-ID`. When that id is too old, the server sends `resync` and the client fetches again.
+
+### API evolution
+
+The app, the CLI and Home Assistant often run another build than the server they reach. So from the beta, `/api/v1` only grows:
+
+- No path, operation, field or enum variant is removed, renamed or retyped. No field becomes required, or stops being required.
+- A body gains only optional fields, and an operation only optional query parameters.
+- An enum gains variants only if its readers can cope: it has a catch-all that an older client reads a newer value as (`unknown`, or `newer` for the rotor's phase), or it lives only in entries an older client skips.
+- Each growth raises the API's revision by one. `GET /health` answers it as `revision`, so a client can say which side to update: an older server lacks what a newer client asks for, and a newer server sends what an older client reads as unknown.
+
+What an older client does with what it doesn't know:
+
+| It meets | It reads |
+| --- | --- |
+| An error code it doesn't know | `unknown`: a refusal for a reason it can't name |
+| A command outcome it doesn't know | `unknown`: the write may have run, so it's never sent again |
+| A feeder connection state it doesn't know | `unknown`, shown as not online |
+| A device's kind or model it doesn't know, or that device's status or settings | `unknown`: the device still lists, and the client asks to be updated to use it |
+| A role it doesn't know | `unknown`, which grants nothing: the client offers no more than a viewer's |
+| A journal state it doesn't know | `unknown`: uncertain, never sent again |
+| Any other value it doesn't know, in an enum with a catch-all | `unknown` (`newer` for the rotor's phase), shown as unknown to that client |
+| An event, journal entry, audit entry or statistics section it can't read | Left out of the page; the page's `next` still moves past it |
+| A stream update it can't read | Skipped; its id still moves the position to resume from |
+
+A server reads a request the same way, and refuses a value it can't name (`400 invalid`) rather than acting on `unknown`.
+
+A few enums are closed, since nothing can be added to them without changing what they mean:
+
+| Enum | Why it's closed |
+| --- | --- |
+| `Weekday` | Seven days |
+| `TimeFormat` | A 24- or 12-hour clock |
+| `Species` | `other` already holds every species it doesn't name |
+| `CallClip` | The one clip slot is empty, receiving or stored |
+| `PortionWeight` | A portion is calibrated or not |
+| `Readiness` | Ready or blocked; a new reason is a new `Blocked` value, which has a catch-all |
+| `TraceRecord` | A feed's trace is stored or missing |
+| `TraceMotor` | The motor driver stops or drives one of two ways |
+| `SamplePage` | The client names the resolution it reads |
+| `TuneName`, `NewRefill` | Only in requests: a server refuses what it doesn't know |
+| `CoreEvent`, `FeederEvent`, `EventBody` | Events go only in pages and stream updates, which skip what they can't read. A catch-all on either half of the untagged body would swallow the other half's events |
+| `StreamEvent`, `Stats`, `StatsSection`, `SampleValue` | Read only in entries a client skips, or by a metric it names |
+
+The `api_growth` test in `wellfed-server` checks each build's document against the published one in `tests/fixtures/api-v1.json`. A change in place fails it, and no blessing stores one. A growth fails it until the revision is raised and the fixture blessed (`WELLFED_BLESS=1`).
 
 ## Read next
 
@@ -85,3 +129,4 @@ Some conventions hold across the API:
 - **Simulation**, October 24–27, 2026: the server's crates and their tests run against `wellfed-feeder-sim` over real TCP and Noise. Feeds, uncertain writes, installs, the stock backup and restore, export and import were exercised this way.
 - **Observed**, October 28, 2026: the server adopted the research unit by invite, mirrored its history, and changed its settings and lock. The history stayed whole across a server restart, a power cut and a Wi-Fi drop.
 - **Static analysis**, October 27, 2026: the route groups above match the committed `openapi.json`, and the role rules match `Permission::can` in `wellfed-service`.
+- **Simulation**, November 8, 2026: the growth check refused a new required field even when blessed, and asked for revision 2 for a new optional one. An older client's reads of a newer value, outcome, error code, page entry and stream update ran as unit tests.

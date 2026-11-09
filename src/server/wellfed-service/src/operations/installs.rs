@@ -85,7 +85,7 @@ impl Service {
         let (release, file) = self.release_file(request.release).await?;
         // An image for another model is never offered: the device would
         // refuse it too, but only once it is sent.
-        if release.model != row.model {
+        if release.model != row.model.into() {
             return Err(InstallError::OtherModel {
                 release: release.model,
                 device: row.model,
@@ -157,6 +157,8 @@ impl Service {
                 "restore of stock {STOCK_VERSION} started, as version {}",
                 install.version
             ),
+            // A newer server's target, which this one never starts.
+            InstallTarget::Unknown => {}
         }
         self.publish_install(install);
 
@@ -258,6 +260,7 @@ impl Service {
                     "activated: the feeder restarts into stock {STOCK_VERSION}, which serves no \
                      device API"
                 ),
+                InstallTarget::Unknown => {}
             },
         }
 

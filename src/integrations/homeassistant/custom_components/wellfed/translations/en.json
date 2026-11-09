@@ -2,6 +2,14 @@
   "config": {
     "step": {
       "user": {
+        "title": "Add a Wellfed feeder",
+        "description": "Reach the feeder directly, as a client of its own, or through your Wellfed server. The entities are the same either way, and you can switch later.",
+        "menu_options": {
+          "direct": "Directly, with a member invite",
+          "server": "Through my Wellfed server"
+        }
+      },
+      "direct": {
         "title": "Pair a Wellfed feeder",
         "description": "Make a member invite on a paired client (`wellfed invite --role member`, or People in the app) and paste it here within 10 minutes. Home Assistant joins as its own client, as a member: it can feed, change the settings, the lock, the plans and the portion weight, and read everything. It needs no server.",
         "data": {
@@ -11,6 +19,31 @@
         "data_description": {
           "invite": "The `wellfed-invite:` text, single use.",
           "address": "The feeder's IP address. Leave empty to find it on the network."
+        }
+      },
+      "server": {
+        "title": "Sign in to your Wellfed server",
+        "description": "Home Assistant reaches the feeder through the server, as the account you sign in with: an owner or a member. A viewer account cannot be used, since it changes nothing.",
+        "data": {
+          "url": "Server address",
+          "username": "Name",
+          "password": "Password"
+        },
+        "data_description": {
+          "url": "Where the Wellfed server answers, such as `https://wellfed.example.com`. An `http://` address sends the password and Home Assistant's token unencrypted, so use it only on a network you trust; Home Assistant asks you to confirm one.",
+          "username": "The name of an owner or member account on the server.",
+          "password": "Used once, to sign in. Home Assistant keeps a token of its own instead, which the server lists as home-assistant."
+        }
+      },
+      "plain_http": {
+        "title": "Use an unencrypted address?",
+        "description": "{url} is plain `http://`: the password you sign in with, and the token Home Assistant keeps, cross your network unencrypted, where anyone on it can read them. Use an `https://` address if the server has one. Continue only if you trust every device on this network."
+      },
+      "server_feeder": {
+        "title": "Choose the feeder",
+        "description": "The feeders on the server that Home Assistant does not have yet. Add each one as its own entry.",
+        "data": {
+          "feeder": "Feeder"
         }
       },
       "zeroconf_confirm": {
@@ -30,13 +63,55 @@
           "invite": "Invite"
         }
       },
+      "reauth_server": {
+        "title": "Sign in to the Wellfed server again",
+        "description": "The server at {url} no longer takes Home Assistant's token: it was revoked or expired, or the account was disabled. Sign in again, and Home Assistant gets a new token.",
+        "data": {
+          "username": "Name",
+          "password": "Password"
+        }
+      },
       "reconfigure": {
+        "title": "Change how the feeder is reached",
+        "menu_options": {
+          "reconfigure_address": "Change the feeder's address",
+          "reconfigure_server": "Reach it through a Wellfed server",
+          "reconfigure_direct": "Reach it directly, with a member invite"
+        }
+      },
+      "reconfigure_address": {
         "title": "Feeder address",
         "description": "Where Home Assistant finds the feeder.",
         "data": {
           "address": "Address"
         },
         "data_description": {
+          "address": "The feeder's IP address. Leave empty to find it on the network."
+        }
+      },
+      "reconfigure_server": {
+        "title": "Reach the feeder through a Wellfed server",
+        "description": "Sign in to the server that holds this feeder. The entities and their history stay as they are. A key Home Assistant held on the feeder directly is removed if the server can remove it; otherwise Home Assistant asks you to remove it in the app.",
+        "data": {
+          "url": "Server address",
+          "username": "Name",
+          "password": "Password"
+        },
+        "data_description": {
+          "url": "Where the Wellfed server answers, such as `https://wellfed.example.com`. An `http://` address sends the password and Home Assistant's token unencrypted, so use it only on a network you trust; Home Assistant asks you to confirm one.",
+          "username": "The name of an owner or member account on the server.",
+          "password": "Used once, to sign in. Home Assistant keeps a token of its own instead, which the server lists as home-assistant."
+        }
+      },
+      "reconfigure_direct": {
+        "title": "Reach the feeder directly",
+        "description": "Make a member invite for this feeder on a paired client and paste it here. The entities and their history stay as they are, and Home Assistant revokes its token on the server.",
+        "data": {
+          "invite": "Invite",
+          "address": "Address"
+        },
+        "data_description": {
+          "invite": "The `wellfed-invite:` text, single use.",
           "address": "The feeder's IP address. Leave empty to find it on the network."
         }
       }
@@ -46,13 +121,25 @@
       "join_failed": "The feeder did not accept the invite. It may have expired or been used already, so make a new one.",
       "wrong_feeder": "That invite is for a different feeder.",
       "owner_invite": "That was an owner invite. Home Assistant joins only as a member, so it removed the key it was given. Make a member invite instead.",
-      "owner_invite_kept": "That was an owner invite, and Home Assistant could not remove the key it was given. Remove the client named home-assistant from the feeder (People in the app, or `wellfed revoke`), then make a member invite."
+      "owner_invite_kept": "That was an owner invite, and Home Assistant could not remove the key it was given. Remove the client named home-assistant from the feeder (People in the app, or `wellfed revoke`), then make a member invite.",
+      "server_unreachable": "Nothing answered at that address. Check it, and that the server is running.",
+      "server_not_a_server": "That address does not answer as a Wellfed server.",
+      "server_redirected": "That address redirects elsewhere. Use the address it redirects to.",
+      "server_bad_credentials": "The name or password is wrong.",
+      "server_login_limited": "Too many failed sign-ins. Wait a minute, then try again.",
+      "server_account_disabled": "That account is past its expiry. An owner can renew it.",
+      "server_unauthorized": "The server did not accept the sign-in. Try again.",
+      "server_forbidden": "That account may not change anything (a viewer). Use an owner or member account.",
+      "server_refused": "The server refused. Check its log, then try again.",
+      "not_on_server": "That server does not hold this feeder. Adopt it on the server first."
     },
     "abort": {
       "already_configured": "This feeder is already paired.",
       "not_a_feeder": "That device does not look like a Wellfed feeder.",
       "reauth_successful": "Paired again.",
-      "reconfigure_successful": "Saved."
+      "reconfigure_successful": "Saved.",
+      "no_feeders": "The server holds no feeder that Home Assistant does not have yet. Adopt one on the server first.",
+      "pair_again": "This entry is from an earlier test build of the integration. Delete it and pair the feeder again."
     },
     "flow_title": "{name}"
   },
@@ -291,6 +378,15 @@
     },
     "refused_newer_build": {
       "message": "The feeder refused it for a reason this integration does not know, from a newer feeder build. Update the integration to see why."
+    },
+    "token_refused": {
+      "message": "The Wellfed server no longer takes Home Assistant's token. Sign in again."
+    },
+    "bad_entry": {
+      "message": "This entry's settings are not valid. Remove it and add the feeder again."
+    },
+    "not_sent_legacy": {
+      "message": "Not sent: the feeder runs firmware from before this integration's device API. Update it from the Wellfed app."
     }
   },
   "issues": {
@@ -313,6 +409,22 @@
     "legacy_feeder": {
       "title": "Feeder {feeder} needs a firmware update",
       "description": "Feeder {feeder} runs build {build}, from before this integration's device API, so Home Assistant can read and change nothing on it and its entities are unavailable. Update the feeder from the Wellfed app. Home Assistant tries again on its own, and this clears once it answers."
+    },
+    "update_server": {
+      "title": "Update the Wellfed server for feeder {feeder}",
+      "description": "The Wellfed server that Home Assistant reaches feeder {feeder} through (build {build}) is older than the feeder or this integration. Everything all three know works; what the server lacks is refused or shows as unknown. Update the server. This clears once it matches."
+    },
+    "server_lost_feeder": {
+      "title": "The Wellfed server no longer reaches feeder {feeder}",
+      "description": "The server no longer holds feeder {feeder}: it was removed from the server, or the feeder dropped the server's key. Adopt the feeder on the server again. Home Assistant checks every few minutes, and this clears once it reaches the feeder."
+    },
+    "leftover_key": {
+      "title": "Remove Home Assistant's old key from feeder {feeder}",
+      "description": "Feeder {feeder} is now reached through the Wellfed server, but Home Assistant could not remove the key it used to reach it directly (it starts {key}). Remove the client named home-assistant from the feeder's people in the app. This clears once the server no longer sees the key on the feeder."
+    },
+    "token_left": {
+      "title": "Revoke Home Assistant's token on the Wellfed server",
+      "description": "A Wellfed entry was deleted, but the server at {url} could not be reached to revoke the token Home Assistant used. The token still works until it is revoked. Revoke it in the app or with the Wellfed CLI: its id is {token_id}. Then ignore this."
     }
   }
 }

@@ -140,7 +140,7 @@ impl Cache {
                 image_len: verified.image_len,
                 image_sha256: Hex(verified.image_sha256),
                 key_id: Hex(verified.key_id),
-                model: verified.model,
+                model: verified.model.into(),
                 signer: match verified.signer {
                     Signer::Project => ReleaseSigner::Project,
                     Signer::Owner => ReleaseSigner::Owner,
@@ -180,7 +180,7 @@ impl Cache {
             let verified = verify(&file, &keys)?;
             // The record beside the file is the server's own note: what an
             // install acts on is what the verified manifest says.
-            if verified.digest != id.0 || verified.model != entry.release.model {
+            if verified.digest != id.0 || entry.release.model != verified.model.into() {
                 return Err(Error::Changed);
             }
             Ok((entry.release, file))

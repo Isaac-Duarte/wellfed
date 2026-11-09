@@ -73,7 +73,9 @@ pub struct Read<'a> {
 /// Whether this client's role may send a write at all: every write here is
 /// a member's, and an update signer's key may only sign.
 pub fn gate(role: ClientRole) -> Result<(), NotSent> {
-    wellfed_formats::require(role != ClientRole::UpdateSigner, || NotSent::Forbidden)
+    // A role a newer build added grants nothing here.
+    let allowed = !matches!(role, ClientRole::UpdateSigner | ClientRole::Unknown);
+    wellfed_formats::require(allowed, || NotSent::Forbidden)
 }
 
 /// Whether a device of `kind` serves `op`: the shared core, or its own
@@ -172,6 +174,7 @@ mod tests {
         assert_eq!(gate(ClientRole::Member), Ok(()));
         assert_eq!(gate(ClientRole::Server), Ok(()));
         assert_eq!(gate(ClientRole::UpdateSigner), Err(NotSent::Forbidden));
+        assert_eq!(gate(ClientRole::Unknown), Err(NotSent::Forbidden));
     }
 
     /// A write's op goes only to a device whose kind serves it, as the op

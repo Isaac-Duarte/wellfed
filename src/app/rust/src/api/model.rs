@@ -19,6 +19,7 @@ pub enum _Skew {
     FeederBehind,
     FeederAhead,
     Legacy,
+    Unknown,
 }
 
 #[frb(mirror(Enrolled))]
@@ -49,6 +50,7 @@ pub enum _ClientRole {
     Member,
     Server,
     UpdateSigner,
+    Unknown,
 }
 
 #[frb(mirror(FoodLevel))]
@@ -151,19 +153,21 @@ pub enum _Weekday {
 pub enum _Window {
     Always,
     Between { start: u16, end: u16 },
+    Unknown,
 }
 
 #[frb(mirror(MealReminder))]
 pub enum _MealReminder {
     Off,
     Before { minutes: u8 },
+    Unknown,
 }
 
 #[frb(mirror(Desiccant))]
 pub enum _Desiccant {
     Unset,
-    Unknown,
     Remaining { days: i32, due: bool },
+    Unknown,
 }
 
 #[frb(mirror(TimeSource))]
@@ -210,6 +214,7 @@ pub enum _UpdateRefusal {
     Unconfirmed,
     Battery,
     HeldAsSessionKey,
+    Unknown,
 }
 
 #[frb(mirror(Bank0Blocked))]
@@ -220,6 +225,7 @@ pub enum _Bank0Blocked {
     Extent,
     Changed,
     Read,
+    Unknown,
 }
 
 #[frb(mirror(Bank0Check))]
@@ -227,6 +233,7 @@ pub enum _Bank0Check {
     Unchecked,
     Match,
     Blocked(Bank0Blocked),
+    Unknown,
 }
 
 #[frb(mirror(UpdatePhase))]
@@ -248,6 +255,7 @@ pub enum _UpdateStop {
     Hash,
     Activate,
     Store,
+    Unknown,
 }
 
 #[frb(mirror(MissedReason))]
@@ -255,6 +263,7 @@ pub enum _MissedReason {
     Late,
     Blocked { reason: Blocked },
     Interrupted,
+    Unknown,
 }
 
 #[frb(mirror(StatsSection))]
@@ -458,4 +467,5 @@ pub enum _TraceEntry {
         at_ms: u32,
         motor: TraceMotor,
     },
+    Unknown,
 }

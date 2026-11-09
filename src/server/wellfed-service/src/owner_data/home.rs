@@ -7,7 +7,7 @@
 //! it.
 
 use tracing::error;
-use wellfed_api::{AuditAction, Home, HomePatch};
+use wellfed_api::{AuditAction, Home, HomePatch, Units};
 use wellfed_mirror::Zone;
 
 use crate::{Caller, Error, Invalid, Resource, Result, Service};
@@ -27,6 +27,10 @@ impl Service {
             home.name = home_name(&name)?.to_owned();
         }
         if let Some(units) = patch.units {
+            // Units a newer client sent, which this server cannot name.
+            if units == Units::Unknown {
+                return Err(Invalid::Units.into());
+            }
             home.units = units;
         }
         if let Some(format) = patch.time_format {

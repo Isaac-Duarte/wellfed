@@ -128,4 +128,5 @@ String missedText(MissedReason reason) => switch (reason) {
     _ => blockedWords(reason),
   },
   MissedReason_Interrupted() => 'The feeder stopped first',
+  MissedReason_Unknown() => 'For a reason this app does not know',
 };

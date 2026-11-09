@@ -208,7 +208,7 @@ pub(crate) fn revocation(before: &User, after: &User) -> Option<RevokeReason> {
         match role {
             Role::Owner => 2,
             Role::Member => 1,
-            Role::Viewer => 0,
+            Role::Viewer | Role::Unknown => 0,
         }
     }
 

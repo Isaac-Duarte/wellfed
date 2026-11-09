@@ -241,6 +241,7 @@ pub enum FoodLevel {
     /// portions remain (at any time during a feed, for a `Fed` event).
     Low,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 
@@ -258,6 +259,7 @@ pub enum FeedOutcome {
     /// feeder's cap on one feed, not what was asked.
     Uncertain,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 
@@ -298,6 +300,7 @@ pub enum FeedReason {
     /// next boot resolved it: always `Uncertain`.
     Interrupted,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 
@@ -562,6 +565,10 @@ pub enum Source {
         /// The plan's slot.
         plan: u8,
     },
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why a plan's occurrence did not run.
@@ -576,6 +583,10 @@ pub enum MissedReason {
     /// The feeder stopped after it took the occurrence and before the
     /// feed was reserved.
     Interrupted,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A role in the feeder's own client table.
@@ -586,6 +597,10 @@ pub enum ClientRole {
     Member,
     Server,
     UpdateSigner,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 impl ClientRole {
@@ -596,6 +611,7 @@ impl ClientRole {
             Self::Member => "member",
             Self::Server => "server",
             Self::UpdateSigner => "update_signer",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -616,6 +632,10 @@ pub enum EnrollPath {
     /// A session asked and a press on the feeder's panel confirmed: how an
     /// update signer's key joins.
     Press,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A live measurement, sent only to subscribers and never stored on the

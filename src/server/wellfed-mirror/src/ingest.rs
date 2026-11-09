@@ -210,7 +210,11 @@ impl Task {
                 })
             }
             Pushed::Sample(sample) => {
-                let len = wellfed_proto::encode(&proto::Metric::from(sample.value), &mut raw)
+                // A sample from the wire always has a wire form.
+                let metric = proto::Metric::try_from(sample.value)
+                    .map_err(|_| Failure::Encode)
+                    .map_err(End::Failed)?;
+                let len = wellfed_proto::encode(&metric, &mut raw)
                     .map_err(|_| Failure::Encode)
                     .map_err(End::Failed)?;
                 let batch = &mut self.batch;

@@ -82,6 +82,7 @@ fn line(client: &FeederClient) -> String {
         },
         ClientOwner::Kept => "kept".to_owned(),
         ClientOwner::Unowned => "unowned".to_owned(),
+        ClientOwner::Unknown => "an owner unknown to this CLI".to_owned(),
     };
     format!(
         "{}  {:<6}  {}  {owner}",

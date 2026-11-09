@@ -271,7 +271,14 @@ final class FeederState {
   bool get cardIsCurrent => connection == Connection.online && cardFresh;
 
   /// Whether the feeder would take a feed from this phone now.
-  bool get canFeed => cardIsCurrent && !feed.active && !viewer && role != ClientRole.server && (card?.ready ?? false);
+  /// A role a newer build added grants nothing here.
+  bool get canFeed =>
+      cardIsCurrent &&
+      !feed.active &&
+      !viewer &&
+      role != ClientRole.server &&
+      role != ClientRole.unknown &&
+      (card?.ready ?? false);
 
   /// This state with the named parts changed. A nullable part takes a function,
   /// so that null can be set.

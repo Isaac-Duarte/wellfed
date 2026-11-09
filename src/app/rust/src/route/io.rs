@@ -118,9 +118,11 @@ fn new_key() -> Result<Uuid, BridgeError> {
     Ok(uuid::Builder::from_random_bytes(random()?).into_uuid())
 }
 
-/// Viewers and accounts with an expiry hold no key of their own.
+/// Viewers, accounts with an expiry and roles a newer server added (which
+/// grant nothing here) hold no key of their own.
 fn keys_of(account: &ServerAccount) -> Keys {
-    if account.role == ServerRole::Viewer || account.expires_ms.is_some() {
+    let least = matches!(account.role, ServerRole::Viewer | ServerRole::Unknown);
+    if least || account.expires_ms.is_some() {
         Keys::ServerOnly
     } else {
         Keys::Own
@@ -448,7 +450,7 @@ impl Router {
             }
             Err(error) => error,
         };
-        let failure = calls::failure(&error);
+        let failure = error.failure();
         let mut state = self.state();
         let (keys, user) = match (&cached, failure) {
             (_, ServerFailure::Unauthorized) | (None, _) => (Keys::ServerOnly, None),
@@ -490,7 +492,7 @@ impl Router {
         let (user, feeders) = match read {
             Ok(read) => read,
             Err(error) => {
-                state.heard_failure(calls::failure(&error), now);
+                state.heard_failure(error.failure(), now);
                 state.announce();
                 return Err(error.into());
             }
@@ -573,7 +575,7 @@ impl Router {
                 state.reach = ServerReach::Up;
                 state.account_is(user);
             }
-            Err(error) => state.heard_failure(calls::failure(&error), now_ms()),
+            Err(error) => state.heard_failure(error.failure(), now_ms()),
         }
         state.announce();
     }
@@ -827,7 +829,7 @@ impl Router {
                 }
             }
             Err(error) => {
-                let failure = calls::failure(&error);
+                let failure = error.failure();
                 state.heard_failure(failure, now_ms());
                 let refusal = calls::refusal(&error).map(calls::feed_refusal);
                 let error = Some(error.into());
@@ -916,7 +918,7 @@ impl Router {
                     return answered(RoutePath::Server, reply, None);
                 }
                 Some(Err(error)) => {
-                    let failure = calls::failure(&error);
+                    let failure = error.failure();
                     state.heard_failure(failure, now_ms());
                     let elsewhere = core::server_ended(failure) == Ended::Unsent;
                     if !(elsewhere && access == Access::Both && state.direct_open(feeder)) {
@@ -1065,7 +1067,7 @@ impl Router {
                 }
             }
             Err(error) => {
-                let failure = calls::failure(&error);
+                let failure = error.failure();
                 state.heard_failure(failure, now_ms());
                 let ended = core::server_ended(failure);
                 let reply = match (ended, calls::refusal(&error)) {
@@ -1162,7 +1164,7 @@ impl Router {
                 settled_unfound(pin, mark, now_ms(), self.inner.grace_ms)
             }
             Err(error) => {
-                state.heard_failure(calls::failure(&error), now_ms());
+                state.heard_failure(error.failure(), now_ms());
                 None
             }
         }

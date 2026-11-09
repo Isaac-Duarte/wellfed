@@ -10,7 +10,7 @@ use reqwest::{Method, StatusCode};
 use wellfed_api::{FeedTrace, FeederId, FeederStats, LogEvent, TraceQuery};
 
 use crate::stream::{Block, Parser};
-use crate::{Client, Error, decode, expect_status};
+use crate::{Client, Error, decode, decode_page, expect_status};
 
 impl Client {
     /// Feed `feed`'s trace, as the server fetched it after the feed.
@@ -28,13 +28,14 @@ impl Client {
         decode(response, StatusCode::OK).await
     }
 
-    /// The latest read of each statistics section.
+    /// The latest read of each statistics section. A section this client
+    /// cannot read (one a newer feeder added) is left out.
     pub async fn feeder_stats(&self, id: FeederId) -> Result<FeederStats, Error> {
         let response = self
             .api(Method::GET, &format!("/feeders/{id}/stats"))
             .send()
             .await?;
-        decode(response, StatusCode::OK).await
+        decode_page(response, StatusCode::OK, "sections").await
     }
 
     /// Follow the feeder's debug log. Owners only.

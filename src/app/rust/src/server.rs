@@ -10,7 +10,7 @@ use wellfed_api::{
     PetIntake, Refill, RefillPage, Role, SinceRefill, StatusSnapshot, StreamEvent, User, Weight,
     WeightPage,
 };
-use wellfed_model::{Event, Gap};
+use wellfed_model::{DeviceKind, Event, Gap, MaybeKnown};
 use wellfed_server_client::Error;
 
 use crate::api::server::{
@@ -18,11 +18,11 @@ use crate::api::server::{
 };
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::{
-    ServerAccount, ServerAnomaly, ServerConnection, ServerEntry, ServerEventPage, ServerFeeder,
-    ServerFeederDetail, ServerFeederFood, ServerFeederPortions, ServerFood, ServerFoodLeft,
-    ServerFoodPeriod, ServerIntakeDay, ServerIntakeFeeder, ServerNextMeal, ServerPet,
-    ServerPetIntake, ServerRefill, ServerRefillPage, ServerRole, ServerSinceRefill, ServerSnapshot,
-    ServerWeight, ServerWeightPage,
+    ServerAccount, ServerAnomaly, ServerConnection, ServerDevice, ServerEntry, ServerEventPage,
+    ServerFeeder, ServerFeederDetail, ServerFeederFood, ServerFeederPortions, ServerFood,
+    ServerFoodLeft, ServerFoodPeriod, ServerIntakeDay, ServerIntakeFeeder, ServerNextMeal,
+    ServerPet, ServerPetIntake, ServerRefill, ServerRefillPage, ServerRole, ServerSinceRefill,
+    ServerSnapshot, ServerWeight, ServerWeightPage,
 };
 use crate::today::{Facts, event_entry, gap_entry};
 
@@ -149,6 +149,7 @@ impl From<Role> for ServerRole {
             Role::Owner => Self::Owner,
             Role::Member => Self::Member,
             Role::Viewer => Self::Viewer,
+            Role::Unknown => Self::Unknown,
         }
     }
 }
@@ -161,6 +162,9 @@ impl From<wellfed_api::Connection> for ServerConnection {
             Connection::Connecting => Self::Connecting,
             Connection::Online => Self::Online,
             Connection::Refused => Self::Refused,
+            // A state a newer server added: shown as not online, so
+            // nothing takes the feeder for reachable.
+            Connection::Unknown => Self::Offline,
         }
     }
 }
@@ -178,9 +182,15 @@ impl From<User> for ServerAccount {
 
 impl From<Feeder> for ServerFeeder {
     fn from(feeder: Feeder) -> Self {
+        let device = match (feeder.kind, feeder.model) {
+            (MaybeKnown::Known(DeviceKind::Feeder), MaybeKnown::Known(_)) => ServerDevice::Feeder,
+            (MaybeKnown::Known(_), MaybeKnown::Known(_)) => ServerDevice::OtherKind,
+            (MaybeKnown::Unknown, _) | (_, MaybeKnown::Unknown) => ServerDevice::Newer,
+        };
         Self {
             id: feeder.id.to_string(),
             name: feeder.name,
+            device,
             identity: feeder.identity.to_string(),
             role: feeder.role,
             address: feeder.address,
@@ -298,7 +308,10 @@ impl From<Command> for ServerCommand {
             feeder: command.feeder.to_string(),
             kind: command.kind,
             state: command.state,
-            outcome: command.outcome.map(ServerCommandOutcome::from),
+            outcome: command
+                .outcome
+                .as_ref()
+                .and_then(ServerCommandOutcome::known),
             feed: command.feed,
             sent_ms: ms(command.sent),
             updated_ms: ms(command.updated),
@@ -306,9 +319,11 @@ impl From<Command> for ServerCommand {
     }
 }
 
-impl From<CommandOutcome> for ServerCommandOutcome {
-    fn from(outcome: CommandOutcome) -> Self {
-        match outcome {
+impl ServerCommandOutcome {
+    /// The outcome as the app shows it; `None` for one a newer server
+    /// added, which reads as not known.
+    fn known(outcome: &CommandOutcome) -> Option<Self> {
+        Some(match *outcome {
             CommandOutcome::Done => Self::Done,
             CommandOutcome::Settings { .. } => Self::Settings,
             CommandOutcome::Plans { .. } => Self::Plans,
@@ -334,7 +349,8 @@ impl From<CommandOutcome> for ServerCommandOutcome {
                 reason,
             },
             CommandOutcome::Unrecorded => Self::Unrecorded,
-        }
+            CommandOutcome::Unknown => return None,
+        })
     }
 }
 
@@ -521,6 +537,7 @@ impl From<FeedAnomaly> for ServerAnomaly {
                 outcome,
                 reason,
             },
+            FeedAnomaly::Unknown => Self::Unknown,
         }
     }
 }

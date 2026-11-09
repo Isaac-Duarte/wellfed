@@ -7,7 +7,7 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, a debug APK, and on Linux or macOS that desktop's app (needs the pinned Flutter)"
-	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
+	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator and the server with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
 	@echo "homeassistant-wheels: the Home Assistant bridge's release wheels, cross-built for musllinux and manylinux (aarch64, x86_64, armv7 musl), and its sdist (needs uv; adds Rust targets)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "guide-screenshots: redraw the owner guide's app screenshots in docs/guide/ from the app's test fixtures"
@@ -262,7 +262,7 @@ check-homeassistant:
 	$(HA_VENV)/bin/maturin generate-stubs --locked -q -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml --out $(HA_STUBS)
 	@diff -u $(HA_STUB) $(HA_STUBS)/wellfed_homeassistant/__init__.pyi || \
 		{ echo "the bridge's stub is stale: copy the generated one over $(HA_STUB)"; exit 1; }
-	cargo build --locked -p wellfed -p wellfed-feeder-sim
+	cargo build --locked -p wellfed -p wellfed-feeder-sim -p wellfed-server
 	rm -rf $(HA_WHEEL)
 	$(HA_VENV)/bin/maturin build --locked --release -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml -o $(HA_WHEEL)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall $(HA_WHEEL)/*.whl

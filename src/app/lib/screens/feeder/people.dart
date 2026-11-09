@@ -20,6 +20,7 @@ String roleName(ClientRole role) => switch (role) {
   ClientRole.member => 'Member',
   ClientRole.server => 'Server',
   ClientRole.updateSigner => 'Update key',
+  ClientRole.unknown => 'A role this app does not know',
 };
 
 /// Who a feeder lists (11.1). Owner only: the settings tab links here from its

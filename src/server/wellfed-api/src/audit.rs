@@ -96,6 +96,10 @@ pub enum AuditAction {
     HomeChanged {
         home: Home,
     },
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why a login failed after its password was checked.
@@ -106,6 +110,10 @@ pub enum LoginFailure {
     BadPassword,
     /// The right password, on an account past its expiry.
     Disabled,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A page of the log, oldest first.

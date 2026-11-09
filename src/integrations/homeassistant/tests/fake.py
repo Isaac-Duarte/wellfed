@@ -59,6 +59,11 @@ def state(**changes: Any) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
+def plan(slot: int) -> SimpleNamespace:
+    """A daily plan in `slot`, on."""
+    return SimpleNamespace(slot=slot, minute=480, portions=1, days=0x7F, enabled=True)
+
+
 def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
     values: dict[str, Any] = {
         "kind": kind,
@@ -71,6 +76,7 @@ def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
         "replayed": False,
         "feed": None,
         "portions": None,
+        "pending": None,
         "gap_from": None,
         "gap_to": None,
         "reason": None,
@@ -95,9 +101,25 @@ def connected(
 
 
 def written(result: bridge.WriteResult, **fields: Any) -> SimpleNamespace:
-    values: dict[str, Any] = {"result": result, "feed": None, "refusal": None, "not_sent": None}
+    values: dict[str, Any] = {
+        "result": result,
+        "feed": None,
+        "refusal": None,
+        "not_sent": None,
+        "pending": None,
+    }
     values.update(fields)
     return SimpleNamespace(**values)
+
+
+def pending(id: str = "a-lost-feed", portions: int = 1) -> bridge.Pending:
+    """A feed whose answer was lost, as the bridge hands it out."""
+    return bridge.Pending(id, portions, 1_793_793_600_000, None)
+
+
+def uncertain(lost: bridge.Pending) -> SimpleNamespace:
+    """A feed write whose answer was lost, kept as `lost`."""
+    return written(bridge.WriteResult.Uncertain, pending=lost)
 
 
 def feed(number: int, outcome: bridge.FeedOutcome = bridge.FeedOutcome.Done) -> SimpleNamespace:
@@ -142,6 +164,9 @@ class FakeFeeder:
 
     def feed(self, portions: int) -> SimpleNamespace:
         self.calls.append(("feed", (portions,)))
+        # As the bridge does: a lost feed is announced before its answer.
+        if self.feed_result.pending is not None:
+            self.push(update(bridge.UpdateKind.Pending, pending=self.feed_result.pending))
         return self.feed_result
 
     def cancel_feed(self, number: int) -> SimpleNamespace:

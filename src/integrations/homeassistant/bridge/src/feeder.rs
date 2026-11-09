@@ -35,6 +35,7 @@ use std::sync::Mutex;
 use std::sync::mpsc as std_mpsc;
 use std::time::{Duration, Instant};
 
+use jiff::tz::TimeZone;
 use tokio::sync::{mpsc, oneshot};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::today::Facts;
@@ -45,7 +46,7 @@ use wellfed_model::{
 };
 
 use crate::Error;
-use crate::api::{self, Capabilities, NotSent, State, Tune, Update, Written};
+use crate::api::{self, Capabilities, NotSent, Pending, State, Tune, Update, Written};
 use crate::key::{ClientKey, locate, random};
 use crate::writes::{self, Kind, Landed, Store, Write};
 
@@ -54,21 +55,88 @@ type RequestId = [u8; 16];
 
 /// How often a quiet session reads the status anew, which also keeps the
 /// connection's silence limit fed.
-const TURN: Duration = Duration::from_secs(30);
+pub(crate) const TURN: Duration = Duration::from_secs(30);
 /// How long an uncertain feed waits for its `Fed` event within one
 /// session: longer than the longest feed the feeder runs.
-const SETTLE: Duration = Duration::from_secs(15 * 60);
+pub(crate) const SETTLE: Duration = Duration::from_secs(15 * 60);
 /// Feeds kept for the day's facts, and feed numbers this client was
 /// answered for: far more than a day holds.
 const FEEDS_KEPT: usize = 512;
+/// How long a write may wait for the session before it is refused unsent.
+/// A press reaches an idle session within milliseconds; one that waited
+/// longer stood behind a connect or a slow write, and by then the owner
+/// has seen nothing happen and may have pressed again or walked away, so a
+/// feed sent later is not the feed they asked for.
+pub(crate) const FRESH: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
-enum Command {
+pub(crate) enum Command {
     Write {
         write: Write,
         reply: oneshot::Sender<Written>,
+        /// When the integration asked: see [`FRESH`].
+        queued: Instant,
     },
     Refresh,
+}
+
+/// Whether a write queued at `queued` waited too long to be sent; it is
+/// then answered unsent here.
+pub(crate) fn stale(
+    queued: Instant,
+    reply: oneshot::Sender<Written>,
+) -> Option<oneshot::Sender<Written>> {
+    if queued.elapsed() > FRESH {
+        let _ = reply.send(Written::not_sent(NotSent::Disconnected));
+        return None;
+    }
+    Some(reply)
+}
+
+/// Run `work` while refusing every write that arrives meanwhile, as
+/// between sessions: a connect may take many requests, and a feed held
+/// until it ends is not the feed the owner asked for. `None` once the
+/// handle is dropped.
+pub(crate) async fn refusing<T>(
+    work: impl Future<Output = T>,
+    commands: &mut mpsc::UnboundedReceiver<Command>,
+) -> Option<T> {
+    tokio::pin!(work);
+    loop {
+        tokio::select! {
+            done = &mut work => return Some(done),
+            command = commands.recv() => match command {
+                None => return None,
+                Some(Command::Write { reply, .. }) => {
+                    let _ = reply.send(Written::not_sent(NotSent::Disconnected));
+                }
+                Some(Command::Refresh) => {}
+            },
+        }
+    }
+}
+
+/// What a session starts from after Home Assistant restarted: the feeds
+/// still unsettled, and the feed numbers this client was answered for
+/// since the oldest of them, so a `Fed` for one of those settles nothing.
+#[derive(Clone, Debug, Default)]
+pub struct Carried {
+    pub pending: Vec<Pending>,
+    pub answered: Vec<u32>,
+}
+
+/// The time now in Unix milliseconds.
+pub(crate) fn now_ms() -> i64 {
+    jiff::Timestamp::now().as_millisecond()
+}
+
+/// The instant a pending feed went out, from its wall-clock time: a feed
+/// carried across a restart keeps its settle window rather than starting
+/// a new one.
+pub(crate) fn sent_at(sent_ms: i64) -> Instant {
+    let ago = u64::try_from(now_ms().saturating_sub(sent_ms)).unwrap_or(0);
+    let ago = Duration::from_millis(ago).min(SETTLE);
+    Instant::now().checked_sub(ago).unwrap_or_else(Instant::now)
 }
 
 /// How long the session waits on the feeder, and between sessions.
@@ -109,7 +177,39 @@ impl Feeder {
     /// Start the session thread for `target` as `key`, on `clocks`. It
     /// connects, and reconnects after every loss, until the handle is
     /// dropped or the feeder revokes the key.
-    pub fn start(key: ClientKey, target: Target, clocks: Clocks) -> Result<Self, Error> {
+    /// `carried` is what the last run left unsettled.
+    pub fn start(
+        key: ClientKey,
+        target: Target,
+        clocks: Clocks,
+        carried: Carried,
+    ) -> Result<Self, Error> {
+        Self::spawn(move |inbox, outbox| run(key, target, clocks, carried, inbox, outbox))
+    }
+
+    /// Start the session thread for the feeder `target` names through the
+    /// owner's server ([`crate::server`]), on `clocks`. It connects, and
+    /// reconnects after every loss, until the handle is dropped, the server
+    /// refuses the token, or the server no longer holds the feeder.
+    /// `pending` is what the last run left unsettled.
+    pub fn start_server(
+        target: crate::server::Target,
+        clocks: crate::server::Clocks,
+        pending: Vec<Pending>,
+    ) -> Result<Self, Error> {
+        let client = crate::server::client(&target, clocks)?;
+        Self::spawn(move |inbox, outbox| {
+            crate::server::run(client, target, clocks, pending, inbox, outbox)
+        })
+    }
+
+    /// Run the session `serve` makes on a thread of its own, on a
+    /// current-thread runtime.
+    fn spawn<F, S>(serve: S) -> Result<Self, Error>
+    where
+        S: FnOnce(mpsc::UnboundedReceiver<Command>, std_mpsc::Sender<Update>) -> F + Send + 'static,
+        F: Future<Output = ()>,
+    {
         let (commands, inbox) = mpsc::unbounded_channel();
         let (outbox, updates) = std_mpsc::channel();
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -118,7 +218,7 @@ impl Feeder {
             .map_err(Error::Thread)?;
         std::thread::Builder::new()
             .name("wellfed-session".into())
-            .spawn(move || runtime.block_on(run(key, target, clocks, inbox, outbox)))
+            .spawn(move || runtime.block_on(serve(inbox, outbox)))
             .map_err(Error::Thread)?;
 
         Ok(Self {
@@ -181,7 +281,13 @@ impl Feeder {
 
     fn write(&self, write: Write) -> Written {
         let (reply, answer) = oneshot::channel();
-        if self.commands.send(Command::Write { write, reply }).is_err() {
+        let queued = Instant::now();
+        let command = Command::Write {
+            write,
+            reply,
+            queued,
+        };
+        if self.commands.send(command).is_err() {
             return Written::not_sent(NotSent::Stopped);
         }
         // The session answers every write it takes, uncertain when it ends
@@ -192,12 +298,11 @@ impl Feeder {
     }
 }
 
-/// A feed that went out and was never answered.
-#[derive(Clone, Copy, Debug)]
+/// A feed that went out and was never answered; its `Fed` comes after
+/// the event `pending.after` names.
+#[derive(Clone, Debug)]
 struct Uncertain {
-    portions: u8,
-    /// The newest event known when it went out: its `Fed` comes after.
-    after: Option<u64>,
+    pending: Pending,
     sent: Instant,
 }
 
@@ -215,6 +320,24 @@ struct Memory {
 }
 
 impl Memory {
+    fn carried(carried: Carried) -> Self {
+        let mut memory = Self {
+            uncertain: carried
+                .pending
+                .into_iter()
+                .map(|pending| Uncertain {
+                    sent: sent_at(pending.sent_ms),
+                    pending,
+                })
+                .collect(),
+            ..Self::default()
+        };
+        for feed in carried.answered {
+            memory.answered(feed);
+        }
+        memory
+    }
+
     fn answered(&mut self, feed: u32) {
         if self.answered.len() == FEEDS_KEPT {
             self.answered.pop_front();
@@ -223,21 +346,21 @@ impl Memory {
     }
 
     fn fed(&mut self, feed: Feed) {
-        // A backlog replays from the cursor, so a feed is seen once; the
-        // check keeps a replay after a lost cursor from doubling it.
-        if self
-            .facts
-            .feeds
-            .last()
-            .is_some_and(|last| last.seq >= feed.seq)
-        {
-            return;
-        }
-        if self.facts.feeds.len() == FEEDS_KEPT {
-            self.facts.feeds.remove(0);
-        }
-        self.facts.feeds.push(feed);
+        fed(&mut self.facts, feed);
     }
+}
+
+/// Add a feed the history gave to the day's facts.
+pub(crate) fn fed(facts: &mut Facts, feed: Feed) {
+    // A backlog replays from the cursor, so a feed is seen once; the check
+    // keeps a replay after a lost cursor from doubling it.
+    if facts.feeds.last().is_some_and(|last| last.seq >= feed.seq) {
+        return;
+    }
+    if facts.feeds.len() == FEEDS_KEPT {
+        facts.feeds.remove(0);
+    }
+    facts.feeds.push(feed);
 }
 
 /// Connect, serve until the session ends, and go again, until the handle is
@@ -246,15 +369,20 @@ async fn run(
     key: ClientKey,
     target: Target,
     clocks: Clocks,
+    carried: Carried,
     mut commands: mpsc::UnboundedReceiver<Command>,
     updates: std_mpsc::Sender<Update>,
 ) {
     let mut fingerprint = [0; 4];
     fingerprint.copy_from_slice(&key.public()[..4]);
-    let mut memory = Memory::default();
+    let mut memory = Memory::carried(carried);
 
     loop {
-        let ended = match open(&key, &target, clocks.session).await {
+        let Some(opened) = refusing(open(&key, &target, clocks.session), &mut commands).await
+        else {
+            return;
+        };
+        let ended = match opened {
             Ok(connection) => {
                 let session = Session::new(connection, fingerprint, &mut memory, &updates);
                 session.serve(&mut commands).await
@@ -273,30 +401,40 @@ async fn run(
         if updates.send(Update::disconnected(reason)).is_err() {
             return;
         }
+        if !pause(clocks.retry, &mut commands).await {
+            return;
+        }
+    }
+}
 
-        // While no session is open a write is refused at once, never held
-        // for the next one: a feed sent minutes after its press is not the
-        // feed the owner asked for.
-        let pause = tokio::time::sleep(clocks.retry);
-        tokio::pin!(pause);
-        loop {
-            tokio::select! {
-                () = &mut pause => break,
-                command = commands.recv() => match command {
-                    None => return,
-                    Some(Command::Write { reply, .. }) => {
-                        let _ = reply.send(Written::not_sent(NotSent::Disconnected));
-                    }
-                    Some(Command::Refresh) => {}
-                },
-            }
+/// Wait `retry` before the next session, refusing every write meanwhile;
+/// `false` once the handle is dropped. A write is refused at once, never
+/// held for the next session: a feed sent minutes after its press is not
+/// the feed the owner asked for.
+pub(crate) async fn pause(
+    retry: Duration,
+    commands: &mut mpsc::UnboundedReceiver<Command>,
+) -> bool {
+    let pause = tokio::time::sleep(retry);
+    tokio::pin!(pause);
+    loop {
+        tokio::select! {
+            () = &mut pause => return true,
+            command = commands.recv() => match command {
+                None => return false,
+                Some(Command::Write { reply, .. }) => {
+                    let _ = reply.send(Written::not_sent(NotSent::Disconnected));
+                }
+                Some(Command::Refresh) => {}
+            },
         }
     }
 }
 
 /// The session cannot go on: say why once, then refuse every write until
-/// the handle is dropped. A revoked key needs a new invite.
-async fn stopped(
+/// the handle is dropped. A revoked key needs a new invite; a refused
+/// token, a new login.
+pub(crate) async fn stopped(
     why: Update,
     commands: &mut mpsc::UnboundedReceiver<Command>,
     updates: &std_mpsc::Sender<Update>,
@@ -348,7 +486,7 @@ impl Read {
 
 /// What an outstanding request was for.
 #[derive(Debug)]
-enum Pending {
+enum Outstanding {
     Write {
         reply: oneshot::Sender<Written>,
         kind: Kind,
@@ -367,7 +505,7 @@ struct Session<'a> {
     updates: &'a std_mpsc::Sender<Update>,
     /// The replay at connect, until its newest event has come.
     backlog: Option<Backlog>,
-    pending: HashMap<RequestId, Pending>,
+    pending: HashMap<RequestId, Outstanding>,
 }
 
 /// The session's own failure, or the handle gone.
@@ -393,17 +531,18 @@ impl<'a> Session<'a> {
     }
 
     async fn serve(mut self, commands: &mut mpsc::UnboundedReceiver<Command>) -> Ended {
-        let ended = match self.open().await {
-            Ok(()) => self.follow(commands).await,
-            Err(ended) => ended,
+        let ended = match refusing(self.open(), commands).await {
+            None => Ended::Dropped,
+            Some(Ok(())) => self.follow(commands).await,
+            Some(Err(ended)) => ended,
         };
 
         // Each write still outstanding went out and was never answered.
-        let outstanding: Vec<Pending> = self.pending.drain().map(|(_, pending)| pending).collect();
+        let outstanding: Vec<Outstanding> =
+            self.pending.drain().map(|(_, pending)| pending).collect();
         for pending in outstanding {
-            if let Pending::Write { reply, kind, .. } = pending {
-                self.unanswered(kind);
-                let _ = reply.send(Written::uncertain());
+            if let Outstanding::Write { reply, kind, .. } = pending {
+                let _ = reply.send(self.unanswered(kind));
             }
         }
         ended
@@ -470,7 +609,10 @@ impl<'a> Session<'a> {
             let step = tokio::select! {
                 command = commands.recv() => match command {
                     None => return Ended::Dropped,
-                    Some(Command::Write { write, reply }) => self.write(write, reply),
+                    Some(Command::Write { write, reply, queued }) => match stale(queued, reply) {
+                        Some(reply) => self.write(write, reply),
+                        None => Ok(()),
+                    },
                     Some(Command::Refresh) => self.read(Read::Status),
                 },
                 received = self.connection.receive(TURN) => match received {
@@ -496,7 +638,8 @@ impl<'a> Session<'a> {
         if self.backlog.is_some() {
             return Ok(());
         }
-        match State::of(&self.memory.facts, self.memory.calibration.as_ref()) {
+        let zone = TimeZone::system();
+        match State::of(&self.memory.facts, self.memory.calibration.as_ref(), &zone) {
             Some(state) => self.send(Update::state(state)),
             None => Ok(()),
         }
@@ -507,14 +650,14 @@ impl<'a> Session<'a> {
         if self
             .pending
             .values()
-            .any(|pending| matches!(pending, Pending::Read(out) if *out == read))
+            .any(|pending| matches!(pending, Outstanding::Read(out) if *out == read))
         {
             return Ok(());
         }
         let op = read.op();
         let id = random().map_err(lost)?;
         self.connection.request(id, &op).map_err(lost)?;
-        self.pending.insert(id, Pending::Read(read));
+        self.pending.insert(id, Outstanding::Read(read));
         Ok(())
     }
 
@@ -555,24 +698,25 @@ impl<'a> Session<'a> {
             let _ = reply.send(Written::not_sent(NotSent::Disconnected));
             return Err(lost(error));
         }
-        self.pending.insert(id, Pending::Write { reply, kind, op });
+        self.pending
+            .insert(id, Outstanding::Write { reply, kind, op });
         Ok(())
     }
 
     fn store_busy(&self, store: Store) -> bool {
         self.pending.values().any(|pending| {
-            matches!(pending, Pending::Write { kind: Kind::Store { store: out, .. }, .. } if *out == store)
+            matches!(pending, Outstanding::Write { kind: Kind::Store { store: out, .. }, .. } if *out == store)
         })
     }
 
     fn answered(&mut self, id: RequestId, answer: Option<Answer>) -> Step {
         match self.pending.remove(&id) {
-            Some(Pending::Write { reply, kind, op }) => {
+            Some(Outstanding::Write { reply, kind, op }) => {
                 let written = self.written(kind, &op, answer.as_ref())?;
                 let _ = reply.send(written);
                 Ok(())
             }
-            Some(Pending::Read(read)) => self.fact(read, answer),
+            Some(Outstanding::Read(read)) => self.fact(read, answer),
             None => Ok(()),
         }
     }
@@ -580,8 +724,7 @@ impl<'a> Session<'a> {
     /// How the write of `kind` ended, by its answer.
     fn written(&mut self, kind: Kind, op: &Op, answer: Option<&Answer>) -> Result<Written, Ended> {
         let Some(answer) = readable(answer) else {
-            self.unanswered(kind);
-            return Ok(Written::uncertain());
+            return Ok(self.unanswered(kind));
         };
         match kind {
             Kind::Once | Kind::Feed { .. } => {
@@ -601,10 +744,7 @@ impl<'a> Session<'a> {
                         Written::done()
                     }
                     Landed::Stale | Landed::Refused(_) => once(answer),
-                    Landed::Unknown => {
-                        self.unanswered(kind);
-                        Written::uncertain()
-                    }
+                    Landed::Unknown => self.unanswered(kind),
                 })
             }
         }
@@ -646,21 +786,33 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// A write of `kind` went out and its answer never came.
-    fn unanswered(&mut self, kind: Kind) {
-        if let Kind::Feed { portions } = kind {
-            self.memory.uncertain.push(Uncertain {
-                portions,
-                after: self.memory.cursor.map(|cursor| cursor.seq).or_else(|| {
-                    self.memory
-                        .facts
-                        .status
-                        .as_ref()
-                        .and_then(|status| status.last_event)
-                }),
-                sent: Instant::now(),
-            });
-        }
+    /// A write of `kind` went out and its answer never came: uncertain,
+    /// and a feed is kept until its `Fed` settles it.
+    fn unanswered(&mut self, kind: Kind) -> Written {
+        let Kind::Feed { portions } = kind else {
+            return Written::uncertain();
+        };
+        let after = self.memory.cursor.map(|cursor| cursor.seq).or_else(|| {
+            self.memory
+                .facts
+                .status
+                .as_ref()
+                .and_then(|status| status.last_event)
+        });
+        let pending = Pending {
+            id: uuid::Uuid::new_v4().to_string(),
+            portions,
+            sent_ms: now_ms(),
+            after,
+        };
+        // Announced on the updates before anything can settle it, so the
+        // integration keeps it first; a handle gone has no one to tell.
+        let _ = self.updates.send(Update::pending(pending.clone()));
+        self.memory.uncertain.push(Uncertain {
+            pending: pending.clone(),
+            sent: Instant::now(),
+        });
+        Written::uncertain_feed(pending)
     }
 
     fn fact(&mut self, read: Read, answer: Option<Answer>) -> Step {
@@ -743,7 +895,7 @@ impl<'a> Session<'a> {
         let feeding = self.memory.facts.status.as_ref().is_some_and(feeding_now);
         if !feeding {
             for uncertain in std::mem::take(&mut self.memory.uncertain) {
-                self.send(Update::still_unknown(uncertain.portions))?;
+                self.send(Update::still_unknown(uncertain.pending))?;
             }
         }
         self.state()
@@ -761,14 +913,14 @@ impl<'a> Session<'a> {
             .memory
             .uncertain
             .iter()
-            .position(|uncertain| uncertain.after.is_none_or(|after| feed.seq > after));
+            .position(|uncertain| uncertain.pending.after.is_none_or(|after| feed.seq > after));
         let Some(found) = found else {
             return Ok(());
         };
 
-        self.memory.uncertain.remove(found);
+        let uncertain = self.memory.uncertain.remove(found);
         self.memory.answered(feed.feed);
-        self.send(Update::settled(api::Feed::from(feed)))
+        self.send(Update::settled(api::Feed::from(feed), uncertain.pending))
     }
 
     /// Uncertain feeds past [`SETTLE`] with no `Fed`: still unknown.
@@ -779,21 +931,21 @@ impl<'a> Session<'a> {
             .partition(|uncertain| now.duration_since(uncertain.sent) >= SETTLE);
         self.memory.uncertain = kept;
         for uncertain in expired {
-            self.send(Update::still_unknown(uncertain.portions))?;
+            self.send(Update::still_unknown(uncertain.pending))?;
         }
         Ok(())
     }
 }
 
 /// Whether the feeder reports a feed running now.
-fn feeding_now(status: &Status) -> bool {
+pub(crate) fn feeding_now(status: &Status) -> bool {
     status
         .feeder()
         .is_some_and(|feeder| feeder.readiness == Readiness::Blocked(Blocked::Feeding))
 }
 
 /// The generation a store moves to from `base`.
-const fn next(base: Generation) -> Generation {
+pub(crate) const fn next(base: Generation) -> Generation {
     Generation(base.0.wrapping_add(1))
 }
 
@@ -840,5 +992,66 @@ mod tests {
         assert_eq!(readable(None), None);
         let done = Answer::Done { generation: None };
         assert_eq!(readable(Some(&done)), Some(&done));
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// A write that waited past [`FRESH`] is answered unsent; a fresh one
+    /// goes on to the session.
+    #[test]
+    fn a_write_that_waited_too_long_is_not_sent() {
+        let (reply, answer) = oneshot::channel();
+        let long_ago = Instant::now() - FRESH - Duration::from_secs(1);
+        assert!(stale(long_ago, reply).is_none());
+        assert_eq!(
+            answer.blocking_recv().unwrap(),
+            Written::not_sent(NotSent::Disconnected)
+        );
+
+        let (reply, _answer) = oneshot::channel();
+        assert!(stale(Instant::now(), reply).is_some());
+    }
+
+    /// A write that arrives while a session connects is refused at once,
+    /// never held until the connect ends.
+    #[test]
+    fn a_write_while_connecting_is_refused_at_once() {
+        runtime().block_on(async {
+            let (commands, mut inbox) = mpsc::unbounded_channel();
+            let (reply, answer) = oneshot::channel();
+            commands
+                .send(Command::Write {
+                    write: Write::Feed { portions: 1 },
+                    reply,
+                    queued: Instant::now(),
+                })
+                .unwrap();
+
+            let connect = tokio::time::sleep(Duration::from_millis(200));
+            assert_eq!(refusing(connect, &mut inbox).await, Some(()));
+            assert_eq!(
+                answer.await.unwrap(),
+                Written::not_sent(NotSent::Disconnected)
+            );
+
+            drop(commands);
+            let forever = std::future::pending::<()>();
+            assert_eq!(refusing(forever, &mut inbox).await, None);
+        });
+    }
+
+    /// A feed carried across a restart keeps its settle window: one sent
+    /// longer ago than [`SETTLE`] is already past it.
+    #[test]
+    fn a_carried_feed_keeps_its_settle_window() {
+        let old = sent_at(now_ms() - 20 * 60 * 1000);
+        assert!(old.elapsed() >= SETTLE);
+        let recent = sent_at(now_ms() - 1000);
+        assert!(recent.elapsed() < Duration::from_secs(5));
     }
 }

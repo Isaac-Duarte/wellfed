@@ -58,6 +58,10 @@ pub enum InstallTarget {
         #[schema(value_type = String)]
         sha256: Hex<32>,
     },
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl InstallTarget {
@@ -71,14 +75,17 @@ impl InstallTarget {
         match self {
             Self::Release { .. } => Self::RELEASE,
             Self::Stock { .. } => Self::STOCK,
+            Self::Unknown => "unknown",
         }
     }
 
-    /// The bytes that name it: the release's id, or the backup's SHA-256.
-    pub const fn name(self) -> Hex<32> {
+    /// The bytes that name it: the release's id, or the backup's SHA-256;
+    /// `None` for a target a newer server added.
+    pub const fn name(self) -> Option<Hex<32>> {
         match self {
-            Self::Release { release } => release,
-            Self::Stock { sha256 } => sha256,
+            Self::Release { release } => Some(release),
+            Self::Stock { sha256 } => Some(sha256),
+            Self::Unknown => None,
         }
     }
 
@@ -108,6 +115,10 @@ pub enum InstallState {
     /// It ended before activation; `failure` says why. The feeder keeps
     /// running the build it had.
     Failed,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl InstallState {
@@ -118,6 +129,7 @@ impl InstallState {
             Self::Activated => "activated",
             Self::AlreadyRunning => "already_running",
             Self::Failed => "failed",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -163,4 +175,8 @@ pub enum InstallFailure {
     /// gets no chunk for a minute, and another install resumes one still
     /// receiving this release.
     Interrupted,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }

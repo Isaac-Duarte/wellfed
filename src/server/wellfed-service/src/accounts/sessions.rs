@@ -190,6 +190,8 @@ impl Service {
             return Err(match reason {
                 LoginFailure::BadPassword => AccountError::BadCredentials,
                 LoginFailure::Disabled => AccountError::Disabled,
+                // Never made here: a newer server's reason.
+                LoginFailure::Unknown => AccountError::BadCredentials,
             }
             .into());
         }

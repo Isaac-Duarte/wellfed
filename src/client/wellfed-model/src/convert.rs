@@ -266,15 +266,18 @@ impl From<proto::Battery> for Battery {
     }
 }
 
-impl From<Battery> for proto::Battery {
-    fn from(battery: Battery) -> Self {
-        match battery {
+impl TryFrom<Battery> for proto::Battery {
+    type Error = NoWireForm;
+
+    fn try_from(battery: Battery) -> Result<Self, NoWireForm> {
+        Ok(match battery {
             Battery::Absent => Self::Absent,
             Battery::Reading { mv, percent } => Self::Reading { mv, percent },
             Battery::Implausible { mv } => Self::Implausible { mv },
             Battery::Unread => Self::Unread,
             Battery::Stale { age_ms } => Self::Stale { age_ms },
-        }
+            Battery::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -341,12 +344,15 @@ impl From<proto::MealReminder> for MealReminder {
     }
 }
 
-impl From<MealReminder> for proto::MealReminder {
-    fn from(reminder: MealReminder) -> Self {
-        match reminder {
+impl TryFrom<MealReminder> for proto::MealReminder {
+    type Error = NoWireForm;
+
+    fn try_from(reminder: MealReminder) -> Result<Self, NoWireForm> {
+        Ok(match reminder {
             MealReminder::Off => Self::Off,
             MealReminder::Before { minutes } => Self::Before { minutes },
-        }
+            MealReminder::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -359,12 +365,15 @@ impl From<proto::Window> for Window {
     }
 }
 
-impl From<Window> for proto::Window {
-    fn from(window: Window) -> Self {
-        match window {
+impl TryFrom<Window> for proto::Window {
+    type Error = NoWireForm;
+
+    fn try_from(window: Window) -> Result<Self, NoWireForm> {
+        Ok(match window {
             Window::Always => Self::Always,
             Window::Between { start, end } => Self::Between { start, end },
-        }
+            Window::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -506,35 +515,35 @@ impl TryFrom<EventBody> for proto::EventBody {
             }
             EventBody::Feeder(FeederEvent::Lock { locked, by }) => Self::Lock {
                 locked,
-                by: by.into(),
+                by: by.try_into()?,
             },
             EventBody::Feeder(FeederEvent::Settings { generation, by }) => Self::Settings {
                 generation: generation.0,
-                by: by.into(),
+                by: by.try_into()?,
             },
             EventBody::Core(CoreEvent::Wifi { generation, by }) => Self::Wifi {
                 generation: generation.0,
-                by: by.into(),
+                by: by.try_into()?,
             },
             EventBody::Core(CoreEvent::Enrolled { client, role, path }) => Self::Enrolled {
                 client: client.0,
-                role: role.into(),
-                path: path.into(),
+                role: role.try_into()?,
+                path: path.try_into()?,
             },
             EventBody::Core(CoreEvent::Revoked { client, by }) => Self::Revoked {
                 client: client.0,
-                by: by.into(),
+                by: by.try_into()?,
             },
             EventBody::Core(CoreEvent::ClockSync { by, jump_ms }) => Self::ClockSync {
-                by: by.into(),
+                by: by.try_into()?,
                 jump_ms,
             },
             EventBody::Core(CoreEvent::Lost { count }) => Self::Lost { count },
-            EventBody::Core(CoreEvent::UpdateStop { stop }) => {
-                Self::UpdateStop { stop: stop.into() }
-            }
+            EventBody::Core(CoreEvent::UpdateStop { stop }) => Self::UpdateStop {
+                stop: stop.try_into()?,
+            },
             EventBody::Core(CoreEvent::UpdateAtBoot { candidate }) => Self::UpdateAtBoot {
-                candidate: candidate.into(),
+                candidate: candidate.try_into()?,
             },
             EventBody::Core(CoreEvent::Restarting) => Self::Restarting,
             EventBody::Core(CoreEvent::UpdateConfirmed) => Self::UpdateConfirmed,
@@ -553,7 +562,7 @@ impl TryFrom<EventBody> for proto::EventBody {
                 outcome: outcome.try_into()?,
                 reason: reason.try_into()?,
                 hopper: hopper.try_into()?,
-                by: by.into(),
+                by: by.try_into()?,
             },
             EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => Self::FeedingBlocked {
                 reason: reason.map(proto::Blocked::try_from).transpose()?,
@@ -564,12 +573,12 @@ impl TryFrom<EventBody> for proto::EventBody {
                 below_floor,
             }) => Self::Supply(proto::Supply {
                 adapter,
-                battery: battery.into(),
+                battery: battery.try_into()?,
                 below_floor,
             }),
             EventBody::Feeder(FeederEvent::Plans { generation, by }) => Self::Plans {
                 generation: generation.0,
-                by: by.into(),
+                by: by.try_into()?,
             },
             // A due time came from the feeder's u32 seconds.
             EventBody::Feeder(FeederEvent::Missed { plan, due, reason }) => Self::Missed {
@@ -597,12 +606,12 @@ impl TryFrom<EventBody> for proto::EventBody {
             EventBody::Feeder(FeederEvent::Skipped { plan, due, by }) => Self::Skipped {
                 plan,
                 due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
-                by: by.into(),
+                by: by.try_into()?,
             },
             EventBody::Feeder(FeederEvent::Unskipped { plan, due, by }) => Self::Unskipped {
                 plan,
                 due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
-                by: by.into(),
+                by: by.try_into()?,
             },
         })
     }
@@ -644,14 +653,17 @@ impl From<proto::Source> for Source {
     }
 }
 
-impl From<Source> for proto::Source {
-    fn from(source: Source) -> Self {
-        match source {
+impl TryFrom<Source> for proto::Source {
+    type Error = NoWireForm;
+
+    fn try_from(source: Source) -> Result<Self, NoWireForm> {
+        Ok(match source {
             Source::Panel => Self::Panel,
             Source::Client { client } => Self::Client(client.0),
             Source::Feeder => Self::Feeder,
             Source::Schedule { plan } => Self::Schedule(plan),
-        }
+            Source::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -675,6 +687,7 @@ impl TryFrom<MissedReason> for proto::MissedReason {
             MissedReason::Late => Self::Late,
             MissedReason::Blocked { reason } => Self::Blocked(reason.try_into()?),
             MissedReason::Interrupted => Self::Interrupted,
+            MissedReason::Unknown => return Err(NoWireForm),
         })
     }
 }
@@ -743,14 +756,17 @@ impl From<proto::Role> for ClientRole {
     }
 }
 
-impl From<ClientRole> for proto::Role {
-    fn from(role: ClientRole) -> Self {
-        match role {
+impl TryFrom<ClientRole> for proto::Role {
+    type Error = NoWireForm;
+
+    fn try_from(role: ClientRole) -> Result<Self, NoWireForm> {
+        Ok(match role {
             ClientRole::Owner => Self::Owner,
             ClientRole::Member => Self::Member,
             ClientRole::Server => Self::Server,
             ClientRole::UpdateSigner => Self::UpdateSigner,
-        }
+            ClientRole::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -765,14 +781,17 @@ impl From<proto::Path> for EnrollPath {
     }
 }
 
-impl From<EnrollPath> for proto::Path {
-    fn from(path: EnrollPath) -> Self {
-        match path {
+impl TryFrom<EnrollPath> for proto::Path {
+    type Error = NoWireForm;
+
+    fn try_from(path: EnrollPath) -> Result<Self, NoWireForm> {
+        Ok(match path {
             EnrollPath::Setup => Self::Setup,
             EnrollPath::Invite => Self::Invite,
             EnrollPath::Recovery => Self::Recovery,
             EnrollPath::Press => Self::Press,
-        }
+            EnrollPath::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -903,9 +922,11 @@ impl From<proto::Metric> for SampleValue {
 }
 
 /// The wire form, which is also how the server stores a sample's value.
-impl From<SampleValue> for proto::Metric {
-    fn from(value: SampleValue) -> Self {
-        match value {
+impl TryFrom<SampleValue> for proto::Metric {
+    type Error = NoWireForm;
+
+    fn try_from(value: SampleValue) -> Result<Self, NoWireForm> {
+        Ok(match value {
             SampleValue::Power {
                 adapter,
                 battery_mv,
@@ -938,10 +959,10 @@ impl From<SampleValue> for proto::Metric {
                 below_floor,
             } => Self::Supply(proto::Supply {
                 adapter,
-                battery: battery.into(),
+                battery: battery.try_into()?,
                 below_floor,
             }),
-        }
+        })
     }
 }
 
@@ -1628,13 +1649,16 @@ impl From<proto::Alert> for Alert {
     }
 }
 
-impl From<UpdateCandidate> for proto::UpdateCandidate {
-    fn from(candidate: UpdateCandidate) -> Self {
-        match candidate {
+impl TryFrom<UpdateCandidate> for proto::UpdateCandidate {
+    type Error = NoWireForm;
+
+    fn try_from(candidate: UpdateCandidate) -> Result<Self, NoWireForm> {
+        Ok(match candidate {
             UpdateCandidate::None => Self::None,
             UpdateCandidate::Pending => Self::Pending,
             UpdateCandidate::Activated => Self::Activated,
-        }
+            UpdateCandidate::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -1648,9 +1672,11 @@ impl From<proto::UpdateCandidate> for UpdateCandidate {
     }
 }
 
-impl From<UpdateStop> for proto::UpdateStop {
-    fn from(stop: UpdateStop) -> Self {
-        match stop {
+impl TryFrom<UpdateStop> for proto::UpdateStop {
+    type Error = NoWireForm;
+
+    fn try_from(stop: UpdateStop) -> Result<Self, NoWireForm> {
+        Ok(match stop {
             UpdateStop::Timeout => Self::Timeout,
             UpdateStop::Cancelled => Self::Cancelled,
             UpdateStop::Order => Self::Order,
@@ -1659,7 +1685,8 @@ impl From<UpdateStop> for proto::UpdateStop {
             UpdateStop::Hash => Self::Hash,
             UpdateStop::Activate => Self::Activate,
             UpdateStop::Store => Self::Store,
-        }
+            UpdateStop::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -1740,7 +1767,12 @@ impl Op {
         if let Self::Stats { section } = self {
             return section.kind();
         }
-        match self.to_proto() {
+        // An op holding a value only a newer build names has no wire
+        // form, so it is never sent and no kind serves it.
+        let Ok(op) = self.to_proto() else {
+            return None;
+        };
+        match op {
             proto::Op::Feeder(_) => Some(DeviceKind::Feeder),
             proto::Op::Status
             | proto::Op::PutWifi { .. }
@@ -1766,18 +1798,20 @@ impl Op {
     /// ([`Skew::Legacy`](crate::Skew::Legacy)). A build of another revision
     /// is sent every op, since the API only grows.
     pub fn is_frozen(&self) -> bool {
-        self.to_proto().is_frozen()
+        self.to_proto().is_ok_and(|op| op.is_frozen())
     }
 
-    /// The wire form, borrowing this op's strings.
-    pub fn to_proto(&self) -> proto::Op<'_> {
-        match self {
+    /// The wire form, borrowing this op's strings; none for an op holding
+    /// a value only a newer build names (a role or a window read from a
+    /// newer server), which is never sent.
+    pub fn to_proto(&self) -> Result<proto::Op<'_>, NoWireForm> {
+        Ok(match self {
             Self::Status => proto::Op::Status,
             Self::GetSettings => proto::Op::Feeder(proto::FeederOp::GetSettings),
             Self::PutSettings { base, changes } => {
                 proto::Op::Feeder(proto::FeederOp::PutSettings {
                     base: base.0,
-                    changes: (*changes).into(),
+                    changes: (*changes).try_into()?,
                 })
             }
             Self::PutWifi { base, wifi } => proto::Op::PutWifi {
@@ -1795,7 +1829,7 @@ impl Op {
             }),
             Self::TimeSync(sync) => proto::Op::TimeSync((*sync).into()),
             Self::CreateInvite { role } => proto::Op::CreateInvite {
-                role: (*role).into(),
+                role: (*role).try_into()?,
             },
             Self::ListClients => proto::Op::ListClients,
             Self::RevokeClient { key } => proto::Op::RevokeClient { key: *key },
@@ -1877,12 +1911,14 @@ impl Op {
                 due_s: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
             }),
             Self::GetAlerts => proto::Op::GetAlerts,
-        }
+        })
     }
 }
 
-impl From<FeederSettingsPatch> for proto::SettingsChanges {
-    fn from(patch: FeederSettingsPatch) -> Self {
+impl TryFrom<FeederSettingsPatch> for proto::SettingsChanges {
+    type Error = NoWireForm;
+
+    fn try_from(patch: FeederSettingsPatch) -> Result<Self, NoWireForm> {
         let FeederSettingsPatch {
             lights,
             sound,
@@ -1892,15 +1928,15 @@ impl From<FeederSettingsPatch> for proto::SettingsChanges {
             desiccant_days,
             meal_reminder,
         } = patch;
-        Self {
+        Ok(Self {
             lights,
             sound,
             volume,
-            lights_window: lights_window.map(Into::into),
-            sound_window: sound_window.map(Into::into),
+            lights_window: lights_window.map(TryInto::try_into).transpose()?,
+            sound_window: sound_window.map(TryInto::try_into).transpose()?,
             desiccant_days,
-            meal_reminder: meal_reminder.map(Into::into),
-        }
+            meal_reminder: meal_reminder.map(TryInto::try_into).transpose()?,
+        })
     }
 }
 
@@ -2116,7 +2152,10 @@ mod tests {
                 ap_changes: 1,
             },
         ] {
-            assert_eq!(proto::Metric::from(SampleValue::from(metric)), metric);
+            assert_eq!(
+                proto::Metric::try_from(SampleValue::from(metric)),
+                Ok(metric)
+            );
         }
     }
 
@@ -2304,13 +2343,13 @@ mod tests {
         };
         assert_eq!(
             op.to_proto(),
-            proto::Op::PutWifi {
+            Ok(proto::Op::PutWifi {
                 base: 4,
                 wifi: Some(proto::Wifi {
                     ssid: b"home",
                     psk: "password1",
                 }),
-            }
+            })
         );
         assert!(!format!("{op:?}").contains("password1"));
     }

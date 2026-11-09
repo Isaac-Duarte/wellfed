@@ -47,5 +47,7 @@ const fn kind_code(kind: CommandKind) -> u8 {
         CommandKind::CallPlay => 16,
         CommandKind::Skip => 17,
         CommandKind::Unskip => 18,
+        // A newer server's kind, which this one never journals.
+        CommandKind::Unknown => 0,
     }
 }

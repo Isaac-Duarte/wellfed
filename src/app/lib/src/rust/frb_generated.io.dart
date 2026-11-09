@@ -1164,6 +1164,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ServerConnection dco_decode_server_connection(dynamic raw);
 
   @protected
+  ServerDevice dco_decode_server_device(dynamic raw);
+
+  @protected
   ServerEntry dco_decode_server_entry(dynamic raw);
 
   @protected
@@ -2599,6 +2602,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerConnection sse_decode_server_connection(SseDeserializer deserializer);
+
+  @protected
+  ServerDevice sse_decode_server_device(SseDeserializer deserializer);
 
   @protected
   ServerEntry sse_decode_server_entry(SseDeserializer deserializer);
@@ -4369,6 +4375,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ServerConnection self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_server_device(ServerDevice self, SseSerializer serializer);
 
   @protected
   void sse_encode_server_entry(ServerEntry self, SseSerializer serializer);

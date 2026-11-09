@@ -1,7 +1,7 @@
 //! Why an install is refused before it starts.
 
 use wellfed_api::ErrorCode;
-use wellfed_model::Model;
+use wellfed_model::{MaybeKnown, Model};
 
 /// Installs, one at a time per server, a restore of stock among them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -18,7 +18,10 @@ pub enum InstallError {
     /// The release is built for another model than the device's: nothing
     /// is offered.
     #[error("the release is built for a {}, and the device is a {}", release.name(), device.name())]
-    OtherModel { release: Model, device: Model },
+    OtherModel {
+        release: MaybeKnown<Model>,
+        device: Model,
+    },
 }
 
 impl InstallError {

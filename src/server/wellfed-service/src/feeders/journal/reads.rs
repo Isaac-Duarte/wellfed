@@ -2,7 +2,7 @@
 //! caller's own entries or, for an owner, everyone's.
 
 use uuid::Uuid;
-use wellfed_api::{Command, CommandPage, CommandQuery, User};
+use wellfed_api::{Command, CommandPage, CommandQuery, CommandState, User};
 use wellfed_store::{CommandFilter, CommandRow};
 
 use crate::{Error, IdempotencyKey, Invalid, Permission, Resource, Result, Service, can};
@@ -47,7 +47,7 @@ impl Service {
             .commands(CommandFilter {
                 user: (!can(user.role, Permission::AllHistory)).then_some(user.id),
                 feeder: query.feeder,
-                state: query.state,
+                state: query.state.map(CommandState::from),
                 after,
                 limit: limit + 1,
             })

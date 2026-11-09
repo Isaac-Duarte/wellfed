@@ -9,7 +9,7 @@ use wellfed_api::{
     Generation, LockRequest, MealRequest, Plans, PlansChange, SamplePage, SampleQuery, Settings,
 };
 
-use crate::{Client, Error, decode, expect_status, is_problem};
+use crate::{Client, Error, decode, decode_page, expect_status, is_problem};
 
 /// What a lock request asks of the feeder's panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,14 +179,16 @@ impl Client {
         Ok(())
     }
 
-    /// A page of the feeder's history as the server holds it.
+    /// A page of the feeder's history as the server holds it. An event
+    /// this client cannot read (a kind a newer feeder or server added) is
+    /// left out; the page's `next` still moves past it.
     pub async fn events(&self, id: FeederId, query: &EventQuery) -> Result<EventPage, Error> {
         let response = self
             .api(Method::GET, &format!("/feeders/{id}/events"))
             .query(query)
             .send()
             .await?;
-        decode(response, StatusCode::OK).await
+        decode_page(response, StatusCode::OK, "events").await
     }
 
     /// A page of one metric's samples, raw or by the hour.

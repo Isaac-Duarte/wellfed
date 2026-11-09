@@ -109,6 +109,7 @@ class SettingsReminderRow extends StatelessWidget {
             child: SettingsWords('Before each meal', switch (reminder) {
               MealReminder_Off() => 'Off',
               MealReminder_Before(:final minutes) => '$minutes minutes ahead',
+              MealReminder_Unknown() => 'Unknown to this app',
             }),
           ),
           StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),

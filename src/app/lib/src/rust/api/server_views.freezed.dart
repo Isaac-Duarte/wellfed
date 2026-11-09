@@ -535,66 +535,30 @@ String toString() {
 /// @nodoc
 mixin _$ServerAnomaly {
 
- String get feeder;
-/// Create a copy of ServerAnomaly
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$ServerAnomalyCopyWith<ServerAnomaly> get copyWith => _$ServerAnomalyCopyWithImpl<ServerAnomaly>(this as ServerAnomaly, _$identity);
+
 
 
 
 @override
 bool operator ==(Object other) {
-  final _this = this as ServerAnomaly;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ServerAnomaly&&(identical(other.feeder, _this.feeder) || other.feeder == _this.feeder));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is ServerAnomaly);
 }
 
 
 @override
-int get hashCode {
-  final _this = this as ServerAnomaly;
-  return Object.hash(runtimeType,_this.feeder);
-}
+int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  final _this = this as ServerAnomaly;
-  return 'ServerAnomaly(feeder: ${_this.feeder})';
+    return 'ServerAnomaly()';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $ServerAnomalyCopyWith<$Res>  {
-  factory $ServerAnomalyCopyWith(ServerAnomaly value, $Res Function(ServerAnomaly) _then) = _$ServerAnomalyCopyWithImpl;
-@useResult
-$Res call({
- String feeder
-});
-
-
-
-
-}
-/// @nodoc
-class _$ServerAnomalyCopyWithImpl<$Res>
-    implements $ServerAnomalyCopyWith<$Res> {
-  _$ServerAnomalyCopyWithImpl(this._self, this._then);
-
-  final ServerAnomaly _self;
-  final $Res Function(ServerAnomaly) _then;
-
-/// Create a copy of ServerAnomaly
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? feeder = null,}) {
-  return _then(_self.copyWith(
-feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
-as String,
-  ));
-}
-
+class $ServerAnomalyCopyWith<$Res>  {
+$ServerAnomalyCopyWith(ServerAnomaly _, $Res Function(ServerAnomaly) __);
 }
 
 
@@ -612,13 +576,14 @@ extension ServerAnomalyPatterns on ServerAnomaly {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ServerAnomaly_Missed value)?  missed,TResult Function( ServerAnomaly_Uncertain value)?  uncertain,TResult Function( ServerAnomaly_Short value)?  short,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ServerAnomaly_Missed value)?  missed,TResult Function( ServerAnomaly_Uncertain value)?  uncertain,TResult Function( ServerAnomaly_Short value)?  short,TResult Function( ServerAnomaly_Unknown value)?  unknown,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case ServerAnomaly_Missed() when missed != null:
 return missed(_that);case ServerAnomaly_Uncertain() when uncertain != null:
 return uncertain(_that);case ServerAnomaly_Short() when short != null:
-return short(_that);case _:
+return short(_that);case ServerAnomaly_Unknown() when unknown != null:
+return unknown(_that);case _:
   return orElse();
 
 }
@@ -636,13 +601,14 @@ return short(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ServerAnomaly_Missed value)  missed,required TResult Function( ServerAnomaly_Uncertain value)  uncertain,required TResult Function( ServerAnomaly_Short value)  short,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ServerAnomaly_Missed value)  missed,required TResult Function( ServerAnomaly_Uncertain value)  uncertain,required TResult Function( ServerAnomaly_Short value)  short,required TResult Function( ServerAnomaly_Unknown value)  unknown,}){
 final _that = this;
 switch (_that) {
 case ServerAnomaly_Missed():
 return missed(_that);case ServerAnomaly_Uncertain():
 return uncertain(_that);case ServerAnomaly_Short():
-return short(_that);}
+return short(_that);case ServerAnomaly_Unknown():
+return unknown(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -656,13 +622,14 @@ return short(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ServerAnomaly_Missed value)?  missed,TResult? Function( ServerAnomaly_Uncertain value)?  uncertain,TResult? Function( ServerAnomaly_Short value)?  short,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ServerAnomaly_Missed value)?  missed,TResult? Function( ServerAnomaly_Uncertain value)?  uncertain,TResult? Function( ServerAnomaly_Short value)?  short,TResult? Function( ServerAnomaly_Unknown value)?  unknown,}){
 final _that = this;
 switch (_that) {
 case ServerAnomaly_Missed() when missed != null:
 return missed(_that);case ServerAnomaly_Uncertain() when uncertain != null:
 return uncertain(_that);case ServerAnomaly_Short() when short != null:
-return short(_that);case _:
+return short(_that);case ServerAnomaly_Unknown() when unknown != null:
+return unknown(_that);case _:
   return null;
 
 }
@@ -679,12 +646,13 @@ return short(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String feeder,  int plan,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed)?  uncertain,TResult Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  short,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String feeder,  int plan,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed)?  uncertain,TResult Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  short,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ServerAnomaly_Missed() when missed != null:
 return missed(_that.feeder,_that.plan,_that.dueMs,_that.reason);case ServerAnomaly_Uncertain() when uncertain != null:
 return uncertain(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed);case ServerAnomaly_Short() when short != null:
-return short(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed,_that.outcome,_that.reason);case _:
+return short(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed,_that.outcome,_that.reason);case ServerAnomaly_Unknown() when unknown != null:
+return unknown();case _:
   return orElse();
 
 }
@@ -702,12 +670,13 @@ return short(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed,
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String feeder,  int plan,  PlatformInt64 dueMs,  MissedReason reason)  missed,required TResult Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed)  uncertain,required TResult Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)  short,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String feeder,  int plan,  PlatformInt64 dueMs,  MissedReason reason)  missed,required TResult Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed)  uncertain,required TResult Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)  short,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case ServerAnomaly_Missed():
 return missed(_that.feeder,_that.plan,_that.dueMs,_that.reason);case ServerAnomaly_Uncertain():
 return uncertain(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed);case ServerAnomaly_Short():
-return short(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed,_that.outcome,_that.reason);}
+return short(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed,_that.outcome,_that.reason);case ServerAnomaly_Unknown():
+return unknown();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -721,12 +690,13 @@ return short(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed,
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String feeder,  int plan,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult? Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed)?  uncertain,TResult? Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  short,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String feeder,  int plan,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult? Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed)?  uncertain,TResult? Function( String feeder,  int feed,  PlatformInt64 atMs,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  short,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case ServerAnomaly_Missed() when missed != null:
 return missed(_that.feeder,_that.plan,_that.dueMs,_that.reason);case ServerAnomaly_Uncertain() when uncertain != null:
 return uncertain(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed);case ServerAnomaly_Short() when short != null:
-return short(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed,_that.outcome,_that.reason);case _:
+return short(_that.feeder,_that.feed,_that.atMs,_that.requested,_that.completed,_that.outcome,_that.reason);case ServerAnomaly_Unknown() when unknown != null:
+return unknown();case _:
   return null;
 
 }
@@ -741,14 +711,14 @@ class ServerAnomaly_Missed extends ServerAnomaly {
   const ServerAnomaly_Missed({required this.feeder, required this.plan, required this.dueMs, required this.reason}): super._();
   
 
-@override final  String feeder;
+ final  String feeder;
  final  int plan;
  final  PlatformInt64 dueMs;
  final  MissedReason reason;
 
 /// Create a copy of ServerAnomaly
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $ServerAnomaly_MissedCopyWith<ServerAnomaly_Missed> get copyWith => _$ServerAnomaly_MissedCopyWithImpl<ServerAnomaly_Missed>(this, _$identity);
 
@@ -776,7 +746,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $ServerAnomaly_MissedCopyWith<$Res> implements $ServerAnomalyCopyWith<$Res> {
   factory $ServerAnomaly_MissedCopyWith(ServerAnomaly_Missed value, $Res Function(ServerAnomaly_Missed) _then) = _$ServerAnomaly_MissedCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  String feeder, int plan, PlatformInt64 dueMs, MissedReason reason
 });
@@ -795,7 +765,7 @@ class _$ServerAnomaly_MissedCopyWithImpl<$Res>
 
 /// Create a copy of ServerAnomaly
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? plan = null,Object? dueMs = null,Object? reason = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? plan = null,Object? dueMs = null,Object? reason = null,}) {
   return _then(ServerAnomaly_Missed(
 feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
 as String,plan: null == plan ? _self.plan : plan // ignore: cast_nullable_to_non_nullable
@@ -824,7 +794,7 @@ class ServerAnomaly_Uncertain extends ServerAnomaly {
   const ServerAnomaly_Uncertain({required this.feeder, required this.feed, required this.atMs, required this.requested, required this.completed}): super._();
   
 
-@override final  String feeder;
+ final  String feeder;
  final  int feed;
  final  PlatformInt64 atMs;
  final  int requested;
@@ -832,7 +802,7 @@ class ServerAnomaly_Uncertain extends ServerAnomaly {
 
 /// Create a copy of ServerAnomaly
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $ServerAnomaly_UncertainCopyWith<ServerAnomaly_Uncertain> get copyWith => _$ServerAnomaly_UncertainCopyWithImpl<ServerAnomaly_Uncertain>(this, _$identity);
 
@@ -860,7 +830,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $ServerAnomaly_UncertainCopyWith<$Res> implements $ServerAnomalyCopyWith<$Res> {
   factory $ServerAnomaly_UncertainCopyWith(ServerAnomaly_Uncertain value, $Res Function(ServerAnomaly_Uncertain) _then) = _$ServerAnomaly_UncertainCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  String feeder, int feed, PlatformInt64 atMs, int requested, int completed
 });
@@ -879,7 +849,7 @@ class _$ServerAnomaly_UncertainCopyWithImpl<$Res>
 
 /// Create a copy of ServerAnomaly
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? feed = null,Object? atMs = null,Object? requested = null,Object? completed = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? feed = null,Object? atMs = null,Object? requested = null,Object? completed = null,}) {
   return _then(ServerAnomaly_Uncertain(
 feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
 as String,feed: null == feed ? _self.feed : feed // ignore: cast_nullable_to_non_nullable
@@ -900,7 +870,7 @@ class ServerAnomaly_Short extends ServerAnomaly {
   const ServerAnomaly_Short({required this.feeder, required this.feed, required this.atMs, required this.requested, required this.completed, required this.outcome, required this.reason}): super._();
   
 
-@override final  String feeder;
+ final  String feeder;
  final  int feed;
  final  PlatformInt64 atMs;
  final  int requested;
@@ -910,7 +880,7 @@ class ServerAnomaly_Short extends ServerAnomaly {
 
 /// Create a copy of ServerAnomaly
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $ServerAnomaly_ShortCopyWith<ServerAnomaly_Short> get copyWith => _$ServerAnomaly_ShortCopyWithImpl<ServerAnomaly_Short>(this, _$identity);
 
@@ -938,7 +908,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $ServerAnomaly_ShortCopyWith<$Res> implements $ServerAnomalyCopyWith<$Res> {
   factory $ServerAnomaly_ShortCopyWith(ServerAnomaly_Short value, $Res Function(ServerAnomaly_Short) _then) = _$ServerAnomaly_ShortCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  String feeder, int feed, PlatformInt64 atMs, int requested, int completed, FeedOutcome outcome, FeedReason reason
 });
@@ -957,7 +927,7 @@ class _$ServerAnomaly_ShortCopyWithImpl<$Res>
 
 /// Create a copy of ServerAnomaly
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? feed = null,Object? atMs = null,Object? requested = null,Object? completed = null,Object? outcome = null,Object? reason = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? feed = null,Object? atMs = null,Object? requested = null,Object? completed = null,Object? outcome = null,Object? reason = null,}) {
   return _then(ServerAnomaly_Short(
 feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
 as String,feed: null == feed ? _self.feed : feed // ignore: cast_nullable_to_non_nullable
@@ -972,5 +942,37 @@ as FeedReason,
 
 
 }
+
+/// @nodoc
+
+
+class ServerAnomaly_Unknown extends ServerAnomaly {
+  const ServerAnomaly_Unknown(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is ServerAnomaly_Unknown);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'ServerAnomaly.unknown()';
+}
+
+
+}
+
+
+
 
 // dart format on

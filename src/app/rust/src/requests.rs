@@ -638,6 +638,7 @@ pub(crate) fn reply_of(answer: Answer) -> FeederReply {
         Answer::Settings(Settings::Feeder(settings)) => FeederReply::Settings {
             settings: settings_view(&settings),
         },
+        Answer::Settings(Settings::Unknown) => FeederReply::Unreadable,
         Answer::Time(time) => FeederReply::Time {
             time: TimeRead::just_read(time).info(Instant::now()),
         },

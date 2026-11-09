@@ -64,7 +64,7 @@ fn an_owner_adopts_a_feeder_and_works_it_over_http() {
         let read = expect_status(read, StatusCode::OK).await.unwrap();
         let etag = read.headers()[ETAG].to_str().unwrap().to_owned();
         let settings: Settings = decode(read, StatusCode::OK).await.unwrap();
-        assert_eq!(etag, format!("\"{}\"", settings.generation()));
+        assert_eq!(etag, format!("\"{}\"", settings.generation().unwrap()));
         assert_eq!(http.settings(kitchen).await.unwrap(), settings);
 
         let key = Uuid::from_u128(0x0192c5d0_1111_7000_8000_000000000001);
@@ -73,17 +73,17 @@ fn an_owner_adopts_a_feeder_and_works_it_over_http() {
             ..FeederSettingsPatch::default()
         };
         let changed = http
-            .put_settings(kitchen, settings.generation(), &patch, key)
+            .put_settings(kitchen, settings.generation().unwrap(), &patch, key)
             .await
             .unwrap();
         assert_eq!(changed.feeder().unwrap().volume, 35);
         let retried = http
-            .put_settings(kitchen, settings.generation(), &patch, key)
+            .put_settings(kitchen, settings.generation().unwrap(), &patch, key)
             .await
             .unwrap();
         assert_eq!(retried, changed);
         let other = Uuid::from_u128(0x0192c5d0_1111_7000_8000_000000000002);
-        let stale = http.put_settings(kitchen, settings.generation(), &patch, other);
+        let stale = http.put_settings(kitchen, settings.generation().unwrap(), &patch, other);
         let Err(Error::Stale(current)) = stale.await else {
             panic!("a stale edit is answered with the current settings");
         };

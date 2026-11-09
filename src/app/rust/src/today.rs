@@ -151,6 +151,7 @@ fn source_of(source: Source) -> FedBy {
         },
         Source::Feeder => FedBy::Feeder,
         Source::Schedule { plan } => FedBy::Plan { slot: plan },
+        Source::Unknown => FedBy::Unknown,
     }
 }
 

@@ -104,6 +104,10 @@ pub enum FeedAnomaly {
         outcome: FeedOutcome,
         reason: FeedReason,
     },
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// `GET /pets/{id}/intake`'s days.

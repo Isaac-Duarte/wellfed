@@ -5,6 +5,10 @@
 //! event ID as of that update, as a browser's `EventSource` keeps it: a
 //! client that reconnects sends it back as `Last-Event-ID` and gets what it
 //! missed, or a `resync` whose empty id clears it.
+//!
+//! An update this client cannot read, one a newer server added, is
+//! skipped: the stream goes on, and [`Updates::last_event_id`] moves past
+//! it, as the device API's sessions skip a kind of message they don't know.
 
 use std::collections::VecDeque;
 
@@ -51,6 +55,8 @@ impl Client {
             body,
             parser: Parser::default(),
             ready: VecDeque::new(),
+            last_event_id: last_event_id.unwrap_or_default().to_owned(),
+            skipped: 0,
         })
     }
 }
@@ -61,23 +67,28 @@ pub struct Updates {
     body: BoxStream<'static, reqwest::Result<Vec<u8>>>,
     parser: Parser,
     ready: VecDeque<Block>,
+    last_event_id: String,
+    skipped: u64,
 }
 
 impl std::fmt::Debug for Updates {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Updates")
             .field("ready", &self.ready.len())
+            .field("last_event_id", &self.last_event_id)
+            .field("skipped", &self.skipped)
             .finish_non_exhaustive()
     }
 }
 
 impl Updates {
     /// The next update, or `None` once the stream has ended. Cancel-safe:
-    /// a block read but not yet returned stays queued.
+    /// a block read but not yet returned stays queued. An update this
+    /// client cannot read is skipped and counted ([`Self::skipped`]).
     pub async fn next(&mut self) -> Option<Result<Update, Error>> {
         loop {
-            if let Some(block) = self.ready.pop_front() {
-                return Some(block.update());
+            if let Some(update) = self.readable() {
+                return Some(Ok(update));
             }
 
             match self.body.next().await? {
@@ -85,6 +96,33 @@ impl Updates {
                 Err(error) => return Some(Err(error.into())),
             }
         }
+    }
+}
+
+impl Updates {
+    /// The first queued update this client can read, skipping and counting
+    /// those it cannot; `None` once the queue is empty.
+    fn readable(&mut self) -> Option<Update> {
+        while let Some(block) = self.ready.pop_front() {
+            block.id.clone_into(&mut self.last_event_id);
+            match block.update() {
+                Ok(update) => return Some(update),
+                Err(_) => self.skipped += 1,
+            }
+        }
+        None
+    }
+
+    /// The position to resume after: the last update's id, read or
+    /// skipped. Send it back as `Last-Event-ID`.
+    pub fn last_event_id(&self) -> &str {
+        &self.last_event_id
+    }
+
+    /// How many updates this stream skipped, unread: ones a newer server
+    /// added.
+    pub const fn skipped(&self) -> u64 {
+        self.skipped
     }
 }
 
@@ -219,6 +257,31 @@ mod tests {
         assert_eq!(parser.push(b"data:\n\n"), [], "empty data, no block");
         assert_eq!(parser.push(b"data: z\n\n"), [block("3", "z")]);
         assert_eq!(parser.push(b"id\ndata: w\n\n"), [block("", "w")]);
+    }
+
+    #[test]
+    fn an_update_this_client_cannot_read_is_skipped_and_the_position_moves() {
+        let mut updates = Updates {
+            body: futures_util::stream::empty().boxed(),
+            parser: Parser::default(),
+            ready: VecDeque::new(),
+            last_event_id: "1-1".into(),
+            skipped: 0,
+        };
+        let text = "id: 1-2\ndata: {\"type\":\"newer_kind\"}\n\nid: 1-3\ndata: {\"type\":\"resync\"}\n\nid: 1-4\ndata: {\"type\":\"newer_kind\"}\n\n";
+        let blocks = updates.parser.push(text.as_bytes());
+        updates.ready.extend(blocks);
+
+        assert_eq!(
+            updates.readable(),
+            Some(Update {
+                id: "1-3".into(),
+                event: StreamEvent::Resync,
+            })
+        );
+        assert_eq!(updates.readable(), None);
+        assert_eq!(updates.last_event_id(), "1-4", "past the last, unread");
+        assert_eq!(updates.skipped(), 2);
     }
 
     #[test]

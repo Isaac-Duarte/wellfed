@@ -68,7 +68,7 @@ fn by_us(fed: &Feed, us: Option<[u8; 4]>) -> bool {
     match fed.by {
         Source::Client { client } => Some(client.0) == us,
         Source::Feeder => fed.outcome == FeedOutcome::Uncertain,
-        Source::Panel | Source::Schedule { .. } => false,
+        Source::Panel | Source::Schedule { .. } | Source::Unknown => false,
     }
 }
 

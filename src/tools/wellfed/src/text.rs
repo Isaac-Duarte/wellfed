@@ -42,6 +42,7 @@ fn source(by: Option<Source>) -> String {
         Some(Source::Client { client }) => format!("client {client}"),
         Some(Source::Feeder) => "feeder".to_owned(),
         Some(Source::Schedule { plan }) => format!("plan {plan}"),
+        Some(Source::Unknown) => "a source unknown to this CLI".to_owned(),
         None => "unknown".to_owned(),
     }
 }
@@ -76,6 +77,9 @@ pub(crate) fn recovery(view: &UpdateView) -> Option<String> {
             reason.code(),
             wellfed_client::update::blocked_words(reason)
         ),
+        Bank0Check::Unknown => {
+            "Recovery copy (bank 0): in a state unknown to this CLI: update the CLI".to_owned()
+        }
     })
 }
 
@@ -98,6 +102,7 @@ pub(crate) fn status(status: &Status, zone: &TimeZone) -> String {
     );
     match &status.device {
         DeviceStatus::Feeder(feeder) => feeder_status(&mut text, feeder),
+        DeviceStatus::Unknown => text.push_str(UPDATE_FOR_DEVICE),
     }
     // Writing to a String cannot fail.
     let _ = write!(
@@ -224,6 +229,7 @@ fn battery(battery: Battery) -> String {
         Battery::Implausible { mv } => format!("battery reading implausible ({mv} mV)"),
         Battery::Unread => "batteries not read".to_owned(),
         Battery::Stale { age_ms } => format!("battery reading stale ({} s old)", age_ms / 1000),
+        Battery::Unknown => "batteries in a state unknown to this CLI".to_owned(),
     }
 }
 
@@ -259,8 +265,14 @@ fn uptime(ms: u32) -> String {
 pub(crate) fn settings(settings: &Settings) -> String {
     match settings {
         Settings::Feeder(settings) => feeder_settings(settings),
+        Settings::Unknown => UPDATE_FOR_DEVICE.trim_end().to_owned(),
     }
 }
+
+/// What a device of a kind or model this CLI does not know shows, for its
+/// status and its settings.
+pub(crate) const UPDATE_FOR_DEVICE: &str =
+    "a kind of device this CLI does not know: update the CLI to use it\n";
 
 pub(crate) fn feeder_settings(settings: &FeederSettings) -> String {
     format!(
@@ -289,6 +301,7 @@ fn reminder(reminder: MealReminder) -> String {
     match reminder {
         MealReminder::Off => "off".to_owned(),
         MealReminder::Before { minutes } => format!("{minutes} min ahead"),
+        MealReminder::Unknown => "unknown to this CLI".to_owned(),
     }
 }
 
@@ -383,6 +396,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                 EnrollPath::Invite => "an invite",
                 EnrollPath::Recovery => "recovery",
                 EnrollPath::Press => "a press on the panel",
+                EnrollPath::Unknown => "a way unknown to this CLI",
             };
             format!("client {client} enrolled as {} through {path}", role.code())
         }
@@ -423,6 +437,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                     format!("blocked for 15 minutes, {}", reason.code())
                 }
                 MissedReason::Interrupted => "interrupted before its feed was reserved".to_owned(),
+                MissedReason::Unknown => "for a reason unknown to this CLI".to_owned(),
             };
             format!(
                 "plan {plan}'s meal due {} missed: {why}",

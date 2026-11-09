@@ -35,6 +35,9 @@ async def _until(hass: HomeAssistant, condition: Callable[[], bool]) -> None:
 async def _pair(hass: HomeAssistant, simulator: Simulator) -> ConfigEntry:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "direct"}
+    )
+    result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
     )
@@ -47,6 +50,9 @@ async def _pair(hass: HomeAssistant, simulator: Simulator) -> ConfigEntry:
 
 async def test_a_text_that_is_not_an_invite_is_refused(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "direct"}
+    )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_INVITE: "not an invite"}
     )
@@ -69,6 +75,9 @@ async def test_a_spent_invite_asks_for_a_new_one(hass: HomeAssistant, simulator:
     assert await proc.wait() == 0
 
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "direct"}
+    )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_INVITE: invite, CONF_ADDRESS: simulator.address}
     )

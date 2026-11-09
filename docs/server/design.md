@@ -59,7 +59,7 @@ The server's crates follow one rule: **a crate per runtime or dependency boundar
 | `wellfed-releases` | Fetching, uploading and verifying releases, the release cache, and each feeder's stock backup. |
 | `wellfed-service` | The use cases, a module per domain, each with its own error enum wrapped in the crate's `Error`, plus the auth rules, the hub and each job's body. It never sees a socket or an HTTP type. |
 | `wellfed-server` | The binary and the jobs supervisor. A handler parses, authorizes through an axum extractor, calls one service method and maps the result. It never sees SQL. |
-| `wellfed-server-client` | The typed client the app, the CLI's `wellfed server` commands and the server's own tests go through, so neither can disagree with the routes. Nothing in it retries. |
+| `wellfed-server-client` | The typed client the app, the CLI's `wellfed server` commands and the server's own tests go through, so neither can disagree with the routes. Nothing in it retries. It leaves out a page entry or stream update it can't read, so a newer server's additions cost an older client only those. |
 | `wellfed-server-testkit` | The service on a temporary store with a fixed `Clock` and a seeded `Random`, the simulated feeder, and the HTTP server in process. |
 
 A few crates outside `src/server/` matter here:
@@ -87,6 +87,9 @@ wellfed (the CLI) ─► wellfed-server-client ─► wellfed-api
 
 wellfed-app-bridge (the app) ─► wellfed-server-client, wellfed-api
           └─► wellfed-connect (the device API)
+
+wellfed-homeassistant (Home Assistant's bridge) ─► wellfed-server-client
+          └─► wellfed-connect (the device API)
 ```
 
 | Crate | May depend on (workspace crates) |
@@ -104,7 +107,7 @@ wellfed-app-bridge (the app) ─► wellfed-server-client, wellfed-api
 
 - **SQL stays in the store.** No crate but `wellfed-store` depends on sqlx, in its tests included.
 - **HTTP stays in the binary.** Nothing below `wellfed-server` links axum, or any of axum's own crates (`axum-core`, `axum-extra`), by any path.
-- **The arrows as drawn.** Each server crate's normal and build dependencies on workspace crates come from its row above. A crate outside the server takes a server crate only where drawn: the CLI takes `wellfed-server-client`, and the app's `wellfed-app-bridge` takes `wellfed-server-client` and `wellfed-api`. Dev-dependencies are exempt, since a test may build a simulated feeder or a whole server. A row's crate is checked from its first manifest. Changing a row changes this table and the check together.
+- **The arrows as drawn.** Each server crate's normal and build dependencies on workspace crates come from its row above. A crate outside the server takes a server crate only where drawn: the CLI and Home Assistant's `wellfed-homeassistant` take `wellfed-server-client`, and the app's `wellfed-app-bridge` takes `wellfed-server-client` and `wellfed-api`. Dev-dependencies are exempt, since a test may build a simulated feeder or a whole server. A row's crate is checked from its first manifest. Changing a row changes this table and the check together.
 - **`wellfed-api` on Android.** Its own dependencies come from an allow-list (`jiff`, `wellfed-model`, `serde`, `utoipa`, `uuid`). `make check` builds no Android target; `make check-app`'s APK build does, `wellfed-server-client`'s reqwest and rustls included.
 - **Files stay small.** A Rust source under `src/server/` has at most 400 lines, or 600 under a `tests/` directory; a `tests.rs` beside the code it tests keeps 400. Generated files (`openapi.json`, the sqlx metadata) aren't counted.
 
@@ -297,7 +300,7 @@ Tests follow the layers:
 | End to end | The server against the host simulator, speaking real Noise over TCP |
 | Release | The shipped binary or image as a separate process ([release check](running.md#the-release-check)) |
 
-Every path that can request a feed has a test that retries it and proves one feed. `openapi.json` and the `.sqlx/` metadata are generated, committed and checked for staleness in `make check`, so a reviewer sees every contract change as a diff.
+Every path that can request a feed has a test that retries it and proves one feed. `openapi.json` and the `.sqlx/` metadata are generated, committed and checked for staleness in `make check`, so a reviewer sees every contract change as a diff. From the beta the document only grows, and the `api_growth` test holds it to the published one ([API evolution](README.md#api-evolution)).
 
 The service tests fix the wall clock but run timers in real time with short intervals: tokio's paused clock would jump while sqlx's SQLite worker threads are busy, and fire timeouts that never happen.
 

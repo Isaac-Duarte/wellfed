@@ -71,6 +71,9 @@ String recoveryWords(String name, Bank0Blocked reason) => switch (reason) {
   Bank0Blocked.marker || Bank0Blocked.extent || Bank0Blocked.read =>
     "$name's recovery copy can't be read as working firmware, so it can't "
         'install updates. It needs a bench repair.',
+  Bank0Blocked.unknown =>
+    "$name's recovery copy won't take this update for a reason this app does "
+        'not know. Update this app to read it.',
 };
 
 (String, String) _refused(String name, FeederRefusal refusal) => switch (refusal) {
@@ -117,6 +120,10 @@ String recoveryWords(String name, Bank0Blocked reason) => switch (reason) {
   FeederRefusal_Update(reason: UpdateRefusal_Fallback(:final reason)) => (
     reason == Bank0Blocked.key ? "The recovery copy can't take it" : 'Updates are blocked',
     '${recoveryWords(name, reason)} Nothing changed.',
+  ),
+  FeederRefusal_Update(reason: UpdateRefusal_Unknown()) => (
+    '$name said no',
+    'For a reason this app does not know. Update this app. Nothing changed.',
   ),
   FeederRefusal_Update() => ('$name said no', "It can't install an update right now. Nothing changed."),
   FeederRefusal_Busy() => ("It's feeding", 'Try again when the feed finishes.'),

@@ -181,7 +181,11 @@ impl Releases {
             .into_iter()
             .skip(start)
             .filter_map(|(release, listed)| listed.then_some(release))
-            .filter(|release| query.model.is_none_or(|model| model == release.model))
+            .filter(|release| {
+                query
+                    .model
+                    .is_none_or(|model| release.model == model.into())
+            })
             .take(limit + 1)
             .collect();
         Ok(page(items, limit))

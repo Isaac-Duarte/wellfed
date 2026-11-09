@@ -115,6 +115,13 @@ class AccountScreen extends StatelessWidget {
             const Notice(tone: Tone.neutral, text: 'A viewer sees the feeders and their history, and feeds none.'),
             const SizedBox(height: Space.s3),
           ],
+          if (account?.role == ServerRole.unknown) ...[
+            const Notice(
+              tone: Tone.neutral,
+              text: 'This account has a role this app does not know, so here it only looks. Update this app.',
+            ),
+            const SizedBox(height: Space.s3),
+          ],
           if (household case final VoidCallback open)
             OutlinedButton(onPressed: open, child: const Text('Pets and foods')),
           const SizedBox(height: Space.s5),

@@ -28,7 +28,7 @@ pub enum Error {
     Refused(FeederRefusal),
     /// An edit named a settings generation the feeder has moved past; it
     /// carries the current settings, which the server answers with.
-    #[error("the settings moved on to generation {}", .0.generation())]
+    #[error("the settings moved on to generation {}", .0.generation().map_or(0, |generation| generation.0))]
     Stale(Settings),
     /// A plans change named a generation the feeder has moved past; it
     /// carries the current plans, which the server answers with.
@@ -215,6 +215,10 @@ pub enum Invalid {
     Password,
     #[error("an owner's account does not expire: remove the expiry, or pick another role")]
     OwnerExpires,
+    #[error("the role is owner, member or viewer")]
+    Role,
+    #[error("the units are grams or ounces")]
+    Units,
     #[error("a home name is 1-64 characters")]
     HomeName,
     #[error("a feeder name is 1-64 characters")]
@@ -288,6 +292,8 @@ pub enum Invalid {
         wellfed_api::PORTION_MG_MAX
     )]
     PortionWeight,
+    #[error("the bowl mode is single or double")]
+    Bowl,
     #[error(
         "a meal call is 1-{} bytes of the feeder's own stream, converted by the client",
         wellfed_api::CALL_BYTES_MAX
