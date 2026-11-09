@@ -2029,6 +2029,139 @@ pub fn setup_reply(reply: proto_setup::Reply) -> Option<setup::Reply> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AlertKey, AlertKind, AlertLevel};
+
+    /// One alert of every kind, as the feeder's rules hold them.
+    fn every_alert() -> Vec<proto::OpenAlert> {
+        let at = core::num::NonZeroU32::new(1_800_000_000);
+        let alerts = [
+            proto::Alert::MealFailed {
+                feed: 7,
+                plan: Some(1),
+                requested: 2,
+                completed: 1,
+                outcome: proto::FeedOutcome::Failed,
+                reason: proto::FeedReason::Jammed,
+            },
+            proto::Alert::MealUncertain {
+                feed: 8,
+                plan: None,
+                requested: 2,
+                completed: 0,
+                reason: proto::FeedReason::Interrupted,
+            },
+            proto::Alert::MealMissed {
+                plan: 2,
+                due: 1_800_000_100,
+                reason: proto::MissedReason::Late,
+            },
+            proto::Alert::MealNoRecord {
+                plan: 3,
+                due: 1_800_000_200,
+            },
+            proto::Alert::PowerWasOut,
+            proto::Alert::UpdateFailed {
+                stop: proto::UpdateStop::Hash,
+            },
+            proto::Alert::RolledBack,
+            proto::Alert::ClientJoined {
+                client: CLIENT,
+                role: proto::Role::Member,
+                path: proto::Path::Invite,
+            },
+            proto::Alert::ClientRevoked {
+                client: CLIENT,
+                by: proto::Source::Panel,
+            },
+            proto::Alert::RepeatedRestarts,
+            proto::Alert::NoClock,
+            proto::Alert::CannotFeed {
+                reason: proto::Blocked::Fault,
+            },
+            proto::Alert::FoodLow,
+            proto::Alert::FoodLikelyOut { confirmed: 5 },
+            proto::Alert::DesiccantDue { days: -2 },
+            proto::Alert::BatteryBelowFloor,
+            proto::Alert::PlansStuck,
+        ];
+        alerts
+            .into_iter()
+            .map(|alert| proto::OpenAlert { at, alert })
+            .collect()
+    }
+
+    fn kind_of(kind: proto::AlertKind) -> AlertKind {
+        match kind {
+            proto::AlertKind::MealFailed => AlertKind::MealFailed,
+            proto::AlertKind::MealUncertain => AlertKind::MealUncertain,
+            proto::AlertKind::MealMissed => AlertKind::MealMissed,
+            proto::AlertKind::MealNoRecord => AlertKind::MealNoRecord,
+            proto::AlertKind::PowerWasOut => AlertKind::PowerWasOut,
+            proto::AlertKind::UpdateFailed => AlertKind::UpdateFailed,
+            proto::AlertKind::RolledBack => AlertKind::RolledBack,
+            proto::AlertKind::ClientJoined => AlertKind::ClientJoined,
+            proto::AlertKind::ClientRevoked => AlertKind::ClientRevoked,
+            proto::AlertKind::RepeatedRestarts => AlertKind::RepeatedRestarts,
+            proto::AlertKind::NoClock => AlertKind::NoClock,
+            proto::AlertKind::CannotFeed => AlertKind::CannotFeed,
+            proto::AlertKind::FoodLow => AlertKind::FoodLow,
+            proto::AlertKind::FoodLikelyOut => AlertKind::FoodLikelyOut,
+            proto::AlertKind::DesiccantDue => AlertKind::DesiccantDue,
+            proto::AlertKind::BatteryBelowFloor => AlertKind::BatteryBelowFloor,
+            proto::AlertKind::PlansStuck => AlertKind::PlansStuck,
+        }
+    }
+
+    fn level_of(level: proto::AlertLevel) -> AlertLevel {
+        match level {
+            proto::AlertLevel::Urgent => AlertLevel::Urgent,
+            proto::AlertLevel::Soon => AlertLevel::Soon,
+            proto::AlertLevel::Security => AlertLevel::Security,
+        }
+    }
+
+    fn key_of(key: proto::AlertKey) -> AlertKey {
+        let at = |at: Option<core::num::NonZeroU32>| at.map(|at| seconds(at.get()));
+        match key {
+            proto::AlertKey::Feed { feed } => AlertKey::Feed { feed },
+            proto::AlertKey::Meal { plan, due } => AlertKey::Meal {
+                plan,
+                due: seconds(due),
+            },
+            proto::AlertKey::Client {
+                kind,
+                client,
+                at: when,
+            } => AlertKey::Client {
+                kind: kind_of(kind),
+                client: Hex(client),
+                at: at(when),
+            },
+            proto::AlertKey::Timed { kind, at: when } => AlertKey::Timed {
+                kind: kind_of(kind),
+                at: at(when),
+            },
+            proto::AlertKey::Kind(kind) => AlertKey::Kind {
+                kind: kind_of(kind),
+            },
+        }
+    }
+
+    /// A client keys, ranks and sorts an alert as the feeder's rules do, for
+    /// every kind: the app's notifications depend on it.
+    #[test]
+    fn an_alert_has_the_feeders_key_kind_and_level() {
+        let every = every_alert();
+        assert_eq!(every.len(), AlertKind::ALL.len());
+        for (wire, kind) in every.iter().zip(AlertKind::ALL) {
+            let open = OpenAlert::from(wire);
+            assert_eq!(open.alert.kind(), kind, "ALL is in the enum's order");
+            assert_eq!(kind_of(wire.alert.kind()), kind);
+            assert_eq!(level_of(wire.alert.level()), open.alert.level());
+            assert_eq!(wire.alert.kind().is_condition(), kind.is_condition());
+            assert_eq!(key_of(wire.key()), open.key(), "{kind:?}");
+        }
+    }
 
     /// The feeder's "no generation" (its settings records apart, read-only
     /// until it repairs them) decodes to none; JSON keeps the number, so
