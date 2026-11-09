@@ -1,71 +1,89 @@
-//! The device API in the loop. It owns the sockets and steps
-//! [`wellfed_device_api`]'s server once per pass:
-//! - the listener on [`PORT`] and up to [`SESSIONS`] connections, every
-//!   call non-blocking, so the loop never waits on a client;
-//! - the mDNS socket and the responder that advertises `_wellfed._tcp`
-//!   (`wellfed_core::mdns`), once the identity is loaded and DHCP gave an
-//!   address;
-//! - the client table, copied from the settings writer when it changes, so
-//!   a revoked key's sessions close;
-//! - the time settings and the NTP exchange ([`super::time`]);
-//! - the live samples (power each time the supply is sampled; Wi-Fi
-//!   signal, and the heap, the loop's pass times, the gateway's round trip
-//!   and the access point, every 30 s) for subscribers that asked for them,
-//!   and the boot's and lost records' events;
-//! - the statistics ([`Keeper`]): what the pass sees goes in, and the
-//!   `Stats` op reads it out; the `FeedTrace` op reads a feed's trace from
-//!   the platform a page at a time.
+//! The device API in the loop: [`Serve`] owns the sockets and steps
+//! [`wellfed_device_api`]'s server once per pass, the fifth stage of
+//! [`super::Feeder::pass`]. Every socket call is non-blocking, so the loop
+//! never waits on a client.
 //!
-//! [`DeviceView`] is the server's view of the rest of the feeder, both the
-//! shared core's ([`Device`]) and the feeder module's ([`FeederDevice`]): the
-//! platform's mailboxes and clock, the panel's lock and the feeding owner.
-//! No record carries a key, a secret or a credential.
+//! # One pass, in order
+//!
+//! [`Serve::step`] takes the pass's [`Inputs`] (what the owner, the supply,
+//! the schedule and the call stages decided) and runs:
+//!
+//! 1. **Before the server** (`before_server`, out of line):
+//!    1. the boot's facts ([`Serve::boot`], read once a boot; the pass's
+//!       local stage asks first, so its supply hold is armed before the
+//!       first readiness);
+//!    2. the records the event queue dropped since the last pass, as a
+//!       `Lost` event, and the enrollments and revocations the settings
+//!       writer saved, handed to the alert rules
+//!       ([`super::events::written`]);
+//!    3. the statistics' share of the pass: the link, the food beam and the
+//!       battery's history (`telemetry`), so a `Stats` answer this pass
+//!       sees them;
+//!    4. the client table, copied from the writer when its generation
+//!       moved, which closes a revoked key's sessions before they run
+//!       another request;
+//!    5. the address: the mDNS responder is made once the identity is
+//!       loaded and told the DHCP address; a new address is logged;
+//!    6. once there is an address, the listener and the mDNS socket opened
+//!       or retried (`net`); the mDNS socket waits for the responder;
+//!    7. mDNS's announcements and a bounded number of queries (`mdns`),
+//!       after the open so a socket opened this pass announces at once;
+//!    8. the time settings and the NTP exchange ([`super::time`]), so the
+//!       clock state and the NTP outcome the server reports are this pass's;
+//!    9. a waiting connection accepted into a free slot, then each slot's
+//!       bytes read into the server's buffer (`net`), so a request that
+//!       arrived is handled in this pass's step.
+//! 2. **The server's step**, with a [`DeviceView`] over the rest of the
+//!    feeder (`device_view`, `feeder_view`): handshakes, then each
+//!    session's requests and events. It borrows the statistics, the task
+//!    cache and the answer page, so the sessions it opened are counted
+//!    only once it lets go.
+//! 3. **After the server** (`after_server`, out of line):
+//!    1. the bytes the step sealed sent, and the slots it ended closed
+//!       (`net`), so an answer leaves in the pass that made it;
+//!    2. the live samples queued for subscribers and, every 30 s, the
+//!       counts handed to the writer (`telemetry`); a session seals a
+//!       queued sample in a later step, so it goes out a pass later;
+//!    3. once a minute, the heap and mDNS's counts as a `Stats` record.
+//!
+//! The delay `step` returns is 1 ms while the server has work, else the
+//! owner's poll.
+//!
+//! Both halves around the server's step are out of line because the
+//! server's handshakes and requests are the loop's deepest stack paths:
+//! whatever a half keeps in its frame would otherwise sit under every one
+//! of them in the stack audit.
+//!
+//! Every record the pass makes is in `records`; none carries a key, a
+//! secret or a credential.
 
-use core::fmt;
+mod device_view;
+mod feeder_view;
+mod mdns;
+mod net;
+mod records;
+mod telemetry;
 
-use wellfed_core::clip;
-use wellfed_core::desiccant::{self, Count};
-use wellfed_core::log_tail::Batch as LogBatch;
-use wellfed_core::mdns::{self, Destination, Responder};
-use wellfed_core::ota::BANK1_BYTES;
-use wellfed_core::ota::install::{Answer, Phase};
-use wellfed_core::ota::offer::{KeyStatement, key_id};
-use wellfed_core::tone::Tune;
-use wellfed_proto::api::{
-    self as proto, AlertsView, BANK1_PAGE_MAX, Bank1Page, Battery, Desiccant, DeviceStatus,
-    EventBody, FeederStatus, FrozenRefusal, Metric, PORT, Power, Readiness, Refusal, Sample,
-    Source, Stats, StatsSection, Status, Supply, TASKS_MAX, Tail, TaskStack as WireTask, TracePage,
-    UpdateRefusal, UpdateView,
-};
-use wellfed_proto::device::Model;
+use wellfed_core::mdns::{self as mdns_core, Responder};
+use wellfed_proto::api::{BANK1_PAGE_MAX, EventBody, PORT, Supply};
 use wellfed_proto::trace::PAGE_MAX;
 use wellfed_session::noise::Keypair;
 
 use super::Feeds;
-use super::call;
 use super::events;
-use super::feeding;
 use super::lock::LockBox;
-use super::owner::{self, POLL_MS};
-use super::platform::{Boot, Platform, TaskCount, TaskStack};
-use super::skip;
-use super::time::{self, Time};
+use super::owner::POLL_MS;
+use super::platform::{Boot, Platform};
+use super::time::Time;
 use crate::stats::Keeper;
-use wellfed_device::io::{Accepted, Datagram, Received};
-use wellfed_device::store::events::Read;
-use wellfed_device::update as wire;
-use wellfed_device_api::mailbox::{
-    Asked, Calibration, CalibrationResult, CallChange, CallClip, CallPlay, CallResult, CallView,
-    ClientChange, KeyResult, LockFields, LockResult, MealSkip, NtpResult, Origin, PlansChange,
-    PlansResult, PlayResult, Requested, SettingsFields, SettingsResult, Stamp, Table, TimeFields,
-    TimeResult, TimeSettings, TimeSettingsResult, TimeState, WifiResult, WifiSource,
-};
+use wellfed_device_api::mailbox::NtpResult;
 use wellfed_device_api::pairing::{self, Pairing};
-use wellfed_device_api::wifi::Credentials;
-use wellfed_device_api::{
-    self as server, Device, EventRead, FeederDevice, KeyChange, KeyOutcome, Pass, Reader, SESSIONS,
-    Server, UpdateAnswer, UpdateKeyChange, UpdateRequest,
-};
+use wellfed_device_api::{self as server, Pass, SESSIONS, Server};
+
+pub use device_view::DeviceView;
+pub(super) use device_view::desiccant_now;
+pub use records::{Record, describe};
+pub use telemetry::TaskCache;
 
 /// The answer page buffer: a trace's page or a bank-1 page, whichever is
 /// larger, or stock's plan entries.
@@ -79,100 +97,7 @@ pub(super) const PAGE_BYTES: usize = if PAGE_MAX > BANK1_PAGE_MAX {
 
 /// A listener or mDNS socket that failed is opened again after this.
 const RETRY_MS: u32 = 2_000;
-/// Wi-Fi signal and, for subscribers with the statistics, the heap, the
-/// loop, the gateway and the access point.
-const RSSI_MS: u32 = 30_000;
-/// mDNS datagrams read per pass, so a storm of queries costs a bounded turn.
-const DATAGRAMS: usize = 4;
 const HEAP_MS: u32 = 60_000;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Record {
-    Server(server::Record),
-    /// The listener (or the mDNS socket) opened, or failed and will retry.
-    Listen {
-        mdns: bool,
-        open: bool,
-        /// The heap free just after, so each socket's cost shows.
-        heap: u32,
-    },
-    /// The address mDNS advertises.
-    Address {
-        ip: u32,
-    },
-    Time(time::Record),
-    /// Enrollments and revocations the settings writer recorded that the
-    /// alert rules never heard of, its outbox being full: in the history,
-    /// their alerts missed until the next boot's replay.
-    Unheard {
-        count: u32,
-    },
-    /// Once a minute: the heap, and the mDNS datagrams seen and answered.
-    Stats {
-        free: u32,
-        min: u32,
-        queries: u32,
-        answers: u32,
-        failed: u32,
-    },
-}
-
-/// One record's body (`PLAPI1`).
-pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
-    match record {
-        Record::Server(record) => server_record(record, f),
-        Record::Listen { mdns, open, heap } => write!(
-            f,
-            "listen socket={} open={} heap_free={heap}",
-            if mdns { "mdns" } else { "api" },
-            u8::from(open)
-        ),
-        Record::Address { ip } => {
-            let [a, b, c, d] = ip.to_be_bytes();
-            write!(f, "mdns address={a}.{b}.{c}.{d} port={PORT}")
-        }
-        Record::Time(record) => time::describe(record, f),
-        Record::Unheard { count } => write!(f, "alerts unheard={count}"),
-        Record::Stats {
-            free,
-            min,
-            queries,
-            answers,
-            failed,
-        } => write!(
-            f,
-            "stats heap_free={free} heap_min={min} mdns_in={queries} mdns_out={answers} mdns_failed={failed}"
-        ),
-    }
-}
-
-fn server_record(record: server::Record, f: &mut impl fmt::Write) -> fmt::Result {
-    use server::Record as R;
-    match record {
-        R::Accepted { slot } => write!(f, "session slot={slot} state=accepted"),
-        R::Opened {
-            slot,
-            role,
-            client,
-            handshake_ms,
-        } => write!(
-            f,
-            "session slot={slot} state=open role={role} client={} handshake_ms={handshake_ms}",
-            wellfed_session::hex::Lower(&client)
-        ),
-        R::Request { slot, op, result } => {
-            write!(f, "request slot={slot} op={op} result={result}")
-        }
-        R::Retried { slot } => write!(f, "request slot={slot} retried=1"),
-        R::Ended { slot, reason } => write!(f, "session slot={slot} state=ended reason={reason}"),
-        R::Pairing(event) => owner::pair(event, f),
-        R::UpdateKey { slot, change, key } => write!(
-            f,
-            "update-key slot={slot} change={change} id={}",
-            wellfed_session::hex::Lower(&key)
-        ),
-    }
-}
 
 /// What the loop hands the device API each pass.
 pub struct Inputs<'a, F> {
@@ -225,8 +150,8 @@ pub struct Serve<S> {
     tasks: TaskCache,
     /// The trace or bank-1 page an answer borrows its bytes from.
     page: [u8; PAGE_BYTES],
-    packet: [u8; mdns::PACKET],
-    reply: [u8; mdns::PACKET],
+    packet: [u8; mdns_core::PACKET],
+    reply: [u8; mdns_core::PACKET],
     time: Time<S>,
 }
 
@@ -253,8 +178,8 @@ impl<S: Copy> Serve<S> {
             stats: Keeper::new(),
             tasks: TaskCache::new(),
             page: [0; PAGE_BYTES],
-            packet: [0; mdns::PACKET],
-            reply: [0; mdns::PACKET],
+            packet: [0; mdns_core::PACKET],
+            reply: [0; mdns_core::PACKET],
             time: Time::new(),
         }
     }
@@ -468,889 +393,10 @@ impl<S: Copy> Serve<S> {
         self.receive(platform, record);
         boot
     }
-
-    fn open_sockets<P: Platform<Socket = S>>(
-        &mut self,
-        platform: &mut P,
-        now_ms: u32,
-        record: &mut impl FnMut(Record),
-    ) {
-        if !wellfed_core::deadline_passed(now_ms, self.retry_at) {
-            return;
-        }
-        if self.listener.is_none() {
-            self.listener = platform.listen(PORT);
-            record(Record::Listen {
-                mdns: false,
-                open: self.listener.is_some(),
-                heap: platform.heap().0,
-            });
-        }
-        if self.mdns_socket.is_none() && self.responder.is_some() {
-            self.mdns_socket = platform.mdns_open();
-            record(Record::Listen {
-                mdns: true,
-                open: self.mdns_socket.is_some(),
-                heap: platform.heap().0,
-            });
-        }
-        if self.listener.is_none() || self.mdns_socket.is_none() {
-            self.retry_at = now_ms.wrapping_add(RETRY_MS);
-        }
-    }
-
-    fn mdns<P: Platform<Socket = S>>(&mut self, platform: &mut P, now_ms: u32) {
-        let (Some(socket), Some(responder)) = (self.mdns_socket, self.responder.as_mut()) else {
-            return;
-        };
-        if let Some(len) = responder.announce(now_ms, &mut self.reply)
-            && !platform.mdns_send(socket, &self.reply[..len], mdns::GROUP, mdns::PORT)
-        {
-            self.close_mdns(platform, now_ms);
-            return;
-        }
-        for _ in 0..DATAGRAMS {
-            match platform.mdns_receive(socket, &mut self.packet) {
-                Datagram::None => return,
-                Datagram::Error => return self.close_mdns(platform, now_ms),
-                Datagram::Got { len, ip, port } => {
-                    self.queries = self.queries.wrapping_add(1);
-                    let Some(reply) = responder.query(&self.packet[..len], port, &mut self.reply)
-                    else {
-                        continue;
-                    };
-                    let answer = &self.reply[..reply.len];
-                    let (to, to_port) = match reply.to {
-                        Destination::Multicast => (mdns::GROUP, mdns::PORT),
-                        Destination::Unicast => (ip, port),
-                    };
-                    let sent = platform.mdns_send(socket, answer, to, to_port);
-                    // A lost answer is asked again; it is only counted.
-                    if sent {
-                        self.answers = self.answers.wrapping_add(1);
-                    } else {
-                        self.failed = self.failed.wrapping_add(1);
-                    }
-                }
-            }
-        }
-    }
-
-    fn close_mdns<P: Platform<Socket = S>>(&mut self, platform: &mut P, now_ms: u32) {
-        if let Some(socket) = self.mdns_socket.take() {
-            platform.close(socket);
-        }
-        self.retry_at = now_ms.wrapping_add(RETRY_MS);
-    }
-
-    fn accept<P: Platform<Socket = S>>(
-        &mut self,
-        platform: &mut P,
-        now_ms: u32,
-        record: &mut impl FnMut(Record),
-    ) {
-        let Some(listener) = self.listener else {
-            return;
-        };
-        match platform.accept(listener) {
-            Accepted::None => {}
-            Accepted::Error => {
-                platform.close(listener);
-                self.listener = None;
-                self.retry_at = now_ms.wrapping_add(RETRY_MS);
-                record(Record::Listen {
-                    mdns: false,
-                    open: false,
-                    heap: platform.heap().0,
-                });
-            }
-            Accepted::Socket(socket) => {
-                match self.server.accept(now_ms, |r| record(Record::Server(r))) {
-                    Some(slot) => self.sockets[slot] = Some(socket),
-                    None => platform.close(socket),
-                }
-            }
-        }
-    }
-
-    fn receive<P: Platform<Socket = S>>(
-        &mut self,
-        platform: &mut P,
-        record: &mut impl FnMut(Record),
-    ) {
-        for slot in 0..SESSIONS {
-            let Some(socket) = self.sockets[slot] else {
-                continue;
-            };
-            let room = self.server.rx(slot);
-            if room.is_empty() {
-                continue;
-            }
-            match platform.receive(socket, room) {
-                Received::Empty => {}
-                Received::Data(n) => self.server.received(slot, n),
-                Received::Closed => self.drop_slot(platform, slot, record),
-            }
-        }
-    }
-
-    fn send<P: Platform<Socket = S>>(&mut self, platform: &mut P, record: &mut impl FnMut(Record)) {
-        for slot in 0..SESSIONS {
-            let Some(socket) = self.sockets[slot] else {
-                continue;
-            };
-            let pending = self.server.tx(slot);
-            if !pending.is_empty() {
-                match platform.send(socket, pending) {
-                    Some(n) => self.server.sent(slot, n),
-                    None => {
-                        self.drop_slot(platform, slot, record);
-                        continue;
-                    }
-                }
-            }
-            if self.server.closing(slot) {
-                self.drop_slot(platform, slot, record);
-            }
-        }
-    }
-
-    fn drop_slot<P: Platform<Socket = S>>(
-        &mut self,
-        platform: &mut P,
-        slot: usize,
-        record: &mut impl FnMut(Record),
-    ) {
-        if let Some(socket) = self.sockets[slot].take() {
-            platform.close(socket);
-        }
-        self.server.closed(slot, |r| record(Record::Server(r)));
-    }
-
-    /// What the statistics take from this pass: the link, the food beam
-    /// and the battery's history.
-    fn keep_stats<P: Platform<Socket = S>, F: Feeds>(
-        &mut self,
-        platform: &mut P,
-        feeds: &F,
-        now_ms: u32,
-    ) {
-        let stats = &mut self.stats;
-        stats.link(platform.link());
-        if let Some(present) = feeds.food() {
-            stats.food(present);
-        }
-        stats.tick(now_ms);
-    }
-
-    fn samples<P: Platform<Socket = S>>(&mut self, platform: &mut P, now_ms: u32, supply: Supply) {
-        if wellfed_core::deadline_passed(now_ms, self.next_power) {
-            self.next_power = now_ms.wrapping_add(P::POWER_SAMPLE_MS);
-            if let Some(power) = platform.power(now_ms) {
-                // The history keeps only readings a pack can give.
-                let battery_mv = match supply.battery {
-                    Battery::Reading { mv, .. } => Some(u32::from(mv)),
-                    Battery::Absent
-                    | Battery::Implausible { .. }
-                    | Battery::Unread
-                    | Battery::Stale { .. } => None,
-                };
-                self.stats.power(
-                    now_ms,
-                    Power {
-                        battery_mv,
-                        ..power
-                    },
-                );
-                self.server.sample(Sample {
-                    at_ms: now_ms,
-                    metric: Metric::Power(super::supply::power(power, supply.battery)),
-                });
-            }
-            self.server.sample(Sample {
-                at_ms: now_ms,
-                metric: Metric::Supply(supply),
-            });
-        }
-        if wellfed_core::deadline_passed(now_ms, self.next_rssi) {
-            self.next_rssi = now_ms.wrapping_add(RSSI_MS);
-            // The writer saves the totals far less often than this.
-            platform.hand_counts(self.stats.counts(now_ms));
-            self.server.sample(Sample {
-                at_ms: now_ms,
-                metric: Metric::Rssi(platform.link().rssi),
-            });
-            // Taken every window whether or not anyone subscribes, so each
-            // covers the same 30 s.
-            let (free, min) = platform.heap();
-            for metric in [
-                Metric::Heap { free, min },
-                self.stats.loop_metric(),
-                self.stats.gateway_metric(),
-                self.stats.wifi_metric(),
-            ] {
-                self.server.sample(Sample {
-                    at_ms: now_ms,
-                    metric,
-                });
-            }
-        }
-    }
 }
 
 impl<S: Copy> Default for Serve<S> {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-// A store write waits while a feed holds the outputs (a flash lease then
-// would reset the board), longer than a client waits for its answer. So a
-// client's write during a feed is refused `Busy`, which changed nothing,
-// rather than left unanswered and applied after the feed.
-
-/// The rest of the feeder, as the server sees it.
-pub struct DeviceView<'a, P, F> {
-    pub(super) platform: &'a mut P,
-    pub(super) lock: &'a mut LockBox,
-    pub(super) feeds: &'a mut F,
-    pub(super) boot: Boot,
-    pub(super) locked: Option<bool>,
-    /// BLE setup mode runs.
-    pub(super) setup: bool,
-    /// The pass's time, which a clock sync is anchored to.
-    pub(super) now_ms: u32,
-    /// What the last NTP exchange came to.
-    pub(super) ntp_last: Option<NtpResult>,
-    pub(super) stats: &'a mut Keeper,
-    pub(super) tasks: &'a mut TaskCache,
-    /// The page a trace or bank-1 answer borrows its bytes from.
-    pub(super) page: &'a mut [u8; PAGE_BYTES],
-    /// A brownout holds feeding until the adapter is seen.
-    pub(super) battery_hold: bool,
-    /// The supply this pass judged.
-    pub(super) supply: Supply,
-    /// A plan's claimed feed must be the next one.
-    pub(super) meal: bool,
-    /// A factory reset is queued or marked: an install offer is refused,
-    /// so the reset's boot never becomes an update's trial boot.
-    pub(super) reset: bool,
-    /// A plan's claim is in flight: counted as a feed, so a client's
-    /// reboot (and an install) is refused `Busy` rather than cutting the
-    /// meal before its feed is queued.
-    pub(super) claim: bool,
-    /// When the next meal call's lead begins (Unix ms), if one is to come.
-    pub(super) call_lead: Option<u64>,
-}
-
-/// How long a walk of the task stacks answers memory requests: the walk
-/// pauses the scheduler, so a client asking again and again repeats none.
-const TASKS_MS: u32 = 5_000;
-
-/// The task stacks as last walked.
-pub struct TaskCache {
-    stacks: [TaskStack; TASKS_MAX],
-    count: TaskCount,
-    at: Option<u32>,
-}
-
-impl TaskCache {
-    pub(super) const fn new() -> Self {
-        Self {
-            stacks: [TaskStack::EMPTY; TASKS_MAX],
-            count: TaskCount {
-                listed: 0,
-                total: 0,
-            },
-            at: None,
-        }
-    }
-
-    /// The stacks, walked again once the last walk is [`TASKS_MS`] old.
-    fn read<P: Platform>(&mut self, platform: &mut P, now_ms: u32) -> (&[TaskStack], u32) {
-        if self.at.is_none_or(|at| now_ms.wrapping_sub(at) >= TASKS_MS) {
-            self.count = platform.task_stacks(&mut self.stacks);
-            self.at = Some(now_ms);
-        }
-        let listed = self.count.listed.min(TASKS_MAX);
-        (&self.stacks[..listed], self.count.total)
-    }
-}
-
-impl<P: Platform, F: Feeds> DeviceView<'_, P, F> {
-    /// A client's change, stamped with the wall time now: what its history
-    /// event, which the writer records as it saves the change, carries.
-    fn stamp(&mut self, by: Source) -> Stamp {
-        Stamp {
-            by,
-            at: events::wall_s(self.platform, self.now_ms),
-        }
-    }
-
-    /// Whether a change that writes must be refused as during a feed: the
-    /// outputs are claimed, or a feed waits for the writes ahead of it, which
-    /// this write would join.
-    fn outputs_claimed(&self) -> bool {
-        self.platform.outputs_claimed() || self.feeds.claiming().is_some()
-    }
-
-    // The heavy `Stats` sections, each out of line so the totals it copies and
-    // the section it builds stay out of `Device::stats`'s frame, which every
-    // other section pays for too.
-
-    #[inline(never)]
-    fn counters_section(&mut self, now_ms: u32) -> Stats<'_> {
-        let stored = self.platform.totals();
-        Stats::Counters(self.stats.counters(now_ms, stored.as_ref()))
-    }
-
-    #[inline(never)]
-    fn memory_section(&mut self, now_ms: u32) -> Stats<'_> {
-        let (heap_free, heap_min) = self.platform.heap();
-        let (stacks, tasks_total) = self.tasks.read(&mut *self.platform, now_ms);
-        let mut tasks = [None; TASKS_MAX];
-        for (out, task) in tasks.iter_mut().zip(stacks) {
-            *out = Some(WireTask {
-                name: task.name(),
-                free_min: task.free_min,
-            });
-        }
-        Stats::Memory(proto::Memory {
-            heap_free,
-            heap_min,
-            tasks,
-            tasks_total,
-        })
-    }
-
-    #[inline(never)]
-    fn flash_section(&mut self) -> Stats<'_> {
-        let fill = self.platform.events_fill();
-        let stored = self.platform.totals();
-        Stats::Flash(Keeper::flash(
-            self.platform.erases(),
-            stored.as_ref(),
-            fill.kept,
-            fill.capacity,
-        ))
-    }
-}
-
-impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
-    type Feeder = Self;
-
-    fn feeder(&mut self) -> Option<&mut Self> {
-        Some(self)
-    }
-
-    fn random(&mut self, out: &mut [u8; 32]) -> bool {
-        self.platform.random(out)
-    }
-
-    fn build(&self) -> &'static str {
-        self.platform.build()
-    }
-
-    fn model(&self) -> Model {
-        self.platform.model()
-    }
-
-    fn status(&mut self, now_ms: u32) -> Status<'static> {
-        let link = self.platform.link();
-        let settings = self.platform.settings();
-        let settings_generation = settings.map_or(0, |view| view.generation);
-        let desiccant = desiccant_now(self.platform, now_ms);
-        let wifi_generation = match self.platform.wifi() {
-            WifiResult::Current { view, .. } => view.generation,
-            _ => 0,
-        };
-        Status {
-            build: self.platform.build(),
-            bank: self.boot.bank,
-            uptime_ms: now_ms,
-            boot_count: self.boot.boot_count,
-            reset_flags: self.boot.reset_flags,
-            faults: 0,
-            rssi: link.rssi,
-            wifi: match self.platform.wifi_source() {
-                WifiSource::Build => proto::WifiSource::Build,
-                WifiSource::Stored => proto::WifiSource::Stored,
-                WifiSource::Fallback => proto::WifiSource::Fallback,
-            }
-            .into(),
-            link_losses: link.link_losses,
-            dns_losses: link.check_losses,
-            clock_ms: self.platform.wall_ms(now_ms),
-            power: self
-                .platform
-                .power(now_ms)
-                .map(|power| super::supply::power(power, self.supply.battery)),
-            wifi_generation,
-            last_event: self.platform.last_event(),
-            sessions: 0,
-            alerts_generation: self.platform.alerts().generation(),
-            device: DeviceStatus::Feeder(FeederStatus {
-                locked: self.locked,
-                settings_generation,
-                desiccant,
-                food: crate::feed::food_level(self.feeds.food()).into(),
-                feed_fault: self.stats.feed_fault(),
-                blocked: FeederDevice::readiness(self).blocked(),
-                supply: self.supply,
-                ext: Tail::EMPTY,
-            }),
-            ext: Tail::EMPTY,
-        }
-    }
-
-    fn wifi(&mut self, change: Option<Asked<Option<Credentials>>>) -> WifiResult {
-        match change {
-            None => self.platform.wifi(),
-            Some(_) if self.outputs_claimed() => WifiResult::Busy,
-            Some(Asked { change, by }) => {
-                let asked = self.stamp(by);
-                self.platform.wifi_change(change, Some(asked))
-            }
-        }
-    }
-
-    fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult {
-        TimeResult::from_sync(self.platform.time_sync(self.now_ms, fields.sync(), origin))
-    }
-
-    fn time_settings(&mut self, change: Option<TimeSettings>) -> TimeSettingsResult {
-        match change {
-            None => self.platform.time_settings(),
-            Some(_) if self.outputs_claimed() => TimeSettingsResult::Busy,
-            Some(settings) => self.platform.time_settings_change(settings),
-        }
-    }
-
-    fn time_state(&mut self, now_ms: u32) -> Option<TimeState> {
-        Some(TimeState {
-            clock: self.platform.clock_state(now_ms),
-            now_ms,
-            ntp_last: self.ntp_last,
-        })
-    }
-
-    /// `None` while the outputs are claimed, as when the slot is taken: a
-    /// revocation is refused `Busy`, and an enrollment asks again.
-    fn keys(&mut self, change: KeyChange) -> Option<u32> {
-        if self.outputs_claimed() {
-            return None;
-        }
-        let at = events::wall_s(self.platform, self.now_ms);
-        let change = ClientChange::Key { change, at };
-        (self.platform.keys_request(change) == Requested::Queued)
-            .then(|| self.platform.keys_ticket().max(1))
-    }
-
-    fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome> {
-        self.platform
-            .keys_outcome(ticket)
-            .map(|result| match result {
-                KeyResult::Done => KeyOutcome::Done,
-                KeyResult::Full => KeyOutcome::Full,
-                KeyResult::Duplicate => KeyOutcome::Duplicate,
-                KeyResult::NotFound => KeyOutcome::NotFound,
-                KeyResult::Unarmed
-                | KeyResult::NoGenerator
-                | KeyResult::NotWritable
-                | KeyResult::Io => KeyOutcome::NotWritable,
-            })
-    }
-
-    fn record(&mut self, now_ms: u32, body: EventBody) {
-        events::record(self.platform, now_ms, body);
-    }
-
-    fn event_after(&mut self, reader: Reader, after: Option<u64>) -> EventRead {
-        match self.platform.event_after(reader, after) {
-            None => EventRead::Wait,
-            Some(Read::End) => EventRead::None,
-            Some(Read::Gap { from, to }) => EventRead::Gap { from, to },
-            Some(Read::Record(record)) => EventRead::Event(proto::RawEvent {
-                seq: record.seq,
-                at: record.at,
-                body: record.body,
-            }),
-        }
-    }
-
-    fn reader_left(&mut self, reader: Reader) {
-        self.platform.reader_left(reader);
-    }
-
-    fn alerts(&mut self) -> Option<AlertsView> {
-        let epoch = self.platform.epoch()?;
-        Some(self.platform.alerts().view(epoch))
-    }
-
-    fn epoch(&self) -> Option<u32> {
-        // On bank 1 no session is welcomed while the alert rules' boot read
-        // has its first seconds to itself. Bank 0 is the recovery bank, there
-        // for installs: an installer reconnecting after a give-way is
-        // welcomed as soon as the ring opens, and the read shares the turns.
-        let epoch = self.platform.epoch()?;
-        (self.boot.bank == 0 || self.platform.alerts().welcoming()).then_some(epoch)
-    }
-
-    fn reboot(&mut self) {
-        // The writer's restart save takes this boot's counts as they are now.
-        self.platform.hand_counts(self.stats.counts(self.now_ms));
-        events::record(self.platform, self.now_ms, EventBody::Restarting);
-        self.platform.reset();
-    }
-
-    fn stats(&mut self, section: StatsSection, now_ms: u32) -> Stats<'_> {
-        match section {
-            StatsSection::Counters => self.counters_section(now_ms),
-            StatsSection::Memory => self.memory_section(now_ms),
-            StatsSection::Flash => self.flash_section(),
-            StatsSection::Power => Stats::Power(self.stats.power_stats()),
-            StatsSection::Food => Stats::Food(self.stats.food_stats()),
-            StatsSection::Feeds => Stats::Feeds(self.stats.feed_stats(self.platform.traces_fill())),
-            StatsSection::Portions => {
-                let portion_mg = match self.platform.calibration() {
-                    CalibrationResult::Current { view, .. } => view.calibration.portion_mg,
-                    _ => None,
-                };
-                Stats::Portions(self.stats.portions_stats(self.feeds.marks(), portion_mg))
-            }
-        }
-    }
-
-    /// Bank 1 as the flash holds it. Only the bank-0 role reads it: there
-    /// it may still hold stock, the feeder's only copy until a promotion
-    /// overwrites it, while on bank 1 it is the running build. An install
-    /// rewrites it under the read, so none is served while one holds the
-    /// flash. Nothing here vouches for the bytes: the installer checks the
-    /// copy against the pinned stock image.
-    fn bank1_page(&mut self, offset: u32) -> Result<Bank1Page<'_>, Refusal> {
-        if self.boot.bank != 0 {
-            return Err(Refusal::Unavailable);
-        }
-        if self.platform.installing() {
-            return Err(Refusal::Busy);
-        }
-
-        let left = BANK1_BYTES
-            .checked_sub(offset)
-            .filter(|&left| left > 0)
-            .ok_or(Refusal::Invalid)?;
-        let len = usize::try_from(left).map_or(BANK1_PAGE_MAX, |left| left.min(BANK1_PAGE_MAX));
-        let out = self.page.get_mut(..len).ok_or(Refusal::Busy)?;
-        if !self.platform.bank1_read(offset, out) {
-            return Err(Refusal::Unavailable);
-        }
-        Ok(Bank1Page {
-            offset,
-            total: BANK1_BYTES,
-            bytes: out,
-        })
-    }
-
-    /// Stock refuses an install on its batteries: one that browns out
-    /// mid-write costs nothing (the marker comes last), but the radio goes
-    /// off within seconds and the install would time out. A cancel and a
-    /// key statement still go through.
-    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, FrozenRefusal> {
-        if matches!(request, UpdateRequest::Offer { .. }) && self.supply.adapter == Some(false) {
-            return Err(FrozenRefusal::Update(UpdateRefusal::Battery));
-        }
-        let ticket = match request {
-            UpdateRequest::Offer { .. } if self.reset => return Err(FrozenRefusal::Busy),
-            UpdateRequest::Offer {
-                manifest,
-                downgrade,
-                device,
-            } => self.platform.update_offer(manifest, downgrade, device),
-            UpdateRequest::Statement { statement } => self.platform.update_statement(statement),
-            UpdateRequest::Cancel => self.platform.update_cancel(),
-        };
-        ticket.map_err(wire::refusal)
-    }
-
-    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
-        self.platform
-            .update_outcome(ticket)
-            .map(|answer| match answer {
-                Ok(Answer::Progress(progress)) => Ok(UpdateAnswer::View(wire::view(&progress))),
-                Ok(Answer::Key(KeyStatement::Revoke(id))) => Ok(UpdateAnswer::Key {
-                    change: UpdateKeyChange::Retired,
-                    id,
-                }),
-                Ok(Answer::Key(KeyStatement::Add(key))) => Ok(UpdateAnswer::Key {
-                    change: UpdateKeyChange::Added,
-                    id: key_id(&key),
-                }),
-                Err(refused) => Err(wire::refusal(refused)),
-            })
-    }
-
-    fn update_chunk(&mut self, offset: u32, data: &[u8]) -> Result<UpdateView, FrozenRefusal> {
-        let progress = self.platform.update_progress().ok_or(FrozenRefusal::Busy)?;
-        match progress.phase {
-            Phase::Receiving => {}
-            // The last chunk's answer may have been lost: the state says so.
-            Phase::Activated => return Ok(wire::view(&progress)),
-            Phase::Idle | Phase::Checking | Phase::GivingWay => {
-                return Err(FrozenRefusal::Update(UpdateRefusal::NotInstalling));
-            }
-        }
-        self.platform
-            .update_chunk(offset, data)
-            .map_err(wire::refusal)?;
-        let progress = self.platform.update_progress().ok_or(FrozenRefusal::Busy)?;
-        Ok(wire::view(&progress))
-    }
-
-    fn update_view(&mut self) -> Option<UpdateView> {
-        self.platform
-            .update_progress()
-            .map(|progress| wire::view(&progress))
-    }
-
-    fn installing(&self) -> bool {
-        self.platform.installing()
-    }
-
-    fn operating(&self) -> bool {
-        self.feeds.busy() || self.claim
-    }
-
-    fn log_after(&mut self, after: Option<u32>, text: &mut [u8]) -> Option<LogBatch> {
-        self.platform.log_after(after, text)
-    }
-}
-
-impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
-    fn today(&mut self, now_ms: u32) -> Option<i32> {
-        today(self.platform, now_ms)
-    }
-
-    fn settings(&mut self, change: Option<Asked<SettingsFields>>) -> SettingsResult {
-        let Some(Asked { change, by }) = change else {
-            return self
-                .platform
-                .settings_request(SettingsFields::default(), None);
-        };
-        if change.changes() && self.outputs_claimed() {
-            return SettingsResult::Busy;
-        }
-        let asked = self.stamp(by);
-        self.platform.settings_request(change, Some(asked))
-    }
-
-    fn lock(&mut self, locked: bool) -> LockResult {
-        self.lock.request(LockFields {
-            locked: Some(locked),
-        })
-    }
-
-    /// A client's tune, queued only when nothing else has a claim on the
-    /// moment. A feed is silent by the owner's choice, so with one already
-    /// in flight a client gets `Busy`. A tune already sounding is not cut
-    /// when a feed comes after it (a Dispense press, a client's feed, a meal
-    /// with no call or whose call has ended): it plays on through the drive,
-    /// and its steps, the codec's close and its `done` record among them,
-    /// run inside passes between the owner's steps and count against the
-    /// gap the owner allows them. The meal call shares this path. Setup mode
-    /// owns the speaker for its own tunes, and an install or a restart has
-    /// the feeder's attention. A flash write is no reason to
-    /// wait: a tune writes nothing and reads no sector a writer changes, and
-    /// the meal call plays through writes the same way, at worst with
-    /// underruns the speaker's `done` record counts.
-    ///
-    /// `Muted` stays the speaker's answer: a test sound means what the
-    /// owner's sound settings let through, so the `sound` switch, a volume
-    /// of 0 and the sound window all silence it.
-    fn play(&mut self, tune: Tune) -> PlayResult {
-        let feed = self.operating() || self.outputs_claimed();
-        let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
-        let wall_ms = self.platform.wall_ms(self.now_ms);
-        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, tune.duration_ms()) {
-            return PlayResult::Busy;
-        }
-        self.platform.play(tune)
-    }
-
-    fn calibration(&mut self, change: Option<Calibration>) -> CalibrationResult {
-        match change {
-            None => self.platform.calibration(),
-            Some(_) if self.outputs_claimed() => CalibrationResult::Busy,
-            Some(calibration) => self.platform.calibration_change(calibration),
-        }
-    }
-
-    /// A client's table is saved at the wall time now, so a plan it adds
-    /// or moves never runs an occurrence already past.
-    fn plans(&mut self, change: Option<Asked<Table>>) -> PlansResult {
-        match change {
-            None => self.platform.plans(),
-            Some(_) if self.outputs_claimed() => PlansResult::Busy,
-            Some(Asked { change: table, by }) => {
-                let asked = self.stamp(by);
-                let change = PlansChange::Replace {
-                    table,
-                    at_s: asked.at,
-                };
-                self.platform.plans_change(change, Some(asked))
-            }
-        }
-    }
-
-    /// A skip, or its undo, waits as any store write does while a feed
-    /// holds the outputs, and while the schedule holds feeding for a claim
-    /// or a change of its own: the plans' one mailbox would be the
-    /// schedule's anyway, and a meal it is taking is never the one to skip.
-    fn skip_meal(
-        &mut self,
-        slot: u8,
-        due_s: u32,
-        skip: Asked<MealSkip>,
-        now_ms: u32,
-    ) -> Result<(), Refusal> {
-        let Asked { change: skip, by } = skip;
-        if self.outputs_claimed() || self.meal {
-            return Err(Refusal::Busy);
-        }
-        let view = match self.platform.plans() {
-            PlansResult::Current { pending: true, .. } | PlansResult::Busy => {
-                return Err(Refusal::Busy);
-            }
-            PlansResult::ReadOnly => return Err(Refusal::NotWritable),
-            PlansResult::Unserved => return Err(Refusal::Unavailable),
-            PlansResult::Current { view, .. } => view,
-        };
-        if !view.writable {
-            return Err(Refusal::NotWritable);
-        }
-        let wall_ms = self.platform.wall_ms(now_ms).ok_or(Refusal::NoClock)?;
-        let platform = &*self.platform;
-        let change = skip::change(&view, slot, due_s, skip, wall_ms, |ms| {
-            platform.offset_at(ms)
-        })?;
-
-        let asked = self.stamp(by);
-        match self.platform.plans_change(change, Some(asked)) {
-            PlansResult::Current { pending: true, .. } => Ok(()),
-            PlansResult::Current { .. } | PlansResult::Busy => Err(Refusal::Busy),
-            PlansResult::ReadOnly => Err(Refusal::NotWritable),
-            PlansResult::Unserved => Err(Refusal::Unavailable),
-        }
-    }
-
-    /// A change to the clip waits, as any store write does, while a feed
-    /// holds the outputs.
-    fn call(&mut self, change: Option<CallChange>) -> CallResult {
-        match change {
-            None => self.platform.call(),
-            Some(_) if self.outputs_claimed() => CallResult::Busy,
-            Some(change) => self.platform.call_change(change),
-        }
-    }
-
-    fn call_chunk(&mut self, offset: u32, data: &[u8]) -> Result<(), Refusal> {
-        if self.outputs_claimed() {
-            return Err(Refusal::Busy);
-        }
-        self.platform.call_chunk(offset, data)
-    }
-
-    /// One play of the stored clip, under the same rules as a test tune: it
-    /// is refused `Busy` during a feed, setup, an install or a restart, and
-    /// when it would still be sounding as a meal's call begins. Also while
-    /// an upload or a delete is queued: the writer then has the clip's
-    /// sectors, or would wait out the play to take them.
-    fn play_call(&mut self) -> CallPlay {
-        let bytes = match self.platform.call() {
-            CallResult::Current { pending: true, .. } => return CallPlay::Busy,
-            CallResult::Current {
-                view:
-                    CallView {
-                        clip: CallClip::Stored { bytes, .. },
-                        ..
-                    },
-                ..
-            } => bytes,
-            CallResult::Current { .. } => return CallPlay::NoClip,
-            CallResult::Busy => return CallPlay::Busy,
-            CallResult::ReadOnly | CallResult::Unserved => return CallPlay::Unserved,
-        };
-
-        let feed = self.operating() || self.outputs_claimed();
-        let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
-        let wall_ms = self.platform.wall_ms(self.now_ms);
-        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, clip::ms(bytes)) {
-            return CallPlay::Busy;
-        }
-
-        match self.platform.play_call(1) {
-            PlayResult::Started => CallPlay::Started,
-            PlayResult::Muted => CallPlay::Muted,
-            PlayResult::Busy => CallPlay::Busy,
-        }
-    }
-
-    fn phase(&self) -> Option<proto::Phase> {
-        self.feeds.marks().map(|marks| marks.phase)
-    }
-
-    fn readiness(&mut self) -> Readiness {
-        let ready = feeding::readiness(
-            &*self.feeds,
-            self.platform.restarting(),
-            self.setup,
-            self.platform.installing(),
-            self.battery_hold,
-        );
-        feeding::held(ready, self.meal)
-    }
-
-    fn feed(&mut self, portions: u8, by: Source) -> Result<u32, Refusal> {
-        let ready = self.readiness();
-        feeding::queue(self.feeds, ready, portions, by)
-    }
-
-    fn feed_reserved(&mut self, feed: u32) -> Option<Result<(), Refusal>> {
-        self.feeds.reserved(feed)
-    }
-
-    fn cancel_feed(&mut self, feed: u32) -> bool {
-        self.feeds.cancel(feed)
-    }
-
-    fn feed_trace(&mut self, feed: u32, offset: u16) -> Result<TracePage<'_>, Refusal> {
-        let (page, _) = self
-            .page
-            .split_first_chunk_mut::<PAGE_MAX>()
-            .ok_or(Refusal::Busy)?;
-        let read = self.platform.trace_page(feed, offset, page)?;
-        Ok(TracePage {
-            summary: read.summary,
-            stored: read.stored,
-            offset,
-            total: read.total,
-            bytes: self.page.get(..read.len).unwrap_or(&[]),
-        })
-    }
-}
-
-/// The local calendar day, while the clock is valid.
-fn today<P: Platform>(platform: &mut P, now_ms: u32) -> Option<i32> {
-    let reading = platform.clock_state(now_ms).reading?;
-    desiccant::today(&reading)
-}
-
-/// The desiccant reminder as it stands at `now_ms`, as the status and the
-/// alert rules read it.
-pub(super) fn desiccant_now<P: Platform>(platform: &mut P, now_ms: u32) -> Desiccant {
-    let today = today(platform, now_ms);
-    match platform.settings().map(|view| view.desiccant(today)) {
-        Some(Count::Remaining(days)) => Desiccant::Remaining { days },
-        Some(Count::Unset) => Desiccant::Unset,
-        Some(Count::Unknown) | None => Desiccant::Unknown,
     }
 }
