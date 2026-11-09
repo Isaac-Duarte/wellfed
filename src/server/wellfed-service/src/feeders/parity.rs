@@ -37,8 +37,9 @@ pub enum NoRoute {
     /// with the CLI.
     AtTheFeeder,
     /// The app reads it straight from the feeder, at home only: the feeder's
-    /// alert table, which the app's catch-up reads over its own session.
-    /// Alerts through the server are a card of their own.
+    /// alert table, which the app's catch-up reads over its own session. The
+    /// server has no route that reads the table, so a phone away from home
+    /// hears no alerts.
     AppAtHomeOnly,
 }
 

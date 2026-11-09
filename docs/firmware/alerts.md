@@ -84,7 +84,7 @@ The epoch holds for a boot, so a read carries it once rather than in each entry.
 - **`more`** says a report left for want of room, or the boot read didn't reach all of the ring, and what is missing could still have been listed.
 - **`settling`** is set until the boot read has ended and the thresholds that began at boot have run out, and while a reading a condition needs is unknown: the desiccant's days with no clock, the food beam before its first reading, or the verdict on a fitted pack.
 
-While either flag is set, a client doesn't take an absent alert to mean it ended.
+While either flag is set, a client doesn't take an absent alert to mean it ended, though not for good. `settling` is one flag for the whole table, so it can't say which condition it holds back, and a reading that stays unknown (the desiccant's days with no clock) keeps it set as long as the clock is missing. The app takes an absent condition as ended once tables have left it out for 2 hours, twice the longest threshold that starts again at a boot, so a cleared `FoodLow` doesn't stay posted while the clock is unknown. An absent report ends once it is past the feeder's own 48 hours: by its time, or, made with no valid clock, by how long tables have left it out.
 
 **When room runs out.** There are at most 7 conditions in 12 slots, so a condition always fits. A report pushes out the oldest of the least urgent reports: `Soon`, then `Security`, then `Urgent`. A report less urgent than all of them is dropped itself.
 
