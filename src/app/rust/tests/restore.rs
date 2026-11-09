@@ -153,7 +153,10 @@ fn a_feeder_nobody_can_find_is_asked_for_and_not_answering() {
         let InstallAsk::Locate { identity } = ask else {
             panic!("{ask:?}");
         };
-        assert_eq!(identity, wellfed_formats::hex::encode(&rig.sim.identity));
+        assert_eq!(
+            identity,
+            wellfed_session::hex::Lower(&rig.sim.identity).to_string()
+        );
         run.answer(id, InstallAnswer::Located { address: None });
 
         let RestoreUpdate::Ended {

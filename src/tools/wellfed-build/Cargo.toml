@@ -17,6 +17,7 @@ wellfed-formats = { workspace = true, features = ["clap"] }
 wellfed-image.workspace = true
 wellfed-proto.workspace = true
 wellfed-signing.workspace = true
+wellfed-session.workspace = true
 regex = "1"
 rustix = { version = "1", features = ["process", "fs"] }
 serde.workspace = true

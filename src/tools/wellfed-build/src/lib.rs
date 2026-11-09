@@ -171,7 +171,7 @@ pub(crate) fn digest(path: &Path) -> Result<String> {
         }
         hasher.update(&block[..read]);
     }
-    Ok(wellfed_formats::hex::encode(&hasher.finalize()))
+    Ok(wellfed_session::hex::Lower(&hasher.finalize()).to_string())
 }
 
 fn program(command: &Command) -> String {

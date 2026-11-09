@@ -282,20 +282,22 @@ fn the_archive_carries_no_secret() {
         let archive = export(&owner, ExportFormat::Json).await;
 
         let text = String::from_utf8_lossy(&archive);
-        let hex = |bytes: &[u8]| wellfed_formats::hex::encode(bytes);
+        let hex = |bytes: &[u8]| wellfed_session::hex::Lower(bytes).to_string();
+        let digits = |text: &str| {
+            let mut bytes = vec![0; text.len() / 2];
+            wellfed_session::hex::decode(text.as_bytes(), &mut bytes).unwrap();
+            bytes
+        };
         let secrets = [
             ("a password hash", "$argon2".to_owned()),
             ("a token", token.secret.clone()),
             ("a token's digits", token.secret["plt_".len()..].to_owned()),
             (
                 "a token's hash",
-                sha256(&wellfed_formats::hex::decode_vec(&token.secret["plt_".len()..]).unwrap()),
+                sha256(&digits(&token.secret["plt_".len()..])),
             ),
             ("a session", cookie.clone()),
-            (
-                "a session's hash",
-                sha256(&wellfed_formats::hex::decode_vec(&cookie).unwrap()),
-            ),
+            ("a session's hash", sha256(&digits(&cookie))),
             ("the sealed feeder key", hex(&sealed)),
         ];
         for (what, secret) in secrets {

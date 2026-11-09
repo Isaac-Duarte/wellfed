@@ -75,7 +75,7 @@ fn image_of(dir: &Path, provisioning: Provisioning, version: u32, build: [u8; 32
 
     let manifest = BuildManifest {
         device: "plaf103".into(),
-        startup_identity: Some(wellfed_formats::hex::encode(&build)),
+        startup_identity: Some(wellfed_session::hex::Lower(&build).to_string()),
         provisioning,
         ..BuildManifest::default()
     };
@@ -437,7 +437,7 @@ fn a_resumed_run_finds_its_feeder_over_the_platforms_discovery() {
         .unwrap();
         let paired = serde_json::json!({
             "device": "AF_TEST",
-            "identity": wellfed_formats::hex::encode(&sim.identity),
+            "identity": wellfed_session::hex::Lower(&sim.identity).to_string(),
             "address": "127.0.0.1:9",
         });
         std::fs::write(
@@ -456,7 +456,10 @@ fn a_resumed_run_finds_its_feeder_over_the_platforms_discovery() {
                     let InstallAsk::Locate { identity } = ask else {
                         panic!("{ask:?}");
                     };
-                    assert_eq!(identity, wellfed_formats::hex::encode(&sim.identity));
+                    assert_eq!(
+                        identity,
+                        wellfed_session::hex::Lower(&sim.identity).to_string()
+                    );
                     located = true;
                     run.answer(
                         id,
@@ -500,7 +503,7 @@ fn a_resumed_run_tries_where_home_last_reached_its_feeder_first() {
 
         let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.6");
         spec.known_feeders = vec![KnownFeeder {
-            identity: wellfed_formats::hex::encode(&sim.identity),
+            identity: wellfed_session::hex::Lower(&sim.identity).to_string(),
             name: "Kitchen".into(),
             address: Some(sim.address.to_string()),
             manual_address: None,
@@ -521,7 +524,7 @@ fn a_resumed_run_tries_where_home_last_reached_its_feeder_first() {
         .unwrap();
         let paired = serde_json::json!({
             "device": "AF_TEST",
-            "identity": wellfed_formats::hex::encode(&sim.identity),
+            "identity": wellfed_session::hex::Lower(&sim.identity).to_string(),
             "address": null,
         });
         std::fs::write(
@@ -1102,7 +1105,7 @@ fn paired_unjoined(spec: &InstallSpec, feeder: &[u8; 32]) {
     enroll(data, "AF_A", "127.41.8.34");
     let paired = serde_json::json!({
         "device": "AF_A",
-        "identity": wellfed_formats::hex::encode(feeder),
+        "identity": wellfed_session::hex::Lower(feeder).to_string(),
         "address": null,
     });
     std::fs::write(
@@ -1193,7 +1196,7 @@ fn a_new_wifi_goes_through_setup_again_for_a_feeder_that_never_joined() {
         assert_eq!(case, StopCase::Cancelled);
         assert_eq!(
             recorded_identity(&record),
-            wellfed_formats::hex::encode(feeder.public())
+            wellfed_session::hex::Lower(feeder.public()).to_string()
         );
     });
 }
@@ -1222,7 +1225,7 @@ fn setup_again_on_another_feeder_stops_and_keeps_the_record() {
         assert_eq!(resume, Resume::FromBank0);
         assert_eq!(
             recorded_identity(&record),
-            wellfed_formats::hex::encode(ours.public())
+            wellfed_session::hex::Lower(ours.public()).to_string()
         );
     });
 }
@@ -1283,7 +1286,7 @@ async fn known_feeder_is_left_alone(ip: &str) {
     let advertising = Keypair::from_secret([0x75; 32]);
     let mut spec = fixture.spec(InstallStart::Bank0, ip);
     spec.known_feeders = vec![KnownFeeder {
-        identity: wellfed_formats::hex::encode(&[0x76; 32]),
+        identity: wellfed_session::hex::Lower(&[0x76; 32]).to_string(),
         name: "Kitchen".into(),
         address: Some(known_at.to_string()),
         manual_address: None,
@@ -1299,7 +1302,7 @@ async fn known_feeder_is_left_alone(ip: &str) {
     assert_ne!(case, StopCase::OtherFeeder);
     assert_eq!(connections.get(), 0, "the known feeder was tried");
     let saved = std::fs::read_to_string(store).unwrap();
-    assert!(saved.contains(&wellfed_formats::hex::encode(advertising.public())));
+    assert!(saved.contains(&wellfed_session::hex::Lower(advertising.public()).to_string()));
 }
 
 #[test]
@@ -1318,12 +1321,12 @@ fn a_known_feeder_goes_on_from_bank_0_after_forgetting() {
         let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
         let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.53");
         spec.known_feeders = vec![KnownFeeder {
-            identity: wellfed_formats::hex::encode(&sim.identity),
+            identity: wellfed_session::hex::Lower(&sim.identity).to_string(),
             name: "Kitchen".into(),
             address: Some(sim.address.to_string()),
             manual_address: None,
         }];
-        spec.feeder = Some(wellfed_formats::hex::encode(&sim.identity));
+        spec.feeder = Some(wellfed_session::hex::Lower(&sim.identity).to_string());
         let data = Path::new(&spec.data_dir).to_path_buf();
         std::fs::create_dir_all(&data).unwrap();
         with_enrolled(&data, "AF_TEST");
@@ -1438,7 +1441,7 @@ fn paired(data: &Path, device: &str, identity: &[u8; 32]) {
         data.join("backups/installing.json"),
         serde_json::to_vec(&serde_json::json!({
             "device": device,
-            "identity": wellfed_formats::hex::encode(identity),
+            "identity": wellfed_session::hex::Lower(identity).to_string(),
             "address": null,
         }))
         .unwrap(),
@@ -1516,7 +1519,7 @@ fn a_picked_feeder_leaves_another_devices_record_and_trial() {
         let fixture = Fixture::new(Provisioning::Consumer);
         let keys = Keypair::from_secret([0x51; 32]);
         let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
-        let hex = wellfed_formats::hex::encode(&sim.identity);
+        let hex = wellfed_session::hex::Lower(&sim.identity).to_string();
         let spec = || {
             let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.57");
             spec.known_feeders = vec![KnownFeeder {
@@ -1565,7 +1568,7 @@ fn a_picked_feeder_leaves_another_devices_record_and_trial() {
         pick_up().await;
         assert_eq!(
             recorded_identity(&spec()),
-            wellfed_formats::hex::encode(&replacement)
+            wellfed_session::hex::Lower(&replacement).to_string()
         );
         assert!(wellfed_install::stock::open_request(&config));
 

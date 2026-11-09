@@ -1322,7 +1322,10 @@ fn ota_signs_one_above_the_highest_signed_version_then_offers() {
 
     let signed = signed_by_bench(&rig, "unit-v13.manifest");
     assert_eq!(signed.version, 13);
-    assert_eq!(wellfed_formats::hex::encode(&signed.build_id), BUILD);
+    assert_eq!(
+        wellfed_session::hex::Lower(&signed.build_id).to_string(),
+        BUILD
+    );
 
     let calls = rig.tools.0.borrow();
     let [job] = &calls.installs[..] else {
@@ -1376,7 +1379,7 @@ fn ota_installs_the_pinned_stock_review_by_its_payload_hash_without_health() {
 
     let signed = signed_by_bench(&rig, "unit-v1.manifest");
     assert_eq!(
-        wellfed_formats::hex::encode(&signed.build_id),
+        wellfed_session::hex::Lower(&signed.build_id).to_string(),
         reviewed.payload_sha256
     );
     let calls = rig.tools.0.borrow();

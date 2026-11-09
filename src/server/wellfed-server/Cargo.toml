@@ -40,6 +40,7 @@ wellfed-model.workspace = true
 wellfed-formats = { workspace = true, features = ["export"] }
 wellfed-server-client.workspace = true
 wellfed-server-testkit.workspace = true
+wellfed-session.workspace = true
 tempfile.workspace = true
 
 [lints]

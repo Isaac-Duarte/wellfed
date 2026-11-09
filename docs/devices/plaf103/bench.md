@@ -47,7 +47,7 @@ The older relay bench added four switches to a bare FT232R adapter's [UART wirin
 1. Build the binaries together, from the repository root:
 
    ```sh
-   cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock -p wellfed
+   cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock-server -p wellfed
    ```
 
    The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another, and `restore-stock` the `wellfed` beside it unless `serve --wellfed-bin` does.

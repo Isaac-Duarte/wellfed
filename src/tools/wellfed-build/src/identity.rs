@@ -13,9 +13,9 @@ use std::path::PathBuf;
 use wellfed_formats::credentials::{
     KeyScope, OtaKeyFile, RELEASE_KEY_PATH, RELEASE_KEY_VERSION, ReleaseKeyFile,
 };
-use wellfed_formats::hex::is_lower_hex;
 use wellfed_formats::manifest::IdentitySnapshot;
 use wellfed_formats::require;
+use wellfed_session::hex;
 
 use crate::{
     Device, Firmware, Profile, Provisioning, Repo, Result, Stage, Variant, digest, relative,
@@ -59,8 +59,8 @@ const SDK_CRATES: [&str; 2] = ["src/sdk", "src/product"];
 const BUILDER_SOURCES: &str = "src/tools/wellfed-build/src";
 const BUILDER_SHARED: [&str; 3] = [
     "src/tools/wellfed-build/Cargo.toml",
-    "src/tools/wellfed-image/src/ota.rs",
-    "src/tools/wellfed-image/src/error.rs",
+    "src/client/wellfed-image/src/ota.rs",
+    "src/client/wellfed-image/src/error.rs",
 ];
 
 /// Tracked plus untracked, non-ignored files below the root-relative
@@ -201,7 +201,10 @@ pub(crate) fn ota_public_key(
         }
     };
 
-    require(is_lower_hex(&public_key, 64), || IdentityError::PublicKey)?;
+    require(
+        public_key.len() == 64 && hex::is_lower(public_key.as_bytes()),
+        || IdentityError::PublicKey,
+    )?;
     Ok(Some(public_key))
 }
 

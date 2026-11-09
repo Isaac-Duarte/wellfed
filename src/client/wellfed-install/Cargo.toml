@@ -21,10 +21,9 @@ wellfed-model.workspace = true
 wellfed-proto.workspace = true
 wellfed-session.workspace = true
 wellfed-signing.workspace = true
-# Stock's broker, server and image server, run in this process; without
-# the bench host's neighbour lookup and its binary. A captured device, which
-# records no address, is refused.
-wellfed-stock = { workspace = true, default-features = false }
+# Stock's broker, server and image server, run in this process. A captured
+# device, which records no address, is refused.
+wellfed-stock.workspace = true
 
 [features]
 # A restore of a stock image no pin names, for tests and simulators, which

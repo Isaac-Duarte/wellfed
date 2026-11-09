@@ -31,14 +31,17 @@ const PRODUCT_CRATES: &str = "src/product/";
 /// Bring-up code, which may take the raw writers, but only as `bringup::…`,
 /// so the one door stays visible at every call.
 const BRINGUP: [&str; 2] = ["src/firmware/wellfed/", "src/sdk/wellfed-probes/src/"];
-/// The stock server's crate. The bench runs it as its own process; only the
+/// The stock server's library. The bench runs it as its own process; only the
 /// shared install driver runs it in-process, since an app cannot
 /// spawn the binary. cargo-deny cannot ban every dependent without banning
 /// the crate itself.
-const STOCK_SERVER: &str = "src/tools/wellfed-stock/Cargo.toml";
-/// The one crate that links the stock server: the install driver the Android
-/// app runs.
-const STOCK_INSTALLER: &str = "src/client/wellfed-install/Cargo.toml";
+const STOCK_SERVER: &str = "src/client/wellfed-stock/Cargo.toml";
+/// The crates that link the stock server: the install driver the Android
+/// app runs, and the bench's binary over the library.
+const STOCK_LINKERS: [&str; 2] = [
+    "src/client/wellfed-install/Cargo.toml",
+    "src/tools/wellfed-stock-server/Cargo.toml",
+];
 /// The flash client's crate, the audited UART writer: every read and write
 /// runs it as its own process, so a fault elsewhere never takes a write down
 /// with it. What other crates check of images and reviews is `wellfed-image`.
@@ -231,7 +234,10 @@ fn check_file(root: &Path, name: &str, summary: &mut Summary) {
         }
     }
     if first == "src" && relative.file_name().is_some_and(|f| f == "Cargo.toml") {
-        if ![STOCK_SERVER, STOCK_INSTALLER].contains(&name) && STOCK_DEPENDENCY.is_match(&content) {
+        if name != STOCK_SERVER
+            && !STOCK_LINKERS.contains(&name)
+            && STOCK_DEPENDENCY.is_match(&content)
+        {
             summary.errors.push(format!(
                 "{name}: links the stock server; run wellfed-stock as a process, or install through wellfed-install"
             ));

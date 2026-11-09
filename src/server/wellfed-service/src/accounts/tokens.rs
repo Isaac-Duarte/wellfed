@@ -18,7 +18,7 @@
 
 use sha2::{Digest, Sha256};
 use wellfed_api::{AuditAction, CreatedToken, NewToken, RevokeReason, Token, TokenId, User};
-use wellfed_formats::hex;
+use wellfed_session::hex;
 use wellfed_store::Whose;
 
 use crate::accounts::sessions::{TOUCH, disabled};
@@ -64,10 +64,7 @@ impl BearerToken {
     fn hash(&self) -> Option<[u8; 32]> {
         let digits = self.0.strip_prefix(PREFIX)?;
         // Lowercase only: the one spelling this server writes.
-        if !hex::is_lower_hex(digits, 64) {
-            return None;
-        }
-        let bytes = hex::decode::<32>(digits)?;
+        let bytes = hex::decode_array::<32>(digits.as_bytes())?;
         Some(Sha256::digest(bytes).into())
     }
 }
@@ -162,7 +159,7 @@ impl Service {
         self.record(caller, action).await;
         Ok(CreatedToken {
             token,
-            secret: format!("{PREFIX}{}", hex::encode(&secret)),
+            secret: format!("{PREFIX}{}", hex::Lower(&secret)),
         })
     }
 

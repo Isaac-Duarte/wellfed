@@ -152,7 +152,7 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
         assert_eq!(feeders.len(), 1);
         assert_eq!(
             feeders[0].identity,
-            wellfed_formats::hex::encode(&sim.identity)
+            wellfed_session::hex::Lower(&sim.identity).to_string()
         );
         assert_eq!(feeders[0].name, "kitchen");
 

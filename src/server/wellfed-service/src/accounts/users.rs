@@ -8,7 +8,7 @@
 
 use jiff::Timestamp;
 use wellfed_api::{AuditAction, NewUser, RevokeReason, Role, User, UserId, UserPatch};
-use wellfed_formats::hex;
+use wellfed_session::hex;
 use wellfed_store::{Change, NewAudit, Store, Whose};
 
 use crate::accounts::sessions::{self, disabled, hash_password, password, user_name};
@@ -193,7 +193,7 @@ pub async fn reset_owner(
     random.fill(&mut secret)?;
     let mut salt = [0; 16];
     random.fill(&mut salt)?;
-    let password = hex::encode(&secret);
+    let password = hex::Lower(&secret).to_string();
     let typed = password.clone();
     let hash = sessions::blocking(move || hash_password(&typed, &salt)).await?;
 

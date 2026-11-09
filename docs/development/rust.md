@@ -8,9 +8,9 @@ The full rules for every Rust crate in the workspace, why each exists, and what 
 | --- | --- |
 | `src/sdk/` | The SDK every firmware builds on |
 | `src/product/` | Product policy shared by the firmware and the server |
-| `src/client/` | The device API values, the sans-IO client and the tokio connector every host client shares |
+| `src/client/` | The device API values, the sans-IO client and the tokio connector every host client shares, and the libraries host programs share: the installer, the shared file formats (`wellfed-formats`), image checks (`wellfed-image`), update signing (`wellfed-signing`) and stock's protocol (`wellfed-stock`) |
 | `src/server/` | The owner's server |
-| `src/tools/wellfed-*`, `src/tools/xtask` | Host tools ([inventory](../../src/tools/README.md)) |
+| `src/tools/wellfed-*`, `src/tools/xtask` | Host tools ([inventory](../../src/tools/README.md)), which no crate outside `src/tools/` links |
 | `src/firmware/wellfed/` | One `no_std` staticlib per firmware ([firmware guide](../../src/firmware/wellfed/README.md)) |
 
 Every crate sets `license.workspace = true` and `publish.workspace = true`, and inherits `[workspace.lints]`. Every host tool is Rust: `cargo xtask check-repository` refuses Python under `src/`.
@@ -77,14 +77,16 @@ The same wrappers keep the SDK below the product: `wellfed-device`, `wellfed-dev
 Some crates may not be linked at all. cargo-deny cannot ban every dependent without banning the crate itself, so `cargo xtask check-repository` refuses any manifest under `src/` that names them:
 
 - `wellfed-flash`, the flash client, which every read and write runs as a process; the image, bank and review checks other crates share live in `wellfed-image`;
-- `wellfed-stock`, the stock server.
+- `wellfed-stock`, the stock server's library, but for the installer and the `wellfed-stock` binary (`wellfed-stock-server`).
 
-`cargo xtask check-repository` also checks the server's layering from `cargo metadata`:
+`cargo xtask check-repository` also checks the crate layering from `cargo metadata`:
 
 - Only `wellfed-store` depends on sqlx.
 - Nothing below `wellfed-server` links axum.
 - Each server crate takes only the workspace crates its arrows name.
 - `wellfed-api` keeps to an allow-list, so it builds for Android ([server design](../server/design.md#allowed-dependencies)).
+- No crate outside `src/tools/` links a crate under it (tests may), so what the app, the server and the firmware build on is a library in its own layer. The one exception is the server's test kit, which serves the server's tests the simulated feeder.
+- The SDK's device-neutral crates link no device kind's own crate by any path.
 
 ### The fuzz crate
 

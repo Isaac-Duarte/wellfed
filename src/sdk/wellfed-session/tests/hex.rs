@@ -1,7 +1,10 @@
-//! The shared strict decoder: lowercase only, exact lengths, no partial
-//! acceptance.
+//! The shared decoder: lowercase only unless a host asks for either case,
+//! exact lengths, no partial acceptance.
 
-use wellfed_session::hex::{decode, decode_array, is_lower, nibble};
+use wellfed_session::hex::{
+    decode, decode_array, decode_array_either_case, decode_either_case, is_lower, nibble,
+    nibble_either_case,
+};
 
 #[test]
 fn nibbles_are_lowercase_digits_only() {
@@ -51,4 +54,27 @@ fn lower_formats_bytes_as_lowercase_hex() {
         "00ab7f"
     );
     assert_eq!(wellfed_session::hex::Lower(&[]).to_string(), "");
+}
+
+#[test]
+fn either_case_also_takes_uppercase_digits() {
+    for c in 0..=u8::MAX {
+        assert_eq!(
+            nibble_either_case(c),
+            nibble(c.to_ascii_lowercase()),
+            "{c:#x}"
+        );
+    }
+
+    assert_eq!(
+        decode_array_either_case::<3>(b"00ABff"),
+        Some([0x00, 0xab, 0xff])
+    );
+    assert_eq!(decode_array_either_case::<2>(b"00ab00"), None);
+
+    let mut out = [0; 2];
+    assert_eq!(decode_either_case(b"", &mut out), Some(0));
+    for refused in [&b"abc"[..], b"zz", b"+1", "\u{e9}0".as_bytes()] {
+        assert_eq!(decode_either_case(refused, &mut out), None, "{refused:?}");
+    }
 }

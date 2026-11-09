@@ -96,7 +96,7 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | `wellfed-board` | The board contract: the one board crate `WELLFED_BOARD` names, checked for every item |
 | `wellfed-board-plaf103` | The PLAF103's pins, ADC channels, storage map and safe output state |
 | `wellfed-board-plwf106` | The PLWF106's pins, safe output state and stock flash; no store yet |
-| `wellfed-testkit`, `wellfed-sim` | Fake NOR storage and the virtual feeder |
+| `wellfed-testkit` | Fake NOR storage for host tests |
 | `wellfed-proto` | The device protocol's messages |
 | `wellfed-device-api` | The feeder's side of the device API and pairing |
 | `wellfed-device` | Policy every device shares: the settings, Wi-Fi, client, time, event and trace stores, the reset marker and the update view |

@@ -24,8 +24,8 @@ use wellfed_api::{
     AuditAction, Credentials, Home, HomeId, LoginFailure, PasswordChange, Role, Setup, SetupState,
     TimeFormat, Units, User, UserId,
 };
-use wellfed_formats::hex;
 use wellfed_mirror::Zone;
+use wellfed_session::hex;
 use wellfed_store::NewUser;
 
 use crate::accounts::tokens::session_only;
@@ -61,10 +61,7 @@ impl SessionToken {
     /// The stored form; `None` for a token this server could not have made.
     pub(crate) fn hash(&self) -> Option<[u8; 32]> {
         // Lowercase only: the one spelling this server writes.
-        if !hex::is_lower_hex(&self.0, 64) {
-            return None;
-        }
-        let bytes = hex::decode::<32>(&self.0)?;
+        let bytes = hex::decode_array::<32>(self.0.as_bytes())?;
         Some(Sha256::digest(bytes).into())
     }
 }
@@ -277,7 +274,7 @@ impl Service {
 
     async fn open_session(&self, user: UserId) -> Result<SessionToken> {
         let secret = self.shared.random::<32>()?;
-        let token = SessionToken(hex::encode(&secret));
+        let token = SessionToken(hex::Lower(&secret).to_string());
         let hash: [u8; 32] = Sha256::digest(secret).into();
 
         let now = self.shared.clock.now();

@@ -175,20 +175,20 @@ pub fn save_store(path: &str, store: &AppStore) -> Result<(), BridgeError> {
 /// A key as the store and NSD's `id` spell it: lowercase hex.
 #[flutter_rust_bridge::frb(sync)]
 pub fn identity_hex(identity: &[u8]) -> String {
-    wellfed_formats::hex::encode(identity)
+    wellfed_session::hex::Lower(identity).to_string()
 }
 
 /// The first 8 bytes in hex: the fingerprint the feeder logs and the
 /// success screen shows.
 #[flutter_rust_bridge::frb(sync)]
 pub fn fingerprint(identity: &[u8]) -> String {
-    wellfed_formats::hex::encode(identity.get(..8).unwrap_or(identity))
+    wellfed_session::hex::Lower(identity.get(..8).unwrap_or(identity)).to_string()
 }
 
 /// The identity key a store entry names, for opening its session.
 #[flutter_rust_bridge::frb(sync)]
 pub fn identity_bytes(hex: &str) -> Result<Vec<u8>, BridgeError> {
-    wellfed_formats::hex::decode::<32>(hex)
+    wellfed_session::hex::decode_array_either_case::<32>(hex.as_bytes())
         .map(|key| key.to_vec())
         .ok_or_else(|| BridgeError::new(ErrorKind::Key, "a feeder identity is 64 hex digits"))
 }

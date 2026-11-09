@@ -290,7 +290,7 @@ async fn connect_via(
         .await?;
         let key = OwnerKey::open(&keys, None, Missing::Refuse, OwnerKey::system())?;
         let identity = key.feeder(target.feeder.as_deref())?;
-        if wellfed_formats::hex::encode(&identity) != lent.identity() {
+        if wellfed_session::hex::Lower(&identity).to_string() != lent.identity() {
             bail!(
                 "the bench server's session is with feeder {}, not {}",
                 &lent.identity()[..16],

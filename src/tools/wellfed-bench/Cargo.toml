@@ -39,6 +39,7 @@ wellfed-model.workspace = true
 wellfed-proto.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }
 wellfed-rig = { path = "../wellfed-rig" }
+wellfed-session.workspace = true
 # `event`: the console waits on its terminal with poll(2) (tui::keys).
 # `termios`: on macOS, the name of the terminal to open for that poll.
 rustix = { version = "1", features = ["event", "fs", "process", "stdio", "termios"] }
@@ -51,7 +52,6 @@ rustix = { version = "1", features = ["pty"] }
 tempfile.workspace = true
 # The feeder session against a simulated feeder over TCP.
 wellfed-feeder-sim = { path = "../wellfed-feeder-sim", features = ["harness"] }
-wellfed-session.workspace = true
 # The server's tests and the MCP test run a real server on a scripted relay
 # board.
 wellfed-relay = { path = "../wellfed-relay", features = ["fake"] }

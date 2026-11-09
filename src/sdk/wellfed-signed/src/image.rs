@@ -6,20 +6,48 @@
 //! words) and its body: KM0's XIP and RAM parts, then, from the next 4 KiB
 //! boundary, KM4's XIP, RAM and PSRAM parts. The image ends at the 4 KiB
 //! boundary after the last body. This is the one profile the reviewed
-//! builds and stock 1.1.15 use (`wellfed-flash`'s `ota::images`); a bank
-//! that does not match it has no extent, so nothing trusts it.
+//! builds and stock 1.1.15 use; a bank that does not match it has no
+//! extent, so nothing trusts it. The host's image checks
+//! (`wellfed_image::ota::images`) walk the same [`PARTS`].
 
 use super::{MARKER, SECTOR_BYTES};
 
-/// Each part's load address, in bank order; KM4's XIP part starts a sector.
-const PARTS: [(u32, bool); 5] = [
-    (0x0C00_0020, false),
-    (0x0008_3000, false),
-    (0x0E00_0020, true),
-    (0x1000_5000, false),
-    (0x0200_0020, false),
+/// One core image in a bank: the load address its header names, and
+/// whether it starts at a sector boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Part {
+    pub address: u32,
+    pub aligned: bool,
+}
+
+/// Each part, in bank order: KM0's XIP and RAM parts, then KM4's XIP part
+/// from the next sector, its RAM part and its PSRAM part, the last, which
+/// is always empty.
+pub const PARTS: [Part; 5] = [
+    Part {
+        address: 0x0C00_0020,
+        aligned: false,
+    },
+    Part {
+        address: 0x0008_3000,
+        aligned: false,
+    },
+    Part {
+        address: 0x0E00_0020,
+        aligned: true,
+    },
+    Part {
+        address: 0x1000_5000,
+        aligned: false,
+    },
+    Part {
+        address: 0x0200_0020,
+        aligned: false,
+    },
 ];
-const HEADER: u32 = 32;
+/// Each part's header: the loader marker, the body's length, the load
+/// address and four erased words.
+pub const HEADER: u32 = 32;
 
 fn word(header: &[u8; 32], index: usize) -> u32 {
     let at = index * 4;
@@ -31,8 +59,8 @@ fn word(header: &[u8; 32], index: usize) -> u32 {
 /// profile or the image would pass `limit`.
 pub fn extent(mut read: impl FnMut(u32, &mut [u8; 32]) -> bool, limit: u32) -> Option<u32> {
     let mut offset = 0u32;
-    for (address, aligned) in PARTS {
-        if aligned {
+    for part in PARTS {
+        if part.aligned {
             offset = offset.checked_next_multiple_of(SECTOR_BYTES)?;
         }
         let mut header = [0u8; 32];
@@ -40,13 +68,13 @@ pub fn extent(mut read: impl FnMut(u32, &mut [u8; 32]) -> bool, limit: u32) -> O
             return None;
         }
         let erased = (4..8).all(|i| word(&header, i) == u32::MAX);
-        if header[..8] != MARKER || word(&header, 3) != address || !erased {
+        if header[..8] != MARKER || word(&header, 3) != part.address || !erased {
             return None;
         }
 
         let body = word(&header, 2);
         // Only the PSRAM part is empty, and it always is.
-        if (address == PARTS[4].0) != (body == 0) {
+        if (part.address == PARTS[4].address) != (body == 0) {
             return None;
         }
         offset = offset.checked_add(HEADER)?.checked_add(body)?;

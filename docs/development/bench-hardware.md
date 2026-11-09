@@ -132,7 +132,7 @@ The order of a session that writes a feeder's flash over UART, each step linking
 1. Build the bench binaries together, from the repository root:
 
    ```sh
-   cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock -p wellfed
+   cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock-server -p wellfed
    ```
 
    Don't rebuild `wellfed-flash` until the session ends: a plan binds the hash of the binary that prepared it.

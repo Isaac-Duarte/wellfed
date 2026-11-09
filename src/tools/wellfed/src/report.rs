@@ -23,7 +23,7 @@ impl Report for Printer {
 pub(crate) fn line(event: &Event) -> String {
     match event {
         Event::KeyEnrollment { key, outcome } => {
-            let id = wellfed_formats::hex::encode(key);
+            let id = wellfed_session::hex::Lower(key).to_string();
             match outcome {
                 Enrollment::Enrolled(Enrolled::Now) => format!("Enrolled update key {id}."),
                 Enrollment::Enrolled(Enrolled::Already) => {
@@ -49,7 +49,7 @@ pub(crate) fn line(event: &Event) -> String {
         } => format!(
             "Signed stock {STOCK_VERSION} as version {version} (a downgrade at floor {floor}) \
              with update key {}.",
-            wellfed_formats::hex::encode(key)
+            wellfed_session::hex::Lower(key)
         ),
         Event::Restoring => {
             "Offering stock: bank 1 gives way, and bank 0 writes stock into bank 1.".to_string()

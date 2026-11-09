@@ -237,7 +237,7 @@ fn announcement_text(announcement: &Announcement) -> String {
         Announcement::SetupCode { code, seconds } => code_text(*code, *seconds),
         Announcement::PressDispense { key } => format!(
             "Press Dispense on the feeder within 60 s to enroll update key {}.",
-            wellfed_formats::hex::encode(key)
+            wellfed_session::hex::Lower(key)
         ),
     }
 }

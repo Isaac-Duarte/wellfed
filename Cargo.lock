@@ -5183,6 +5183,7 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5267,6 +5268,7 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
+ "wellfed-session",
  "wellfed-signed",
  "wellfed-signing",
 ]
@@ -5474,6 +5476,8 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
+ "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5618,6 +5622,7 @@ dependencies = [
  "thiserror 2.0.21",
  "wellfed-formats",
  "wellfed-proto",
+ "wellfed-session",
  "wellfed-signed",
 ]
 
@@ -5836,6 +5841,7 @@ dependencies = [
  "wellfed-server-client",
  "wellfed-server-testkit",
  "wellfed-service",
+ "wellfed-session",
  "wellfed-store",
 ]
 
@@ -5902,6 +5908,7 @@ dependencies = [
  "wellfed-model",
  "wellfed-releases",
  "wellfed-server-testkit",
+ "wellfed-session",
  "wellfed-store",
 ]
 
@@ -5939,6 +5946,7 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
+ "wellfed-session",
  "wellfed-signed",
 ]
 
@@ -5968,7 +5976,6 @@ dependencies = [
  "axum",
  "chrono",
  "chrono-tz",
- "clap",
  "hyper",
  "hyper-util",
  "mqtt5",
@@ -5981,12 +5988,34 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
  "wellfed-client",
  "wellfed-formats",
  "wellfed-model",
  "wellfed-signed",
+]
+
+[[package]]
+name = "wellfed-stock-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "reqwest",
+ "rumqttc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "wellfed-client",
+ "wellfed-formats",
+ "wellfed-session",
+ "wellfed-stock",
 ]
 
 [[package]]
