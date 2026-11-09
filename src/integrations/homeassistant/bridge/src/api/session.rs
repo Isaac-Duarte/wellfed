@@ -3,6 +3,7 @@
 
 use wellfed_model as model;
 
+use super::alerts::Alerts;
 use super::enums::{NotSent, RefusalKind, Role, Skew, UpdateKind, WriteResult};
 use super::state::{Capabilities, State};
 use super::views::{Event, Feed};
@@ -137,6 +138,8 @@ pub struct Update {
     /// Why the session ended, for [`UpdateKind::Disconnected`] and
     /// [`UpdateKind::ServerLostFeeder`]: for logs.
     pub reason: Option<String>,
+    /// For [`UpdateKind::Alerts`].
+    pub alerts: Option<Alerts>,
 }
 
 impl Update {
@@ -156,6 +159,7 @@ impl Update {
             gap_from: None,
             gap_to: None,
             reason: None,
+            alerts: None,
         }
     }
 
@@ -240,6 +244,15 @@ impl Update {
             portions: Some(pending.portions),
             pending: Some(pending),
             ..Self::kind(UpdateKind::StillUnknown)
+        }
+    }
+
+    /// The feeder's alerts moved: what is open, and what opened and
+    /// cleared.
+    pub fn alerts(alerts: Alerts) -> Self {
+        Self {
+            alerts: Some(alerts),
+            ..Self::kind(UpdateKind::Alerts)
         }
     }
 

@@ -118,6 +118,30 @@ impl NoticeKind {
             .chain([Self::Unreachable])
     }
 
+    /// The kind's snake_case name, as JSON spells it.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::MealFailed => "meal_failed",
+            Self::MealUncertain => "meal_uncertain",
+            Self::MealMissed => "meal_missed",
+            Self::MealNoRecord => "meal_no_record",
+            Self::PowerWasOut => "power_was_out",
+            Self::UpdateFailed => "update_failed",
+            Self::RolledBack => "rolled_back",
+            Self::ClientJoined => "client_joined",
+            Self::ClientRevoked => "client_revoked",
+            Self::RepeatedRestarts => "repeated_restarts",
+            Self::NoClock => "no_clock",
+            Self::CannotFeed => "cannot_feed",
+            Self::FoodLow => "food_low",
+            Self::FoodLikelyOut => "food_likely_out",
+            Self::DesiccantDue => "desiccant_due",
+            Self::BatteryBelowFloor => "battery_below_floor",
+            Self::PlansStuck => "plans_stuck",
+            Self::Unreachable => "unreachable",
+        }
+    }
+
     pub fn level(self) -> AlertLevel {
         match AlertKind::ALL
             .into_iter()
@@ -166,6 +190,32 @@ impl NoticeKey {
         let head = digest.first_chunk::<4>().copied().unwrap_or_default();
         let id = (u32::from_le_bytes(head) & 0x3fff_ffff) | 0x4000_0000;
         i32::try_from(id).unwrap_or(i32::MAX)
+    }
+
+    /// The key as text, the same for the same alert on every read and on
+    /// every client: its epoch, then what tells it from the others there.
+    /// What a receiver outside Rust (a webhook's, Home Assistant's) matches
+    /// an alert's opening and clearing by.
+    pub fn text(&self) -> String {
+        let time =
+            |at: &Option<Timestamp>| at.map_or_else(|| "none".to_owned(), |at| at.to_string());
+        let name = |kind: AlertKind| NoticeKind::from(kind).name();
+        match self {
+            Self::Unreachable => "unreachable".to_owned(),
+            Self::Alert { epoch, key } => match key {
+                AlertKey::Feed { feed } => format!("{epoch}:feed:{feed}"),
+                AlertKey::Meal { plan, due } => format!("{epoch}:meal:{plan}:{due}"),
+                AlertKey::Client {
+                    kind: alert,
+                    client,
+                    at,
+                } => format!("{epoch}:{}:{client}:{}", name(*alert), time(at)),
+                AlertKey::Timed { kind: alert, at } => {
+                    format!("{epoch}:{}:{}", name(*alert), time(at))
+                }
+                AlertKey::Kind { kind: alert } => format!("{epoch}:{}", name(*alert)),
+            },
+        }
     }
 
     /// A fixed encoding of the key, so the id never depends on a serializer.

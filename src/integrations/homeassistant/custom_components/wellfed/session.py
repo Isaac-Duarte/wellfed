@@ -187,6 +187,9 @@ class FeederSession:
         # The Portions number's value: what the Feed button asks for.
         self.portions = 1
         self._event_listeners: list[Callable[[bridge.Event], None]] = []
+        # The feeder's open alerts, and who hears each that opens or clears.
+        self.alerts: bridge.Alerts | None = None
+        self._alert_listeners: list[Callable[[bridge.Alerts], None]] = []
         self._ready = asyncio.Event()
         # The last events as they happened, for diagnostics.
         self.recent: deque[dict[str, object]] = deque(maxlen=RECENT_EVENTS)
@@ -236,6 +239,13 @@ class FeederSession:
         """Call `listener` with each event as it happens (never a replay)."""
         self._event_listeners.append(listener)
         return lambda: self._event_listeners.remove(listener)
+
+    @callback
+    def add_alert_listener(self, listener: Callable[[bridge.Alerts], None]) -> Callable[[], None]:
+        """Call `listener` with each change to the alerts: what is open, and
+        what opened and cleared."""
+        self._alert_listeners.append(listener)
+        return lambda: self._alert_listeners.remove(listener)
 
     @callback
     def add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
@@ -389,6 +399,10 @@ class FeederSession:
             self.connected = False
             self._ready.set()
             self._issue(SERVER_LOST_FEEDER_ISSUE, ir.IssueSeverity.ERROR, {})
+        elif kind == bridge.UpdateKind.Alerts and update.alerts is not None:
+            self.alerts = update.alerts
+            for told in list(self._alert_listeners):
+                told(update.alerts)
         elif kind == bridge.UpdateKind.Disconnected:
             if self.connected:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)

@@ -53,6 +53,7 @@ pub use account::{
 };
 
 use crate::Error;
+use crate::alerts::Tracker;
 use crate::api::{
     self, Capabilities, NotSent, Pending, RefusalKind, Role, Skew, State, Update, Written,
 };
@@ -143,6 +144,8 @@ struct Memory {
     facts: Facts,
     calibration: Option<CalibrationView>,
     uncertain: Vec<Uncertain>,
+    /// The alerts the server served so far.
+    alerts: Tracker,
 }
 
 enum Ended {
@@ -343,6 +346,7 @@ impl<'a> Session<'a> {
         self.backlog(&detail).await?;
         self.recheck().await?;
         self.state()?;
+        self.read_alerts().await?;
         Ok(stream)
     }
 
@@ -558,9 +562,24 @@ impl<'a> Session<'a> {
                 self.journalled(&command)?;
                 self.state()
             }
+            StreamEvent::Alerts { feeder } if feeder == ours => self.read_alerts().await,
             // The stream could not resume: read what it would have said.
             StreamEvent::Resync => self.refresh().await,
             _ => Ok(()),
+        }
+    }
+
+    /// The feeder's alerts as the server last read them, and whether it
+    /// reaches the feeder. A server that can't serve them (one from before
+    /// the route, or a passing failure) is asked again at the next turn.
+    async fn read_alerts(&mut self) -> Step {
+        match self.client.feeder_alerts(self.target.feeder).await {
+            Ok(alerts) => match self.memory.alerts.relayed(&alerts) {
+                Some(update) => self.send(update),
+                None => Ok(()),
+            },
+            Err(error) if error.failure() == Failure::Unauthorized => Err(Ended::TokenRefused),
+            Err(_) => Ok(()),
         }
     }
 
@@ -667,7 +686,8 @@ impl<'a> Session<'a> {
                 self.read_facts().await?;
             }
         }
-        self.state()
+        self.state()?;
+        self.read_alerts().await
     }
 
     async fn write(&mut self, write: Write, reply: oneshot::Sender<Written>) -> Step {

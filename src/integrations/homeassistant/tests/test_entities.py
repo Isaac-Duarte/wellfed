@@ -15,6 +15,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 import pytest
 
 from custom_components.wellfed.const import CONF_ADDRESS, CONF_INVITE, DOMAIN
+import wellfed_homeassistant as bridge
 
 from .conftest import Simulator
 
@@ -97,6 +98,8 @@ async def test_a_member_gets_every_entity(hass: HomeAssistant, simulator: Simula
         ("binary_sensor", "feed_problem"),
         ("binary_sensor", "on_battery"),
         ("event", "feed"),
+        ("sensor", "alerts"),
+        ("event", "alert"),
     ]:
         assert _id(entry, domain, name) in ids, (domain, name)
     assert _id(entry, "number", "portion_weight") in ids, "a member's to set"
@@ -257,4 +260,31 @@ async def test_a_member_sets_the_portion_weight(hass: HomeAssistant, simulator: 
     await _set(hass, weight, 9.5)
     await _until(hass, lambda: _state(hass, weight).state == "9.5")
     assert '"portion_mg": 9500' in simulator.owner("calibrate")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_new_client_opens_an_alert_and_its_event_fires(
+    hass: HomeAssistant, simulator: Simulator
+) -> None:
+    entry = await _pair(hass, simulator)
+    alerts = _id(entry, "sensor", "alerts")
+    alert = _id(entry, "event", "alert")
+    # This Home Assistant's own joining is open, and fired nothing.
+    await _until(hass, lambda: _state(hass, alerts).state not in (STATE_UNKNOWN, "unavailable"))
+    before = int(_state(hass, alerts).state)
+    assert _state(hass, alert).state == STATE_UNKNOWN
+
+    secret = await hass.async_add_executor_job(bridge.generate_secret)
+    await hass.async_add_executor_job(
+        bridge.join, secret, simulator.invite(), "visitor", simulator.address
+    )
+
+    await _until(hass, lambda: _state(hass, alert).state != STATE_UNKNOWN)
+    fired = _state(hass, alert)
+    assert fired.attributes["event_type"] == "opened"
+    assert fired.attributes["kind"] == "client_joined"
+    assert fired.attributes["level"] == "security"
+    await _until(hass, lambda: int(_state(hass, alerts).state) == before + 1)
+    listed = _state(hass, alerts).attributes["alerts"]
+    assert fired.attributes["key"] in [item["key"] for item in listed]
     assert await hass.config_entries.async_unload(entry.entry_id)

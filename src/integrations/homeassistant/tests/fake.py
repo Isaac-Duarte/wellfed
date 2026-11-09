@@ -80,9 +80,27 @@ def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
         "gap_from": None,
         "gap_to": None,
         "reason": None,
+        "alerts": None,
     }
     values.update(fields)
     return SimpleNamespace(**values)
+
+
+def alert(key: str, kind: bridge.AlertKind, level: bridge.AlertLevel) -> SimpleNamespace:
+    """One alert, as the bridge hands it out."""
+    return SimpleNamespace(key=key, kind=kind, level=level, at_ms=1_793_793_600_000)
+
+
+def alerts(
+    open: list[SimpleNamespace],
+    opened: list[SimpleNamespace] | None = None,
+    cleared: list[SimpleNamespace] | None = None,
+) -> SimpleNamespace:
+    """An alerts update: what is open, and what opened and cleared."""
+    return update(
+        bridge.UpdateKind.Alerts,
+        alerts=SimpleNamespace(open=open, opened=opened or [], cleared=cleared or [], unread=0),
+    )
 
 
 def connected(

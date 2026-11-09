@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use wellfed_api::FeederId;
 use wellfed_client::alerts::{Notice, NoticeKey, NoticeKind};
-use wellfed_model::{Alert, AlertKey, AlertLevel};
+use wellfed_model::{Alert, AlertLevel};
 
 /// The body's layout.
 pub const VERSION: u32 = 1;
@@ -71,44 +71,12 @@ impl AlertRef {
             Notice::Unreachable { since } => Some(*since),
         };
         Self {
-            key: key_text(key),
+            key: key.text(),
             kind,
             level: kind.level(),
             words: words(notice),
             at,
         }
-    }
-}
-
-/// A key as text, the same for the same alert on every read: its epoch,
-/// then what tells it from the others there.
-fn key_text(key: &NoticeKey) -> String {
-    let time = |at: &Option<Timestamp>| at.map_or_else(|| "none".to_owned(), |at| at.to_string());
-    let kind = |kind| name(NoticeKind::from(kind));
-    match key {
-        NoticeKey::Unreachable => "unreachable".to_owned(),
-        NoticeKey::Alert { epoch, key } => match key {
-            AlertKey::Feed { feed } => format!("{epoch}:feed:{feed}"),
-            AlertKey::Meal { plan, due } => format!("{epoch}:meal:{plan}:{due}"),
-            AlertKey::Client {
-                kind: alert,
-                client,
-                at,
-            } => format!("{epoch}:{}:{client}:{}", kind(*alert), time(at)),
-            AlertKey::Timed { kind: alert, at } => {
-                format!("{epoch}:{}:{}", kind(*alert), time(at))
-            }
-            AlertKey::Kind { kind: alert } => format!("{epoch}:{}", kind(*alert)),
-        },
-    }
-}
-
-/// A kind's name as the body spells it.
-fn name(kind: NoticeKind) -> String {
-    match serde_json::to_value(kind) {
-        Ok(serde_json::Value::String(name)) => name,
-        // A unit enum serializes as its name.
-        _ => format!("{kind:?}"),
     }
 }
 
@@ -149,27 +117,9 @@ fn words(notice: &Notice) -> String {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_model::{AlertKind, OpenAlert};
+    use wellfed_model::OpenAlert;
 
     use super::*;
-
-    #[test]
-    fn a_key_reads_the_same_for_the_same_alert() {
-        let due = Timestamp::from_second(1_800_000_000).expect("a time");
-        let meal = NoticeKey::Alert {
-            epoch: 7,
-            key: AlertKey::Meal { plan: 2, due },
-        };
-        assert_eq!(key_text(&meal), format!("7:meal:2:{due}"));
-        let food = NoticeKey::Alert {
-            epoch: 7,
-            key: AlertKey::Kind {
-                kind: AlertKind::FoodLow,
-            },
-        };
-        assert_eq!(key_text(&food), "7:food_low");
-        assert_eq!(key_text(&NoticeKey::Unreachable), "unreachable");
-    }
 
     #[test]
     fn every_alert_has_words() {

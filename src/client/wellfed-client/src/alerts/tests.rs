@@ -835,3 +835,27 @@ fn an_unreachable_feeder_posts_once_whoever_judged_it() {
     watch.relayed_reach(None, &context(at(1200), &mutes));
     assert_eq!(watch.changes(), [Change::Remove(NoticeKey::Unreachable)]);
 }
+
+#[test]
+fn a_key_reads_as_the_same_text_for_the_same_alert() {
+    let meal = NoticeKey::Alert {
+        epoch: 7,
+        key: AlertKey::Meal {
+            plan: 2,
+            due: at(0),
+        },
+    };
+    assert_eq!(meal.text(), format!("7:meal:2:{}", at(0)));
+    let food = NoticeKey::Alert {
+        epoch: 7,
+        key: AlertKey::Kind {
+            kind: AlertKind::FoodLow,
+        },
+    };
+    assert_eq!(food.text(), "7:food_low");
+    assert_eq!(NoticeKey::Unreachable.text(), "unreachable");
+    for kind in NoticeKind::all() {
+        let json = serde_json::to_value(kind).unwrap();
+        assert_eq!(json, kind.name(), "{kind:?}");
+    }
+}

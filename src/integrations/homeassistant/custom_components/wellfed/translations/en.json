@@ -194,6 +194,46 @@
             }
           }
         }
+      },
+      "alert_event": {
+        "name": "Alert",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "opened": "Opened",
+              "cleared": "Cleared"
+            }
+          },
+          "kind": {
+            "state": {
+              "meal_failed": "Meal failed",
+              "meal_uncertain": "Meal may not have dispensed",
+              "meal_missed": "Meal missed",
+              "meal_no_record": "Meal has no record",
+              "power_was_out": "Power was out",
+              "update_failed": "Update failed",
+              "rolled_back": "Went back to earlier firmware",
+              "client_joined": "New client joined",
+              "client_revoked": "Client removed",
+              "repeated_restarts": "Keeps restarting",
+              "no_clock": "Doesn't know the local time",
+              "cannot_feed": "Can't feed",
+              "food_low": "Food is low",
+              "food_likely_out": "Food has likely run out",
+              "desiccant_due": "Desiccant is due",
+              "battery_below_floor": "Battery needs replacing",
+              "plans_stuck": "Feeding plans are stuck",
+              "unreachable": "Can't be reached"
+            }
+          },
+          "level": {
+            "state": {
+              "urgent": "Urgent",
+              "soon": "Soon",
+              "security": "Security"
+            }
+          }
+        }
       }
     },
     "number": {
@@ -247,6 +287,10 @@
       },
       "desiccant": {
         "name": "Desiccant days left"
+      },
+      "alerts": {
+        "name": "Alerts",
+        "unit_of_measurement": "alerts"
       }
     },
     "switch": {

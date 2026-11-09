@@ -451,6 +451,9 @@ view_enum! {
         /// dropped the server's key, or the server no longer holds it.
         /// The owner adopts it again.
         ServerLostFeeder => "server_lost_feeder",
+        /// The feeder's alerts moved: what is open, and what opened and
+        /// cleared since.
+        Alerts => "alerts",
     }
 }
 

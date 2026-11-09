@@ -311,10 +311,10 @@ mod wellfed_homeassistant {
     };
     #[pymodule_export]
     use crate::api::{
-        AccountRole, By, Capabilities, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason,
-        FoodLevel, NextMeal, NotSent, Pending, Plan, PortionsToday, Readiness, RefusalKind, Role,
-        ServerProblem, Settings, Skew, State, Status, Tune, Update, UpdateKind, WriteResult,
-        Written,
+        AccountRole, Alert, AlertKind, AlertLevel, Alerts, By, Capabilities, Event, EventKind,
+        Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel, NextMeal, NotSent, Pending, Plan,
+        PortionsToday, Readiness, RefusalKind, Role, ServerProblem, Settings, Skew, State, Status,
+        Tune, Update, UpdateKind, WriteResult, Written,
     };
     #[pymodule_export]
     use crate::key::Joined;
