@@ -3,8 +3,9 @@
 
 use reqwest::StatusCode;
 use wellfed_api::FeederId;
-use wellfed_client::alerts::{Change, NoticeKey, Tracked};
+use wellfed_client::alerts::{Change, Delivery, NoticeKey, Tracked};
 use wellfed_formats::canonical::sha256;
+use wellfed_mirror::Kept;
 
 use crate::body::Transition;
 
@@ -80,4 +81,17 @@ pub(crate) fn delivery_id(feeder: FeederId, transition: Transition, tracked: &Tr
     let mut digest = sha256(text.as_bytes());
     digest.truncate(32);
     digest
+}
+
+/// What `change` would send, or `None` when it sends nothing: a quiet
+/// alert, or the clear of one whose opening the receiver never took.
+pub(crate) fn sendable(kept: &Kept, change: &Change) -> Option<(Transition, Tracked)> {
+    let (transition, tracked) = match change {
+        Change::Post(tracked) => (Transition::Opened, *tracked),
+        Change::Remove(key) => (
+            Transition::Cleared,
+            *kept.hooked.iter().find(|hooked| hooked.key == *key)?,
+        ),
+    };
+    (tracked.delivery != Delivery::Quiet).then_some((transition, tracked))
 }

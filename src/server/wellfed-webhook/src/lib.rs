@@ -52,7 +52,7 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use wellfed_api::FeederId;
-use wellfed_client::alerts::{Change, Delivery as Shown};
+use wellfed_client::alerts::Change;
 use wellfed_mirror::{Clock, Kept};
 use wellfed_store::Store;
 
@@ -60,7 +60,7 @@ pub use reqwest::Url;
 
 pub use body::{AlertRef, Delivery, FeederRef, Transition, VERSION};
 pub use target::{PlainHttp, Target, TargetError};
-use told::{Failure, Told, delivery_id, hook, refused, without_url};
+use told::{Failure, Told, delivery_id, hook, refused, sendable, without_url};
 
 /// Tries of one change before it is given up.
 pub const TRIES: u32 = 6;
@@ -179,7 +179,19 @@ impl Webhook {
             }
         };
 
+        // Every change still in the kept alerts keeps its tries, the ones
+        // behind one waiting to be tried again included: only a change gone
+        // from them is forgotten.
         self.live.clear();
+        for (feeder, kept) in &kept {
+            for change in kept.watch.changes() {
+                if let Some((transition, tracked)) = sendable(kept, &change) {
+                    let id = delivery_id(*feeder, transition, &tracked);
+                    self.live.insert((*feeder, id));
+                }
+            }
+        }
+
         let mut next: Option<Instant> = None;
         for (feeder, kept) in kept {
             for change in kept.watch.changes() {
@@ -206,20 +218,11 @@ impl Webhook {
         let Some(target) = self.target.clone() else {
             return Outcome::Done(Told::Not);
         };
-        let (transition, tracked) = match change {
-            Change::Post(tracked) => (Transition::Opened, *tracked),
-            Change::Remove(key) => match kept.hooked.iter().find(|hooked| hooked.key == *key) {
-                Some(hooked) => (Transition::Cleared, *hooked),
-                // Never sent as opened: nothing to clear.
-                None => return Outcome::Done(Told::Not),
-            },
-        };
-        if tracked.delivery == Shown::Quiet {
+        let Some((transition, tracked)) = sendable(kept, change) else {
             return Outcome::Done(Told::Not);
-        }
+        };
 
         let id = delivery_id(feeder, transition, &tracked);
-        self.live.insert((feeder, id.clone()));
         let now = Instant::now();
         let pending = *self
             .pending
@@ -332,14 +335,10 @@ impl Webhook {
 
     /// Drop a removed feeder's kept alerts, sending nothing: the owner
     /// removed it, and a clear of each alert would be news of a feeder
-    /// they no longer hold. Adopted again, it starts afresh.
+    /// they no longer hold. The store drops them as it archives the feeder;
+    /// this catches a reader's last write after that.
     async fn forget(&self, feeder: FeederId) {
-        let now = self.clock.now();
-        let forgotten = wellfed_mirror::change_kept(&self.store, feeder, now, |kept| {
-            *kept = Kept::default();
-        })
-        .await;
-        if let Err(error) = forgotten {
+        if let Err(error) = self.store.delete_feeder_alerts(feeder).await {
             warn!(%feeder, "drop a removed feeder's alerts: {error}");
         }
     }

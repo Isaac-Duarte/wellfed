@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM feeder_alerts WHERE feeder_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "e7fe67452ca429e541dc56e83de3431228b6fa7ce29474f8fd53424eff880533"
+}

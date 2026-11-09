@@ -1,7 +1,8 @@
 //! Alerts away from home: the server reads each feeder's alert table over
 //! its own session and serves it at `GET /feeders/{id}/alerts`, judges the
 //! feeder unreachable by a phone's rule, and POSTs each alert's opening and
-//! clearing to the owner's webhook, once.
+//! clearing to the owner's webhook. A feeder removed and adopted again
+//! starts afresh: what is open then is taken quietly.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -205,6 +206,49 @@ fn a_feeder_out_of_reach_is_unreachable_until_it_answers_again() {
         assert_eq!(cleared["alert"]["key"], "unreachable");
         assert_ne!(cleared["id"], opened["id"]);
 
+        server.stop().await;
+    });
+}
+
+#[test]
+fn a_feeder_adopted_again_starts_afresh_and_quietly() {
+    local(async {
+        let (url, mut bodies) = receiver().await;
+        let clock = Arc::new(ManualClock::new());
+        let sim = feeder::start().await;
+        let server = server(url, Arc::clone(&clock)).await;
+        let mut http = server.client();
+        http.setup(&ada_setup()).await.unwrap();
+        let kitchen = adopt(&http, &sim).await;
+        until("the server reads the table", || async {
+            http.feeder_alerts(kitchen).await.unwrap().read.is_some()
+        })
+        .await;
+        let invite = feeder::invite(&sim, ClientRole::Member).await;
+        feeder::join_phone(&sim, &invite, [0x42; 32]).await;
+        assert_eq!(next(&mut bodies).await["event"], "opened");
+
+        // Removed, which revokes the server's key, and adopted again.
+        http.remove_feeder(kitchen).await.unwrap();
+        let again = adopt(&http, &sim).await;
+        assert_eq!(again, kitchen, "the same feeder, adopted again");
+        until("the server reads the table again", || async {
+            http.feeder_alerts(kitchen).await.unwrap().read.is_some()
+        })
+        .await;
+        // Its first table is taken quietly: nothing opened, and no clear
+        // for what was told before the removal.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(bodies.try_recv().is_err(), "nothing sent for the old row");
+
+        // And it is watched as any feeder.
+        let invite = feeder::invite(&sim, ClientRole::Member).await;
+        feeder::join_phone(&sim, &invite, [0x43; 32]).await;
+        let body = next(&mut bodies).await;
+        assert_eq!(
+            (body["event"].as_str(), body["alert"]["kind"].as_str()),
+            (Some("opened"), Some("client_joined"))
+        );
         server.stop().await;
     });
 }

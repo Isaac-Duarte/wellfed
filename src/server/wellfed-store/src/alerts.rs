@@ -78,6 +78,14 @@ impl Store {
             .collect()
     }
 
+    /// Drop the feeder's kept alerts, so it starts afresh.
+    pub async fn delete_feeder_alerts(&self, id: FeederId) -> Result<()> {
+        sqlx::query!("DELETE FROM feeder_alerts WHERE feeder_id = ?", id.0)
+            .execute(&self.writer)
+            .await?;
+        Ok(())
+    }
+
     /// Write the feeder's kept alerts over what `expect` names: whether it
     /// was written. `false` means another write came first, and the caller
     /// reads the row again and redoes its change.

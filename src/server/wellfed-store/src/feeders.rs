@@ -146,10 +146,13 @@ impl Store {
 
     /// Bring an archived feeder back under a new key: its id, history and
     /// journal continue. Whether an archived feeder was there to take it.
+    /// Its kept alerts start afresh, as a new adoption's do: the first
+    /// table is taken quietly, and nothing told before is cleared.
     pub async fn readopt_feeder(&self, feeder: NewFeeder<'_>) -> Result<bool> {
         let (kind, model) = (feeder.model.kind().name(), feeder.model.name());
         let role = feeder.role.code();
         let nonce = feeder.key.nonce.as_slice();
+        let mut tx = self.writer.begin().await?;
         let done = sqlx::query!(
             "UPDATE feeders SET home_id = ?, kind = ?, model = ?, name = ?, role = ?, address = ?,
                  key_nonce = ?, key_sealed = ?, archived_ms = NULL
@@ -164,22 +167,35 @@ impl Store {
             feeder.key.sealed,
             feeder.id.0,
         )
-        .execute(&self.writer)
+        .execute(&mut *tx)
         .await?;
-        Ok(done.rows_affected() == 1)
+        let taken = done.rows_affected() == 1;
+        if taken {
+            delete_alerts(&mut tx, feeder.id).await?;
+        }
+        tx.commit().await?;
+        Ok(taken)
     }
 
-    /// Archive a removed feeder. Whether it was mirrored until now.
+    /// Archive a removed feeder. Whether it was mirrored until now. Its
+    /// kept alerts go with it: nothing more is told of a feeder the owner
+    /// removed, not even the clears of what was open.
     pub async fn archive_feeder(&self, id: FeederId, at: Timestamp) -> Result<bool> {
         let at = millis(at);
+        let mut tx = self.writer.begin().await?;
         let done = sqlx::query!(
             "UPDATE feeders SET archived_ms = ? WHERE id = ? AND archived_ms IS NULL",
             at,
             id.0
         )
-        .execute(&self.writer)
+        .execute(&mut *tx)
         .await?;
-        Ok(done.rows_affected() == 1)
+        let archived = done.rows_affected() == 1;
+        if archived {
+            delete_alerts(&mut tx, id).await?;
+        }
+        tx.commit().await?;
+        Ok(archived)
     }
 
     /// Where the feeder was last reached.
@@ -315,4 +331,11 @@ fn feeder_row(row: Selected) -> Result<FeederRow> {
         },
         archived: row.archived_ms.map(timestamp).transpose()?,
     })
+}
+
+async fn delete_alerts(tx: &mut sqlx::SqliteConnection, id: FeederId) -> Result<()> {
+    sqlx::query!("DELETE FROM feeder_alerts WHERE feeder_id = ?", id.0)
+        .execute(tx)
+        .await?;
+    Ok(())
 }
