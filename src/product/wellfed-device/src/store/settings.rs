@@ -43,7 +43,7 @@
 use core::ffi::c_uint;
 
 use wellfed_core::settings::{
-    KindSettings, Saved, SettingsFields, SettingsView, Window, view_generation,
+    KindSettings, RecordRead, Saved, SettingsFields, SettingsView, Slots, Window, view_generation,
 };
 use wellfed_core::store::slot::{
     DualSlot, Extent, Found, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u16, get_u64, newest,
@@ -124,11 +124,11 @@ impl Settings {
         }
     }
 
-    /// The view the writer publishes for these settings, at `generation`
-    /// in the device's record, with the kind's beside them: the shared
-    /// generation the two records name (`view_generation`), and writable
-    /// only when both are. The outcomes of finished changes are the
-    /// mailbox's, which keeps its own.
+    /// The view the writer publishes for these settings, as the device's
+    /// record read (`device`), with the kind's beside them: the shared
+    /// generation the two records name ([`shared_generation`]), and
+    /// writable only when both are. The outcomes of finished changes are
+    /// the mailbox's, which keeps its own.
     ///
     /// One read-only record makes the whole view read-only, refusing even a
     /// change to the other record's fields. That is deliberate: a record
@@ -137,11 +137,11 @@ impl Settings {
     /// a single writable flag keeps one request's answer whole.
     pub fn view<K: KindSettings>(
         &self,
-        generation: u64,
+        device: RecordRead,
         writable: bool,
         kind: Stored<K>,
     ) -> SettingsView<K> {
-        let generation = view_generation(generation, K::OWN_RECORD.then_some(kind.generation));
+        let generation = shared_generation(device, &kind);
         SettingsView {
             lights: self.lights,
             sound: self.sound,
@@ -154,6 +154,23 @@ impl Settings {
             writable: writable && kind.writable,
             saved: Saved::default(),
         }
+    }
+}
+
+/// The generation both records name, the device's as it read and the
+/// kind's (none for a kind without a record): what the view reports, and
+/// one below what the next save writes to both
+/// (`wellfed_core::settings::view_generation`).
+pub fn shared_generation<K: KindSettings>(device: RecordRead, kind: &Stored<K>) -> u64 {
+    view_generation(device, K::OWN_RECORD.then(|| kind.read()))
+}
+
+/// How a store's status says its record read: fallen back when it opened
+/// [`SettingsStatus::Recovered`], its other slot unreadable.
+const fn slots(status: SettingsStatus) -> Slots {
+    match status {
+        SettingsStatus::Recovered => Slots::FellBack,
+        _ => Slots::Clean,
     }
 }
 
@@ -208,6 +225,16 @@ pub struct Stored<V> {
     /// How the store opened, or its last save's failure, as the writer's
     /// records report it.
     pub status: SettingsStatus,
+}
+
+impl<V> Stored<V> {
+    /// How the record read, for the shared generation.
+    pub const fn read(&self) -> RecordRead {
+        RecordRead {
+            generation: self.generation,
+            slots: slots(self.status),
+        }
+    }
 }
 
 /// A device kind's own settings record, kept beside the device's: the
@@ -362,6 +389,14 @@ impl<I, R: SettingsRecord> SettingsStore<I, R> {
     /// failed since.
     pub fn writable(&self) -> bool {
         self.writable && self.status.writable()
+    }
+
+    /// How its record read, for the shared generation.
+    pub const fn read(&self) -> RecordRead {
+        RecordRead {
+            generation: self.generation,
+            slots: slots(self.status),
+        }
     }
 
     /// What it holds, as the writer publishes it.

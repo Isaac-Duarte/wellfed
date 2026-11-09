@@ -26,8 +26,8 @@ use wellfed_hal::sdk::fake;
 use wellfed_proto::api::{EventBody, Source};
 
 use crate::support::{
-    A, ASKED_AT, Armed, EVENTS_PROGRAMS_FAIL, PROGRAMS_FAIL_IN, boot, restart_mailboxes, start,
-    step,
+    A, ASKED_AT, Armed, ERASE_FAILS, EVENTS_PROGRAMS_FAIL, PROGRAMS_FAIL_IN, boot,
+    restart_mailboxes, start, step,
 };
 
 /// The client every change here comes from, and when it asked.
@@ -254,11 +254,11 @@ fn a_power_cut_between_the_two_saves_leaves_the_device_s_part_and_no_event() {
     assert_eq!(view().generation, 3, "the records agree again");
 }
 
-/// The review's case: a record that loses its newest slot falls back to
-/// its older one, and the view never reports a generation that named
-/// other settings. Saves publish 1 and 2; a lost newest slot in either
-/// record reads as 3, a generation none published, and the next save
-/// brings the records together past it.
+/// A record that loses its newest slot falls back to its older one, and
+/// the view never reports a generation that named other settings. Saves
+/// publish 1 and 2; a lost newest slot in either record reads as 6, four
+/// past the larger, and the next save brings the records together past
+/// it.
 #[test]
 fn a_lost_newest_slot_never_brings_back_a_generation_that_named_other_settings() {
     for (lost, volume, minutes) in [
@@ -283,16 +283,66 @@ fn a_lost_newest_slot_never_brings_back_a_generation_that_named_other_settings()
             (volume, MealReminder::Before { minutes }),
             "{lost:?}"
         );
-        assert_eq!(decayed.generation, 3, "{lost:?}: neither 1 nor 2");
+        assert_eq!(decayed.generation, 6, "{lost:?}: neither 1 nor 2");
 
         ask(both(40, 15));
         assert!(matches!(
             step(&mut writer, &mut provider),
-            Some(Record::Saved { generation: 4, .. })
+            Some(Record::Saved { generation: 7, .. })
         ));
         restart(&mut provider);
-        assert_eq!(view().generation, 4, "{lost:?}: the records agree again");
+        assert_eq!(view().generation, 7, "{lost:?}: the records agree again");
     }
+}
+
+/// The reviewer's sequence: two whole saves (generation 2), then a cut
+/// right after save 3's device write, before the feeder's record is
+/// touched, so the boot reads 4 (volume 40, reminder 45). The feeder's
+/// newest slot then lost, the next boot reads other settings (reminder
+/// 15), which must not read as 4, the generation a client may hold, nor
+/// as anything published; the next save writes past it all.
+#[test]
+fn a_cut_then_a_lost_feeder_slot_never_repeats_a_generation() {
+    let (_guard, mut writer, mut provider) = opened();
+    ask(both(20, 15));
+    step(&mut writer, &mut provider);
+    ask(both(30, 45));
+    step(&mut writer, &mut provider);
+
+    // The cut: the feeder's save fails at its erase, before any byte of
+    // its record changes, and the event is never written.
+    ERASE_FAILS.with(|f| f.set(Some(storage::FEEDER_SETTINGS.first)));
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(true));
+    ask(both(40, 15));
+    step(&mut writer, &mut provider);
+    ERASE_FAILS.with(|f| f.set(None));
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
+
+    restart(&mut provider);
+    let cut = view();
+    assert_eq!(
+        (cut.volume, cut.kind.meal_reminder, cut.generation),
+        (40, MealReminder::Before { minutes: 45 }, 4)
+    );
+
+    // The feeder's newest slot, generation 2, is slot 1.
+    lose(storage::FEEDER_SETTINGS, 1);
+    let mut writer = restart(&mut provider);
+    let lost = view();
+    assert_eq!(
+        (lost.volume, lost.kind.meal_reminder, lost.writable),
+        (40, MealReminder::Before { minutes: 15 }, true)
+    );
+    assert_eq!(
+        lost.generation, 7,
+        "past 1, 2 and 4: a client holding 4 is stale"
+    );
+
+    ask(both(50, 30));
+    assert!(matches!(
+        step(&mut writer, &mut provider),
+        Some(Record::Saved { generation: 8, .. })
+    ));
 }
 
 /// How a test spoils the feeder's settings record.

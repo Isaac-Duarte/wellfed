@@ -64,7 +64,6 @@ use core::fmt;
 
 use wellfed_core::named_enum;
 
-use wellfed_core::settings::view_generation;
 use wellfed_core::store::handover;
 use wellfed_core::store::seed::{SeedStatus, SeedStore};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
@@ -72,7 +71,9 @@ use wellfed_device::store::clients::{ClientError, ClientStatus, ClientStore};
 use wellfed_device::store::events::{self as ring, EMPTY, EventLog, EventsFill};
 use wellfed_device::store::net::{NetStatus, NetStore};
 use wellfed_device::store::reset as reset_marker;
-use wellfed_device::store::settings::{Settings, SettingsStatus, SettingsStore, Stored};
+use wellfed_device::store::settings::{
+    Settings, SettingsStatus, SettingsStore, Stored, shared_generation,
+};
 use wellfed_device::store::time::{TimeStatus, TimeStore};
 use wellfed_hal::board::storage::{
     FACTORY_CLEARED_SECTORS, HANDOVER_CLEARED_SECTORS, factory_cleared, handover_cleared,
@@ -789,7 +790,7 @@ impl<F: FlashOps> Core<F> {
         let view = self
             .store
             .settings
-            .view(self.store.generation, writable, product.settings());
+            .view(self.store.read(), writable, product.settings());
         P::settings_mailbox().publish(view);
         network::publish(&self.net, self.armed);
         time::publish(&self.time, self.armed);
@@ -1018,12 +1019,9 @@ impl<F: FlashOps> Core<F> {
     }
 
     /// The generation the device API reports for the settings, which
-    /// both records share (`wellfed_core::settings::view_generation`).
+    /// both records share (`wellfed_device::store::settings::shared_generation`).
     fn settings_generation<P: Product<F>>(&self, product: &P) -> u64 {
-        view_generation(
-            self.store.generation,
-            P::Settings::OWN_RECORD.then(|| product.settings().generation),
-        )
+        shared_generation(self.store.read(), &product.settings())
     }
 
     /// The reset cannot go on this boot. A boot that serves nothing has no

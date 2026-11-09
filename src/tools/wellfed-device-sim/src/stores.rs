@@ -24,9 +24,7 @@ use std::rc::Rc;
 
 use wellfed_board::storage::{self, Sectors};
 use wellfed_core::clock::wall::WallClock;
-use wellfed_core::settings::{
-    KindSettings, Saved, SettingsFields, SettingsResult, SettingsView, view_generation,
-};
+use wellfed_core::settings::{KindSettings, Saved, SettingsFields, SettingsResult, SettingsView};
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::{SlotIo, crc32};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
@@ -35,7 +33,7 @@ use wellfed_device::store::events::{BODY_BYTES, EMPTY, EventLog, EventsFill, Rea
 use wellfed_device::store::net::NetStore;
 use wellfed_device::store::reads::{READ_BATCH, Reads};
 use wellfed_device::store::reset;
-use wellfed_device::store::settings::{KindStore, SettingsStore};
+use wellfed_device::store::settings::{KindStore, SettingsStore, shared_generation};
 use wellfed_device::store::time::TimeStore;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
@@ -227,7 +225,7 @@ impl<S: KindStore> DeviceStores<S> {
 
     pub fn settings(&self) -> SettingsView<S::Settings> {
         let view = self.settings.settings.view(
-            self.settings.generation,
+            self.settings.read(),
             self.settings.writable(),
             self.kind.stored(),
         );
@@ -452,8 +450,7 @@ impl<S: KindStore> DeviceStores<S> {
             return false;
         }
 
-        let kind_generation = S::Settings::OWN_RECORD.then(|| self.kind.stored().generation);
-        let next = view_generation(self.settings.generation, kind_generation) + 1;
+        let next = shared_generation(self.settings.read(), &self.kind.stored()) + 1;
         let device_saved = self.settings.save_at(&device, next);
         let kind_saved = device_saved && (!S::Settings::OWN_RECORD || self.kind.save(&kind, next));
         if device_saved && let Some(asked) = asked {

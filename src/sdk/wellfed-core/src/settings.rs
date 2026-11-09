@@ -12,22 +12,35 @@
 //! **One generation for both records.** A client checks a write against
 //! the view's generation, so a generation must never name two different
 //! settings. Every save writes both records with the same new generation,
-//! one past the view's, the device's record first. A whole save leaves
-//! them equal, and the view reports that value. They differ only after a
-//! save that stopped between the two writes (a power cut, or the second
-//! write failing), or once a record's newest slot is lost and it falls
-//! back to its older one. The view then reports one past the larger
-//! ([`view_generation`]), and the next save, one past that, makes them
-//! equal again.
+//! one past the view's, the device's record first, and the view reports
+//! ([`view_generation`]):
 //!
-//! Why that number is new: the device's record is always written first,
-//! and a save is published only once both writes landed. So the larger
-//! generation is the last any save committed, unless the device's newest
-//! slot was lost as well; one past it was never published, since only a
-//! view of records that differ reports it, and such a view is the same
-//! records each time it is read. With saves stopped at any point and one
-//! newest slot lost, no generation names two different settings. A second
-//! newest slot lost at the same time could repeat one.
+//! - the records' generation, when they agree and each read its newest
+//!   slot cleanly;
+//! - one past the larger, when they read cleanly but differ: a save that
+//!   stopped between the two writes (a power cut, or the second write
+//!   failing);
+//! - four past the larger, when either record fell back to its older slot
+//!   (its other slot unreadable: a newest slot lost, or a write cut short).
+//!
+//! The next save, one past that, makes them agree again. The steps stay
+//! small because a record's wear limit counts its generation.
+//!
+//! Why no generation names two different settings, with power cuts and
+//! failed writes at any point and at most one record without its newest
+//! slot at a time. Let S be the generation the last save wrote to the
+//! device's record. First, every save writes past everything published
+//! before it, so values published before that save are below S, and after
+//! it the records either agree (S) or differ (S + 1). Second, a fallback:
+//! if the device's record is whole, the larger is S, and S + 4 is past
+//! S + 1; if the device's record fell back and the kind's holds S, the
+//! larger is S again; if the device's fell back and the kind's never got S
+//! (a cut), the larger is the device's previous generation P, the save
+//! that wrote S started from a view of P or P + 1, so S is at most P + 2,
+//! everything published is at most P + 3, and P + 4 is new. A view of
+//! clean records names the records themselves, so reading them again
+//! reports the same settings. Two records each without their newest slot
+//! at once (two losses no save mended between) could repeat a generation.
 
 /// Minutes in a local day: a window's bounds are below it.
 pub const DAY_MINUTES: u16 = 24 * 60;
@@ -103,16 +116,47 @@ pub trait KindSettings: Copy + Default + PartialEq + Eq + core::fmt::Debug {
     const OWN_RECORD: bool;
 }
 
-/// The generation a view reports, from the device's record's and, for a
-/// kind with a record of its own, the kind's: their shared value when
-/// they are equal, else one past the larger (the module's docs say why).
-pub const fn view_generation(device: u64, kind: Option<u64>) -> u64 {
-    match kind {
-        Some(kind) if kind != device => {
-            let larger = if kind > device { kind } else { device };
-            larger.saturating_add(1)
-        }
-        Some(_) | None => device,
+/// How a settings record read: its generation, and whether it fell back
+/// to its older slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecordRead {
+    pub generation: u64,
+    pub slots: Slots,
+}
+
+/// Whether a record read its newest slot with the other in order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slots {
+    /// Both slots valid, or the other erased.
+    Clean,
+    /// The other slot unreadable: a newest slot lost, or a write of this
+    /// record cut short.
+    FellBack,
+}
+
+/// The generation a view reports, from the device's record and, for a
+/// kind with a record of its own, the kind's (the module's docs give the
+/// rule and why it never names two different settings).
+pub const fn view_generation(device: RecordRead, kind: Option<RecordRead>) -> u64 {
+    let (larger, apart, fell_back) = match kind {
+        Some(kind) => (
+            if kind.generation > device.generation {
+                kind.generation
+            } else {
+                device.generation
+            },
+            kind.generation != device.generation,
+            matches!(kind.slots, Slots::FellBack),
+        ),
+        None => (device.generation, false, false),
+    };
+
+    if fell_back || matches!(device.slots, Slots::FellBack) {
+        larger.saturating_add(4)
+    } else if apart {
+        larger.saturating_add(1)
+    } else {
+        larger
     }
 }
 
