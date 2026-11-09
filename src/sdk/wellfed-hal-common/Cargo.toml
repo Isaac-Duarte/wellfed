@@ -22,6 +22,7 @@ km4 = ["wellfed-amebad-sys/km4"]
 wellfed-amebad-sys.workspace = true
 wellfed-board.workspace = true
 wellfed-core.workspace = true
+wellfed-signed.workspace = true
 wellfed-session.workspace = true
 
 [target.'cfg(target_os = "none")'.dependencies]

@@ -47,15 +47,15 @@ pub use wellfed_core::ota::SectorStep;
 use wellfed_core::ota::install::{
     Bank0Check, Bank0Error, Blocked, CandidateState, Install, Phase, Progress, Refused, Stop, Taken,
 };
-use wellfed_core::ota::offer::{
-    self, Admitted, Context, ImageKind, KeyId, KeyRing, KeyStatement, Trust, admit_offer,
-    admit_statement,
-};
-use wellfed_core::ota::{BANK1_OFFSET, MARKER, SECTOR, SECTOR_BYTES, image};
 use wellfed_core::record::Tag;
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::store::update::{Bank0, Candidate, State, UpdateStatus, UpdateStore};
+use wellfed_signed::offer::{
+    self, Admitted, Context, ImageKind, KeyId, KeyRing, KeyStatement, Trust, admit_offer,
+    admit_statement,
+};
+use wellfed_signed::{BANK1_OFFSET, MARKER, SECTOR, SECTOR_BYTES, image};
 
 use crate::flash_lock::arming::{self, Hooks};
 use crate::interlock::{INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn};

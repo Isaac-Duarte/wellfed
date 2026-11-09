@@ -2,11 +2,11 @@
 //! retired key ids that are never forgotten, the release slot and bank 0's
 //! image, across reopens and a power cut at every flash mutation.
 
-use wellfed_core::ota::offer::{ImageKind, key_id};
 use wellfed_core::store::slot::crc32;
 use wellfed_core::store::update::{
     Bank0, Candidate, RECORD_BYTES, REVOKED, State, UpdateError, UpdateStatus, UpdateStore,
 };
+use wellfed_signed::offer::{ImageKind, key_id};
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
 
 const UNIT: usize = 512;

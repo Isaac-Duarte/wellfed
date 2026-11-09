@@ -379,7 +379,7 @@ fn run(command: Command) -> Result<()> {
             wellfed_formats::private::write_new(&output, &statement)?;
             println!(
                 "Signed adding key id {} in {}",
-                wellfed_formats::hex::encode(&wellfed_core::ota::offer::key_id(&added)),
+                wellfed_formats::hex::encode(&wellfed_signed::offer::key_id(&added)),
                 output.display()
             );
         }

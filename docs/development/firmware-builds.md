@@ -176,7 +176,7 @@ The firmware installs an update only if its manifest is signed by the key the bu
 ```
 
 - **`keygen`** writes a new Ed25519 key to `private/ota-key.json` (mode 600), marked `"scope": "bench"`, and prints the public key first-boot builds embed, which joins their identity. It never replaces an existing key.
-- **`sign`** writes the version 2 manifest the device API takes (`wellfed_core::ota::offer`), naming the bench key's id and the image's kind. `--version` must exceed the feeder's floor (the highest version it confirmed), or come with a downgrade statement.
+- **`sign`** writes the version 2 manifest the device API takes (`wellfed_signed::offer`), naming the bench key's id and the image's kind. `--version` must exceed the feeder's floor (the highest version it confirmed), or come with a downgrade statement.
 - **`downgrade --manifest M --device HEX --floor N`** is a statement letting the feeder whose identity key is `HEX` install the version 2 manifest `M` while its floor is `N`. A version at or below the floor, or any stock image, needs one.
 - **`revoke --key-id HEX`** retires an update key id for good, and **`add-key --public HEX`** fills the firmware's release slot ([OTA design](../firmware/ota-design.md#keys-and-anti-rollback)). Only a key built into the firmware signs these key statements. `keygen` prints the bench key's id.
 

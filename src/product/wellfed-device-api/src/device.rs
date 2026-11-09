@@ -19,13 +19,13 @@ use crate::mailbox::{
 use crate::wifi::Credentials;
 use wellfed_core::log_tail::Batch as LogBatch;
 use wellfed_core::named_enum;
-use wellfed_core::ota::offer::KeyId;
 use wellfed_core::tone::Tune as CoreTune;
 use wellfed_proto::api::{
     self as proto, AlertsView, Bank1Page, Blocked, Bowl, EventBody, FrozenRefusal, Phase,
     Readiness, Refusal, Source, Stats, StatsSection, Status, TracePage, UpdateView,
 };
 use wellfed_proto::device::Model;
+use wellfed_signed::offer::KeyId;
 
 /// The rest of the device, as the server's shared core needs it. Every call
 /// returns at once: a write is queued for its owner, and the server polls

@@ -101,9 +101,9 @@ fn a_handover_clears_wifi_and_clients_and_keeps_the_identity() {
 /// The floor holds across an ordinary boot, and only the handover forgets it.
 #[test]
 fn a_handover_forgets_the_update_floor_and_an_ordinary_boot_does_not() {
-    use wellfed_core::ota::offer::ImageKind;
     use wellfed_core::store::update::{Candidate, UpdateStore};
     use wellfed_hal::board::storage;
+    use wellfed_signed::offer::ImageKind;
 
     type Slots = wellfed_sdk::storage::Region<Armed, { storage::UPDATE.first }, 2>;
     let floor = || {
@@ -262,9 +262,9 @@ fn a_handover_that_cannot_finish_waits_for_the_next_boot() {
 /// stays for the next boot, which resets it.
 #[test]
 fn a_handover_waits_for_an_update_store_it_can_read() {
-    use wellfed_core::ota::offer::ImageKind;
     use wellfed_core::store::update::{Candidate, UpdateStore};
     use wellfed_hal::board::storage;
+    use wellfed_signed::offer::ImageKind;
 
     type Slots = wellfed_sdk::storage::Region<Armed, { storage::UPDATE.first }, 2>;
 

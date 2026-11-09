@@ -16,10 +16,6 @@ use sha2::{Digest, Sha256};
 use wellfed_client::connection::{Connection, Event};
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
 use wellfed_core::ota::install::{Blocked, Install, Phase, Progress, Refused, Stop, Taken};
-use wellfed_core::ota::offer::{
-    self, Context, ImageKind, KeyRing, Signed, admit_offer, key_id, manifest_digest,
-};
-use wellfed_core::ota::{BANK1_OFFSET, MARKER, Manifest, SECTOR};
 use wellfed_core::store::update::{Candidate, State, UpdateStore};
 use wellfed_core::tone::Tune;
 use wellfed_device::update as wire;
@@ -40,6 +36,10 @@ use wellfed_proto::api::{
     RequestId, Status, UpdateView,
 };
 use wellfed_session::noise::Keypair;
+use wellfed_signed::offer::{
+    self, Context, ImageKind, KeyRing, Signed, admit_offer, key_id, manifest_digest,
+};
+use wellfed_signed::{BANK1_OFFSET, MARKER, Manifest, SECTOR};
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
 
 const FEEDER: [u8; 32] = [0x10; 32];

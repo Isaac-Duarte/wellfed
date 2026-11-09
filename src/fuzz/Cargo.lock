@@ -439,9 +439,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "wellfed-core"
 version = "0.1.0"
 dependencies = [
- "ed25519-dalek",
  "sha2",
  "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -452,6 +452,7 @@ dependencies = [
  "wellfed-core",
  "wellfed-proto",
  "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -463,6 +464,7 @@ dependencies = [
  "wellfed-device-api",
  "wellfed-proto",
  "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -481,6 +483,14 @@ dependencies = [
  "chacha20poly1305",
  "sha2",
  "x25519-dalek",
+]
+
+[[package]]
+name = "wellfed-signed"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "sha2",
 ]
 
 [[package]]

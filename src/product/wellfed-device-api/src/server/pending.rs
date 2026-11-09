@@ -11,10 +11,10 @@ use crate::clients::Role;
 use crate::mailbox::{NtpResult, NtpServer, Origin, TimeSettingsResult, WifiResult};
 use crate::pairing::{self, Path};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record, UpdateAnswer, UpdateKeyChange};
-use wellfed_core::ota::offer::key_id;
 use wellfed_proto::api::{
     self as proto, DeviceMessage, Outcome, Refusal, RequestId, TimeView, UpdateRefusal,
 };
+use wellfed_signed::offer::key_id;
 
 impl Server {
     /// Hold the answer until the device finishes the write.

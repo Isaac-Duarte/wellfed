@@ -76,11 +76,11 @@
 
 use core::ffi::c_uint;
 
-use crate::ota::offer::{ImageKind, KeyId, key_id};
 use crate::store::slot::{
     DualSlot, Extent, Layout, Pick, SlotIo, Version, get_u32, get_u64, newest, put_u32, put_u64,
     seal, target, unwritten,
 };
+use wellfed_signed::offer::{ImageKind, KeyId, key_id};
 
 pub const VERSION: Version = Version::new(2, 0);
 const LAYOUT: Layout = Layout::new(*b"PLFUPD01", VERSION, REVOKED_END, Extent::Record);
@@ -118,7 +118,7 @@ const _: () = assert!(REVOKED_END + 40 == CRC_AT);
 /// One manifest the update is about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Candidate {
-    /// `ota::offer::manifest_digest` of the manifest.
+    /// `wellfed_signed::offer::manifest_digest` of the manifest.
     pub digest: [u8; 32],
     pub version: u32,
     pub build_id: [u8; 32],

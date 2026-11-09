@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 wellfed-core.workspace = true
+wellfed-signed.workspace = true
 wellfed-proto.workspace = true
 wellfed-session.workspace = true
 serde = { version = "1.0.229", default-features = false }

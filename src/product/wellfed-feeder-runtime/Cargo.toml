@@ -21,5 +21,8 @@ wellfed-hal.workspace = true
 wellfed-proto.workspace = true
 wellfed-sdk.workspace = true
 
+[dev-dependencies]
+wellfed-signed.workspace = true
+
 [lints]
 workspace = true

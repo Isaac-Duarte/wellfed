@@ -178,7 +178,7 @@ impl<'a> Installer<'a> {
             reading: false,
             settling: false,
             bank: None,
-            digest: wellfed_core::ota::offer::manifest_digest(image.manifest),
+            digest: wellfed_signed::offer::manifest_digest(image.manifest),
             adopting: false,
         }
     }

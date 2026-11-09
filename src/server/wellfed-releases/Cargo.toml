@@ -23,7 +23,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
-wellfed-core.workspace = true
+wellfed-signed.workspace = true
 sha2-0-10.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt"] }

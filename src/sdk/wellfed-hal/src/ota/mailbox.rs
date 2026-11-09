@@ -25,7 +25,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use wellfed_core::ota::MAX_CHUNK;
 pub use wellfed_core::ota::install::Answer;
 use wellfed_core::ota::install::{Progress, Refused};
-use wellfed_core::ota::offer::{DOWNGRADE_BODY, MANIFEST_LEN, SIGNATURE_LEN, STATEMENT_MAX};
+use wellfed_signed::offer::{DOWNGRADE_BODY, MANIFEST_LEN, SIGNATURE_LEN, STATEMENT_MAX};
 
 use crate::cell::TaskCell;
 use crate::sdk;
@@ -60,7 +60,7 @@ impl Request {
         downgrade: Option<&[u8]>,
         device: [u8; 32],
     ) -> Result<Self, Refused> {
-        use wellfed_core::ota::offer::{OfferError, StatementError};
+        use wellfed_signed::offer::{OfferError, StatementError};
         let manifest = <[u8; MANIFEST_LEN]>::try_from(manifest)
             .map_err(|_| Refused::Offer(OfferError::Length))?;
         let downgrade = match downgrade {
@@ -78,7 +78,7 @@ impl Request {
     }
 
     pub fn statement(bytes: &[u8]) -> Result<Self, Refused> {
-        use wellfed_core::ota::offer::StatementError;
+        use wellfed_signed::offer::StatementError;
         let len = u8::try_from(bytes.len())
             .ok()
             .filter(|&len| usize::from(len) <= STATEMENT_MAX)

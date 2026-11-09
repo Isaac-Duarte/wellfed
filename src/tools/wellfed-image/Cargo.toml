@@ -8,7 +8,7 @@ description = "The PLAF103 OTA image as every host tool reads it: its container 
 publish.workspace = true
 
 [dependencies]
-wellfed-core.workspace = true
+wellfed-signed.workspace = true
 wellfed-formats.workspace = true
 wellfed-proto.workspace = true
 serde.workspace = true

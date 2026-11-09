@@ -25,10 +25,11 @@ use std::rc::Rc;
 
 use sha2::{Digest, Sha256};
 use wellfed_amebad_sys::{BANK0_OFFSET, BANK1_OFFSET, SECTOR_BYTES};
-use wellfed_core::ota::{BANK1_BYTES, CONFIRM_LEN, MARKER, image};
+use wellfed_core::ota::CONFIRM_LEN;
 use wellfed_core::store::handover;
 use wellfed_core::store::update::Bank0;
 use wellfed_hal::ota::update::Flash;
+use wellfed_signed::{BANK1_BYTES, MARKER, image};
 
 use crate::flash::Region;
 use wellfed_hal::trial::{self, Decision, Storm};
@@ -227,7 +228,7 @@ impl Banks {
             build_id: self.bank0_build,
             len,
             sha256: Sha256::digest(&self.bank0[..len as usize]).into(),
-            key: key.map(|key| wellfed_core::ota::offer::key_id(&key)),
+            key: key.map(|key| wellfed_signed::offer::key_id(&key)),
         })
     }
 

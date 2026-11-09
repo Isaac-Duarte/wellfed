@@ -13,12 +13,12 @@
 //! Ed25519 signatures are deterministic, so every signed line is a fixed
 //! answer from a fixed key, and each is checked the way the feeder checks
 //! it. The lines are only ever appended
-//! (`WELLFED_BLESS=1 cargo nextest run -p wellfed-core --test signed_formats`).
+//! (`WELLFED_BLESS=1 cargo nextest run -p wellfed-signed --test signed_formats`).
 
 use ed25519_dalek::{Signer as _, SigningKey};
-use wellfed_core::ota::offer::*;
-use wellfed_core::ota::{BANK1_BYTES, BANK1_OFFSET, MARKER, Manifest, SECTOR_BYTES, image};
 use wellfed_session::hex::Lower;
+use wellfed_signed::offer::*;
+use wellfed_signed::{BANK1_BYTES, BANK1_OFFSET, MARKER, Manifest, SECTOR_BYTES, image};
 
 const PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/signed-v1.txt");
 

@@ -25,7 +25,7 @@
 //! the same manifests. A public release needs an offline release key that
 //! never sits in a checkout; this tool does not create or hold one.
 //!
-//! The manifest bytes are `wellfed_core::ota::offer`'s version 2 format,
+//! The manifest bytes are `wellfed_signed::offer`'s version 2 format,
 //! which the firmware verifies and the device API takes: it names its key
 //! and its image kind.
 //!
@@ -41,8 +41,8 @@ use std::path::{Path, PathBuf};
 
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
-use wellfed_core::ota::offer::{self, ImageKind as OfferKind, KeyId, Signed};
-use wellfed_core::ota::{self, MARKER, Manifest};
+use wellfed_signed::offer::{self, ImageKind as OfferKind, KeyId, Signed};
+
 use wellfed_formats::bench::VERIFICATION;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::credentials::{KeyScope, OtaKeyFile};
@@ -56,6 +56,7 @@ use wellfed_image::ota::STOCK_SHA256;
 use wellfed_image::review::frozen;
 use wellfed_image::root::Root;
 use wellfed_proto::device::Model;
+use wellfed_signed::{MARKER, Manifest};
 
 mod error;
 
@@ -110,7 +111,12 @@ pub fn highest_signed(directory: &Path) -> Option<(u32, PathBuf)> {
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "manifest"))
-        .filter_map(|path| Some((ota::claimed_version(&std::fs::read(&path).ok()?)?, path)))
+        .filter_map(|path| {
+            Some((
+                wellfed_signed::claimed_version(&std::fs::read(&path).ok()?)?,
+                path,
+            ))
+        })
         .max_by_key(|(version, _)| *version)
 }
 
@@ -428,7 +434,7 @@ fn bank_manifest(container: &[u8], version: u32, build_id: [u8; 32]) -> Result<M
     require(payload[..MARKER.len()] == MARKER, || ImageError::NoMarker)?;
     let image_len = u32::try_from(payload.len()).map_err(|_| ImageError::TooLarge)?;
     require(
-        (ota::SECTOR_BYTES..=ota::BANK1_BYTES).contains(&image_len),
+        (wellfed_signed::SECTOR_BYTES..=wellfed_signed::BANK1_BYTES).contains(&image_len),
         || ImageError::Size { bytes: image_len },
     )?;
 
@@ -457,9 +463,9 @@ mod tests {
     use std::fs;
 
     use serde_json::json;
-    use wellfed_core::ota::SECTOR;
     use wellfed_core::record::Tag;
     use wellfed_formats::bench::STOCK_BACKUPS;
+    use wellfed_signed::SECTOR;
 
     use super::*;
 
@@ -577,7 +583,7 @@ mod tests {
     /// own checks.
     #[test]
     fn a_version_2_offer_and_its_statements_pass_the_firmware_s_checks() {
-        use wellfed_core::ota::offer::{
+        use wellfed_signed::offer::{
             Context, KeyRing, KeyStatement, OfferError, Trust, admit_offer, admit_statement,
         };
 
@@ -664,9 +670,7 @@ mod tests {
     /// a feeder that enrolled it admits; one that did not refuses it.
     #[test]
     fn an_owner_key_loads_and_signs_for_the_feeders_that_enrolled_it() {
-        use wellfed_core::ota::offer::{
-            Context, KeyError as RingError, KeyRing, OfferError, Trust,
-        };
+        use wellfed_signed::offer::{Context, KeyError as RingError, KeyRing, OfferError, Trust};
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("owner-key.json");
@@ -803,7 +807,7 @@ mod tests {
             refused(&container(100, |_| 0)),
             Some(Error::Image(ImageError::Size { bytes: 100 }))
         ));
-        let large = container(ota::BANK1_BYTES as usize + 1, |_| 0);
+        let large = container(wellfed_signed::BANK1_BYTES as usize + 1, |_| 0);
         assert!(matches!(
             refused(&large),
             Some(Error::Image(ImageError::Size { .. }))

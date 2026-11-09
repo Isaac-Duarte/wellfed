@@ -1500,11 +1500,11 @@ fn give_way_name(name: &str) -> String {
 fn bank1_marker_valid(read: &Path) -> Result<bool> {
     let bytes = fs::read(read)?;
     let start =
-        usize::try_from(wellfed_core::ota::BANK1_OFFSET).map_err(|_| CommandsError::Bank1Offset)?;
+        usize::try_from(wellfed_signed::BANK1_OFFSET).map_err(|_| CommandsError::Bank1Offset)?;
     let marker = bytes
-        .get(start..start + wellfed_core::ota::MARKER.len())
+        .get(start..start + wellfed_signed::MARKER.len())
         .ok_or_else(|| CommandsError::NotFullRead { read: read.into() })?;
-    Ok(marker == wellfed_core::ota::MARKER)
+    Ok(marker == wellfed_signed::MARKER)
 }
 
 /// Expected serial bytes (out, back) of a development update, for the

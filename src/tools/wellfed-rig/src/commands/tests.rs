@@ -13,10 +13,10 @@ use super::*;
 use crate::commands::ota::{ArgError, OtaError, Source};
 use crate::device::{Answer, DeviceError, DeviceStatus};
 use crate::tools::{Capture, CaptureFailure, Captured, InstallJob, Installing, PushError};
-use wellfed_core::ota::SECTOR;
 use wellfed_formats::bench::VERIFICATION;
 use wellfed_formats::bench::progress::{FlashTool, StepState};
 use wellfed_relay::FakeBoard;
+use wellfed_signed::SECTOR;
 
 fn sector() -> PlannedSector {
     PlannedSector {
@@ -1213,8 +1213,8 @@ fn freeze(root: &Path, review: &Path, manifest: &Value) {
 /// A version 2 manifest the bench key signed, through the firmware's
 /// check (with the bench's own downgrade statement, which a stock image
 /// always needs).
-fn signed_by_bench(rig: &Rig, file: &str) -> wellfed_core::ota::Manifest {
-    use wellfed_core::ota::offer::{Context, KeyRing, admit_offer};
+fn signed_by_bench(rig: &Rig, file: &str) -> wellfed_signed::Manifest {
+    use wellfed_signed::offer::{Context, KeyRing, admit_offer};
     let key = wellfed_signing::Key::load(&rig.bench.root.join(wellfed_signing::KEY_PATH)).unwrap();
     let bytes = fs::read(rig.bench.root.join(VERIFICATION).join(file)).unwrap();
     let built_in = [key.public()];

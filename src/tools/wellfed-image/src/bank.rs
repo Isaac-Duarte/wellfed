@@ -5,8 +5,8 @@
 //! (`0x6000`) is its fallback. Each keeps the reviewed stock footprint. The
 //! factory region `0x0-0x6000` belongs to neither.
 
-use wellfed_core::ota::SECTOR;
 use wellfed_formats::flash_plan::Kind;
+use wellfed_signed::SECTOR;
 
 use wellfed_formats::require;
 

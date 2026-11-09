@@ -12,12 +12,12 @@ use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use tokio::sync::oneshot;
 use wellfed_client::update::{Image, InstallError};
-use wellfed_core::ota::offer::{self, ImageKind, Signed, key_id};
-use wellfed_core::ota::{MARKER, Manifest, SECTOR};
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::Running;
 use wellfed_model::{UpdatePhase, UpdateStop};
+use wellfed_signed::offer::{self, ImageKind, Signed, key_id};
+use wellfed_signed::{MARKER, Manifest, SECTOR};
 
 use super::{Answer, Ask, Device, DeviceError, Fault};
 
