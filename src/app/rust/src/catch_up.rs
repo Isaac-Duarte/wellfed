@@ -233,7 +233,8 @@ async fn through_server(
 }
 
 /// Apply what the server last read of the feeder, as a session's read
-/// would be applied.
+/// would be applied, unless this phone has read a newer table itself
+/// ([`Watch::apply_relayed`]).
 fn relayed(watch: &mut Watch, alerts: &FeederAlerts, context: &Context<'_>) {
     if let Some(read) = alerts.read {
         let cursor = Cursor {
@@ -241,19 +242,15 @@ fn relayed(watch: &mut Watch, alerts: &FeederAlerts, context: &Context<'_>) {
             boot: read.boot,
             generation: read.generation,
         };
-        if watch.needs_read(cursor) {
-            let view = AlertsView {
-                epoch: read.epoch,
-                generation: read.generation,
-                more: read.more,
-                settling: read.settling,
-                alerts: alerts.alerts.clone(),
-                unread: read.unread,
-            };
-            watch.apply(cursor, &view, context);
-        } else {
-            watch.lapse(context);
-        }
+        let view = AlertsView {
+            epoch: read.epoch,
+            generation: read.generation,
+            more: read.more,
+            settling: read.settling,
+            alerts: alerts.alerts.clone(),
+            unread: read.unread,
+        };
+        watch.apply_relayed(cursor, &view, context);
     }
     watch.relayed_reach(alerts.unreachable, context);
 }
@@ -326,4 +323,114 @@ async fn read(
 async fn ask(connection: &mut Connection, read: Read) -> Result<Answer, Error> {
     let id = random().map_err(|_| Error::Timeout)?;
     connection.ask(id, &read.op()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_api::AlertsRead;
+    use wellfed_client::alerts::Mutes;
+    use wellfed_model::{Alert, Generation, OpenAlert};
+
+    use super::*;
+
+    fn at(second: i64) -> Timestamp {
+        Timestamp::from_second(1_800_000_000 + second).expect("a time")
+    }
+
+    fn food_low() -> OpenAlert {
+        OpenAlert {
+            at: Some(at(0)),
+            alert: Alert::FoodLow,
+        }
+    }
+
+    fn view(generation: u32, alerts: &[OpenAlert]) -> AlertsView {
+        AlertsView {
+            epoch: 1,
+            generation: Generation(generation),
+            more: false,
+            settling: false,
+            alerts: alerts.to_vec(),
+            unread: 0,
+        }
+    }
+
+    fn cursor(generation: u32) -> Cursor {
+        Cursor {
+            epoch: 1,
+            boot: 4,
+            generation: Generation(generation),
+        }
+    }
+
+    /// The server's copy of the table at `generation`.
+    fn served(generation: u32, alerts: &[OpenAlert]) -> FeederAlerts {
+        FeederAlerts {
+            read: Some(AlertsRead {
+                epoch: 1,
+                boot: 4,
+                generation: Generation(generation),
+                more: false,
+                settling: false,
+                unread: 0,
+                clock_valid: true,
+                at: at(0),
+            }),
+            alerts: alerts.to_vec(),
+            unreachable: None,
+        }
+    }
+
+    /// A home read of `table` at `generation`, its changes confirmed as
+    /// Dart would.
+    fn read_at_home(
+        watch: &mut Watch,
+        generation: u32,
+        table: &[OpenAlert],
+        context: &Context<'_>,
+    ) {
+        watch.apply(cursor(generation), &view(generation, table), context);
+        for change in watch.changes() {
+            watch.confirm(&change);
+        }
+    }
+
+    fn context(mutes: &Mutes, now: Timestamp) -> Context<'_> {
+        Context {
+            now,
+            mutes,
+            own: Hex([0; 4]),
+            clock: FeederClock::Known,
+        }
+    }
+
+    #[test]
+    fn a_server_one_generation_behind_a_home_read_ends_and_reposts_nothing() {
+        let mutes = Mutes::default();
+        let mut watch = Watch::default();
+        read_at_home(&mut watch, 5, &[food_low()], &context(&mutes, at(0)));
+
+        relayed(&mut watch, &served(4, &[]), &context(&mutes, at(60)));
+
+        assert!(watch.changes().is_empty());
+        assert_eq!(watch.listed().count(), 1);
+        assert_eq!(watch.cursor, Some(cursor(5)));
+    }
+
+    #[test]
+    fn an_alert_that_ended_at_home_is_not_revived_by_a_lagging_server() {
+        let mutes = Mutes::default();
+        let mut watch = Watch::default();
+        read_at_home(&mut watch, 4, &[food_low()], &context(&mutes, at(0)));
+        read_at_home(&mut watch, 5, &[], &context(&mutes, at(60)));
+
+        relayed(
+            &mut watch,
+            &served(4, &[food_low()]),
+            &context(&mutes, at(120)),
+        );
+
+        assert!(watch.changes().is_empty());
+        assert_eq!(watch.listed().count(), 0);
+    }
 }

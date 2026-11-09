@@ -859,3 +859,90 @@ fn a_key_reads_as_the_same_text_for_the_same_alert() {
         assert_eq!(json, kind.name(), "{kind:?}");
     }
 }
+
+#[test]
+fn a_server_copy_one_generation_behind_a_home_read_ends_nothing() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+
+    // At home: the meal failed at generation 5.
+    watch.apply(
+        cursor(1, 4, 5),
+        &view(1, &[failed(3)]),
+        &context(at(0), &mutes),
+    );
+    for change in watch.changes() {
+        watch.confirm(&change);
+    }
+
+    // The server's copy is still generation 4, from before the meal.
+    let away = context(at(60), &mutes);
+    assert!(watch.behind(cursor(1, 4, 4)));
+    watch.apply_relayed(cursor(1, 4, 4), &view(1, &[]), &away);
+    assert!(watch.changes().is_empty(), "nothing ends, nothing posts");
+    assert_eq!(watch.cursor, Some(cursor(1, 4, 5)));
+    assert_eq!(watch.listed().count(), 1);
+
+    // Once it catches up, the same alert is the same notice.
+    watch.apply_relayed(cursor(1, 4, 6), &view(1, &[failed(3)]), &away);
+    assert!(watch.changes().is_empty());
+}
+
+#[test]
+fn a_server_copy_behind_a_home_read_never_revives_what_ended() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    watch.apply(
+        cursor(1, 4, 4),
+        &view(1, &[condition(Alert::FoodLow)]),
+        &context(at(0), &mutes),
+    );
+    for change in watch.changes() {
+        watch.confirm(&change);
+    }
+    // At home the food was topped up: the condition ended at generation 5.
+    watch.apply(cursor(1, 4, 5), &view(1, &[]), &context(at(60), &mutes));
+    for change in watch.changes() {
+        watch.confirm(&change);
+    }
+    assert_eq!(watch.listed().count(), 0);
+
+    // The server still holds generation 4, and an earlier boot's copy is
+    // older still.
+    let away = context(at(120), &mutes);
+    watch.apply_relayed(
+        cursor(1, 4, 4),
+        &view(1, &[condition(Alert::FoodLow)]),
+        &away,
+    );
+    watch.apply_relayed(
+        cursor(1, 3, 9),
+        &view(1, &[condition(Alert::FoodLow)]),
+        &away,
+    );
+    assert!(watch.changes().is_empty());
+    assert_eq!(watch.listed().count(), 0);
+    assert!(
+        !watch.behind(cursor(2, 0, 0)),
+        "another ring is never older"
+    );
+}
+
+#[test]
+fn a_server_that_reaches_the_feeder_clears_the_phone_s_count() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    watch.reached(Some("home".into()), at(0));
+    watch.unanswered(Some("home"), &context(at(60), &mutes));
+    watch.unanswered(Some("home"), &context(at(120), &mutes));
+    assert_eq!(watch.reach.failures, 2);
+
+    watch.relayed_reach(None, &context(at(180), &mutes));
+    assert_eq!(watch.reach.failures, 0);
+    assert_eq!(watch.reach.first_failure, None);
+
+    // Two more at home are two, not four: nothing opens.
+    watch.unanswered(Some("home"), &context(at(900), &mutes));
+    watch.unanswered(Some("home"), &context(at(1500), &mutes));
+    assert!(watch.changes().is_empty());
+}

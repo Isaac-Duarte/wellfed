@@ -441,8 +441,9 @@ impl Watch {
     /// phone's place, by the same rule: `unreachable` is since when it has
     /// not reached the feeder, or `None` while it does. The notice is the
     /// phone's own, under the same key, so a feeder found unreachable at
-    /// home and then by the server posts once. Nothing here moves what the
-    /// phone counts at home.
+    /// home and then by the server posts once. A server that reaches the
+    /// feeder vouches for it as an answer at home would, so the phone's own
+    /// count of failures starts again; one that doesn't adds nothing to it.
     pub fn relayed_reach(&mut self, unreachable: Option<Timestamp>, context: &Context<'_>) {
         match unreachable {
             Some(since) => self.track(
@@ -450,8 +451,35 @@ impl Watch {
                 Notice::Unreachable { since },
                 context,
             ),
-            None => self.end(|key| *key == NoticeKey::Unreachable),
+            None => {
+                self.reach.failures = 0;
+                self.reach.first_failure = None;
+                self.end(|key| *key == NoticeKey::Unreachable);
+            }
         }
+    }
+
+    /// Apply a table someone else read, the owner's server's copy, under
+    /// `cursor`. A copy can lag what this watch read itself: one older than
+    /// the table applied, in the same ring, would end alerts the newer one
+    /// lists or bring back ones it no longer does, so it only lets held
+    /// alerts lapse, as an unchanged table does.
+    pub fn apply_relayed(&mut self, cursor: Cursor, view: &AlertsView, context: &Context<'_>) {
+        if self.behind(cursor) || !self.needs_read(cursor) {
+            self.lapse(context);
+        } else {
+            self.apply(cursor, view, context);
+        }
+    }
+
+    /// Whether `cursor` is older than the table applied: the same ring,
+    /// and an earlier boot or an earlier generation of the same boot.
+    /// Another ring is never older; it replaces this one.
+    pub fn behind(&self, cursor: Cursor) -> bool {
+        self.cursor.is_some_and(|applied| {
+            applied.epoch == cursor.epoch
+                && (cursor.boot, cursor.generation) < (applied.boot, applied.generation)
+        })
     }
 
     /// Apply the table `view`, read under `cursor`. Each alert not yet

@@ -89,19 +89,15 @@ impl Tracker {
                 boot: read.boot,
                 generation: read.generation,
             };
-            if self.watch.needs_read(cursor) {
-                let view = AlertsView {
-                    epoch: read.epoch,
-                    generation: read.generation,
-                    more: read.more,
-                    settling: read.settling,
-                    alerts: alerts.alerts.clone(),
-                    unread: read.unread,
-                };
-                self.watch.apply(cursor, &view, &context);
-            } else {
-                self.watch.lapse(&context);
-            }
+            let view = AlertsView {
+                epoch: read.epoch,
+                generation: read.generation,
+                more: read.more,
+                settling: read.settling,
+                alerts: alerts.alerts.clone(),
+                unread: read.unread,
+            };
+            self.watch.apply_relayed(cursor, &view, &context);
         }
         self.watch.relayed_reach(alerts.unreachable, &context);
         let unread = self.watch.unread;
@@ -137,8 +133,13 @@ impl Tracker {
         let open: Vec<Tracked> = self.watch.listed().copied().collect();
         let moved = open != self.shown;
         self.shown = open;
+        // The first table seeds the tracker. A server that has not read
+        // the feeder yet answers with no table, which seeds nothing: what
+        // its first table shows is still what was open at the start.
         let first = !self.seeded;
-        self.seeded = true;
+        if self.watch.cursor.is_some() {
+            self.seeded = true;
+        }
         if first {
             // What is open at the start is shown, not announced.
             opened.clear();
@@ -153,5 +154,125 @@ impl Tracker {
             cleared,
             unread,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_model::{Alert as Wire, Generation, OpenAlert};
+    use wellfed_server_client::api::AlertsRead;
+
+    use super::*;
+    use crate::api::AlertKind;
+
+    fn food_low() -> OpenAlert {
+        OpenAlert {
+            at: None,
+            alert: Wire::FoodLow,
+        }
+    }
+
+    fn battery_low() -> OpenAlert {
+        OpenAlert {
+            at: None,
+            alert: Wire::BatteryBelowFloor,
+        }
+    }
+
+    fn cursor(generation: u32) -> Cursor {
+        Cursor {
+            epoch: 1,
+            boot: 1,
+            generation: Generation(generation),
+        }
+    }
+
+    fn view(generation: u32, alerts: &[OpenAlert]) -> AlertsView {
+        AlertsView {
+            epoch: 1,
+            generation: Generation(generation),
+            more: false,
+            settling: false,
+            alerts: alerts.to_vec(),
+            unread: 0,
+        }
+    }
+
+    fn served(generation: Option<u32>, alerts: &[OpenAlert]) -> FeederAlerts {
+        FeederAlerts {
+            read: generation.map(|generation| AlertsRead {
+                epoch: 1,
+                boot: 1,
+                generation: Generation(generation),
+                more: false,
+                settling: false,
+                unread: 0,
+                clock_valid: true,
+                at: Timestamp::UNIX_EPOCH,
+            }),
+            alerts: alerts.to_vec(),
+            unreachable: None,
+        }
+    }
+
+    fn kinds(alerts: &[Alert]) -> Vec<AlertKind> {
+        alerts.iter().map(|alert| alert.kind).collect()
+    }
+
+    fn alerts(update: Option<Update>) -> Alerts {
+        update
+            .and_then(|update| update.alerts)
+            .expect("an alerts update")
+    }
+
+    #[test]
+    fn the_first_table_is_shown_and_fires_nothing() {
+        let mut tracker = Tracker::default();
+
+        let first = alerts(tracker.table(cursor(1), &view(1, &[food_low()]), FeederClock::Known));
+
+        assert_eq!(kinds(&first.open), [AlertKind::FoodLow]);
+        assert!(first.opened.is_empty());
+        assert!(first.cleared.is_empty());
+    }
+
+    #[test]
+    fn a_new_alert_fires_opened_and_an_ended_one_cleared_under_one_key() {
+        let mut tracker = Tracker::default();
+        tracker.table(cursor(1), &view(1, &[]), FeederClock::Known);
+
+        let opened = alerts(tracker.table(cursor(2), &view(2, &[food_low()]), FeederClock::Known));
+        assert_eq!(kinds(&opened.opened), [AlertKind::FoodLow]);
+        assert!(opened.cleared.is_empty());
+
+        let cleared = alerts(tracker.table(cursor(3), &view(3, &[]), FeederClock::Known));
+        assert!(cleared.opened.is_empty());
+        assert_eq!(kinds(&cleared.cleared), [AlertKind::FoodLow]);
+        assert_eq!(cleared.cleared[0].key, opened.opened[0].key);
+        assert!(cleared.open.is_empty());
+
+        assert!(
+            tracker.unchanged(FeederClock::Known).is_none(),
+            "nothing moved, nothing to say"
+        );
+    }
+
+    #[test]
+    fn a_server_with_no_table_yet_leaves_its_first_table_to_seed() {
+        let mut tracker = Tracker::default();
+
+        let empty = alerts(tracker.relayed(&served(None, &[])));
+        assert!(empty.open.is_empty());
+
+        // What was open before Home Assistant came is shown, not fired.
+        let first = alerts(tracker.relayed(&served(Some(4), &[food_low()])));
+        assert_eq!(kinds(&first.open), [AlertKind::FoodLow]);
+        assert!(first.opened.is_empty());
+
+        let next = alerts(tracker.relayed(&served(Some(5), &[food_low(), battery_low()])));
+        assert_eq!(kinds(&next.opened), [AlertKind::BatteryBelowFloor]);
+
+        // A copy older than the table applied changes nothing.
+        assert!(tracker.relayed(&served(Some(4), &[food_low()])).is_none());
     }
 }
