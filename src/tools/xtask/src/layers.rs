@@ -108,10 +108,15 @@ const BELOW_SERVER: [&str; 6] = [
 ];
 
 /// The SDK crates every device kind builds on, which must not link a
-/// kind's own crate ([`is_kind_sdk`]) by any path.
-const NEUTRAL_SDK: [&str; 9] = [
+/// kind's own crate ([`is_kind_sdk`]) by any path. The board crates are
+/// among them: a board names its pins and safe outputs as data (the
+/// PLAF103's motor and sensor pins too), which the kind's drivers read; it
+/// needs none of a kind's policy.
+const NEUTRAL_SDK: [&str; 11] = [
     "wellfed-amebad-sys",
     "wellfed-board",
+    "wellfed-board-plaf103",
+    "wellfed-board-plwf106",
     "wellfed-core",
     "wellfed-hal",
     "wellfed-hal-common",
