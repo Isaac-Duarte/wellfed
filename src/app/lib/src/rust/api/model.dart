@@ -513,7 +513,7 @@ enum SetupRefusal { busy, unconfirmed, wrongCode, full, notWritable, invalid }
 /// How a feeder's API revision stands against this app's (or the server's):
 /// which side to update. Every op both know still goes, so neither side is
 /// ever offered an older build for it.
-enum Skew { same, feederBehind, feederAhead }
+enum Skew { same, feederBehind, feederAhead, legacy }
 
 @freezed
 sealed class Stats with _$Stats {

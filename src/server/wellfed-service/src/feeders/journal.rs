@@ -295,7 +295,12 @@ impl Service {
             // Never sent: a first attempt leaves no entry, so the key is
             // free for the same write later. Only the first attempt sends
             // while the entry is `sent`, so no other attempt is using it.
-            Err(unsent @ (AskError::NotRunning | AskError::Offline | AskError::Unsendable)) => {
+            Err(
+                unsent @ (AskError::NotRunning
+                | AskError::Offline
+                | AskError::Legacy
+                | AskError::Unsendable),
+            ) => {
                 if matches!(attempt, Attempt::First) {
                     store.forget_unsent(&key).await?;
                 }

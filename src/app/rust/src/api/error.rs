@@ -99,7 +99,11 @@ impl From<wellfed_connect::Error> for BridgeError {
             Error::UnknownKey => ErrorKind::UnknownKey,
             Error::Version(_) => ErrorKind::Version,
             Error::Full => ErrorKind::Full,
-            Error::Session(_) | Error::Encode | Error::ReservedId => ErrorKind::Protocol,
+            // The session sends a pre-revision build frozen ops alone, so
+            // this never comes back from it: any that does is a fault here.
+            Error::Session(_) | Error::Encode | Error::ReservedId | Error::Legacy => {
+                ErrorKind::Protocol
+            }
         };
         Self::new(kind, error)
     }

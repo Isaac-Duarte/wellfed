@@ -36,6 +36,9 @@ pub async fn enroll(
     report: &impl Report,
 ) -> Result<Result<Enrolled, EnrollError>, Error> {
     let mut enroll = match Enroll::new(public, label, session.role()) {
+        // A pre-revision build's client list is not frozen: enroll
+        // directly, and let the feeder's own checks answer.
+        Ok(enroll) if session.legacy() => enroll.unlisted(),
         Ok(enroll) => enroll,
         Err(error) => return Ok(Err(error)),
     };
@@ -89,8 +92,12 @@ async fn pressed(
     }
 }
 
-/// The feeder's enrolled clients.
+/// The feeder's enrolled clients; [`Error::Legacy`] from a pre-revision
+/// build, whose list is not frozen and is never asked for.
 pub async fn clients(session: &mut impl Session) -> Result<Vec<Client>, Error> {
+    if session.legacy() {
+        return Err(Error::Legacy);
+    }
     match session
         .ask(&Op::ListClients)
         .await

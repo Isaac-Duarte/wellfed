@@ -96,6 +96,13 @@ pub enum Error {
     Version(u16),
     #[error("every session slot is taken")]
     Full,
+    /// The feeder runs a build from before API revisions, which takes only
+    /// frozen ops: nothing was sent.
+    #[error(
+        "the feeder runs a build from before API revisions, which takes only an update; \
+         nothing was sent: update the feeder"
+    )]
+    Legacy,
 }
 
 impl From<wellfed_client::api::Error> for Error {
@@ -108,6 +115,7 @@ impl From<wellfed_client::api::Error> for Error {
             Session::Timeout => Self::Timeout,
             Session::Silent => Self::Silent,
             Session::ReservedId => Self::ReservedId,
+            Session::Legacy => Self::Legacy,
             Session::TooLarge => Self::Encode,
             other => Self::Session(other),
         }

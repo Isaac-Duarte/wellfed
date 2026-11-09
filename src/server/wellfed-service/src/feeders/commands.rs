@@ -20,6 +20,11 @@ use crate::{
 pub enum CommandError {
     #[error("the server has no session with the feeder")]
     Offline,
+    #[error(
+        "the feeder runs a build from before API revisions, which takes only an update; \
+         update the feeder"
+    )]
+    Legacy,
     #[error("no answer in time: retry with the same key")]
     Unknown,
     #[error("the Idempotency-Key already names another request; nothing was sent")]
@@ -34,6 +39,7 @@ impl CommandError {
     pub(crate) fn code(&self) -> ErrorCode {
         match self {
             Self::Offline => ErrorCode::FeederOffline,
+            Self::Legacy => ErrorCode::FeederLegacy,
             Self::Unknown => ErrorCode::OutcomeUnknown,
             Self::KeyReused => ErrorCode::KeyReused,
             Self::Superseded => ErrorCode::Superseded,
@@ -160,7 +166,9 @@ impl Service {
             // under the same key reads it again without changing anything.
             CommandOutcome::Done => {
                 let settings = self.read_settings(id).await.map_err(|error| match error {
-                    Error::Command(CommandError::Offline) => CommandError::Unknown.into(),
+                    Error::Command(CommandError::Offline | CommandError::Legacy) => {
+                        CommandError::Unknown.into()
+                    }
                     other => other,
                 })?;
                 self.amend(&recorded.key, &CommandOutcome::Settings { settings })

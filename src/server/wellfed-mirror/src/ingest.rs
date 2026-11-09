@@ -51,9 +51,9 @@ impl Batch {
 }
 
 /// A stored event of `epoch` as the feeder sent it, or `None` when its
-/// body does not decode.
+/// body does not decode. The raw bytes decide, not the stored kind: a row
+/// stored unread by an older server is read by any build that knows it.
 pub fn stored_event(epoch: u32, row: &EventRow) -> Option<HistoryEvent> {
-    row.kind?;
     let event = Event {
         epoch,
         seq: row.seq,
@@ -85,15 +85,28 @@ impl Mirror {
     /// projection code changed since they were built. Call it before
     /// starting any feeder, so ingest never writes beside a stale build.
     pub async fn refresh_projections(&self) -> wellfed_store::Result<Refresh> {
-        let refresh = self.shared.store.refresh_projections(stored_body).await?;
-        if let Refresh::Rebuilt { events, undecoded } = refresh {
-            info!(events, "projections rebuilt from the stored events");
-            if undecoded > 0 {
-                warn!(
-                    undecoded,
-                    "stored events that do not decode project nothing"
+        let refresh = self
+            .shared
+            .store
+            .refresh_projections(stored_body, proto::REVISION)
+            .await?;
+        match refresh {
+            Refresh::Rebuilt { events, undecoded } => {
+                info!(events, "projections rebuilt from the stored events");
+                if undecoded > 0 {
+                    warn!(
+                        undecoded,
+                        "stored events that do not decode project nothing"
+                    );
+                }
+            }
+            Refresh::Reread { read, unread } => {
+                info!(
+                    read,
+                    unread, "events stored unread were read again by this device API revision"
                 );
             }
+            Refresh::Current => {}
         }
         Ok(refresh)
     }
@@ -235,5 +248,21 @@ impl Task {
             .record_samples(self.id, &batch.samples)
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stored body longer than the ring's 16 bytes is no body the feeder
+    /// sent: it reads as undecodable rather than panicking or truncating.
+    #[test]
+    fn a_stored_body_past_the_ring_s_size_does_not_decode() {
+        let mut raw = vec![0; proto::EVENT_BODY_MAX + 1];
+        let len = wellfed_proto::encode(&proto::EventBody::Restarting, &mut raw).unwrap();
+        assert!(stored_body(&raw[..len]).is_some(), "the short form reads");
+
+        assert_eq!(stored_body(&raw), None);
     }
 }

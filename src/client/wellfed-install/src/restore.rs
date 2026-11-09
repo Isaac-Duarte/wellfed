@@ -433,7 +433,9 @@ async fn signed_up<D: Discovery>(
                     .any(|c| c.key.0 == key.public() && c.role == ClientRole::UpdateSigner);
                 return listed.then_some(session);
             }
-            Err(error) if Instant::now() >= deadline => {
+            // A pre-revision build's list is never readable: asking again
+            // only waits out the deadline.
+            Err(error) if matches!(error, Error::Legacy) || Instant::now() >= deadline => {
                 report.event(Event::SignersUnread {
                     error: crate::text(&error),
                 });

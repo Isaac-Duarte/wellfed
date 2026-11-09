@@ -325,6 +325,9 @@ String? skewWords(FeederState state) {
   final bool owner = state.role == ClientRole.owner;
   return switch ((state.skew, state.serverSkew)) {
     (Skew.feederAhead, _) => 'Update this app: the feeder runs newer firmware',
+    // A pre-revision build takes nothing but an update from this app.
+    (Skew.legacy, _) || (null, Skew.legacy) when owner => 'Update the feeder: its firmware is too old for this app',
+    (Skew.legacy, _) || (null, Skew.legacy) => 'The feeder needs an update from its owner',
     (Skew.feederBehind, _) ||
     (null, Skew.feederBehind) when owner => 'Update the feeder: it runs older firmware than this app',
     (Skew.feederBehind, _) || (null, Skew.feederBehind) => 'The feeder runs older firmware: its owner can update it',

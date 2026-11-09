@@ -438,6 +438,10 @@ view_enum! {
         /// The feeder is newer: what it added reads as `newer_build` until
         /// this integration is updated.
         FeederAhead => "feeder_ahead",
+        /// The feeder runs a build from before API revisions, which takes
+        /// nothing this integration reads or writes: it must be updated,
+        /// from the app, before the session can serve it.
+        Legacy => "legacy",
     }
 }
 
@@ -447,6 +451,7 @@ impl From<model::Skew> for Skew {
             model::Skew::Same => Self::Same,
             model::Skew::FeederBehind => Self::FeederBehind,
             model::Skew::FeederAhead => Self::FeederAhead,
+            model::Skew::Legacy => Self::Legacy,
         }
     }
 }

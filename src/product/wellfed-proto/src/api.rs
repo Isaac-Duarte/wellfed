@@ -893,6 +893,11 @@ pub enum DeviceMessage<'a> {
     },
 }
 
+/// How many [`DeviceMessage`] variants this build knows. Each is its own
+/// sealed frame, so a client skips one tagged at or past this, which a
+/// newer build added, and reads on.
+pub const DEVICE_MESSAGES: u32 = 5;
+
 /// The most text one [`DeviceMessage::Log`] carries: a frame, less the
 /// message's tag, numbers and the text's length prefix.
 pub const LOG_TEXT_MAX: usize = MESSAGE_MAX - 16;
@@ -1979,6 +1984,12 @@ impl<'de> Deserialize<'de> for AlertTable {
                 let mut table = AlertTable::default();
                 let mut slots = table.entries.iter_mut();
                 while let Some(entry) = seq.next_element::<EncodedAlert<'de>>()? {
+                    // Any entry that does not decode counts as a newer
+                    // build's: an alert kind added at the enum's end, or
+                    // one that grew. A garbled entry cannot be told apart
+                    // from those, and the frame around it authenticated,
+                    // so it is counted the same rather than failing the
+                    // whole table.
                     let Ok(alert) = crate::decode::<Alert>(entry.alert) else {
                         table.skipped = table.skipped.saturating_add(1);
                         continue;
@@ -2930,6 +2941,24 @@ mod tests {
 
     /// An entry a newer build added is skipped and counted, and the
     /// entries around it still read.
+    /// The last variant's tag is one short of [`DEVICE_MESSAGES`], so a
+    /// variant added at the end is the first tag a client skips.
+    #[test]
+    fn device_messages_counts_every_variant() {
+        let mut out = [0; 32];
+        let len = crate::encode(
+            &DeviceMessage::Log {
+                seq: 0,
+                dropped: 0,
+                text: "",
+            },
+            &mut out,
+        )
+        .unwrap();
+        assert!(len > 0);
+        assert_eq!(u32::from(out[0]) + 1, DEVICE_MESSAGES);
+    }
+
     #[test]
     fn a_newer_alert_is_skipped_and_counted() {
         #[derive(Serialize)]

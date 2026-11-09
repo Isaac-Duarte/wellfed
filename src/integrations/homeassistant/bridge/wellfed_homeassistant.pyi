@@ -608,6 +608,12 @@ class Skew:
     The feeder is older: what it lacks is refused until it is
     updated, from the app.
     """
+    Legacy: Final[Skew]
+    """
+    The feeder runs a build from before API revisions, which takes
+    nothing this integration reads or writes: it must be updated,
+    from the app, before the session can serve it.
+    """
     Same: Final[Skew]
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...

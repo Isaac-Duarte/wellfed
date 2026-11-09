@@ -25,8 +25,8 @@ use wellfed_model::{
     convert,
 };
 use wellfed_proto::api::{
-    ClientMessage, DeviceMessage, FRAME_MAX, Join as JoinRequest, Op as WireOp, Open, PROLOGUE,
-    REVISION, RequestId, Samples, Welcome,
+    ClientMessage, DEVICE_MESSAGES, DeviceMessage, FRAME_MAX, Join as JoinRequest, Op as WireOp,
+    Open, PROLOGUE, REVISION, RequestId, Samples, Welcome,
 };
 use wellfed_session::frame::{self, PREFIX};
 use wellfed_session::hex::{self, Lower};
@@ -58,6 +58,13 @@ pub enum Error {
     ReservedId,
     #[error("the session is not open yet")]
     NotOpen,
+    /// The feeder runs a build from before the API revision
+    /// ([`Skew::Legacy`]): only frozen ops go to it, so nothing was sent.
+    #[error(
+        "the feeder runs a build from before API revisions, which takes only an update; \
+         nothing was sent: update the feeder"
+    )]
+    Legacy,
     #[error(transparent)]
     Setup(#[from] crate::setup::Error),
 }
@@ -213,6 +220,9 @@ pub struct Session {
     /// The welcome's epoch, once it has arrived: what pushed events count
     /// in.
     epoch: Option<u32>,
+    /// The welcome named a pre-revision build ([`Skew::Legacy`]): every op
+    /// outside the frozen part, and a subscription, is refused unsent.
+    legacy: bool,
 }
 
 impl std::fmt::Debug for Session {
@@ -264,6 +274,7 @@ impl Session {
             inbox: std::collections::VecDeque::new(),
             events: std::collections::VecDeque::new(),
             epoch: None,
+            legacy: false,
         };
         Ok((session, out))
     }
@@ -333,6 +344,7 @@ impl Session {
                     schema,
                 } => {
                     self.epoch = Some(epoch);
+                    self.legacy = Skew::of(schema, REVISION) == Skew::Legacy;
                     Incoming::Opened(Opened {
                         kind: model.kind(),
                         model,
@@ -351,6 +363,11 @@ impl Session {
         };
 
         let Ok(message) = wellfed_proto::decode::<DeviceMessage<'_>>(&plain) else {
+            // A message kind a newer build added comes in a frame of its
+            // own, so it is skipped whole and the next one read.
+            if newer_message(&plain) {
+                return self.next_incoming();
+            }
             return unreadable(&plain)
                 .map(Some)
                 .ok_or_else(|| Error::Malformed(Garbled::of(&plain)));
@@ -389,8 +406,13 @@ impl Session {
 
     /// One request under `id`, sealed and framed. It goes to a feeder of
     /// any revision: the API only grows, so an op means the same to every
-    /// build that knows it, and one that does not answers `Unavailable`.
+    /// build that knows it, and one that does not answers `Unavailable`. A
+    /// pre-revision build takes frozen ops alone: any other is
+    /// [`Error::Legacy`], unsent, since its bytes mean something else there.
     pub fn request(&mut self, id: RequestId, op: &Op) -> Result<Vec<u8>, Error> {
+        if self.legacy && !op.is_frozen() {
+            return Err(Error::Legacy);
+        }
         self.send(&ClientMessage::Request {
             id,
             op: op.to_proto(),
@@ -410,6 +432,11 @@ impl Session {
     /// live samples if `samples`. A newer feeder's bodies this client does
     /// not know come out as [`Pushed::Unknown`].
     pub fn subscribe(&mut self, after: Option<u64>, samples: bool) -> Result<Vec<u8>, Error> {
+        // A pre-revision build frames its events without lengths: they
+        // would read as junk.
+        if self.legacy {
+            return Err(Error::Legacy);
+        }
         let samples = if samples { Samples::On } else { Samples::Off };
         self.send(&ClientMessage::Subscribe { after, samples })
     }
@@ -426,11 +453,28 @@ impl Session {
     }
 }
 
+/// Whether `plain` is a device message of a kind a newer build added: its
+/// tag, postcard's leading `u32` varint, is at or past [`DEVICE_MESSAGES`].
+/// Bytes whose tag is no `u32` varint at all are garbled, not newer, and
+/// end the session like any other message that does not decode.
+fn newer_message(plain: &[u8]) -> bool {
+    // A `u32` varint takes at most five bytes, seven bits each.
+    let mut tag: u64 = 0;
+    for (index, &byte) in plain.iter().take(5).enumerate() {
+        tag |= u64::from(byte & 0x7f) << (7 * index);
+        if byte & 0x80 == 0 {
+            return u32::try_from(tag).is_ok_and(|tag| tag >= DEVICE_MESSAGES);
+        }
+    }
+    false
+}
+
 /// A response this build cannot decode, which a newer build sent: its id
 /// sits right after the message's tag, so the request it answers is still
 /// known, and the session goes on. An outcome tagged as a refusal is one this
-/// build cannot name; anything else is unreadable. The request may have run
-/// either way, so its caller treats a write answered so as uncertain.
+/// build cannot name: a device refuses before it acts, so the request did
+/// not run. Anything else is unreadable: the request may have run, so its
+/// caller treats a write answered so as uncertain and never resends it.
 /// `None` for bytes that are no response at all, which end the session.
 fn unreadable(plain: &[u8]) -> Option<Incoming> {
     // Postcard writes `DeviceMessage::Response` and `Outcome::Refused`, both
@@ -766,5 +810,21 @@ mod tests {
         ] {
             assert_eq!(Invite::parse(&text), Err(error), "{text}");
         }
+    }
+
+    /// A tag past the known kinds is a newer build's message, whatever its
+    /// varint's length; bytes that are no `u32` varint are garbled.
+    #[test]
+    fn a_newer_tag_is_told_from_garbled_bytes() {
+        let past = u8::try_from(DEVICE_MESSAGES).expect("a one-byte tag");
+
+        assert!(!newer_message(&[0, 1, 2]));
+        assert!(!newer_message(&[past - 1]));
+        assert!(newer_message(&[past, 0]));
+        assert!(newer_message(&[0x80, 0x01]));
+
+        assert!(!newer_message(&[0xff; 24]));
+        assert!(!newer_message(&[0xff, 0xff]));
+        assert!(!newer_message(&[]));
     }
 }

@@ -18,6 +18,7 @@ pub enum _Skew {
     Same,
     FeederBehind,
     FeederAhead,
+    Legacy,
 }
 
 #[frb(mirror(Enrolled))]

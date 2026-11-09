@@ -19,6 +19,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   Bank0Check bank0 = const Bank0Check.unchecked(),
   int minVersion = 6,
   Skew skew = Skew.same,
+  bool card = true,
 }) async {
   final book = FakeBook()..feeders = [kitchen];
   final ports = FakeFeederPorts()..image = image;
@@ -27,7 +28,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   addTearDown(feeder.dispose);
   await tester.pump();
   ports.session.opened(skew: skew);
-  ports.session.status(fakeCard(build: build));
+  if (card) ports.session.status(fakeCard(build: build));
   await tester.pump();
   ports.session.replies.add(
     FeederReply.update(
@@ -73,6 +74,14 @@ void main() {
       expect(find.text('Install on Kitchen'), findsNothing);
     });
   }
+
+  // A pre-revision build answers the update path alone and sends no status
+  // this app reads: its open session is enough for the offer.
+  testWidgets('a pre-revision build is offered the update, with no status card', (tester) async {
+    await _show(tester, skew: Skew.legacy, card: false);
+    expect(find.text('Install on Kitchen'), findsOneWidget);
+    expect(find.textContaining('newer firmware than this app carries'), findsNothing);
+  });
 
   testWidgets('the running build is up to date', (tester) async {
     await _show(tester, build: _newBuild);

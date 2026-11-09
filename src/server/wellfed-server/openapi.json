@@ -7561,6 +7561,7 @@
           "invite_expired",
           "unreachable",
           "feeder_offline",
+          "feeder_legacy",
           "feeder_refused",
           "outcome_unknown",
           "key_reused",
@@ -11797,7 +11798,8 @@
         "enum": [
           "same",
           "feeder_behind",
-          "feeder_ahead"
+          "feeder_ahead",
+          "legacy"
         ]
       },
       "Source": {

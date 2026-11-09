@@ -21,7 +21,10 @@
 //! A feeder of another API revision is mirrored the same way: the API
 //! only grows, so it refuses what its build lacks `Unavailable`, and what a
 //! newer build adds reads as unknown. Its [`Skew`] says which side to
-//! update.
+//! update. A pre-revision build ([`Skew::Legacy`]) is the exception: its
+//! bytes outside the frozen part moved since, so its session does none of
+//! the above and carries only an install, which updates it; any other
+//! command is refused [`crate::AskError::Legacy`] unsent.
 //!
 //! [`Skew`]: wellfed_model::Skew
 //! [`Timing::time_sync`]: crate::Timing::time_sync
@@ -97,9 +100,10 @@ impl Task {
             () = cancel.cancelled() => Err(End::Cancelled),
             started = self.start(connection, lanes) => started,
         };
-        if let Err(end) = started {
-            return end;
-        }
+        let whole = match started {
+            Ok(whole) => whole,
+            Err(end) => return end,
+        };
         self.set(Link::Online);
 
         let every = self.shared.config.timing.time_sync;
@@ -125,11 +129,11 @@ impl Task {
                     Some(step) => lanes.dispatch(Lane::Long, step, connection),
                     None => Err(End::Cancelled),
                 },
-                () = tokio::time::sleep_until(next_sync) => {
+                () = tokio::time::sleep_until(next_sync), if whole => {
                     next_sync += every;
                     self.keep_time(connection, lanes).await
                 }
-                changed = self.zone.changed(), if zone_open => match changed {
+                changed = self.zone.changed(), if zone_open && whole => match changed {
                     Ok(()) => self.keep_time(connection, lanes).await,
                     Err(_) => {
                         zone_open = false;
@@ -155,8 +159,9 @@ impl Task {
     }
 
     /// The connect sequence: history first, then the clock, then the
-    /// cached status, settings and plans.
-    async fn start(&mut self, connection: &mut Connection, lanes: &mut Lanes) -> Result<(), End> {
+    /// cached status, settings and plans; whether it ran, which it does not
+    /// for a pre-revision build.
+    async fn start(&mut self, connection: &mut Connection, lanes: &mut Lanes) -> Result<bool, End> {
         let Some(row) = self.shared.store.feeder(self.id).await? else {
             return Err(End::Cancelled);
         };
@@ -176,6 +181,16 @@ impl Task {
                 ?skew,
                 "the feeder runs another revision of the device API than this server"
             );
+        }
+        if skew == Skew::Legacy {
+            self.opened.send_replace(Some(Opened {
+                epoch: connection.epoch(),
+                kind: connection.kind(),
+                model: connection.model(),
+                skew,
+                boot_count: None,
+            }));
+            return Ok(false);
         }
         let from = row.synced.map(|synced| Cursor {
             epoch: synced.epoch,
@@ -217,7 +232,7 @@ impl Task {
                 .await?;
         }
         self.read_plans(connection, lanes).await?;
-        Ok(())
+        Ok(true)
     }
 
     /// Set the feeder's clock and its zone's rule.

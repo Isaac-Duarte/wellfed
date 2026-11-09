@@ -41,6 +41,8 @@ UNKNOWN_ISSUE = "unknown_feed"
 UPDATE_FEEDER_ISSUE = "update_feeder"
 # A feeder of a newer API revision: what it added needs this integration updated.
 UPDATE_INTEGRATION_ISSUE = "update_integration"
+# A feeder from before API revisions: it takes nothing but an update, from the app.
+LEGACY_FEEDER_ISSUE = "legacy_feeder"
 
 
 class WriteNotDone(HomeAssistantError):
@@ -315,6 +317,7 @@ class FeederSession:
         issues = {
             bridge.Skew.FeederBehind: UPDATE_FEEDER_ISSUE,
             bridge.Skew.FeederAhead: UPDATE_INTEGRATION_ISSUE,
+            bridge.Skew.Legacy: LEGACY_FEEDER_ISSUE,
         }
         wanted = issues.get(skew) if skew is not None else None
         for issue in issues.values():
@@ -324,9 +327,9 @@ class FeederSession:
             _LOGGER.warning(
                 "The feeder runs another revision of the device API (build %s): %s",
                 build,
-                "update the feeder from the Wellfed app"
-                if wanted == UPDATE_FEEDER_ISSUE
-                else "update this integration",
+                "update this integration"
+                if wanted == UPDATE_INTEGRATION_ISSUE
+                else "update the feeder from the Wellfed app",
             )
             self._issue(wanted, ir.IssueSeverity.WARNING, {"build": build or "unknown"})
 

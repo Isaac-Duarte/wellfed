@@ -11209,6 +11209,7 @@ impl SseDecode for crate::api::model::Skew {
             0 => crate::api::model::Skew::Same,
             1 => crate::api::model::Skew::FeederBehind,
             2 => crate::api::model::Skew::FeederAhead,
+            3 => crate::api::model::Skew::Legacy,
             _ => unreachable!("Invalid variant for Skew: {}", inner),
         };
     }
@@ -16558,6 +16559,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Skew> {
             crate::api::model::Skew::Same => 0.into_dart(),
             crate::api::model::Skew::FeederBehind => 1.into_dart(),
             crate::api::model::Skew::FeederAhead => 2.into_dart(),
+            crate::api::model::Skew::Legacy => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -21514,6 +21516,7 @@ impl SseEncode for crate::api::model::Skew {
                 crate::api::model::Skew::Same => 0,
                 crate::api::model::Skew::FeederBehind => 1,
                 crate::api::model::Skew::FeederAhead => 2,
+                crate::api::model::Skew::Legacy => 3,
                 _ => {
                     unimplemented!("");
                 }

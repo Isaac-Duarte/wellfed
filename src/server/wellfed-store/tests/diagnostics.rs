@@ -26,7 +26,7 @@ async fn fresh() -> (TempDir, Store) {
         .await
         .unwrap();
     home(&store).await;
-    store.refresh_projections(decode).await.unwrap();
+    store.refresh_projections(decode, REVISION).await.unwrap();
     store
         .insert_feeder(NewFeeder {
             id: ID,
@@ -46,6 +46,9 @@ async fn fresh() -> (TempDir, Store) {
         .unwrap();
     (dir, store)
 }
+
+/// The device API revision the tests' server reads.
+const REVISION: u32 = 1;
 
 fn decode(raw: &[u8]) -> Option<EventBody> {
     serde_json::from_slice(raw).ok()
@@ -227,7 +230,7 @@ async fn a_projection_rebuild_leaves_the_traces_and_statistics() {
         .unwrap();
     pool.close().await;
     assert!(matches!(
-        store.refresh_projections(decode).await.unwrap(),
+        store.refresh_projections(decode, REVISION).await.unwrap(),
         Refresh::Rebuilt { events: 1, .. }
     ));
 

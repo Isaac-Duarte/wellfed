@@ -1,6 +1,7 @@
 //! A feeder whose welcome names a newer API revision is served as any
 //! other: the API only grows, so the bridge reads and writes what both
 //! know, and its connect update says the integration is the side to update.
+//! A pre-revision build is sent nothing, and named for an update.
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
@@ -8,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use wellfed_connect::Timing;
-use wellfed_homeassistant::api::{Skew, UpdateKind};
+use wellfed_homeassistant::api::{Skew, Update, UpdateKind};
 use wellfed_homeassistant::feeder::{Clocks, Feeder, Target};
 use wellfed_homeassistant::key::ClientKey;
 use wellfed_proto::api::{FRAME_MAX, Open, PROLOGUE, PROTOCOL_MAJOR, REVISION, Role, Welcome};
@@ -29,7 +30,7 @@ fn read_frame(stream: &mut TcpStream) -> Option<Vec<u8>> {
 
 /// Open one session as a build of a newer revision would, then count
 /// every message that arrives after the welcome, answering none.
-fn serve(mut stream: TcpStream, sent: &Mutex<usize>) {
+fn serve(mut stream: TcpStream, schema: u32, sent: &Mutex<usize>) {
     let Some(open) = read_frame(&mut stream) else {
         return;
     };
@@ -53,10 +54,10 @@ fn serve(mut stream: TcpStream, sent: &Mutex<usize>) {
     let welcome = Welcome::Open {
         major: PROTOCOL_MAJOR,
         model: wellfed_proto::device::Model::Plaf103,
-        build: "new",
+        build: if schema == REVISION + 1 { "new" } else { "old" },
         role: Role::Member,
         epoch: 1,
-        schema: REVISION + 1,
+        schema,
     };
     let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
     let written = handshake.write_message(&plain[..len], &mut sealed).unwrap();
@@ -70,8 +71,9 @@ fn serve(mut stream: TcpStream, sent: &Mutex<usize>) {
     }
 }
 
-#[test]
-fn a_feeder_of_a_newer_revision_is_served_and_named_ahead() {
+/// A session with a feeder whose welcome carries `schema`; its connect
+/// update, and how many messages the bridge had sent it a moment later.
+fn connect(schema: u32) -> (Update, usize) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
     let sent = Arc::new(Mutex::new(0));
@@ -80,7 +82,7 @@ fn a_feeder_of_a_newer_revision_is_served_and_named_ahead() {
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let sent = Arc::clone(&sent);
-                std::thread::spawn(move || serve(stream.unwrap(), &sent));
+                std::thread::spawn(move || serve(stream.unwrap(), schema, &sent));
             }
         });
     }
@@ -108,12 +110,33 @@ fn a_feeder_of_a_newer_revision_is_served_and_named_ahead() {
             break update;
         }
     };
+    // Long enough for a status read to go out, were one sent.
+    std::thread::sleep(Duration::from_millis(500));
+    let sent = *sent.lock().unwrap();
+    (connected, sent)
+}
+
+#[test]
+fn a_feeder_of_a_newer_revision_is_served_and_named_ahead() {
+    let (connected, sent) = connect(REVISION + 1);
+
     assert_eq!(connected.build.as_deref(), Some("new"));
     assert_eq!(connected.skew, Some(Skew::FeederAhead));
+    assert!(
+        sent > 0,
+        "the status read goes out, as to a feeder of this revision"
+    );
+}
 
-    // The status read goes out, as to a feeder of this revision.
-    while *sent.lock().unwrap() == 0 {
-        assert!(Instant::now() < deadline, "nothing was asked of it");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+/// A pre-revision build sends the schema hash it was built with where the
+/// revision now goes (master's last): every byte outside the frozen part
+/// moved since, so nothing is sent to it, and the connect update says to
+/// update the feeder.
+#[test]
+fn a_pre_revision_feeder_is_sent_nothing_and_named_legacy() {
+    let (connected, sent) = connect(0x2af2_8cd8);
+
+    assert_eq!(connected.build.as_deref(), Some("old"));
+    assert_eq!(connected.skew, Some(Skew::Legacy));
+    assert_eq!(sent, 0, "no status read or subscription went to it");
 }

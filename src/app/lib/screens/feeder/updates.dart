@@ -8,6 +8,7 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart' show Connection;
 import 'package:wellfed/state/update/update.dart';
 import 'package:wellfed/state/update/update_state.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -124,13 +125,18 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                     Bank0Check_Blocked(:final Bank0Blocked field0) => field0,
                     _ => null,
                   };
+                  // A pre-revision build sends no status this app reads, so
+                  // its open session stands in for a current card: the update
+                  // is all it takes, and what this screen is for.
+                  final bool legacy =
+                      _feeder.state.skew == Skew.legacy && _feeder.state.connection == Connection.online;
                   final bool can =
                       offered != null &&
                       !current &&
                       !older &&
                       state != null &&
                       blocked == null &&
-                      _feeder.state.cardIsCurrent;
+                      (_feeder.state.cardIsCurrent || legacy);
 
                   return ListView(
                     padding: const EdgeInsets.all(Space.s4),

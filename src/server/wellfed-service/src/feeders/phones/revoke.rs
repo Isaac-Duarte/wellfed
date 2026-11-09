@@ -112,11 +112,14 @@ impl Service {
                     refusal: refusal.into(),
                 },
                 Ok(_) | Err(AskError::Unknown) => RevokeAttempt::Unknown,
-                // A feeder of another build takes the revocation once it
-                // is updated, as an offline one does once it is back.
-                Err(AskError::Offline | AskError::NotRunning | AskError::Unsendable) => {
-                    RevokeAttempt::Offline
-                }
+                // A pre-revision build takes the revocation once it is
+                // updated, as an offline one does once it is back.
+                Err(
+                    AskError::Offline
+                    | AskError::NotRunning
+                    | AskError::Legacy
+                    | AskError::Unsendable,
+                ) => RevokeAttempt::Offline,
             };
             store.revoke_attempt(id, &key, &attempt).await?;
             warn!(%client, ?attempt, "a phone's key is not revoked yet");
@@ -228,9 +231,10 @@ pub(crate) fn own_revoke(sent: Result<CommandOutcome>) -> Result<Option<RevokeAt
         | Err(Error::Command(CommandError::Unknown) | Error::Internal(InternalError::Unexpected)) => {
             Ok(Some(RevokeAttempt::Unknown))
         }
-        Err(Error::Command(CommandError::Offline) | Error::NotFound(Resource::Feeder)) => {
-            Ok(Some(RevokeAttempt::Offline))
-        }
+        Err(
+            Error::Command(CommandError::Offline | CommandError::Legacy)
+            | Error::NotFound(Resource::Feeder),
+        ) => Ok(Some(RevokeAttempt::Offline)),
         Err(other) => Err(other),
     }
 }

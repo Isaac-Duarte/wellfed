@@ -41,7 +41,7 @@ use wellfed_client::today::Facts;
 use wellfed_connect::{Connection, Cursor, Received, Timing};
 use wellfed_model::{
     Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
-    FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Source, Status,
+    FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Skew, Source, Status,
 };
 
 use crate::Error;
@@ -418,6 +418,13 @@ impl<'a> Session<'a> {
             self.connection.skew(),
         );
         self.send(connected)?;
+        // A pre-revision build takes only the frozen update path: nothing
+        // this session reads or writes. Its connect update says so; the
+        // session ends and tries again later, by which time the app may
+        // have updated it.
+        if self.connection.skew() == Skew::Legacy {
+            return Err(Ended::Lost(wellfed_connect::Error::Legacy.to_string()));
+        }
 
         let status = match self
             .connection
@@ -572,7 +579,7 @@ impl<'a> Session<'a> {
 
     /// How the write of `kind` ended, by its answer.
     fn written(&mut self, kind: Kind, op: &Op, answer: Option<&Answer>) -> Result<Written, Ended> {
-        let Some(answer) = answer else {
+        let Some(answer) = readable(answer) else {
             self.unanswered(kind);
             return Ok(Written::uncertain());
         };
@@ -594,7 +601,10 @@ impl<'a> Session<'a> {
                         Written::done()
                     }
                     Landed::Stale | Landed::Refused(_) => once(answer),
-                    Landed::Unknown => Written::uncertain(),
+                    Landed::Unknown => {
+                        self.unanswered(kind);
+                        Written::uncertain()
+                    }
                 })
             }
         }
@@ -795,6 +805,13 @@ const fn store_read(store: Store) -> Read {
     }
 }
 
+/// The answer a write is judged by. One this build cannot read (a newer
+/// feeder's) says no more than none: the write may have run, so it takes
+/// the unanswered path, and a feed so answered waits for its `Fed` event.
+fn readable(answer: Option<&Answer>) -> Option<&Answer> {
+    answer.filter(|answer| !matches!(answer, Answer::Unreadable))
+}
+
 /// How a write whose answer is its whole result ended.
 fn once(answer: &Answer) -> Written {
     match answer {
@@ -809,4 +826,19 @@ fn once(answer: &Answer) -> Written {
 
 fn lost(error: impl std::fmt::Display) -> Ended {
     Ended::Lost(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An answer a newer feeder sent that this build cannot read is no
+    /// answer: the write is judged unanswered, never done or refused.
+    #[test]
+    fn an_unreadable_answer_is_judged_as_none() {
+        assert_eq!(readable(Some(&Answer::Unreadable)), None);
+        assert_eq!(readable(None), None);
+        let done = Answer::Done { generation: None };
+        assert_eq!(readable(Some(&done)), Some(&done));
+    }
 }

@@ -6,13 +6,18 @@
 //! projection in the raw insert's transaction, only when the raw row is
 //! new, so a replay changes neither. When the projection code changes,
 //! [`PROJECTION_VERSION`] moves and [`Store::refresh_projections`] rebuilds
-//! every projection from the raw rows at the next start. The store keeps
+//! every projection from the raw rows at the next start. When only the
+//! device API revision the server reads rises, the rows it stored unread
+//! (a newer feeder's bodies) are read again: each that now decodes takes
+//! its kind and its projection. The store keeps
 //! no decoder of its own (the bodies are the feeder's encoding, which the
 //! mirror owns), so the caller passes one.
 
 mod read;
+mod reread;
 
 pub(crate) use read::FeedRow;
+use reread::{reread, take_kind};
 
 use jiff::Timestamp;
 use sqlx::SqliteConnection;
@@ -86,6 +91,10 @@ pub enum Refresh {
     /// Every projection was rebuilt from `events` raw rows, of which
     /// `undecoded` did not decode and project nothing.
     Rebuilt { events: u64, undecoded: u64 },
+    /// The device API revision rose: of the rows stored unread, `read`
+    /// now decode and took their kind and projection, and `unread` still do
+    /// not.
+    Reread { read: u64, unread: u64 },
 }
 
 /// Where an event sits, in its stored form.
@@ -100,19 +109,37 @@ pub(crate) struct Place {
 impl Store {
     /// Rebuild every projection from the raw events when they were built
     /// by another [`PROJECTION_VERSION`] (or never), with `decode` turning
-    /// a stored body back into the event. One transaction on the writer,
-    /// so readers see the old projections until the new ones are whole,
-    /// and ingest waits for it. Run it at start, before ingest begins.
+    /// a stored body back into the event; or, when only `revision` (the
+    /// device API revision `decode` reads) rose, read the rows stored
+    /// unread again. One transaction on the writer, so readers see the old
+    /// projections until the new ones are whole, and ingest waits for it.
+    /// Run it at start, before ingest begins.
     pub async fn refresh_projections(
         &self,
         decode: impl Fn(&[u8]) -> Option<EventBody>,
+        revision: u32,
     ) -> Result<Refresh> {
         let mut tx = self.writer.begin().await?;
-        let stored = sqlx::query_scalar!("SELECT version FROM projection_version WHERE id = 0")
-            .fetch_optional(&mut *tx)
+        let stored =
+            sqlx::query!("SELECT version, api_revision FROM projection_version WHERE id = 0")
+                .fetch_optional(&mut *tx)
+                .await?;
+        let revision_now = i64::from(revision);
+        if let Some(stored) = stored
+            && stored.version == i64::from(PROJECTION_VERSION)
+        {
+            if stored.api_revision >= revision_now {
+                return Ok(Refresh::Current);
+            }
+            let refresh = reread(&mut tx, &decode).await?;
+            sqlx::query!(
+                "UPDATE projection_version SET api_revision = ? WHERE id = 0",
+                revision_now,
+            )
+            .execute(&mut *tx)
             .await?;
-        if stored == Some(i64::from(PROJECTION_VERSION)) {
-            return Ok(Refresh::Current);
+            tx.commit().await?;
+            return Ok(refresh);
         }
 
         sqlx::query!("DELETE FROM feeds").execute(&mut *tx).await?;
@@ -156,16 +183,7 @@ impl Store {
                 // A body that came from a newer feeder build than the
                 // server that stored it is read now: it takes its kind.
                 if row.kind == crate::history::UNREAD {
-                    let kind = body.kind().code();
-                    sqlx::query!(
-                        "UPDATE events SET kind = ? WHERE feeder_id = ? AND epoch = ? AND seq = ?",
-                        kind,
-                        row.feeder_id,
-                        row.epoch,
-                        row.seq,
-                    )
-                    .execute(&mut *tx)
-                    .await?;
+                    take_kind(&mut tx, &row.feeder_id, row.epoch, row.seq, &body).await?;
                 }
                 let id =
                     Uuid::from_slice(&row.feeder_id).map_err(|_| Error::Corrupt("feeder id"))?;
@@ -180,9 +198,11 @@ impl Store {
         }
 
         sqlx::query!(
-            "INSERT INTO projection_version (id, version) VALUES (0, ?)
-             ON CONFLICT (id) DO UPDATE SET version = excluded.version",
+            "INSERT INTO projection_version (id, version, api_revision) VALUES (0, ?, ?)
+             ON CONFLICT (id) DO UPDATE
+             SET version = excluded.version, api_revision = excluded.api_revision",
             PROJECTION_VERSION,
+            revision_now,
         )
         .execute(&mut *tx)
         .await?;

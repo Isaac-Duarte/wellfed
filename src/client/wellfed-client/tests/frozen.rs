@@ -32,6 +32,10 @@ const FEEDER: [u8; 32] = [0x10; 32];
 const OWNER: [u8; 32] = [0x20; 32];
 /// The older build's revision.
 const OLD_REVISION: u32 = REVISION - 1;
+/// Where the revision now goes, a pre-revision build sent master's schema
+/// hash: the last value the bench unit's bank 0 and every feeder updated
+/// before this build carry.
+const PRE_REVISION: u32 = 0x2af2_8cd8;
 
 /// What an older build decodes: the frozen request alone.
 #[derive(Debug, Deserialize)]
@@ -94,6 +98,8 @@ struct OldBuild {
     /// Every op it decoded, by name, and the requests it could not.
     ops: Vec<&'static str>,
     unknown: usize,
+    /// What its welcome carries where the revision goes.
+    schema: u32,
 }
 
 impl OldBuild {
@@ -111,6 +117,15 @@ impl OldBuild {
             restart: None,
             ops: Vec::new(),
             unknown: 0,
+            schema: OLD_REVISION,
+        }
+    }
+
+    /// A pre-revision build: its welcome carries a schema hash.
+    fn pre_revision(image_len: u32) -> Self {
+        Self {
+            schema: PRE_REVISION,
+            ..Self::new(image_len)
         }
     }
 
@@ -203,7 +218,7 @@ impl OldBuild {
                     },
                     role: Role::Owner,
                     epoch: 7,
-                    schema: OLD_REVISION,
+                    schema: self.schema,
                 };
                 let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
                 let mut sealed = [0; FRAME_MAX];
@@ -301,6 +316,17 @@ impl OldBuild {
         link.out.push_back(framed(&sealed[..sealed_len]));
     }
 
+    /// Seal `plain` as a message of its own, as a newer build sends one.
+    fn send_plain(&mut self, plain: &[u8]) {
+        let link = self.link.as_mut().unwrap();
+        let Stage::Open(transport) = &mut link.stage else {
+            unreachable!()
+        };
+        let mut sealed = [0; FRAME_MAX];
+        let sealed_len = transport.seal(plain, &mut sealed).unwrap();
+        link.out.push_back(framed(&sealed[..sealed_len]));
+    }
+
     /// What the device sends; a restart it owes happens once that is out.
     fn transmit(&mut self) -> Vec<Vec<u8>> {
         let out = self
@@ -352,11 +378,12 @@ impl Client {
         };
         client.pump(device);
         let opened = client.connection.opened().expect("the welcome");
-        assert_eq!(
-            opened.skew(),
-            Skew::FeederBehind,
-            "the device plays an older build"
-        );
+        let expected = if device.schema == PRE_REVISION {
+            Skew::Legacy
+        } else {
+            Skew::FeederBehind
+        };
+        assert_eq!(opened.skew(), expected, "the device plays an older build");
         client
     }
 
@@ -416,6 +443,17 @@ fn payload() -> Vec<u8> {
 
 #[test]
 fn an_update_goes_through_a_bank_0_of_another_build() {
+    update_through(OldBuild::new);
+}
+
+/// The update path is all a pre-revision build takes, and all it needs:
+/// the bench unit's bank 0 and every feeder updated before this build.
+#[test]
+fn an_update_goes_through_a_pre_revision_bank_0() {
+    update_through(OldBuild::pre_revision);
+}
+
+fn update_through(build: fn(u32) -> OldBuild) {
     let payload = payload();
     let manifest = [0x5a; 96];
     let image = Image {
@@ -423,7 +461,7 @@ fn an_update_goes_through_a_bank_0_of_another_build() {
         downgrade: None,
         payload: &payload,
     };
-    let mut device = OldBuild::new(u32::try_from(payload.len()).unwrap());
+    let mut device = build(u32::try_from(payload.len()).unwrap());
     let mut installer = Installer::new(image);
     let mut client = Client::connect(&mut device, Instant::now());
     let bank = client.bank(&mut device);
@@ -512,4 +550,55 @@ fn a_session_with_an_older_build_sends_every_op_and_reads_unavailable() {
         client.ask(&mut device, &ModelOp::UpdateState),
         Answer::Update(_)
     ));
+}
+
+/// A pre-revision build's bytes outside the frozen part moved since: no
+/// status read and no subscription goes to it, each refused before a byte
+/// is sent, while the update path and the keepalive still do.
+#[test]
+fn a_pre_revision_build_is_sent_the_frozen_part_alone() {
+    let mut device = OldBuild::pre_revision(1_000);
+    let mut client = Client::connect(&mut device, Instant::now());
+
+    for op in [ModelOp::Status, ModelOp::ListClients, ModelOp::GetSettings] {
+        let id = client.id();
+        let refused = client.connection.request(client.now, id, &op);
+        assert!(
+            matches!(refused, Err(wellfed_client::api::Error::Legacy)),
+            "{op:?}: {refused:?}"
+        );
+    }
+    let refused = client.connection.subscribe(client.now, None, false);
+    assert!(
+        matches!(refused, Err(wellfed_client::api::Error::Legacy)),
+        "{refused:?}"
+    );
+    assert!(client.connection.poll_transmit().is_none(), "nothing went");
+    client.pump(&mut device);
+    assert_eq!(device.unknown, 0);
+    assert!(device.ops.is_empty(), "{:?}", device.ops);
+
+    assert!(matches!(
+        client.ask(&mut device, &ModelOp::UpdateState),
+        Answer::Update(_)
+    ));
+    assert!(client.connection.opened().is_some(), "the session is kept");
+}
+
+/// A message kind a later build adds goes at the end of `DeviceMessage`,
+/// in a sealed frame of its own: this build skips it whole, by its tag, and
+/// reads the next message on the same session.
+#[test]
+fn a_newer_kind_of_message_is_skipped_and_the_session_kept() {
+    let mut device = OldBuild::new(1_000);
+    let mut client = Client::connect(&mut device, Instant::now());
+
+    let past = u8::try_from(wellfed_proto::api::DEVICE_MESSAGES).unwrap();
+    device.send_plain(&[past, 1, 2, 3]);
+    device.send_plain(&[0x80, 0x01, 9]);
+    assert!(matches!(
+        client.ask(&mut device, &ModelOp::UpdateState),
+        Answer::Update(_)
+    ));
+    assert!(client.connection.opened().is_some(), "the session is kept");
 }

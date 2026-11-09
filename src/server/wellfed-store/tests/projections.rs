@@ -60,6 +60,9 @@ async fn adopt(store: &Store, n: u8) -> FeederId {
     id
 }
 
+/// The device API revision the tests' server reads.
+const REVISION: u32 = 1;
+
 fn decode(raw: &[u8]) -> Option<EventBody> {
     serde_json::from_slice(raw).ok()
 }
@@ -313,7 +316,7 @@ proptest! {
         runtime.block_on(async {
             let (dir, store) = fresh().await;
             assert_eq!(
-                store.refresh_projections(decode).await.unwrap(),
+                store.refresh_projections(decode, REVISION).await.unwrap(),
                 Refresh::Rebuilt { events: 0, undecoded: 0 }
             );
             let feeders = [adopt(&store, 1).await, adopt(&store, 2).await];
@@ -331,7 +334,7 @@ proptest! {
 
             stale(&dir.path().join(DATABASE), 0).await;
             let Refresh::Rebuilt { undecoded, .. } =
-                store.refresh_projections(decode).await.unwrap()
+                store.refresh_projections(decode, REVISION).await.unwrap()
             else {
                 panic!("a stale version rebuilds");
             };
@@ -394,7 +397,7 @@ async fn a_rebuild_reads_across_its_batches() {
 
     stale(&dir.path().join(DATABASE), 0).await;
     assert_eq!(
-        store.refresh_projections(decode).await.unwrap(),
+        store.refresh_projections(decode, REVISION).await.unwrap(),
         Refresh::Rebuilt {
             events: 1_300,
             undecoded: 0
@@ -481,7 +484,7 @@ async fn a_feed_is_its_latest_event_and_reads_take_a_window() {
 async fn a_new_projection_version_rebuilds_from_the_raw_events() {
     let (dir, store) = fresh().await;
     let path = dir.path().join(DATABASE);
-    store.refresh_projections(decode).await.unwrap();
+    store.refresh_projections(decode, REVISION).await.unwrap();
     let feeders = [adopt(&store, 1).await];
     let fed = Pushed {
         feeder: 0,
@@ -511,7 +514,7 @@ async fn a_new_projection_version_rebuilds_from_the_raw_events() {
 
     stale(&path, i64::from(PROJECTION_VERSION)).await;
     assert_eq!(
-        store.refresh_projections(decode).await.unwrap(),
+        store.refresh_projections(decode, REVISION).await.unwrap(),
         Refresh::Current
     );
     assert_ne!(
@@ -522,7 +525,7 @@ async fn a_new_projection_version_rebuilds_from_the_raw_events() {
 
     stale(&path, i64::from(PROJECTION_VERSION) - 1).await;
     assert_eq!(
-        store.refresh_projections(decode).await.unwrap(),
+        store.refresh_projections(decode, REVISION).await.unwrap(),
         Refresh::Rebuilt {
             events: 1,
             undecoded: 0
@@ -530,7 +533,7 @@ async fn a_new_projection_version_rebuilds_from_the_raw_events() {
     );
     assert_eq!(all(store.clone()).await, before);
     assert_eq!(
-        store.refresh_projections(decode).await.unwrap(),
+        store.refresh_projections(decode, REVISION).await.unwrap(),
         Refresh::Current
     );
 }
@@ -554,12 +557,15 @@ async fn a_body_that_does_not_decode_is_counted_and_skipped() {
     };
     ingest(&store, &feeders, &lock(1, true)).await;
     ingest(&store, &feeders, &lock(2, false)).await;
-    store.refresh_projections(decode).await.unwrap();
+    store.refresh_projections(decode, REVISION).await.unwrap();
 
     stale(&dir.path().join(DATABASE), 0).await;
     let only_unlocks = |raw: &[u8]| decode(raw).filter(|body| *body == lock(2, false).body);
     assert_eq!(
-        store.refresh_projections(only_unlocks).await.unwrap(),
+        store
+            .refresh_projections(only_unlocks, REVISION)
+            .await
+            .unwrap(),
         Refresh::Rebuilt {
             events: 2,
             undecoded: 1

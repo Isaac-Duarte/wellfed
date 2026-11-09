@@ -309,6 +309,10 @@
     "update_integration": {
       "title": "Update the Wellfed integration for feeder {feeder}",
       "description": "Feeder {feeder} runs build {build}, newer than this integration. Everything both know works; what the newer build added shows as unknown. Update the Wellfed integration. This clears once it matches."
+    },
+    "legacy_feeder": {
+      "title": "Feeder {feeder} needs a firmware update",
+      "description": "Feeder {feeder} runs build {build}, from before this integration's device API, so Home Assistant can read and change nothing on it and its entities are unavailable. Update the feeder from the Wellfed app. Home Assistant tries again on its own, and this clears once it answers."
     }
   }
 }

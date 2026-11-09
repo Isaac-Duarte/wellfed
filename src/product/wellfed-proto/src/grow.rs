@@ -148,20 +148,21 @@ impl<'de, T: Unit> Deserialize<'de> for Lenient<T> {
 }
 
 /// The end of a struct that will grow: see the [module](self). This build
-/// writes it empty and reads only how long it is.
+/// writes it empty and keeps only whether one came full: a byte, so a
+/// struct of bytes (a plan, ten to a table) keeps its alignment and size.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Tail {
-    len: usize,
+    carried: bool,
 }
 
 impl Tail {
     /// What this build writes.
-    pub const EMPTY: Self = Self { len: 0 };
+    pub const EMPTY: Self = Self { carried: false };
 
     /// Whether a later build's fields came in it. A device refuses a
     /// request that carries any, since it cannot do what they ask.
     pub const fn is_empty(&self) -> bool {
-        self.len == 0
+        !self.carried
     }
 }
 
@@ -186,7 +187,9 @@ impl<'de> Deserialize<'de> for Tail {
             }
 
             fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Tail, E> {
-                Ok(Tail { len: bytes.len() })
+                Ok(Tail {
+                    carried: !bytes.is_empty(),
+                })
             }
         }
 

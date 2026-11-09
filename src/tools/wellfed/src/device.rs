@@ -114,6 +114,16 @@ impl wellfed_install::session::Session for Connection {
         Self::role(self)
     }
 
+    fn legacy(&self) -> bool {
+        match self {
+            Self::Direct(connection) => connection.skew() == wellfed_model::Skew::Legacy,
+            // The bench server holds its own session, whose shared client
+            // refuses a pre-revision build any op outside the frozen part,
+            // typed, so a list read still ends with that reason.
+            Self::Bench(_) => false,
+        }
+    }
+
     async fn ask(&mut self, op: &Op) -> Result<Answer, wellfed_install::PlatformError> {
         Ok(Self::ask(self, op).await?)
     }

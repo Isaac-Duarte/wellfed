@@ -147,7 +147,7 @@ impl Snapshot {
             Table::ProjectionVersion => rows(
                 sqlx::query_as!(
                     ProjectionVersion,
-                    "SELECT version FROM projection_version ORDER BY id"
+                    "SELECT version, api_revision FROM projection_version ORDER BY id"
                 )
                 .fetch(tx),
             ),

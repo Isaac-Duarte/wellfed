@@ -25,7 +25,7 @@ use wellfed_formats::bench::prompt::Prompt;
 use wellfed_formats::manifest::Provisioning;
 use wellfed_formats::stock::TrialPhase;
 use wellfed_model::setup::Refusal as SetupRefusal;
-use wellfed_model::{Answer, Op};
+use wellfed_model::{Answer, Op, Skew};
 use wellfed_proto::api::PORT;
 use wellfed_signing::{Frozen, Key, Motion, highest_signed};
 use wellfed_stock::ota::trial::{AnsweredInput, Input};
@@ -1190,7 +1190,9 @@ where
             };
             match read.await {
                 Ok(clients) => return install.signers(&clients),
-                Err(error) if Instant::now() >= deadline => {
+                // A pre-revision build's list is never readable: asking
+                // again only waits out the deadline.
+                Err(error) if matches!(error, Error::Legacy) || Instant::now() >= deadline => {
                     self.io.report.event(Event::SignersUnread {
                         error: crate::text(&error),
                     });
@@ -1437,14 +1439,19 @@ where
         while Instant::now() < deadline {
             // The bank from the update state and the build from the welcome,
             // both frozen: a trial that fell back to an older bank 0 reads as
-            // gone back. A status this build cannot read leaves readiness
-            // unknown.
+            // gone back. A pre-revision build's status is never asked (its
+            // bytes moved since), and one this build cannot read leaves
+            // readiness unknown.
             if let Ok(mut connection) = self.connect().await
                 && let Ok(Answer::Update(view)) = connection.ask(random()?, &Op::UpdateState).await
             {
-                let readiness = match connection.ask(random()?, &Op::Status).await {
-                    Ok(Answer::Status(status)) => status.feeder().map(|f| f.readiness),
-                    _ => None,
+                let readiness = if connection.skew() == Skew::Legacy {
+                    None
+                } else {
+                    match connection.ask(random()?, &Op::Status).await {
+                        Ok(Answer::Status(status)) => status.feeder().map(|f| f.readiness),
+                        _ => None,
+                    }
                 };
                 install.confirmed(
                     Replacement {

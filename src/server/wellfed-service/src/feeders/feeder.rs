@@ -141,11 +141,15 @@ impl Service {
         // is kept but not listed; the page's cursor still moves past it.
         let events = rows
             .iter()
-            .filter(|row| row.kind.is_some())
-            .map(|row| {
-                wellfed_mirror::stored_event(epoch, row)
-                    .ok_or(Error::Internal(InternalError::Undecodable(row.seq)))
-            })
+            .filter_map(
+                |row| match (wellfed_mirror::stored_event(epoch, row), row.kind) {
+                    (Some(event), _) => Some(Ok(event)),
+                    (None, None) => None,
+                    (None, Some(_)) => {
+                        Some(Err(Error::Internal(InternalError::Undecodable(row.seq))))
+                    }
+                },
+            )
             .collect::<Result<Vec<_>>>()?;
 
         let next = rows.last().map(|row| row.seq).filter(|_| full);

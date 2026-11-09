@@ -40,7 +40,7 @@ use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::plans::Edit;
 use wellfed_connect::{Connection, Received};
 use wellfed_model::{
-    Answer, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed, Settings,
+    Answer, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed, Settings, Skew,
 };
 use wellfed_session::noise::Keypair;
 
@@ -347,6 +347,9 @@ async fn serve(
     if let Some(link) = link {
         link.opened();
     }
+    if connection.skew() == Skew::Legacy {
+        return serve_legacy(&mut connection, commands).await;
+    }
 
     let Answer::Status(status) = connection.ask(random()?, &Op::Status).await? else {
         return Err(BridgeError::new(
@@ -411,6 +414,44 @@ async fn serve(
                     return Ok(());
                 }
             }
+        }
+    }
+}
+
+/// A session with a pre-revision build ([`Skew::Legacy`]), which takes the
+/// frozen update path alone: no status, history or clock, whose bytes moved
+/// since. It stays open for the update's own reads and its cancel, so the
+/// Firmware screen can offer the update; anything else is answered unsent.
+async fn serve_legacy(
+    connection: &mut Connection,
+    commands: &mut mpsc::UnboundedReceiver<Command>,
+) -> Result<(), BridgeError> {
+    loop {
+        tokio::select! {
+            command = commands.recv() => match command {
+                None | Some(Command::Close) => return Ok(()),
+                Some(Command::Ask { op, reply }) if op.is_frozen() => {
+                    match connection.ask(random()?, &op).await {
+                        Ok(answer) => {
+                            let _ = reply.send(Heard::Answer(answer));
+                        }
+                        Err(wellfed_connect::Error::Timeout) => {
+                            let _ = reply.send(Heard::Unanswered);
+                        }
+                        Err(error) => {
+                            let _ = reply.send(Heard::Unanswered);
+                            return Err(error.into());
+                        }
+                    }
+                }
+                Some(other) => never_sent(other),
+            },
+            // Nothing is asked of it but the keepalive the connection
+            // sends on its own; this only notices the feeder going.
+            received = connection.receive(QUIET_SILENCE) => match received {
+                Ok(_) | Err(wellfed_connect::Error::Timeout) => {}
+                Err(error) => return Err(error.into()),
+            },
         }
     }
 }

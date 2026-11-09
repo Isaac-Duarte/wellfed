@@ -180,6 +180,28 @@ async def test_a_feeder_of_another_revision_is_served_and_names_the_side_to_upda
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_a_pre_revision_feeder_asks_for_a_feeder_update_and_is_retried(
+    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("custom_components.wellfed.READY_WAIT", 0.2)
+    # The bridge says so on connect, then reads nothing: no state comes.
+    feeder.push(fake.connected(skew=bridge.Skew.Legacy))
+    entry = _entry(hass)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert _issue(hass, "legacy_feeder") is not None
+    assert _issue(hass, "update_feeder") is None
+
+    # Updated from the app, it is set up as any other and the repair goes.
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert _entry_state(entry) is ConfigEntryState.LOADED
+    assert _issue(hass, "legacy_feeder") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_a_feeder_that_never_answers_is_tried_again_later(
     hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
 ) -> None:

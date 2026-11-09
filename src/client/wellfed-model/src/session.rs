@@ -51,11 +51,25 @@ pub enum Skew {
     /// The feeder's build is newer: what it added needs the client
     /// updated. Never a reason to offer the feeder an older build.
     FeederAhead,
+    /// The feeder's build is from before the API revision existed: its
+    /// welcome carries a hash where the revision now goes, and every op
+    /// outside the frozen part moved since. Only frozen ops go to it (the
+    /// update path, the keepalive, invites), so the feeder is the side to
+    /// update.
+    Legacy,
 }
+
+/// The lowest value a pre-revision build's welcome can carry where the
+/// revision now goes: those builds sent a 32-bit hash of their schema, and
+/// the revision counts from 1, one per growth, so it never comes near.
+pub const LEGACY_SCHEMA_FROM: u32 = 0x1_0000;
 
 impl Skew {
     /// How a feeder's `revision` stands against `ours`.
     pub fn of(revision: u32, ours: u32) -> Self {
+        if revision >= LEGACY_SCHEMA_FROM {
+            return Self::Legacy;
+        }
         match revision.cmp(&ours) {
             core::cmp::Ordering::Less => Self::FeederBehind,
             core::cmp::Ordering::Equal => Self::Same,
@@ -117,5 +131,16 @@ mod tests {
         assert_eq!(Skew::of(1, 2), Skew::FeederBehind);
         assert_eq!(Skew::of(2, 2), Skew::Same);
         assert_eq!(Skew::of(3, 2), Skew::FeederAhead);
+    }
+
+    /// Master's schema hash, the last a pre-revision build sent, is no
+    /// revision: it reads as a build to update, never as a newer one.
+    #[test]
+    fn a_pre_revision_hash_is_a_legacy_build() {
+        assert_eq!(Skew::of(0x2af2_8cd8, 1), Skew::Legacy);
+        assert_eq!(
+            Skew::of(super::LEGACY_SCHEMA_FROM - 1, 1),
+            Skew::FeederAhead
+        );
     }
 }

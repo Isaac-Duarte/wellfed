@@ -7,10 +7,14 @@
 -- received it. `source` is who caused it (`panel`, `client` or `feeder`),
 -- with the client's fingerprint in `client` for `client` only.
 
--- The projection code's version the rows were built by. One row.
+-- The projection code's version the rows were built by, and the device
+-- API revision of the server that last read the events: a body stored
+-- unread (`kind` 'unknown', from a feeder newer than that server) is read
+-- again once the revision rises. One row.
 CREATE TABLE projection_version (
     id INTEGER PRIMARY KEY NOT NULL CHECK (id = 0),
-    version INTEGER NOT NULL
+    version INTEGER NOT NULL,
+    api_revision INTEGER NOT NULL
 ) STRICT;
 
 -- One row per feed: the feeder numbers its feeds within an epoch, and a

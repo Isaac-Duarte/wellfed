@@ -190,9 +190,11 @@ impl Import {
             Row::ProjectionVersion(version) => {
                 // A fresh server's start may have written its own.
                 sqlx::query!(
-                    "INSERT INTO projection_version (id, version) VALUES (0, ?)
-                     ON CONFLICT (id) DO UPDATE SET version = excluded.version",
+                    "INSERT INTO projection_version (id, version, api_revision) VALUES (0, ?, ?)
+                     ON CONFLICT (id) DO UPDATE
+                     SET version = excluded.version, api_revision = excluded.api_revision",
                     version.version,
+                    version.api_revision,
                 )
                 .execute(tx)
                 .await?;

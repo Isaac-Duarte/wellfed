@@ -83,7 +83,9 @@ impl Service {
             // unknown rather than offline, and a retry reads them again.
             CommandOutcome::Done => {
                 let plans = self.read_plans(id).await.map_err(|error| match error {
-                    Error::Command(CommandError::Offline) => CommandError::Unknown.into(),
+                    Error::Command(CommandError::Offline | CommandError::Legacy) => {
+                        CommandError::Unknown.into()
+                    }
                     other => other,
                 })?;
                 self.amend(&recorded.key, &CommandOutcome::Plans { plans })

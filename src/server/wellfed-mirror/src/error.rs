@@ -12,6 +12,13 @@ pub enum AskError {
     NotRunning,
     #[error("the server has no session with the feeder")]
     Offline,
+    /// The feeder runs a build from before API revisions, which takes only
+    /// the frozen update path: nothing was sent.
+    #[error(
+        "the feeder runs a build from before API revisions, which takes only an update; \
+         nothing was sent: update the feeder"
+    )]
+    Legacy,
     #[error("no answer in time: retry with the same key")]
     Unknown,
     /// Refused before anything was sent (a reserved id, or an op that does

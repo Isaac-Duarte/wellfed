@@ -167,6 +167,12 @@ pub enum Error {
     },
     #[error("the feeder refused to list its clients: {0:?}")]
     ClientsRefused(wellfed_model::Refusal),
+    /// The feeder runs a build from before API revisions, which takes
+    /// only the frozen update path: its client list cannot be read.
+    #[error(
+        "the feeder runs a build from before API revisions; update the feeder to read its clients"
+    )]
+    Legacy,
     #[error("the feeder's identity is not known yet")]
     NoIdentity,
     #[error("no session with the replacement")]
