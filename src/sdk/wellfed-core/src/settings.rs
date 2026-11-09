@@ -1,9 +1,13 @@
 //! The device settings as the runtime's services see them: the view the
 //! settings writer publishes (the speaker honours `sound`, `volume` and the
-//! sound window; the loop's lights honour `lights` and the lights window;
-//! and the schedule's meal reminder reads `meal_reminder`), and a
-//! `settings` request's fields and result, carried by
+//! sound window; the loop's lights honour `lights` and the lights window),
+//! and a `settings` request's fields and result, carried by
 //! `wellfed_hal::settings` between the device API and the writer.
+//!
+//! A device kind keeps settings of its own beside these (the feeder's meal
+//! reminder and desiccant reminder, `wellfed_core_feeder::settings`), in a
+//! record of its own: one request and one view carry both, the kind's part
+//! as [`KindSettings`] names it, so nothing here names a kind.
 
 /// Minutes in a local day: a window's bounds are below it.
 pub const DAY_MINUTES: u16 = 24 * 60;
@@ -54,62 +58,67 @@ impl Window {
     }
 }
 
-/// Whether the feeder announces each scheduled meal ahead of it, and how
-/// far ahead: a `MealSoon` event on the event stream, never a sound.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum MealReminder {
-    #[default]
-    Off,
-    /// [`REMINDER_MINUTES_MIN`] to [`REMINDER_MINUTES_MAX`] minutes before
-    /// each occurrence.
-    Before { minutes: u8 },
+/// A device kind's own settings, carried beside the device's in one
+/// `settings` request and one view. `()` is a kind with none.
+pub trait KindSettings: Copy + Default + PartialEq + Eq + core::fmt::Debug {
+    /// A request's fields for the kind's settings; none present changes
+    /// nothing.
+    type Fields: Copy + Default + PartialEq + Eq + core::fmt::Debug;
+
+    /// The settings before any record is read, and the fields of a request
+    /// that changes nothing: the constants a mailbox starts from.
+    const DEFAULT: Self;
+    const NO_FIELDS: Self::Fields;
+
+    /// Whether `fields` change anything (and so must be signed).
+    fn changes(fields: &Self::Fields) -> bool;
+    /// Whether every field present is one the kind's store accepts.
+    fn valid(fields: &Self::Fields) -> bool;
+    /// These settings with `fields` applied.
+    #[must_use]
+    fn changed(self, fields: &Self::Fields) -> Self;
 }
 
-/// The shortest lead a meal reminder takes.
-pub const REMINDER_MINUTES_MIN: u8 = 1;
-/// The longest lead a meal reminder takes: an hour, a choice of ours, as
-/// stock's cloud field (`feedingPlanAdvanceNoticeTime`) gives no unit.
-pub const REMINDER_MINUTES_MAX: u8 = 60;
+impl KindSettings for () {
+    type Fields = ();
 
-impl MealReminder {
-    /// Whether the lead is one the store accepts.
-    pub const fn valid(self) -> bool {
-        match self {
-            Self::Off => true,
-            Self::Before { minutes } => {
-                minutes >= REMINDER_MINUTES_MIN && minutes <= REMINDER_MINUTES_MAX
-            }
-        }
+    const DEFAULT: Self = ();
+    const NO_FIELDS: Self::Fields = ();
+
+    fn changes(_: &()) -> bool {
+        false
     }
 
-    /// The lead in minutes, or `None` when off.
-    pub const fn minutes(self) -> Option<u8> {
-        match self {
-            Self::Off => None,
-            Self::Before { minutes } => Some(minutes),
-        }
+    fn valid(_: &()) -> bool {
+        true
     }
+
+    fn changed(self, _: &()) -> Self {}
 }
 
 /// The fields of a `settings` request; none present reads the settings.
+/// `kind` is the device kind's own ([`KindSettings::Fields`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SettingsFields {
+pub struct SettingsFields<K: KindSettings = ()> {
     pub lights: Option<bool>,
     pub sound: Option<bool>,
     pub volume: Option<u8>,
     pub lights_window: Option<Window>,
     pub sound_window: Option<Window>,
-    /// The desiccant reminder's period in days
-    /// ([`crate::desiccant::PERIOD_MIN`] to [`crate::desiccant::PERIOD_MAX`]).
-    pub desiccant_days: Option<u8>,
-    /// Record a desiccant replacement made on this local calendar day
-    /// ([`crate::desiccant::today`]); set only by the reset request, which
-    /// reads the day from a valid clock.
-    pub desiccant_reset: Option<i32>,
-    pub meal_reminder: Option<MealReminder>,
+    pub kind: K::Fields,
 }
 
-impl SettingsFields {
+impl<K: KindSettings> SettingsFields<K> {
+    /// A request that changes nothing: what a read sends.
+    pub const NONE: Self = Self {
+        lights: None,
+        sound: None,
+        volume: None,
+        lights_window: None,
+        sound_window: None,
+        kind: K::NO_FIELDS,
+    };
+
     /// Whether the request changes anything (and so must be signed).
     pub fn changes(&self) -> bool {
         self.lights.is_some()
@@ -117,20 +126,15 @@ impl SettingsFields {
             || self.volume.is_some()
             || self.lights_window.is_some()
             || self.sound_window.is_some()
-            || self.desiccant_days.is_some()
-            || self.desiccant_reset.is_some()
-            || self.meal_reminder.is_some()
+            || K::changes(&self.kind)
     }
 
-    /// Whether every field present is one the store accepts.
+    /// Whether every field present is one the stores accept.
     pub fn valid(&self) -> bool {
         self.volume.is_none_or(|volume| volume <= MAX_VOLUME)
             && self.lights_window.is_none_or(Window::valid)
             && self.sound_window.is_none_or(Window::valid)
-            && self
-                .desiccant_days
-                .is_none_or(crate::desiccant::period_valid)
-            && self.meal_reminder.is_none_or(MealReminder::valid)
+            && K::valid(&self.kind)
     }
 }
 
@@ -138,27 +142,39 @@ impl SettingsFields {
 /// Volume 0 mutes every sound, as stock's does.
 pub const MAX_VOLUME: u8 = 100;
 
-/// The settings as a `settings` reply reports them.
+/// The settings as a `settings` reply reports them. `kind` is the device
+/// kind's own.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SettingsView {
+pub struct SettingsView<K = ()> {
     pub lights: bool,
     pub sound: bool,
     pub volume: u8,
     pub lights_window: Window,
     pub sound_window: Window,
-    /// The desiccant reminder's period in days.
-    pub desiccant_days: u8,
-    /// The local calendar day of the last desiccant replacement; `None`
-    /// before the first.
-    pub desiccant_reset: Option<i32>,
-    pub meal_reminder: MealReminder,
-    /// The stored record's generation; 0 for defaults never saved.
+    pub kind: K,
+    /// The stored records' generation, the device's and the kind's added:
+    /// every save of either raises it, so a write checked against it is
+    /// refused after any change; 0 for defaults never saved.
     pub generation: u32,
-    /// Whether NOR holds a record this firmware can update.
+    /// Whether NOR holds records this firmware can update.
     pub writable: bool,
 }
 
-impl SettingsView {
+impl<K> SettingsView<K> {
+    /// The device's settings alone, as the SDK's own services read them.
+    pub fn device(&self) -> SettingsView {
+        SettingsView {
+            lights: self.lights,
+            sound: self.sound,
+            volume: self.volume,
+            lights_window: self.lights_window,
+            sound_window: self.sound_window,
+            kind: (),
+            generation: self.generation,
+            writable: self.writable,
+        }
+    }
+
     /// Whether the lights may show at `local_ms` ([`Window::allows`]).
     pub fn lights_at(&self, local_ms: Option<i64>) -> bool {
         self.lights && self.lights_window.allows(local_ms)
@@ -169,33 +185,20 @@ impl SettingsView {
     pub fn sound_at(&self, local_ms: Option<i64>) -> bool {
         self.sound && self.volume > 0 && self.sound_window.allows(local_ms)
     }
-
-    /// The desiccant reminder on local calendar day `today` (`None` while
-    /// the clock is invalid).
-    pub fn desiccant(&self, today: Option<i32>) -> crate::desiccant::Count {
-        crate::desiccant::Count::new(self.desiccant_days, self.desiccant_reset, today)
-    }
 }
 
 /// How a `settings` request ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SettingsResult {
+pub enum SettingsResult<K = ()> {
     /// The current settings; `pending` once a change is queued for the writer.
-    Current { view: SettingsView, pending: bool },
+    Current {
+        view: SettingsView<K>,
+        pending: bool,
+    },
     /// Not loaded yet, or a change already pending.
     Busy,
     /// The store cannot be written (corrupt, newer schema, worn or unarmed).
     ReadOnly,
-}
-
-/// `off`, or the lead in minutes, as records spell it.
-impl core::fmt::Display for MealReminder {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match *self {
-            Self::Off => f.write_str("off"),
-            Self::Before { minutes } => write!(f, "{minutes}"),
-        }
-    }
 }
 
 /// `always`, or the window's bounds as `HH:MM-HH:MM`, as records spell it.

@@ -13,12 +13,12 @@ use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{Device, FeederDevice, KeyChange};
 use wellfed_device_runtime::{keys, network};
 use wellfed_feeder::feeder::{DeviceView, Feeder, NoFeeds};
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_fw_feeder::feeding::{ClaimTurn, Claiming, writes_queued};
 use wellfed_fw_feeder::platform::Plaf103;
 use wellfed_proto::api::{Path, Source};
 use wellfed_sdk::hal::interlock::{INTERLOCK, Interlock};
 use wellfed_sdk::hal::sdk::fake;
-use wellfed_sdk::hal::settings;
 
 /// The mailboxes are process-wide.
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -79,12 +79,12 @@ fn start() -> MutexGuard<'static, ()> {
     let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     fake::reset_hardware();
     INTERLOCK.reset();
-    settings::reset();
+    SETTINGS.reset();
     keys::reset();
     // SAFETY: the test holds `SERIAL` and runs no Wi-Fi task.
     unsafe { network::reset() };
 
-    settings::publish(SettingsView {
+    SETTINGS.publish(SettingsView {
         lights: true,
         sound: true,
         volume: 50,
@@ -127,7 +127,7 @@ fn writes_during_a_feed_are_refused_busy_and_reads_still_answer() {
     ));
     assert_eq!(keys_request(revoke), None);
     // Nothing was queued for the writer.
-    assert_eq!(settings::pending(), None);
+    assert_eq!(SETTINGS.pending(), None);
     assert!(!network::saving());
     assert_eq!(keys::pending(), None);
 
@@ -207,7 +207,7 @@ fn a_change_queued_just_before_a_feed_goes_first() {
             assert!(!interlock.outputs_claimed(), "the writer can go on");
             now.set(now.get() + 10);
             if now.get() == 200 {
-                settings::finish();
+                SETTINGS.finish();
                 network::finish();
                 keys::finish(keys::KeyResult::Done);
             }

@@ -439,7 +439,7 @@ fn a_smaller_region_s_image_grows_into_erased_sectors() {
         drop(flash);
 
         let image = std::fs::read(&path).unwrap();
-        assert_eq!(image.len(), 48 * 4096);
+        assert_eq!(image.len(), 50 * 4096);
         std::fs::write(&path, &image[..32 * 4096]).unwrap();
         let flash = Flash::file(&path).unwrap();
         let sim = Running::start(&flash, false).await;
@@ -447,7 +447,7 @@ fn a_smaller_region_s_image_grows_into_erased_sectors() {
         sim.stop().await;
     });
 
-    for len in [32 * 4096 + 1, 49 * 4096] {
+    for len in [32 * 4096 + 1, 51 * 4096] {
         std::fs::write(&path, vec![0xff; len]).unwrap();
         assert!(Flash::file(&path).is_err(), "{len}");
     }

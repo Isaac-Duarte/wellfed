@@ -3,11 +3,10 @@
 //! change answers its ticket, and an event reaches a subscriber only
 //! through the firmware's read turns, answered between passes.
 
+use wellfed_core::settings::{SettingsFields, SettingsResult};
 use wellfed_device::store::events::{BODY_BYTES, Read};
 use wellfed_device_api::clients::{Label, Role};
-use wellfed_device_api::mailbox::{
-    ClientChange, KeyResult, Requested, SettingsFields, SettingsResult,
-};
+use wellfed_device_api::mailbox::{ClientChange, KeyResult, Requested};
 use wellfed_device_api::{KeyChange, Reader};
 use wellfed_device_sim::flash::Flash;
 use wellfed_device_sim::stores::{DeviceError, DeviceStores};
@@ -19,7 +18,7 @@ fn stores() -> DeviceStores {
         next = next.wrapping_add(1);
         Some([next; 32])
     });
-    DeviceStores::open(&Flash::memory(), random).expect("a blank image opens")
+    DeviceStores::open(&Flash::memory(), random, ()).expect("a blank image opens")
 }
 
 #[test]

@@ -76,7 +76,10 @@ impl Reminder {
         now_ms: u32,
         mut record: impl FnMut(Record),
     ) {
-        let Some(lead) = platform.settings().and_then(|s| s.meal_reminder.minutes()) else {
+        let Some(lead) = platform
+            .settings()
+            .and_then(|s| s.kind.meal_reminder.minutes())
+        else {
             return;
         };
         // A change being written may be a skip of the meal about to be

@@ -5,8 +5,10 @@
 //! Feeding ([`feed`]: the controller, its inputs and outputs, the durable
 //! interface to the journal and the synthetic check that drives them
 //! together), the feed journal on NOR ([`feed_journal`]), the meal schedule
-//! ([`schedule`]), the pack's floor for feeding ([`floor`]) and the feeding
-//! owner's UART records as the host tools read them ([`record`]).
+//! ([`schedule`]), the pack's floor for feeding ([`floor`]), the feeder's
+//! own settings beside the device's ([`settings`]) with the desiccant
+//! reminder's count ([`desiccant`]), and the feeding owner's UART records
+//! as the host tools read them ([`record`]).
 //!
 //! `wellfed-core` never names anything here: where the SDK runs feeder
 //! logic (the startup's synthetic check), it calls a hook the product's
@@ -16,8 +18,10 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+pub mod desiccant;
 pub mod feed;
 pub mod feed_journal;
 pub mod floor;
 pub mod record;
 pub mod schedule;
+pub mod settings;

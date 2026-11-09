@@ -9,7 +9,6 @@ publish.workspace = true
 
 [dependencies]
 wellfed-core.workspace = true
-wellfed-core-feeder.workspace = true
 wellfed-signed.workspace = true
 wellfed-device-api.workspace = true
 wellfed-proto.workspace = true

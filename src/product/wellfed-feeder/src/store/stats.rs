@@ -2,21 +2,25 @@
 //! boot, its boots by reset cause and its erases by storage sector.
 //!
 //! A 320-byte record in the dual-slot store (`wellfed_core::store::slot`),
-//! little-endian: magic `PLFSTA01`, major 2, minor, record size,
+//! little-endian: magic `PLFSTA01`, major 2, minor 1, record size,
 //! generation (u64 at 12), the ten counts of `Counts` in wire order (u32
 //! each at 20..60: uptime, feeds, feeds not done, portions, presses,
 //! sessions, reconnects, DHCP renewals, outages, seconds on battery), the
 //! five reset causes (60..80: power-on, watchdog, software, brownout,
-//! other), bank 1's erases (80), each storage sector's erases (84..276,
-//! sector 0 first), the early saves' tokens in use (276, at most
+//! other), bank 1's erases (80), the erases of storage sectors 0 to 47
+//! (84..276, sector 0 first), the early saves' tokens in use (276, at most
 //! `EARLY_SAVES`), flags (277: bit 0, the early budget was spent), zero
-//! padding, 32 spare bytes from 280, zero, CRC-32/ISO-HDLC of bytes 0..312
-//! at 312 and the `CMIT` commit marker at 316.
+//! padding, the erases of sectors 48 and 49 (280..288, minor 1), 24 spare
+//! bytes from 288, zero, CRC-32/ISO-HDLC of bytes 0..312 at 312 and the
+//! `CMIT` commit marker at 316.
 //!
 //! The erase list covers `TOTAL_SECTORS`, the region as it is now. A count
 //! a later build adds goes in the spare room or past the record's end, as
-//! a minor this build reads and keeps; growing the region again does the
-//! same with the erases of the sectors it adds.
+//! a minor this build reads and keeps; growing the region does the same
+//! with the erases of the sectors it adds. Minor 1 is that for sectors 48
+//! and 49 (the feeder's settings): a minor-0 build, which knows the
+//! 48-sector region, reads the rest and carries those 8 bytes unread
+//! through its own saves.
 //!
 //! **Early saves** are the one each boot makes as it starts, so its reset
 //! is counted even if it ends at once, and one at an intentional restart
@@ -52,9 +56,9 @@ use wellfed_proto::api::{Counts, Resets};
 
 use crate::stats::{EARLY_SAVES, RESTART_SETTLED_MS, TOTAL_SECTORS, Totals};
 
-pub const VERSION: Version = Version::new(2, 0);
+pub const VERSION: Version = Version::new(2, 1);
 /// The record's size: the totals, padded to a 4-byte program granule, and
-/// 32 spare bytes.
+/// 24 spare bytes.
 pub const RECORD_BYTES: usize = 320;
 const LAYOUT: Layout = Layout::new(*b"PLFSTA01", VERSION, FIELDS_END, Extent::Record);
 const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
@@ -63,17 +67,22 @@ const COUNTS_AT: usize = 20;
 const RESETS_AT: usize = 60;
 const UPDATE_AT: usize = 80;
 const STORAGE_AT: usize = 84;
-const STORAGE_END: usize = STORAGE_AT + 4 * TOTAL_SECTORS;
+/// The sectors of the 48-sector region, whose erases minor 0 holds.
+const FIRST_SECTORS: usize = 48;
+const STORAGE_END: usize = STORAGE_AT + 4 * FIRST_SECTORS;
 const EARLY_AT: usize = STORAGE_END;
 const FLAGS_AT: usize = EARLY_AT + 1;
 const MISSED: u8 = 1;
+/// The erases of the sectors past the 48-sector region (minor 1).
+const ADDED_AT: usize = (FLAGS_AT + 1).next_multiple_of(4);
+const ADDED_SECTORS: usize = TOTAL_SECTORS - FIRST_SECTORS;
 /// The checksum and the marker, as `seal` places them.
 const CRC_AT: usize = RECORD_BYTES - 8;
 
 /// Where the spare room starts.
-const FIELDS_END: usize = (FLAGS_AT + 1).next_multiple_of(4);
+const FIELDS_END: usize = ADDED_AT + 4 * ADDED_SECTORS;
 
-const _: () = assert!(FIELDS_END + 32 == CRC_AT);
+const _: () = assert!(FIELDS_END + 24 == CRC_AT);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatsStatus {
@@ -247,7 +256,9 @@ fn encode(generation: u64, totals: &Totals, budget: Budget) -> [u8; RECORD_BYTES
     put_words(&mut p, COUNTS_AT, &counts_fields(&totals.counts));
     put_words(&mut p, RESETS_AT, &resets_fields(&totals.resets));
     put_u32::<UPDATE_AT, _>(&mut p, totals.update);
-    put_words(&mut p, STORAGE_AT, &totals.storage);
+    let (first, added) = totals.storage.split_at(FIRST_SECTORS);
+    put_words(&mut p, STORAGE_AT, first);
+    put_words(&mut p, ADDED_AT, added);
     p[EARLY_AT] = budget.early;
     p[FLAGS_AT] = if budget.missed { MISSED } else { 0 };
     seal(&mut p);
@@ -262,7 +273,8 @@ fn decode(p: &[u8; RECORD_BYTES]) -> Option<(u64, Totals, Budget)> {
     if generation == 0
         || p[EARLY_AT] > EARLY_SAVES
         || p[FLAGS_AT] & !MISSED != 0
-        || p[FLAGS_AT + 1..CRC_AT].iter().any(|&b| b != 0)
+        || p[FLAGS_AT + 1..ADDED_AT].iter().any(|&b| b != 0)
+        || p[FIELDS_END..CRC_AT].iter().any(|&b| b != 0)
     {
         return None;
     }
@@ -304,10 +316,21 @@ fn decode(p: &[u8; RECORD_BYTES]) -> Option<(u64, Totals, Budget)> {
             brownout,
             other,
         },
-        storage: get_words::<TOTAL_SECTORS>(p, STORAGE_AT),
+        storage: storage_words(p),
         update: get_u32::<UPDATE_AT, _>(p),
     };
     Some((generation, totals, budget))
+}
+
+/// Every sector's erases: the 48-sector region's, then those minor 1
+/// added (zero in a minor-0 record).
+fn storage_words(p: &[u8; RECORD_BYTES]) -> [u32; TOTAL_SECTORS] {
+    let first = get_words::<FIRST_SECTORS>(p, STORAGE_AT);
+    let added = get_words::<ADDED_SECTORS>(p, ADDED_AT);
+    core::array::from_fn(|sector| match sector.checked_sub(FIRST_SECTORS) {
+        None => first[sector],
+        Some(index) => added[index],
+    })
 }
 
 impl<I: SlotIo> StatsStore<I> {

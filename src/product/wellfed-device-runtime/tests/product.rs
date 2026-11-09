@@ -6,11 +6,11 @@
 use std::cell::Cell;
 use std::fmt;
 
+use wellfed_core::settings::{SettingsFields, SettingsResult};
 use wellfed_core::store::update::UpdateStatus;
 use wellfed_device::store::events::EventsFill;
 use wellfed_device::store::reset;
-use wellfed_device::store::settings::SettingsStatus;
-use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
+use wellfed_device::store::settings::{KindStore, SettingsStatus, Stored};
 use wellfed_device_runtime::writer::{
     self as writer, Core, Describe, POLL_MS, Product, RESET_BASE, Record, Step, Wear, Writer,
 };
@@ -22,7 +22,8 @@ use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::ota::update::{self as update, SdkFlash, StoreSlots, Update};
 use wellfed_hal::sdk::{self, fake};
-use wellfed_hal::{settings, supervision};
+use wellfed_hal::settings::Mailbox;
+use wellfed_hal::supervision;
 use wellfed_sdk::storage::{FlashOps, Region};
 
 thread_local! {
@@ -41,12 +42,32 @@ impl Describe for Never {
     }
 }
 
+/// The settings mailbox of a kind with no settings of its own.
+static SETTINGS: Mailbox<()> = Mailbox::new();
+
 /// A device kind with no stores beyond the device's.
 #[derive(Default)]
 struct Bare;
 
 impl<F: FlashOps> Product<F> for Bare {
     type Record = Never;
+    type Settings = ();
+
+    fn settings_mailbox() -> &'static Mailbox<()> {
+        &SETTINGS
+    }
+
+    fn settings(&self) -> Stored<()> {
+        ().stored()
+    }
+
+    fn save_settings(&mut self, (): &()) -> bool {
+        true
+    }
+
+    fn settings_record(&self) -> Option<Never> {
+        None
+    }
 
     fn open_kept(&mut self) {}
 
@@ -145,7 +166,7 @@ fn step(writer: &mut Writer<Armed, Bare>, provider: &mut Provider) -> Option<Rec
 /// The fake hardware and the runtime's mailboxes at boot, and a writer.
 fn boot() -> (Writer<Armed, Bare>, Provider) {
     fake::reset_hardware();
-    settings::reset();
+    SETTINGS.reset();
     // SAFETY: this test runs alone in its process and no Wi-Fi task runs.
     unsafe { network::reset() };
     keys::reset();
@@ -198,7 +219,7 @@ fn a_product_without_stores_keeps_the_devices() {
         ..SettingsFields::default()
     };
     assert!(matches!(
-        settings::request(fields),
+        SETTINGS.request(fields),
         SettingsResult::Current { pending: true, .. }
     ));
     let mut text = String::new();

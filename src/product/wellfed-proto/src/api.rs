@@ -2520,7 +2520,7 @@ pub struct TaskStack<'a> {
 
 /// The storage sectors [`Erases`] counts one by one, from the region's
 /// first; the board's map says which store owns each. The region has grown
-/// past them (to 48 sectors), but a message never changes a field's type,
+/// past them (to 50 sectors), but a message never changes a field's type,
 /// so the later sectors' erases reach the wire only in a new variant.
 pub const FLASH_SECTORS: usize = 32;
 

@@ -75,11 +75,12 @@ pub mod pins {
     pub const IR_PB_BIT: u32 = bit(IR_PB);
 }
 
-/// Owner-approved replacement-firmware storage: 48 sectors at
-/// 0x340000-0x370000. The owner approved the first 16, extended them to 32
-/// (October 23, 2026) for client keys, plans and the 7-day event ring, and
-/// to 48 (October 26) for the lifetime statistics and plans. A static pass
-/// over stock 1.1.15 found no fixed or bounded computed flash access in
+/// Owner-approved replacement-firmware storage: 50 sectors at
+/// 0x340000-0x372000. The owner approved the first 16, extended them to 32
+/// (October 23, 2026) for client keys, plans and the 7-day event ring, to
+/// 48 (October 26) for the lifetime statistics and plans, and to 50
+/// (November 9) for the feeder's settings record. A static pass over stock
+/// 1.1.15 found no fixed or bounded computed flash access in
 /// 0x306000-0x3e8000, and every full dump of the research unit is blank
 /// there. Clear of bank 0, of a full-size bank 1 (ends no later than
 /// 0x306000) and of the stock settings (0x3e8000). The region only ever
@@ -87,7 +88,7 @@ pub mod pins {
 /// bound is smaller, never reaches the sectors added after it.
 /// Callers name a sector index; nothing takes a flash address.
 pub const STORAGE_OFFSET: u32 = 0x34_0000;
-pub const STORAGE_SECTORS: u32 = 48;
+pub const STORAGE_SECTORS: u32 = 50;
 const _: () =
     assert!(STORAGE_OFFSET >= 0x30_6000 && STORAGE_OFFSET + STORAGE_SECTORS * 0x1000 <= 0x3e_8000);
 
@@ -111,7 +112,8 @@ pub mod storage {
 
     /// The feed journal's slot pair.
     pub const JOURNAL: Sectors = Sectors { first: 0, count: 2 };
-    /// Device settings.
+    /// The device's settings, those every kind keeps (lights, sound, volume
+    /// and their windows); the feeder's own are [`FEEDER_SETTINGS`].
     pub const SETTINGS: Sectors = Sectors { first: 2, count: 2 };
     /// The boot confirmation record.
     pub const CONFIRM: Sectors = Sectors { first: 4, count: 1 };
@@ -220,7 +222,7 @@ pub mod storage {
     /// handover's own mark). It erases every other sector in region order:
     /// the Wi-Fi credentials, the plans and whatever a later build adds,
     /// for the same reason as [`FACTORY_KEPT`].
-    pub const HANDOVER_KEPT: [Sectors; 13] = [
+    pub const HANDOVER_KEPT: [Sectors; 14] = [
         JOURNAL,
         SETTINGS,
         CONFIRM,
@@ -234,6 +236,7 @@ pub mod storage {
         CALIBRATION,
         RESET,
         CALL,
+        FEEDER_SETTINGS,
     ];
 
     /// The sectors the handover erases.
@@ -290,15 +293,24 @@ pub mod storage {
     }
 
     /// The meal call: one clip the owner uploads, a header and about 8 s
-    /// of ADPCM (`wellfed_core::clip`). The region's last sectors, which no
-    /// earlier build allocated.
+    /// of ADPCM (`wellfed_core::clip`). The 48-sector region's last
+    /// sectors, which no earlier build allocated.
     pub const CALL: Sectors = Sectors {
         first: 40,
         count: 8,
     };
 
+    /// The feeder's own settings, beside the device's: the meal reminder,
+    /// the desiccant reminder and the bowl mode. The first sectors past the
+    /// 48-sector region, so a build that predates the store never reads or
+    /// writes them; a factory reset clears them, being off its keep list.
+    pub const FEEDER_SETTINGS: Sectors = Sectors {
+        first: 48,
+        count: 2,
+    };
+
     /// Every allocation, in region order.
-    pub const ALL: [Sectors; 16] = [
+    pub const ALL: [Sectors; 17] = [
         JOURNAL,
         SETTINGS,
         CONFIRM,
@@ -315,6 +327,7 @@ pub mod storage {
         RESET,
         UPLINK,
         CALL,
+        FEEDER_SETTINGS,
     ];
 
     const fn disjoint_and_inside() -> bool {

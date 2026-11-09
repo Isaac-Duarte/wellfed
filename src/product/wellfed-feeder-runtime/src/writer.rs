@@ -2,7 +2,10 @@
 //! [`Product`] of `wellfed_device_runtime::writer`), and the SDK runtime's
 //! settings stage over them (`wellfed_store_step`).
 //!
-//! Beside the device's stores the writer keeps the portion calibration
+//! Beside the device's stores the writer keeps the feeder's own settings
+//! (sectors 48 and 49, `wellfed_feeder::store::settings`, [`settings`]),
+//! saved with the device's from one `settings` request, and the portion
+//! calibration
 //! (sectors 34 and 35, `wellfed_feeder::store::calibration`,
 //! [`calibration`]), opened first each boot since a factory reset keeps
 //! it, and the feeding plans (sectors 11 and 12,
@@ -32,8 +35,9 @@
 use core::fmt;
 
 use wellfed_device::store::events::EventsFill;
+use wellfed_device::store::settings::{SettingsStatus, Stored};
 use wellfed_device::store::traces::TraceRing;
-use wellfed_device_api::mailbox::{CallChange, CallClip, PlansChange};
+use wellfed_device_api::mailbox::{CallChange, CallClip, FeederSettings, PlansChange};
 use wellfed_device_runtime::events;
 use wellfed_device_runtime::writer::{
     self as device, Core, Describe, EVENTS_POLL_MS, ErrorStage, POLL_MS, Product,
@@ -43,14 +47,17 @@ use wellfed_feeder::stats::{FEED_SAVE_MS, SAVE_MS, TOTAL_SECTORS, Totals, reset_
 use wellfed_feeder::store::calibration::CalibrationStore;
 use wellfed_feeder::store::call::CallStore;
 use wellfed_feeder::store::plans::PlansStore;
+use wellfed_feeder::store::settings::FeederSettingsStore;
 use wellfed_feeder::store::stats::{SaveKind, StatsStatus, StatsStore};
 use wellfed_hal::flash_lock::arming::{self, Hooks};
+use wellfed_hal::settings::Mailbox;
 use wellfed_hal::{audio, sdk, supervision};
-use wellfed_sdk::storage::{FlashOps, Region, Slots, TRACES_BASE, TRACES_UNITS};
+use wellfed_sdk::storage::{FlashOps, Region, SETTINGS_BINDING, Slots, TRACES_BASE, TRACES_UNITS};
 
 use crate::calibration::{self, CALIBRATION_BASE};
 use crate::call::{self, CALL_BASE, CALL_UNITS, Queued};
 use crate::plans::{self, PLANS_BASE};
+use crate::settings::{self, FEEDER_SETTINGS_BASE};
 use crate::stats::{self, STATS_BASE};
 use crate::traces;
 
@@ -70,6 +77,13 @@ pub const RECEIVE_LINGER_POLLS: u32 = READ_LINGER_POLLS;
 /// The feeder's own stores' records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FeederRecord {
+    /// The feeder's settings (sectors 48 and 49), as the writer's settings
+    /// lines name them after the device's.
+    Settings {
+        status: SettingsStatus,
+        generation: u64,
+        settings: FeederSettings,
+    },
     /// The lifetime statistics (sectors 32 and 33).
     StatsOpen {
         status: StatsStatus,
@@ -124,6 +138,24 @@ pub enum FeederRecord {
 impl Describe for FeederRecord {
     fn describe(self, f: &mut impl fmt::Write) -> fmt::Result {
         match self {
+            Self::Settings {
+                status,
+                generation,
+                settings,
+            } => {
+                write!(
+                    f,
+                    "feeder_status={} feeder_generation={generation} meal_reminder={} \
+                     desiccant_days={} desiccant_reset=",
+                    status.code(),
+                    settings.meal_reminder,
+                    settings.desiccant_days,
+                )?;
+                match settings.desiccant_reset {
+                    Some(day) => write!(f, "{day}"),
+                    None => f.write_str("none"),
+                }
+            }
             Self::StatsOpen {
                 status,
                 generation,
@@ -227,6 +259,8 @@ impl SaveTrigger {
 /// The feeder's stores, which the settings writer keeps beside the
 /// device's.
 pub struct FeederStores<F> {
+    /// The feeder's own settings, beside the device's.
+    settings: FeederSettingsStore<Slots<F, FEEDER_SETTINGS_BASE>>,
     /// Opened first each boot; its status shows in the device API's
     /// calibration view (writable, generation) rather than a record.
     calibration: CalibrationStore<Slots<F, CALIBRATION_BASE>>,
@@ -256,6 +290,7 @@ pub struct FeederStores<F> {
 impl<F> Default for FeederStores<F> {
     fn default() -> Self {
         Self {
+            settings: FeederSettingsStore::default(),
             calibration: CalibrationStore::default(),
             plans: PlansStore::default(),
             call: CallStore::default(),
@@ -603,12 +638,34 @@ impl<F: FlashOps> FeederStores<F> {
 
 impl<F: FlashOps> Product<F> for FeederStores<F> {
     type Record = FeederRecord;
+    type Settings = FeederSettings;
+
+    fn settings_mailbox() -> &'static Mailbox<FeederSettings> {
+        &settings::SETTINGS
+    }
+
+    fn settings(&self) -> Stored<FeederSettings> {
+        self.settings.stored()
+    }
+
+    fn save_settings(&mut self, settings: &FeederSettings) -> bool {
+        self.settings.save(settings)
+    }
+
+    fn settings_record(&self) -> Option<FeederRecord> {
+        Some(FeederRecord::Settings {
+            status: self.settings.status,
+            generation: self.settings.generation,
+            settings: self.settings.settings,
+        })
+    }
 
     fn open_kept(&mut self) {
         self.calibration.open(Slots::new());
     }
 
     fn open_cleared(&mut self) {
+        self.settings.open(Slots::new(), SETTINGS_BINDING);
         self.plans.open(Slots::new());
         self.call.open(Region::new());
     }

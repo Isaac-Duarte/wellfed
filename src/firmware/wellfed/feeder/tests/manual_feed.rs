@@ -25,6 +25,7 @@ use wellfed_feeder::feeder::owner::POLL_MS;
 use wellfed_feeder::feeder::{Feeder, Feeds, Platform, Record};
 use wellfed_feeder::store::call::CallStore;
 use wellfed_feeder::store::plans::PlansStore;
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::{call, plans};
 use wellfed_fw_feeder::platform::{Driver, Plaf103};
 use wellfed_proto::api::{
@@ -35,7 +36,7 @@ use wellfed_sdk::hal::interlock::INTERLOCK;
 use wellfed_sdk::hal::ota::mailbox::{self, Request};
 use wellfed_sdk::hal::power::{self, Monitor};
 use wellfed_sdk::hal::sdk::fake;
-use wellfed_sdk::hal::{audio, buttons, clock, settings, supervision};
+use wellfed_sdk::hal::{audio, buttons, clock, supervision};
 
 /// The button queue, the settings, the speaker's slot and the event queue
 /// are process-wide.
@@ -154,7 +155,7 @@ impl Rig {
         let serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         fake::reset_hardware();
         buttons::reset();
-        settings::reset();
+        SETTINGS.reset();
         audio::reset();
         events::reset();
         clock::reset();
@@ -163,7 +164,7 @@ impl Rig {
         mailbox::reset();
         supervision::reset();
         INTERLOCK.reset();
-        settings::publish(SettingsView {
+        SETTINGS.publish(SettingsView {
             lights: true,
             sound: true,
             volume: 50,
@@ -456,7 +457,7 @@ fn play(rig: &mut Rig, tune: Tune) -> PlayResult {
 }
 
 fn publish_sound(sound: bool, volume: u8) {
-    settings::publish(SettingsView {
+    SETTINGS.publish(SettingsView {
         lights: true,
         sound,
         volume,
@@ -522,7 +523,7 @@ fn sound_off_or_volume_zero_answers_muted_and_stays_quiet() {
 #[test]
 fn a_tune_waits_for_the_settings_to_load() {
     let mut rig = Rig::new();
-    settings::reset();
+    SETTINGS.reset();
     assert_eq!(play(&mut rig, Tune::Test), PlayResult::Busy);
 }
 
@@ -867,7 +868,7 @@ fn setup_mode_takes_the_speaker_from_a_tune_and_refuses_another() {
 #[test]
 fn a_queued_store_write_does_not_hold_a_tune() {
     let mut rig = Rig::new();
-    let queued = settings::request(SettingsFields {
+    let queued = SETTINGS.request(SettingsFields {
         volume: Some(60),
         ..Default::default()
     });
@@ -875,7 +876,7 @@ fn a_queued_store_write_does_not_hold_a_tune() {
         matches!(queued, SettingsResult::Current { .. }),
         "{queued:?}"
     );
-    assert!(settings::pending().is_some());
+    assert!(SETTINGS.pending().is_some());
 
     assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
 }

@@ -10,7 +10,7 @@ It fits.
 - **Heap:** about 120 KB free in Bluetooth setup mode, the tightest case.
 - **Tasks:** none spare, by design. Everything new joins the loop task.
 - **Latency:** three rules keep the loop responsive: one handshake operation per pass, feeds and Wi-Fi joins take turns, and logging never holds the scheduler.
-- **Storage:** a 48-sector region with 3 sectors still free; the meal call's clip takes the last 8.
+- **Storage:** a 50-sector region with 3 sectors still free; the meal call's clip takes 8 and the feeder's settings the last 2.
 
 ## Flash
 
@@ -232,16 +232,17 @@ How each case plays out:
 
 ## The storage region
 
-The replacement's storage lives at 0x340000–0x370000: 48 sectors of 4 KiB. The full sector map is in [pairing](pairing.md#storage-sectors).
+The replacement's storage lives at 0x340000–0x372000: 50 sectors of 4 KiB. The full sector map is in [pairing](pairing.md#storage-sectors).
 
-**Why it grew.** The original region was 16 sectors (0x340000–0x350000). The journal (sectors 0–1), settings (2–3), confirmation (4) and Wi-Fi (5–6) left 9 free sectors, 36 KB. Client keys and schedules needed a few of those too, so a 12-sector event ring did not fit, and 16 sectors would have meant about 3 days of history. So the owner extended the region to 32 sectors (0x340000–0x360000), then to 48 (0x340000–0x370000) for the lifetime statistics.
+**Why it grew.** The original region was 16 sectors (0x340000–0x350000). The journal (sectors 0–1), settings (2–3), confirmation (4) and Wi-Fi (5–6) left 9 free sectors, 36 KB. Client keys and schedules needed a few of those too, so a 12-sector event ring did not fit, and 16 sectors would have meant about 3 days of history. So the owner extended the region to 32 sectors (0x340000–0x360000), then to 48 (0x340000–0x370000) for the lifetime statistics, and on November 9, 2026 to 50 (0x340000–0x372000), when the feeder's settings moved out of the device's record into their own (sectors 48–49).
 
 **Why that space is safe to use.**
 
 - A static pass over stock 1.1.15 found no fixed or bounded computed flash access in 0x306000–0x3e8000.
-- All 15 full dumps of the research unit are blank there, nine of them from before the replacement ran.
+- All 15 full dumps of the research unit are blank there, nine of them from before the replacement ran. That covers 0x370000–0x372000, the last two sectors added.
+- The factory loader only selects between the two banks, checking bank 1's marker and then bank 0's ([bank policy](bank-policy.md), modeled), and never writes flash; the blank dumps, taken after many loader boots, agree.
 - The area is headroom left by the vendor's shifted SDK layout. Only an oversized OTA image (over about 1.79 MB) or the UART console's `FLASH` command could reach it.
-- 0x370000 is still 480 KiB below stock's settings at 0x3e8000.
+- 0x372000 is still 472 KiB below stock's settings at 0x3e8000.
 - The region grows only upward, so bank 1's room is unchanged.
 
 **Stock's clock block.** The same pass found that stock's clock checkpoint save block-erases **0x3f0000–0x400000**, 64 KiB at a time, at minute 30 and on save. It is in `layout.json`'s preserve ranges (`clock_checkpoint_block`). Nothing of ours is near it.

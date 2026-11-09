@@ -15,13 +15,16 @@
 //!
 //! A factory reset or a handover an earlier boot left marked is finished
 //! before any store opens ([`finish_reset`], [`finish_handover`]), with the
-//! device kind's own part of each given by the caller.
+//! device kind's own part of each given by the caller. So is the kind's own
+//! settings record ([`KindStore`], `()` for none), which a settings request
+//! saves beside the device's.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
 
 use wellfed_board::storage::{self, Sectors};
 use wellfed_core::clock::wall::WallClock;
+use wellfed_core::settings::{KindSettings as _, SettingsFields, SettingsResult, SettingsView};
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::{SlotIo, crc32};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
@@ -30,13 +33,12 @@ use wellfed_device::store::events::{BODY_BYTES, EMPTY, EventLog, EventsFill, Rea
 use wellfed_device::store::net::NetStore;
 use wellfed_device::store::reads::{READ_BATCH, Reads};
 use wellfed_device::store::reset;
-use wellfed_device::store::settings::{SettingsStatus, SettingsStore};
+use wellfed_device::store::settings::{KindStore, SettingsStore};
 use wellfed_device::store::time::TimeStore;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
-    ClientChange, KEYS_FINISHED, KeyResult, Requested, SettingsFields, SettingsResult,
-    SettingsView, Stamp, TimeSettings, TimeSettingsResult, TimeSettingsView, WifiResult,
-    WifiSource, WifiView, tells_alerts,
+    ClientChange, KEYS_FINISHED, KeyResult, Requested, Stamp, TimeSettings, TimeSettingsResult,
+    TimeSettingsView, WifiResult, WifiSource, WifiView, tells_alerts,
 };
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{KeyChange, Reader};
@@ -46,8 +48,8 @@ use wellfed_proto::api::EventBody;
 use crate::flash::{Flash, Region};
 
 /// This simulator's settings binding: a store written by one installation
-/// is not read as another's.
-const BINDING: u64 = 0x5046_5731_5349_4d01;
+/// is not read as another's. A kind's own settings record takes it too.
+pub const BINDING: u64 = 0x5046_5731_5349_4d01;
 
 /// 32 bytes from the generator, or `None` when it has none.
 pub type Random = Box<dyn FnMut() -> Option<[u8; 32]>>;
@@ -66,12 +68,14 @@ pub enum DeviceError {
     EnrolledAs(Role),
 }
 
-/// The device's stores and their mailboxes, for one boot.
-pub struct DeviceStores {
+/// The device's stores and their mailboxes, for one boot, with the kind's
+/// own settings record `S` beside the device's.
+pub struct DeviceStores<S: KindStore = ()> {
     random: Random,
     flash: Rc<Flash>,
     settings: SettingsStore<Region>,
-    settings_pending: Option<(SettingsFields, Option<Stamp>)>,
+    kind: S,
+    settings_pending: Option<(SettingsFields<S::Settings>, Option<Stamp>)>,
     net: NetStore<Region>,
     wifi_pending: Option<(Option<Credentials>, Option<Stamp>)>,
     time: TimeStore<Region>,
@@ -96,7 +100,7 @@ pub struct DeviceStores {
     clock: WallClock,
 }
 
-impl std::fmt::Debug for DeviceStores {
+impl<S: KindStore> std::fmt::Debug for DeviceStores<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DeviceStores")
             .field("clients", &self.clients)
@@ -105,10 +109,11 @@ impl std::fmt::Debug for DeviceStores {
     }
 }
 
-impl DeviceStores {
+impl<S: KindStore> DeviceStores<S> {
     /// Open every store on `flash`, creating the identity on first use as
-    /// the writer does.
-    pub fn open(flash: &Rc<Flash>, mut random: Random) -> Result<Self, DeviceError> {
+    /// the writer does, beside the kind's settings record `kind`, opened
+    /// on the same flash.
+    pub fn open(flash: &Rc<Flash>, mut random: Random, kind: S) -> Result<Self, DeviceError> {
         let mut settings = SettingsStore::default();
         settings.open(Region::new(flash, storage::SETTINGS), BINDING);
         let mut net = NetStore::default();
@@ -149,6 +154,7 @@ impl DeviceStores {
             random,
             flash: Rc::clone(flash),
             settings,
+            kind,
             settings_pending: None,
             net,
             wifi_pending: None,
@@ -213,21 +219,18 @@ impl DeviceStores {
         &self.clock
     }
 
-    pub fn settings(&self) -> SettingsView {
-        let writable = matches!(
-            self.settings.status,
-            SettingsStatus::Loaded | SettingsStatus::Empty | SettingsStatus::Recovered
-        );
+    pub fn settings(&self) -> SettingsView<S::Settings> {
+        let writable = self.settings.status.writable();
         self.settings
             .settings
-            .view(self.settings.generation, writable)
+            .view(self.settings.generation, writable, self.kind.stored())
     }
 
     pub fn settings_request(
         &mut self,
-        change: SettingsFields,
+        change: SettingsFields<S::Settings>,
         asked: Option<Stamp>,
-    ) -> SettingsResult {
+    ) -> SettingsResult<S::Settings> {
         let view = self.settings();
         if !change.changes() {
             let pending = self.settings_pending.is_some();
@@ -425,20 +428,25 @@ impl DeviceStores {
     }
 
     /// The writer's turn for the settings, Wi-Fi and time settings queued:
-    /// each applied. A failed save leaves the generation where it was; the
-    /// client sees no change, as on the device. A client's save records its
-    /// event in the same turn, after it, as the firmware's writer does.
+    /// each applied, a settings change to the device's record and then the
+    /// kind's, each only if it changes it. A failed save leaves the
+    /// generation where it was; the client sees no change, as on the device.
+    /// A client's save records its event in the same turn, after it, once
+    /// any part landed, as the firmware's writer does.
     pub fn apply_settings(&mut self) {
         if let Some((fields, asked)) = self.settings_pending.take() {
-            let current = self.settings.settings;
-            let target = current.changed(fields);
-            if target != current
-                && self.settings.save(&target)
-                && let Some(asked) = asked
-            {
-                let generation = u32::try_from(self.settings.generation).unwrap_or(u32::MAX);
+            let device = self.settings.settings.changed(&fields);
+            let kind_now = self.kind.stored().settings;
+            let kind = kind_now.changed(&fields.kind);
+            let device_changed = device != self.settings.settings;
+            let kind_changed = kind != kind_now;
+
+            let device_saved = !device_changed || self.settings.save(&device);
+            let kind_saved = device_saved && (!kind_changed || self.kind.save(&kind));
+            let landed = (device_changed && device_saved) || (kind_changed && kind_saved);
+            if landed && let Some(asked) = asked {
                 let body = EventBody::Settings {
-                    generation,
+                    generation: self.settings().generation,
                     by: asked.by,
                 };
                 self.append_written(asked.at, &body);

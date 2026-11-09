@@ -8,6 +8,7 @@ use std::sync::{Mutex, MutexGuard};
 use wellfed_device_runtime::{events, keys, network, time};
 use wellfed_feeder::conformance::Rig;
 use wellfed_feeder::feeder::Feeder;
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::writer::Writer;
 use wellfed_feeder_runtime::{calibration, call, plans, traces};
 use wellfed_fw_feeder::platform::Plaf103;
@@ -18,7 +19,7 @@ use wellfed_sdk::hal::flash_lock::provider::Provider;
 use wellfed_sdk::hal::interlock::INTERLOCK;
 use wellfed_sdk::hal::ota::mailbox;
 use wellfed_sdk::hal::sdk::{self, fake};
-use wellfed_sdk::hal::{audio, bringup, buttons, clock, rng, settings};
+use wellfed_sdk::hal::{audio, bringup, buttons, clock, rng};
 use wellfed_sdk::storage::FlashOps;
 
 /// The writer runs with the hooks already armed, as after confirmation.
@@ -100,7 +101,7 @@ impl FirmwareRig {
         fake::reset_hardware();
         buttons::reset();
         wellfed_sdk::hal::supervision::reset();
-        settings::reset();
+        SETTINGS.reset();
         // SAFETY: the test holds `SERIAL` and runs no Wi-Fi task.
         unsafe { network::reset() };
         keys::reset();

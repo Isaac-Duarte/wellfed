@@ -14,8 +14,8 @@ use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{
-    Asked, CallChange, CallClip, CallResult, MealReminder, MealSkip, PlansChange, PlansResult,
-    PlansView, SettingsFields, SettingsResult,
+    Asked, CallChange, CallClip, CallResult, FeederFields, MealReminder, MealSkip, PlansChange,
+    PlansResult, PlansView, SettingsFields, SettingsResult,
 };
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::{self, schedule};
@@ -201,7 +201,10 @@ impl Feeder {
     /// Set the meal reminder, as a client's settings write does.
     fn remind(&mut self, reminder: MealReminder) {
         let fields = SettingsFields {
-            meal_reminder: Some(reminder),
+            kind: FeederFields {
+                meal_reminder: Some(reminder),
+                ..FeederFields::default()
+            },
             ..SettingsFields::default()
         };
         let queued = self.sim.platform().settings_request(fields, None);
@@ -210,7 +213,7 @@ impl Feeder {
             SettingsResult::Current { pending: true, .. }
         ));
         self.run(1);
-        let saved = self.sim.platform().settings().map(|s| s.meal_reminder);
+        let saved = self.sim.platform().settings().map(|s| s.kind.meal_reminder);
         assert_eq!(saved, Some(reminder));
     }
 
@@ -727,7 +730,7 @@ fn reminded_breakfast(lead: u8) -> Feeder {
 fn the_reminder_is_off_by_default() {
     let mut feeder = breakfast();
     let settings = feeder.sim.platform().settings().unwrap();
-    assert_eq!(settings.meal_reminder, MealReminder::Off);
+    assert_eq!(settings.kind.meal_reminder, MealReminder::Off);
 
     feeder.run_until(BREAKFAST + MINUTE_MS);
     assert_eq!(feeder.fed().len(), 1);

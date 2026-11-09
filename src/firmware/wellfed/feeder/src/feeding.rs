@@ -286,9 +286,11 @@ impl Claiming {
 /// first, so the client hears its answer before the feed rather than after.
 pub fn writes_queued() -> bool {
     use wellfed_device_runtime::{keys, network};
-    use wellfed_feeder_runtime::traces;
-    use wellfed_sdk::hal::settings;
-    settings::pending().is_some() || network::saving() || keys::queued() || traces::queued()
+    use wellfed_feeder_runtime::{settings, traces};
+    settings::SETTINGS.pending().is_some()
+        || network::saving()
+        || keys::queued()
+        || traces::queued()
 }
 
 /// Whether the firmware's own reasons hold food readings at rest

@@ -6,11 +6,12 @@ use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
 use wellfed_device_runtime::keys::{self, Requested};
 use wellfed_device_runtime::writer::{self as writer, Identity, KeyChange, KeyResult};
 use wellfed_device_runtime::{events, network};
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::writer::{RECEIVE_LINGER_POLLS, Record, Step, Writer};
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
+use wellfed_hal::rng;
 use wellfed_hal::sdk::fake;
-use wellfed_hal::{rng, settings};
 
 use crate::support::{A, Armed, NoMmio, changed, open_all, phone, start, step};
 
@@ -56,7 +57,7 @@ fn every_store_write_waits_for_a_feed_and_completes_after_it() {
         assert!(events::record(None, body));
     }
     assert!(matches!(
-        settings::request(SettingsFields {
+        SETTINGS.request(SettingsFields {
             volume: Some(7),
             ..SettingsFields::default()
         }),
@@ -151,7 +152,7 @@ fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
     let queue: [(&str, &mut dyn FnMut() -> bool); 7] = [
         ("settings", &mut || {
             matches!(
-                settings::request(SettingsFields {
+                SETTINGS.request(SettingsFields {
                     volume: Some(10),
                     ..SettingsFields::default()
                 }),
@@ -241,7 +242,7 @@ fn only_a_writer_at_rest_is_stepped_early() {
     assert_eq!(idle.delay_ms, writer::POLL_MS);
     writer_wake::settle(idle.rested);
     assert!(!writer_wake::take(), "nothing queued");
-    settings::request(quieter);
+    SETTINGS.request(quieter);
     assert!(writer_wake::take(), "steps the writer now");
 
     // After the write: a second change waits out the writer's delay.
@@ -250,7 +251,7 @@ fn only_a_writer_at_rest_is_stepped_early() {
     assert!(!saved.rested);
     assert_eq!(saved.delay_ms, writer::POLL_MS);
     writer_wake::settle(saved.rested);
-    settings::request(SettingsFields {
+    SETTINGS.request(SettingsFields {
         volume: Some(20),
         ..SettingsFields::default()
     });
@@ -278,7 +279,7 @@ fn a_wake_during_a_feed_writes_nothing_until_the_owner_is_at_rest() {
     let before = fake::with(|h| h.storage.clone());
     let writes = notifies();
     assert!(matches!(
-        settings::request(SettingsFields {
+        SETTINGS.request(SettingsFields {
             volume: Some(10),
             ..SettingsFields::default()
         }),
@@ -301,7 +302,7 @@ fn a_wake_during_a_feed_writes_nothing_until_the_owner_is_at_rest() {
         before,
         "no write while the outputs are claimed"
     );
-    assert!(settings::current().is_some_and(|view| view.writable));
+    assert!(SETTINGS.current().is_some_and(|view| view.writable));
 
     INTERLOCK.release_feed();
     assert!(matches!(

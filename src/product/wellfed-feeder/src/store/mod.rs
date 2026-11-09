@@ -1,5 +1,6 @@
 //! The feeder's own records on NOR: the lifetime statistics, the portion
-//! calibration and the feeding plans, each a dual-slot store
+//! calibration, the feeding plans and the feeder's settings, each a
+//! dual-slot store
 //! (`wellfed_core::store::slot`: two alternating erase units under one
 //! torn-write rule, with the store's own fields and recovery policy), and
 //! the meal call ([`call`]): one clip across eight units, written once a
@@ -12,4 +13,5 @@
 pub mod calibration;
 pub mod call;
 pub mod plans;
+pub mod settings;
 pub mod stats;

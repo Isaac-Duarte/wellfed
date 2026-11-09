@@ -24,7 +24,6 @@
 
 use wellfed_core::clock::tick::TickClock;
 use wellfed_core::flash_coord::{FlashCoord, FlashFault, FlashPhase, FlashReply};
-use wellfed_core_feeder::feed::progress::BowlMode;
 use wellfed_device::store::settings::{Settings, SettingsStatus, SettingsStore, SlotState};
 
 use wellfed_hal::flash::park::{self, Mmio, Reply};
@@ -56,7 +55,6 @@ pub fn stress_settings(generation: u64) -> Settings {
         return Settings::default();
     }
     Settings {
-        bowl_mode: BowlMode::Single,
         lights: generation % 2 == 1,
         sound: true,
         volume: (generation % 100) as u8,

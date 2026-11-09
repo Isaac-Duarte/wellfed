@@ -1,5 +1,5 @@
 //! The on-flash bytes of every record the product's stores write, pinned:
-//! settings, Wi-Fi credentials and their clear, the client table, the time
+//! the device's settings and the feeder's, Wi-Fi credentials and their clear, the client table, the time
 //! settings, the portion calibration, the feeding plans, the meal call and the event
 //! ring's records. These are the layouts deployed feeders hold, so a
 //! change to the shared slot layer must leave every byte where it was. The
@@ -10,8 +10,9 @@
 //! pinned bytes, placed in erased flash, and reads back the values that
 //! wrote them.
 
-use wellfed_core::settings::{MealReminder, Window};
+use wellfed_core::settings::Window;
 use wellfed_core_feeder::feed::progress::BowlMode;
+use wellfed_core_feeder::settings::{FeederSettings, MealReminder};
 use wellfed_device::store::clients::{ClientStatus, ClientStore};
 use wellfed_device::store::events::{BODY_BYTES, EventLog, Read, Record};
 use wellfed_device::store::net::{NetStatus, NetStore};
@@ -24,6 +25,7 @@ use wellfed_device_api::mailbox::{
 use wellfed_device_api::wifi::Credentials;
 use wellfed_feeder::store::calibration::{CalibrationStatus, CalibrationStore};
 use wellfed_feeder::store::plans::{Plans, PlansStatus, PlansStore};
+use wellfed_feeder::store::settings::FeederSettingsStore;
 use wellfed_testkit::journal_flash::FakeJournalFlash;
 
 /// `bytes` as lowercase hex, 32 bytes a line.
@@ -51,47 +53,82 @@ fn pinned(name: &str, f: &FakeJournalFlash, slot: usize, len: usize, golden: &[&
     );
 }
 
+/// The device's settings the pinned records hold, after the defaults.
+fn device_settings() -> [Settings; 2] {
+    [
+        Settings {
+            lights: false,
+            sound: true,
+            volume: 100,
+            utc_offset_minutes: -570,
+            lights_window: Window::Between {
+                start: 1320,
+                end: 420,
+            },
+            sound_window: Window::Between {
+                start: 480,
+                end: 1200,
+            },
+        },
+        Settings {
+            lights: true,
+            sound: false,
+            volume: 0,
+            utc_offset_minutes: 14 * 60,
+            lights_window: Window::Always,
+            sound_window: Window::Between { start: 0, end: 0 },
+        },
+    ]
+}
+
+/// The feeder's settings the pinned records hold, after the defaults.
+fn feeder_settings() -> [FeederSettings; 2] {
+    [
+        FeederSettings {
+            bowl_mode: BowlMode::Double,
+            meal_reminder: MealReminder::Before { minutes: 60 },
+            desiccant_days: 30,
+            desiccant_reset: Some(20_389),
+        },
+        FeederSettings {
+            bowl_mode: BowlMode::Single,
+            meal_reminder: MealReminder::Before { minutes: 1 },
+            desiccant_days: 1,
+            desiccant_reset: Some(-1),
+        },
+    ]
+}
+
 #[test]
 fn settings_records() {
     let mut f = FakeJournalFlash::with_unit(512);
-    let mut s = SettingsStore::default();
+    let mut s: SettingsStore<_> = SettingsStore::default();
     // SAFETY: the fake flash outlives the store.
     unsafe { s.open(f.io(), 0x5046_5731_3502_0001) };
 
     assert!(s.save(&Settings::default()));
     pinned("default settings", &f, 0, 128, DEFAULT_SETTINGS);
-    assert!(s.save(&Settings {
-        bowl_mode: BowlMode::Double,
-        lights: false,
-        sound: true,
-        volume: 100,
-        utc_offset_minutes: -570,
-        lights_window: Window::Between {
-            start: 1320,
-            end: 420
-        },
-        sound_window: Window::Between {
-            start: 480,
-            end: 1200
-        },
-        desiccant_days: 30,
-        desiccant_reset: Some(20_389),
-        meal_reminder: MealReminder::Before { minutes: 60 },
-    }));
+    let [custom, third] = device_settings();
+    assert!(s.save(&custom));
     pinned("custom settings", &f, 1, 128, CUSTOM_SETTINGS);
-    assert!(s.save(&Settings {
-        bowl_mode: BowlMode::Single,
-        lights: true,
-        sound: false,
-        volume: 0,
-        utc_offset_minutes: 14 * 60,
-        lights_window: Window::Always,
-        sound_window: Window::Between { start: 0, end: 0 },
-        desiccant_days: 1,
-        desiccant_reset: Some(0),
-        meal_reminder: MealReminder::Before { minutes: 1 },
-    }));
+    assert!(s.save(&third));
     pinned("third settings", &f, 0, 128, THIRD_SETTINGS);
+}
+
+#[test]
+fn feeder_settings_records() {
+    let mut f = FakeJournalFlash::with_unit(512);
+    let mut s = FeederSettingsStore::default();
+    // SAFETY: the fake flash outlives the store.
+    unsafe { s.open(f.io(), 0x5046_5731_3502_0001) };
+
+    assert!(s.save(&FeederSettings::DEFAULT));
+    pinned("default feeder settings", &f, 0, 128, DEFAULT_FEEDER);
+    let [custom, third] = feeder_settings();
+    assert!(s.save(&custom));
+    pinned("custom feeder settings", &f, 1, 128, CUSTOM_FEEDER);
+    assert!(s.save(&third));
+    pinned("third feeder settings", &f, 0, 128, THIRD_FEEDER);
 }
 
 #[test]
@@ -358,51 +395,34 @@ fn flash(unit: usize, records: &[(usize, &[&str])]) -> FakeJournalFlash {
 
 #[test]
 fn settings_store_reads_the_pinned_records() {
+    let [custom, third] = device_settings();
     for (record, slot, generation, settings) in [
         (DEFAULT_SETTINGS, 0, 1, Settings::default()),
-        (
-            CUSTOM_SETTINGS,
-            1,
-            2,
-            Settings {
-                bowl_mode: BowlMode::Double,
-                lights: false,
-                sound: true,
-                volume: 100,
-                utc_offset_minutes: -570,
-                lights_window: Window::Between {
-                    start: 1320,
-                    end: 420,
-                },
-                sound_window: Window::Between {
-                    start: 480,
-                    end: 1200,
-                },
-                desiccant_days: 30,
-                desiccant_reset: Some(20_389),
-                meal_reminder: MealReminder::Before { minutes: 60 },
-            },
-        ),
-        (
-            THIRD_SETTINGS,
-            0,
-            3,
-            Settings {
-                bowl_mode: BowlMode::Single,
-                lights: true,
-                sound: false,
-                volume: 0,
-                utc_offset_minutes: 14 * 60,
-                lights_window: Window::Always,
-                sound_window: Window::Between { start: 0, end: 0 },
-                desiccant_days: 1,
-                desiccant_reset: Some(0),
-                meal_reminder: MealReminder::Before { minutes: 1 },
-            },
-        ),
+        (CUSTOM_SETTINGS, 1, 2, custom),
+        (THIRD_SETTINGS, 0, 3, third),
     ] {
         let mut f = flash(512, &[(slot, record)]);
-        let mut s = SettingsStore::default();
+        let mut s: SettingsStore<_> = SettingsStore::default();
+        // SAFETY: the fake flash outlives the store.
+        let status = unsafe { s.open(f.io(), 0x5046_5731_3502_0001) };
+        assert_eq!(status, SettingsStatus::Loaded);
+        assert_eq!(
+            (s.generation, s.slot, s.settings),
+            (generation, slot as u32, settings)
+        );
+    }
+}
+
+#[test]
+fn feeder_settings_store_reads_the_pinned_records() {
+    let [custom, third] = feeder_settings();
+    for (record, slot, generation, settings) in [
+        (DEFAULT_FEEDER, 0, 1, FeederSettings::DEFAULT),
+        (CUSTOM_FEEDER, 1, 2, custom),
+        (THIRD_FEEDER, 0, 3, third),
+    ] {
+        let mut f = flash(512, &[(slot, record)]);
+        let mut s = FeederSettingsStore::default();
         // SAFETY: the fake flash outlives the store.
         let status = unsafe { s.open(f.io(), 0x5046_5731_3502_0001) };
         assert_eq!(status, SettingsStatus::Loaded);
@@ -498,26 +518,50 @@ fn event_ring_reads_the_pinned_records() {
 
 /// Default settings.
 const DEFAULT_SETTINGS: &[&str] = &[
-    "504c465345543031040080000100000000000000010002353157465000033200",
-    "0000000000000000000000000e00000000000000000000000000000000000000",
+    "504c465345543031050080000100000000000000010002353157465003320000",
     "0000000000000000000000000000000000000000000000000000000000000000",
-    "00000000000000000000000000000000000000000000000038234339434d4954",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "000000000000000000000000000000000000000000000000b40e7637434d4954",
 ];
 
 /// Custom settings.
 const CUSTOM_SETTINGS: &[&str] = &[
-    "504c46534554303104008000020000000000000001000235315746500102643c",
-    "c6fd01012805a401e001b0041e010000a54f0000000000000000000000000000",
+    "504c46534554303105008000020000000000000001000235315746500264c6fd",
+    "01012805a401e001b00400000000000000000000000000000000000000000000",
     "0000000000000000000000000000000000000000000000000000000000000000",
-    "000000000000000000000000000000000000000000000000ab6afb43434d4954",
+    "000000000000000000000000000000000000000000000000d420ec38434d4954",
 ];
 
 /// Third settings.
 const THIRD_SETTINGS: &[&str] = &[
-    "504c465345543031040080000300000000000000010002353157465000010001",
-    "4803000100000000000000000101000000000000000000000000000000000000",
+    "504c465345543031050080000300000000000000010002353157465001004803",
+    "0001000000000000000000000000000000000000000000000000000000000000",
     "0000000000000000000000000000000000000000000000000000000000000000",
-    "0000000000000000000000000000000000000000000000009b63283d434d4954",
+    "0000000000000000000000000000000000000000000000001ca8c979434d4954",
+];
+
+/// Default feeder settings.
+const DEFAULT_FEEDER: &[&str] = &[
+    "504c464644533031010080000100000000000000010002353157465000000e00",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "000000000000000000000000000000000000000000000000d03acf40434d4954",
+];
+
+/// Custom feeder settings.
+const CUSTOM_FEEDER: &[&str] = &[
+    "504c4646445330310100800002000000000000000100023531574650013c1e01",
+    "a54f000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000002000406c434d4954",
+];
+
+/// Third feeder settings.
+const THIRD_FEEDER: &[&str] = &[
+    "504c464644533031010080000300000000000000010002353157465000010101",
+    "ffffffff00000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "00000000000000000000000000000000000000000000000003308806434d4954",
 ];
 
 /// Short credentials.

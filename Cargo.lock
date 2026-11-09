@@ -5334,7 +5334,6 @@ version = "0.1.0"
 dependencies = [
  "thiserror 2.0.21",
  "wellfed-core",
- "wellfed-core-feeder",
  "wellfed-device-api",
  "wellfed-proto",
  "wellfed-signed",
@@ -5359,7 +5358,6 @@ name = "wellfed-device-runtime"
 version = "0.1.0"
 dependencies = [
  "wellfed-core",
- "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-hal",

@@ -11,9 +11,9 @@ use super::memory::Remembered;
 use super::request::{Action, Reply};
 use super::{Server, Waiting};
 use crate::mailbox::{
-    Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult,
-    MealReminder, MealSkip, PLANS, Plan, PlansResult, PlayResult, SettingsFields, SettingsResult,
-    Table, Weekdays, Window,
+    Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, FeederFields,
+    LockResult, MealReminder, MealSkip, PLANS, Plan, PlansResult, PlayResult, SettingsFields,
+    SettingsResult, Table, Weekdays, Window,
 };
 use crate::{FeederDevice, Reason};
 use wellfed_core::tone::Tune as CoreTune;
@@ -171,9 +171,11 @@ pub(super) fn action(op: FeederOp<'_>) -> Action {
                 volume: changes.volume,
                 lights_window: changes.lights_window.map(window),
                 sound_window: changes.sound_window.map(window),
-                desiccant_days: changes.desiccant_days,
-                desiccant_reset: None,
-                meal_reminder: changes.meal_reminder.map(reminder),
+                kind: FeederFields {
+                    meal_reminder: changes.meal_reminder.map(reminder),
+                    desiccant_days: changes.desiccant_days,
+                    desiccant_reset: None,
+                },
             };
             if !fields.valid() {
                 return Action::Invalid;
@@ -319,9 +321,9 @@ impl Server {
                         volume: view.volume,
                         lights_window: wire_window(view.lights_window),
                         sound_window: wire_window(view.sound_window),
-                        desiccant_days: view.desiccant_days,
-                        desiccant_reset: view.desiccant_reset,
-                        meal_reminder: wire_reminder(view.meal_reminder),
+                        desiccant_days: view.kind.desiccant_days,
+                        desiccant_reset: view.kind.desiccant_reset,
+                        meal_reminder: wire_reminder(view.kind.meal_reminder),
                         writable: view.writable,
                         ext: proto::Tail::EMPTY,
                     }))
@@ -603,7 +605,10 @@ fn reset_desiccant<F: FeederDevice>(
         SettingsResult::Current { .. } => {}
     }
     let fields = SettingsFields {
-        desiccant_reset: Some(today),
+        kind: FeederFields {
+            desiccant_reset: Some(today),
+            ..FeederFields::default()
+        },
         ..SettingsFields::default()
     };
     match device.settings(Some(Asked { change: fields, by })) {
@@ -687,13 +692,13 @@ fn wire_reminder(reminder: MealReminder) -> proto::MealReminder {
 const _: () = assert!(PLANS == proto::PLANS_MAX);
 const _: () = assert!(wellfed_core_feeder::schedule::PORTIONS_MAX == proto::PORTIONS_MAX);
 const _: () = assert!(
-    wellfed_core::desiccant::PERIOD_MIN == proto::DESICCANT_DAYS_MIN
-        && wellfed_core::desiccant::PERIOD_MAX == proto::DESICCANT_DAYS_MAX
-        && wellfed_core::desiccant::PERIOD_DEFAULT == proto::DESICCANT_DAYS_DEFAULT
+    wellfed_core_feeder::desiccant::PERIOD_MIN == proto::DESICCANT_DAYS_MIN
+        && wellfed_core_feeder::desiccant::PERIOD_MAX == proto::DESICCANT_DAYS_MAX
+        && wellfed_core_feeder::desiccant::PERIOD_DEFAULT == proto::DESICCANT_DAYS_DEFAULT
 );
 const _: () = assert!(
-    wellfed_core::settings::REMINDER_MINUTES_MIN == proto::MEAL_REMINDER_MINUTES_MIN
-        && wellfed_core::settings::REMINDER_MINUTES_MAX == proto::MEAL_REMINDER_MINUTES_MAX
+    wellfed_core_feeder::settings::REMINDER_MINUTES_MIN == proto::MEAL_REMINDER_MINUTES_MIN
+        && wellfed_core_feeder::settings::REMINDER_MINUTES_MAX == proto::MEAL_REMINDER_MINUTES_MAX
 );
 
 /// The wire's plans as the store keeps them. A plan's portions outside

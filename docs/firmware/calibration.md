@@ -54,7 +54,7 @@ Only one weight is kept. The food beam (PA17) says only whether food is present,
 
 ### Storage
 
-A dual-slot store, `PLFCAL01` (`wellfed_feeder::store::calibration`), holds the generation, `portion_mg` at bytes 20–23 (0 for none), zero padding, a CRC and a commit marker, pinned in `store_layout.rs`. Its sectors, 34 and 35 of the 48-sector storage region (`storage::CALIBRATION`), were never allocated before, so a build that predates the store never touches them. The settings writer saves it on its write turn, never during a feed, inside a marked attempt like the time settings. The [factory reset](pairing.md#factory-reset) keeps it, since the weight belongs to the hardware.
+A dual-slot store, `PLFCAL01` (`wellfed_feeder::store::calibration`), holds the generation, `portion_mg` at bytes 20–23 (0 for none), zero padding, a CRC and a commit marker, pinned in `store_layout.rs`. Its sectors, 34 and 35 of the storage region (`storage::CALIBRATION`), were never allocated before, so a build that predates the store never touches them. The settings writer saves it on its write turn, never during a feed, inside a marked attempt like the time settings. The [factory reset](pairing.md#factory-reset) keeps it, since the weight belongs to the hardware.
 
 ### Wire
 

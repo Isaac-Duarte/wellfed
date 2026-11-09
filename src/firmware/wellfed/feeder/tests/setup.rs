@@ -32,12 +32,13 @@ use wellfed_feeder::feeder::owner::{Owner, POLL_MS, Record as OwnerRecord};
 use wellfed_feeder::feeder::setup::{self, Cause, Ended, PROVE_MS, Setup};
 use wellfed_feeder::store::plans::PlansStore;
 use wellfed_feeder_runtime::plans;
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_fw_feeder::platform::{Driver, Plaf103};
 use wellfed_proto::setup::{Enrolled, Refusal, Reply, WifiSaved};
 use wellfed_sdk::hal::power::{self, Monitor};
 use wellfed_sdk::hal::sdk::fake::{self, ble_record};
 use wellfed_sdk::hal::sdk::{Advertising, BleEvent};
-use wellfed_sdk::hal::{audio, ble, buttons, settings};
+use wellfed_sdk::hal::{audio, ble, buttons};
 use wellfed_session::noise::Keypair;
 use wellfed_session::setup_code::{Code, PRESSES};
 
@@ -70,7 +71,7 @@ impl Bench {
         // SAFETY: the test holds `SERIAL` and runs no Wi-Fi task.
         unsafe { network::reset() };
         power::reset();
-        settings::reset();
+        SETTINGS.reset();
         audio::reset();
         fake::with(|h| h.input[0] |= 1 << 19);
         wellfed_sdk::hal::rng::reset();
@@ -121,7 +122,7 @@ impl Bench {
 
     /// Settings loaded, with `sound` as given.
     fn sound(&mut self, sound: bool) {
-        settings::publish(SettingsView {
+        SETTINGS.publish(SettingsView {
             lights: true,
             sound,
             volume: 40,
@@ -584,7 +585,7 @@ impl Boot {
         unsafe { network::reset() };
         plans::reset();
         power::reset();
-        settings::reset();
+        SETTINGS.reset();
         audio::reset();
         Self::next(serial, build_wifi)
     }

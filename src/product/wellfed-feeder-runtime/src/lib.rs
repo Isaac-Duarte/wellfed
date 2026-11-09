@@ -14,7 +14,8 @@
 //! `wellfed_startup_check` ([`diagnostic`]).
 //!
 //! The rest carries the feeder's work between the loop task and the
-//! writer, each a one-slot mailbox: the portion calibration
+//! writer, each a one-slot mailbox: the settings, the device's with the
+//! feeder's own ([`settings`]), the portion calibration
 //! ([`calibration`]), the feeding plans ([`plans`]), the meal call's upload
 //! ([`call`]), the statistics' totals and the event ring's fill
 //! ([`stats`]), and the latest feed's trace on its way to storage
@@ -31,6 +32,7 @@ pub mod calibration;
 pub mod call;
 pub mod diagnostic;
 pub mod plans;
+pub mod settings;
 pub mod stats;
 pub mod traces;
 pub mod writer;

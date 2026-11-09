@@ -60,6 +60,7 @@ fn store_writes_decode_for_the_bench() {
         Record::Saved {
             generation: 7,
             settings: Settings::default(),
+            kind: None,
             event: WriteEvent::Appended,
         },
         Some(Event::Settings(record::Settings::Saved {

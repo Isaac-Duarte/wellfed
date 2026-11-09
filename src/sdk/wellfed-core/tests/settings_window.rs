@@ -55,7 +55,7 @@ fn every_window_is_open_without_a_local_time() {
 
 #[test]
 fn a_bound_must_be_a_minute_of_the_day() {
-    let past = |start, end| SettingsFields {
+    let past = |start, end| SettingsFields::<()> {
         lights_window: Some(Window::Between { start, end }),
         ..SettingsFields::default()
     };
@@ -64,7 +64,7 @@ fn a_bound_must_be_a_minute_of_the_day() {
     assert!(!past(1440, 0).valid());
     assert!(!past(0, 1440).valid());
     assert!(
-        !SettingsFields {
+        !SettingsFields::<()> {
             volume: Some(101),
             ..SettingsFields::default()
         }
@@ -74,7 +74,7 @@ fn a_bound_must_be_a_minute_of_the_day() {
 
 #[test]
 fn sound_needs_the_switch_a_volume_and_the_window() {
-    let on = SettingsView {
+    let on = SettingsView::<()> {
         sound: true,
         volume: 50,
         sound_window: Window::Between {
