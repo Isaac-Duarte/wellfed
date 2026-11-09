@@ -37,6 +37,13 @@ pub const UNREACHABLE_AFTER: u32 = 3;
 /// And for at least this long, so a phone checking every minute does not call
 /// a restart or a router's hiccup a lost feeder.
 pub const UNREACHABLE_FOR: SignedDuration = SignedDuration::from_mins(10);
+/// How long a condition may stay absent from tables the feeder can't vouch
+/// for (`settling`) before its notice comes off anyway. `settling` is one
+/// flag for the whole table, and a reading that stays unknown keeps it set
+/// for good (the desiccant's days with no clock), so without this a cleared
+/// condition would stay posted. Twice the longest threshold that starts again
+/// at a boot (no clock, 1 hour), so a boot's own settling never ends one.
+pub const SETTLING_HOLD: SignedDuration = SignedDuration::from_hours(2);
 /// The most notices a watch tracks. The feeder's table holds 12; reports kept
 /// past it while the feeder can't vouch for their end, and a phone's own,
 /// stay well under this. Past it the oldest report goes first.
@@ -240,6 +247,9 @@ pub struct Tracked {
     /// When this phone first saw it, by the phone's clock.
     pub seen: Timestamp,
     pub delivery: Delivery,
+    /// When a table this phone read first left it out, while the feeder
+    /// could not vouch that it ended; `None` while tables list it.
+    pub absent: Option<Timestamp>,
 }
 
 /// The alert table a catch-up last applied.
@@ -375,35 +385,40 @@ impl Watch {
                     }
             })
         };
-        let ended: Vec<NoticeKey> = self
-            .open
-            .iter()
-            .filter(|tracked| match tracked.notice {
-                Notice::Alert { open } if !shown(tracked) => {
-                    let vouched = if open.alert.kind().is_condition() {
-                        !view.settling
-                    } else {
-                        !view.settling && !view.more
-                    };
-                    vouched || lapsed(&open, context.now)
-                }
-                Notice::Alert { .. } | Notice::Unreachable { .. } => false,
-            })
-            .map(|tracked| tracked.key)
-            .collect();
+        let mut ended = Vec::new();
+        for tracked in &mut self.open {
+            let Notice::Alert { open } = tracked.notice else {
+                continue;
+            };
+            if shown(tracked) {
+                tracked.absent = None;
+                continue;
+            }
+            let vouched = if open.alert.kind().is_condition() {
+                !view.settling
+            } else {
+                !view.settling && !view.more
+            };
+            let absent = *tracked.absent.get_or_insert(context.now);
+            if vouched || unvouched_over(&open, absent, context.now) {
+                ended.push(tracked.key);
+            }
+        }
         self.end(|key| ended.contains(key));
         self.bound();
     }
 
-    /// Reports the table no longer vouches for, once their time has passed
-    /// the feeder's own lapse: for a catch-up that found the table unchanged.
+    /// Alerts the last table left out without vouching for their end, once
+    /// they have been absent past their hold: for a catch-up that found the
+    /// table unchanged.
     pub fn lapse(&mut self, now: Timestamp) {
         let lapsed: Vec<NoticeKey> = self
             .open
             .iter()
-            .filter(
-                |tracked| matches!(tracked.notice, Notice::Alert { open } if lapsed(&open, now)),
-            )
+            .filter(|tracked| match (tracked.notice, tracked.absent) {
+                (Notice::Alert { open }, Some(absent)) => unvouched_over(&open, absent, now),
+                _ => false,
+            })
             .map(|tracked| tracked.key)
             .collect();
         self.end(|key| lapsed.contains(key));
@@ -493,34 +508,41 @@ impl Watch {
         } else {
             Delivery::Due
         };
-        match self.open.iter_mut().find(|tracked| tracked.key == key) {
-            Some(tracked) => {
-                let kind_changed = tracked.notice.kind() != notice.kind();
-                tracked.notice = notice;
-                if kind_changed && tracked.delivery != Delivery::Dismissed {
-                    tracked.delivery = delivery;
-                }
-            }
-            None => self.open.push(Tracked {
+        let Some(tracked) = self.open.iter_mut().find(|tracked| tracked.key == key) else {
+            self.open.push(Tracked {
                 key,
                 notice,
                 seen: context.now,
                 delivery,
-            }),
+                absent: None,
+            });
+            return;
+        };
+
+        let kind_changed = tracked.notice.kind() != notice.kind();
+        tracked.notice = notice;
+        tracked.absent = None;
+        if !kind_changed || tracked.delivery == Delivery::Dismissed {
+            return;
+        }
+        // A posted notice whose new kind is muted comes off, as a mute does.
+        let showing = matches!(tracked.delivery, Delivery::Due | Delivery::Posted);
+        tracked.delivery = delivery;
+        if showing && delivery == Delivery::Quiet {
+            self.removal(key);
         }
     }
 
-    /// End every tracked notice whose key `ends`: those that may be on the
-    /// phone come off.
+    /// End every tracked notice whose key `ends`, and take each off the
+    /// phone whatever this watch thinks it shows: removing one that is not
+    /// there costs nothing, and one left up would stay for good.
     fn end(&mut self, ends: impl Fn(&NoticeKey) -> bool) {
         let mut removed = Vec::new();
         self.open.retain(|tracked| {
             if !ends(&tracked.key) {
                 return true;
             }
-            if matches!(tracked.delivery, Delivery::Due | Delivery::Posted) {
-                removed.push(tracked.key);
-            }
+            removed.push(tracked.key);
             false
         });
         for key in removed {
@@ -551,13 +573,17 @@ impl Watch {
     }
 }
 
-/// A report whose own time is past the feeder's lapse: gone from the table,
-/// whatever the table says.
-fn lapsed(open: &OpenAlert, now: Timestamp) -> bool {
-    !open.alert.kind().is_condition()
-        && open
-            .at
-            .is_some_and(|at| now.duration_since(at) > REPORT_LIFE)
+/// Whether an alert tables have left out since `absent`, though the feeder
+/// could not vouch for its end, has ended anyway. A condition ends after
+/// [`SETTLING_HOLD`]. A report ends once past the feeder's own lapse: by its
+/// own time, or, with no valid clock when it was made, by how long tables
+/// have left it out.
+fn unvouched_over(open: &OpenAlert, absent: Timestamp, now: Timestamp) -> bool {
+    if open.alert.kind().is_condition() {
+        return now.duration_since(absent) > SETTLING_HOLD;
+    }
+    let since = open.at.unwrap_or(absent);
+    now.duration_since(since) > REPORT_LIFE
 }
 
 fn is_own_join(notice: &Notice, own: Hex<4>) -> bool {

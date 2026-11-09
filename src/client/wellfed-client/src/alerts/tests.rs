@@ -222,6 +222,107 @@ fn an_uncertain_feed_found_failed_posts_again_under_its_own_id() {
 }
 
 #[test]
+fn a_posted_alert_whose_new_kind_is_muted_comes_off() {
+    let mutes = Mutes {
+        kinds: vec![NoticeKind::MealFailed],
+        levels: Vec::new(),
+    };
+    let mut watch = Watch::default();
+    let now = context(at(10), &mutes);
+    watch.apply(cursor(1, 1, 1), &view(1, &[uncertain(9)]), &now);
+    deliver(&mut watch);
+
+    watch.apply(cursor(1, 1, 2), &view(1, &[failed(9)]), &now);
+    assert_eq!(removals(&watch), 1, "the uncertain notice is not left up");
+    assert!(posts(&watch).is_empty());
+    assert_eq!(watch.open[0].delivery, Delivery::Quiet);
+}
+
+#[test]
+fn a_quiet_alert_that_ends_still_comes_off() {
+    let mutes = Mutes {
+        kinds: vec![NoticeKind::FoodLow],
+        levels: Vec::new(),
+    };
+    let mut watch = Watch::default();
+    let now = context(at(10), &mutes);
+    watch.apply(
+        cursor(1, 1, 1),
+        &view(1, &[condition(Alert::FoodLow)]),
+        &now,
+    );
+    assert!(watch.changes().is_empty());
+
+    watch.apply(cursor(1, 1, 2), &view(1, &[]), &now);
+    assert_eq!(removals(&watch), 1);
+}
+
+#[test]
+fn a_cleared_condition_comes_off_while_the_feeder_settles_for_good() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    watch.apply(
+        cursor(1, 1, 1),
+        &view(1, &[condition(Alert::FoodLow)]),
+        &context(at(0), &mutes),
+    );
+    deliver(&mut watch);
+
+    // No clock: the desiccant's reading stays unknown, so every table
+    // settles, and FoodLow has been cleared.
+    let mut settling = view(1, &[]);
+    settling.settling = true;
+    watch.apply(cursor(1, 1, 2), &settling, &context(at(60), &mutes));
+    assert_eq!(watch.listed().count(), 1, "held while a boot may settle");
+
+    watch.lapse(at(60) + SETTLING_HOLD);
+    assert_eq!(watch.listed().count(), 1, "not before the hold is over");
+    watch.lapse(at(61) + SETTLING_HOLD);
+    assert_eq!(watch.listed().count(), 0);
+    assert_eq!(removals(&watch), 1);
+}
+
+#[test]
+fn a_condition_listed_again_starts_its_hold_over() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let food = view(1, &[condition(Alert::FoodLow)]);
+    watch.apply(cursor(1, 1, 1), &food, &context(at(0), &mutes));
+    let mut settling = view(1, &[]);
+    settling.settling = true;
+    watch.apply(cursor(1, 1, 2), &settling, &context(at(60), &mutes));
+    watch.apply(cursor(1, 1, 3), &food, &context(at(120), &mutes));
+
+    watch.lapse(at(61) + SETTLING_HOLD);
+    assert_eq!(watch.listed().count(), 1);
+}
+
+#[test]
+fn a_report_with_no_clock_lapses_by_how_long_it_has_been_absent() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let mut timeless = failed(4);
+    timeless.at = None;
+    watch.apply(
+        cursor(1, 1, 1),
+        &view(1, &[timeless]),
+        &context(at(0), &mutes),
+    );
+    deliver(&mut watch);
+
+    // Left out of a table that has more to say: it may only have left
+    // for room.
+    let mut more = view(1, &[]);
+    more.more = true;
+    watch.apply(cursor(1, 1, 2), &more, &context(at(100), &mutes));
+    watch.lapse(at(100) + REPORT_LIFE);
+    assert_eq!(watch.listed().count(), 1);
+
+    watch.lapse(at(101) + REPORT_LIFE);
+    assert_eq!(watch.listed().count(), 0);
+}
+
+#[test]
 fn new_words_for_a_condition_update_the_list_and_post_nothing() {
     let mutes = Mutes::default();
     let mut watch = Watch::default();
@@ -351,10 +452,12 @@ fn a_dismissed_alert_is_hidden_here_until_it_ends() {
     assert!(watch.changes().is_empty(), "still open: still dismissed");
 
     watch.apply(cursor(1, 1, 3), &view(1, &[]), &now);
-    assert!(
-        watch.changes().is_empty(),
-        "dismissed, so nothing to take off"
+    assert_eq!(
+        removals(&watch),
+        1,
+        "an end takes its id off whatever this watch thought was showing"
     );
+    deliver(&mut watch);
     watch.apply(
         cursor(1, 1, 4),
         &view(1, &[condition(Alert::FoodLow)]),
@@ -452,6 +555,53 @@ fn a_notification_id_is_stable_positive_and_per_feeder() {
     assert_eq!(id, key.notification_id(&FEEDER));
     assert_ne!(id, key.notification_id(&[8; 32]));
     assert_ne!(id, NoticeKey::Unreachable.notification_id(&FEEDER));
+}
+
+/// Pinned: a notification posted by one build is taken off by the next, so
+/// these ids never change.
+#[test]
+fn notification_ids_are_pinned() {
+    let feed = NoticeKey::Alert {
+        epoch: 5,
+        key: failed(3).key(),
+    };
+    let food = NoticeKey::Alert {
+        epoch: 1,
+        key: condition(Alert::FoodLow).key(),
+    };
+    let alert = |alert: Alert| NoticeKey::Alert {
+        epoch: 1,
+        key: condition(alert).key(),
+    };
+    let meal = alert(Alert::MealNoRecord {
+        plan: 2,
+        due: at(-60),
+    });
+    let joined = alert(Alert::ClientJoined {
+        client: Hex([1, 2, 3, 4]),
+        role: ClientRole::Member,
+        path: EnrollPath::Invite,
+    });
+    let power = alert(Alert::PowerWasOut);
+    let ids = [
+        feed.notification_id(&FEEDER),
+        food.notification_id(&FEEDER),
+        NoticeKey::Unreachable.notification_id(&FEEDER),
+        meal.notification_id(&FEEDER),
+        joined.notification_id(&FEEDER),
+        power.notification_id(&FEEDER),
+    ];
+    assert_eq!(
+        ids,
+        [
+            1_116_229_146,
+            1_639_503_056,
+            1_831_101_205,
+            1_862_037_239,
+            1_081_698_757,
+            1_382_233_608,
+        ]
+    );
 }
 
 #[test]
