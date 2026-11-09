@@ -4,7 +4,7 @@ name = "wellfed-webhook"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "The server's alert webhook: a small, stable JSON body POSTed to an owner's URL when an alert opens or clears, at most once per change, with bounded retries"
+description = "The server's alert webhook: a small, stable JSON body POSTed to an owner's URL when an alert opens or clears, at least once under one id per change, with bounded retries"
 publish.workspace = true
 
 [dependencies]
@@ -26,6 +26,8 @@ wellfed-model.workspace = true
 wellfed-store.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["io-util", "net"] }
 uuid.workspace = true
 
 [lints]

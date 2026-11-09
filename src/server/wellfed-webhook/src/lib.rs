@@ -8,42 +8,51 @@
 //! changes its watch hands over are exactly what a phone would post and
 //! take off. The worker delivers them one feeder at a time, in order, and
 //! confirms each in the kept alerts only once it is delivered or given up,
-//! so a change is sent once however often the table is read, and a server
-//! stopped mid-delivery sends it at its next start.
+//! so a change is not sent again however often the table is read, and a
+//! server stopped mid-delivery sends it at its next start.
 //!
-//! - **Once per change.** A change confirmed is never sent again. A try
-//!   that failed is retried after [`BACKOFF`], at most [`TRIES`] in all,
-//!   and every try of a change carries the same `id`. A try whose answer
-//!   was lost may still have arrived, so a receiver that keeps the ids it
-//!   has seen never sees a change twice.
+//! - **At least once, under one id.** A change confirmed is never sent
+//!   again. A try that failed is retried after [`BACKOFF`], at most
+//!   [`TRIES`] in all, and every try of a change carries the same `id`. A
+//!   try whose answer was lost may still have arrived, and a server
+//!   stopped between a delivery and its confirmation sends it again at its
+//!   next start, so a receiver may see one change twice: one that keeps
+//!   the ids it has seen never acts on it twice.
+//! - **Pairs by key.** An alert's `opened` and `cleared` carry the same
+//!   key. An alert whose kind changes while open (an uncertain meal found
+//!   failed) is `opened` again under the same key, with a new id: for each
+//!   key, the latest event is the alert's state.
 //! - **In order.** A feeder's next change waits while one of its changes
 //!   waits to be tried again, so a clear never arrives before its open.
 //! - **Off the feeder's path.** The worker is a task of its own, reading
 //!   the kept alerts from the store; a slow or dead receiver delays only
 //!   the next delivery.
-//! - **Only what it opened.** A clear goes out only for an alert the
-//!   webhook was told opened. With no webhook set, every change is
-//!   confirmed unsent, so an alert open when a webhook is first set is not
-//!   sent until it opens again.
+//! - **Only what it opened.** A clear goes out only for an alert whose
+//!   opening the receiver took (a 2xx answer), or one open at the first
+//!   table the server read ([`wellfed_mirror::Kept::take`]). With no
+//!   webhook set, every change is confirmed unsent, so an alert open when a
+//!   webhook is first set is not sent until it opens again.
+//! - **Not for a removed feeder.** A feeder the owner removed is sent
+//!   nothing more, not even the clears of what was open: its kept alerts
+//!   are dropped, and a feeder adopted again starts afresh.
 //!
 //! [server docs]: ../../../../docs/server/README.md#alert-webhook
 
 mod body;
 mod target;
+mod told;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use jiff::Timestamp;
-use reqwest::StatusCode;
 use tokio::sync::watch;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use wellfed_api::FeederId;
-use wellfed_client::alerts::{Change, Delivery as Shown, NoticeKey, Tracked};
-use wellfed_formats::canonical::{canonical_of, sha256};
+use wellfed_client::alerts::{Change, Delivery as Shown};
 use wellfed_mirror::{Clock, Kept};
 use wellfed_store::Store;
 
@@ -51,6 +60,7 @@ pub use reqwest::Url;
 
 pub use body::{AlertRef, Delivery, FeederRef, Transition, VERSION};
 pub use target::{PlainHttp, Target, TargetError};
+use told::{Failure, Told, delivery_id, hook, refused, without_url};
 
 /// Tries of one change before it is given up.
 pub const TRIES: u32 = 6;
@@ -69,7 +79,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("build the webhook's HTTP client: {0}")]
+    #[error("build the webhook's HTTP client")]
     Client(#[source] reqwest::Error),
 }
 
@@ -85,9 +95,11 @@ struct Pending {
 /// What one try came to.
 enum Outcome {
     /// Delivered, given up, or nothing to send: confirm it.
-    Done,
+    Done(Told),
     /// Try again at this instant.
     Later(Instant),
+    /// The feeder was removed: nothing more goes out for it.
+    Gone,
 }
 
 /// The worker's state between passes.
@@ -100,6 +112,12 @@ pub struct Webhook {
     moved: watch::Receiver<u64>,
     /// Changes tried and not yet done, by feeder and delivery id.
     pending: HashMap<(FeederId, String), Pending>,
+    /// The changes this pass looked at, so one gone from the kept alerts
+    /// meanwhile (ended before its retry, or its feeder removed) is
+    /// forgotten.
+    live: HashSet<(FeederId, String)>,
+    /// The wait after each failed try: [`BACKOFF`], shorter in tests.
+    backoff: Vec<Duration>,
 }
 
 impl Webhook {
@@ -128,6 +146,8 @@ impl Webhook {
             clock,
             moved,
             pending: HashMap::new(),
+            live: HashSet::new(),
+            backoff: BACKOFF.to_vec(),
         })
     }
 
@@ -155,43 +175,51 @@ impl Webhook {
             Ok(kept) => kept,
             Err(error) => {
                 warn!("read the kept alerts: {error}");
-                return Some(Instant::now() + BACKOFF[0]);
+                return Some(Instant::now() + self.wait(0));
             }
         };
 
+        self.live.clear();
         let mut next: Option<Instant> = None;
         for (feeder, kept) in kept {
             for change in kept.watch.changes() {
                 match self.deliver(feeder, &kept, &change).await {
-                    Outcome::Done => self.confirm(feeder, &change).await,
+                    Outcome::Done(told) => self.confirm(feeder, &change, told).await,
                     Outcome::Later(at) => {
                         next = Some(next.map_or(at, |next| next.min(at)));
+                        break;
+                    }
+                    Outcome::Gone => {
+                        self.forget(feeder).await;
                         break;
                     }
                 }
             }
         }
+        let live = &self.live;
+        self.pending.retain(|key, _| live.contains(key));
         next
     }
 
     /// Try `change` once, if it is due and there is anything to send.
     async fn deliver(&mut self, feeder: FeederId, kept: &Kept, change: &Change) -> Outcome {
         let Some(target) = self.target.clone() else {
-            return Outcome::Done;
+            return Outcome::Done(Told::Not);
         };
         let (transition, tracked) = match change {
             Change::Post(tracked) => (Transition::Opened, *tracked),
             Change::Remove(key) => match kept.hooked.iter().find(|hooked| hooked.key == *key) {
                 Some(hooked) => (Transition::Cleared, *hooked),
                 // Never sent as opened: nothing to clear.
-                None => return Outcome::Done,
+                None => return Outcome::Done(Told::Not),
             },
         };
         if tracked.delivery == Shown::Quiet {
-            return Outcome::Done;
+            return Outcome::Done(Told::Not);
         }
 
         let id = delivery_id(feeder, transition, &tracked);
+        self.live.insert((feeder, id.clone()));
         let now = Instant::now();
         let pending = *self
             .pending
@@ -209,11 +237,11 @@ impl Webhook {
         }
 
         let name = match self.store.feeder(feeder).await {
-            Ok(Some(row)) => row.name,
-            Ok(None) => return Outcome::Done,
+            Ok(Some(row)) if row.archived.is_none() => row.name,
+            Ok(_) => return Outcome::Gone,
             Err(error) => {
                 warn!(%feeder, "read the feeder for the webhook: {error}");
-                return Outcome::Later(now + BACKOFF[0]);
+                return Outcome::Later(now + self.wait(0));
             }
         };
         let body = Delivery {
@@ -226,34 +254,30 @@ impl Webhook {
         };
 
         let tries = pending.tries.saturating_add(1);
-        let retry = match self.post(&target, &body).await {
+        let done = match self.post(&target, &body).await {
             Ok(()) => {
                 debug!(%feeder, event = transition.name(), key = body.alert.key, "webhook delivered");
-                false
+                Some(Told::Took)
             }
             Err(Failure::Final(reason)) => {
                 warn!(%feeder, host = target.host(), "webhook refused, not tried again: {reason}");
-                false
+                Some(Told::Not)
             }
             Err(Failure::Again(reason)) if tries >= TRIES => {
                 warn!(%feeder, host = target.host(), tries, "webhook given up: {reason}");
-                false
+                Some(Told::Not)
             }
             Err(Failure::Again(reason)) => {
                 info!(%feeder, host = target.host(), tries, "webhook try failed: {reason}");
-                true
+                None
             }
         };
-        if !retry {
+        if let Some(told) = done {
             self.pending.remove(&(feeder, id));
-            return Outcome::Done;
+            return Outcome::Done(told);
         }
 
-        let wait = usize::try_from(tries - 1)
-            .ok()
-            .and_then(|at| BACKOFF.get(at))
-            .copied()
-            .unwrap_or(BACKOFF[BACKOFF.len() - 1]);
+        let wait = self.wait(usize::try_from(tries - 1).unwrap_or(usize::MAX));
         let next = Instant::now() + wait;
         self.pending.insert(
             (feeder, id),
@@ -280,77 +304,45 @@ impl Webhook {
         if status.is_success() {
             return Ok(());
         }
-        let again = status == StatusCode::REQUEST_TIMEOUT
-            || status == StatusCode::TOO_MANY_REQUESTS
-            || status.is_server_error();
-        let reason = format!("answered {status}");
-        Err(if again {
-            Failure::Again(reason)
-        } else {
-            Failure::Final(reason)
-        })
+        Err(refused(status))
     }
 
-    /// Mark `change` done in the feeder's kept alerts, and note what the
-    /// webhook was told, so a later clear names it.
-    async fn confirm(&self, feeder: FeederId, change: &Change) {
-        let sent = self.target.is_some();
+    /// The wait after the `after`th failed try.
+    fn wait(&self, after: usize) -> Duration {
+        self.backoff
+            .get(after)
+            .or(self.backoff.last())
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Mark `change` done in the feeder's kept alerts, and note whether
+    /// the receiver took it, so a later clear goes only where an open did.
+    async fn confirm(&self, feeder: FeederId, change: &Change, told: Told) {
         let now = self.clock.now();
         let confirmed = wellfed_mirror::change_kept(&self.store, feeder, now, |kept| {
             kept.watch.confirm(change);
-            hook(&mut kept.hooked, change, sent);
+            hook(&mut kept.hooked, change, told);
         })
         .await;
         if let Err(error) = confirmed {
             warn!(%feeder, "confirm a webhook delivery: {error}");
         }
     }
-}
 
-/// Keep `hooked` to the alerts the webhook was told are open.
-fn hook(hooked: &mut Vec<Tracked>, change: &Change, sent: bool) {
-    match change {
-        Change::Post(tracked) => {
-            hooked.retain(|each| each.key != tracked.key);
-            if sent && tracked.delivery != Shown::Quiet {
-                hooked.push(*tracked);
-            }
+    /// Drop a removed feeder's kept alerts, sending nothing: the owner
+    /// removed it, and a clear of each alert would be news of a feeder
+    /// they no longer hold. Adopted again, it starts afresh.
+    async fn forget(&self, feeder: FeederId) {
+        let now = self.clock.now();
+        let forgotten = wellfed_mirror::change_kept(&self.store, feeder, now, |kept| {
+            *kept = Kept::default();
+        })
+        .await;
+        if let Err(error) = forgotten {
+            warn!(%feeder, "drop a removed feeder's alerts: {error}");
         }
-        Change::Remove(key) => hooked.retain(|each| each.key != *key),
     }
-}
-
-/// Why a try failed.
-enum Failure {
-    /// Worth trying again: no answer, or the receiver said so.
-    Again(String),
-    /// The receiver refused the body: trying again would get the same.
-    Final(String),
-}
-
-/// A request error's words without its URL, whose path may be a secret.
-fn without_url(error: reqwest::Error) -> String {
-    let kind = if error.is_timeout() {
-        "timed out"
-    } else if error.is_connect() {
-        "could not connect"
-    } else {
-        "request failed"
-    };
-    format!("{kind}: {}", error.without_url())
-}
-
-/// The same for every try of one change: the feeder, the transition and
-/// the alert, by its key, kind and when the server first saw it, so the
-/// same alert opening again later is a new change.
-fn delivery_id(feeder: FeederId, transition: Transition, tracked: &Tracked) -> String {
-    let seen = tracked.seen.as_millisecond();
-    let kind = tracked.notice.kind();
-    let key: &NoticeKey = &tracked.key;
-    let bytes = canonical_of(&(feeder, transition, key, kind, seen)).unwrap_or_default();
-    let mut digest = sha256(&bytes);
-    digest.truncate(32);
-    digest
 }
 
 /// Sleep until `at`; `None` is never selected (its branch is disabled).
