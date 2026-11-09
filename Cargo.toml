@@ -65,7 +65,7 @@ wellfed-emu = { path = "src/tools/wellfed-emu" }
 wellfed-image = { path = "src/client/wellfed-image" }
 wellfed-signing = { path = "src/client/wellfed-signing" }
 wellfed-testkit = { path = "src/sdk/wellfed-testkit" }
-wellfed-sim = { path = "src/sdk/wellfed-sim" }
+wellfed-sim = { path = "src/tools/wellfed-sim" }
 # Host tools.
 anyhow = "1.0.104"
 axum = "0.8.9"

@@ -588,7 +588,7 @@ mod tests {
             "wellfed-build",
             "wellfed-feeder-sim",
             "wellfed-server-testkit",
-            "wellfed-sim",
+            "wellfed-core",
         ];
         let mut edges = vec![
             ("wellfed-install", "wellfed-stock", Links),
@@ -602,14 +602,14 @@ mod tests {
         assert!(rules(&graph(&members, &edges)).is_empty());
 
         edges.extend([
+            ("wellfed-core", "wellfed-feeder-sim", Links),
             ("wellfed-install", "wellfed-build", Links),
-            ("wellfed-sim", "wellfed-feeder-sim", Links),
         ]);
         assert_eq!(
             rules(&graph(&members, &edges)),
             [
+                "dependency rule: wellfed-core → wellfed-feeder-sim: a crate outside src/tools/ links no host tool's crate",
                 "dependency rule: wellfed-install → wellfed-build: a crate outside src/tools/ links no host tool's crate",
-                "dependency rule: wellfed-sim → wellfed-feeder-sim: a crate outside src/tools/ links no host tool's crate",
             ]
         );
     }

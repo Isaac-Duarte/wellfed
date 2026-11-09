@@ -56,11 +56,11 @@ Under `nohup`, macOS doesn't show that SIGHUP is ignored, so `wellfed restore-st
 
 | Folder | Contents |
 | --- | --- |
-| `src/sdk/` | The SDK every firmware builds on: runtime, feeding core, hardware ports, board map and simulator ([firmware architecture](../firmware/README.md)) |
+| `src/sdk/` | The SDK every firmware builds on: runtime, feeding core, hardware ports and board map ([firmware architecture](../firmware/README.md)) |
 | `src/product/` | Product policy shared by the firmware and the server: the device protocol and the feeder's stores |
-| `src/client/` | The clients the CLI, the server and the Android app share ([server design](../server/design.md#crates)) |
+| `src/client/` | The clients the CLI, the server and the Android app share, and the libraries host programs share: file formats, image checks, signing and stock's protocol ([server design](../server/design.md#crates)) |
 | `src/server/` | The owner's optional server ([the server](../server/README.md)) |
-| `src/tools/` | Host tools, including the `wellfed` CLI ([tool list](../../src/tools/README.md)) |
+| `src/tools/` | Host tools, including the `wellfed` CLI and the simulators ([tool list](../../src/tools/README.md)) |
 | `src/firmware/wellfed/` | One crate per firmware: `feeder`, `qa`, `bringup` and `blink` ([firmware guide](../../src/firmware/wellfed/README.md)) |
 | `src/firmware/vendor/` | The vendor SDK side: C hooks and ports, pinned SDK and toolchain locks, the stock layout, simulator scenarios and the image build (`make -C src/firmware/vendor`) |
 | `src/firmware/devices/` | Per-device descriptions and layouts |
@@ -112,7 +112,7 @@ Every host tool is Rust. [src/tools/README.md](../../src/tools/README.md) lists 
 | Freeze a build for installing, or sign it as an update | `wellfed-build review`, `sign` | [development updates](uart-development.md) |
 | Read or write the feeder's flash over UART | `wellfed-flash` | [Rust flash client](rust-flash.md) |
 | Drive the relay bench: power, loader, OTA, the suite | `wellfed-bench` | [relay bench](../devices/plaf103/bench.md), [bench server](../devices/plaf103/bench-server.md), [integration suite](../devices/plaf103/integration-suite.md), [bench hardware](bench-hardware.md) |
-| Serve stock 1.1.15 for an install | `wellfed-stock` | [stock server](stock-server.md) |
+| Serve stock 1.1.15 for an install | `wellfed-stock` (`wellfed-stock-server`) | [stock server](stock-server.md) |
 | Audit a capture or compare full-flash backups | `wellfed-audit` | [tools](../../src/tools/README.md) |
 | Test feeding logic against a modeled mechanism | `wellfed-sim` | [the simulator](#the-simulator) |
 | Run the repository checks or a fuzzer | `cargo xtask` | [fuzzing](#fuzzing) |
