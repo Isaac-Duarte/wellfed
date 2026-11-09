@@ -2,7 +2,7 @@
 
 This page explains how the feeder decides what is wrong and how a client reads it. It is for contributors. An alert only reports: no rule feeds, retries or changes anything.
 
-The feeder is the only thing that knows what is wrong, so it decides. It keeps a small table of open alerts in RAM, and every client reads that table, so a phone, the CLI and a server can't disagree. `wellfed alerts` prints it. Nothing on the phone or the server judges these alerts yet: the app shows none of them so far ([roadmap](../roadmap.md)).
+The feeder is the only thing that knows what is wrong, so it decides. It keeps a small table of open alerts in RAM, and every client reads that table, so a phone, the CLI and a server can't disagree. `wellfed alerts` prints it. The Android app catches up with the table at home and notifies each alert once, clearing the notification when the feeder clears the alert ([alerts at home](../../src/app/README.md#alerts-at-home)); the server doesn't read it yet ([roadmap](../roadmap.md)). Neither judges an alert: the phone's one judgement of its own is that it can't reach the feeder.
 
 ## One failed meal
 
