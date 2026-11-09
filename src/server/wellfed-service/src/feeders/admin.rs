@@ -11,7 +11,7 @@ use wellfed_api::{
     CommandKind, Connection as Link, FeederId, Generation, KeyRemoval, PlayRequest, Removal,
     RevokeAttempt, TuneName, WifiChange,
 };
-use wellfed_mirror::{MirrorEvent, hmac_sha256};
+use wellfed_mirror::{AlertHold, MirrorEvent, hmac_sha256};
 use wellfed_model::{Op, Tune, Wifi};
 
 use crate::feeders::commands::done;
@@ -157,6 +157,24 @@ impl Service {
         let _one_at_a_time = self.feeders.adopting.lock().await;
         let row = self.live_row(id).await?;
         let own = self.own_key(&row)?;
+        // Nothing more is judged of a feeder being removed: the revokes
+        // below would read as news its archive then drops, the clear of an
+        // "unreachable" for the server's own key among them.
+        self.mirror.hold_alerts(id, AlertHold::Held);
+        let removed = self.revoke_and_archive(caller, id, own).await;
+        // Removed, its reader is stopped and an adoption starts afresh;
+        // failed, it is judged again.
+        self.mirror.hold_alerts(id, AlertHold::Released);
+        removed
+    }
+
+    /// The removal's revokes, then stopping the mirror and archiving.
+    async fn revoke_and_archive(
+        &self,
+        caller: &Caller,
+        id: FeederId,
+        own: [u8; 32],
+    ) -> Result<Removal> {
         // The server's key is the last that can revoke them.
         self.revoke_owed(id).await;
         let phones_owed = self.shared.store.revoking(id).await?;

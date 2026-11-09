@@ -84,7 +84,8 @@ The feeder decides every alert ([alerts](../firmware/alerts.md)). The server rea
     "epoch": 7, "boot": 42, "generation": 3,
     "more": false, "settling": false, "unread": 0,
     "clock_valid": true,
-    "at": "2026-11-09T08:00:03Z"
+    "at": "2026-11-09T08:00:03Z",
+    "checked": "2026-11-09T08:42:03Z"
   },
   "alerts": [
     { "at": "2026-11-09T08:00:00Z",
@@ -95,7 +96,12 @@ The feeder decides every alert ([alerts](../firmware/alerts.md)). The server rea
 }
 ```
 
-`read` is `null` before the server's first read. `epoch`, `boot` and `generation` are the cursor a phone's own read carries, so the app applies the server's copy and the feeder's to one tracker and never shows an alert twice. The app takes a copy only when `read.at` is at least 5 minutes after its own last contact with the feeder, and not while `unreachable` is set: the boot count starts again after a power loss, so cursors alone can't say which table is newer, and the margin keeps a server clock that runs ahead from passing a stale copy off as fresh. An entry a client can't read, a kind a newer feeder added, is left out and counted in `unread`. `unreachable` is since when the server hasn't reached the feeder. The stream's `alerts` update says the table or the reach changed.
+`read` is `null` before the server's first read. `epoch`, `boot` and `generation` are the cursor a phone's own read carries, so the app applies the server's copy and the feeder's to one tracker and never shows an alert twice. `read.at` is when the server read this table; `read.checked` is when it last found the table unchanged, or read it, so a table that stays the same keeps its `at` while its `checked` moves on with each poll. The server keeps `checked` in memory, since an unchanged poll writes nothing; after a restart it reads as `at` until the first poll.
+
+The app takes a copy of a higher generation in the same epoch and boot as its own last read whatever the clocks say, and never one of a lower generation. Across boots or epochs, where cursors can't say which table is newer (the boot count starts again after a power loss), it takes a copy only when `read.checked` is at least 5 minutes after its own last contact with the feeder. It takes none while `unreachable` is set. The margin assumes both clocks are kept by NTP, and covers them disagreeing by up to 5 minutes:
+
+- **A server clock more than 5 minutes ahead** of the phone's can let a stale copy count.
+- **A server clock behind, or a phone clock ahead,** delays a fresh copy by as much, until the server's later polls pass the margin. More than 5 minutes the same way can also hide a "can't reach" the server judged after the phone last reached the feeder, since the phone then seems to have reached it after. An entry a client can't read, a kind a newer feeder added, is left out and counted in `unread`. `unreachable` is since when the server hasn't reached the feeder. The stream's `alerts` update says the table or the reach changed.
 
 ### Alert webhook
 
