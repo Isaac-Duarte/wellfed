@@ -672,7 +672,12 @@ impl<'a> Session<'a> {
     fn write(&mut self, write: Write, reply: oneshot::Sender<Written>) -> Step {
         let facts = &self.memory.facts;
         let read = writes::Read {
-            settings: facts.settings.as_ref().map(|settings| settings.generation),
+            // A view with no generation (read-only while the feeder
+            // repairs its settings) gives a write nothing to name.
+            settings: facts
+                .settings
+                .as_ref()
+                .and_then(|settings| settings.generation),
             plans: facts.plans.as_ref(),
             calibration: self.memory.calibration.as_ref(),
         };
@@ -760,10 +765,10 @@ impl<'a> Session<'a> {
                 if let Some(settings) = facts
                     .settings
                     .as_mut()
-                    .filter(|held| held.generation == *base)
+                    .filter(|held| held.generation == Some(*base))
                 {
                     settings.apply(*changes);
-                    settings.generation = next(*base);
+                    settings.generation = Some(next(*base));
                     if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
                         status.settings_generation = settings.generation;
                     }

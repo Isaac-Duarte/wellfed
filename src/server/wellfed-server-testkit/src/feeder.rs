@@ -11,7 +11,7 @@ use wellfed_client::api::Invite;
 pub use wellfed_connect::Connection;
 pub use wellfed_feeder_sim::banks::Banks;
 pub use wellfed_feeder_sim::flash::Flash;
-pub use wellfed_feeder_sim::harness::{Relay, Running};
+pub use wellfed_feeder_sim::harness::{Relay, Running, fail_feeder_settings};
 pub use wellfed_feeder_sim::serve::Control;
 use wellfed_model::{Answer, ClientRole, Joined, Op, TraceSummary};
 use wellfed_proto::api as proto;

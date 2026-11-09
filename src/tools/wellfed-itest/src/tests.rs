@@ -335,7 +335,7 @@ impl Feeder {
 
     fn settings(&self) -> Settings {
         Settings::Feeder(FeederSettings {
-            generation: Generation(self.generation),
+            generation: Some(Generation(self.generation)),
             lights: self.lights,
             sound: self.sound,
             volume: self.volume,

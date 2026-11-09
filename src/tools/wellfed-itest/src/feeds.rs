@@ -27,7 +27,7 @@ use wellfed_model::{FeederSettings, FeederSettingsPatch, Refusal};
 use wellfed_rig::device::{Answer, Ask};
 
 use super::log::events;
-use super::scenarios::{RECORD_WAIT, changes_to, read_settings, set_settings};
+use super::scenarios::{RECORD_WAIT, base, changes_to, read_settings, set_settings};
 use super::{Ctx, Error, Result, compact};
 
 /// Why `feed-writes` failed. A feed that may still be running is its own
@@ -219,7 +219,7 @@ fn writes_during_feed(
     })?;
 
     let settings = ctx.ask_held(&Ask::PutSettings {
-        base: before.generation.0,
+        base: base(before)?,
         changes: change,
     })?;
     ctx.note(&format!(

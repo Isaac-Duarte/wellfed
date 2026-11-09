@@ -190,7 +190,10 @@ fn an_owner_reads_and_writes_the_feeder() {
         let stale = sim.ask(&mut owner, &put).await;
         assert_eq!(stale, stale_at(1));
         let settings = settings(&mut sim, &mut owner).await;
-        assert_eq!((settings.volume, settings.generation), (20, Generation(1)));
+        assert_eq!(
+            (settings.volume, settings.generation),
+            (20, Some(Generation(1)))
+        );
 
         let unlock = sim.ask(&mut owner, &Op::SetLock { locked: false }).await;
         assert_eq!(unlock, Answer::Done { generation: None });
@@ -257,7 +260,7 @@ fn an_owner_sets_the_meal_reminder_within_its_hour() {
 
         for minutes in [0, 61] {
             let put = Op::PutSettings {
-                base: before.generation,
+                base: before.generation.unwrap(),
                 changes: FeederSettingsPatch {
                     meal_reminder: Some(MealReminder::Before { minutes }),
                     ..FeederSettingsPatch::default()
@@ -267,7 +270,7 @@ fn an_owner_sets_the_meal_reminder_within_its_hour() {
             assert_eq!(refused, Answer::Refused(Refusal::Invalid), "{minutes}");
         }
         let put = Op::PutSettings {
-            base: before.generation,
+            base: before.generation.unwrap(),
             changes: FeederSettingsPatch {
                 meal_reminder: Some(MealReminder::Before { minutes: 15 }),
                 ..FeederSettingsPatch::default()

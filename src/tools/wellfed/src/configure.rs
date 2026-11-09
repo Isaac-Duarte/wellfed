@@ -202,12 +202,10 @@ pub(crate) async fn settings_command(args: SettingsArgs) -> Result<()> {
         };
     }
 
-    let answer = connection
-        .ask(&Op::PutSettings {
-            base: settings.generation,
-            changes,
-        })
-        .await?;
+    let Some(base) = settings.generation else {
+        bail!("the feeder's settings are {}", text::REPAIRING);
+    };
+    let answer = connection.ask(&Op::PutSettings { base, changes }).await?;
     match answer {
         Answer::Done {
             generation: Some(generation),

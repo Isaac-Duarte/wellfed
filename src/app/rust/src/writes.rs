@@ -99,13 +99,13 @@ impl Write {
                 let Some(settings) = facts.settings.as_mut() else {
                     return false;
                 };
-                if settings.generation != base || !landed_on(base, answer) {
+                if settings.generation != Some(base) || !landed_on(base, answer) {
                     return false;
                 }
                 settings.apply(changes);
-                settings.generation = after(base);
+                settings.generation = Some(after(base));
                 if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
-                    status.settings_generation = after(base);
+                    status.settings_generation = Some(after(base));
                 }
                 true
             }
@@ -113,12 +113,12 @@ impl Write {
                 let (Some(base), Some(settings)) = (base, facts.settings.as_mut()) else {
                     return false;
                 };
-                if settings.generation != base || !landed_on(base, answer) {
+                if settings.generation != Some(base) || !landed_on(base, answer) {
                     return false;
                 }
-                settings.generation = after(base);
+                settings.generation = Some(after(base));
                 if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
-                    status.settings_generation = after(base);
+                    status.settings_generation = Some(after(base));
                 }
                 true
             }
@@ -426,7 +426,7 @@ mod tests {
 
     fn settings() -> FeederSettings {
         FeederSettings {
-            generation: Generation(7),
+            generation: Some(Generation(7)),
             lights: true,
             sound: true,
             volume: 50,
@@ -504,7 +504,7 @@ mod tests {
         assert!(write.landed(&mut facts, Some(&done(8))));
 
         let landed = facts.settings.expect("still read");
-        assert_eq!(landed.generation, Generation(8));
+        assert_eq!(landed.generation, Some(Generation(8)));
         assert_eq!(landed.volume, 20);
         assert!(!landed.sound);
         assert!(landed.lights, "what the patch does not name stays");
@@ -527,7 +527,7 @@ mod tests {
 
         // The read that the change's event brings came first: it is newer.
         let read = FeederSettings {
-            generation: Generation(9),
+            generation: Some(Generation(9)),
             volume: 80,
             ..settings()
         };
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(
             facts.settings,
             Some(FeederSettings {
-                generation: Generation(8),
+                generation: Some(Generation(8)),
                 ..settings()
             })
         );

@@ -1592,6 +1592,7 @@ pub enum DeviceStatus {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeederStatus {
     pub locked: Option<bool>,
+    /// The settings' generation, or [`NO_SETTINGS_GENERATION`].
     pub settings_generation: u32,
     /// The hopper as the food beam last read it.
     pub food: Lenient<FoodLevel>,
@@ -1682,8 +1683,14 @@ pub enum Battery {
     Stale { age_ms: u32 },
 }
 
+/// The `generation` a feeder's settings report while its two records
+/// share none: read-only, until the feeder repairs them. No record ever
+/// holds it, so a write naming it is never taken.
+pub const NO_SETTINGS_GENERATION: u32 = u32::MAX;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
+    /// [`NO_SETTINGS_GENERATION`] while the records share none.
     pub generation: u32,
     pub lights: bool,
     pub sound: bool,

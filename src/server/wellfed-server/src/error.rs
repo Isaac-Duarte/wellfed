@@ -68,7 +68,8 @@ impl IntoResponse for ApiError {
         let (code, detail, refusal) = match self {
             Self::Code(code, detail) => (code, detail, None),
             Self::Service(Error::Stale(settings)) => {
-                // The server only ever holds settings it can read.
+                // Stale settings always have a generation: the service
+                // answers ones without it as read-only.
                 return stale(&settings, settings.generation());
             }
             Self::Service(Error::StalePlans(plans)) => {

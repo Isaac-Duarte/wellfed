@@ -510,6 +510,11 @@ class SettingsView {
   final MealReminder mealReminder;
   final bool writable;
 
+  /// Read-only while the feeder repairs its settings: its two settings
+  /// records share no generation, and it takes no change until they do,
+  /// at its next restart if not before.
+  final bool repairing;
+
   const SettingsView({
     required this.generation,
     required this.lights,
@@ -521,6 +526,7 @@ class SettingsView {
     this.desiccantReplaced,
     required this.mealReminder,
     required this.writable,
+    required this.repairing,
   });
 
   @override
@@ -534,7 +540,8 @@ class SettingsView {
       desiccantDays.hashCode ^
       desiccantReplaced.hashCode ^
       mealReminder.hashCode ^
-      writable.hashCode;
+      writable.hashCode ^
+      repairing.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -550,7 +557,8 @@ class SettingsView {
           desiccantDays == other.desiccantDays &&
           desiccantReplaced == other.desiccantReplaced &&
           mealReminder == other.mealReminder &&
-          writable == other.writable;
+          writable == other.writable &&
+          repairing == other.repairing;
 }
 
 class TimeInfo {

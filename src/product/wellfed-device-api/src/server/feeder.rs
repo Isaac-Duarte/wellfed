@@ -17,6 +17,10 @@ use crate::mailbox::{
 };
 use crate::{FeederDevice, Reason};
 use wellfed_core::tone::Tune as CoreTune;
+
+// The settings' view carries the firmware's generation as the wire's.
+const _: () =
+    assert!(wellfed_core::settings::NO_GENERATION == wellfed_proto::api::NO_SETTINGS_GENERATION);
 use wellfed_proto::api::{
     self as proto, Bowl, CALL_BYTES_MAX, CALL_CHUNK_MAX, CallClip, ClientMessage, DeviceMessage,
     EventBody, FeederOp, FeederOutcome, Op, Outcome, Readiness, Refusal, RequestId, Source, Tune,

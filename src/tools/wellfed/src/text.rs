@@ -144,17 +144,25 @@ fn feeder_status(text: &mut String, feeder: &FeederStatus) {
     if let Some(fault) = feeder.feed_fault {
         let _ = writeln!(text, "Last fault: {}", feed_fault(fault));
     }
+    let settings = feeder.settings_generation.map_or_else(
+        || format!("Settings: {REPAIRING}"),
+        |generation| format!("Settings generation {generation}"),
+    );
     let _ = writeln!(
         text,
         "Power: {}\n\
          Desiccant: {}\n\
          Panel: {panel}\n\
-         Settings generation {}",
+         {settings}",
         supply(feeder.supply),
         feeder.desiccant,
-        feeder.settings_generation,
     );
 }
+
+/// What a feeder's settings with no generation say: its two settings
+/// records disagree, and it takes no change until it has repaired them.
+pub(crate) const REPAIRING: &str =
+    "read-only while the feeder repairs them; restart it if this lasts";
 
 /// Whether a feed can start now, and if not why.
 fn readiness(readiness: Readiness) -> String {
@@ -275,10 +283,18 @@ pub(crate) const UPDATE_FOR_DEVICE: &str =
     "a kind of device this CLI does not know: update the CLI to use it\n";
 
 pub(crate) fn feeder_settings(settings: &FeederSettings) -> String {
+    let generation = settings.generation.map_or_else(
+        || "No generation".to_owned(),
+        |generation| format!("Generation {generation}"),
+    );
+    let note = match (settings.generation, settings.writable) {
+        (None, _) => format!(" ({REPAIRING})"),
+        (Some(_), true) => String::new(),
+        (Some(_), false) => " (not writable now)".to_owned(),
+    };
     format!(
-        "Generation {}: lights {} ({}), sound {} ({}), volume {}, meal reminder {}, desiccant \
-         every {} days (replaced {}){}",
-        settings.generation,
+        "{generation}: lights {} ({}), sound {} ({}), volume {}, meal reminder {}, desiccant \
+         every {} days (replaced {}){note}",
         on_off(settings.lights),
         settings.lights_window,
         on_off(settings.sound),
@@ -289,11 +305,6 @@ pub(crate) fn feeder_settings(settings: &FeederSettings) -> String {
         settings
             .desiccant_replaced
             .map_or_else(|| "-".to_owned(), |date| date.to_string()),
-        if settings.writable {
-            ""
-        } else {
-            " (not writable now)"
-        },
     )
 }
 
@@ -578,7 +589,7 @@ mod tests {
             alerts_generation: Generation(0),
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: Some(false),
-                settings_generation: Generation(7),
+                settings_generation: Some(Generation(7)),
                 food: FoodLevel::Low,
                 feed_fault: Some(FeedFault {
                     feed: 128,
@@ -765,7 +776,7 @@ mod tests {
     #[test]
     fn settings_and_plans_read_as_lines() {
         let settings = Settings::Feeder(FeederSettings {
-            generation: Generation(7),
+            generation: Some(Generation(7)),
             lights: true,
             sound: false,
             volume: 40,
@@ -783,6 +794,17 @@ mod tests {
             super::settings(&settings),
             "Generation 7: lights on (always), sound off (08:00-21:00), volume 40, meal reminder \
              5 min ahead, desiccant every 14 days (replaced -)"
+        );
+        let Settings::Feeder(mut repairing) = settings else {
+            unreachable!("a feeder's settings")
+        };
+        repairing.generation = None;
+        repairing.writable = false;
+        assert_eq!(
+            super::feeder_settings(&repairing),
+            "No generation: lights on (always), sound off (08:00-21:00), volume 40, meal reminder \
+             5 min ahead, desiccant every 14 days (replaced -) (read-only while the feeder \
+             repairs them; restart it if this lasts)"
         );
 
         let mut table = [None; PLANS];

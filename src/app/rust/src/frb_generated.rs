@@ -11118,6 +11118,7 @@ impl SseDecode for crate::api::feeder::SettingsView {
         let mut var_desiccantReplaced = <Option<String>>::sse_decode(deserializer);
         let mut var_mealReminder = <crate::api::model::MealReminder>::sse_decode(deserializer);
         let mut var_writable = <bool>::sse_decode(deserializer);
+        let mut var_repairing = <bool>::sse_decode(deserializer);
         return crate::api::feeder::SettingsView {
             generation: var_generation,
             lights: var_lights,
@@ -11129,6 +11130,7 @@ impl SseDecode for crate::api::feeder::SettingsView {
             desiccant_replaced: var_desiccantReplaced,
             meal_reminder: var_mealReminder,
             writable: var_writable,
+            repairing: var_repairing,
         };
     }
 }
@@ -16506,6 +16508,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::SettingsView {
             self.desiccant_replaced.into_into_dart().into_dart(),
             self.meal_reminder.into_into_dart().into_dart(),
             self.writable.into_into_dart().into_dart(),
+            self.repairing.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -21524,6 +21527,7 @@ impl SseEncode for crate::api::feeder::SettingsView {
         <Option<String>>::sse_encode(self.desiccant_replaced, serializer);
         <crate::api::model::MealReminder>::sse_encode(self.meal_reminder, serializer);
         <bool>::sse_encode(self.writable, serializer);
+        <bool>::sse_encode(self.repairing, serializer);
     }
 }
 

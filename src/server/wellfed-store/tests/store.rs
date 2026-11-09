@@ -466,7 +466,7 @@ async fn the_cached_status_and_settings_read_back() {
     assert_eq!(store.state(id).await.unwrap(), Default::default());
 
     let settings = Settings::Feeder(FeederSettings {
-        generation: Generation(4),
+        generation: Some(Generation(4)),
         lights: true,
         sound: false,
         volume: 60,
@@ -500,7 +500,7 @@ async fn the_cached_status_and_settings_read_back() {
         alerts_generation: Generation(0),
         device: DeviceStatus::Feeder(FeederStatus {
             locked: Some(true),
-            settings_generation: Generation(4),
+            settings_generation: Some(Generation(4)),
             food: FoodLevel::Low,
             feed_fault: None,
             readiness: Readiness::Blocked(Blocked::Joining),

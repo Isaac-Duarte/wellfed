@@ -76,6 +76,7 @@ Card fullCard() => fakeCard(
     desiccantDays: 14,
     mealReminder: MealReminder.before(minutes: 15),
     writable: true,
+    repairing: false,
   ),
 );
 

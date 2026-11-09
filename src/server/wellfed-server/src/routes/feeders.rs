@@ -307,7 +307,8 @@ pub(crate) fn etag(generation: Generation) -> String {
 
 fn tagged(settings: Settings) -> Response {
     let mut response = Json(settings).into_response();
-    // The server only ever holds settings it can read, which have one.
+    // No tag for settings with none: a kind this server cannot read, or a
+    // feeder's while it repairs them, read-only, which no write may name.
     if let Some(generation) = settings.generation() {
         insert(&mut response, header::ETAG, &etag(generation));
     }

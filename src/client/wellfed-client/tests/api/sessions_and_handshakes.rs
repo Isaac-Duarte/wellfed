@@ -34,14 +34,17 @@ fn an_owner_opens_a_session_and_reads_status_and_settings() {
     let Answer::Status(status) = status else {
         panic!("{status:?}");
     };
-    assert_eq!(status.feeder().unwrap().settings_generation, Generation(7));
+    assert_eq!(
+        status.feeder().unwrap().settings_generation,
+        Some(Generation(7))
+    );
     assert_eq!(status.sessions, 1);
 
     let settings = ask(&mut rig, &mut owner, 2, Op::GetSettings);
     assert!(matches!(
         settings,
         Answer::Settings(model::Settings::Feeder(model::FeederSettings {
-            generation: Generation(7),
+            generation: Some(Generation(7)),
             volume: 40,
             ..
         }))
