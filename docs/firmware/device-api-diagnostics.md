@@ -53,7 +53,7 @@ The live metrics that go beside the statistics are in [samples](device-api-ops.m
 
 The feeder keeps what each feed's drive measured, poll by poll, in RAM and then in its own storage, so an owner can read it without a UART or a server: `wellfed trace <feed>` (`--json` for the whole trace). It is a feeder op (`FeederOp::FeedTrace`).
 
-**Recorded after each owner step, never inside it.** The feeding owner keeps one `Observation` (`wellfed_core::feed::observe`) per poll of a feed being prepared or driven:
+**Recorded after each owner step, never inside it.** The feeding owner keeps one `Observation` (`wellfed_core_feeder::feed::observe`) per poll of a feed being prepared or driven:
 
 - the current channel (PB1, ADC channel 4);
 - the battery pack in millivolts;

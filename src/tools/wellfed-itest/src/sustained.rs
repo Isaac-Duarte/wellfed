@@ -20,10 +20,13 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use wellfed_core::feed::controller::FeedReason;
-use wellfed_core::feed::owner::OwnerState;
-use wellfed_core::feed::storage::OwnerOutcome;
-use wellfed_core::record::{Event, Owner, Trial};
+use wellfed_core::record::Trial;
+use wellfed_core_feeder::feed::controller::FeedReason;
+use wellfed_core_feeder::feed::owner::OwnerState;
+use wellfed_core_feeder::feed::storage::OwnerOutcome;
+use wellfed_core_feeder::record::Owner;
+
+use crate::Event;
 use wellfed_formats::require;
 use wellfed_model::{Counters, Counts, Memory, Refusal, ResetCause, Stats, StatsSection, TimeView};
 use wellfed_rig::commands::ota::{Outcome, Staged};
@@ -744,7 +747,7 @@ impl Run {
 
         let from = self.boot.start.unwrap_or(self.since);
         let results = ctx.log.records(from, |e| match e {
-            Event::Owner(Owner::Fed {
+            Event::Kind(Owner::Fed {
                 outcome, completed, ..
             }) => Some((outcome, completed)),
             _ => None,
@@ -886,7 +889,7 @@ impl Run {
         ctx.quiet_mark()?;
         let submitted = ctx.log.records(self.since, |e| feeds::submitted(&e));
         let results = ctx.log.records(self.since, |e| match e {
-            Event::Owner(Owner::Fed { id, .. }) => Some(id),
+            Event::Kind(Owner::Fed { id, .. }) => Some(id),
             _ => None,
         });
 

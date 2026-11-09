@@ -412,7 +412,7 @@ impl Lock {
     }
 }
 
-pub use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
+pub use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
 
 /// The occurrence the loop took before feeding it: the plan in slot
 /// `plan`, due at `due_s` (Unix seconds), fed as the next feed after

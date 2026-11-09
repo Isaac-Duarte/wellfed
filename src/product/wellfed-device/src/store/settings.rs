@@ -31,12 +31,12 @@
 use core::ffi::c_uint;
 
 use wellfed_core::desiccant;
-use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::settings::{MealReminder, SettingsFields, SettingsView, Window};
 use wellfed_core::store::slot::{
     CRC_AT, DualSlot, Extent, Found, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u16, get_u32,
     get_u64, newest, put_u16, put_u32, put_u64, seal, target,
 };
+use wellfed_core_feeder::feed::progress::BowlMode;
 
 pub const VERSION: Version = Version::new(4, 0);
 /// Settings read their whole units, as the journal does, so data another

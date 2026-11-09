@@ -21,8 +21,8 @@ use std::rc::Rc;
 
 use tokio::net::{TcpStream, UdpSocket};
 use wellfed_core::buttons::Gesture;
-use wellfed_core::feed::controller::FeedReason;
 use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_core_feeder::feed::controller::FeedReason;
 use wellfed_device_api::FeederDevice;
 use wellfed_device_api::mailbox::{Asked, KeyResult, MealSkip};
 pub use wellfed_device_sim::updates::TRIAL_MS;

@@ -1,0 +1,18 @@
+[package]
+license.workspace = true
+name = "wellfed-core-feeder"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Hardware-independent feeder logic on the Wellfed SDK: feeding, its journal, the meal schedule and the pack's floor for feeding"
+publish.workspace = true
+
+[dev-dependencies]
+wellfed-testkit.workspace = true
+proptest.workspace = true
+
+[dependencies]
+wellfed-core.workspace = true
+
+[lints]
+workspace = true

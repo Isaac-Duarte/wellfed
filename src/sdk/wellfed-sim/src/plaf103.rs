@@ -5,9 +5,9 @@
 //! `feeding::CONFIG`), so they are copied here, and the firmware's own tests
 //! hold the two equal: a change to either fails there.
 
-use wellfed_core::feed::controller::FeedLimits;
-use wellfed_core::feed::progress::BowlMode;
-use wellfed_core::feed::sensor_inputs::SensorLimits;
+use wellfed_core_feeder::feed::controller::FeedLimits;
+use wellfed_core_feeder::feed::progress::BowlMode;
+use wellfed_core_feeder::feed::sensor_inputs::SensorLimits;
 use wellfed_hal::sdk;
 use wellfed_hal::supervision::config::{SYSTIMER_HZ, WATCHDOG};
 use wellfed_hal::supervision::supervise::LIVENESS_MS;
@@ -41,7 +41,7 @@ pub const OWNER: OwnerConfig = OwnerConfig {
         power_settle_ms: 100,
         max_observation_gap_ms: 100,
         max_age_ms: 100,
-        battery: wellfed_hal::power::FLOOR,
+        battery: wellfed_hal_feeder::power::FLOOR,
     },
     events: EventsConfig {
         ticks_per_second: SYSTIMER_HZ,

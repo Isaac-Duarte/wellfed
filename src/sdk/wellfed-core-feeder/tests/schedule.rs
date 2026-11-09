@@ -4,7 +4,7 @@
 
 use proptest::prelude::*;
 use wellfed_core::clock::zone::{Rule, Zone};
-use wellfed_core::schedule::{
+use wellfed_core_feeder::schedule::{
     PLANS, Plan, Weekdays, latest_due, next_due, table_valid, utc_of, weekday,
 };
 

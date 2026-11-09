@@ -863,7 +863,7 @@ mod tests {
             "on/off",
             "flash-prepare/flash-execute",
             "server.json",
-            "wellfed_core::feed",
+            "wellfed_core_feeder::feed",
             "/etc/x.rs",
             "a b.rs",
         ] {

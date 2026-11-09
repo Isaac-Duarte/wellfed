@@ -3,7 +3,7 @@
 
 use crate::common::owner::*;
 use crate::common::*;
-use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery};
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery};
 use wellfed_hal::sdk::fake;
 use wellfed_hal::supervision::beat;
 use wellfed_hal_feeder::board::MOTOR_MASK;

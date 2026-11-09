@@ -10,7 +10,10 @@
 //! - a server crate depends only on the workspace crates its arrows name, and
 //!   a crate outside the server takes a server crate only where drawn;
 //! - `wellfed-api` builds for the app's Android library, so its own
-//!   dependencies come from an allow-list.
+//!   dependencies come from an allow-list;
+//! - the SDK's device-neutral crates link no kind's own crate by any path,
+//!   so a fountain's image carries no feeder code
+//!   (docs/firmware/device-kinds.md).
 //!
 //! The arrows name crates that do not exist yet, so a new crate is checked
 //! from its first manifest. Dev-dependencies are exempt from the arrows (a
@@ -103,6 +106,26 @@ const BELOW_SERVER: [&str; 6] = [
     "wellfed-service",
     "wellfed-server-client",
 ];
+
+/// The SDK crates every device kind builds on, which must not link a
+/// kind's own crate ([`is_kind_sdk`]) by any path.
+const NEUTRAL_SDK: [&str; 9] = [
+    "wellfed-amebad-sys",
+    "wellfed-board",
+    "wellfed-core",
+    "wellfed-hal",
+    "wellfed-hal-common",
+    "wellfed-sdk",
+    "wellfed-sdk-macros",
+    "wellfed-session",
+    "wellfed-signed",
+];
+
+/// A device kind's own SDK crates: its logic beside `wellfed-core` and its
+/// drivers above the chip HAL.
+fn is_kind_sdk(name: &str) -> bool {
+    matches!(name, "wellfed-core-feeder" | "wellfed-hal-feeder")
+}
 
 /// What `wellfed-api` may depend on: serde types, schemas, ids and times,
 /// all of which build for Android. A new entry needs that check.
@@ -338,6 +361,14 @@ fn rules(graph: &Graph) -> Vec<String> {
                 path.join(" → ")
             ));
         }
+        if NEUTRAL_SDK.contains(&from)
+            && let Some(path) = graph.linked_path(member, is_kind_sdk)
+        {
+            errors.push(format!(
+                "dependency rule: {}: the device-neutral SDK links no kind's crate",
+                path.join(" → ")
+            ));
+        }
     }
 
     errors
@@ -453,6 +484,40 @@ mod tests {
                 "dependency rule: wellfed-service → wellfed-mirror → utoipa-axum → axum: nothing below wellfed-server links axum",
                 "dependency rule: wellfed-store → wellfed-service is not an allowed edge; wellfed-store may depend on wellfed-api, wellfed-formats",
                 "dependency rule: wellfed-store → wellfed-service → wellfed-mirror → utoipa-axum → axum: nothing below wellfed-server links axum",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_neutral_sdk_links_no_kind_s_crate() {
+        use Use::{Links, TestsOnly};
+        let members = [
+            "wellfed-core",
+            "wellfed-core-feeder",
+            "wellfed-hal",
+            "wellfed-hal-feeder",
+            "wellfed-sdk",
+            "wellfed-fw-feeder",
+        ];
+        let mut edges = vec![
+            ("wellfed-core-feeder", "wellfed-core", Links),
+            ("wellfed-hal", "wellfed-core", Links),
+            ("wellfed-hal-feeder", "wellfed-hal", Links),
+            ("wellfed-hal-feeder", "wellfed-core-feeder", Links),
+            ("wellfed-sdk", "wellfed-hal", Links),
+            ("wellfed-fw-feeder", "wellfed-sdk", Links),
+            ("wellfed-fw-feeder", "wellfed-hal-feeder", Links),
+            // A neutral crate's tests may build the feeder's.
+            ("wellfed-core", "wellfed-core-feeder", TestsOnly),
+        ];
+        assert!(rules(&graph(&members, &edges)).is_empty());
+
+        edges.push(("wellfed-hal", "wellfed-hal-feeder", Links));
+        assert_eq!(
+            rules(&graph(&members, &edges)),
+            [
+                "dependency rule: wellfed-hal → wellfed-hal-feeder: the device-neutral SDK links no kind's crate",
+                "dependency rule: wellfed-sdk → wellfed-hal → wellfed-hal-feeder: the device-neutral SDK links no kind's crate",
             ]
         );
     }

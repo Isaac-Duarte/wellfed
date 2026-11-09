@@ -9,9 +9,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wellfed_core::clock::zone::Zone;
-use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_core::store::slot::crc32;
 use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{
     Asked, CallChange, CallClip, CallResult, MealReminder, MealSkip, PlansChange, PlansResult,

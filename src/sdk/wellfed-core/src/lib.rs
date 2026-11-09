@@ -1,4 +1,7 @@
-//! Hardware-independent replacement-firmware logic.
+//! Hardware-independent replacement-firmware logic every device kind
+//! shares. A kind's own logic sits beside it (`wellfed-core-feeder`), and
+//! nothing here names it: where the SDK runs a kind's logic, it calls a
+//! hook the kind's runtime defines.
 //!
 //! States, faults and reasons are Rust enums with fixed discriminants: a
 //! record or report carries a variant's number (`code`, or `byte` for a
@@ -22,7 +25,6 @@ pub mod clip;
 pub mod clock;
 pub mod desiccant;
 pub mod echo;
-pub mod feed;
 pub mod flash_coord;
 pub mod indicator;
 pub mod liveness;
@@ -32,7 +34,6 @@ pub mod mdns;
 pub mod ota;
 pub mod record;
 pub mod rng;
-pub mod schedule;
 pub mod settings;
 pub mod store;
 pub mod supply;

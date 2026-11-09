@@ -2,7 +2,7 @@
 //! its journal and at rest, every check passing, for `PROOF_MS`; and what
 //! makes the trial fail at once instead.
 
-use wellfed_core::feed::food_read::{
+use wellfed_core_feeder::feed::food_read::{
     FOOD_READ_FIRST_MS, FOOD_READ_MS, FoodReads, FoodStep, FoodView,
 };
 use wellfed_fw_feeder::feeding::{InFlight, Opened, PROOF_MS, Proof, food_read_held};

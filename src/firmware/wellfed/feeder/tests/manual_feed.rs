@@ -13,9 +13,9 @@ use std::sync::{Mutex, MutexGuard};
 
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_core::clock::wall::{Origin, Sync};
-use wellfed_core::schedule::{Plan, Weekdays};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_core_feeder::schedule::{Plan, Weekdays};
 use wellfed_device_api::FeederDevice;
 use wellfed_device_api::mailbox::{
     CallChange, CallClip, CallPlay, CallResult, SettingsFields, SettingsResult, SettingsView,

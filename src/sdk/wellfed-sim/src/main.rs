@@ -23,13 +23,13 @@ use std::process::exit;
 
 use clap::Parser;
 
-use wellfed_core::feed::controller::FeedRequest;
-use wellfed_core::feed::food_read::FoodReads;
-use wellfed_core::feed::progress::{BowlMode, Direction};
-use wellfed_core::feed::storage::{OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase};
 use wellfed_core::flash_coord::{FlashCoord, FlashParty, FlashReply, FlashToken};
-use wellfed_core::store::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_core::store::slot::SlotIo;
+use wellfed_core_feeder::feed::controller::FeedRequest;
+use wellfed_core_feeder::feed::food_read::FoodReads;
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::storage::{OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase};
+use wellfed_core_feeder::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_hal::interlock::{
     ClaimStep, ClaimWait, INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn,
 };

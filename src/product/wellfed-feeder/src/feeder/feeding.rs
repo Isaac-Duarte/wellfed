@@ -34,7 +34,7 @@
 //! the same consequences an immediate one has.
 //!
 //! **Food level.** The food beam is lit during feeds and in a short window at
-//! rest (`wellfed_core::feed::food_read`), so its level is the latest of
+//! rest (`wellfed_core_feeder::feed::food_read`), so its level is the latest of
 //! either's. With no feed in flight, a level that differs from the last one
 //! seen this boot is a `Food` event ([`Watch::food`]): at most one a feed or a
 //! window, however the beam flickers as the last kibble passes. A boot's first

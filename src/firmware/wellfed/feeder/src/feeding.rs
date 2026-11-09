@@ -75,18 +75,18 @@
 //! meanwhile ([`Claiming`]). The journal writes under the loop's own claim, at
 //! the owner's rest boundaries.
 //!
-//! The food beam is also read at rest (`wellfed_core::feed::food_read`), so
+//! The food beam is also read at rest (`wellfed_core_feeder::feed::food_read`), so
 //! the low-food light and `Status.food` follow a refill or a restart with no
 //! feed. The loop drives that from here, before each owner step, and every
 //! reason to hold a reading gives way to the feed or write in question:
 //! `submit` ends a reading before it claims, a writer waiting ends it within a
 //! step, and a trial holds readings until it has confirmed ([`food_read_held`]).
 
-use wellfed_core::feed::controller::FeedLimits;
-use wellfed_core::feed::progress::BowlMode;
-use wellfed_core::feed::sensor_inputs::SensorLimits;
-use wellfed_core::feed::storage::{OwnerResult, RotorPhase};
-use wellfed_core::store::feed_journal::{JournalConfig, JournalError};
+use wellfed_core_feeder::feed::controller::FeedLimits;
+use wellfed_core_feeder::feed::progress::BowlMode;
+use wellfed_core_feeder::feed::sensor_inputs::SensorLimits;
+use wellfed_core_feeder::feed::storage::{OwnerResult, RotorPhase};
+use wellfed_core_feeder::feed_journal::{JournalConfig, JournalError};
 use wellfed_feeder::feed::Durability;
 use wellfed_hal_feeder::events::{EventsConfig, EventsFault, PinWatch};
 use wellfed_hal_feeder::owner::{
@@ -164,7 +164,7 @@ pub const CONFIG: OwnerConfig = OwnerConfig {
         power_settle_ms: 100,
         max_observation_gap_ms: 100,
         max_age_ms: 100,
-        battery: wellfed_sdk::hal::power::FLOOR,
+        battery: wellfed_hal_feeder::power::FLOOR,
     },
     events: EventsConfig {
         ticks_per_second: SYSTIMER_HZ,
@@ -786,10 +786,10 @@ pub use target::Feeding;
 
 #[cfg(target_os = "none")]
 mod target {
-    use wellfed_core::feed::food_read::FoodReads;
-    use wellfed_core::feed::progress::Direction;
-    use wellfed_core::feed::storage::{OwnerResult, RotorPhase};
-    use wellfed_core::store::feed_journal::{FeedJournal, JournalError};
+    use wellfed_core_feeder::feed::food_read::FoodReads;
+    use wellfed_core_feeder::feed::progress::Direction;
+    use wellfed_core_feeder::feed::storage::{OwnerResult, RotorPhase};
+    use wellfed_core_feeder::feed_journal::{FeedJournal, JournalError};
     use wellfed_feeder::feed::{self, Durability};
     use wellfed_feeder::feeder::{Marks, RefusedClaim};
     use wellfed_feeder_runtime::traces;

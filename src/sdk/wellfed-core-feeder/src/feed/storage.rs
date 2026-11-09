@@ -3,7 +3,7 @@
 //! The owner reserves each request durably before applying output and
 //! records its result afterwards; at boot `recover` returns the ID high-water
 //! mark and the mechanical phase, and `resolve` records a reservation that
-//! a reset interrupted as uncertain. [`crate::store::feed_journal::FeedJournal`]
+//! a reset interrupted as uncertain. [`crate::feed_journal::FeedJournal`]
 //! provides the implementation.
 
 use crate::feed::controller::{FeedReason, FeedRequest};

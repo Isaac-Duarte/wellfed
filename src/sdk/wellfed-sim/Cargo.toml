@@ -17,6 +17,7 @@ clap.workspace = true
 wellfed-hal.workspace = true
 wellfed-hal-feeder.workspace = true
 wellfed-core.workspace = true
+wellfed-core-feeder.workspace = true
 wellfed-formats.workspace = true
 wellfed-testkit.workspace = true
 serde.workspace = true

@@ -15,7 +15,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use wellfed_client::history::{Delivered, Entry};
 use wellfed_connect::Connection;
-use wellfed_core::feed::food_read::{FOOD_READ_EVERY_MS, FOOD_READ_FIRST_MS};
+use wellfed_core_feeder::feed::food_read::{FOOD_READ_EVERY_MS, FOOD_READ_FIRST_MS};
 use wellfed_feeder_sim::feeding;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::{Running, local};

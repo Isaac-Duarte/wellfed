@@ -7,9 +7,9 @@ use std::rc::Rc;
 
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_core::clock::wall::{Fix, Origin, Sync};
-use wellfed_core::feed::controller::FeedReason as CoreReason;
 use wellfed_core::ota::install::CandidateState;
-use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
+use wellfed_core_feeder::feed::controller::FeedReason as CoreReason;
+use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{Asked, MealSkip, PlansChange, PlansResult};
 use wellfed_feeder::feeder::alert_stage::{BOOT_READ, BOOT_READ_MS, RING_WAIT_MS, WELCOME_MS};

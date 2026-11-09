@@ -9,7 +9,7 @@
 //! the reminder off.
 //!
 //! **Which occurrence.** Each enabled plan's next occurrence
-//! (`wellfed_core::schedule::next_due`, the same daylight rules the
+//! (`wellfed_core_feeder::schedule::next_due`, the same daylight rules the
 //! schedule runs by), worked out once a wall-clock minute, is reminded
 //! once the wall clock is within the lead of it and before it is due. A
 //! plan with no mark (saved without a valid clock), or whose mark is at or
@@ -29,7 +29,7 @@
 //!
 //! [schedules]: ../../../../../docs/firmware/schedules.md
 
-use wellfed_core::schedule::next_due;
+use wellfed_core_feeder::schedule::next_due;
 use wellfed_device_api::mailbox::{PLANS, PlansResult, PlansView};
 use wellfed_proto::api::EventBody;
 

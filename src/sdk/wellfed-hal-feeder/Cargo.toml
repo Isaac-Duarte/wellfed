@@ -22,6 +22,7 @@ feed-faults = []
 wellfed-hal.workspace = true
 wellfed-board.workspace = true
 wellfed-core.workspace = true
+wellfed-core-feeder.workspace = true
 
 [dev-dependencies]
 wellfed-testkit.workspace = true

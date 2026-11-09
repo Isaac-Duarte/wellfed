@@ -14,7 +14,7 @@ The feeder has no scale. It knows how many marks passed, never what fell or what
 
 ## Phase
 
-The phase is where the rotor rests between feeds (`RotorPhase`, `wellfed_core::feed::storage`):
+The phase is where the rotor rests between feeds (`RotorPhase`, `wellfed_core_feeder::feed::storage`):
 
 - **At a mark:** the last feed ended `Done`, on its last portion's rise.
 - **Unknown:** the last feed that may have moved the motor ended any other way (cancelled, failed, or uncertain after a reset). The rotor may be anywhere between two marks, or inside one (PA18 LOW).

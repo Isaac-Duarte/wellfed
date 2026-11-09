@@ -14,8 +14,8 @@
 //! and bank 0 and the flash tools read it), so the reason is the wire's
 //! alone: the boot that resolves the feed names it.
 
-use wellfed_core::feed::controller::FeedReason as CoreReason;
-use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult};
+use wellfed_core_feeder::feed::controller::FeedReason as CoreReason;
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerResult};
 use wellfed_proto::api::{EventBody, FeedOutcome, FeedReason, FoodLevel, Source};
 
 /// Whether the journal holds the result.

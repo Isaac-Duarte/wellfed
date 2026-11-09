@@ -315,8 +315,8 @@ fn a_denying_server_is_left_alone_while_the_clock_needs_the_time() {
 /// next feed's claim lets it go first.
 #[test]
 fn a_feed_trace_is_stored_on_the_writer_turn_and_read_back_after_a_restart() {
-    use wellfed_core::feed::controller::MotorCommand;
-    use wellfed_core::feed::observe::Observation;
+    use wellfed_core_feeder::feed::controller::MotorCommand;
+    use wellfed_core_feeder::feed::observe::Observation;
     use wellfed_device_api::FeederDevice;
     use wellfed_feeder::feeder::NoFeeds;
     use wellfed_feeder::trace::DriveFigures;

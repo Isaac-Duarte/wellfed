@@ -18,10 +18,10 @@
 //! starts on either, since preparing a feed converts both on every poll for at
 //! least the optical settling time before it can start.
 
-use crate::adc_scale::{AdcCalibration, SAMPLES};
 use crate::feed::controller::FeedSample;
-use crate::supply::{Floor, FloorLimits};
-use crate::{HALF_RANGE, interval_valid};
+use crate::floor::{Floor, FloorLimits};
+use wellfed_core::adc_scale::{AdcCalibration, SAMPLES};
+use wellfed_core::{HALF_RANGE, interval_valid};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SensorLimits {

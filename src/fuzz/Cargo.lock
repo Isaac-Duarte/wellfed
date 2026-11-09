@@ -445,11 +445,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wellfed-core-feeder"
+version = "0.1.0"
+dependencies = [
+ "wellfed-core",
+]
+
+[[package]]
 name = "wellfed-device-api"
 version = "0.1.0"
 dependencies = [
  "serde",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-proto",
  "wellfed-session",
  "wellfed-signed",

@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use wellfed_connect::Connection;
 use wellfed_core::liveness::Radio;
-use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
+use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device_api::mailbox::{PlansChange, PlansResult};
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::supply::{RADIO_OFF_MS, RELEASE_MS, Released};

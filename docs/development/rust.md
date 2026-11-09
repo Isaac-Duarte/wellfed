@@ -72,7 +72,7 @@ cargo-deny's `wrappers` keep the bench's hardware edge inside the crates that ne
 - `wellfed-relay` may be linked only from `wellfed-bench`, `wellfed-rig` and `wellfed-itest`.
 - `wellfed-build` may be linked only from `wellfed-rig`, whose tests freeze a stock review; the rig signs through `wellfed-signing`.
 
-The same wrappers keep the SDK below the product: `wellfed-device`, `wellfed-device-api`, `wellfed-device-runtime`, `wellfed-feeder`, `wellfed-feeder-runtime` and `wellfed-proto` are linked only by the product, firmware and host crates that use them today, so no `src/sdk` crate can take one on. The board crates (`wellfed-board-plaf103`, `wellfed-board-plwf106`) are reached only through the board contract, and `wellfed-hal-feeder` only from the feeder firmware, the bring-up probes and the virtual feeder ([deny.toml](../../deny.toml) lists each crate's linkers).
+The same wrappers keep the SDK below the product: `wellfed-device`, `wellfed-device-api`, `wellfed-device-runtime`, `wellfed-feeder`, `wellfed-feeder-runtime` and `wellfed-proto` are linked only by the product, firmware and host crates that use them today, so no `src/sdk` crate can take one on. The board crates (`wellfed-board-plaf103`, `wellfed-board-plwf106`) are reached only through the board contract, and `wellfed-hal-feeder` only from the feeder firmware, the bring-up probes, the virtual feeder and the feeder simulator ([deny.toml](../../deny.toml) lists each crate's linkers).
 
 Some crates may not be linked at all. cargo-deny cannot ban every dependent without banning the crate itself, so `cargo xtask check-repository` refuses any manifest under `src/` that names them:
 

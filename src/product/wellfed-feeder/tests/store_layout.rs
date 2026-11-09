@@ -10,8 +10,8 @@
 //! pinned bytes, placed in erased flash, and reads back the values that
 //! wrote them.
 
-use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::settings::{MealReminder, Window};
+use wellfed_core_feeder::feed::progress::BowlMode;
 use wellfed_device::store::clients::{ClientStatus, ClientStore};
 use wellfed_device::store::events::{BODY_BYTES, EventLog, Read, Record};
 use wellfed_device::store::net::{NetStatus, NetStore};

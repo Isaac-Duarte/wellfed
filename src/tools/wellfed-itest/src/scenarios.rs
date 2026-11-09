@@ -19,7 +19,9 @@ use std::ops::Deref;
 use std::time::Duration;
 
 use wellfed_core::ota::install::StopStage;
-use wellfed_core::record::{self, Api, Confirm, Event, Trial, Update, Watch};
+use wellfed_core::record::{self, Api, Confirm, Trial, Update, Watch};
+
+use crate::Event;
 use wellfed_formats::bench::catalog;
 use wellfed_formats::require;
 use wellfed_model::Generation;

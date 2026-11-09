@@ -62,6 +62,15 @@ unsafe extern "Rust" {
     /// Called only from the service task; `provider` is the runtime's fixed
     /// provider, never borrowed.
     fn wellfed_store_step(provider: *mut Provider) -> u32;
+
+    /// The device kind's synthetic startup check: its core logic run end to
+    /// end on memory-only outputs, never board I/O, so a build shows that
+    /// logic is linked and consistent. The logic is the kind's, which the
+    /// SDK may not depend on, so the kind's runtime crate defines it beside
+    /// `wellfed_store_step` (`wellfed_feeder_runtime::diagnostic`) and pins
+    /// its own signature, as that one does. A direct call, so the stack
+    /// audit follows it into the kind's check.
+    safe fn wellfed_startup_check() -> bool;
 }
 
 /// Creates one of the firmware's tasks, made by [`#[task]`](crate::task).
@@ -1133,7 +1142,7 @@ unsafe extern "C" fn diagnostic_task(_: *mut c_void) -> u32 {
     // every path after a passing diagnostic and the variant no longer links
     // the image the link audit pins.
     let forced_fail = cfg!(feature = "trial-fail") && core::hint::black_box(true);
-    let passed = wellfed_core::feed::diagnostic::run() && !forced_fail;
+    let passed = wellfed_startup_check() && !forced_fail;
     sdk::log(if passed {
         c"Synthetic core diagnostic: PASS\r\n"
     } else {

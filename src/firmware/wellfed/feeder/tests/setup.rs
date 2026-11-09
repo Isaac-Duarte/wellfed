@@ -17,8 +17,8 @@ use wellfed_client::setup::{
 };
 use wellfed_core::ble_setup::{PREFIX, parse_prefix};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
-use wellfed_core::schedule::{Plan, Weekdays};
 use wellfed_core::tone::Tune;
+use wellfed_core_feeder::schedule::{Plan, Weekdays};
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device::store::net::NetStore;
 use wellfed_device_api::KeyChange;

@@ -33,6 +33,7 @@ wellfed-board = { path = "src/sdk/wellfed-board" }
 wellfed-board-plaf103 = { path = "src/sdk/wellfed-board-plaf103" }
 wellfed-board-plwf106 = { path = "src/sdk/wellfed-board-plwf106" }
 wellfed-core = { path = "src/sdk/wellfed-core" }
+wellfed-core-feeder = { path = "src/sdk/wellfed-core-feeder" }
 wellfed-proto = { path = "src/product/wellfed-proto" }
 wellfed-session = { path = "src/sdk/wellfed-session" }
 wellfed-signed = { path = "src/sdk/wellfed-signed" }

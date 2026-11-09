@@ -10,7 +10,7 @@
 //! (sound off, the speaker busy, no clip) is simply not heard.
 //!
 //! **Which occurrence.** Each enabled plan with a call, at its next
-//! occurrence (`wellfed_core::schedule::next_due`, worked out once a
+//! occurrence (`wellfed_core_feeder::schedule::next_due`, worked out once a
 //! wall-clock minute), once the wall clock is within the call's lead and
 //! before the meal is due. A plan whose mark is at or past the occurrence
 //! (a client's skip among them), or with none, is passed over, as the
@@ -36,7 +36,7 @@
 //! [schedules]: ../../../../../docs/firmware/schedules.md
 
 use wellfed_core::clip;
-use wellfed_core::schedule::next_due;
+use wellfed_core_feeder::schedule::next_due;
 use wellfed_device_api::mailbox::{
     CallClip, CallResult, PLANS, PlansResult, PlansView, PlayResult,
 };

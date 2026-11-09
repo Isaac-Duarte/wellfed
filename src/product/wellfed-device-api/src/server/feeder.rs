@@ -685,7 +685,7 @@ fn wire_reminder(reminder: MealReminder) -> proto::MealReminder {
 }
 
 const _: () = assert!(PLANS == proto::PLANS_MAX);
-const _: () = assert!(wellfed_core::schedule::PORTIONS_MAX == proto::PORTIONS_MAX);
+const _: () = assert!(wellfed_core_feeder::schedule::PORTIONS_MAX == proto::PORTIONS_MAX);
 const _: () = assert!(
     wellfed_core::desiccant::PERIOD_MIN == proto::DESICCANT_DAYS_MIN
         && wellfed_core::desiccant::PERIOD_MAX == proto::DESICCANT_DAYS_MAX

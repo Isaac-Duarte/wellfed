@@ -42,7 +42,7 @@
 //!
 //! [schedules]: ../../../../../docs/firmware/schedules.md
 
-use wellfed_core::schedule::{latest_due, next_due};
+use wellfed_core_feeder::schedule::{latest_due, next_due};
 use wellfed_device_api::mailbox::{MealSkip, PlansChange, PlansView};
 use wellfed_proto::api::Refusal;
 

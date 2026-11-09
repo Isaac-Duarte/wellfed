@@ -26,15 +26,15 @@ use core::cell::UnsafeCell;
 use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use wellfed_core::feed::controller::{FeedController, FeedReason, FeedRequest};
-use wellfed_core::feed::food_read::{
+use wellfed_core::flash_coord::{FlashFault, FlashPhase};
+use wellfed_core_feeder::feed::controller::{FeedController, FeedReason, FeedRequest};
+use wellfed_core_feeder::feed::food_read::{
     FOOD_READ_BOUND_MS, FOOD_READ_BUDGET_MS, FoodReads, FoodStep, FoodView,
 };
-use wellfed_core::feed::observe::Observation;
-use wellfed_core::feed::progress::BowlMode;
-use wellfed_core::feed::sensor_inputs::SensorInputs;
-use wellfed_core::feed::storage::{OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase};
-use wellfed_core::flash_coord::{FlashFault, FlashPhase};
+use wellfed_core_feeder::feed::observe::Observation;
+use wellfed_core_feeder::feed::progress::BowlMode;
+use wellfed_core_feeder::feed::sensor_inputs::SensorInputs;
+use wellfed_core_feeder::feed::storage::{OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase};
 
 use crate::board::{self, Board};
 use crate::events::{EDGE_LOG, Events, EventsFault, PinWatch};
@@ -49,7 +49,7 @@ mod state;
 
 pub use config::OwnerConfig;
 
-pub use wellfed_core::feed::owner::{OwnerFault, OwnerState};
+pub use wellfed_core_feeder::feed::owner::{OwnerFault, OwnerState};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u32)]

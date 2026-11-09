@@ -11,10 +11,10 @@
 //! are the product's schema, so the SDK does not know them: the runtime
 //! steps the writer the firmware links (`wellfed_store_step`), and the
 //! Wi-Fi task's entry (`wellfed_wifi_run`) runs the SDK's join driver with
-//! the same crate's stored credentials. `wellfed-feeder-runtime` defines
-//! both, and
-//! every PLAF103 firmware links it, so a firmware swap keeps the owner's
-//! data.
+//! the same crate's stored credentials. The startup's synthetic check of
+//! the device kind's logic (`wellfed_startup_check`) is the kind's too.
+//! `wellfed-feeder-runtime` defines all three, and every PLAF103 firmware
+//! links it, so a firmware swap keeps the owner's data.
 //!
 //! A firmware is a crate that defines its start hook and its tasks:
 //!

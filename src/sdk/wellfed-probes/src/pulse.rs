@@ -20,9 +20,9 @@
 use core::fmt;
 
 use wellfed_core::adc_scale::SAMPLES;
-use wellfed_core::feed::controller::{FeedController, FeedSample, MotorCommand};
-use wellfed_core::feed::sensor_inputs::SensorReading;
 use wellfed_core::flash_coord::{FlashCoord, FlashReply};
+use wellfed_core_feeder::feed::controller::{FeedController, FeedSample, MotorCommand};
+use wellfed_core_feeder::feed::sensor_inputs::SensorReading;
 
 use crate::elapsed_ms;
 use crate::optics::FEED;

@@ -106,7 +106,7 @@ The 2 s and 500 ms are provisional.
 | `cutoff` | 1550 | 3.20 V | Little 3.3 V regulator headroom left; stop at once rather than brown out mid-drive |
 | `hold_ms` | 300 | | From the first reading under `floor`: 15 polls in a feed, 3 conversions at rest. On the adapter the start-up surge lasted one poll; a longer sag is the pack failing under load |
 
-`wellfed_core::supply::Floor` judges every battery conversion the owner takes, on the adapter too, so the verdict is current when the adapter goes:
+`wellfed_core_feeder::floor::Floor` judges every battery conversion the owner takes, on the adapter too, so the verdict is current when the adapter goes:
 
 - At or above `clear`, the pack is above the floor.
 - Between `floor` and `clear`, it keeps its last verdict. A first reading there counts as above.
@@ -183,7 +183,7 @@ The chip doesn't sleep (recovered):
 - **Phantom at a cut.** Observed, October 28, before the fix: a no-cell cut recorded `Supply { adapter: false, battery: Reading 3861 mV }`, the decaying rail. The fix is modeled only.
 - **Brownout bit on hardware.** Unknown.
 - **Modeled**, October 26 (floor, reporting, brownout) and October 28 (battery mode, charge, hold release, phantom fix), in these tests:
-  - `wellfed-core/tests/supply.rs`, `tests/sensor_inputs.rs`: readings, charge steps, hold, cutoff, hysteresis, wrap, surges, failed conversions.
+  - `wellfed-core/tests/supply.rs`, `wellfed-core-feeder/tests/floor.rs` and `tests/sensor_inputs.rs`: readings, charge steps, hold, cutoff, hysteresis, wrap, surges, failed conversions.
   - `wellfed-hal/tests/power.rs`, `tests/link.rs`; `wellfed-hal-common/tests/trial_brownout.rs`: unread, stale and implausible samples; the radio's leave, restarts, refused and deferred feeds, a radio that won't return; a stuck brownout bit still giving way and halting, no two forgiven in a row, trials counting brownouts.
   - `wellfed-device-runtime/tests/network.rs`: cut-short joins don't count toward the fallback.
   - `wellfed-feeder/tests/supply.rs`: events and their rate, the 5 s wait, the minute back on, boots across the uptime wrap, setup mode, the phantom, the hold and its release.

@@ -12,7 +12,7 @@ use wellfed_model::{
 use super::log::Log;
 use super::scenarios::ended_for;
 use super::*;
-use wellfed_core::feed::storage::OwnerOutcome;
+use wellfed_core_feeder::feed::storage::OwnerOutcome;
 use wellfed_rig::commands::ota::Variant;
 use wellfed_rig::device::DeviceError;
 
@@ -250,9 +250,10 @@ impl Feeder {
     /// A result counts once it is logged, as the feeder counts its `Fed`
     /// event: one a reset drops never counts.
     fn counted(&mut self, text: &str) {
-        use wellfed_core::record::{Event as Record, Owner};
+        use crate::Event as Record;
+        use wellfed_core_feeder::record::Owner;
         for event in super::log::events(text) {
-            if let Record::Owner(Owner::Fed {
+            if let Record::Kind(Owner::Fed {
                 outcome, completed, ..
             }) = event
             {
@@ -1496,7 +1497,7 @@ fn the_log_joins_split_lines_and_counts_from_a_mark() {
     );
 
     assert_eq!(log.len(), 3);
-    let refused = |e: &wellfed_core::record::Event<'_>| ended_for(e, "noise");
+    let refused = |e: &crate::Event<'_>| ended_for(e, "noise");
     assert_eq!(log.count(0, refused), 2);
     assert_eq!(log.count(1, refused), 1);
     assert_eq!(log.find(1, refused), Some(2));

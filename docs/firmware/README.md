@@ -85,7 +85,8 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | --- | --- |
 | `wellfed-session` | Noise, HMAC, the setup code and framing, shared with clients |
 | `wellfed-signed` | The frozen signed update formats bank 0 checks (manifest, key statements, key ids, image bounds), shared with clients and the server |
-| `wellfed-core` | Controller, portions, sensors, motor gate, clock and the stores |
+| `wellfed-core` | Device-neutral logic: the clock, the shared slot store with the seed and update stores, the updater's checks, the indicators, the UART records |
+| `wellfed-core-feeder` | The feeder's logic on the SDK: the feed controller, portions, sensors, motor gate, the feed journal, the meal schedule and the pack's floor for feeding |
 | `wellfed-hal-common` | Code both cores link: RAM parking, flash hooks, the boot trial, panics |
 | `wellfed-hal` | The chip HAL: KM4 GPIO, ADC, timers, watchdog, flash leases, the update stage, and the buttons, lights, buzzer and audio drivers |
 | `wellfed-hal-feeder` | The feeder's drivers above the chip HAL: the motor, beams and feedback board, its timer events and the feeding owner |

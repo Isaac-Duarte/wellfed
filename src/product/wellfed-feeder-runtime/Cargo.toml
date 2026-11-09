@@ -13,6 +13,7 @@ km4 = ["wellfed-sdk/km4", "wellfed-hal/km4", "wellfed-hal/sdk", "wellfed-device-
 
 [dependencies]
 wellfed-core.workspace = true
+wellfed-core-feeder.workspace = true
 wellfed-device.workspace = true
 wellfed-device-api.workspace = true
 wellfed-device-runtime.workspace = true

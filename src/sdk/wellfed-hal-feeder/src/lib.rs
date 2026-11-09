@@ -1,7 +1,8 @@
 //! EXPERIMENTAL feeder drivers on the AmebaD chip HAL (`wellfed-hal`): what
 //! only a feeder has. The motor, optics and sensor board ([`board`]), its
-//! timer tick and feedback capture ([`events`]), and the feeding owner that
-//! drives a feed under supervision ([`owner`]). The chip HAL keeps
+//! timer tick and feedback capture ([`events`]), the feeding owner that
+//! drives a feed under supervision ([`owner`]), and the pack's floor it
+//! holds a feed to ([`power`]). The chip HAL keeps
 //! everything a device of any kind needs (startup, supervision and the
 //! watchdog, the outputs' stopped state, flash leases, updates, the link, the
 //! panel's buttons, LEDs and buzzer, the ADC), and both read their pins from
@@ -16,6 +17,7 @@
 pub mod board;
 pub mod events;
 pub mod owner;
+pub mod power;
 
 // The `stop-fail` bench variant's STOP that does not take; never in a
 // product image.

@@ -3,12 +3,10 @@
 //!
 //! One single-portion feed runs through ADC scaling, sensor qualification,
 //! the tick clock, the controller, the feedback queue and the motor gate.
-//! The board app runs it at startup and the C ABI exports it, so a build
-//! shows the core logic is linked and consistent; it says nothing about
-//! hardware.
+//! The SDK runtime's startup runs it, through the hook the feeder's
+//! runtime defines (`wellfed_startup_check`), so a build shows the core
+//! logic is linked and consistent; it says nothing about hardware.
 
-use crate::adc_scale::{AdcCalibration, SAMPLES};
-use crate::clock::tick::TickClock;
 use crate::feed::controller::{
     FeedController, FeedLimits, FeedRequest, FeedStartResult, FeedState, MotorCommand,
 };
@@ -16,7 +14,9 @@ use crate::feed::feedback::{FeedbackDrive, FeedbackEvents, FeedbackFault};
 use crate::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
 use crate::feed::progress::{BowlMode, Direction};
 use crate::feed::sensor_inputs::{SensorInputs, SensorLimits, SensorReading};
-use crate::supply::FloorLimits;
+use crate::floor::FloorLimits;
+use wellfed_core::adc_scale::{AdcCalibration, SAMPLES};
+use wellfed_core::clock::tick::TickClock;
 
 #[derive(Default)]
 struct SimulatedMotor {

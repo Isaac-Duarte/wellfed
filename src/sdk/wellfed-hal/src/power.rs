@@ -9,13 +9,14 @@
 //! 2.068 against a meter on three D cells (physical, October 23 2026).
 //!
 //! [`supply`] reports the same sample judged, with its uncertainty named
-//! (unread, stale, implausible), and [`FLOOR`] is the pack's floor the
-//! feeding owner holds a feed to ([power](../../../../docs/firmware/power.md)).
+//! (unread, stale, implausible). The pack's floor a feeding owner holds a
+//! feed to is the feeder's (`wellfed_hal_feeder::power`,
+//! [power](../../../../docs/firmware/power.md)).
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use wellfed_core::adc_scale::{AdcCalibration, SAMPLES};
-use wellfed_core::supply::{self, Curve, FloorLimits, PackLimits};
+use wellfed_core::supply::{self, Curve, PackLimits};
 
 use crate::{adc, sdk};
 
@@ -28,39 +29,15 @@ pub const DIVIDER_PER_MILLE: u32 = 2_063;
 /// 16 mV, and three D cells read 2306–2357 mV.
 pub const NO_PACK_PIN_MV: u32 = 500;
 
-/// The pack's floor for feeding, in the battery channel's scaled unit (pin
-/// millivolts; pack volts are about 2.063 times them). Provisional: no
-/// motor has run on the pack yet, and the regulator's dropout and the SoC's
-/// brownout level are unmeasured on this board.
-/// - `floor` 1650 (pack about 3.40 V, 1.13 V a cell): stock's 0 % point,
-///   below which stock stops its outputs on battery. A fresh pack reads
-///   about 2306 (4.77 V) at rest.
-/// - `clear` 1710 (about 3.53 V): stock's 10 % step above it, so a pack
-///   that recovers at rest after a sag does not feed again until it has
-///   recovered by a step.
-/// - `cutoff` 1550 (about 3.20 V): a sag this deep stops a feed at once;
-///   it leaves the 3.3 V rail's regulator little headroom, and a brownout
-///   mid-drive would leave the feed uncertain.
-/// - `hold_ms` 300, timed from the first reading under the floor: fifteen of
-///   the owner's 20 ms polls in a feed, three of its 100 ms battery
-///   conversions at rest. The motor's start-up surge lasted one poll on the
-///   bench (on the adapter); a sag under the floor that outlasts the hold is
-///   the pack failing under load.
-pub const FLOOR: FloorLimits = FloorLimits {
-    floor: 1650,
-    clear: 1710,
-    cutoff: 1550,
-    hold_ms: 300,
-};
-
 /// What a reading of this board's pack can be. Three D cells read 4.86 V
 /// with the adapter and 4.77 V without (the meter, October 23); alkaline
 /// cells start near 1.65 V each, so above 5.5 V the reading is wrong. On
 /// the pack alone the board is running, so it reads at least what the
 /// 3.3 V rail needs with any regulator; 2.5 V is well under that.
-/// The charge is stock's curve on the same scaled unit: 1650 (the floor,
-/// pack about 3.40 V) is 0 % and 2250 (about 4.64 V) 100 %, in 10 % steps
-/// of 60. Fresh cells read about 2306 at rest, so 100 %.
+/// The charge is stock's curve on the same scaled unit: 1650 (pack about
+/// 3.40 V, below which stock stops its outputs on battery, and the
+/// feeder's floor for feeding) is 0 % and 2250 (about 4.64 V) 100 %, in
+/// 10 % steps of 60. Fresh cells read about 2306 at rest, so 100 %.
 pub const PACK: PackLimits = PackLimits {
     divider_per_mille: DIVIDER_PER_MILLE,
     absent_pin_mv: NO_PACK_PIN_MV,
@@ -68,7 +45,7 @@ pub const PACK: PackLimits = PackLimits {
     min_running_mv: 2_500,
     stale_ms: STALE_MS + 1,
     curve: Curve {
-        empty_pin_mv: FLOOR.floor,
+        empty_pin_mv: 1650,
         full_pin_mv: 2250,
     },
 };
