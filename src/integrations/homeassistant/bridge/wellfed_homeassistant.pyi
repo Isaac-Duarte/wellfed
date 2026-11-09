@@ -1,7 +1,33 @@
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key"]
+__all__ = ["AccountRole", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "server_feeders", "server_login", "server_revoke_token"]
+
+@final
+class AccountRole:
+    """
+    An account's role on the owner's server.
+    """
+    Member: Final[AccountRole]
+    NewerBuild: Final[AccountRole]
+    """
+    A role a newer server added: it grants nothing here.
+    """
+    Owner: Final[AccountRole]
+    Viewer: Final[AccountRole]
+    """
+    Reads, and changes nothing: Home Assistant refuses it at setup.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
+        """
 
 @final
 class By:
@@ -309,6 +335,13 @@ class Feeder:
         """
         Record a fresh desiccant pack today.
         """
+    @staticmethod
+    def server(url: str, token: str, feeder_id: str, identity: bytes) -> Feeder:
+        """
+        The session to the feeder `feeder_id` on the owner's server at
+        `url`, signed in with `token`; `identity` is the feeder's, and a
+        feeder under that id with another one is never served as this one.
+        """
     def set_lock(self, /, locked: bool) -> Written:
         """
         Lock or unlock the panel; how it ended.
@@ -370,6 +403,24 @@ class Joined:
         """
 
 @final
+class Login:
+    """
+    A sign-in that holds: Home Assistant's own token on the server.
+    """
+    @property
+    def role(self, /) -> AccountRole: ...
+    @property
+    def token(self, /) -> str:
+        """
+        The bearer token, shown once; the config entry keeps it.
+        """
+    @property
+    def token_id(self, /) -> str:
+        """
+        Its id, to revoke it by.
+        """
+
+@final
 class NextMeal:
     """
     The plans' next meal, by the feeder's clock.
@@ -412,6 +463,11 @@ class NotSent:
     Invalid: Final[NotSent]
     """
     A value outside what the feeder accepts.
+    """
+    Legacy: Final[NotSent]
+    """
+    The feeder runs a build from before API revisions, which the
+    server sends nothing but an update: update the feeder.
     """
     NotRead: Final[NotSent]
     """
@@ -550,7 +606,8 @@ class RefusalKind:
 @final
 class Role:
     """
-    The role the feeder enrolled this client with.
+    The role the feeder enrolled this client with, or through the
+    owner's server the account's role there.
     """
     Member: Final[Role]
     NewerBuild: Final[Role]
@@ -560,6 +617,11 @@ class Role:
     Owner: Final[Role]
     Server: Final[Role]
     UpdateSigner: Final[Role]
+    Viewer: Final[Role]
+    """
+    Through the owner's server, an account that reads and changes
+    nothing.
+    """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
     def __int__(self, /) -> int: ...
@@ -570,6 +632,89 @@ class Role:
         """
         The snake_case name: an entity's state and its translation key.
         """
+
+@final
+class ServerFeeder:
+    """
+    A feeder the server holds, as the setup flow offers it.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def id(self, /) -> str:
+        """
+        Its id on the server.
+        """
+    @property
+    def identity(self, /) -> bytes:
+        """
+        Its identity key, which names it on either route.
+        """
+    @property
+    def name(self, /) -> str: ...
+
+@final
+class ServerProblem:
+    """
+    Why a call to the owner's server at setup failed, as the flow words
+    it.
+    """
+    AccountDisabled: Final[ServerProblem]
+    """
+    The account is past its expiry.
+    """
+    BadCredentials: Final[ServerProblem]
+    """
+    The name or password is wrong.
+    """
+    Forbidden: Final[ServerProblem]
+    """
+    The account's role may not do that.
+    """
+    LoginLimited: Final[ServerProblem]
+    """
+    Too many failed logins: wait a minute.
+    """
+    NotAServer: Final[ServerProblem]
+    """
+    Something answered, but not as a Wellfed server of this API.
+    """
+    Redirected: Final[ServerProblem]
+    """
+    The address redirects elsewhere: use the address it names.
+    """
+    Refused: Final[ServerProblem]
+    """
+    The server refused for another reason.
+    """
+    Unauthorized: Final[ServerProblem]
+    """
+    The token no longer holds: log in again.
+    """
+    Unreachable: Final[ServerProblem]
+    """
+    Nothing answered at that address.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
+        """
+
+@final
+class ServerRefused(WellfedError):
+    """
+    The owner's server refused a setup call, or could not be reached;
+    `problem` says how, as the setup flow words it.
+    """
+    def __new__(cls, /, problem: ServerProblem, *_args) -> ServerRefused: ...
+    @property
+    def problem(self, /) -> ServerProblem: ...
 
 @final
 class Settings:
@@ -627,6 +772,16 @@ class Skew:
     A value a newer build added, which this integration cannot name.
     """
     Same: Final[Skew]
+    ServerAhead: Final[Skew]
+    """
+    Through the owner's server: the server is newer than this
+    integration, so update the integration.
+    """
+    ServerBehind: Final[Skew]
+    """
+    Through the owner's server: the server is older than the feeder
+    or this integration, so update the server.
+    """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
     def __int__(self, /) -> int: ...
@@ -803,7 +958,8 @@ class Update:
     @property
     def feed(self, /) -> Feed | None:
         """
-        For [`UpdateKind::Settled`]: the feed whose answer never came.
+        For [`UpdateKind::Settled`]: the feed whose answer never came;
+        `None` when the server's journal found it refused, so nothing ran.
         """
     @property
     def gap_from(self, /) -> int | None:
@@ -823,7 +979,8 @@ class Update:
     @property
     def reason(self, /) -> str | None:
         """
-        Why the session ended, for [`UpdateKind::Disconnected`]: for logs.
+        Why the session ended, for [`UpdateKind::Disconnected`] and
+        [`UpdateKind::ServerLostFeeder`]: for logs.
         """
     @property
     def replayed(self, /) -> bool:
@@ -866,6 +1023,12 @@ class UpdateKind:
     The feeder no longer knows this client's key; the session will
     not reconnect.
     """
+    ServerLostFeeder: Final[UpdateKind]
+    """
+    The server no longer reaches the feeder for good: the feeder
+    dropped the server's key, or the server no longer holds it.
+    The owner adopts it again.
+    """
     Settled: Final[UpdateKind]
     """
     A feed whose answer never came has its `Fed` event.
@@ -878,6 +1041,12 @@ class UpdateKind:
     """
     A feed whose answer never came has no `Fed` event this session
     could find: whether it ran is not known.
+    """
+    TokenRefused: Final[UpdateKind]
+    """
+    The server no longer takes this integration's token (revoked,
+    expired, or its account disabled); the session will not
+    reconnect until a new login.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
@@ -977,4 +1146,21 @@ def join(secret: bytes, invite: str, label: str, address: str | None = None) -> 
 def public_key(secret: bytes) -> bytes:
     """
     The public key of `secret`, as the feeder lists this client.
+    """
+
+def server_feeders(url: str, token: str) -> list[ServerFeeder]:
+    """
+    The feeders the server at `url` holds, as `token` sees them.
+    """
+
+def server_login(url: str, name: str, password: str, label: str) -> Login:
+    """
+    Sign in to the owner's server at `url` as `name`, and create a token
+    labelled `label` for Home Assistant. The password is used for this alone
+    and not kept; an account that may change nothing is refused.
+    """
+
+def server_revoke_token(url: str, token: str, token_id: str) -> None:
+    """
+    Revoke the token `token_id` with itself.
     """

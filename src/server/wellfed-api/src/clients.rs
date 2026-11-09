@@ -236,6 +236,20 @@ pub enum TuneName {
     Twinkle,
 }
 
+impl From<wellfed_model::Tune> for TuneName {
+    fn from(tune: wellfed_model::Tune) -> Self {
+        use wellfed_model::Tune;
+        match tune {
+            Tune::Chime => Self::Chime,
+            Tune::Meal => Self::Meal,
+            Tune::Coin => Self::Coin,
+            Tune::Alert => Self::Alert,
+            Tune::Test => Self::Test,
+            Tune::Twinkle => Self::Twinkle,
+        }
+    }
+}
+
 /// A feeder the server no longer mirrors. Its history, samples and journal
 /// stay readable; adopting it again continues them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

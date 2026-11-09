@@ -83,13 +83,15 @@ const ARROWS: [(&str, &[&str]); 8] = [
 ];
 
 /// The only edges into a server crate from a crate outside the server: the
-/// CLI speaks the server's API through its typed client, and the app's
+/// CLI speaks the server's API through its typed client, the app's
 /// flutter_rust_bridge crate does too, handing `wellfed-api`'s values to
-/// Dart.
-const INTO_SERVER: [(&str, &str); 3] = [
+/// Dart, and so does Home Assistant's bridge, for a feeder reached through
+/// the server.
+const INTO_SERVER: [(&str, &str); 4] = [
     ("wellfed", "wellfed-server-client"),
     ("wellfed-app-bridge", "wellfed-server-client"),
     ("wellfed-app-bridge", API),
+    ("wellfed-homeassistant", "wellfed-server-client"),
 ];
 
 /// The crates below the binary, which must not link axum by any path.

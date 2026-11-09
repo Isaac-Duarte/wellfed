@@ -17,8 +17,8 @@ mod state;
 mod views;
 
 pub use enums::{
-    By, EventKind, FeedOutcome, FeedReason, FoodLevel, NotSent, Readiness, RefusalKind, Role, Skew,
-    Tune, UpdateKind, WriteResult,
+    AccountRole, By, EventKind, FeedOutcome, FeedReason, FoodLevel, NotSent, Readiness,
+    RefusalKind, Role, ServerProblem, Skew, Tune, UpdateKind, WriteResult,
 };
 pub use session::{Update, Written};
 pub use state::{Capabilities, NextMeal, Plan, PortionsToday, Settings, State};

@@ -157,11 +157,16 @@ pub struct State {
 
 impl State {
     /// The state `facts` come to, once the status is in. The day is the
-    /// feeder's, in its own zone, with this host's as the fallback before
-    /// the time is read.
-    pub fn of(facts: &Facts, calibration: Option<&model::CalibrationView>) -> Option<Self> {
+    /// feeder's, in its own zone, with `fallback` before the time is read:
+    /// this host's directly, the home's through the owner's server, which
+    /// keeps every feeder on the home's zone.
+    pub fn of(
+        facts: &Facts,
+        calibration: Option<&model::CalibrationView>,
+        fallback: &TimeZone,
+    ) -> Option<Self> {
         let status = facts.status.as_ref()?;
-        let today = facts.today(TimeZone::system());
+        let today = facts.today(fallback.clone());
         let plans = facts.plans.as_ref().map(|plans| {
             plans
                 .plans
@@ -192,7 +197,7 @@ impl State {
             }),
             last_fed: facts.last_fed().map(Feed::from),
             portions_today: facts
-                .portions_today(TimeZone::system())
+                .portions_today(fallback.clone())
                 .map(PortionsToday::from),
             portion_mg: calibration.and_then(|view| view.calibration.portion_mg),
         })

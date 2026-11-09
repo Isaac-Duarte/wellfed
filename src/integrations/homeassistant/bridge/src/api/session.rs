@@ -45,8 +45,13 @@ impl Written {
     }
 
     pub fn refused(refusal: &model::Refusal) -> Self {
+        Self::refused_for(refusal.into())
+    }
+
+    /// Refused for `refusal`, as the owner's server names it.
+    pub fn refused_for(refusal: RefusalKind) -> Self {
         Self {
-            refusal: Some(refusal.into()),
+            refusal: Some(refusal),
             ..Self::result(WriteResult::Refused)
         }
     }
@@ -85,7 +90,8 @@ pub struct Update {
     /// Whether the event came from the history read at connect: already
     /// part of the state, and not news.
     pub replayed: bool,
-    /// For [`UpdateKind::Settled`]: the feed whose answer never came.
+    /// For [`UpdateKind::Settled`]: the feed whose answer never came;
+    /// `None` when the server's journal found it refused, so nothing ran.
     pub feed: Option<Feed>,
     /// For [`UpdateKind::StillUnknown`]: the portions that feed asked for.
     pub portions: Option<u8>,
@@ -93,7 +99,8 @@ pub struct Update {
     /// named; both `None` for a history that started over.
     pub gap_from: Option<u64>,
     pub gap_to: Option<u64>,
-    /// Why the session ended, for [`UpdateKind::Disconnected`]: for logs.
+    /// Why the session ended, for [`UpdateKind::Disconnected`] and
+    /// [`UpdateKind::ServerLostFeeder`]: for logs.
     pub reason: Option<String>,
 }
 
@@ -122,11 +129,22 @@ impl Update {
         capabilities: Capabilities,
         skew: model::Skew,
     ) -> Self {
+        Self::connected_as(build, role.into(), capabilities, skew.into())
+    }
+
+    /// A session opened, with the side to update already decided: through
+    /// the owner's server, its own revision counts too.
+    pub fn connected_as(
+        build: impl Into<String>,
+        role: Role,
+        capabilities: Capabilities,
+        skew: Skew,
+    ) -> Self {
         Self {
             build: Some(build.into()),
-            role: Some(role.into()),
+            role: Some(role),
             capabilities: Some(capabilities),
-            skew: Some(skew.into()),
+            skew: Some(skew),
             ..Self::kind(UpdateKind::Connected)
         }
     }
@@ -161,6 +179,12 @@ impl Update {
         }
     }
 
+    /// A feed whose answer never came did not run after all: the
+    /// feeder refused it, as the server's journal later learned.
+    pub fn settled_unfed() -> Self {
+        Self::kind(UpdateKind::Settled)
+    }
+
     pub fn still_unknown(portions: u8) -> Self {
         Self {
             portions: Some(portions),
@@ -170,6 +194,17 @@ impl Update {
 
     pub fn revoked() -> Self {
         Self::kind(UpdateKind::Revoked)
+    }
+
+    pub fn token_refused() -> Self {
+        Self::kind(UpdateKind::TokenRefused)
+    }
+
+    pub fn server_lost_feeder(reason: impl Into<String>) -> Self {
+        Self {
+            reason: Some(reason.into()),
+            ..Self::kind(UpdateKind::ServerLostFeeder)
+        }
     }
 
     pub fn disconnected(reason: impl Into<String>) -> Self {

@@ -35,6 +35,7 @@ use std::sync::Mutex;
 use std::sync::mpsc as std_mpsc;
 use std::time::{Duration, Instant};
 
+use jiff::tz::TimeZone;
 use tokio::sync::{mpsc, oneshot};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::today::Facts;
@@ -54,16 +55,16 @@ type RequestId = [u8; 16];
 
 /// How often a quiet session reads the status anew, which also keeps the
 /// connection's silence limit fed.
-const TURN: Duration = Duration::from_secs(30);
+pub(crate) const TURN: Duration = Duration::from_secs(30);
 /// How long an uncertain feed waits for its `Fed` event within one
 /// session: longer than the longest feed the feeder runs.
-const SETTLE: Duration = Duration::from_secs(15 * 60);
+pub(crate) const SETTLE: Duration = Duration::from_secs(15 * 60);
 /// Feeds kept for the day's facts, and feed numbers this client was
 /// answered for: far more than a day holds.
 const FEEDS_KEPT: usize = 512;
 
 #[derive(Debug)]
-enum Command {
+pub(crate) enum Command {
     Write {
         write: Write,
         reply: oneshot::Sender<Written>,
@@ -110,6 +111,28 @@ impl Feeder {
     /// connects, and reconnects after every loss, until the handle is
     /// dropped or the feeder revokes the key.
     pub fn start(key: ClientKey, target: Target, clocks: Clocks) -> Result<Self, Error> {
+        Self::spawn(move |inbox, outbox| run(key, target, clocks, inbox, outbox))
+    }
+
+    /// Start the session thread for the feeder `target` names through the
+    /// owner's server ([`crate::server`]), on `clocks`. It connects, and
+    /// reconnects after every loss, until the handle is dropped, the server
+    /// refuses the token, or the server no longer holds the feeder.
+    pub fn start_server(
+        target: crate::server::Target,
+        clocks: crate::server::Clocks,
+    ) -> Result<Self, Error> {
+        let client = crate::server::client(&target, clocks)?;
+        Self::spawn(move |inbox, outbox| crate::server::run(client, target, clocks, inbox, outbox))
+    }
+
+    /// Run the session `serve` makes on a thread of its own, on a
+    /// current-thread runtime.
+    fn spawn<F, S>(serve: S) -> Result<Self, Error>
+    where
+        S: FnOnce(mpsc::UnboundedReceiver<Command>, std_mpsc::Sender<Update>) -> F + Send + 'static,
+        F: Future<Output = ()>,
+    {
         let (commands, inbox) = mpsc::unbounded_channel();
         let (outbox, updates) = std_mpsc::channel();
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -118,7 +141,7 @@ impl Feeder {
             .map_err(Error::Thread)?;
         std::thread::Builder::new()
             .name("wellfed-session".into())
-            .spawn(move || runtime.block_on(run(key, target, clocks, inbox, outbox)))
+            .spawn(move || runtime.block_on(serve(inbox, outbox)))
             .map_err(Error::Thread)?;
 
         Ok(Self {
@@ -223,21 +246,21 @@ impl Memory {
     }
 
     fn fed(&mut self, feed: Feed) {
-        // A backlog replays from the cursor, so a feed is seen once; the
-        // check keeps a replay after a lost cursor from doubling it.
-        if self
-            .facts
-            .feeds
-            .last()
-            .is_some_and(|last| last.seq >= feed.seq)
-        {
-            return;
-        }
-        if self.facts.feeds.len() == FEEDS_KEPT {
-            self.facts.feeds.remove(0);
-        }
-        self.facts.feeds.push(feed);
+        fed(&mut self.facts, feed);
     }
+}
+
+/// Add a feed the history gave to the day's facts.
+pub(crate) fn fed(facts: &mut Facts, feed: Feed) {
+    // A backlog replays from the cursor, so a feed is seen once; the check
+    // keeps a replay after a lost cursor from doubling it.
+    if facts.feeds.last().is_some_and(|last| last.seq >= feed.seq) {
+        return;
+    }
+    if facts.feeds.len() == FEEDS_KEPT {
+        facts.feeds.remove(0);
+    }
+    facts.feeds.push(feed);
 }
 
 /// Connect, serve until the session ends, and go again, until the handle is
@@ -273,30 +296,40 @@ async fn run(
         if updates.send(Update::disconnected(reason)).is_err() {
             return;
         }
+        if !pause(clocks.retry, &mut commands).await {
+            return;
+        }
+    }
+}
 
-        // While no session is open a write is refused at once, never held
-        // for the next one: a feed sent minutes after its press is not the
-        // feed the owner asked for.
-        let pause = tokio::time::sleep(clocks.retry);
-        tokio::pin!(pause);
-        loop {
-            tokio::select! {
-                () = &mut pause => break,
-                command = commands.recv() => match command {
-                    None => return,
-                    Some(Command::Write { reply, .. }) => {
-                        let _ = reply.send(Written::not_sent(NotSent::Disconnected));
-                    }
-                    Some(Command::Refresh) => {}
-                },
-            }
+/// Wait `retry` before the next session, refusing every write meanwhile;
+/// `false` once the handle is dropped. A write is refused at once, never
+/// held for the next session: a feed sent minutes after its press is not
+/// the feed the owner asked for.
+pub(crate) async fn pause(
+    retry: Duration,
+    commands: &mut mpsc::UnboundedReceiver<Command>,
+) -> bool {
+    let pause = tokio::time::sleep(retry);
+    tokio::pin!(pause);
+    loop {
+        tokio::select! {
+            () = &mut pause => return true,
+            command = commands.recv() => match command {
+                None => return false,
+                Some(Command::Write { reply, .. }) => {
+                    let _ = reply.send(Written::not_sent(NotSent::Disconnected));
+                }
+                Some(Command::Refresh) => {}
+            },
         }
     }
 }
 
 /// The session cannot go on: say why once, then refuse every write until
-/// the handle is dropped. A revoked key needs a new invite.
-async fn stopped(
+/// the handle is dropped. A revoked key needs a new invite; a refused
+/// token, a new login.
+pub(crate) async fn stopped(
     why: Update,
     commands: &mut mpsc::UnboundedReceiver<Command>,
     updates: &std_mpsc::Sender<Update>,
@@ -496,7 +529,8 @@ impl<'a> Session<'a> {
         if self.backlog.is_some() {
             return Ok(());
         }
-        match State::of(&self.memory.facts, self.memory.calibration.as_ref()) {
+        let zone = TimeZone::system();
+        match State::of(&self.memory.facts, self.memory.calibration.as_ref(), &zone) {
             Some(state) => self.send(Update::state(state)),
             None => Ok(()),
         }
@@ -786,14 +820,14 @@ impl<'a> Session<'a> {
 }
 
 /// Whether the feeder reports a feed running now.
-fn feeding_now(status: &Status) -> bool {
+pub(crate) fn feeding_now(status: &Status) -> bool {
     status
         .feeder()
         .is_some_and(|feeder| feeder.readiness == Readiness::Blocked(Blocked::Feeding))
 }
 
 /// The generation a store moves to from `base`.
-const fn next(base: Generation) -> Generation {
+pub(crate) const fn next(base: Generation) -> Generation {
     Generation(base.0.wrapping_add(1))
 }
 

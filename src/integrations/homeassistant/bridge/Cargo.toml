@@ -22,10 +22,12 @@ jiff.workspace = true
 pyo3 = { version = "=0.30.1", features = ["abi3-py313", "experimental-inspect"], optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
+uuid = { workspace = true, features = ["v4"] }
 wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-formats.workspace = true
 wellfed-model.workspace = true
+wellfed-server-client.workspace = true
 wellfed-session.workspace = true
 
 [dev-dependencies]
@@ -33,6 +35,7 @@ serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 wellfed-proto.workspace = true
+wellfed-server-testkit.workspace = true
 
 [lints]
 workspace = true

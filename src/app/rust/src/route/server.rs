@@ -3,13 +3,12 @@
 //! [`super::core`].
 
 use uuid::Uuid;
-use wellfed_api::{ErrorCode, FeederId, Generation, MealRequest, PlansChange, Settings};
+use wellfed_api::{FeederId, Generation, MealRequest, PlansChange, Settings};
 use wellfed_server_client::{Client, Error, Lock};
 
 use crate::api::feeder::{FeederRefusal, FeederReply, FeederRequest};
 use crate::api::session::FeedRefusal;
 use crate::requests::{calibration_of, call_of, plans_view, settings_view};
-use crate::route::core::ServerFailure;
 use crate::route::shape::SentWrite;
 
 const fn done(generation: Option<u32>) -> FeederReply {
@@ -99,36 +98,6 @@ pub(crate) async fn read(
         _ => return None,
     };
     Some(read)
-}
-
-/// How a failed call reads to the router's rules. Only a failure to
-/// connect counts as nothing sent: reqwest's connect errors are the
-/// resolver, the TCP connect and the TLS handshake, all before a byte of
-/// the request is written; a connection that breaks after is a request
-/// error, which may have run. Of the server's answers, only
-/// `feeder_offline` says its feeder task never took the write.
-pub(crate) fn failure(error: &Error) -> ServerFailure {
-    match error {
-        Error::Http(http) if http.is_connect() => ServerFailure::Connect,
-        Error::Http(_) | Error::Decode(_) | Error::Unexpected { .. } => ServerFailure::Interrupted,
-        Error::Problem {
-            status, problem, ..
-        } => match problem.code {
-            ErrorCode::OutcomeUnknown => ServerFailure::OutcomeUnknown,
-            ErrorCode::FeederOffline => ServerFailure::FeederOffline,
-            ErrorCode::FeederRefused => ServerFailure::FeederRefused,
-            ErrorCode::KeyReused => ServerFailure::KeyReused,
-            ErrorCode::Unauthenticated | ErrorCode::AccountDisabled => ServerFailure::Unauthorized,
-            // The server failed inside, or lost its feeder part way
-            // (`unreachable`): either may be after it sent.
-            _ if status.is_server_error() => ServerFailure::Interrupted,
-            _ => ServerFailure::Rejected,
-        },
-        Error::Stale(_) | Error::StalePlans(_) | Error::StaleCalibration(_) => ServerFailure::Stale,
-        Error::Base(_) | Error::Build(_) | Error::Redirect { .. } | Error::NoSession => {
-            ServerFailure::Rejected
-        }
-    }
 }
 
 /// The feeder's refusal a failed write carries, as Dart's reply names it.

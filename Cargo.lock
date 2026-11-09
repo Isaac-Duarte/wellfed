@@ -5578,12 +5578,15 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "uuid",
  "wellfed-client",
  "wellfed-connect",
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-model",
  "wellfed-proto",
+ "wellfed-server-client",
+ "wellfed-server-testkit",
  "wellfed-session",
 ]
 

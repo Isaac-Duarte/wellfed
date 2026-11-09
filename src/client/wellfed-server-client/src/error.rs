@@ -70,4 +70,65 @@ impl Error {
             _ => None,
         }
     }
+
+    /// What the failure says of the write the call carried. Only a failure
+    /// to connect counts as nothing sent: reqwest's connect errors are the
+    /// resolver, the TCP connect and the TLS handshake, all before a byte
+    /// of the request is written; a connection that breaks after is a
+    /// request error, which may have run. Of the server's answers, only
+    /// `feeder_offline` says its feeder task never took the write.
+    pub fn failure(&self) -> Failure {
+        match self {
+            Self::Http(http) if http.is_connect() => Failure::Connect,
+            Self::Http(_) | Self::Decode(_) | Self::Unexpected { .. } => Failure::Interrupted,
+            Self::Problem {
+                status, problem, ..
+            } => match problem.code {
+                ErrorCode::OutcomeUnknown => Failure::OutcomeUnknown,
+                ErrorCode::FeederOffline => Failure::FeederOffline,
+                ErrorCode::FeederRefused => Failure::FeederRefused,
+                ErrorCode::KeyReused => Failure::KeyReused,
+                ErrorCode::Unauthenticated | ErrorCode::AccountDisabled => Failure::Unauthorized,
+                // The server failed inside, or lost its feeder part way
+                // (`unreachable`): either may be after it sent. A code a
+                // newer server added reads by its status the same way.
+                _ if status.is_server_error() => Failure::Interrupted,
+                _ => Failure::Rejected,
+            },
+            Self::Stale(_) | Self::StalePlans(_) | Self::StaleCalibration(_) => Failure::Stale,
+            Self::Base(_) | Self::Build(_) | Self::Redirect { .. } | Self::NoSession => {
+                Failure::Rejected
+            }
+        }
+    }
+}
+
+/// How one call to the server failed, as a client deciding what became of
+/// the write it carried tells them apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Failure {
+    /// No connection to the server: nothing left this client.
+    Connect,
+    /// Sent, and the answer was cut off, timed out or could not be read,
+    /// or the server failed inside: it may have run.
+    Interrupted,
+    /// `504 outcome_unknown`: the journal keeps it unknown.
+    OutcomeUnknown,
+    /// `503 feeder_offline`: the server's feeder task never took it, and a
+    /// first attempt's entry is dropped. Nothing ran.
+    FeederOffline,
+    /// The feeder refused it (`409 feeder_refused`): final for the key.
+    FeederRefused,
+    /// A settings, plans or calibration write whose base the store moved
+    /// past: the feeder refused it, and nothing ran.
+    Stale,
+    /// The key already names another request: nothing was sent.
+    KeyReused,
+    /// The client's token or session no longer holds (`401`), or its
+    /// account is disabled: nothing was sent, and the server is closed to
+    /// this client.
+    Unauthorized,
+    /// The server refused before sending anything: forbidden, invalid, a
+    /// redirect.
+    Rejected,
 }

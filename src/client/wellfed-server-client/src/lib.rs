@@ -57,7 +57,7 @@ use serde::de::DeserializeOwned;
 use wellfed_api::{PREFIX, Problem, SESSION_COOKIE};
 
 pub use diagnostics::LogBatches;
-pub use error::Error;
+pub use error::{Error, Failure};
 pub use feeders::Lock;
 pub use releases::Uploaded;
 pub use reqwest::{self, Method, StatusCode, Url};

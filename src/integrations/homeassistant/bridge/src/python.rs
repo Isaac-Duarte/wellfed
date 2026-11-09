@@ -12,9 +12,13 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::FeederSettingsPatch;
 
-use crate::api::{Tune, Update, Written};
+use uuid::Uuid;
+use wellfed_server_client::api::FeederId;
+
+use crate::api::{ServerProblem, Tune, Update, Written};
 use crate::feeder::{self, Clocks, Target};
 use crate::key::{self, ClientKey, Joined, bytes32};
+use crate::server::{self, Login, ServerFeeder};
 
 /// A call into the Wellfed bridge failed.
 ///
@@ -35,6 +39,41 @@ impl From<Error> for PyErr {
     fn from(error: Error) -> Self {
         PyErr::new::<WellfedError, _>(error.to_string())
     }
+}
+
+/// The owner's server refused a setup call, or could not be reached;
+/// `problem` says how, as the setup flow words it.
+#[pyclass(extends = WellfedError, frozen, module = "wellfed_homeassistant")]
+struct ServerRefused {
+    #[pyo3(get)]
+    problem: ServerProblem,
+}
+
+#[pymethods]
+impl ServerRefused {
+    #[new]
+    #[pyo3(signature = (problem, *_args))]
+    fn new(problem: &ServerProblem, _args: &Bound<'_, PyTuple>) -> PyClassInitializer<Self> {
+        PyClassInitializer::from(WellfedError).add_subclass(Self { problem: *problem })
+    }
+}
+
+impl From<server::Refused> for PyErr {
+    fn from(refused: server::Refused) -> Self {
+        PyErr::new::<ServerRefused, _>((refused.problem(), refused.to_string()))
+    }
+}
+
+/// Run `future` to its end on a runtime of its own.
+fn block_on<T, E>(future: impl Future<Output = Result<T, E>>) -> PyResult<T>
+where
+    PyErr: From<E>,
+{
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(Error::Thread)?;
+    Ok(runtime.block_on(future)?)
 }
 
 /// A new client key's secret, for the config entry.
@@ -68,14 +107,33 @@ fn join(
     address: Option<&str>,
 ) -> PyResult<Joined> {
     let key = ClientKey::restore(secret)?;
-    let joined = py.detach(|| {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(Error::Thread)?;
-        runtime.block_on(key::join_member(&key, invite, label, address))
-    })?;
-    Ok(joined)
+    py.detach(|| block_on(key::join_member(&key, invite, label, address)))
+}
+
+/// Sign in to the owner's server at `url` as `name`, and create a token
+/// labelled `label` for Home Assistant. The password is used for this alone
+/// and not kept; an account that may change nothing is refused.
+#[pyfunction]
+fn server_login(
+    py: Python<'_>,
+    url: &str,
+    name: &str,
+    password: &str,
+    label: &str,
+) -> PyResult<Login> {
+    py.detach(|| block_on(server::login(url, name, password, label)))
+}
+
+/// The feeders the server at `url` holds, as `token` sees them.
+#[pyfunction]
+fn server_feeders(py: Python<'_>, url: &str, token: &str) -> PyResult<Vec<ServerFeeder>> {
+    py.detach(|| block_on(server::feeders(url, token)))
+}
+
+/// Revoke the token `token_id` with itself.
+#[pyfunction]
+fn server_revoke_token(py: Python<'_>, url: &str, token: &str, token_id: &str) -> PyResult<()> {
+    py.detach(|| block_on(server::revoke_token(url, token, token_id)))
 }
 
 /// One feeder's session, on a thread of its own until this is dropped.
@@ -93,6 +151,25 @@ impl Feeder {
             key,
             Target { identity, address },
             Clocks::DEFAULT,
+        )?))
+    }
+
+    /// The session to the feeder `feeder_id` on the owner's server at
+    /// `url`, signed in with `token`; `identity` is the feeder's, and a
+    /// feeder under that id with another one is never served as this one.
+    #[staticmethod]
+    fn server(url: &str, token: String, feeder_id: &str, identity: &[u8]) -> PyResult<Self> {
+        let target = server::Target {
+            url: server::address(url)?,
+            token,
+            feeder: FeederId(
+                Uuid::parse_str(feeder_id).map_err(|_| Error::FeederId(feeder_id.to_owned()))?,
+            ),
+            identity: bytes32(identity, Error::IdentityLength)?,
+        };
+        Ok(Self(feeder::Feeder::start_server(
+            target,
+            server::Clocks::DEFAULT,
         )?))
     }
 
@@ -168,13 +245,19 @@ impl Feeder {
 #[pymodule]
 mod wellfed_homeassistant {
     #[pymodule_export]
-    use super::{Feeder, WellfedError, generate_secret, invite_feeder, join, public_key};
+    use super::{
+        Feeder, ServerRefused, WellfedError, generate_secret, invite_feeder, join, public_key,
+        server_feeders, server_login, server_revoke_token,
+    };
     #[pymodule_export]
     use crate::api::{
-        By, Capabilities, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel,
-        NextMeal, NotSent, Plan, PortionsToday, Readiness, RefusalKind, Role, Settings, Skew,
-        State, Status, Tune, Update, UpdateKind, WriteResult, Written,
+        AccountRole, By, Capabilities, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason,
+        FoodLevel, NextMeal, NotSent, Plan, PortionsToday, Readiness, RefusalKind, Role,
+        ServerProblem, Settings, Skew, State, Status, Tune, Update, UpdateKind, WriteResult,
+        Written,
     };
     #[pymodule_export]
     use crate::key::Joined;
+    #[pymodule_export]
+    use crate::server::{Login, ServerFeeder};
 }
