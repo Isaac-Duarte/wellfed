@@ -9,7 +9,7 @@ publish.workspace = true
 
 [dependencies]
 ed25519-dalek = "2"
-wellfed-core.workspace = true
+wellfed-signed.workspace = true
 wellfed-formats.workspace = true
 wellfed-image.workspace = true
 wellfed-proto.workspace = true
@@ -24,6 +24,7 @@ fixtures = []
 [dev-dependencies]
 wellfed-image = { workspace = true, features = ["fixtures"] }
 tempfile.workspace = true
+wellfed-core.workspace = true
 
 [lints]
 workspace = true

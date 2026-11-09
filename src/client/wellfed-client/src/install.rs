@@ -122,7 +122,7 @@ pub struct Options {
 /// The version a signed update manifest promotes to, which the run waits
 /// to see confirmed; `None` for bytes that are not a manifest.
 pub fn manifest_version(manifest: &[u8]) -> Option<u32> {
-    wellfed_core::ota::offer::parse_manifest(manifest)
+    wellfed_signed::offer::parse_manifest(manifest)
         .ok()
         .map(|signed| signed.manifest.version)
 }
@@ -130,7 +130,7 @@ pub fn manifest_version(manifest: &[u8]) -> Option<u32> {
 /// The build a signed update manifest names, which bank 1 must then run;
 /// `None` for bytes that are not a manifest.
 pub fn manifest_build(manifest: &[u8]) -> Option<[u8; 32]> {
-    wellfed_core::ota::offer::parse_manifest(manifest)
+    wellfed_signed::offer::parse_manifest(manifest)
         .ok()
         .map(|signed| signed.manifest.build_id)
 }

@@ -73,7 +73,8 @@
 //! registers clear on power loss, so a power cut restarts every count; no
 //! flash record is involved, and none can be torn.
 
-use wellfed_core::ota::{self, MARKER, Trial};
+use wellfed_core::ota::{self, Trial};
+use wellfed_signed::MARKER;
 
 /// Unconfirmed boots per power-on before giving way.
 pub const LIMIT: u32 = 3;

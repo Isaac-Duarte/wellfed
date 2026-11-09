@@ -13,10 +13,10 @@
 use wellfed_core::feed::controller::{FeedReason, FeedRequest};
 use wellfed_core::feed::progress::{BowlMode, Direction};
 use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult};
-use wellfed_core::ota::offer::ImageKind;
 use wellfed_core::store::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_core::store::seed::{SeedStatus, SeedStore};
 use wellfed_core::store::update::{Bank0, Candidate, State, UpdateStatus, UpdateStore};
+use wellfed_signed::offer::ImageKind;
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
 
 /// `bytes` as lowercase hex, 32 bytes a line.

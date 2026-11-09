@@ -28,7 +28,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional =
 uuid = { workspace = true, features = ["v4", "serde"] }
 wellfed-client.workspace = true
 wellfed-model.workspace = true
-wellfed-core.workspace = true
+wellfed-signed.workspace = true
 wellfed-formats.workspace = true
 
 [features]

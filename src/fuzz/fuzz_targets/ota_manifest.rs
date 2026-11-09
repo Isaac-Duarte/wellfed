@@ -2,8 +2,9 @@
 //! carries, and as chunks to a writer.
 #![no_main]
 
-use wellfed_core::ota::offer::{self, Context, KeyRing};
-use wellfed_core::ota::{Manifest, Writer};
+use wellfed_signed::offer::{self, Context, KeyRing};
+use wellfed_core::ota::Writer;
+use wellfed_signed::Manifest;
 
 libfuzzer_sys::fuzz_target!(|data: &[u8]| {
     // No signer holds this key's secret, so nothing may be admitted.

@@ -1,10 +1,11 @@
 //! An update end to end on the host: the owner's client
 //! (`wellfed_client::update` over a `Connection`) against the feeder's
 //! `Server`, with a fake feeder that keeps two banks, the update store and
-//! the attempt flag, installs through the real `ota::install::Install` and
-//! checks offers with the real `ota::offer::admit_offer`. Restarts drop the
-//! server's RAM, as the feeder's do; a power cut also clears the attempt
-//! flag, as it clears the backup register.
+//! the attempt flag, installs through the real
+//! `wellfed_core::ota::install::Install` and checks offers with the real
+//! `wellfed_signed::offer::admit_offer`. Restarts drop the server's RAM, as
+//! the feeder's do; a power cut also clears the attempt flag, as it clears
+//! the backup register.
 //!
 //! Every failure before activation must leave bank 1's marker clear, so the
 //! feeder keeps booting bank 0, which still answers.
@@ -16,10 +17,6 @@ use sha2::{Digest, Sha256};
 use wellfed_client::connection::{Connection, Event};
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
 use wellfed_core::ota::install::{Blocked, Install, Phase, Progress, Refused, Stop, Taken};
-use wellfed_core::ota::offer::{
-    self, Context, ImageKind, KeyRing, Signed, admit_offer, key_id, manifest_digest,
-};
-use wellfed_core::ota::{BANK1_OFFSET, MARKER, Manifest, SECTOR};
 use wellfed_core::store::update::{Candidate, State, UpdateStore};
 use wellfed_core::tone::Tune;
 use wellfed_device::update as wire;
@@ -40,6 +37,10 @@ use wellfed_proto::api::{
     RequestId, Status, UpdateView,
 };
 use wellfed_session::noise::Keypair;
+use wellfed_signed::offer::{
+    self, Context, ImageKind, KeyRing, Signed, admit_offer, key_id, manifest_digest,
+};
+use wellfed_signed::{BANK1_OFFSET, MARKER, Manifest, SECTOR};
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
 
 const FEEDER: [u8; 32] = [0x10; 32];

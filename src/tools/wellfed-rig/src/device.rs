@@ -866,7 +866,7 @@ impl Device {
                     // Two sectors on: the sector this chunk is in may
                     // complete before the stage takes the fault, and then the
                     // next sector's first chunk is the one it wants.
-                    let sector = wellfed_core::ota::SECTOR_BYTES;
+                    let sector = wellfed_signed::SECTOR_BYTES;
                     let ahead = (offset / sector + 2) * sector;
                     note(format!("Sending byte {ahead} before it is wanted"));
                     fault = Fault::None;

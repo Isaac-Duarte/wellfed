@@ -7,13 +7,13 @@ use std::cell::RefCell;
 use ed25519_dalek::{Signer as _, SigningKey};
 use sha2_0_10::{Digest, Sha256};
 use wellfed_api::{Hex, StockRestore};
-use wellfed_core::ota::offer::{self, ImageKind, Signed, key_id};
-use wellfed_core::ota::{MARKER, Manifest};
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_service::{Config, StockPins};
+use wellfed_signed::offer::{self, ImageKind, Signed, key_id};
+use wellfed_signed::{MARKER, Manifest};
 
-pub use wellfed_core::ota::SECTOR;
-pub use wellfed_core::ota::offer::MANIFEST_LEN;
+pub use wellfed_signed::SECTOR;
+pub use wellfed_signed::offer::MANIFEST_LEN;
 
 /// The project's key in every test that installs: the simulator trusts it
 /// for updates, and the server for releases.

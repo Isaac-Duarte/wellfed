@@ -27,9 +27,9 @@ use crate::support::{
 /// Write an update store record with the floor `version`, as a confirmed
 /// update leaves it.
 fn floor_update_store(version: u32) {
-    use wellfed_core::ota::offer::ImageKind;
     use wellfed_core::store::update::{Candidate, UpdateStore};
     use wellfed_hal::board::storage;
+    use wellfed_signed::offer::ImageKind;
 
     let mut update = UpdateStore::default();
     update.open(wellfed_sdk::storage::Region::<

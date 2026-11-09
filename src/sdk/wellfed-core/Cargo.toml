@@ -8,15 +8,14 @@ description = "Hardware-independent PLAF103 feeding, sensing, journal and flash-
 publish.workspace = true
 
 [dev-dependencies]
-ed25519-dalek = "2"
 wellfed-testkit.workspace = true
 proptest.workspace = true
 sha2 = "0.10"
 simple-dns = "0.12.0"
 
 [dependencies]
-ed25519-dalek = { version = "2", default-features = false }
 wellfed-session.workspace = true
+wellfed-signed.workspace = true
 sha2 = { version = "0.10", default-features = false }
 
 # On the feeder, the compact SHA-2 rounds: the unrolled SHA-512 alone was

@@ -3,11 +3,12 @@
 //! when it finds no flag) cannot defeat the storm's bounds; a trial counts
 //! a brownout boot like any other; and a brownout in each storm state.
 
-use wellfed_core::ota::{CONFIRM_LEN, MARKER, confirm_record};
+use wellfed_core::ota::{CONFIRM_LEN, confirm_record};
 use wellfed_hal_common::trial::{
     Decision, FORGIVEN, HALT_LIMIT, Reset, STORM_LIMIT, STORM_STATE, Storm, decide_after,
     deliberate, halt_over, resets, settled,
 };
+use wellfed_signed::MARKER;
 
 const ID: [u8; 32] = [0x5a; 32];
 const CLEARED: [u8; 8] = *b"\x001958711";

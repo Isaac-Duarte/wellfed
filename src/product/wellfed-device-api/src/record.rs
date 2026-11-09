@@ -5,8 +5,8 @@ use crate::UpdateKeyChange;
 use crate::clients::Role;
 use crate::pairing::{self};
 use wellfed_core::named_enum;
-use wellfed_core::ota::offer::KeyId;
 use wellfed_proto::api::Fingerprint;
+use wellfed_signed::offer::KeyId;
 
 named_enum! {
     /// Why a connection ended or was refused.

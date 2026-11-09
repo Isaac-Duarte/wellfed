@@ -32,7 +32,7 @@ use wellfed_formats::{
     review::{ImageKind, ImageReview, ReviewKind},
 };
 
-use wellfed_core::ota::MARKER;
+use wellfed_signed::MARKER;
 
 use crate::protocol::plaf103;
 use crate::{config::Config, storage};

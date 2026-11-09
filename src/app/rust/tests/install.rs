@@ -69,7 +69,7 @@ fn image(dir: &Path, provisioning: Provisioning, version: u32) -> Pin {
 /// [`image`], of this build.
 fn image_of(dir: &Path, provisioning: Provisioning, version: u32, build: [u8; 32]) -> Pin {
     let mut container = vec![0u8; 32];
-    container.extend_from_slice(&wellfed_core::ota::MARKER);
+    container.extend_from_slice(&wellfed_signed::MARKER);
     container.extend_from_slice(&[0x5a; 1024]);
     std::fs::write(dir.join("image.bin"), &container).unwrap();
 
@@ -99,16 +99,16 @@ fn image_of(dir: &Path, provisioning: Provisioning, version: u32, build: [u8; 32
     let review = serde_json::to_vec(&review).unwrap();
     std::fs::write(dir.join("review.json"), &review).unwrap();
 
-    let body = wellfed_core::ota::offer::manifest_body(&wellfed_core::ota::offer::Signed {
+    let body = wellfed_signed::offer::manifest_body(&wellfed_signed::offer::Signed {
         model: 1,
-        manifest: wellfed_core::ota::Manifest {
+        manifest: wellfed_signed::Manifest {
             version,
             image_len: 1,
             target_bank: 1,
             image_sha256: [0; 32],
             build_id: build,
         },
-        kind: wellfed_core::ota::offer::ImageKind::Replacement,
+        kind: wellfed_signed::offer::ImageKind::Replacement,
         key_id: [0; 8],
     });
     let mut update = body.to_vec();

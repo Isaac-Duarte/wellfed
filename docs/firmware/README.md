@@ -84,6 +84,7 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | Crate | In short |
 | --- | --- |
 | `wellfed-session` | Noise, HMAC, the setup code and framing, shared with clients |
+| `wellfed-signed` | The frozen signed update formats bank 0 checks (manifest, key statements, key ids, image bounds), shared with clients and the server |
 | `wellfed-core` | Controller, portions, sensors, motor gate, clock and the stores |
 | `wellfed-hal-common` | Code both cores link: RAM parking, flash hooks, the boot trial, panics |
 | `wellfed-hal` | The chip HAL: KM4 GPIO, ADC, timers, watchdog, flash leases, the update stage, and the buttons, lights, buzzer and audio drivers |

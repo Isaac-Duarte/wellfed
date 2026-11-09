@@ -3,11 +3,12 @@
 //! spent trial's run; and a fault that lets held boots through their hold
 //! backs off and steps down again.
 
-use wellfed_core::ota::{CONFIRM_LEN, MARKER};
+use wellfed_core::ota::CONFIRM_LEN;
 use wellfed_hal_common::trial::{
     Decision, LIMIT, MAX_LEVEL, STORM_LIMIT, STORM_STATE, Storm, decide, deliberate, fresh,
     hold_ms, level, past_trial, released, resets, settled,
 };
+use wellfed_signed::MARKER;
 
 const ID: [u8; 32] = [0x5a; 32];
 const CLEARED: [u8; 8] = *b"\x001958711";

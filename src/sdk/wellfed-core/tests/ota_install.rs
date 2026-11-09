@@ -3,9 +3,10 @@
 //! after a stop can reach the marker.
 
 use sha2::{Digest, Sha256};
+use wellfed_core::ota::MAX_CHUNK;
 use wellfed_core::ota::install::{IDLE_MS, Install, Stop, Taken, WANTED};
-use wellfed_core::ota::offer::{Admitted, ImageKind, Signed, Trust};
-use wellfed_core::ota::{BANK1_OFFSET, MARKER, MAX_CHUNK, Manifest, SECTOR};
+use wellfed_signed::offer::{Admitted, ImageKind, Signed, Trust};
+use wellfed_signed::{BANK1_OFFSET, MARKER, Manifest, SECTOR};
 
 fn image(len: usize) -> Vec<u8> {
     let mut out: Vec<u8> = (0..len).map(|i| (i * 7 % 253) as u8).collect();

@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use wellfed_proto::device::Model;
 
-use wellfed_core::ota::offer::OfferError;
+use wellfed_signed::offer::OfferError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

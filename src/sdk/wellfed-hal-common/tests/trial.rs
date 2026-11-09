@@ -1,12 +1,13 @@
 //! KM0 boot-trial and reset-storm decisions, and KM4's side of the storm
 //! count: no flash or register access here.
 
-use wellfed_core::ota::{CONFIRM_LEN, MARKER, confirm_record};
+use wellfed_core::ota::{CONFIRM_LEN, confirm_record};
 use wellfed_hal_common::trial::{
     CONFIRM_SECTOR, Decision, HALT_LIMIT, HALT_MS, LIMIT, MAX_LEVEL, STABLE_MS, STORM_LIMIT,
     STORM_STATE, Storm, confirmation, decide, deliberate, halt_over, hold_ms, level, past_trial,
     released, resets, settled,
 };
+use wellfed_signed::MARKER;
 
 const ID: [u8; 32] = [0x5a; 32];
 /// A marker whose first byte was cleared: what give-way leaves behind.

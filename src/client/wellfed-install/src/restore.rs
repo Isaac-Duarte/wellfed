@@ -525,13 +525,13 @@ mod tests {
 
     use tokio::task::LocalSet;
     use wellfed_client::install::StockPins;
-    use wellfed_core::ota::{MARKER, SECTOR};
     use wellfed_feeder_sim::banks::Banks;
     use wellfed_feeder_sim::flash::Flash;
     use wellfed_feeder_sim::harness::Running;
     use wellfed_feeder_sim::serve::Control;
     use wellfed_formats::bench::prompt::Prompt;
     use wellfed_model::{Refusal, UpdateRefusal};
+    use wellfed_signed::{MARKER, SECTOR};
 
     use super::*;
     use crate::platform::{Announcement, PlatformError};

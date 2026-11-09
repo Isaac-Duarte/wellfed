@@ -18,6 +18,7 @@ The one idea: **the server is a mirror of each feeder, never a second source of 
 
 ```text
 src/sdk/wellfed-session      no_std, no alloc. Noise, HMAC, the setup code, length-prefixed frames, hex and base64
+src/sdk/wellfed-signed       no_std, no alloc. The frozen signed update formats bank 0 checks: manifest, key statements, key ids
 src/product/wellfed-proto    no_std, no alloc. Device-protocol messages, framing, versions, and device kinds and models
 src/product/wellfed-device-api no_std, no alloc. The feeder's side: the sans-IO session server, pairing, the setup exchange
 src/client/wellfed-model     owned device API values (status, settings, events, requests, answers) and their conversion from the wire
@@ -96,7 +97,7 @@ wellfed-app-bridge (the app) ─► wellfed-server-client, wellfed-api
 | `wellfed-releases` | `wellfed-store`, `wellfed-api`, `wellfed-client`, `wellfed-model`; the verifier is `wellfed_client::release`, over the firmware's own offer check |
 | `wellfed-service` | `wellfed-mirror`, `wellfed-releases`, `wellfed-store`, `wellfed-api`, `wellfed-model`, `wellfed-formats` |
 | `wellfed-server` | `wellfed-service`, `wellfed-api`, `wellfed-store` |
-| `wellfed-server-testkit` | `wellfed-server`, `wellfed-service`, `wellfed-store`, `wellfed-api`, `wellfed-server-client`, `wellfed-feeder-sim`, `wellfed-client`, `wellfed-connect`, `wellfed-model`, `wellfed-session`, `wellfed-core` (to sign test releases) |
+| `wellfed-server-testkit` | `wellfed-server`, `wellfed-service`, `wellfed-store`, `wellfed-api`, `wellfed-server-client`, `wellfed-feeder-sim`, `wellfed-client`, `wellfed-connect`, `wellfed-model`, `wellfed-session`, `wellfed-signed` (to sign test releases) |
 | `wellfed-server-client` | `wellfed-api` |
 
 `cargo xtask check-repository` enforces these from `cargo metadata` (all features, every platform), each error naming the edge or path that breaks them.

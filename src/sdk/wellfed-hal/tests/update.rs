@@ -16,13 +16,10 @@ use std::sync::{Mutex, MutexGuard};
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use wellfed_core::flash_coord::{FlashFault, FlashPhase, FlashReply};
+use wellfed_core::ota::MAX_CHUNK;
 use wellfed_core::ota::install::{
     Bank0Check, Bank0Error, Blocked, IDLE_MS, Phase, Progress, Refused, Stop,
 };
-use wellfed_core::ota::offer::{
-    self, ImageKind, KeyError, KeyStatement, OfferError, Signed, StatementError, key_id,
-};
-use wellfed_core::ota::{MARKER, MAX_CHUNK, Manifest, SECTOR};
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::store::update::{Bank0, Candidate, State, UpdateStatus, UpdateStore};
@@ -36,6 +33,10 @@ use wellfed_hal::ota::signers;
 use wellfed_hal::ota::update::*;
 use wellfed_hal::sdk::fake;
 use wellfed_hal::stopped;
+use wellfed_signed::offer::{
+    self, ImageKind, KeyError, KeyStatement, OfferError, Signed, StatementError, key_id,
+};
+use wellfed_signed::{MARKER, Manifest, SECTOR};
 
 /// The mailbox and the update bit are process-wide.
 static SERIAL: Mutex<()> = Mutex::new(());

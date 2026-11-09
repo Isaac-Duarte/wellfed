@@ -8,7 +8,6 @@
 use std::cell::{Cell, RefCell};
 use std::sync::{Mutex, MutexGuard};
 
-use wellfed_core::ota::offer::ImageKind;
 use wellfed_core::ota::{CONFIRM_LEN, confirm_record, confirmed};
 use wellfed_core::store::update::{Candidate, State, UpdateStore};
 use wellfed_hal::flash::park::{self, Mmio};
@@ -23,6 +22,7 @@ use wellfed_hal::sdk::fake;
 use wellfed_hal::stopped;
 use wellfed_hal::supervision::supervise::Feeding;
 use wellfed_hal::trial::identity;
+use wellfed_signed::offer::ImageKind;
 
 thread_local! {
     static REGS: RefCell<[[u32; 12]; 2]> = const { RefCell::new([[0; 12]; 2]) };

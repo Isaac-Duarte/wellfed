@@ -35,6 +35,7 @@ wellfed-board-plwf106 = { path = "src/sdk/wellfed-board-plwf106" }
 wellfed-core = { path = "src/sdk/wellfed-core" }
 wellfed-proto = { path = "src/product/wellfed-proto" }
 wellfed-session = { path = "src/sdk/wellfed-session" }
+wellfed-signed = { path = "src/sdk/wellfed-signed" }
 wellfed-probes = { path = "src/sdk/wellfed-probes" }
 wellfed-sdk = { path = "src/sdk/wellfed-sdk" }
 wellfed-sdk-macros = { path = "src/sdk/wellfed-sdk-macros" }

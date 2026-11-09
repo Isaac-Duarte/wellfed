@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 wellfed-core.workspace = true
+wellfed-signed.workspace = true
 wellfed-device-api.workspace = true
 wellfed-proto.workspace = true
 thiserror = { version = "2.0.21", default-features = false }

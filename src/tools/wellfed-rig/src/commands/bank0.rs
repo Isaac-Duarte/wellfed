@@ -30,7 +30,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use wellfed_core::ota::SECTOR;
 use wellfed_core::ota::install::{Bank0Check, Bank0Error, Blocked};
 use wellfed_core::record::{Event, Record, Update};
 use wellfed_formats::bench::banks::{BANKS, Bank, Check, Content, Ledger, Source};
@@ -40,6 +39,7 @@ use wellfed_formats::require;
 use wellfed_image::bank::{self, Layout};
 use wellfed_image::review::Frozen;
 use wellfed_image::root::Root;
+use wellfed_signed::SECTOR;
 
 use super::{
     Bench, CommandsError, ExecuteArgs, GiveWayArgs, GiveWayExecuteArgs, Prepared, UpdateArgs, argv,

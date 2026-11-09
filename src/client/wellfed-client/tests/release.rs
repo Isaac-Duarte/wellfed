@@ -6,8 +6,8 @@ use sha2::{Digest, Sha256};
 use wellfed_client::release::{
     Keys, MANIFEST_LEN, MAX_LEN, OfferError, ReleaseError, Signer, parts, verify,
 };
-use wellfed_core::ota::offer::{self, ImageKind, Signed, key_id};
-use wellfed_core::ota::{MARKER, Manifest, SECTOR};
+use wellfed_signed::offer::{self, ImageKind, Signed, key_id};
+use wellfed_signed::{MARKER, Manifest, SECTOR};
 
 fn project() -> SigningKey {
     SigningKey::from_bytes(&[0x05; 32])
