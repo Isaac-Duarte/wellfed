@@ -29,7 +29,7 @@ mod webhook;
 pub use advertise::{Advertise, AdvertiseOverrides};
 pub use discovery::Discovery;
 pub use releases::{RELEASES, ReleaseOverrides, Releases, UpdateKey};
-pub use webhook::{Webhook, WebhookOverrides, WebhookUrl};
+pub use webhook::{Webhook, WebhookError, WebhookOverrides, WebhookUrl};
 
 use releases::ReleasesFile;
 use webhook::WebhookFile;
@@ -78,12 +78,12 @@ pub enum ConfigError {
         #[source]
         source: Box<toml::de::Error>,
     },
-    /// The webhook's URL breaks its rule ([`Webhook::target`]).
-    #[error("{}: `webhook`", path.display())]
+    /// The webhook's URL is no URL, or breaks its rule ([`Webhook::target`]).
+    #[error("{}: `webhook.url`", path.display())]
     Webhook {
         path: PathBuf,
         #[source]
-        source: wellfed_service::WebhookTargetError,
+        source: WebhookError,
     },
 }
 
@@ -98,8 +98,6 @@ pub enum InvalidValue {
     HostName { name: String },
     #[error("`{text}` is not an update key (64 lowercase hex digits)")]
     UpdateKey { text: String },
-    #[error("the webhook URL is not a URL")] // Not repeated: it may hold a secret.
-    WebhookUrl,
 }
 
 /// The settings the server runs with.

@@ -1,5 +1,10 @@
 //! The `[webhook]` settings: where each alert's opening and clearing is
 //! POSTed. None by default.
+//!
+//! The URL is often a secret of its own (Home Assistant's is), so it is
+//! kept as written and parsed only once the settings are read: a TOML or a
+//! flag parser's error quotes the value it refused, and this one must never
+//! reach a log or a terminal whole.
 
 use serde::Deserialize;
 use wellfed_service::{Url, WebhookPlainHttp, WebhookTarget, WebhookTargetError};
@@ -25,17 +30,27 @@ impl Webhook {
     }
 
     /// The checked target, or `None` with no URL set.
-    pub fn target(&self) -> Result<Option<WebhookTarget>, WebhookTargetError> {
+    pub fn target(&self) -> Result<Option<WebhookTarget>, WebhookError> {
         let plain = if self.allow_plain_http {
             WebhookPlainHttp::Allowed
         } else {
             WebhookPlainHttp::Refused
         };
-        self.url
-            .as_ref()
-            .map(|url| WebhookTarget::new(url.0.clone(), plain))
-            .transpose()
+        let Some(url) = &self.url else {
+            return Ok(None);
+        };
+        let url = Url::parse(&url.0).map_err(|_| WebhookError::NotUrl)?;
+        Ok(Some(WebhookTarget::new(url, plain)?))
     }
+}
+
+/// Why the webhook's URL was refused. Neither names the URL.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum WebhookError {
+    #[error("the webhook URL is not a URL")]
+    NotUrl,
+    #[error(transparent)]
+    Rule(#[from] WebhookTargetError),
 }
 
 /// The webhook flags, each with its environment variable.
@@ -44,7 +59,12 @@ pub struct WebhookOverrides {
     /// Where each alert's opening and clearing is POSTed as JSON
     /// (`webhook.url`): an https:// URL, or http:// to this computer or
     /// the home network.
-    #[arg(long, env = "WELLFED_SERVER_WEBHOOK_URL", value_name = "URL")]
+    #[arg(
+        long,
+        env = "WELLFED_SERVER_WEBHOOK_URL",
+        hide_env_values = true,
+        value_name = "URL"
+    )]
     pub webhook_url: Option<WebhookUrl>,
     /// Take a plain http:// webhook URL off the home network
     /// (`webhook.allow_plain_http`; default false).
@@ -64,34 +84,22 @@ pub(super) struct WebhookFile {
     allow_plain_http: Option<bool>,
 }
 
-/// A URL as written. It never prints whole, since its path may be a
-/// secret.
+/// A URL as written, checked by [`Webhook::target`]. It never prints,
+/// since its path may be a secret.
 #[derive(Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "String")]
-pub struct WebhookUrl(Url);
+#[serde(transparent)]
+pub struct WebhookUrl(String);
 
 impl std::fmt::Debug for WebhookUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("WebhookUrl")
-            .field(&self.0.host_str().unwrap_or_default())
-            .finish()
-    }
-}
-
-impl TryFrom<String> for WebhookUrl {
-    type Error = super::InvalidValue;
-
-    fn try_from(text: String) -> Result<Self, super::InvalidValue> {
-        Url::parse(&text)
-            .map(Self)
-            .map_err(|_| super::InvalidValue::WebhookUrl)
+        f.write_str("WebhookUrl(..)")
     }
 }
 
 impl std::str::FromStr for WebhookUrl {
-    type Err = super::InvalidValue;
+    type Err = std::convert::Infallible;
 
-    fn from_str(text: &str) -> Result<Self, super::InvalidValue> {
-        Self::try_from(text.to_owned())
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Ok(Self(text.to_owned()))
     }
 }

@@ -94,10 +94,22 @@ fn a_webhook_takes_plain_http_only_at_home_unless_allowed() {
     let allowed = format!("{away}allow_plain_http = true\n");
     assert!(at(&allowed).is_ok());
 
-    assert_eq!(
-        invalid_field("[webhook]\nurl = \"not a url\"\n"),
-        "webhook.url"
+    // The URL may hold a secret: no error names it, whatever is wrong.
+    for text in [
+        "[webhook]\nurl = \"not a url/secret\"\n",
+        "[webhook]\nurl = \"http://hooks.example.com/api/webhook/secret\"\n",
+    ] {
+        let error = at(text).unwrap_err();
+        assert!(matches!(error, ConfigError::Webhook { .. }), "{error:?}");
+        let words = format!("{:#}", anyhow::Error::from(error));
+        assert!(!words.contains("secret"), "{words}");
+    }
+    let flagged = ServerConfig::load(
+        tempfile::tempdir().unwrap().path(),
+        flags(&["--webhook-url", "not a url/secret"]),
     );
+    let words = format!("{:#}", anyhow::Error::from(flagged.unwrap_err()));
+    assert!(!words.contains("secret"), "{words}");
     let flagged = ServerConfig::load(
         tempfile::tempdir().unwrap().path(),
         flags(&["--webhook-url", "http://hooks.example.com/x"]),
