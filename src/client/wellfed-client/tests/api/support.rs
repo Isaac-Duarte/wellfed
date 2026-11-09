@@ -95,6 +95,8 @@ pub(crate) struct Fake {
     pub(crate) time_pending: Option<TimeSettings>,
     /// The writer's next time save fails, leaving the store as it was.
     pub(crate) time_fails: bool,
+    /// The writer's next settings save fails: nothing saved, no event.
+    pub(crate) settings_fails: bool,
     /// Keeps a log tail, `tail`.
     pub(crate) log: bool,
     pub(crate) tail: LogTail<4096>,
@@ -166,6 +168,10 @@ impl Fake {
     /// The settings writer's turn: apply what is queued, and record each
     /// client change's event as it saves it.
     pub(crate) fn write(&mut self) {
+        if let Some(Asked { .. }) = self.settings_pending.take_if(|_| self.settings_fails) {
+            self.settings_fails = false;
+            self.settings.saved.finish(true);
+        }
         if let Some(Asked { change: fields, by }) = self.settings_pending.take() {
             self.settings.lights = fields.lights.unwrap_or(self.settings.lights);
             self.settings.sound = fields.sound.unwrap_or(self.settings.sound);
