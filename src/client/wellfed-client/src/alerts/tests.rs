@@ -860,72 +860,141 @@ fn a_key_reads_as_the_same_text_for_the_same_alert() {
     }
 }
 
-#[test]
-fn a_server_copy_one_generation_behind_a_home_read_ends_nothing() {
-    let mutes = Mutes::default();
-    let mut watch = Watch::default();
+/// A server's copy of `table`, read under `cursor` at `read_at`.
+fn relayed<'a>(cursor: Cursor, table: &'a AlertsView, read_at: Timestamp) -> Relayed<'a> {
+    Relayed {
+        table: Some(RelayedTable {
+            cursor,
+            view: table,
+            read_at,
+        }),
+        unreachable: None,
+    }
+}
 
-    // At home: the meal failed at generation 5.
-    watch.apply(
-        cursor(1, 4, 5),
-        &view(1, &[failed(3)]),
-        &context(at(0), &mutes),
-    );
+/// A read at home at `now`, its changes confirmed as Dart would.
+fn home_read(watch: &mut Watch, cursor: Cursor, table: &AlertsView, now: Timestamp, mutes: &Mutes) {
+    watch.apply(cursor, table, &context(now, mutes));
+    watch.reached(Some("home".into()), now);
     for change in watch.changes() {
         watch.confirm(&change);
     }
-
-    // The server's copy is still generation 4, from before the meal.
-    let away = context(at(60), &mutes);
-    assert!(watch.behind(cursor(1, 4, 4)));
-    watch.apply_relayed(cursor(1, 4, 4), &view(1, &[]), &away);
-    assert!(watch.changes().is_empty(), "nothing ends, nothing posts");
-    assert_eq!(watch.cursor, Some(cursor(1, 4, 5)));
-    assert_eq!(watch.listed().count(), 1);
-
-    // Once it catches up, the same alert is the same notice.
-    watch.apply_relayed(cursor(1, 4, 6), &view(1, &[failed(3)]), &away);
-    assert!(watch.changes().is_empty());
 }
 
 #[test]
-fn a_server_copy_behind_a_home_read_never_revives_what_ended() {
+fn a_server_copy_read_before_a_home_read_ends_nothing() {
     let mutes = Mutes::default();
     let mut watch = Watch::default();
-    watch.apply(
-        cursor(1, 4, 4),
-        &view(1, &[condition(Alert::FoodLow)]),
-        &context(at(0), &mutes),
+    home_read(
+        &mut watch,
+        cursor(1, 4, 5),
+        &view(1, &[failed(3)]),
+        at(600),
+        &mutes,
     );
-    for change in watch.changes() {
-        watch.confirm(&change);
-    }
-    // At home the food was topped up: the condition ended at generation 5.
-    watch.apply(cursor(1, 4, 5), &view(1, &[]), &context(at(60), &mutes));
-    for change in watch.changes() {
-        watch.confirm(&change);
-    }
+
+    // The server read generation 4, from before the meal, a minute before
+    // the phone's own read, and even one "newer" by its cursor counts no
+    // more while it is not clearly later.
+    let away = context(at(900), &mutes);
+    let empty = view(1, &[]);
+    watch.apply_relayed(relayed(cursor(1, 4, 4), &empty, at(540)), &away);
+    watch.apply_relayed(relayed(cursor(1, 4, 6), &empty, at(660)), &away);
+    assert!(watch.changes().is_empty(), "nothing ends, nothing posts");
+    assert_eq!(watch.cursor, Some(cursor(1, 4, 5)));
+
+    // Read clearly after, it counts.
+    watch.apply_relayed(relayed(cursor(1, 4, 6), &empty, at(600 + 300)), &away);
+    assert_eq!(watch.cursor, Some(cursor(1, 4, 6)));
+}
+
+#[test]
+fn a_stale_server_copy_never_revives_what_ended_at_home() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let low = view(1, &[condition(Alert::FoodLow)]);
+    home_read(&mut watch, cursor(1, 4, 4), &low, at(0), &mutes);
+    home_read(&mut watch, cursor(1, 4, 5), &view(1, &[]), at(3600), &mutes);
     assert_eq!(watch.listed().count(), 0);
 
-    // The server still holds generation 4, and an earlier boot's copy is
-    // older still.
-    let away = context(at(120), &mutes);
-    watch.apply_relayed(
-        cursor(1, 4, 4),
-        &view(1, &[condition(Alert::FoodLow)]),
-        &away,
-    );
-    watch.apply_relayed(
-        cursor(1, 3, 9),
-        &view(1, &[condition(Alert::FoodLow)]),
-        &away,
-    );
+    // The server still serves generation 4, read before the phone's last
+    // read; and a copy clearly later but of a lower generation of the same
+    // boot is older whatever the clocks say.
+    let away = context(at(7200), &mutes);
+    watch.apply_relayed(relayed(cursor(1, 4, 4), &low, at(3000)), &away);
+    watch.apply_relayed(relayed(cursor(1, 4, 4), &low, at(7000)), &away);
     assert!(watch.changes().is_empty());
     assert_eq!(watch.listed().count(), 0);
+}
+
+#[test]
+fn after_a_power_loss_the_server_s_copy_of_a_lower_boot_counts() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    home_read(&mut watch, cursor(1, 40, 5), &view(1, &[]), at(0), &mutes);
+
+    // Power lost: the boot count starts again, the ring's epoch doesn't.
+    let away = context(at(3600), &mutes);
+    let low = view(1, &[condition(Alert::FoodLow)]);
+    watch.apply_relayed(relayed(cursor(1, 1, 2), &low, at(3500)), &away);
     assert!(
-        !watch.behind(cursor(2, 0, 0)),
-        "another ring is never older"
+        matches!(watch.changes().as_slice(), [Change::Post(tracked)] if tracked.notice.kind() == NoticeKind::FoodLow)
     );
+    assert_eq!(watch.cursor, Some(cursor(1, 1, 2)));
+}
+
+#[test]
+fn a_shut_out_server_s_frozen_copy_posts_nothing_walking_in_and_out() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let open = view(1, &[failed(3)]);
+    // The server read the old ring, then the feeder turned it away at
+    // minute 10 (a factory reset: a new ring).
+    let frozen = |watch: &mut Watch, now| {
+        let relayed = Relayed {
+            unreachable: Some(at(600)),
+            ..relayed(cursor(1, 4, 5), &open, at(590))
+        };
+        watch.apply_relayed(relayed, &context(now, &mutes));
+    };
+
+    home_read(&mut watch, cursor(2, 1, 1), &view(2, &[]), at(1200), &mutes);
+    for hour in 1..=3 {
+        // Out: the old ring's copy and the server's unreachable say nothing
+        // the phone didn't see after them.
+        frozen(&mut watch, at(hour * 3600));
+        assert!(watch.changes().is_empty(), "out, hour {hour}");
+        // In again.
+        home_read(
+            &mut watch,
+            cursor(2, 1, 1),
+            &view(2, &[]),
+            at(hour * 3600 + 600),
+            &mutes,
+        );
+        assert!(watch.changes().is_empty(), "in, hour {hour}");
+    }
+    assert_eq!(watch.listed().count(), 0);
+}
+
+#[test]
+fn a_server_that_lost_the_feeder_after_the_phone_did_posts_unreachable_once() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    home_read(&mut watch, cursor(1, 4, 5), &view(1, &[]), at(0), &mutes);
+
+    let lost = Relayed {
+        table: None,
+        unreachable: Some(at(1800)),
+    };
+    watch.apply_relayed(lost, &context(at(3600), &mutes));
+    let posted = watch.changes();
+    assert!(
+        matches!(posted.as_slice(), [Change::Post(tracked)] if tracked.key == NoticeKey::Unreachable)
+    );
+    watch.confirm(&posted[0]);
+    watch.apply_relayed(lost, &context(at(4200), &mutes));
+    assert!(watch.changes().is_empty());
 }
 
 #[test]

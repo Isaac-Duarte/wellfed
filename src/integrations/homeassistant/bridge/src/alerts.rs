@@ -97,7 +97,15 @@ impl Tracker {
                 alerts: alerts.alerts.clone(),
                 unread: read.unread,
             };
-            self.watch.apply_relayed(cursor, &view, &context);
+            // Through the server, every table is the server's: there is
+            // no read of Home Assistant's own for a copy to lag behind, so
+            // any other cursor is news, a power loss's lower boot count
+            // included.
+            if self.watch.needs_read(cursor) {
+                self.watch.apply(cursor, &view, &context);
+            } else {
+                self.watch.lapse(&context);
+            }
         }
         self.watch.relayed_reach(alerts.unreachable, &context);
         let unread = self.watch.unread;
@@ -272,7 +280,24 @@ mod tests {
         let next = alerts(tracker.relayed(&served(Some(5), &[food_low(), battery_low()])));
         assert_eq!(kinds(&next.opened), [AlertKind::BatteryBelowFloor]);
 
-        // A copy older than the table applied changes nothing.
-        assert!(tracker.relayed(&served(Some(4), &[food_low()])).is_none());
+        // Unchanged, nothing to say.
+        assert!(
+            tracker
+                .relayed(&served(Some(5), &[food_low(), battery_low()]))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn through_the_server_a_lower_boot_after_a_power_loss_is_applied() {
+        let mut tracker = Tracker::default();
+        tracker.relayed(&served(Some(9), &[]));
+
+        let mut lost = served(Some(1), &[food_low()]);
+        if let Some(read) = &mut lost.read {
+            read.boot = 0;
+        }
+        let after = alerts(tracker.relayed(&lost));
+        assert_eq!(kinds(&after.opened), [AlertKind::FoodLow]);
     }
 }

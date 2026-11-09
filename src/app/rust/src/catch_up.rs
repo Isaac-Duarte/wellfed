@@ -35,7 +35,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use tokio::time::timeout;
 use wellfed_api::{FeederAlerts, FeederId};
-use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Watch};
+use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Relayed, RelayedTable, Watch};
 use wellfed_connect::{Connection, Error};
 use wellfed_model::{AlertsView, Answer, Hex, Op};
 use wellfed_server_client::Client;
@@ -233,26 +233,34 @@ async fn through_server(
 }
 
 /// Apply what the server last read of the feeder, as a session's read
-/// would be applied, unless this phone has read a newer table itself
+/// would be applied, unless this phone knows better from its own
 /// ([`Watch::apply_relayed`]).
 fn relayed(watch: &mut Watch, alerts: &FeederAlerts, context: &Context<'_>) {
-    if let Some(read) = alerts.read {
-        let cursor = Cursor {
-            epoch: read.epoch,
-            boot: read.boot,
-            generation: read.generation,
-        };
-        let view = AlertsView {
-            epoch: read.epoch,
-            generation: read.generation,
-            more: read.more,
-            settling: read.settling,
-            alerts: alerts.alerts.clone(),
-            unread: read.unread,
-        };
-        watch.apply_relayed(cursor, &view, context);
-    }
-    watch.relayed_reach(alerts.unreachable, context);
+    let view = alerts.read.map(|read| AlertsView {
+        epoch: read.epoch,
+        generation: read.generation,
+        more: read.more,
+        settling: read.settling,
+        alerts: alerts.alerts.clone(),
+        unread: read.unread,
+    });
+    let table = alerts
+        .read
+        .zip(view.as_ref())
+        .map(|(read, view)| RelayedTable {
+            cursor: Cursor {
+                epoch: read.epoch,
+                boot: read.boot,
+                generation: read.generation,
+            },
+            view,
+            read_at: read.at,
+        });
+    let relayed = Relayed {
+        table,
+        unreachable: alerts.unreachable,
+    };
+    watch.apply_relayed(relayed, context);
 }
 
 /// The changes still to make for the feeder `identity`, with no catch-up.
@@ -363,8 +371,8 @@ mod tests {
         }
     }
 
-    /// The server's copy of the table at `generation`.
-    fn served(generation: u32, alerts: &[OpenAlert]) -> FeederAlerts {
+    /// The server's copy of the table at `generation`, read at `read_at`.
+    fn served(generation: u32, alerts: &[OpenAlert], read_at: Timestamp) -> FeederAlerts {
         FeederAlerts {
             read: Some(AlertsRead {
                 epoch: 1,
@@ -374,7 +382,7 @@ mod tests {
                 settling: false,
                 unread: 0,
                 clock_valid: true,
-                at: at(0),
+                at: read_at,
             }),
             alerts: alerts.to_vec(),
             unreachable: None,
@@ -390,6 +398,7 @@ mod tests {
         context: &Context<'_>,
     ) {
         watch.apply(cursor(generation), &view(generation, table), context);
+        watch.reached(Some("home".into()), context.now);
         for change in watch.changes() {
             watch.confirm(&change);
         }
@@ -410,11 +419,28 @@ mod tests {
         let mut watch = Watch::default();
         read_at_home(&mut watch, 5, &[food_low()], &context(&mutes, at(0)));
 
-        relayed(&mut watch, &served(4, &[]), &context(&mutes, at(60)));
+        // Read by the server just before the phone's own read.
+        relayed(
+            &mut watch,
+            &served(4, &[], at(-30)),
+            &context(&mutes, at(600)),
+        );
 
         assert!(watch.changes().is_empty());
         assert_eq!(watch.listed().count(), 1);
         assert_eq!(watch.cursor, Some(cursor(5)));
+    }
+
+    #[test]
+    fn a_server_copy_read_well_after_the_phone_s_last_read_counts() {
+        let mutes = Mutes::default();
+        let mut watch = Watch::default();
+        read_at_home(&mut watch, 5, &[], &context(&mutes, at(0)));
+
+        let later = served(6, &[food_low()], at(900));
+        relayed(&mut watch, &later, &context(&mutes, at(960)));
+
+        assert_eq!(watch.changes().len(), 1);
     }
 
     #[test]
@@ -426,8 +452,8 @@ mod tests {
 
         relayed(
             &mut watch,
-            &served(4, &[food_low()]),
-            &context(&mutes, at(120)),
+            &served(4, &[food_low()], at(30)),
+            &context(&mutes, at(600)),
         );
 
         assert!(watch.changes().is_empty());

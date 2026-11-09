@@ -37,6 +37,17 @@ pub const UNREACHABLE_AFTER: u32 = 3;
 /// And for at least this long, so a phone checking every minute does not call
 /// a restart or a router's hiccup a lost feeder.
 pub const UNREACHABLE_FOR: SignedDuration = SignedDuration::from_mins(10);
+
+/// How much later than this watch's own last contact with the feeder a
+/// server's read must be for its copy to count, by their two clocks. A
+/// phone's clock and a server's differ, and the two ways of being wrong
+/// differ too: a stale copy taken for a fresh one ends alerts a newer table
+/// lists and brings them back after, reposting them, while a fresh copy
+/// taken for a stale one only waits for the server's next read, a minute
+/// on. So the copy must be clearly newer: a server clock up to this far
+/// ahead still can't pass a stale copy off, and one behind delays a fresh
+/// copy by as much.
+pub const RELAY_MARGIN: SignedDuration = SignedDuration::from_mins(5);
 /// How long a condition may stay absent from tables the feeder can't vouch
 /// for (`settling`) before its notice comes off anyway. `settling` is one
 /// flag for the whole table, and a reading that stays unknown keeps it set
@@ -381,6 +392,25 @@ pub enum FeederClock {
     Unknown,
 }
 
+/// What the owner's server last made of a feeder, as its alerts route
+/// answers.
+#[derive(Clone, Copy, Debug)]
+pub struct Relayed<'a> {
+    /// Its copy of the table, if it has read one.
+    pub table: Option<RelayedTable<'a>>,
+    /// Since when it hasn't reached the feeder.
+    pub unreachable: Option<Timestamp>,
+}
+
+/// A server's copy of the table: as read, under which cursor, and when by
+/// the server's clock.
+#[derive(Clone, Copy, Debug)]
+pub struct RelayedTable<'a> {
+    pub cursor: Cursor,
+    pub view: &'a AlertsView,
+    pub read_at: Timestamp,
+}
+
 /// What a phone keeps of one feeder's alerts.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -444,8 +474,14 @@ impl Watch {
     /// home and then by the server posts once. A server that reaches the
     /// feeder vouches for it as an answer at home would, so the phone's own
     /// count of failures starts again; one that doesn't adds nothing to it.
+    ///
+    /// A watch that reached the feeder itself clearly after the server lost
+    /// it ([`RELAY_MARGIN`]) knows better: the server's view is older than
+    /// its own, as when the feeder turned the server away and the phone
+    /// still talks to it at home, and it opens nothing.
     pub fn relayed_reach(&mut self, unreachable: Option<Timestamp>, context: &Context<'_>) {
         match unreachable {
+            Some(since) if self.reached_after(since) => {}
             Some(since) => self.track(
                 NoticeKey::Unreachable,
                 Notice::Unreachable { since },
@@ -459,27 +495,55 @@ impl Watch {
         }
     }
 
-    /// Apply a table someone else read, the owner's server's copy, under
-    /// `cursor`. A copy can lag what this watch read itself: one older than
-    /// the table applied, in the same ring, would end alerts the newer one
-    /// lists or bring back ones it no longer does, so it only lets held
-    /// alerts lapse, as an unchanged table does.
-    pub fn apply_relayed(&mut self, cursor: Cursor, view: &AlertsView, context: &Context<'_>) {
-        if self.behind(cursor) || !self.needs_read(cursor) {
-            self.lapse(context);
-        } else {
-            self.apply(cursor, view, context);
+    /// What the owner's server last made of the feeder, applied in place of
+    /// a read of this watch's own: its copy of the table, if it has read
+    /// one, and since when it hasn't reached the feeder.
+    ///
+    /// A copy can be older than what this watch read itself, and applying
+    /// it would end alerts the newer table lists and bring back ones it no
+    /// longer does. Cursors can't say which is newer: the boot count lives
+    /// in a register a power loss clears, and a server the feeder turned
+    /// away keeps serving the old ring. So a copy counts only when the
+    /// server read it clearly after this watch last reached the feeder
+    /// ([`RELAY_MARGIN`]), and not while the server can't reach the feeder,
+    /// since then its copy is as old as its last read. Within one boot of
+    /// one ring, a lower generation is older whatever the clocks say. A
+    /// copy that doesn't count only lets held alerts lapse, as an
+    /// unchanged table does.
+    pub fn apply_relayed(&mut self, relayed: Relayed<'_>, context: &Context<'_>) {
+        let fresh = relayed.unreachable.is_none()
+            && relayed
+                .table
+                .is_some_and(|table| self.counts(table.cursor, table.read_at));
+        match relayed.table {
+            Some(table) if fresh && self.needs_read(table.cursor) => {
+                self.apply(table.cursor, table.view, context);
+            }
+            _ => self.lapse(context),
         }
+        self.relayed_reach(relayed.unreachable, context);
     }
 
-    /// Whether `cursor` is older than the table applied: the same ring,
-    /// and an earlier boot or an earlier generation of the same boot.
-    /// Another ring is never older; it replaces this one.
-    pub fn behind(&self, cursor: Cursor) -> bool {
-        self.cursor.is_some_and(|applied| {
+    /// Whether a server's copy read under `cursor` at `read_at` is newer
+    /// than what this watch knows.
+    fn counts(&self, cursor: Cursor, read_at: Timestamp) -> bool {
+        let lower = self.cursor.is_some_and(|applied| {
             applied.epoch == cursor.epoch
-                && (cursor.boot, cursor.generation) < (applied.boot, applied.generation)
-        })
+                && applied.boot == cursor.boot
+                && cursor.generation < applied.generation
+        });
+        !lower
+            && self
+                .reach
+                .reached
+                .is_none_or(|reached| read_at.duration_since(reached) >= RELAY_MARGIN)
+    }
+
+    /// Whether this watch reached the feeder itself clearly after `at`.
+    fn reached_after(&self, at: Timestamp) -> bool {
+        self.reach
+            .reached
+            .is_some_and(|reached| reached.duration_since(at) >= RELAY_MARGIN)
     }
 
     /// Apply the table `view`, read under `cursor`. Each alert not yet
