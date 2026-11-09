@@ -179,10 +179,7 @@ impl<P: FnMut(&UpdateView)> Steps for Lane<'_, P> {
     async fn reopen(&mut self) -> Result<Option<Opened>, PushError> {
         let deadline = Instant::now() + REOPEN_WAIT;
         loop {
-            let online = self
-                .operation
-                .link
-                .wait_for(|link| matches!(link, Link::Online | Link::OtherBuild));
+            let online = self.operation.link.wait_for(|link| *link == Link::Online);
             match timeout_at(deadline, online).await {
                 Ok(Ok(_)) => {}
                 // Not back in time, or the feeder's task has ended.

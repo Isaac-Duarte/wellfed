@@ -137,15 +137,22 @@ impl Service {
             .events(id, epoch, query.after, limit, query.kind)
             .await?;
         let full = u32::try_from(rows.len()).is_ok_and(|len| len == limit);
+        // A body a newer feeder build added, which this server cannot read,
+        // is kept but not listed; the page's cursor still moves past it.
         let events = rows
             .iter()
-            .map(|row| {
-                wellfed_mirror::stored_event(epoch, row)
-                    .ok_or(Error::Internal(InternalError::Undecodable(row.seq)))
-            })
+            .filter_map(
+                |row| match (wellfed_mirror::stored_event(epoch, row), row.kind) {
+                    (Some(event), _) => Some(Ok(event)),
+                    (None, None) => None,
+                    (None, Some(_)) => {
+                        Some(Err(Error::Internal(InternalError::Undecodable(row.seq))))
+                    }
+                },
+            )
             .collect::<Result<Vec<_>>>()?;
 
-        let next = events.last().map(|event| event.seq).filter(|_| full);
+        let next = rows.last().map(|row| row.seq).filter(|_| full);
         let gaps = self
             .shared
             .store
@@ -188,6 +195,7 @@ impl Service {
             role: row.role,
             address: row.address,
             connection,
+            skew: self.mirror.skew(row.id),
             synced: row.synced.map(|synced| synced.seq),
             epoch: row.synced.map(|synced| synced.epoch),
             archived: row.archived,

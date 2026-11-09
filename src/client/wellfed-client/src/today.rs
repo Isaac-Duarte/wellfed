@@ -192,6 +192,7 @@ mod tests {
             wifi_generation: Generation(1),
             last_event: None,
             sessions: 1,
+            alerts_generation: Generation(0),
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: Some(false),
                 settings_generation: Generation(1),
@@ -204,7 +205,6 @@ mod tests {
                     battery: Battery::Absent,
                     below_floor: None,
                 },
-                alerts_generation: Generation(0),
             }),
         }
     }

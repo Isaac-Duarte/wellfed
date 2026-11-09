@@ -237,7 +237,7 @@ impl Schedule {
 
         match self.step {
             Step::Boot | Step::Resolving => self.boot(&view, feeds),
-            Step::Queue(change, expect) => match platform.plans_change(change) {
+            Step::Queue(change, expect) => match platform.plans_change(change, None) {
                 PlansResult::Current { pending: true, .. } => self.step = Step::Wait(expect),
                 // A client's change holds the slot: ask again next pass.
                 PlansResult::Busy => {}
@@ -446,7 +446,8 @@ impl Schedule {
                 due_s,
                 revision: view.revision,
             };
-            if let PlansResult::Current { pending: true, .. } = platform.plans_change(change) {
+            if let PlansResult::Current { pending: true, .. } = platform.plans_change(change, None)
+            {
                 self.step = Step::Wait(Expect::Passed {
                     plan,
                     due_s,
@@ -497,7 +498,7 @@ impl Schedule {
             claim,
             revision: view.revision,
         };
-        if let PlansResult::Current { pending: true, .. } = platform.plans_change(change) {
+        if let PlansResult::Current { pending: true, .. } = platform.plans_change(change, None) {
             self.step = Step::Wait(Expect::Claimed(claim));
             record(Record::Claimed {
                 plan,

@@ -18,11 +18,15 @@
 //! gets the new zone in its next connect sequence. The feeder shows online
 //! only once the connect sequence is done, so no command waits behind it.
 //!
-//! A feeder whose welcome names another schema revision runs a build this
-//! server cannot read beyond the frozen update path. Its session does none
-//! of the above: it shows as [`Link::OtherBuild`] and carries only an
-//! install, which updates it.
+//! A feeder of another API revision is mirrored the same way: the API
+//! only grows, so it refuses what its build lacks `Unavailable`, and what a
+//! newer build adds reads as unknown. Its [`Skew`] says which side to
+//! update. A pre-revision build ([`Skew::Legacy`]) is the exception: its
+//! bytes outside the frozen part moved since, so its session does none of
+//! the above and carries only an install, which updates it; any other
+//! command is refused [`crate::AskError::Legacy`] unsent.
 //!
+//! [`Skew`]: wellfed_model::Skew
 //! [`Timing::time_sync`]: crate::Timing::time_sync
 
 use std::time::Duration;
@@ -32,7 +36,7 @@ use tokio::time::Instant;
 use tracing::{debug, info, warn};
 use wellfed_api::Connection as Link;
 use wellfed_connect::{Connection, Cursor, Received, Resume};
-use wellfed_model::{Answer, Model, Op, Refusal, TimeChanges};
+use wellfed_model::{Answer, Model, Op, Refusal, Skew, TimeChanges};
 
 use crate::RandomFailed;
 use crate::lanes::{Lane, Lanes};
@@ -41,16 +45,6 @@ use crate::task::{Opened, Task};
 /// How long the task waits on a quiet feeder before looking again; the
 /// connection keeps the session alive meanwhile.
 const QUIET: Duration = Duration::from_secs(60);
-
-/// What a session mirrors.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Mirrored {
-    /// History, clock, status, settings and plans.
-    Whole,
-    /// Nothing: the feeder runs another build, which only an install
-    /// reaches.
-    UpdateOnly,
-}
 
 /// Why a session ended.
 pub(crate) enum End {
@@ -106,16 +100,11 @@ impl Task {
             () = cancel.cancelled() => Err(End::Cancelled),
             started = self.start(connection, lanes) => started,
         };
-        let mirrored = match started {
-            Ok(mirrored) => mirrored,
+        let whole = match started {
+            Ok(whole) => whole,
             Err(end) => return end,
         };
-        let whole = mirrored == Mirrored::Whole;
-        self.set(if whole {
-            Link::Online
-        } else {
-            Link::OtherBuild
-        });
+        self.set(Link::Online);
 
         let every = self.shared.config.timing.time_sync;
         let mut next_sync = Instant::now() + every;
@@ -170,13 +159,9 @@ impl Task {
     }
 
     /// The connect sequence: history first, then the clock, then the
-    /// cached status, settings and plans; none of it with a feeder of
-    /// another build.
-    async fn start(
-        &mut self,
-        connection: &mut Connection,
-        lanes: &mut Lanes,
-    ) -> Result<Mirrored, End> {
+    /// cached status, settings and plans; whether it ran, which it does not
+    /// for a pre-revision build.
+    async fn start(&mut self, connection: &mut Connection, lanes: &mut Lanes) -> Result<bool, End> {
         let Some(row) = self.shared.store.feeder(self.id).await? else {
             return Err(End::Cancelled);
         };
@@ -189,19 +174,23 @@ impl Task {
             }));
         }
         self.build.send_replace(Some(connection.build().to_owned()));
-        if !connection.same_schema() {
-            warn!(
+        let skew = connection.skew();
+        if skew != Skew::Same {
+            info!(
                 build = connection.build(),
-                "the feeder runs a different build than this server: only an update is sent \
-                 to it; update the feeder, or update the server"
+                ?skew,
+                "the feeder runs another revision of the device API than this server"
             );
+        }
+        if skew == Skew::Legacy {
             self.opened.send_replace(Some(Opened {
                 epoch: connection.epoch(),
                 kind: connection.kind(),
                 model: connection.model(),
+                skew,
                 boot_count: None,
             }));
-            return Ok(Mirrored::UpdateOnly);
+            return Ok(false);
         }
         let from = row.synced.map(|synced| Cursor {
             epoch: synced.epoch,
@@ -212,6 +201,7 @@ impl Task {
             epoch: connection.epoch(),
             kind: connection.kind(),
             model: connection.model(),
+            skew,
             boot_count: None,
         }));
         if resume == Resume::Restarted {
@@ -242,7 +232,7 @@ impl Task {
                 .await?;
         }
         self.read_plans(connection, lanes).await?;
-        Ok(Mirrored::Whole)
+        Ok(true)
     }
 
     /// Set the feeder's clock and its zone's rule.

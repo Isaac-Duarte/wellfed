@@ -324,6 +324,8 @@ pub enum FeederRefusal {
         asked: u8,
     },
     NoClock,
+    /// A refusal a newer feeder build added, which this app cannot name.
+    Unknown,
 }
 
 /// What this phone's Rust half refused before anything was sent.
@@ -405,4 +407,8 @@ pub enum FeederReply {
     NotSent,
     /// The feeder answered something else.
     Unexpected,
+    /// A newer feeder build answered in a way this app cannot read. The
+    /// request may have run: a write answered so is uncertain, shown so,
+    /// and never sent again.
+    Unreadable,
 }

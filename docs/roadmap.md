@@ -39,7 +39,7 @@ What works today and what comes next, for the replacement firmware, the tools ar
 | --- | --- | --- |
 | Wi-Fi join and reconnect | Works | |
 | Bluetooth setup and pairing | Works | |
-| Encrypted local API | Works | See [device API](firmware/device-api.md). |
+| Encrypted local API | Works | It only grows, so a phone, server or Home Assistant of another release keeps working with a feeder and says which side to update; mixed releases are tested on the host only. See [device API](firmware/device-api.md#evolution). |
 | Child lock | Works | |
 | Reset button | Works | Clears clients, Wi-Fi, settings, plans, history and statistics; keeps the calibration, feed journal and flash wear counts. Checked on the feeder: a hold on an unlocked panel wipes it, and the owner pairs again over Bluetooth. |
 | Buttons | Works | |

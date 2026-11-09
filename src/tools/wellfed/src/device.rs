@@ -114,13 +114,11 @@ impl wellfed_install::session::Session for Connection {
         Self::role(self)
     }
 
-    fn same_schema(&self) -> bool {
+    fn legacy(&self) -> bool {
         match self {
-            Self::Direct(connection) => connection.same_schema(),
-            // The bench server holds its own session, whose shared client
-            // refuses any op another build may misread, typed, so a list
-            // read still ends with that reason.
-            Self::Bench(_) => true,
+            Self::Direct(connection) => connection.skew() == wellfed_model::Skew::Legacy,
+            // The bench server's session says what its welcome did.
+            Self::Bench(lent) => lent.skew() == wellfed_model::Skew::Legacy,
         }
     }
 

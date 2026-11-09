@@ -7,8 +7,19 @@ use flutter_rust_bridge::frb;
 pub use wellfed_model::setup::{Enrolled, Refusal as SetupRefusal, WifiSaved};
 pub use wellfed_model::{
     Bank0Blocked, Bank0Check, Blocked, ClientRole, FeedOutcome, FeedReason, FoodLevel,
-    MissedReason, UpdatePhase, UpdateStop,
+    MissedReason, Skew, UpdatePhase, UpdateStop,
 };
+
+/// How a feeder's API revision stands against this app's (or the server's):
+/// which side to update. Every op both know still goes, so neither side is
+/// ever offered an older build for it.
+#[frb(mirror(Skew))]
+pub enum _Skew {
+    Same,
+    FeederBehind,
+    FeederAhead,
+    Legacy,
+}
 
 #[frb(mirror(Enrolled))]
 pub enum _Enrolled {
@@ -45,6 +56,7 @@ pub enum _FoodLevel {
     Unread,
     Present,
     Low,
+    Unknown,
 }
 
 #[frb(mirror(Blocked))]
@@ -60,6 +72,7 @@ pub enum _Blocked {
     Unserved,
     Battery,
     Restarting,
+    Unknown,
 }
 
 #[frb(mirror(FeedOutcome))]
@@ -69,6 +82,7 @@ pub enum _FeedOutcome {
     Expired,
     Failed,
     Uncertain,
+    Unknown,
 }
 
 #[frb(mirror(FeedReason))]
@@ -88,6 +102,7 @@ pub enum _FeedReason {
     FeedbackStream,
     Output,
     Interrupted,
+    Unknown,
 }
 
 pub use wellfed_model::{
@@ -101,12 +116,14 @@ pub use wellfed_model::{
 pub enum _Bowl {
     Single,
     Double,
+    Unknown,
 }
 
 #[frb(mirror(Phase))]
 pub enum _Phase {
     AtMark,
     Unknown,
+    Newer,
 }
 
 #[frb(mirror(Tune))]
@@ -154,6 +171,7 @@ pub enum _TimeSource {
     Owner,
     Client,
     Ntp,
+    Unknown,
 }
 
 #[frb(mirror(NtpResult))]
@@ -162,6 +180,7 @@ pub enum _NtpResult {
     Bounded,
     Lost,
     Refused,
+    Unknown,
 }
 
 #[frb(mirror(CallClip))]
@@ -291,6 +310,7 @@ pub enum _ResetCause {
     Software,
     Brownout,
     Other,
+    Unknown,
 }
 
 #[frb(mirror(Resets))]
@@ -381,6 +401,7 @@ pub struct _FeedStats {
 pub enum _CurrentUnit {
     Scaled,
     MilliAmps,
+    Unknown,
 }
 
 #[frb(mirror(TraceSummary))]

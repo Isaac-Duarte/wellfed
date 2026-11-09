@@ -1,0 +1,3355 @@
+{
+  "revision": 1,
+  "registry": {
+    "Alert": {
+      "ENUM": {
+        "0": {
+          "MealFailed": {
+            "STRUCT": [
+              {
+                "feed": "U32"
+              },
+              {
+                "plan": {
+                  "OPTION": "U8"
+                }
+              },
+              {
+                "requested": "U8"
+              },
+              {
+                "completed": "U8"
+              },
+              {
+                "outcome": {
+                  "TYPENAME": "FeedOutcome"
+                }
+              },
+              {
+                "reason": {
+                  "TYPENAME": "FeedReason"
+                }
+              }
+            ]
+          }
+        },
+        "1": {
+          "MealUncertain": {
+            "STRUCT": [
+              {
+                "feed": "U32"
+              },
+              {
+                "plan": {
+                  "OPTION": "U8"
+                }
+              },
+              {
+                "requested": "U8"
+              },
+              {
+                "completed": "U8"
+              },
+              {
+                "reason": {
+                  "TYPENAME": "FeedReason"
+                }
+              }
+            ]
+          }
+        },
+        "2": {
+          "MealMissed": {
+            "STRUCT": [
+              {
+                "plan": "U8"
+              },
+              {
+                "due": "U32"
+              },
+              {
+                "reason": {
+                  "TYPENAME": "MissedReason"
+                }
+              }
+            ]
+          }
+        },
+        "3": {
+          "MealNoRecord": {
+            "STRUCT": [
+              {
+                "plan": "U8"
+              },
+              {
+                "due": "U32"
+              }
+            ]
+          }
+        },
+        "4": {
+          "PowerWasOut": "UNIT"
+        },
+        "5": {
+          "UpdateFailed": {
+            "STRUCT": [
+              {
+                "stop": {
+                  "TYPENAME": "UpdateStop"
+                }
+              }
+            ]
+          }
+        },
+        "6": {
+          "RolledBack": "UNIT"
+        },
+        "7": {
+          "ClientJoined": {
+            "STRUCT": [
+              {
+                "client": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 4
+                  }
+                }
+              },
+              {
+                "role": {
+                  "TYPENAME": "Role"
+                }
+              },
+              {
+                "path": {
+                  "TYPENAME": "Path"
+                }
+              }
+            ]
+          }
+        },
+        "8": {
+          "ClientRevoked": {
+            "STRUCT": [
+              {
+                "client": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 4
+                  }
+                }
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "9": {
+          "RepeatedRestarts": "UNIT"
+        },
+        "10": {
+          "NoClock": "UNIT"
+        },
+        "11": {
+          "CannotFeed": {
+            "STRUCT": [
+              {
+                "reason": {
+                  "TYPENAME": "Blocked"
+                }
+              }
+            ]
+          }
+        },
+        "12": {
+          "FoodLow": "UNIT"
+        },
+        "13": {
+          "FoodLikelyOut": {
+            "STRUCT": [
+              {
+                "confirmed": "U8"
+              }
+            ]
+          }
+        },
+        "14": {
+          "DesiccantDue": {
+            "STRUCT": [
+              {
+                "days": "I32"
+              }
+            ]
+          }
+        },
+        "15": {
+          "BatteryBelowFloor": "UNIT"
+        },
+        "16": {
+          "PlansStuck": "UNIT"
+        }
+      }
+    },
+    "AlertsView": {
+      "STRUCT": [
+        {
+          "epoch": "U32"
+        },
+        {
+          "generation": "U32"
+        },
+        {
+          "more": "BOOL"
+        },
+        {
+          "settling": "BOOL"
+        },
+        {
+          "alerts": {
+            "SEQ": {
+              "TYPENAME": "EncodedAlert"
+            }
+          }
+        }
+      ]
+    },
+    "Answer": {
+      "ENUM": {
+        "0": {
+          "Round": {
+            "STRUCT": [
+              {
+                "open": {
+                  "OPTION": {
+                    "TUPLEARRAY": {
+                      "CONTENT": "U8",
+                      "SIZE": 32
+                    }
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "OPTION": {
+                    "TUPLEARRAY": {
+                      "CONTENT": "U8",
+                      "SIZE": 32
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "1": {
+          "Last": {
+            "STRUCT": [
+              {
+                "open": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 32
+                  }
+                }
+              },
+              {
+                "wifi": {
+                  "OPTION": {
+                    "TYPENAME": "Wifi"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Bank0Blocked": {
+      "ENUM": {
+        "0": {
+          "Marker": "UNIT"
+        },
+        "1": {
+          "Unrecorded": "UNIT"
+        },
+        "2": {
+          "Key": "UNIT"
+        },
+        "3": {
+          "Extent": "UNIT"
+        },
+        "4": {
+          "Changed": "UNIT"
+        },
+        "5": {
+          "Read": "UNIT"
+        }
+      }
+    },
+    "Bank0Check": {
+      "ENUM": {
+        "0": {
+          "Unchecked": "UNIT"
+        },
+        "1": {
+          "Match": "UNIT"
+        },
+        "2": {
+          "Blocked": {
+            "STRUCT": [
+              {
+                "reason": {
+                  "TYPENAME": "Bank0Blocked"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Bank1Page": {
+      "STRUCT": [
+        {
+          "offset": "U32"
+        },
+        {
+          "total": "U32"
+        },
+        {
+          "bytes": "BYTES"
+        }
+      ]
+    },
+    "Battery": {
+      "ENUM": {
+        "0": {
+          "Absent": "UNIT"
+        },
+        "1": {
+          "Reading": {
+            "STRUCT": [
+              {
+                "mv": "U16"
+              },
+              {
+                "percent": "U8"
+              }
+            ]
+          }
+        },
+        "2": {
+          "Implausible": {
+            "STRUCT": [
+              {
+                "mv": "U16"
+              }
+            ]
+          }
+        },
+        "3": {
+          "Unread": "UNIT"
+        },
+        "4": {
+          "Stale": {
+            "STRUCT": [
+              {
+                "age_ms": "U32"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Blocked": {
+      "ENUM": {
+        "0": {
+          "Starting": "UNIT"
+        },
+        "1": {
+          "Journal": "UNIT"
+        },
+        "2": {
+          "Fault": "UNIT"
+        },
+        "3": {
+          "Resolving": "UNIT"
+        },
+        "4": {
+          "Feeding": "UNIT"
+        },
+        "5": {
+          "Joining": "UNIT"
+        },
+        "6": {
+          "Updating": "UNIT"
+        },
+        "7": {
+          "Setup": "UNIT"
+        },
+        "8": {
+          "Unserved": "UNIT"
+        },
+        "9": {
+          "Battery": "UNIT"
+        },
+        "10": {
+          "Restarting": "UNIT"
+        }
+      }
+    },
+    "Bowl": {
+      "ENUM": {
+        "0": {
+          "Single": "UNIT"
+        },
+        "1": {
+          "Double": "UNIT"
+        }
+      }
+    },
+    "Calibration": {
+      "STRUCT": [
+        {
+          "portion_mg": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "bowl": {
+            "TYPENAME": "LenientBowl"
+          }
+        }
+      ]
+    },
+    "CalibrationView": {
+      "STRUCT": [
+        {
+          "generation": "U32"
+        },
+        {
+          "writable": "BOOL"
+        },
+        {
+          "calibration": {
+            "TYPENAME": "Calibration"
+          }
+        },
+        {
+          "phase": {
+            "OPTION": {
+              "TYPENAME": "LenientPhase"
+            }
+          }
+        }
+      ]
+    },
+    "CallClip": {
+      "ENUM": {
+        "0": {
+          "None": "UNIT"
+        },
+        "1": {
+          "Receiving": {
+            "STRUCT": [
+              {
+                "bytes": "U32"
+              },
+              {
+                "crc": "U32"
+              },
+              {
+                "received": "U32"
+              }
+            ]
+          }
+        },
+        "2": {
+          "Stored": {
+            "STRUCT": [
+              {
+                "bytes": "U32"
+              },
+              {
+                "crc": "U32"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "CallView": {
+      "STRUCT": [
+        {
+          "writable": "BOOL"
+        },
+        {
+          "clip": {
+            "TYPENAME": "CallClip"
+          }
+        }
+      ]
+    },
+    "Client": {
+      "STRUCT": [
+        {
+          "key": {
+            "TUPLEARRAY": {
+              "CONTENT": "U8",
+              "SIZE": 32
+            }
+          }
+        },
+        {
+          "label": "STR"
+        },
+        {
+          "role": {
+            "TYPENAME": "Role"
+          }
+        },
+        {
+          "you": "BOOL"
+        }
+      ]
+    },
+    "ClientMessage": {
+      "ENUM": {
+        "0": {
+          "Request": {
+            "STRUCT": [
+              {
+                "id": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 16
+                  }
+                }
+              },
+              {
+                "op": {
+                  "TYPENAME": "Op"
+                }
+              }
+            ]
+          }
+        },
+        "1": {
+          "Subscribe": {
+            "STRUCT": [
+              {
+                "after": {
+                  "OPTION": "U64"
+                }
+              },
+              {
+                "samples": {
+                  "TYPENAME": "Samples"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Clients": {
+      "STRUCT": [
+        {
+          "clients": {
+            "TUPLEARRAY": {
+              "CONTENT": {
+                "OPTION": {
+                  "TYPENAME": "Client"
+                }
+              },
+              "SIZE": 8
+            }
+          }
+        }
+      ]
+    },
+    "Counters": {
+      "STRUCT": [
+        {
+          "boot": {
+            "TYPENAME": "Counts"
+          }
+        },
+        {
+          "reset": {
+            "TYPENAME": "LenientResetCause"
+          }
+        },
+        {
+          "lifetime": {
+            "OPTION": {
+              "TYPENAME": "Counts"
+            }
+          }
+        },
+        {
+          "resets": {
+            "OPTION": {
+              "TYPENAME": "Resets"
+            }
+          }
+        },
+        {
+          "handshake_max_ms": "U32"
+        },
+        {
+          "handshake_mean_ms": "U32"
+        }
+      ]
+    },
+    "Counts": {
+      "STRUCT": [
+        {
+          "uptime_s": "U32"
+        },
+        {
+          "feeds": "U32"
+        },
+        {
+          "feeds_failed": "U32"
+        },
+        {
+          "portions": "U32"
+        },
+        {
+          "presses": "U32"
+        },
+        {
+          "sessions": "U32"
+        },
+        {
+          "reconnects": "U32"
+        },
+        {
+          "dhcp_renewals": "U32"
+        },
+        {
+          "outages": "U32"
+        },
+        {
+          "battery_s": "U32"
+        }
+      ]
+    },
+    "CurrentUnit": {
+      "ENUM": {
+        "0": {
+          "Scaled": "UNIT"
+        },
+        "1": {
+          "MilliAmps": "UNIT"
+        }
+      }
+    },
+    "Desiccant": {
+      "ENUM": {
+        "0": {
+          "Unset": "UNIT"
+        },
+        "1": {
+          "Unknown": "UNIT"
+        },
+        "2": {
+          "Remaining": {
+            "STRUCT": [
+              {
+                "days": "I32"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "DeviceMessage": {
+      "ENUM": {
+        "0": {
+          "Response": {
+            "STRUCT": [
+              {
+                "id": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 16
+                  }
+                }
+              },
+              {
+                "result": {
+                  "TYPENAME": "Outcome"
+                }
+              }
+            ]
+          }
+        },
+        "1": {
+          "Events": {
+            "NEWTYPE": {
+              "TYPENAME": "EventBatch"
+            }
+          }
+        },
+        "2": {
+          "Gap": {
+            "STRUCT": [
+              {
+                "from": "U64"
+              },
+              {
+                "to": "U64"
+              }
+            ]
+          }
+        },
+        "3": {
+          "Sample": {
+            "NEWTYPE": {
+              "TYPENAME": "Sample"
+            }
+          }
+        },
+        "4": {
+          "Log": {
+            "STRUCT": [
+              {
+                "seq": "U32"
+              },
+              {
+                "dropped": "U32"
+              },
+              {
+                "text": "STR"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "DeviceStatus": {
+      "ENUM": {
+        "0": {
+          "Feeder": {
+            "NEWTYPE": {
+              "TYPENAME": "FeederStatus"
+            }
+          }
+        }
+      }
+    },
+    "EncodedAlert": {
+      "STRUCT": [
+        {
+          "at": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "alert": "BYTES"
+        }
+      ]
+    },
+    "EncodedEvent": {
+      "STRUCT": [
+        {
+          "seq": "U64"
+        },
+        {
+          "at": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "body": "BYTES"
+        }
+      ]
+    },
+    "Enrolled": {
+      "ENUM": {
+        "0": {
+          "New": "UNIT"
+        },
+        "1": {
+          "Already": "UNIT"
+        }
+      }
+    },
+    "Erases": {
+      "STRUCT": [
+        {
+          "storage": {
+            "TUPLEARRAY": {
+              "CONTENT": "U32",
+              "SIZE": 32
+            }
+          }
+        },
+        {
+          "update": "U32"
+        }
+      ]
+    },
+    "EventBatch": {
+      "STRUCT": [
+        {
+          "encoded": "BYTES"
+        }
+      ]
+    },
+    "EventBody": {
+      "ENUM": {
+        "0": {
+          "Boot": {
+            "STRUCT": [
+              {
+                "bank": "U8"
+              },
+              {
+                "reset_flags": "U32"
+              }
+            ]
+          }
+        },
+        "1": {
+          "Lock": {
+            "STRUCT": [
+              {
+                "locked": "BOOL"
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "2": {
+          "Settings": {
+            "STRUCT": [
+              {
+                "generation": "U32"
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "3": {
+          "Wifi": {
+            "STRUCT": [
+              {
+                "generation": "U32"
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "4": {
+          "Enrolled": {
+            "STRUCT": [
+              {
+                "client": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 4
+                  }
+                }
+              },
+              {
+                "role": {
+                  "TYPENAME": "Role"
+                }
+              },
+              {
+                "path": {
+                  "TYPENAME": "Path"
+                }
+              }
+            ]
+          }
+        },
+        "5": {
+          "Revoked": {
+            "STRUCT": [
+              {
+                "client": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 4
+                  }
+                }
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "6": {
+          "ClockSync": {
+            "STRUCT": [
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              },
+              {
+                "jump_ms": {
+                  "OPTION": "I32"
+                }
+              }
+            ]
+          }
+        },
+        "7": {
+          "Lost": {
+            "STRUCT": [
+              {
+                "count": "U16"
+              }
+            ]
+          }
+        },
+        "8": {
+          "Fed": {
+            "STRUCT": [
+              {
+                "feed": "U32"
+              },
+              {
+                "requested": "U8"
+              },
+              {
+                "completed": "U8"
+              },
+              {
+                "outcome": {
+                  "TYPENAME": "FeedOutcome"
+                }
+              },
+              {
+                "reason": {
+                  "TYPENAME": "FeedReason"
+                }
+              },
+              {
+                "hopper": {
+                  "TYPENAME": "FoodLevel"
+                }
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "9": {
+          "FeedingBlocked": {
+            "STRUCT": [
+              {
+                "reason": {
+                  "OPTION": {
+                    "TYPENAME": "Blocked"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "10": {
+          "Supply": {
+            "NEWTYPE": {
+              "TYPENAME": "Supply"
+            }
+          }
+        },
+        "11": {
+          "Plans": {
+            "STRUCT": [
+              {
+                "generation": "U32"
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "12": {
+          "Missed": {
+            "STRUCT": [
+              {
+                "plan": "U8"
+              },
+              {
+                "due": "U32"
+              },
+              {
+                "reason": {
+                  "TYPENAME": "MissedReason"
+                }
+              }
+            ]
+          }
+        },
+        "13": {
+          "DispenseRefused": {
+            "STRUCT": [
+              {
+                "reason": {
+                  "TYPENAME": "Blocked"
+                }
+              }
+            ]
+          }
+        },
+        "14": {
+          "MealSoon": {
+            "STRUCT": [
+              {
+                "plan": "U8"
+              },
+              {
+                "due": "U32"
+              },
+              {
+                "minute": "U16"
+              },
+              {
+                "portions": "U8"
+              }
+            ]
+          }
+        },
+        "15": {
+          "Food": {
+            "STRUCT": [
+              {
+                "level": {
+                  "TYPENAME": "FoodLevel"
+                }
+              }
+            ]
+          }
+        },
+        "16": {
+          "Skipped": {
+            "STRUCT": [
+              {
+                "plan": "U8"
+              },
+              {
+                "due": "U32"
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "17": {
+          "Unskipped": {
+            "STRUCT": [
+              {
+                "plan": "U8"
+              },
+              {
+                "due": "U32"
+              },
+              {
+                "by": {
+                  "TYPENAME": "Source"
+                }
+              }
+            ]
+          }
+        },
+        "18": {
+          "UpdateStop": {
+            "STRUCT": [
+              {
+                "stop": {
+                  "TYPENAME": "UpdateStop"
+                }
+              }
+            ]
+          }
+        },
+        "19": {
+          "UpdateAtBoot": {
+            "STRUCT": [
+              {
+                "candidate": {
+                  "TYPENAME": "UpdateCandidate"
+                }
+              }
+            ]
+          }
+        },
+        "20": {
+          "Restarting": "UNIT"
+        },
+        "21": {
+          "UpdateConfirmed": "UNIT"
+        }
+      }
+    },
+    "FeedFault": {
+      "STRUCT": [
+        {
+          "feed": "U32"
+        },
+        {
+          "outcome": {
+            "TYPENAME": "LenientFeedOutcome"
+          }
+        },
+        {
+          "reason": {
+            "TYPENAME": "LenientFeedReason"
+          }
+        }
+      ]
+    },
+    "FeedOutcome": {
+      "ENUM": {
+        "0": {
+          "Done": "UNIT"
+        },
+        "1": {
+          "Cancelled": "UNIT"
+        },
+        "2": {
+          "Expired": "UNIT"
+        },
+        "3": {
+          "Failed": "UNIT"
+        },
+        "4": {
+          "Uncertain": "UNIT"
+        }
+      }
+    },
+    "FeedReason": {
+      "ENUM": {
+        "0": {
+          "Done": "UNIT"
+        },
+        "1": {
+          "Cancelled": "UNIT"
+        },
+        "2": {
+          "Clock": "UNIT"
+        },
+        "3": {
+          "ObservationGap": "UNIT"
+        },
+        "4": {
+          "Timeout": "UNIT"
+        },
+        "5": {
+          "NoFeedback": "UNIT"
+        },
+        "6": {
+          "Power": "UNIT"
+        },
+        "7": {
+          "Sensor": "UNIT"
+        },
+        "8": {
+          "OutletBlocked": "UNIT"
+        },
+        "9": {
+          "Overcurrent": "UNIT"
+        },
+        "10": {
+          "FeedbackStream": "UNIT"
+        },
+        "11": {
+          "Output": "UNIT"
+        },
+        "12": {
+          "Jammed": "UNIT"
+        },
+        "13": {
+          "MarkStuck": "UNIT"
+        },
+        "14": {
+          "Interrupted": "UNIT"
+        }
+      }
+    },
+    "FeedStats": {
+      "STRUCT": [
+        {
+          "traced": "U32"
+        },
+        {
+          "drive_ms": "U32"
+        },
+        {
+          "samples": "U32"
+        },
+        {
+          "unit": {
+            "TYPENAME": "LenientCurrentUnit"
+          }
+        },
+        {
+          "current_peak": "U32"
+        },
+        {
+          "current_mean": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "rising": "U32"
+        },
+        {
+          "falling": "U32"
+        },
+        {
+          "beam_breaks": "U32"
+        },
+        {
+          "reversals": "U32"
+        },
+        {
+          "kept": "U32"
+        },
+        {
+          "capacity": "U32"
+        },
+        {
+          "unsaved": "U32"
+        },
+        {
+          "last": {
+            "OPTION": {
+              "TYPENAME": "TraceSummary"
+            }
+          }
+        }
+      ]
+    },
+    "FeederOp": {
+      "ENUM": {
+        "0": {
+          "GetSettings": "UNIT"
+        },
+        "1": {
+          "PutSettings": {
+            "STRUCT": [
+              {
+                "base": "U32"
+              },
+              {
+                "changes": {
+                  "TYPENAME": "SettingsChanges"
+                }
+              }
+            ]
+          }
+        },
+        "2": {
+          "SetLock": {
+            "STRUCT": [
+              {
+                "locked": "BOOL"
+              }
+            ]
+          }
+        },
+        "3": {
+          "Play": {
+            "STRUCT": [
+              {
+                "tune": {
+                  "TYPENAME": "Tune"
+                }
+              }
+            ]
+          }
+        },
+        "4": {
+          "Feed": {
+            "STRUCT": [
+              {
+                "portions": "U8"
+              }
+            ]
+          }
+        },
+        "5": {
+          "CancelFeed": {
+            "STRUCT": [
+              {
+                "feed": "U32"
+              }
+            ]
+          }
+        },
+        "6": {
+          "FeedTrace": {
+            "STRUCT": [
+              {
+                "feed": "U32"
+              },
+              {
+                "offset": "U16"
+              }
+            ]
+          }
+        },
+        "7": {
+          "GetCalibration": "UNIT"
+        },
+        "8": {
+          "PutCalibration": {
+            "STRUCT": [
+              {
+                "base": "U32"
+              },
+              {
+                "calibration": {
+                  "TYPENAME": "Calibration"
+                }
+              }
+            ]
+          }
+        },
+        "9": {
+          "GetPlans": "UNIT"
+        },
+        "10": {
+          "PutPlans": {
+            "STRUCT": [
+              {
+                "base": "U32"
+              },
+              {
+                "plans": {
+                  "TUPLEARRAY": {
+                    "CONTENT": {
+                      "OPTION": {
+                        "TYPENAME": "Plan"
+                      }
+                    },
+                    "SIZE": 10
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "11": {
+          "ResetDesiccant": "UNIT"
+        },
+        "12": {
+          "GetCall": "UNIT"
+        },
+        "13": {
+          "StartCall": {
+            "STRUCT": [
+              {
+                "bytes": "U32"
+              },
+              {
+                "crc": "U32"
+              }
+            ]
+          }
+        },
+        "14": {
+          "CallChunk": {
+            "STRUCT": [
+              {
+                "offset": "U32"
+              },
+              {
+                "data": "BYTES"
+              }
+            ]
+          }
+        },
+        "15": {
+          "DeleteCall": "UNIT"
+        },
+        "16": {
+          "PlayCall": "UNIT"
+        },
+        "17": {
+          "SkipMeal": {
+            "STRUCT": [
+              {
+                "slot": "U8"
+              },
+              {
+                "due_s": "U32"
+              }
+            ]
+          }
+        },
+        "18": {
+          "UnskipMeal": {
+            "STRUCT": [
+              {
+                "slot": "U8"
+              },
+              {
+                "due_s": "U32"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "FeederOutcome": {
+      "ENUM": {
+        "0": {
+          "Settings": {
+            "NEWTYPE": {
+              "TYPENAME": "Settings"
+            }
+          }
+        },
+        "1": {
+          "Feeding": {
+            "STRUCT": [
+              {
+                "feed": "U32"
+              }
+            ]
+          }
+        },
+        "2": {
+          "FeedTrace": {
+            "NEWTYPE": {
+              "TYPENAME": "TracePage"
+            }
+          }
+        },
+        "3": {
+          "Calibration": {
+            "NEWTYPE": {
+              "TYPENAME": "CalibrationView"
+            }
+          }
+        },
+        "4": {
+          "Plans": {
+            "NEWTYPE": {
+              "TYPENAME": "Plans"
+            }
+          }
+        },
+        "5": {
+          "Call": {
+            "NEWTYPE": {
+              "TYPENAME": "CallView"
+            }
+          }
+        }
+      }
+    },
+    "FeederStatus": {
+      "STRUCT": [
+        {
+          "locked": {
+            "OPTION": "BOOL"
+          }
+        },
+        {
+          "settings_generation": "U32"
+        },
+        {
+          "food": {
+            "TYPENAME": "LenientFoodLevel"
+          }
+        },
+        {
+          "feed_fault": {
+            "OPTION": {
+              "TYPENAME": "FeedFault"
+            }
+          }
+        },
+        {
+          "desiccant": {
+            "TYPENAME": "Desiccant"
+          }
+        },
+        {
+          "blocked": {
+            "OPTION": {
+              "TYPENAME": "LenientBlocked"
+            }
+          }
+        },
+        {
+          "supply": {
+            "TYPENAME": "Supply"
+          }
+        },
+        {
+          "ext": "BYTES"
+        }
+      ]
+    },
+    "Flash": {
+      "STRUCT": [
+        {
+          "boot": {
+            "TYPENAME": "Erases"
+          }
+        },
+        {
+          "lifetime": {
+            "OPTION": {
+              "TYPENAME": "Erases"
+            }
+          }
+        },
+        {
+          "events_kept": "U32"
+        },
+        {
+          "events_capacity": "U32"
+        }
+      ]
+    },
+    "Food": {
+      "STRUCT": [
+        {
+          "present": {
+            "OPTION": "BOOL"
+          }
+        },
+        {
+          "ran_low": "U32"
+        },
+        {
+          "refilled": "U32"
+        },
+        {
+          "feeds_since_refill": {
+            "OPTION": "U32"
+          }
+        }
+      ]
+    },
+    "FoodLevel": {
+      "ENUM": {
+        "0": {
+          "Unread": "UNIT"
+        },
+        "1": {
+          "Present": "UNIT"
+        },
+        "2": {
+          "Low": "UNIT"
+        }
+      }
+    },
+    "Hello": {
+      "STRUCT": [
+        {
+          "major": "U16"
+        }
+      ]
+    },
+    "Invite": {
+      "STRUCT": [
+        {
+          "id": "U32"
+        },
+        {
+          "secret": {
+            "TUPLEARRAY": {
+              "CONTENT": "U8",
+              "SIZE": 32
+            }
+          }
+        },
+        {
+          "seconds": "U16"
+        }
+      ]
+    },
+    "Join": {
+      "STRUCT": [
+        {
+          "label": "STR"
+        }
+      ]
+    },
+    "Joined": {
+      "ENUM": {
+        "0": {
+          "Enrolled": {
+            "STRUCT": [
+              {
+                "role": {
+                  "TYPENAME": "Role"
+                }
+              },
+              {
+                "model": {
+                  "TYPENAME": "Model"
+                }
+              }
+            ]
+          }
+        },
+        "1": {
+          "Refused": {
+            "NEWTYPE": {
+              "TYPENAME": "Refusal"
+            }
+          }
+        }
+      }
+    },
+    "LenientBlocked": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientBowl": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientCurrentUnit": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientFeedOutcome": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientFeedReason": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientFoodLevel": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientNtpResult": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientPhase": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientResetCause": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientTimeSource": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientWifiSource": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "MealReminder": {
+      "ENUM": {
+        "0": {
+          "Off": "UNIT"
+        },
+        "1": {
+          "Before": {
+            "STRUCT": [
+              {
+                "minutes": "U8"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Memory": {
+      "STRUCT": [
+        {
+          "heap_free": "U32"
+        },
+        {
+          "heap_min": "U32"
+        },
+        {
+          "tasks": {
+            "TUPLEARRAY": {
+              "CONTENT": {
+                "OPTION": {
+                  "TYPENAME": "TaskStack"
+                }
+              },
+              "SIZE": 16
+            }
+          }
+        },
+        {
+          "tasks_total": "U32"
+        }
+      ]
+    },
+    "Metric": {
+      "ENUM": {
+        "0": {
+          "Power": {
+            "NEWTYPE": {
+              "TYPENAME": "Power"
+            }
+          }
+        },
+        "1": {
+          "Rssi": {
+            "NEWTYPE": "I32"
+          }
+        },
+        "2": {
+          "Heap": {
+            "STRUCT": [
+              {
+                "free": "U32"
+              },
+              {
+                "min": "U32"
+              }
+            ]
+          }
+        },
+        "3": {
+          "Loop": {
+            "STRUCT": [
+              {
+                "passes": "U32"
+              },
+              {
+                "max_us": "U32"
+              },
+              {
+                "p99_us": "U32"
+              }
+            ]
+          }
+        },
+        "4": {
+          "Gateway": {
+            "STRUCT": [
+              {
+                "round_trip_ms": {
+                  "OPTION": "U32"
+                }
+              }
+            ]
+          }
+        },
+        "5": {
+          "Wifi": {
+            "STRUCT": [
+              {
+                "channel": {
+                  "OPTION": "U8"
+                }
+              },
+              {
+                "ap_changes": "U32"
+              }
+            ]
+          }
+        },
+        "6": {
+          "Supply": {
+            "NEWTYPE": {
+              "TYPENAME": "Supply"
+            }
+          }
+        }
+      }
+    },
+    "MissedReason": {
+      "ENUM": {
+        "0": {
+          "Late": "UNIT"
+        },
+        "1": {
+          "Blocked": {
+            "NEWTYPE": {
+              "TYPENAME": "Blocked"
+            }
+          }
+        },
+        "2": {
+          "Interrupted": "UNIT"
+        }
+      }
+    },
+    "Model": {
+      "ENUM": {
+        "0": {
+          "plaf103": "UNIT"
+        },
+        "1": {
+          "plwf106": "UNIT"
+        }
+      }
+    },
+    "NtpResult": {
+      "ENUM": {
+        "0": {
+          "Used": "UNIT"
+        },
+        "1": {
+          "Bounded": "UNIT"
+        },
+        "2": {
+          "Lost": "UNIT"
+        },
+        "3": {
+          "Refused": "UNIT"
+        }
+      }
+    },
+    "NtpServer": {
+      "ENUM": {
+        "0": {
+          "Off": "UNIT"
+        },
+        "1": {
+          "Gateway": {
+            "STRUCT": [
+              {
+                "port": "U16"
+              }
+            ]
+          }
+        },
+        "2": {
+          "Address": {
+            "STRUCT": [
+              {
+                "ip": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 4
+                  }
+                }
+              },
+              {
+                "port": "U16"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Op": {
+      "ENUM": {
+        "0": {
+          "Update": {
+            "NEWTYPE": {
+              "TYPENAME": "UpdateOp"
+            }
+          }
+        },
+        "1": {
+          "Alive": "UNIT"
+        },
+        "2": {
+          "CreateInvite": {
+            "STRUCT": [
+              {
+                "role": {
+                  "TYPENAME": "Role"
+                }
+              }
+            ]
+          }
+        },
+        "3": {
+          "Status": "UNIT"
+        },
+        "4": {
+          "PutWifi": {
+            "STRUCT": [
+              {
+                "base": "U32"
+              },
+              {
+                "wifi": {
+                  "OPTION": {
+                    "TYPENAME": "Wifi"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "5": {
+          "TimeSync": {
+            "NEWTYPE": {
+              "TYPENAME": "TimeSync"
+            }
+          }
+        },
+        "6": {
+          "ListClients": "UNIT"
+        },
+        "7": {
+          "RevokeClient": {
+            "STRUCT": [
+              {
+                "key": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 32
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "8": {
+          "Reboot": "UNIT"
+        },
+        "9": {
+          "GetTime": "UNIT"
+        },
+        "10": {
+          "PutTime": {
+            "STRUCT": [
+              {
+                "base": "U32"
+              },
+              {
+                "changes": {
+                  "TYPENAME": "TimeChanges"
+                }
+              }
+            ]
+          }
+        },
+        "11": {
+          "TailLog": {
+            "STRUCT": [
+              {
+                "after": {
+                  "OPTION": "U32"
+                }
+              }
+            ]
+          }
+        },
+        "12": {
+          "Stats": {
+            "STRUCT": [
+              {
+                "section": {
+                  "TYPENAME": "StatsSection"
+                }
+              }
+            ]
+          }
+        },
+        "13": {
+          "ReadBank1": {
+            "STRUCT": [
+              {
+                "offset": "U32"
+              }
+            ]
+          }
+        },
+        "14": {
+          "GetAlerts": "UNIT"
+        },
+        "15": {
+          "Feeder": {
+            "NEWTYPE": {
+              "TYPENAME": "FeederOp"
+            }
+          }
+        }
+      }
+    },
+    "Open": {
+      "ENUM": {
+        "0": {
+          "Session": "UNIT"
+        },
+        "1": {
+          "Invite": {
+            "STRUCT": [
+              {
+                "id": "U32"
+              }
+            ]
+          }
+        },
+        "2": {
+          "Recovery": "UNIT"
+        }
+      }
+    },
+    "OpenRefusal": {
+      "ENUM": {
+        "0": {
+          "Unknown": "UNIT"
+        },
+        "1": {
+          "Version": {
+            "STRUCT": [
+              {
+                "supported": "U16"
+              }
+            ]
+          }
+        },
+        "2": {
+          "Full": "UNIT"
+        }
+      }
+    },
+    "Outcome": {
+      "ENUM": {
+        "0": {
+          "Done": {
+            "STRUCT": [
+              {
+                "generation": {
+                  "OPTION": "U32"
+                }
+              }
+            ]
+          }
+        },
+        "1": {
+          "Refused": {
+            "NEWTYPE": {
+              "TYPENAME": "Refusal"
+            }
+          }
+        },
+        "2": {
+          "Update": {
+            "NEWTYPE": {
+              "TYPENAME": "UpdateView"
+            }
+          }
+        },
+        "3": {
+          "Invite": {
+            "NEWTYPE": {
+              "TYPENAME": "Invite"
+            }
+          }
+        },
+        "4": {
+          "Status": {
+            "NEWTYPE": {
+              "TYPENAME": "Status"
+            }
+          }
+        },
+        "5": {
+          "Clients": {
+            "NEWTYPE": {
+              "TYPENAME": "Clients"
+            }
+          }
+        },
+        "6": {
+          "Time": {
+            "NEWTYPE": {
+              "TYPENAME": "TimeView"
+            }
+          }
+        },
+        "7": {
+          "Stats": {
+            "NEWTYPE": {
+              "TYPENAME": "Stats"
+            }
+          }
+        },
+        "8": {
+          "Bank1": {
+            "NEWTYPE": {
+              "TYPENAME": "Bank1Page"
+            }
+          }
+        },
+        "9": {
+          "Alerts": {
+            "NEWTYPE": {
+              "TYPENAME": "AlertsView"
+            }
+          }
+        },
+        "10": {
+          "Feeder": {
+            "NEWTYPE": {
+              "TYPENAME": "FeederOutcome"
+            }
+          }
+        }
+      }
+    },
+    "Path": {
+      "ENUM": {
+        "0": {
+          "Setup": "UNIT"
+        },
+        "1": {
+          "Invite": "UNIT"
+        },
+        "2": {
+          "Recovery": "UNIT"
+        },
+        "3": {
+          "Press": "UNIT"
+        }
+      }
+    },
+    "Phase": {
+      "ENUM": {
+        "0": {
+          "AtMark": "UNIT"
+        },
+        "1": {
+          "Unknown": "UNIT"
+        }
+      }
+    },
+    "Plan": {
+      "STRUCT": [
+        {
+          "minute": "U16"
+        },
+        {
+          "portions": "U8"
+        },
+        {
+          "days": "U8"
+        },
+        {
+          "enabled": "BOOL"
+        },
+        {
+          "call": "U8"
+        },
+        {
+          "ext": "BYTES"
+        }
+      ]
+    },
+    "Plans": {
+      "STRUCT": [
+        {
+          "generation": "U32"
+        },
+        {
+          "writable": "BOOL"
+        },
+        {
+          "plans": {
+            "TUPLEARRAY": {
+              "CONTENT": {
+                "OPTION": {
+                  "TYPENAME": "Plan"
+                }
+              },
+              "SIZE": 10
+            }
+          }
+        },
+        {
+          "skipped": {
+            "TUPLEARRAY": {
+              "CONTENT": {
+                "OPTION": "U32"
+              },
+              "SIZE": 10
+            }
+          }
+        }
+      ]
+    },
+    "Portions": {
+      "STRUCT": [
+        {
+          "portions": "U32"
+        },
+        {
+          "homed": "U32"
+        },
+        {
+          "outlet_breaks": "U32"
+        },
+        {
+          "portion_mg": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "delivered_mg": {
+            "OPTION": "U64"
+          }
+        }
+      ]
+    },
+    "Power": {
+      "STRUCT": [
+        {
+          "adapter": "BOOL"
+        },
+        {
+          "battery_mv": {
+            "OPTION": "U32"
+          }
+        }
+      ]
+    },
+    "PowerStats": {
+      "STRUCT": [
+        {
+          "adapter": {
+            "OPTION": "BOOL"
+          }
+        },
+        {
+          "adapter_changes": "U32"
+        },
+        {
+          "outages": "U32"
+        },
+        {
+          "battery_s": "U32"
+        },
+        {
+          "battery_min_mv": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "battery_max_mv": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "battery_mv": {
+            "TUPLEARRAY": {
+              "CONTENT": {
+                "OPTION": "U16"
+              },
+              "SIZE": 24
+            }
+          }
+        },
+        {
+          "period_s": "U32"
+        }
+      ]
+    },
+    "Refusal": {
+      "ENUM": {
+        "0": {
+          "Forbidden": "UNIT"
+        },
+        "1": {
+          "Busy": "UNIT"
+        },
+        "2": {
+          "Unavailable": "UNIT"
+        },
+        "3": {
+          "Invalid": "UNIT"
+        },
+        "4": {
+          "NotWritable": "UNIT"
+        },
+        "5": {
+          "Full": "UNIT"
+        },
+        "6": {
+          "Update": {
+            "NEWTYPE": {
+              "TYPENAME": "UpdateRefusal"
+            }
+          }
+        },
+        "7": {
+          "NotFound": "UNIT"
+        },
+        "8": {
+          "Stale": {
+            "STRUCT": [
+              {
+                "current": "U32"
+              }
+            ]
+          }
+        },
+        "9": {
+          "Muted": "UNIT"
+        },
+        "10": {
+          "Time": "UNIT"
+        },
+        "11": {
+          "Fault": "UNIT"
+        },
+        "12": {
+          "Unverified": "UNIT"
+        },
+        "13": {
+          "Portions": {
+            "STRUCT": [
+              {
+                "asked": "U8"
+              }
+            ]
+          }
+        },
+        "14": {
+          "NoClock": "UNIT"
+        }
+      }
+    },
+    "Reply": {
+      "ENUM": {
+        "0": {
+          "EnterCode": {
+            "STRUCT": [
+              {
+                "seconds": "U16"
+              }
+            ]
+          }
+        },
+        "1": {
+          "Round": {
+            "STRUCT": [
+              {
+                "open": {
+                  "OPTION": {
+                    "TUPLEARRAY": {
+                      "CONTENT": "U8",
+                      "SIZE": 32
+                    }
+                  }
+                }
+              },
+              {
+                "commit": {
+                  "OPTION": {
+                    "TUPLEARRAY": {
+                      "CONTENT": "U8",
+                      "SIZE": 32
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "2": {
+          "Done": {
+            "STRUCT": [
+              {
+                "enrolled": {
+                  "TYPENAME": "Enrolled"
+                }
+              },
+              {
+                "wifi": {
+                  "TYPENAME": "WifiSaved"
+                }
+              }
+            ]
+          }
+        },
+        "3": {
+          "Refused": {
+            "NEWTYPE": {
+              "TYPENAME": "SetupRefusal"
+            }
+          }
+        }
+      }
+    },
+    "Request": {
+      "STRUCT": [
+        {
+          "label": "STR"
+        }
+      ]
+    },
+    "ResetCause": {
+      "ENUM": {
+        "0": {
+          "PowerOn": "UNIT"
+        },
+        "1": {
+          "Watchdog": "UNIT"
+        },
+        "2": {
+          "Software": "UNIT"
+        },
+        "3": {
+          "Brownout": "UNIT"
+        },
+        "4": {
+          "Other": "UNIT"
+        }
+      }
+    },
+    "Resets": {
+      "STRUCT": [
+        {
+          "power_on": "U32"
+        },
+        {
+          "watchdog": "U32"
+        },
+        {
+          "software": "U32"
+        },
+        {
+          "brownout": "U32"
+        },
+        {
+          "other": "U32"
+        }
+      ]
+    },
+    "Role": {
+      "ENUM": {
+        "0": {
+          "Owner": "UNIT"
+        },
+        "1": {
+          "Member": "UNIT"
+        },
+        "2": {
+          "Server": "UNIT"
+        },
+        "3": {
+          "UpdateSigner": "UNIT"
+        }
+      }
+    },
+    "Sample": {
+      "STRUCT": [
+        {
+          "at_ms": "U32"
+        },
+        {
+          "metric": {
+            "TYPENAME": "Metric"
+          }
+        }
+      ]
+    },
+    "Samples": {
+      "ENUM": {
+        "0": {
+          "Off": "UNIT"
+        },
+        "1": {
+          "On": "UNIT"
+        }
+      }
+    },
+    "Settings": {
+      "STRUCT": [
+        {
+          "generation": "U32"
+        },
+        {
+          "lights": "BOOL"
+        },
+        {
+          "sound": "BOOL"
+        },
+        {
+          "volume": "U8"
+        },
+        {
+          "lights_window": {
+            "TYPENAME": "Window"
+          }
+        },
+        {
+          "sound_window": {
+            "TYPENAME": "Window"
+          }
+        },
+        {
+          "desiccant_days": "U8"
+        },
+        {
+          "desiccant_reset": {
+            "OPTION": "I32"
+          }
+        },
+        {
+          "meal_reminder": {
+            "TYPENAME": "MealReminder"
+          }
+        },
+        {
+          "writable": "BOOL"
+        },
+        {
+          "ext": "BYTES"
+        }
+      ]
+    },
+    "SettingsChanges": {
+      "STRUCT": [
+        {
+          "lights": {
+            "OPTION": "BOOL"
+          }
+        },
+        {
+          "sound": {
+            "OPTION": "BOOL"
+          }
+        },
+        {
+          "volume": {
+            "OPTION": "U8"
+          }
+        },
+        {
+          "lights_window": {
+            "OPTION": {
+              "TYPENAME": "Window"
+            }
+          }
+        },
+        {
+          "sound_window": {
+            "OPTION": {
+              "TYPENAME": "Window"
+            }
+          }
+        },
+        {
+          "desiccant_days": {
+            "OPTION": "U8"
+          }
+        },
+        {
+          "meal_reminder": {
+            "OPTION": {
+              "TYPENAME": "MealReminder"
+            }
+          }
+        }
+      ]
+    },
+    "SetupRefusal": {
+      "ENUM": {
+        "0": {
+          "Busy": "UNIT"
+        },
+        "1": {
+          "Unconfirmed": "UNIT"
+        },
+        "2": {
+          "WrongCode": "UNIT"
+        },
+        "3": {
+          "Full": "UNIT"
+        },
+        "4": {
+          "NotWritable": "UNIT"
+        },
+        "5": {
+          "Invalid": "UNIT"
+        }
+      }
+    },
+    "Source": {
+      "ENUM": {
+        "0": {
+          "Panel": "UNIT"
+        },
+        "1": {
+          "Client": {
+            "NEWTYPE": {
+              "TUPLEARRAY": {
+                "CONTENT": "U8",
+                "SIZE": 4
+              }
+            }
+          }
+        },
+        "2": {
+          "Feeder": "UNIT"
+        },
+        "3": {
+          "Schedule": {
+            "NEWTYPE": "U8"
+          }
+        }
+      }
+    },
+    "Stats": {
+      "ENUM": {
+        "0": {
+          "Counters": {
+            "NEWTYPE": {
+              "TYPENAME": "Counters"
+            }
+          }
+        },
+        "1": {
+          "Memory": {
+            "NEWTYPE": {
+              "TYPENAME": "Memory"
+            }
+          }
+        },
+        "2": {
+          "Flash": {
+            "NEWTYPE": {
+              "TYPENAME": "Flash"
+            }
+          }
+        },
+        "3": {
+          "Power": {
+            "NEWTYPE": {
+              "TYPENAME": "PowerStats"
+            }
+          }
+        },
+        "4": {
+          "Food": {
+            "NEWTYPE": {
+              "TYPENAME": "Food"
+            }
+          }
+        },
+        "5": {
+          "Feeds": {
+            "NEWTYPE": {
+              "TYPENAME": "FeedStats"
+            }
+          }
+        },
+        "6": {
+          "Portions": {
+            "NEWTYPE": {
+              "TYPENAME": "Portions"
+            }
+          }
+        }
+      }
+    },
+    "StatsSection": {
+      "ENUM": {
+        "0": {
+          "Counters": "UNIT"
+        },
+        "1": {
+          "Memory": "UNIT"
+        },
+        "2": {
+          "Flash": "UNIT"
+        },
+        "3": {
+          "Power": "UNIT"
+        },
+        "4": {
+          "Food": "UNIT"
+        },
+        "5": {
+          "Feeds": "UNIT"
+        },
+        "6": {
+          "Portions": "UNIT"
+        }
+      }
+    },
+    "Status": {
+      "STRUCT": [
+        {
+          "build": "STR"
+        },
+        {
+          "bank": "U8"
+        },
+        {
+          "uptime_ms": "U32"
+        },
+        {
+          "boot_count": "U32"
+        },
+        {
+          "reset_flags": "U32"
+        },
+        {
+          "faults": "U32"
+        },
+        {
+          "rssi": "I32"
+        },
+        {
+          "wifi": {
+            "TYPENAME": "LenientWifiSource"
+          }
+        },
+        {
+          "link_losses": "U32"
+        },
+        {
+          "dns_losses": "U32"
+        },
+        {
+          "clock_ms": {
+            "OPTION": "U64"
+          }
+        },
+        {
+          "power": {
+            "OPTION": {
+              "TYPENAME": "Power"
+            }
+          }
+        },
+        {
+          "wifi_generation": "U32"
+        },
+        {
+          "last_event": {
+            "OPTION": "U64"
+          }
+        },
+        {
+          "sessions": "U8"
+        },
+        {
+          "alerts_generation": "U32"
+        },
+        {
+          "device": {
+            "TYPENAME": "DeviceStatus"
+          }
+        },
+        {
+          "ext": "BYTES"
+        }
+      ]
+    },
+    "Supply": {
+      "STRUCT": [
+        {
+          "adapter": {
+            "OPTION": "BOOL"
+          }
+        },
+        {
+          "battery": {
+            "TYPENAME": "Battery"
+          }
+        },
+        {
+          "below_floor": {
+            "OPTION": "BOOL"
+          }
+        }
+      ]
+    },
+    "TaskStack": {
+      "STRUCT": [
+        {
+          "name": "STR"
+        },
+        {
+          "free_min": "U32"
+        }
+      ]
+    },
+    "TimeChanges": {
+      "STRUCT": [
+        {
+          "zone": {
+            "OPTION": "STR"
+          }
+        },
+        {
+          "ntp": {
+            "OPTION": {
+              "TYPENAME": "NtpServer"
+            }
+          }
+        }
+      ]
+    },
+    "TimeSource": {
+      "ENUM": {
+        "0": {
+          "Owner": "UNIT"
+        },
+        "1": {
+          "Client": "UNIT"
+        },
+        "2": {
+          "Ntp": "UNIT"
+        }
+      }
+    },
+    "TimeSync": {
+      "STRUCT": [
+        {
+          "unix_ms": "U64"
+        },
+        {
+          "offset_s": "I32"
+        },
+        {
+          "next_change_s": "U64"
+        },
+        {
+          "next_offset_s": "I32"
+        }
+      ]
+    },
+    "TimeView": {
+      "STRUCT": [
+        {
+          "generation": "U32"
+        },
+        {
+          "writable": "BOOL"
+        },
+        {
+          "zone": "STR"
+        },
+        {
+          "ntp": {
+            "TYPENAME": "NtpServer"
+          }
+        },
+        {
+          "clock_ms": {
+            "OPTION": "U64"
+          }
+        },
+        {
+          "error_ms": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "offset_s": {
+            "OPTION": "I32"
+          }
+        },
+        {
+          "rate_ppb": "I32"
+        },
+        {
+          "rate_bound_ppb": "U32"
+        },
+        {
+          "learned": "BOOL"
+        },
+        {
+          "syncs": "U32"
+        },
+        {
+          "last": {
+            "OPTION": {
+              "TYPENAME": "LenientTimeSource"
+            }
+          }
+        },
+        {
+          "last_age_s": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "ntp_last": {
+            "OPTION": {
+              "TYPENAME": "LenientNtpResult"
+            }
+          }
+        }
+      ]
+    },
+    "TracePage": {
+      "STRUCT": [
+        {
+          "summary": {
+            "TYPENAME": "TraceSummary"
+          }
+        },
+        {
+          "stored": "BOOL"
+        },
+        {
+          "offset": "U16"
+        },
+        {
+          "total": "U16"
+        },
+        {
+          "bytes": "BYTES"
+        }
+      ]
+    },
+    "TraceSummary": {
+      "STRUCT": [
+        {
+          "feed": "U32"
+        },
+        {
+          "requested": "U8"
+        },
+        {
+          "completed": "U8"
+        },
+        {
+          "outcome": {
+            "TYPENAME": "LenientFeedOutcome"
+          }
+        },
+        {
+          "reason": {
+            "TYPENAME": "LenientFeedReason"
+          }
+        },
+        {
+          "drive_ms": "U32"
+        },
+        {
+          "samples": "U32"
+        },
+        {
+          "unit": {
+            "TYPENAME": "LenientCurrentUnit"
+          }
+        },
+        {
+          "current_peak": "U32"
+        },
+        {
+          "current_mean": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "rising": "U16"
+        },
+        {
+          "falling": "U16"
+        },
+        {
+          "first_edge_ms": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "beam_breaks": "U16"
+        },
+        {
+          "reversals": "U16"
+        },
+        {
+          "battery_rest_mv": {
+            "OPTION": "U16"
+          }
+        },
+        {
+          "battery_min_mv": {
+            "OPTION": "U16"
+          }
+        },
+        {
+          "stride": "U16"
+        },
+        {
+          "truncated": "BOOL"
+        }
+      ]
+    },
+    "Tune": {
+      "ENUM": {
+        "0": {
+          "Chime": "UNIT"
+        },
+        "1": {
+          "Meal": "UNIT"
+        },
+        "2": {
+          "Coin": "UNIT"
+        },
+        "3": {
+          "Alert": "UNIT"
+        },
+        "4": {
+          "Test": "UNIT"
+        },
+        "5": {
+          "Twinkle": "UNIT"
+        }
+      }
+    },
+    "UpdateCandidate": {
+      "ENUM": {
+        "0": {
+          "None": "UNIT"
+        },
+        "1": {
+          "Pending": "UNIT"
+        },
+        "2": {
+          "Activated": "UNIT"
+        }
+      }
+    },
+    "UpdateOp": {
+      "ENUM": {
+        "0": {
+          "Offer": {
+            "STRUCT": [
+              {
+                "manifest": "BYTES"
+              },
+              {
+                "downgrade": {
+                  "OPTION": "BYTES"
+                }
+              }
+            ]
+          }
+        },
+        "1": {
+          "Chunk": {
+            "STRUCT": [
+              {
+                "offset": "U32"
+              },
+              {
+                "data": "BYTES"
+              }
+            ]
+          }
+        },
+        "2": {
+          "State": "UNIT"
+        },
+        "3": {
+          "Cancel": "UNIT"
+        },
+        "4": {
+          "EnrollKey": {
+            "STRUCT": [
+              {
+                "key": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 32
+                  }
+                }
+              },
+              {
+                "label": "STR"
+              }
+            ]
+          }
+        },
+        "5": {
+          "KeyStatement": {
+            "STRUCT": [
+              {
+                "statement": "BYTES"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "UpdatePhase": {
+      "ENUM": {
+        "0": {
+          "Idle": "UNIT"
+        },
+        "1": {
+          "Checking": "UNIT"
+        },
+        "2": {
+          "GivingWay": "UNIT"
+        },
+        "3": {
+          "Receiving": "UNIT"
+        },
+        "4": {
+          "Activated": "UNIT"
+        }
+      }
+    },
+    "UpdateRefusal": {
+      "ENUM": {
+        "0": {
+          "Manifest": "UNIT"
+        },
+        "1": {
+          "Key": "UNIT"
+        },
+        "2": {
+          "Revoked": "UNIT"
+        },
+        "3": {
+          "Signature": "UNIT"
+        },
+        "4": {
+          "Target": "UNIT"
+        },
+        "5": {
+          "Same": "UNIT"
+        },
+        "6": {
+          "Downgrade": "UNIT"
+        },
+        "7": {
+          "Statement": "UNIT"
+        },
+        "8": {
+          "Pending": "UNIT"
+        },
+        "9": {
+          "Failed": "UNIT"
+        },
+        "10": {
+          "Fallback": {
+            "STRUCT": [
+              {
+                "reason": {
+                  "TYPENAME": "Bank0Blocked"
+                }
+              }
+            ]
+          }
+        },
+        "11": {
+          "Attempt": "UNIT"
+        },
+        "12": {
+          "Installing": "UNIT"
+        },
+        "13": {
+          "NotInstalling": "UNIT"
+        },
+        "14": {
+          "Store": "UNIT"
+        },
+        "15": {
+          "Unconfirmed": "UNIT"
+        },
+        "16": {
+          "Battery": "UNIT"
+        },
+        "17": {
+          "HeldAsSessionKey": "UNIT"
+        }
+      }
+    },
+    "UpdateStop": {
+      "ENUM": {
+        "0": {
+          "Timeout": "UNIT"
+        },
+        "1": {
+          "Cancelled": "UNIT"
+        },
+        "2": {
+          "Order": "UNIT"
+        },
+        "3": {
+          "Marker": "UNIT"
+        },
+        "4": {
+          "Write": "UNIT"
+        },
+        "5": {
+          "Hash": "UNIT"
+        },
+        "6": {
+          "Activate": "UNIT"
+        },
+        "7": {
+          "Store": "UNIT"
+        }
+      }
+    },
+    "UpdateView": {
+      "STRUCT": [
+        {
+          "phase": {
+            "TYPENAME": "UpdatePhase"
+          }
+        },
+        {
+          "bank": "U8"
+        },
+        {
+          "min_version": "U32"
+        },
+        {
+          "digest": {
+            "OPTION": {
+              "TUPLEARRAY": {
+                "CONTENT": "U8",
+                "SIZE": 32
+              }
+            }
+          }
+        },
+        {
+          "version": "U32"
+        },
+        {
+          "image_len": "U32"
+        },
+        {
+          "written": "U32"
+        },
+        {
+          "wanted": {
+            "TUPLEARRAY": {
+              "CONTENT": {
+                "OPTION": "U32"
+              },
+              "SIZE": 8
+            }
+          }
+        },
+        {
+          "stopped": {
+            "OPTION": {
+              "TYPENAME": "UpdateStop"
+            }
+          }
+        },
+        {
+          "bank0": {
+            "TYPENAME": "Bank0Check"
+          }
+        }
+      ]
+    },
+    "Welcome": {
+      "ENUM": {
+        "0": {
+          "Open": {
+            "STRUCT": [
+              {
+                "major": "U16"
+              },
+              {
+                "model": {
+                  "TYPENAME": "Model"
+                }
+              },
+              {
+                "build": "STR"
+              },
+              {
+                "role": {
+                  "TYPENAME": "Role"
+                }
+              },
+              {
+                "epoch": "U32"
+              },
+              {
+                "schema": "U32"
+              }
+            ]
+          }
+        },
+        "1": {
+          "Refused": {
+            "NEWTYPE": {
+              "TYPENAME": "OpenRefusal"
+            }
+          }
+        }
+      }
+    },
+    "Wifi": {
+      "STRUCT": [
+        {
+          "ssid": "BYTES"
+        },
+        {
+          "psk": "STR"
+        }
+      ]
+    },
+    "WifiSaved": {
+      "ENUM": {
+        "0": {
+          "Saved": "UNIT"
+        },
+        "1": {
+          "Unchanged": "UNIT"
+        }
+      }
+    },
+    "WifiSource": {
+      "ENUM": {
+        "0": {
+          "Build": "UNIT"
+        },
+        "1": {
+          "Stored": "UNIT"
+        },
+        "2": {
+          "Fallback": "UNIT"
+        }
+      }
+    },
+    "Window": {
+      "ENUM": {
+        "0": {
+          "Always": "UNIT"
+        },
+        "1": {
+          "Between": {
+            "STRUCT": [
+              {
+                "start": "U16"
+              },
+              {
+                "end": "U16"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

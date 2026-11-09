@@ -11,7 +11,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use wellfed_core::store::slot::SlotIo;
-use wellfed_device_api::mailbox::{PlansChange, PlansResult, PlansView};
+use wellfed_device_api::mailbox::{PlansChange, PlansResult, PlansView, Stamp};
 use wellfed_feeder::store::plans::PlansStore;
 use wellfed_hal::cell::TaskCell;
 use wellfed_hal::sdk::IrqGuard;
@@ -34,6 +34,10 @@ static PENDING: TaskCell<PlansChange> = TaskCell::new(PlansChange::Replace {
     table: [None; wellfed_device_api::mailbox::PLANS],
     at_s: None,
 });
+/// Who asked for the queued change (a client's table, skip or undo), for
+/// the event the writer records as it saves it; `None` for the schedule's
+/// own. Written and read as `PENDING` is.
+static ASKED: TaskCell<Option<Stamp>> = TaskCell::new(None);
 static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
 
 /// What NOR holds, published by the writer, copied in and out with
@@ -67,8 +71,9 @@ pub fn current() -> PlansResult {
     }
 }
 
-/// Queue one change for the writer.
-pub fn change(change: PlansChange) -> PlansResult {
+/// Queue one change for the writer, with who asked for it (`None`: the
+/// schedule's own).
+pub fn change(change: PlansChange, asked: Option<Stamp>) -> PlansResult {
     if !LOADED.load(Ordering::Acquire) {
         return PlansResult::Busy;
     }
@@ -88,7 +93,10 @@ pub fn change(change: PlansChange) -> PlansResult {
         return PlansResult::Busy;
     }
     // SAFETY: `Filling` makes this the only accessor until `Queued`.
-    unsafe { *PENDING.get() = change };
+    unsafe {
+        *PENDING.get() = change;
+        *ASKED.get() = asked;
+    }
     STATE.store(Hand::Queued as u8, Ordering::Release);
     wellfed_hal::writer_wake::wake();
     PlansResult::Current {
@@ -101,6 +109,14 @@ pub fn change(change: PlansChange) -> PlansResult {
 pub fn pending() -> Option<PlansChange> {
     // SAFETY: `Queued` hands the value to the writer until `finish`.
     (STATE.load(Ordering::Acquire) == Hand::Queued as u8).then(|| unsafe { *PENDING.get() })
+}
+
+/// The writer's half: who asked for the queued change, if anyone.
+pub fn asked() -> Option<Stamp> {
+    // SAFETY: as in `pending`.
+    (STATE.load(Ordering::Acquire) == Hand::Queued as u8)
+        .then(|| unsafe { *ASKED.get() })
+        .flatten()
 }
 
 pub fn finish() {

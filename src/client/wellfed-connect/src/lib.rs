@@ -96,6 +96,13 @@ pub enum Error {
     Version(u16),
     #[error("every session slot is taken")]
     Full,
+    /// The feeder runs a build from before API revisions, which takes only
+    /// frozen ops: nothing was sent.
+    #[error(
+        "the feeder runs a build from before API revisions, which takes only an update; \
+         nothing was sent: update the feeder"
+    )]
+    Legacy,
 }
 
 impl From<wellfed_client::api::Error> for Error {
@@ -108,6 +115,7 @@ impl From<wellfed_client::api::Error> for Error {
             Session::Timeout => Self::Timeout,
             Session::Silent => Self::Silent,
             Session::ReservedId => Self::ReservedId,
+            Session::Legacy => Self::Legacy,
             Session::TooLarge => Self::Encode,
             other => Self::Session(other),
         }
@@ -388,12 +396,10 @@ impl Connection {
         self.opened().epoch
     }
 
-    /// Whether the feeder's build speaks this client's schema revision.
-    /// When it does not, only the frozen update path goes to it: every
-    /// other request and a subscription are refused with
-    /// [`wellfed_client::api::Error::OtherSchema`], never sent.
-    pub fn same_schema(&self) -> bool {
-        self.opened().same_schema()
+    /// Which side is the older build ([`wellfed_model::Skew`]): every op
+    /// goes either way, and this says what to update when one is missing.
+    pub fn skew(&self) -> wellfed_model::Skew {
+        self.opened().skew()
     }
 
     /// The newest event or gap end received since [`Self::subscribe`].
@@ -711,7 +717,7 @@ mod tests {
             build: "fountain",
             role: WireRole::Owner,
             epoch: 1,
-            schema: wellfed_proto::api::SCHEMA,
+            schema: wellfed_proto::api::REVISION,
         };
         let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
         let mut out = [0; FRAME_MAX];

@@ -40,7 +40,7 @@ use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::plans::Edit;
 use wellfed_connect::{Connection, Received};
 use wellfed_model::{
-    Answer, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed, Settings,
+    Answer, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed, Settings, Skew,
 };
 use wellfed_session::noise::Keypair;
 
@@ -340,11 +340,15 @@ async fn serve(
     if !update(SessionUpdate::Opened {
         build: connection.build().to_owned(),
         role: connection.role(),
+        skew: connection.skew(),
     }) {
         return Ok(());
     }
     if let Some(link) = link {
         link.opened();
+    }
+    if connection.skew() == Skew::Legacy {
+        return serve_legacy(&mut connection, commands).await;
     }
 
     let Answer::Status(status) = connection.ask(random()?, &Op::Status).await? else {
@@ -410,6 +414,44 @@ async fn serve(
                     return Ok(());
                 }
             }
+        }
+    }
+}
+
+/// A session with a pre-revision build ([`Skew::Legacy`]), which takes the
+/// frozen update path alone: no status, history or clock, whose bytes moved
+/// since. It stays open for the update's own reads and its cancel, so the
+/// Firmware screen can offer the update; anything else is answered unsent.
+async fn serve_legacy(
+    connection: &mut Connection,
+    commands: &mut mpsc::UnboundedReceiver<Command>,
+) -> Result<(), BridgeError> {
+    loop {
+        tokio::select! {
+            command = commands.recv() => match command {
+                None | Some(Command::Close) => return Ok(()),
+                Some(Command::Ask { op, reply }) if op.is_frozen() => {
+                    match connection.ask(random()?, &op).await {
+                        Ok(answer) => {
+                            let _ = reply.send(Heard::Answer(answer));
+                        }
+                        Err(wellfed_connect::Error::Timeout) => {
+                            let _ = reply.send(Heard::Unanswered);
+                        }
+                        Err(error) => {
+                            let _ = reply.send(Heard::Unanswered);
+                            return Err(error.into());
+                        }
+                    }
+                }
+                Some(other) => never_sent(other),
+            },
+            // Nothing is asked of it but the keepalive the connection
+            // sends on its own; this only notices the feeder going.
+            received = connection.receive(QUIET_SILENCE) => match received {
+                Ok(_) | Err(wellfed_connect::Error::Timeout) => {}
+                Err(error) => return Err(error.into()),
+            },
         }
     }
 }
@@ -757,8 +799,13 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             Some(Entry::Feed(feed)) => Some(feed),
             _ => None,
         };
-        if let (Some(link), Pushed::Event(event)) = (self.link, pushed) {
-            link.event_at(Some(event.seq));
+        let seq = match pushed {
+            Pushed::Event(event) => Some(event.seq),
+            Pushed::Unknown(event) => Some(event.seq),
+            Pushed::Gap(_) | Pushed::Sample(_) | Pushed::Log(_) => None,
+        };
+        if let (Some(link), Some(seq)) = (self.link, seq) {
+            link.event_at(Some(seq));
         }
         if let (Some(link), Some(feed)) = (self.link, fed.as_ref()) {
             link.fed(feed);
@@ -773,6 +820,14 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         let entry = match pushed {
             Pushed::Event(event) => event_entry(event),
             Pushed::Gap(gap) => gap_entry(gap),
+            // A newer feeder build's event, which this app cannot show: it
+            // makes no entry, but may still end the backlog.
+            Pushed::Unknown(_) => {
+                return Ok(match self.backlog {
+                    Some(backlog) if backlog.ends_at(pushed) => self.end_backlog(),
+                    Some(_) | None => true,
+                });
+            }
             Pushed::Sample(_) | Pushed::Log(_) => return Ok(true),
         };
 
@@ -834,12 +889,17 @@ fn feed_answered(what: Asked, answer: Option<Answer>) -> Option<SessionUpdate> {
         (Asked::Feed { .. }, Some(Answer::Refused(refusal))) => Some(SessionUpdate::FeedRefused {
             refusal: FeedRefusal::from(refusal),
         }),
-        // The feed may have run; it is never sent again.
-        (Asked::Feed { .. }, None) => Some(SessionUpdate::FeedUnanswered),
+        // The feed may have run; it is never sent again. An answer a newer
+        // feeder build sent that this one cannot read says no more.
+        (Asked::Feed { .. }, None | Some(Answer::Unreadable)) => {
+            Some(SessionUpdate::FeedUnanswered)
+        }
         (Asked::Cancel, Some(Answer::Refused(refusal))) => Some(SessionUpdate::CancelUnconfirmed {
             refusal: Some(FeedRefusal::from(refusal)),
         }),
-        (Asked::Cancel, None) => Some(SessionUpdate::CancelUnconfirmed { refusal: None }),
+        (Asked::Cancel, None | Some(Answer::Unreadable)) => {
+            Some(SessionUpdate::CancelUnconfirmed { refusal: None })
+        }
         _ => None,
     }
 }

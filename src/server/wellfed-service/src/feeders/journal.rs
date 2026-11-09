@@ -298,7 +298,7 @@ impl Service {
             Err(
                 unsent @ (AskError::NotRunning
                 | AskError::Offline
-                | AskError::OtherBuild
+                | AskError::Legacy
                 | AskError::Unsendable),
             ) => {
                 if matches!(attempt, Attempt::First) {

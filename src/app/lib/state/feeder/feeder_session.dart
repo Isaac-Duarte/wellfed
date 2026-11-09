@@ -24,13 +24,14 @@ extension FeederSessionRun on FeederController {
         break;
       }
       switch (update) {
-        case SessionUpdate_Opened(:final String build, role: final ClientRole role):
+        case SessionUpdate_Opened(:final String build, role: final ClientRole role, :final Skew skew):
           unawaited(_ports.answered(_state.known.identity, build));
           opened = true;
           _connection = Connection.online;
           _setState(
             _state.copyWith(
               role: role,
+              skew: () => skew,
               error: () => null,
               // A new session reads the card again: until then, not the server's.
               cardFresh: false,
@@ -103,15 +104,10 @@ extension FeederSessionRun on FeederController {
         when path != RoutePath.server) {
       _setFeed(FeedAdrift(feed: feed, by: FeedLoss.link, portions: portions, sentAt: sentAt));
     }
-    // A feeder of another build answers only an update, so the session
-    // ends at its first read, and one of another major refuses it at the
-    // handshake: either is reachable all the same.
+    // A feeder of another major refuses the session at the handshake: it
+    // is reachable all the same.
     if (!_disposed) {
-      _sessionIs(switch (_state.error) {
-        ErrorKind.otherBuild => Connection.otherBuild,
-        ErrorKind.version => Connection.otherVersion,
-        _ => Connection.offline,
-      });
+      _sessionIs(_state.error == ErrorKind.version ? Connection.otherVersion : Connection.offline);
     }
     return opened;
   }

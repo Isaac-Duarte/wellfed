@@ -149,6 +149,8 @@ pub enum ServerRefusal {
     Portions,
     NoClock,
     Unverified,
+    /// A refusal a newer feeder build added, which the server cannot name.
+    Unknown,
 }
 
 #[frb(opaque)]

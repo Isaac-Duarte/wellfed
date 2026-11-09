@@ -104,7 +104,7 @@ async fn record(
         seq,
         at,
         received,
-        body,
+        body: Some(body),
         raw: &raw,
     };
     assert!(store.record_event(KITCHEN, event).await.unwrap());

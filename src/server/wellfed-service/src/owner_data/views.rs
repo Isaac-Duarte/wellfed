@@ -95,7 +95,10 @@ fn portion_mg(weight: PortionWeight) -> Option<u64> {
 /// Portions an uncertain feed may have dropped beyond those confirmed.
 fn uncertain_portions(feed: &FeedRow) -> u8 {
     match feed.outcome {
-        FeedOutcome::Uncertain => feed.requested.saturating_sub(feed.completed),
+        // An ending a newer feeder build added counts as uncertain.
+        FeedOutcome::Uncertain | FeedOutcome::Unknown => {
+            feed.requested.saturating_sub(feed.completed)
+        }
         FeedOutcome::Done | FeedOutcome::Cancelled | FeedOutcome::Expired | FeedOutcome::Failed => {
             0
         }
@@ -256,7 +259,7 @@ pub(crate) fn anomaly(feed: &FeedRow) -> Option<FeedAnomaly> {
     let (feeder, number, at) = (feed.feeder, feed.feed, feed.at);
     let (requested, completed) = (feed.requested, feed.completed);
     match feed.outcome {
-        FeedOutcome::Uncertain => Some(FeedAnomaly::Uncertain {
+        FeedOutcome::Uncertain | FeedOutcome::Unknown => Some(FeedAnomaly::Uncertain {
             feeder,
             feed: number,
             at,

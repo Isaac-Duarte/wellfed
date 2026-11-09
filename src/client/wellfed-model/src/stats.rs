@@ -110,6 +110,8 @@ pub enum ResetCause {
     Software,
     Brownout,
     Other,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

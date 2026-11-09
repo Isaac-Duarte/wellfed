@@ -308,7 +308,8 @@ impl Answer {
             | Model::Bank1(_)
             | Model::Plans(_)
             | Model::Call(_)
-            | Model::Alerts(_) => Self::Unexpected,
+            | Model::Alerts(_)
+            | Model::Unreadable => Self::Unexpected,
         }
     }
 }

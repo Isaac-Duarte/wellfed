@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT version, api_revision FROM projection_version WHERE id = 0",
+  "describe": {
+    "columns": [
+      {
+        "name": "version",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "projection_version",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "name": "api_revision",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "projection_version",
+            "name": "api_revision"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b1a768d946b69d7011f1bdee9584846096b216e6efe909d8dda4ae1711390deb"
+}

@@ -4,7 +4,9 @@
 use wellfed_core::clock::wall::{Origin, Sync};
 use wellfed_core::schedule::{PLANS, Plan, Weekdays};
 use wellfed_device_api::FeederDevice;
-use wellfed_device_api::mailbox::{MealSkip, NtpServer, PlansChange, PlansResult, TimeSettings};
+use wellfed_device_api::mailbox::{
+    Asked, MealSkip, NtpServer, PlansChange, PlansResult, TimeSettings,
+};
 use wellfed_feeder::feeder::{Feeder, Feeds, Platform};
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::platform::SimPlatform;
@@ -79,10 +81,13 @@ fn plan_changes_wait_for_a_claimed_meal_to_be_queued() {
         minute: 9 * 60,
         ..table[0].unwrap()
     });
-    platform.plans_change(PlansChange::Replace {
-        table,
-        at_s: Some(u32::try_from(breakfast / 1000 - 60).unwrap()),
-    });
+    platform.plans_change(
+        PlansChange::Replace {
+            table,
+            at_s: Some(u32::try_from(breakfast / 1000 - 60).unwrap()),
+        },
+        None,
+    );
     platform.write();
     let mut feeder = Feeder::new(platform);
     let mut feeds = RecordedFeeds::default();
@@ -110,24 +115,27 @@ fn plan_changes_wait_for_a_claimed_meal_to_be_queued() {
     // The other slot's next meal is still to come today, so the claim's
     // hold is what refuses its skip, not the due-meal validation.
     let later = u32::try_from((breakfast + 3_600_000) / 1000).unwrap();
-    assert_eq!(
-        device.skip_meal(1, later, MealSkip::Skip, 2),
-        Err(Refusal::Busy)
-    );
+    let by = Source::Client([1, 2, 3, 4]);
+    let skip = Asked {
+        change: MealSkip::Skip,
+        by,
+    };
+    assert_eq!(device.skip_meal(1, later, skip, 2), Err(Refusal::Busy));
 
     let replacement = table[0].as_mut().unwrap();
     replacement.minute = 9 * 60;
     replacement.portions = 7;
-    assert_eq!(device.plans(Some(table)), PlansResult::Busy);
+    assert_eq!(
+        device.plans(Some(Asked { change: table, by })),
+        PlansResult::Busy
+    );
 
     feeder.platform_mut().write();
     feeder.pass(3, &mut feeds, |_| {});
     assert_eq!(feeds.0, [(1, Source::Schedule(0))]);
 
     assert_eq!(
-        feeder
-            .device(3, &mut feeds)
-            .skip_meal(1, later, MealSkip::Skip, 3),
+        feeder.device(3, &mut feeds).skip_meal(1, later, skip, 3),
         Ok(()),
         "the same future meal can be skipped once the claim is queued"
     );
@@ -136,7 +144,9 @@ fn plan_changes_wait_for_a_claimed_meal_to_be_queued() {
     // Once the meal has been queued, the owner guards any actual feed.
     // This recording owner is idle, so the table can now be changed.
     assert!(matches!(
-        feeder.device(3, &mut feeds).plans(Some(table)),
+        feeder
+            .device(3, &mut feeds)
+            .plans(Some(Asked { change: table, by })),
         PlansResult::Current { pending: true, .. }
     ));
 }

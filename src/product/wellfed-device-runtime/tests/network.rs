@@ -293,7 +293,7 @@ fn changes_queue_checked_credentials_or_a_clear() {
     fake::reset_hardware();
     forget();
     assert_eq!(current(), WifiResult::Busy, "store not opened");
-    assert_eq!(change(None), WifiResult::Busy);
+    assert_eq!(change(None, None), WifiResult::Busy);
     store(None);
 
     let read = current();
@@ -303,10 +303,10 @@ fn changes_queue_checked_credentials_or_a_clear() {
 
     let set = Credentials::new(b"net", b"password").unwrap();
     assert!(matches!(
-        change(Some(set)),
+        change(Some(set), None),
         WifiResult::Current { pending: true, .. }
     ));
-    assert_eq!(change(Some(set)), WifiResult::Busy);
+    assert_eq!(change(Some(set), None), WifiResult::Busy);
     assert!(matches!(
         current(),
         WifiResult::Current { pending: true, .. }
@@ -319,7 +319,7 @@ fn changes_queue_checked_credentials_or_a_clear() {
     finish();
 
     assert!(matches!(
-        change(None),
+        change(None, None),
         WifiResult::Current { pending: true, .. }
     ));
     assert_eq!(pending(), Some(None));

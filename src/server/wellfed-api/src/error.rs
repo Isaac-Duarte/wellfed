@@ -99,10 +99,10 @@ pub enum ErrorCode {
     Unreachable,
     /// The server has no session with the feeder right now.
     FeederOffline,
-    /// The feeder runs a different build than the server, so the server
-    /// sends it nothing but an update (the feeder's `connection` reads
-    /// `other_build`). Nothing was sent: update the feeder, or the server.
-    FeederOtherBuild,
+    /// The feeder runs a build from before API revisions (its `skew` reads
+    /// `legacy`), which takes nothing but an update: nothing was sent.
+    /// Update the feeder.
+    FeederLegacy,
     /// The feeder refused the request; `refusal` says why. A refused write is
     /// final for its `Idempotency-Key`: the feeder replays the refusal while
     /// it remembers the id, and a later attempt needs a new key.
@@ -184,6 +184,8 @@ pub enum FeederRefusal {
     NoClock,
     /// A calibration named a bowl mode the feeder has not verified.
     Unverified,
+    /// A refusal a newer feeder build added, which this server cannot name.
+    Unknown,
 }
 
 impl From<Refusal> for FeederRefusal {
@@ -203,6 +205,7 @@ impl From<Refusal> for FeederRefusal {
             Refusal::Portions { .. } => Self::Portions,
             Refusal::NoClock => Self::NoClock,
             Refusal::Unverified => Self::Unverified,
+            Refusal::Unknown => Self::Unknown,
             // An install reads its own refusals from the update driver;
             // through a journalled write one could only be a session
             // without the owner role, refused before these could arrive.

@@ -38,7 +38,7 @@ pub use call::{CALL_BYTES_MAX, CALL_CHUNK_MAX, CALL_PLAYS_MAX, CALL_RATE_HZ, Cal
 pub use event::{
     ClientRole, CoreEvent, EnrollPath, Event, EventBody, EventKind, FeedOutcome, FeedReason,
     FeederEvent, FoodLevel, Gap, LogLines, MetricKind, MissedReason, Pushed, Sample, SampleValue,
-    Source,
+    Source, UnknownEvent,
 };
 pub use plan::{
     NextMeal, PLANS, PORTIONS_MAX, Plan, Plans, SkippedMeals, TimeOfDay, Weekday, Weekdays,
@@ -48,7 +48,9 @@ pub use request::{
     Answer, Bowl, Calibration, CalibrationView, Client, Invite, NtpResult, NtpServer, Op, Phase,
     Refusal, TimeChanges, TimeSource, TimeSync, TimeView, Tune, Wifi,
 };
-pub use session::{DeviceKind, Hello, Joined, Model, OpenRefusal, schema};
+pub use session::{
+    DeviceKind, Hello, Joined, LEGACY_SCHEMA_FROM, Model, OpenRefusal, Skew, schema,
+};
 pub use stats::{
     Counters, Counts, Erases, FeedStats, Flash, Food, Memory, Portions, PowerStats, ResetCause,
     Resets, Stats, StatsSection, TaskStack,

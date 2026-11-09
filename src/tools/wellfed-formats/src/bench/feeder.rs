@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use wellfed_model::{Answer, ClientRole, DeviceKind, Model, Op, Pushed};
+use wellfed_model::{Answer, ClientRole, DeviceKind, Model, Op, Pushed, Skew};
 
 use super::live::Unavailable;
 
@@ -63,6 +63,9 @@ pub struct Opened {
     pub model: Model,
     pub build: String,
     pub role: ClientRole,
+    /// Which side to update; a pre-revision build (`Legacy`) takes the
+    /// frozen update path alone, so a client knows to offer only that.
+    pub skew: Skew,
 }
 
 /// Which of the session's pushed messages a read takes: the history

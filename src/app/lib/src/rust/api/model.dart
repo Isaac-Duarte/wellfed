@@ -32,9 +32,10 @@ enum Blocked {
   unserved,
   battery,
   restarting,
+  unknown,
 }
 
-enum Bowl { single, double }
+enum Bowl { single, double, unknown }
 
 @freezed
 sealed class CallClip with _$CallClip {
@@ -146,7 +147,7 @@ class Counts {
           batteryS == other.batteryS;
 }
 
-enum CurrentUnit { scaled, milliAmps }
+enum CurrentUnit { scaled, milliAmps, unknown }
 
 @freezed
 sealed class Desiccant with _$Desiccant {
@@ -178,7 +179,7 @@ class Erases {
           update == other.update;
 }
 
-enum FeedOutcome { done, cancelled, expired, failed, uncertain }
+enum FeedOutcome { done, cancelled, expired, failed, uncertain, unknown }
 
 enum FeedReason {
   done,
@@ -196,6 +197,7 @@ enum FeedReason {
   feedbackStream,
   output,
   interrupted,
+  unknown,
 }
 
 class FeedStats {
@@ -331,7 +333,7 @@ class Food {
           feedsSinceRefill == other.feedsSinceRefill;
 }
 
-enum FoodLevel { unread, present, low }
+enum FoodLevel { unread, present, low, unknown }
 
 @freezed
 sealed class MealReminder with _$MealReminder {
@@ -383,9 +385,9 @@ sealed class MissedReason with _$MissedReason {
   const factory MissedReason.interrupted() = MissedReason_Interrupted;
 }
 
-enum NtpResult { used, bounded, lost, refused }
+enum NtpResult { used, bounded, lost, refused, unknown }
 
-enum Phase { atMark, unknown }
+enum Phase { atMark, unknown, newer }
 
 class Portions {
   final int portions;
@@ -469,7 +471,7 @@ class PowerStats {
           periodS == other.periodS;
 }
 
-enum ResetCause { powerOn, watchdog, software, brownout, other }
+enum ResetCause { powerOn, watchdog, software, brownout, other, unknown }
 
 class Resets {
   final int powerOn;
@@ -508,6 +510,11 @@ class Resets {
 
 enum SetupRefusal { busy, unconfirmed, wrongCode, full, notWritable, invalid }
 
+/// How a feeder's API revision stands against this app's (or the server's):
+/// which side to update. Every op both know still goes, so neither side is
+/// ever offered an older build for it.
+enum Skew { same, feederBehind, feederAhead, legacy }
+
 @freezed
 sealed class Stats with _$Stats {
   const Stats._();
@@ -541,7 +548,7 @@ class TaskStack {
           freeMin == other.freeMin;
 }
 
-enum TimeSource { owner, client, ntp }
+enum TimeSource { owner, client, ntp, unknown }
 
 @freezed
 sealed class TraceEntry with _$TraceEntry {

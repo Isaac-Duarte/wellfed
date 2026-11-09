@@ -10,7 +10,7 @@ use wellfed_proto::api as proto;
 use wellfed_proto::device::DeviceKind;
 use wellfed_proto::setup as proto_setup;
 
-use crate::{Alert, AlertsView, OpenAlert, UpdateCandidate};
+use crate::{Alert, AlertsView, OpenAlert, Pushed, UnknownEvent, UpdateCandidate};
 use crate::{
     Answer, Bank0Blocked, Bank0Check, Bank1Page, Battery, Blocked, Bowl, Calibration,
     CalibrationView, CallClip, CallView, Client, ClientRole, CoreEvent, Counters, Counts,
@@ -37,6 +37,23 @@ pub fn log(seq: u32, dropped: u32, text: &str) -> LogLines {
     }
 }
 
+/// One event of the history `epoch` counts, as a batch carries it: an
+/// [`UnknownEvent`] when this build does not know its body.
+pub fn raw_event(epoch: u32, raw: proto::RawEvent) -> Pushed {
+    match raw.event() {
+        Some(known) => Pushed::Event(event(epoch, known)),
+        None => {
+            let proto::RawEvent { seq, at, body } = raw;
+            Pushed::Unknown(UnknownEvent {
+                epoch,
+                seq,
+                at: at.map(seconds),
+                raw: Hex(body),
+            })
+        }
+    }
+}
+
 /// One event of the history `epoch` counts.
 pub fn event(epoch: u32, event: proto::Event) -> Event {
     let proto::Event { seq, at, body } = event;
@@ -47,6 +64,19 @@ pub fn event(epoch: u32, event: proto::Event) -> Event {
         body: body.into(),
     }
 }
+
+/// A unit-only enum an answer carries leniently, as this build reads it:
+/// `unknown` for a variant a newer build added.
+fn lenient<P: Copy, M: From<P>>(value: proto::Lenient<P>, unknown: M) -> M {
+    value.known().map_or(unknown, M::from)
+}
+
+/// A host value with no wire form: one holding a variant a newer feeder
+/// build added, which this build only names `Unknown`. Never so for one
+/// decoded from the wire, where a body this build cannot read stays raw.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("the value holds one this build cannot name, which has no wire form here")]
+pub struct NoWireForm;
 
 /// An event's time: the feeder's clock in Unix seconds.
 fn seconds(at: u32) -> Timestamp {
@@ -71,7 +101,9 @@ impl From<proto::Status<'_>> for Status {
             wifi_generation,
             last_event,
             sessions,
+            alerts_generation,
             device,
+            ext: _,
         } = status;
         Self {
             build: build.to_owned(),
@@ -81,7 +113,7 @@ impl From<proto::Status<'_>> for Status {
             reset_flags,
             faults,
             rssi,
-            wifi: wifi.into(),
+            wifi: lenient(wifi, WifiSource::Unknown),
             link_losses,
             dns_losses,
             clock: clock_ms.and_then(|ms| {
@@ -93,6 +125,7 @@ impl From<proto::Status<'_>> for Status {
             wifi_generation: Generation(wifi_generation),
             last_event,
             sessions,
+            alerts_generation: Generation(alerts_generation),
             device: device.into(),
         }
     }
@@ -114,23 +147,25 @@ impl From<proto::FeederStatus> for FeederStatus {
             food,
             feed_fault,
             desiccant,
-            readiness,
+            blocked,
             supply,
-            alerts_generation,
+            ext: _,
         } = status;
         Self {
             locked,
             settings_generation: Generation(settings_generation),
-            food: food.into(),
+            food: lenient(food, FoodLevel::Unknown),
             feed_fault: feed_fault.map(|fault| FeedFault {
                 feed: fault.feed,
-                outcome: fault.outcome.into(),
-                reason: fault.reason.into(),
+                outcome: lenient(fault.outcome, FeedOutcome::Unknown),
+                reason: lenient(fault.reason, FeedReason::Unknown),
             }),
-            readiness: readiness.into(),
+            readiness: match blocked {
+                None => Readiness::Ready,
+                Some(blocked) => Readiness::Blocked(lenient(blocked, Blocked::Unknown)),
+            },
             desiccant: desiccant.into(),
             supply: supply.into(),
-            alerts_generation: Generation(alerts_generation),
         }
     }
 }
@@ -175,9 +210,11 @@ impl From<proto::Blocked> for Blocked {
     }
 }
 
-impl From<Blocked> for proto::Blocked {
-    fn from(blocked: Blocked) -> Self {
-        match blocked {
+impl TryFrom<Blocked> for proto::Blocked {
+    type Error = NoWireForm;
+
+    fn try_from(blocked: Blocked) -> Result<Self, NoWireForm> {
+        Ok(match blocked {
             Blocked::Starting => Self::Starting,
             Blocked::Journal => Self::Journal,
             Blocked::Fault => Self::Fault,
@@ -189,7 +226,8 @@ impl From<Blocked> for proto::Blocked {
             Blocked::Unserved => Self::Unserved,
             Blocked::Battery => Self::Battery,
             Blocked::Restarting => Self::Restarting,
-        }
+            Blocked::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -268,6 +306,7 @@ impl From<proto::Settings> for FeederSettings {
             desiccant_reset,
             meal_reminder,
             writable,
+            ext: _,
         } = settings;
         Self {
             generation: Generation(generation),
@@ -457,9 +496,11 @@ impl From<proto::EventBody> for EventBody {
 /// The wire form, which is also how the server stores a body: the
 /// feeder's own encoding, so a stored history decodes the way the feeder
 /// meant it.
-impl From<EventBody> for proto::EventBody {
-    fn from(body: EventBody) -> Self {
-        match body {
+impl TryFrom<EventBody> for proto::EventBody {
+    type Error = NoWireForm;
+
+    fn try_from(body: EventBody) -> Result<Self, NoWireForm> {
+        Ok(match body {
             EventBody::Core(CoreEvent::Boot { bank, reset_flags }) => {
                 Self::Boot { bank, reset_flags }
             }
@@ -509,13 +550,13 @@ impl From<EventBody> for proto::EventBody {
                 feed,
                 requested,
                 completed,
-                outcome: outcome.into(),
-                reason: reason.into(),
-                hopper: hopper.into(),
+                outcome: outcome.try_into()?,
+                reason: reason.try_into()?,
+                hopper: hopper.try_into()?,
                 by: by.into(),
             },
             EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => Self::FeedingBlocked {
-                reason: reason.map(proto::Blocked::from),
+                reason: reason.map(proto::Blocked::try_from).transpose()?,
             },
             EventBody::Feeder(FeederEvent::Supply {
                 adapter,
@@ -534,10 +575,10 @@ impl From<EventBody> for proto::EventBody {
             EventBody::Feeder(FeederEvent::Missed { plan, due, reason }) => Self::Missed {
                 plan,
                 due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
-                reason: reason.into(),
+                reason: reason.try_into()?,
             },
             EventBody::Feeder(FeederEvent::DispenseRefused { reason }) => Self::DispenseRefused {
-                reason: reason.into(),
+                reason: reason.try_into()?,
             },
             EventBody::Feeder(FeederEvent::MealSoon {
                 plan,
@@ -551,7 +592,7 @@ impl From<EventBody> for proto::EventBody {
                 portions,
             },
             EventBody::Feeder(FeederEvent::Food { level }) => Self::Food {
-                level: level.into(),
+                level: level.try_into()?,
             },
             EventBody::Feeder(FeederEvent::Skipped { plan, due, by }) => Self::Skipped {
                 plan,
@@ -563,7 +604,7 @@ impl From<EventBody> for proto::EventBody {
                 due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
                 by: by.into(),
             },
-        }
+        })
     }
 }
 
@@ -577,13 +618,16 @@ impl From<proto::FoodLevel> for FoodLevel {
     }
 }
 
-impl From<FoodLevel> for proto::FoodLevel {
-    fn from(level: FoodLevel) -> Self {
-        match level {
+impl TryFrom<FoodLevel> for proto::FoodLevel {
+    type Error = NoWireForm;
+
+    fn try_from(level: FoodLevel) -> Result<Self, NoWireForm> {
+        Ok(match level {
             FoodLevel::Unread => Self::Unread,
             FoodLevel::Present => Self::Present,
             FoodLevel::Low => Self::Low,
-        }
+            FoodLevel::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -623,13 +667,15 @@ impl From<proto::MissedReason> for MissedReason {
     }
 }
 
-impl From<MissedReason> for proto::MissedReason {
-    fn from(reason: MissedReason) -> Self {
-        match reason {
+impl TryFrom<MissedReason> for proto::MissedReason {
+    type Error = NoWireForm;
+
+    fn try_from(reason: MissedReason) -> Result<Self, NoWireForm> {
+        Ok(match reason {
             MissedReason::Late => Self::Late,
-            MissedReason::Blocked { reason } => Self::Blocked(reason.into()),
+            MissedReason::Blocked { reason } => Self::Blocked(reason.try_into()?),
             MissedReason::Interrupted => Self::Interrupted,
-        }
+        })
     }
 }
 
@@ -653,6 +699,7 @@ impl From<Plan> for proto::Plan {
             days: plan.days.bits(),
             enabled: plan.enabled,
             call: plan.call,
+            ext: proto::Tail::EMPTY,
         }
     }
 }
@@ -741,15 +788,18 @@ impl From<proto::FeedOutcome> for FeedOutcome {
     }
 }
 
-impl From<FeedOutcome> for proto::FeedOutcome {
-    fn from(outcome: FeedOutcome) -> Self {
-        match outcome {
+impl TryFrom<FeedOutcome> for proto::FeedOutcome {
+    type Error = NoWireForm;
+
+    fn try_from(outcome: FeedOutcome) -> Result<Self, NoWireForm> {
+        Ok(match outcome {
             FeedOutcome::Done => Self::Done,
             FeedOutcome::Cancelled => Self::Cancelled,
             FeedOutcome::Expired => Self::Expired,
             FeedOutcome::Failed => Self::Failed,
             FeedOutcome::Uncertain => Self::Uncertain,
-        }
+            FeedOutcome::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -775,9 +825,11 @@ impl From<proto::FeedReason> for FeedReason {
     }
 }
 
-impl From<FeedReason> for proto::FeedReason {
-    fn from(reason: FeedReason) -> Self {
-        match reason {
+impl TryFrom<FeedReason> for proto::FeedReason {
+    type Error = NoWireForm;
+
+    fn try_from(reason: FeedReason) -> Result<Self, NoWireForm> {
+        Ok(match reason {
             FeedReason::Done => Self::Done,
             FeedReason::Cancelled => Self::Cancelled,
             FeedReason::Clock => Self::Clock,
@@ -793,7 +845,8 @@ impl From<FeedReason> for proto::FeedReason {
             FeedReason::FeedbackStream => Self::FeedbackStream,
             FeedReason::Output => Self::Output,
             FeedReason::Interrupted => Self::Interrupted,
-        }
+            FeedReason::Unknown => return Err(NoWireForm),
+        })
     }
 }
 
@@ -964,7 +1017,7 @@ impl From<proto::Outcome<'_>> for Answer {
                 skipped: SkippedMeals::from_seconds(skipped),
             }),
             proto::Outcome::Feeder(proto::FeederOutcome::Call(view)) => Self::Call(view.into()),
-            proto::Outcome::Feeder(proto::FeederOutcome::Alerts(view)) => Self::Alerts(view.into()),
+            proto::Outcome::Alerts(view) => Self::Alerts(view.into()),
         }
     }
 }
@@ -1005,11 +1058,11 @@ impl From<proto::TraceSummary> for TraceSummary {
             feed,
             requested,
             completed,
-            outcome: outcome.into(),
-            reason: reason.into(),
+            outcome: lenient(outcome, FeedOutcome::Unknown),
+            reason: lenient(reason, FeedReason::Unknown),
             drive_ms,
             samples,
-            unit: unit.into(),
+            unit: lenient(unit, CurrentUnit::Unknown),
             current_peak,
             current_mean,
             rising,
@@ -1112,8 +1165,9 @@ impl From<proto::CalibrationView> for CalibrationView {
             writable,
             calibration: calibration.into(),
             phase: phase.map(|phase| match phase {
-                proto::Phase::AtMark => Phase::AtMark,
-                proto::Phase::Unknown => Phase::Unknown,
+                proto::Lenient::Known(proto::Phase::AtMark) => Phase::AtMark,
+                proto::Lenient::Known(proto::Phase::Unknown) => Phase::Unknown,
+                proto::Lenient::Unknown(_) => Phase::Newer,
             }),
         }
     }
@@ -1125,8 +1179,9 @@ impl From<proto::Calibration> for Calibration {
         Self {
             portion_mg,
             bowl: match bowl {
-                proto::Bowl::Single => Bowl::Single,
-                proto::Bowl::Double => Bowl::Double,
+                proto::Lenient::Known(proto::Bowl::Single) => Bowl::Single,
+                proto::Lenient::Known(proto::Bowl::Double) => Bowl::Double,
+                proto::Lenient::Unknown(_) => Bowl::Unknown,
             },
         }
     }
@@ -1138,8 +1193,12 @@ impl From<Calibration> for proto::Calibration {
         Self {
             portion_mg,
             bowl: match bowl {
-                Bowl::Single => proto::Bowl::Single,
-                Bowl::Double => proto::Bowl::Double,
+                Bowl::Single => proto::Bowl::Single.into(),
+                Bowl::Double => proto::Bowl::Double.into(),
+                // An index no build gives a mode: the device refuses any
+                // mode but its own `Unverified`, so a calibration read from
+                // a newer build and written back changes nothing.
+                Bowl::Unknown => proto::Lenient::Unknown(u8::MAX),
             },
         }
     }
@@ -1227,7 +1286,7 @@ impl From<proto::Stats<'_>> for Stats {
                 traced,
                 drive_ms,
                 samples,
-                unit: unit.into(),
+                unit: lenient(unit, CurrentUnit::Unknown),
                 current_peak,
                 current_mean,
                 rising,
@@ -1268,12 +1327,13 @@ impl From<proto::Counters> for Counters {
         } = counters;
         Self {
             boot: boot.into(),
-            reset: match reset {
-                proto::ResetCause::PowerOn => ResetCause::PowerOn,
-                proto::ResetCause::Watchdog => ResetCause::Watchdog,
-                proto::ResetCause::Software => ResetCause::Software,
-                proto::ResetCause::Brownout => ResetCause::Brownout,
-                proto::ResetCause::Other => ResetCause::Other,
+            reset: match reset.known() {
+                Some(proto::ResetCause::PowerOn) => ResetCause::PowerOn,
+                Some(proto::ResetCause::Watchdog) => ResetCause::Watchdog,
+                Some(proto::ResetCause::Software) => ResetCause::Software,
+                Some(proto::ResetCause::Brownout) => ResetCause::Brownout,
+                Some(proto::ResetCause::Other) => ResetCause::Other,
+                None => ResetCause::Unknown,
             },
             lifetime: lifetime.map(Counts::from),
             resets: resets.map(
@@ -1366,17 +1426,19 @@ impl From<proto::TimeView<'_>> for TimeView {
             rate_bound_ppb,
             learned,
             syncs,
-            last: last.map(|source| match source {
-                proto::TimeSource::Owner => TimeSource::Owner,
-                proto::TimeSource::Client => TimeSource::Client,
-                proto::TimeSource::Ntp => TimeSource::Ntp,
+            last: last.map(|source| match source.known() {
+                Some(proto::TimeSource::Owner) => TimeSource::Owner,
+                Some(proto::TimeSource::Client) => TimeSource::Client,
+                Some(proto::TimeSource::Ntp) => TimeSource::Ntp,
+                None => TimeSource::Unknown,
             }),
             last_age_s,
-            ntp_last: ntp_last.map(|result| match result {
-                proto::NtpResult::Used => NtpResult::Used,
-                proto::NtpResult::Bounded => NtpResult::Bounded,
-                proto::NtpResult::Lost => NtpResult::Lost,
-                proto::NtpResult::Refused => NtpResult::Refused,
+            ntp_last: ntp_last.map(|result| match result.known() {
+                Some(proto::NtpResult::Used) => NtpResult::Used,
+                Some(proto::NtpResult::Bounded) => NtpResult::Bounded,
+                Some(proto::NtpResult::Lost) => NtpResult::Lost,
+                Some(proto::NtpResult::Refused) => NtpResult::Refused,
+                None => NtpResult::Unknown,
             }),
         }
     }
@@ -1479,7 +1541,14 @@ impl From<proto::AlertsView> for AlertsView {
             generation: Generation(view.generation),
             more: view.more,
             settling: view.settling,
-            alerts: view.alerts.iter().flatten().map(OpenAlert::from).collect(),
+            alerts: view
+                .alerts
+                .entries
+                .iter()
+                .flatten()
+                .map(OpenAlert::from)
+                .collect(),
+            unread: view.alerts.skipped,
         }
     }
 }
@@ -1686,13 +1755,16 @@ impl Op {
             | proto::Op::PutTime { .. }
             | proto::Op::TailLog { .. }
             | proto::Op::Stats { .. }
-            | proto::Op::ReadBank1 { .. } => None,
+            | proto::Op::ReadBank1 { .. }
+            | proto::Op::GetAlerts => None,
         }
     }
 
-    /// Whether the op belongs to the frozen update path, which a device of
-    /// any build serves: the only ops a client sends to a build of another
-    /// schema revision.
+    /// Whether the op belongs to major 1's frozen part (the update ops,
+    /// the keepalive and the invite), which a device of any build serves at
+    /// the same indices: the only ops a client sends a pre-revision build
+    /// ([`Skew::Legacy`](crate::Skew::Legacy)). A build of another revision
+    /// is sent every op, since the API only grows.
     pub fn is_frozen(&self) -> bool {
         self.to_proto().is_frozen()
     }
@@ -1804,7 +1876,7 @@ impl Op {
                 slot: *slot,
                 due_s: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
             }),
-            Self::GetAlerts => proto::Op::Feeder(proto::FeederOp::GetAlerts),
+            Self::GetAlerts => proto::Op::GetAlerts,
         }
     }
 }
@@ -1989,7 +2061,7 @@ mod tests {
     fn a_stored_body_decodes_to_the_body_received() {
         for body in bodies() {
             let model = EventBody::from(body);
-            assert_eq!(proto::EventBody::from(model), body);
+            assert_eq!(proto::EventBody::try_from(model), Ok(body));
         }
     }
 
@@ -2076,7 +2148,7 @@ mod tests {
             reset_flags: 0,
             faults: 0,
             rssi: 0,
-            wifi: proto::WifiSource::Build,
+            wifi: proto::WifiSource::Build.into(),
             link_losses: 0,
             dns_losses: 0,
             clock_ms: Some(u64::MAX),
@@ -2084,20 +2156,22 @@ mod tests {
             wifi_generation: 0,
             last_event: None,
             sessions: 1,
+            alerts_generation: 0,
             device: proto::DeviceStatus::Feeder(proto::FeederStatus {
                 locked: None,
                 settings_generation: 0,
                 desiccant: proto::Desiccant::Unknown,
-                food: proto::FoodLevel::Unread,
+                food: proto::FoodLevel::Unread.into(),
                 feed_fault: None,
-                readiness: proto::Readiness::Ready,
+                blocked: None,
                 supply: proto::Supply {
                     adapter: None,
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
-                alerts_generation: 0,
+                ext: proto::Tail::EMPTY,
             }),
+            ext: proto::Tail::EMPTY,
         };
         assert_eq!(Status::from(status).clock, None);
     }

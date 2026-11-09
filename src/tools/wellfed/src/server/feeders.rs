@@ -449,7 +449,9 @@ fn settled(entry: &Command) -> Result<Settled> {
         }
         Some(CommandOutcome::Fed { outcome, .. }) => match outcome {
             FeedOutcome::Done => Ok(Settled::Known),
-            FeedOutcome::Uncertain => Ok(Settled::Unknown),
+            // An ending a newer feeder build added says no more than
+            // an uncertain one.
+            FeedOutcome::Uncertain | FeedOutcome::Unknown => Ok(Settled::Unknown),
             FeedOutcome::Cancelled | FeedOutcome::Expired | FeedOutcome::Failed => {
                 bail!("the feed ended {}", text::word(outcome))
             }

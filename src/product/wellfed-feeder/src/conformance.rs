@@ -16,21 +16,22 @@
 
 use wellfed_core::store::slot::crc32;
 use wellfed_proto::api::{
-    Blocked, CurrentUnit, Desiccant, DeviceStatus, Event, EventBody, FeedOutcome, FeedReason,
-    FeederStatus, FoodLevel, FrozenRefusal, Readiness, Refusal, Resets, Source, Stats,
-    StatsSection, Status, TraceSummary,
+    self as proto, Alert, Blocked, CurrentUnit, Desiccant, DeviceStatus, EventBody, FeedOutcome,
+    FeedReason, FeederStatus, FoodLevel, FrozenRefusal, Path, Readiness, Refusal, Resets, Source,
+    Stats, StatsSection, Status, TraceSummary,
 };
 use wellfed_proto::device::{DeviceKind, Model};
 
 use crate::feeder::owner::{self, ResetRefusal};
+use crate::feeder::platform::EventSlot;
 use crate::feeder::{DeviceView, Feeder, Feeds, NoFeeds, Platform, Record};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallClip, CallResult, LockResult, MealReminder,
-    NtpServer, Origin, PLANS, Plan, PlansResult, SettingsFields, SettingsResult, SettingsView,
-    Table, TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, Weekdays,
-    WifiResult, WifiView, Window, Zone,
+    Asked, Calibration, CalibrationResult, CallChange, CallClip, CallResult, LockResult,
+    MealReminder, MealSkip, NtpServer, Origin, PLANS, Plan, PlansResult, SettingsFields,
+    SettingsResult, SettingsView, Table, TimeFields, TimeResult, TimeSettings, TimeSettingsResult,
+    TimeSettingsView, Weekdays, WifiResult, WifiView, Window, Zone,
 };
 use wellfed_device_api::mailbox::{KeyResult, Requested};
 use wellfed_device_api::wifi::Credentials;
@@ -73,7 +74,9 @@ fn device<R: Rig, T>(
     call(&mut device)
 }
 
+/// A read with no fields; a change as the suite's client asks it.
 fn settings(rig: &mut impl Rig, change: SettingsFields) -> SettingsResult {
+    let change = change.changes().then_some(Asked { change, by: CLIENT });
     device(rig, 0, |device| device.settings(change))
 }
 
@@ -88,6 +91,7 @@ fn settings_view(rig: &mut impl Rig) -> SettingsView {
 }
 
 fn wifi(rig: &mut impl Rig, change: Option<Option<Credentials>>) -> WifiResult {
+    let change = change.map(|change| Asked { change, by: CLIENT });
     device(rig, 0, |device| device.wifi(change))
 }
 
@@ -128,7 +132,56 @@ fn enroll(key: u8) -> KeyChange {
         key: [key; 32],
         label: Label::new(b"phone").expect("a short label"),
         role: Role::Member,
+        path: Path::Invite,
     }
+}
+
+/// The client that asks for the suite's writes.
+const CLIENT: Source = Source::Client([1, 2, 3, 4]);
+
+fn revoke(key: u8) -> KeyChange {
+    KeyChange::Revoke {
+        key: [key; 32],
+        by: CLIENT,
+    }
+}
+
+/// Run the loop and the writer until the event ring is open (the alert
+/// rules' boot read ends as the loop runs, too).
+fn open_ring(rig: &mut impl Rig) {
+    for _ in 0..TURNS {
+        pass(rig, 0);
+        rig.write();
+        if device(rig, 0, |device| device.epoch()).is_some() {
+            return;
+        }
+    }
+    panic!("the ring never opened");
+}
+
+/// The events after `after`, through the subscriber's turns: as many as
+/// fit `out`, and how many there were.
+fn events_after(
+    rig: &mut impl Rig,
+    mut after: Option<u64>,
+    out: &mut [Option<EventBody>],
+) -> usize {
+    let mut count = 0;
+    for _ in 0..TURNS {
+        match device(rig, 0, |device| device.event_after(Reader::slot(0), after)) {
+            EventRead::Event(read) => {
+                after = Some(read.seq);
+                if let Some(slot) = out.get_mut(count) {
+                    *slot = read.body();
+                }
+                count += 1;
+            }
+            EventRead::Wait => rig.write(),
+            EventRead::None => return count,
+            EventRead::Gap { from, to } => panic!("events {from}..={to} lost"),
+        }
+    }
+    panic!("the ring never reached its end");
 }
 
 fn credentials() -> Credentials {
@@ -235,14 +288,137 @@ pub fn client_changes_answer_by_ticket(rig: &mut impl Rig) {
     assert_eq!(keys_outcome(rig, ticket), Some(KeyOutcome::Done));
 
     assert_eq!(key_change(rig, enroll(7)), KeyOutcome::Duplicate);
+    assert_eq!(key_change(rig, revoke(9)), KeyOutcome::NotFound);
+    assert_eq!(key_change(rig, revoke(7)), KeyOutcome::Done);
+}
+
+/// A client store change records its history event in the writer's turn,
+/// with nobody reading its outcome (the session that asked has gone): one
+/// event for each change that went through, the change's own time on it,
+/// and none for one that changed nothing. The alert rules hear of each on
+/// the loop's next pass, as they do of the loop's own events.
+pub fn a_client_change_records_its_event_unread(rig: &mut impl Rig) {
+    open_ring(rig);
+    let before = device(rig, 0, |device| device.status(0)).last_event;
+
+    for change in [enroll(7), enroll(7), revoke(7), revoke(7)] {
+        keys(rig, change).expect("the client mailbox is free");
+        rig.write();
+    }
+    pass(rig, 0);
+
+    let joined = EventBody::Enrolled {
+        client: [7; 4],
+        role: proto::Role::Member,
+        path: Path::Invite,
+    };
+    let revoked = EventBody::Revoked {
+        client: [7; 4],
+        by: CLIENT,
+    };
+    let mut events = [None; 4];
+    let count = events_after(rig, before, &mut events);
     assert_eq!(
-        key_change(rig, KeyChange::Revoke { key: [9; 32] }),
-        KeyOutcome::NotFound
+        count, 2,
+        "one event per change that went through: {events:?}"
     );
-    assert_eq!(
-        key_change(rig, KeyChange::Revoke { key: [7; 32] }),
-        KeyOutcome::Done
-    );
+    assert_eq!(events[..2], [Some(joined), Some(revoked)]);
+
+    let view = device(rig, 0, |device| device.alerts()).expect("the ring is open");
+    let alerted = |alert: Alert| {
+        view.alerts
+            .entries
+            .iter()
+            .flatten()
+            .any(|open| open.alert == alert)
+    };
+    assert!(alerted(Alert::ClientJoined {
+        client: [7; 4],
+        role: proto::Role::Member,
+        path: Path::Invite,
+    }));
+    assert!(alerted(Alert::ClientRevoked {
+        client: [7; 4],
+        by: CLIENT,
+    }));
+}
+
+/// A client's settings, Wi-Fi, plans, skip and undo each record their
+/// event in the writer's turn, naming the client, with nobody reading the
+/// result (the session that asked has gone); a change that leaves the
+/// settings as they were records none.
+pub fn a_client_write_records_its_event_unread(rig: &mut impl Rig) {
+    open_ring(rig);
+    let sync = TimeFields {
+        unix_ms: 1_793_170_800_000,
+        offset_s: 0,
+        next_change_s: 0,
+        next_offset_s: 0,
+    };
+    device(rig, 0, |device| device.time_sync(sync, Origin::Owner));
+    rig.write();
+    let before = device(rig, 0, |device| device.status(0)).last_event;
+
+    for _ in 0..2 {
+        settings(rig, volume(3));
+        rig.write();
+    }
+    let settings = settings_view(rig).generation;
+    wifi(rig, Some(Some(credentials())));
+    rig.write();
+    let wifi = wifi_view(rig).generation;
+    let mut table = [None; PLANS];
+    table[4] = Some(Plan {
+        minute: 7 * 60 + 30,
+        portions: 2,
+        days: Weekdays::EVERY_DAY,
+        enabled: true,
+        call: 0,
+    });
+    plans(rig, Some(table));
+    rig.write();
+    let PlansResult::Current { view, .. } = plans(rig, None) else {
+        panic!("the plans after the writer's turn");
+    };
+    // Today's 07:30, still to come at 07:00.
+    let due = 1_793_172_600;
+    for skip in [MealSkip::Skip, MealSkip::Unskip] {
+        let asked = Asked {
+            change: skip,
+            by: CLIENT,
+        };
+        device(rig, 0, |device| device.skip_meal(4, due, asked, 0)).expect("queued");
+        rig.write();
+    }
+
+    let mut events = [None; 8];
+    let count = events_after(rig, before, &mut events);
+    let expected = [
+        EventBody::Settings {
+            generation: settings,
+            by: CLIENT,
+        },
+        EventBody::Wifi {
+            generation: wifi,
+            by: CLIENT,
+        },
+        EventBody::Plans {
+            generation: view.revision,
+            by: CLIENT,
+        },
+        EventBody::Skipped {
+            plan: 4,
+            due,
+            by: CLIENT,
+        },
+        EventBody::Unskipped {
+            plan: 4,
+            due,
+            by: CLIENT,
+        },
+    ];
+    assert_eq!(count, expected.len(), "one event per change: {events:?}");
+    assert_eq!(events[..expected.len()], expected.map(Some));
 }
 
 /// While a feed holds the outputs, every store write is refused at once
@@ -486,6 +662,7 @@ pub fn the_desiccant_count_follows_the_clock_and_its_reset(rig: &mut impl Rig) {
 }
 
 fn plans(rig: &mut impl Rig, change: Option<Table>) -> PlansResult {
+    let change = change.map(|change| Asked { change, by: CLIENT });
     device(rig, 0, |device| device.plans(change))
 }
 
@@ -641,13 +818,11 @@ pub fn a_recorded_event_reads_back(rig: &mut impl Rig) {
     let mut found = None;
     for _ in 0..TURNS {
         match device(rig, 0, |device| device.event_after(Reader::slot(0), after)) {
-            EventRead::Event(Event {
-                seq, body: read, ..
-            }) if read == body => {
-                found = Some(seq);
+            EventRead::Event(read) if read.body() == Some(body) => {
+                found = Some(read.seq);
                 break;
             }
-            EventRead::Event(Event { seq, .. }) => after = Some(seq),
+            EventRead::Event(read) => after = Some(read.seq),
             EventRead::Wait | EventRead::None => rig.write(),
             EventRead::Gap { from, to } => panic!("events {from}..={to} lost"),
         }
@@ -655,6 +830,38 @@ pub fn a_recorded_event_reads_back(rig: &mut impl Rig) {
     let seq = found.expect("the event reads back");
     let status = device(rig, 0, |device| device.status(0));
     assert_eq!(status.last_event, Some(seq));
+}
+
+/// A body this build cannot decode (a newer build's, as a bank 0 that kept
+/// an older one meets after a fall) goes to the client as the ring keeps
+/// it, numbered: the client reads it or skips it by its length, rather than
+/// being told the event is gone.
+pub fn a_body_this_build_cannot_read_goes_out_as_kept(rig: &mut impl Rig) {
+    let mut newer = [0; wellfed_proto::api::EVENT_BODY_MAX];
+    newer[..3].copy_from_slice(&[0xf0, 0x01, 0x07]);
+    assert!(
+        rig.feeder()
+            .platform_mut()
+            .queue_event(Some(9), newer, EventSlot::Shared),
+        "the queue takes it"
+    );
+
+    let mut after = None;
+    let mut found = None;
+    for _ in 0..TURNS {
+        match device(rig, 0, |device| device.event_after(Reader::slot(0), after)) {
+            EventRead::Event(read) if read.body == newer => {
+                found = Some(read);
+                break;
+            }
+            EventRead::Event(read) => after = Some(read.seq),
+            EventRead::Wait | EventRead::None => rig.write(),
+            EventRead::Gap { from, to } => panic!("events {from}..={to} reported gone"),
+        }
+    }
+    let read = found.expect("the event reads back");
+    assert_eq!(read.at, Some(9));
+    assert_eq!(read.body(), None, "no build of today reads it");
 }
 
 /// Status names the build the welcome does, and the time it was asked at.
@@ -782,11 +989,11 @@ pub fn traces_are_served_beside_the_statistics(rig: &mut impl Rig) {
         feed: 77,
         requested: 1,
         completed: 1,
-        outcome: FeedOutcome::Done,
-        reason: FeedReason::Done,
+        outcome: FeedOutcome::Done.into(),
+        reason: FeedReason::Done.into(),
         drive_ms: 9_072,
         samples: 300,
-        unit: CurrentUnit::Scaled,
+        unit: CurrentUnit::Scaled.into(),
         current_peak: 164,
         current_mean: Some(60),
         rising: 1,
@@ -868,9 +1075,9 @@ pub fn a_lasting_reason_not_to_feed_is_recorded_once(rig: &mut impl Rig) {
     let mut seen = 0;
     for _ in 0..TURNS {
         match device(rig, 0, |device| device.event_after(Reader::slot(0), after)) {
-            EventRead::Event(Event { seq, body, .. }) => {
-                seen += usize::from(body == blocked);
-                after = Some(seq);
+            EventRead::Event(read) => {
+                seen += usize::from(read.body() == Some(blocked));
+                after = Some(read.seq);
             }
             EventRead::Wait => rig.write(),
             EventRead::None => break,
@@ -1040,6 +1247,8 @@ macro_rules! conformance {
             a_settings_change_lands_on_the_writer_turn,
             wifi_credentials_are_saved_and_cleared,
             client_changes_answer_by_ticket,
+            a_client_change_records_its_event_unread,
+            a_client_write_records_its_event_unread,
             writes_are_refused_while_the_outputs_are_claimed,
             the_lock_follows_the_panel_owner,
             a_time_sync_sets_the_clock,
@@ -1049,6 +1258,7 @@ macro_rules! conformance {
             a_meal_call_uploads_in_chunks_and_deletes,
             the_desiccant_count_follows_the_clock_and_its_reset,
             a_recorded_event_reads_back,
+            a_body_this_build_cannot_read_goes_out_as_kept,
             status_reports_the_build_and_the_time,
             a_feeder_without_a_feeding_owner_refuses_feeds,
             the_statistics_follow_the_loop,

@@ -15,19 +15,37 @@ pub struct NewEvent<'a> {
     pub seq: u64,
     pub at: Option<Timestamp>,
     pub received: Timestamp,
-    /// The event, decoded once, for its kind and its projection.
-    pub body: EventBody,
-    /// The body as the feeder encoded it (postcard bytes): what is stored.
+    /// The event, decoded once, for its kind and its projection; `None`
+    /// for a body a newer feeder build added, which this server cannot
+    /// read. That one is stored with no kind and projects nothing, so a
+    /// later server reads it from its bytes.
+    pub body: Option<EventBody>,
+    /// The body as the feeder encoded it (postcard bytes, trailing zeros
+    /// perhaps trimmed): what is stored.
     pub raw: &'a [u8],
 }
+
+/// The kind a body this server cannot read is stored under.
+pub(crate) const UNREAD: &str = "unknown";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventRow {
     pub seq: u64,
     pub at: Option<Timestamp>,
     pub received: Timestamp,
-    pub kind: EventKind,
+    /// `None` for a body this server could not read when it came.
+    pub kind: Option<EventKind>,
     pub body: Vec<u8>,
+}
+
+/// A stored kind, `None` for a body that came unread.
+fn stored_kind(code: &str) -> Result<Option<EventKind>> {
+    if code == UNREAD {
+        return Ok(None);
+    }
+    EventKind::from_code(code)
+        .map(Some)
+        .ok_or(Error::Corrupt("event kind"))
 }
 
 impl Store {
@@ -40,7 +58,7 @@ impl Store {
         let seq = to_i64(event.seq, "event sequence")?;
         let at = event.at.map(|at| at.as_second());
         let received = millis(event.received);
-        let kind = event.body.kind().code();
+        let kind = event.body.map_or(UNREAD, |body| body.kind().code());
 
         let mut tx = self.writer.begin().await?;
         let done = sqlx::query!(
@@ -57,14 +75,14 @@ impl Store {
         .execute(&mut *tx)
         .await?;
         let new = done.rows_affected() == 1;
-        if new {
+        if new && let Some(body) = event.body {
             let place = Place {
                 epoch,
                 seq,
                 at_s: at,
                 received_ms: received,
             };
-            project(&mut tx, id, place, event.body).await?;
+            project(&mut tx, id, place, body).await?;
         }
         advance(&mut tx, id, epoch, seq).await?;
         tx.commit().await?;
@@ -132,7 +150,7 @@ impl Store {
                     seq: from_i64(row.seq, "event sequence")?,
                     at: seconds(row.at_s)?,
                     received: timestamp(row.received_ms)?,
-                    kind: EventKind::from_code(&row.kind).ok_or(Error::Corrupt("event kind"))?,
+                    kind: stored_kind(&row.kind)?,
                     body: row.body,
                 })
             })
@@ -171,7 +189,7 @@ impl Store {
                     seq: from_i64(row.seq, "event sequence")?,
                     at: seconds(row.at_s)?,
                     received: timestamp(row.received_ms)?,
-                    kind: EventKind::from_code(&row.kind).ok_or(Error::Corrupt("event kind"))?,
+                    kind: stored_kind(&row.kind)?,
                     body: row.body,
                 };
                 Ok((epoch, event))

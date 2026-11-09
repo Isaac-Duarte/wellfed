@@ -205,10 +205,6 @@ enum ServerConnection {
 
   /// The feeder refused the server's key: removed or reset.
   refused,
-
-  /// The feeder runs a different build than the server, so it takes
-  /// nothing but an update, which the Firmware screen still sends.
-  otherBuild,
 }
 
 /// One history entry, with when the server received it.
@@ -274,6 +270,10 @@ class ServerFeeder {
   final String? address;
   final ServerConnection connection;
 
+  /// How the feeder's API revision stands against the server's, from its
+  /// last welcome: `FeederAhead` asks for the server to be updated.
+  final Skew? skew;
+
   /// The newest event sequence the server holds.
   final BigInt? synced;
   final int? epoch;
@@ -288,6 +288,7 @@ class ServerFeeder {
     required this.role,
     this.address,
     required this.connection,
+    this.skew,
     this.synced,
     this.epoch,
     this.archivedMs,
@@ -301,6 +302,7 @@ class ServerFeeder {
       role.hashCode ^
       address.hashCode ^
       connection.hashCode ^
+      skew.hashCode ^
       synced.hashCode ^
       epoch.hashCode ^
       archivedMs.hashCode;
@@ -316,6 +318,7 @@ class ServerFeeder {
           role == other.role &&
           address == other.address &&
           connection == other.connection &&
+          skew == other.skew &&
           synced == other.synced &&
           epoch == other.epoch &&
           archivedMs == other.archivedMs;

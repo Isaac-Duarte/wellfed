@@ -373,6 +373,9 @@ enum ServerRefusal {
   portions,
   noClock,
   unverified,
+
+  /// A refusal a newer feeder build added, which the server cannot name.
+  unknown,
 }
 
 @freezed

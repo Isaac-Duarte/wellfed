@@ -3,7 +3,7 @@
 //! the answer once the device is done.
 
 use super::feeder::{self, FeederReply};
-use super::handshake::{find, fingerprint};
+use super::handshake::find;
 use super::memory::remembered;
 use super::request::{Action, Name, Reply};
 use super::{Pending, Phase, Server, Waiting, slot_id};
@@ -13,8 +13,7 @@ use crate::pairing::{self, Path};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record, UpdateAnswer, UpdateKeyChange};
 use wellfed_core::ota::offer::key_id;
 use wellfed_proto::api::{
-    self as proto, DeviceMessage, EventBody, Outcome, Refusal, RequestId, Source, TimeView,
-    UpdateRefusal,
+    self as proto, DeviceMessage, Outcome, Refusal, RequestId, TimeView, UpdateRefusal,
 };
 
 impl Server {
@@ -40,38 +39,32 @@ impl Server {
     pub(super) fn poll_pending<D: Device>(
         &mut self,
         index: usize,
-        now_ms: u32,
         device: &mut D,
         record: &mut impl FnMut(Record),
     ) -> Result<Option<(RequestId, &'static str, Reply)>, Reason> {
         let Phase::Open {
             pending: Some(pending),
-            key,
             memory,
             ..
         } = self.slots[index].phase
         else {
             return Ok(None);
         };
-        let by = Source::Client(fingerprint(&key));
 
         let outcome = match pending.waiting {
             Waiting::Feeder(wait) => match device.feeder() {
-                Some(feeder) => match feeder::poll(wait, now_ms, by, feeder) {
+                Some(feeder) => match feeder::poll(wait, feeder) {
                     Some(reply) => reply,
                     None => return Ok(None),
                 },
                 None => Reply::Refused(Refusal::Unavailable),
             },
+            // The writer recorded the `Wifi` event as it saved the change.
             Waiting::Wifi => match device.wifi(None) {
                 WifiResult::Current {
                     view,
                     pending: false,
-                } => {
-                    let generation = view.generation;
-                    device.record(now_ms, EventBody::Wifi { generation, by });
-                    Reply::Done(Some(generation))
-                }
+                } => Reply::Done(Some(view.generation)),
                 WifiResult::Current { pending: true, .. } | WifiResult::Busy => return Ok(None),
                 WifiResult::ReadOnly | WifiResult::Invalid => Reply::Refused(Refusal::NotWritable),
             },
@@ -94,15 +87,10 @@ impl Server {
                     Reply::Refused(Refusal::NotWritable)
                 }
             },
-            Waiting::Keys {
-                ticket,
-                revoked: revoked_key,
-            } => match device.keys_outcome(ticket) {
+            // The writer recorded the revocation as it made it.
+            Waiting::Keys { ticket } => match device.keys_outcome(ticket) {
                 None => return Ok(None),
-                Some(KeyOutcome::Done) => {
-                    revoked(now_ms, device, &revoked_key, by);
-                    Reply::Done(None)
-                }
+                Some(KeyOutcome::Done) => Reply::Done(None),
                 Some(KeyOutcome::NotFound) => Reply::Refused(Refusal::NotFound),
                 Some(_) => Reply::Refused(Refusal::NotWritable),
             },
@@ -127,6 +115,7 @@ impl Server {
                         key,
                         label,
                         role: Role::UpdateSigner,
+                        path: proto::Path::Press,
                     };
                     // The mailbox may be busy; the press is kept until it is not.
                     if let Some(ticket) = device.keys(change) {
@@ -152,8 +141,8 @@ impl Server {
                 {
                     Reply::Refused(Refusal::Update(UpdateRefusal::HeldAsSessionKey))
                 }
-                Some(outcome @ (KeyOutcome::Done | KeyOutcome::Duplicate)) => {
-                    signer_landed(now_ms, device, outcome, slot_id(index), &key, record);
+                Some(KeyOutcome::Done | KeyOutcome::Duplicate) => {
+                    signer_landed(slot_id(index), &key, record);
                     Reply::Done(None)
                 }
                 Some(KeyOutcome::Full) => Reply::Refused(Refusal::Full),
@@ -263,6 +252,10 @@ impl Server {
                 };
                 return self.seal_and_send(index, &message);
             }
+            Reply::Alerts => match device.alerts() {
+                Some(view) => Outcome::Alerts(view),
+                None => Outcome::Refused(Refusal::Unavailable),
+            },
             Reply::Bank1 { offset } => {
                 let result = match device.bank1_page(offset) {
                     Ok(page) => Outcome::Bank1(page),
@@ -275,39 +268,15 @@ impl Server {
     }
 }
 
-/// A pressed key's enrollment went through, with its session or after it. A
-/// key that was already enrolled changed nothing, so it leaves no history.
-#[inline(never)]
-pub(super) fn signer_landed<D: Device>(
-    now_ms: u32,
-    device: &mut D,
-    outcome: KeyOutcome,
-    slot: u8,
-    key: &[u8; 32],
-    record: &mut impl FnMut(Record),
-) {
-    if matches!(outcome, KeyOutcome::Done) {
-        let body = EventBody::Enrolled {
-            client: fingerprint(key),
-            role: proto::Role::UpdateSigner,
-            path: proto::Path::Press,
-        };
-        device.record(now_ms, body);
-    }
+/// A pressed key's enrollment went through, read by its session. Its
+/// history event is the writer's, recorded with the store write whether or
+/// not the session stayed to read this.
+fn signer_landed(slot: u8, key: &[u8; 32], record: &mut impl FnMut(Record)) {
     record(Record::UpdateKey {
         slot,
         change: UpdateKeyChange::Enrolled,
         key: key_id(key),
     });
-}
-
-/// A revocation went through, with its session or after it.
-pub(super) fn revoked<D: Device>(now_ms: u32, device: &mut D, key: &[u8; 32], by: Source) {
-    let body = EventBody::Revoked {
-        client: fingerprint(key),
-        by,
-    };
-    device.record(now_ms, body);
 }
 
 /// The zone's text, copied out of the device's view for the answer to
@@ -357,16 +326,16 @@ fn time_view<D: Device>(device: &mut D, now_ms: u32) -> Option<(TimeView<'static
         learned: clock.learned,
         syncs: clock.syncs,
         last: clock.last.map(|(origin, _)| match origin {
-            Origin::Owner => proto::TimeSource::Owner,
-            Origin::Client => proto::TimeSource::Client,
-            Origin::Ntp => proto::TimeSource::Ntp,
+            Origin::Owner => proto::TimeSource::Owner.into(),
+            Origin::Client => proto::TimeSource::Client.into(),
+            Origin::Ntp => proto::TimeSource::Ntp.into(),
         }),
         last_age_s: clock.last.map(|(_, age_ms)| age_ms / 1000),
         ntp_last: state.ntp_last.map(|result| match result {
-            NtpResult::Used => proto::NtpResult::Used,
-            NtpResult::Bounded => proto::NtpResult::Bounded,
-            NtpResult::Lost => proto::NtpResult::Lost,
-            NtpResult::Refused => proto::NtpResult::Refused,
+            NtpResult::Used => proto::NtpResult::Used.into(),
+            NtpResult::Bounded => proto::NtpResult::Bounded.into(),
+            NtpResult::Lost => proto::NtpResult::Lost.into(),
+            NtpResult::Refused => proto::NtpResult::Refused.into(),
         }),
     };
     Some((view, text))

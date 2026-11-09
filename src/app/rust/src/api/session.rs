@@ -16,7 +16,7 @@ use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::feeder::{PlansView, SettingsView, TimeInfo};
 use crate::api::keys::ClientKey;
 use crate::api::model::{
-    Blocked, ClientRole, Desiccant, FeedOutcome, FeedReason, FoodLevel, MissedReason,
+    Blocked, ClientRole, Desiccant, FeedOutcome, FeedReason, FoodLevel, MissedReason, Skew,
 };
 use crate::frb_generated::StreamSink;
 use crate::link::DirectLink;
@@ -280,6 +280,9 @@ pub enum SessionUpdate {
     Opened {
         build: String,
         role: ClientRole,
+        /// Which side to update when the feeder's API revision differs:
+        /// the feeder (`FeederBehind`) or this app (`FeederAhead`).
+        skew: Skew,
     },
     Status {
         card: Card,

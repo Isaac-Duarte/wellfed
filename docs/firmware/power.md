@@ -187,6 +187,6 @@ The chip doesn't sleep (recovered):
   - `wellfed-hal/tests/power.rs`, `tests/link.rs`; `wellfed-hal-common/tests/trial_brownout.rs`: unread, stale and implausible samples; the radio's leave, restarts, refused and deferred feeds, a radio that won't return; a stuck brownout bit still giving way and halting, no two forgiven in a row, trials counting brownouts.
   - `wellfed-device-runtime/tests/network.rs`: cut-short joins don't count toward the fallback.
   - `wellfed-feeder/tests/supply.rs`: events and their rate, the 5 s wait, the minute back on, boots across the uptime wrap, setup mode, the phantom, the hold and its release.
-  - The firmware's `tests/manual_feed.rs`, `wellfed-client/tests/api.rs`, and wire fixtures for every variant: a refused press on a low pack, the battery reason on the wire.
+  - The firmware's `tests/manual_feed.rs`, `wellfed-client/tests/api/feeds_and_refusals.rs`, and wire fixtures for every variant: a refused press on a low pack, the battery reason on the wire.
   - Simulation: `wellfed-sim` (sags via `surge_sag_adc`, `drive_sag_adc`, zero by default; scenarios `adapter-loss-mid-feed.json`, `battery-sag.json`), `wellfed-feeder-sim/tests/battery.rs` and `tests/update.rs` (battery mode end to end over TCP, an install cancelled mid-transfer). Its console takes `adapter in|out` and `pack <mV>|out`.
   - The Wi-Fi task's `wifi_off`/`wifi_on` path is host-tested against a scripted driver (`wellfed-core/tests/wifi_task.rs`) and the SDK fake (`wellfed-hal/tests/link.rs`); on hardware it is static analysis only.

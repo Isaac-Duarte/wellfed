@@ -44,7 +44,7 @@ use wellfed_formats::bench::notes::Seen;
 use wellfed_formats::bench::now;
 use wellfed_formats::hex;
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
-use wellfed_model::{Answer, LogLines, Op, Pushed, Status};
+use wellfed_model::{Answer, LogLines, Op, Pushed, Skew, Status};
 use wellfed_rig::device::{self, DeviceError, DeviceLink, Owner};
 
 use crate::server::banks::Banks;
@@ -399,6 +399,7 @@ impl Pushes {
                 ring.first += 1;
                 let gone = match dropped {
                     Some(Pushed::Event(event)) => Some(event.seq),
+                    Some(Pushed::Unknown(event)) => Some(event.seq),
                     Some(Pushed::Gap(gap)) => Some(gap.to),
                     Some(Pushed::Log(batch)) => Some(u64::from(batch.seq)),
                     Some(Pushed::Sample(_)) | None => None,
@@ -620,7 +621,9 @@ impl Task {
         self.store.update(|state| state.feeder.session = session);
     }
 
-    /// Find the feeder, open a session and subscribe after `cursor`.
+    /// Find the feeder, open a session and subscribe after `cursor`. A
+    /// pre-revision build takes only the frozen update path, so its session
+    /// opens with no subscription and serves the frozen ops alone.
     async fn open(
         &self,
         owner: &Owner,
@@ -640,17 +643,19 @@ impl Task {
         if cursor.is_some_and(|cursor| cursor.epoch != epoch) {
             *cursor = None;
         }
-        let resume = connection.subscribe(*cursor, false).await?;
+        if connection.skew() != Skew::Legacy {
+            let resume = connection.subscribe(*cursor, false).await?;
 
-        // The held history is one epoch's. A new epoch (a store reset)
-        // starts it again, empty, as does the first subscription; a
-        // reconnect in the same epoch carries on from the same cursor.
-        if self.events.epoch() != Some(epoch) || resume == Resume::Restarted {
-            let floor = match resume {
-                Resume::Continued => cursor.map(|cursor| cursor.seq),
-                Resume::Restarted => None,
-            };
-            self.events.reset(Some(epoch), floor);
+            // The held history is one epoch's. A new epoch (a store reset)
+            // starts it again, empty, as does the first subscription; a
+            // reconnect in the same epoch carries on from the same cursor.
+            if self.events.epoch() != Some(epoch) || resume == Resume::Restarted {
+                let floor = match resume {
+                    Resume::Continued => cursor.map(|cursor| cursor.seq),
+                    Resume::Restarted => None,
+                };
+                self.events.reset(Some(epoch), floor);
+            }
         }
         if let Some(info) = lock(&self.info).as_mut() {
             info.opened = Some(Opened {
@@ -658,6 +663,7 @@ impl Task {
                 model: connection.model(),
                 build: connection.build().to_string(),
                 role: connection.role(),
+                skew: connection.skew(),
             });
         }
         Ok((connection, address))
@@ -803,7 +809,12 @@ impl Open<'_> {
         for (request, _) in waiting.drain(..) {
             self.send(request);
         }
-        self.request(Purpose::Status, &Op::Status);
+        // A pre-revision build reads no status and gets no clock sync: its
+        // `Status` and `TimeSync` bytes are not this build's.
+        let legacy = self.connection.skew() == Skew::Legacy;
+        if !legacy {
+            self.request(Purpose::Status, &Op::Status);
+        }
         let mut ticks = tokio::time::interval_at(Instant::now() + STATUS_EVERY, STATUS_EVERY);
 
         let closed = loop {
@@ -830,7 +841,9 @@ impl Open<'_> {
                 },
                 _ = ticks.tick() => {
                     self.log.flush();
-                    self.request(Purpose::Status, &Op::Status);
+                    if !legacy {
+                        self.request(Purpose::Status, &Op::Status);
+                    }
                 }
                 _ = hold.changed() => {}
                 _ = states.changed() => {}
@@ -866,6 +879,9 @@ impl Open<'_> {
             }
             // Refused before anything was written: it never reached the
             // feeder.
+            Err(wellfed_connect::Error::Legacy) => {
+                let _ = request.reply.send(Err(Unavailable::Legacy));
+            }
             Err(error) => {
                 let _ = request.reply.send(Err(Unavailable::NotOpen {
                     error: Some(error.to_string()),
@@ -1006,7 +1022,9 @@ impl Open<'_> {
                     .seen(&Seen::Event(&event_name(event.body.kind())));
                 self.events.push(message);
             }
-            Pushed::Gap(_) => {
+            // A newer build's event this bench cannot read is kept as it
+            // came, so a page of the history still numbers it.
+            Pushed::Gap(_) | Pushed::Unknown(_) => {
                 *self.cursor = self.connection.cursor();
                 self.keep_cursor();
                 self.events.push(message);

@@ -1382,7 +1382,7 @@ const fn not_sent(reason: NotSentReason, error: Option<ServerError>) -> RoutedFe
 async fn direct_write(link: &DirectLink, call: DirectCall) -> WriteTry {
     let reply = direct(link, call).await;
     let (ended, not_sent) = match reply {
-        FeederReply::Unanswered => (Ended::Uncertain, None),
+        FeederReply::Unanswered | FeederReply::Unreadable => (Ended::Uncertain, None),
         FeederReply::NotSent
         | FeederReply::NotAsked {
             reason: NotAsked::Held,
@@ -1499,3 +1499,7 @@ fn feed_settlement(routed: &RoutedFeed) -> Option<Settlement> {
         RoutedFeed::Uncertain { .. } | RoutedFeed::Held { .. } => None,
     }
 }
+
+#[cfg(test)]
+#[path = "io_tests.rs"]
+mod tests;

@@ -60,6 +60,7 @@ use wellfed_core::store::slot::{
     unwritten,
 };
 use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, PlansView, Table, Weekdays};
+use wellfed_proto::api::{EventBody, Source};
 
 pub const VERSION: Version = Version::new(4, 0);
 /// The whole record.
@@ -507,6 +508,33 @@ impl<I: SlotIo> PlansStore<I> {
             self.replaced = plans.revision;
         }
         Some(saved)
+    }
+
+    /// The history event of a client's `change` that [`Self::apply`] just
+    /// saved, naming `by`: a new table's `Plans` (with the revision it
+    /// produced), a skip's `Skipped` or an undo's `Unskipped`. The
+    /// schedule's own changes have none.
+    pub fn event(&self, change: &PlansChange, by: Source) -> Option<EventBody> {
+        Some(match *change {
+            PlansChange::Replace { .. } => EventBody::Plans {
+                generation: self.plans.revision,
+                by,
+            },
+            PlansChange::Skip { plan, due_s, .. } => EventBody::Skipped {
+                plan,
+                due: due_s,
+                by,
+            },
+            PlansChange::Unskip { plan, due_s, .. } => EventBody::Unskipped {
+                plan,
+                due: due_s,
+                by,
+            },
+            PlansChange::Claim { .. }
+            | PlansChange::Release { .. }
+            | PlansChange::Settle { .. }
+            | PlansChange::Pass { .. } => return None,
+        })
     }
 
     /// Store `plans` to the other slot by the torn-write rule. A failure

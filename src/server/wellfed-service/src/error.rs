@@ -302,7 +302,7 @@ impl From<AskError> for Error {
         match error {
             AskError::NotRunning => Self::NotFound(Resource::Feeder),
             AskError::Offline => CommandError::Offline.into(),
-            AskError::OtherBuild => CommandError::OtherBuild.into(),
+            AskError::Legacy => CommandError::Legacy.into(),
             AskError::Unknown => CommandError::Unknown.into(),
             AskError::Unsendable => InternalError::Unexpected.into(),
         }

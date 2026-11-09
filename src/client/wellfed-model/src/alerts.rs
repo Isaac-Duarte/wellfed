@@ -23,6 +23,9 @@ pub struct AlertsView {
     pub settling: bool,
     /// Oldest first.
     pub alerts: Vec<OpenAlert>,
+    /// Alerts a newer feeder build added, which this build cannot read:
+    /// open, but not listed here. Update this client to see them.
+    pub unread: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

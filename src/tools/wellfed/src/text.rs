@@ -51,7 +51,7 @@ fn source(by: Option<Source>) -> String {
 pub(crate) fn fed(feed: &Feed) -> String {
     let low = match feed.hopper {
         FoodLevel::Low => "  food read low",
-        FoodLevel::Unread | FoodLevel::Present => "",
+        FoodLevel::Unread | FoodLevel::Present | FoodLevel::Unknown => "",
     };
     format!(
         "feed {}  by {}  {} ({}){low}",
@@ -177,6 +177,7 @@ const fn blocked(reason: Blocked) -> &'static str {
             "on batteries below the floor a feed needs or not yet read, or after a brownout"
         }
         Blocked::Restarting => "a restart is coming within seconds",
+        Blocked::Unknown => "something a newer feeder build added: update this CLI",
     }
 }
 
@@ -187,6 +188,7 @@ fn food(level: FoodLevel) -> &'static str {
         FoodLevel::Unread => "not read yet (the food beam reads soon after a boot, on the adapter)",
         FoodLevel::Present => "present at the last reading",
         FoodLevel::Low => "low at the last reading",
+        FoodLevel::Unknown => "something a newer feeder build added: update this CLI",
     }
 }
 
@@ -338,6 +340,12 @@ pub(crate) fn pushed(pushed: &Pushed, zone: &TimeZone) -> String {
             event.seq,
             time(event.at, zone),
             self::event(event, zone)
+        ),
+        Pushed::Unknown(event) => format!(
+            "{:>6}  {}  an event of a newer feeder build than this CLI ({})",
+            event.seq,
+            time(event.at, zone),
+            event.raw
         ),
         Pushed::Gap(gap) => format!(
             "events {}-{} left the feeder's history before they were read",
@@ -552,6 +560,7 @@ mod tests {
             wifi_generation: Generation(3),
             last_event: Some(1175),
             sessions: 1,
+            alerts_generation: Generation(0),
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: Some(false),
                 settings_generation: Generation(7),
@@ -574,7 +583,6 @@ mod tests {
                     },
                     below_floor: Some(true),
                 },
-                alerts_generation: Generation(0),
             }),
         }
     }

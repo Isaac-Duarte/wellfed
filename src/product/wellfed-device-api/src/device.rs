@@ -12,8 +12,8 @@
 
 use crate::clients::{Label, Role};
 use crate::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealSkip, Origin,
-    PlansResult, PlayResult, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
+    Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealSkip,
+    Origin, PlansResult, PlayResult, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
     TimeSettings, TimeSettingsResult, TimeState, WifiResult,
 };
 use crate::wifi::Credentials;
@@ -37,11 +37,10 @@ pub trait Device {
     fn build(&self) -> &'static str;
     /// The device's model, for the welcome; its kind follows from it.
     fn model(&self) -> Model;
-    /// The revision of the protocol outside the frozen update path, for
-    /// the welcome. Every build sends its own; a simulator may play an
-    /// older one.
-    fn schema(&self) -> u32 {
-        wellfed_proto::api::SCHEMA
+    /// The API revision, for the welcome. Every build sends its own; a
+    /// simulator may play an older or a newer one.
+    fn revision(&self) -> u32 {
+        wellfed_proto::api::REVISION
     }
     /// The feeder's module of this device: [`NoFeeder`] for another kind,
     /// whose [`Self::feeder`] is always `None`. Generic rather than `dyn`,
@@ -53,8 +52,9 @@ pub trait Device {
     /// Everything [`Status`] reports, the kind's part included, but the
     /// session count.
     fn status(&mut self, now_ms: u32) -> Status<'static>;
-    /// The Wi-Fi store; with `Some`, one change (`Some(None)` clears) queued.
-    fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult;
+    /// The Wi-Fi store; with `Some`, one change (`None` credentials clear)
+    /// queued, whose `Wifi` event the writer records as it saves it.
+    fn wifi(&mut self, change: Option<Asked<Option<Credentials>>>) -> WifiResult;
     /// A client's sync; `origin` says whether it may step the clock.
     fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult;
     /// Queue a client store change; its ticket, or `None` while the mailbox
@@ -84,6 +84,11 @@ pub trait Device {
     /// bank's end. Asked only for an owner.
     fn bank1_page(&mut self, _offset: u32) -> Result<Bank1Page<'_>, Refusal> {
         Err(Refusal::Unavailable)
+    }
+    /// The table of open alerts, some any device's and some its kind's. A
+    /// device that keeps none answers `None`, refused `Unavailable`.
+    fn alerts(&mut self) -> Option<AlertsView> {
+        None
     }
 
     /// Queue an update request for the installer: its ticket, or why it
@@ -139,8 +144,9 @@ pub trait Device {
 /// The rest of a feeder, as the feeder's module of the device API needs
 /// it ([`proto::FeederOp`]).
 pub trait FeederDevice: Device {
-    /// The settings, or one change queued for the writer.
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult;
+    /// The settings; with `Some`, one change queued for the writer, which
+    /// records its `Settings` event as it saves it.
+    fn settings(&mut self, change: Option<Asked<SettingsFields>>) -> SettingsResult;
     fn lock(&mut self, locked: bool) -> LockResult;
     /// Queue a tune for the speaker, or say why it will not sound now.
     /// `Started` means queued, not heard: a codec that then will not open
@@ -174,19 +180,22 @@ pub trait FeederDevice: Device {
         CalibrationResult::Unserved
     }
     /// The feeding plans; with `Some`, a client's whole new table queued
-    /// for the writer. A feeder without a plans store keeps none.
-    fn plans(&mut self, _change: Option<Table>) -> PlansResult {
+    /// for the writer, which records its `Plans` event as it saves it. A
+    /// feeder without a plans store keeps none.
+    fn plans(&mut self, _change: Option<Asked<Table>>) -> PlansResult {
         PlansResult::Unserved
     }
     /// Queue a client's skip of slot `slot`'s meal due at `due_s` (Unix
     /// seconds), or its undo, for the plans' writer, after checking it is
     /// that plan's meal still to come today (`Invalid`), with a valid clock
-    /// and offset (`NoClock`). A feeder without a plans store keeps none.
+    /// and offset (`NoClock`). The writer records the `Skipped` or
+    /// `Unskipped` event, naming `by`, as it saves it. A feeder without a
+    /// plans store keeps none.
     fn skip_meal(
         &mut self,
         _slot: u8,
         _due_s: u32,
-        _skip: MealSkip,
+        _skip: Asked<MealSkip>,
         _now_ms: u32,
     ) -> Result<(), Refusal> {
         Err(Refusal::Unavailable)
@@ -206,11 +215,6 @@ pub trait FeederDevice: Device {
     /// Queue the stored meal call to play once, so its owner can hear it.
     fn play_call(&mut self) -> CallPlay {
         CallPlay::Unserved
-    }
-    /// The table of open alerts. A feeder that keeps none answers `None`,
-    /// refused `Unavailable`.
-    fn alerts(&mut self) -> Option<AlertsView> {
-        None
     }
     /// Today's local calendar day (days since 1970-01-01, UTC when the
     /// clock knows no offset) while the clock is valid: the day a desiccant
@@ -254,7 +258,7 @@ impl Device for NoFeeder {
     fn status(&mut self, _now_ms: u32) -> Status<'static> {
         match *self {}
     }
-    fn wifi(&mut self, _change: Option<Option<Credentials>>) -> WifiResult {
+    fn wifi(&mut self, _change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         match *self {}
     }
     fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {
@@ -284,7 +288,7 @@ impl Device for NoFeeder {
 }
 
 impl FeederDevice for NoFeeder {
-    fn settings(&mut self, _change: SettingsFields) -> SettingsResult {
+    fn settings(&mut self, _change: Option<Asked<SettingsFields>>) -> SettingsResult {
         match *self {}
     }
     fn lock(&mut self, _locked: bool) -> LockResult {
@@ -346,16 +350,46 @@ pub enum UpdateAnswer {
     },
 }
 
+/// A client store change the device API asks for. Each names what its
+/// history event needs, since the settings writer, not the asking session,
+/// records it ([`KeyChange::event`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyChange {
     Enroll {
         key: [u8; 32],
         label: Label,
         role: Role,
+        /// How the key joined.
+        path: proto::Path,
     },
     Revoke {
         key: [u8; 32],
+        /// The client that asked.
+        by: Source,
     },
+}
+
+impl KeyChange {
+    /// The history event this change records once the writer has made it
+    /// (`Done`). A device records it in the same turn as the store write,
+    /// whether or not the asking session is still there to read the
+    /// outcome; a change that was refused, or changed nothing (a key
+    /// already enrolled), records none.
+    pub fn event(&self) -> EventBody {
+        match *self {
+            Self::Enroll {
+                key, role, path, ..
+            } => EventBody::Enrolled {
+                client: crate::fingerprint(&key),
+                role: crate::proto_role(role),
+                path,
+            },
+            Self::Revoke { key, by } => EventBody::Revoked {
+                client: crate::fingerprint(&key),
+                by,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -385,12 +419,12 @@ impl Reader {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventRead {
-    Event(proto::Event),
+    /// The event as the ring keeps it: a body this build cannot read (a
+    /// newer build's, met by a bank 0 that kept an older one) goes to the
+    /// client as it is, which reads it or skips it by its length.
+    Event(proto::RawEvent),
     /// Events `from..=to` are gone from the ring.
-    Gap {
-        from: u64,
-        to: u64,
-    },
+    Gap { from: u64, to: u64 },
     /// Nothing newer yet.
     None,
     /// Ask again on a later pass (the writer is reading flash).

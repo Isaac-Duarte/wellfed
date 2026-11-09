@@ -1160,7 +1160,7 @@ fn an_owner_reads_the_statistics_and_their_live_metrics() {
                         kinds.push(kind);
                     }
                 }
-                Pushed::Event(_) | Pushed::Gap(_) | Pushed::Log(_) => {}
+                Pushed::Event(_) | Pushed::Unknown(_) | Pushed::Gap(_) | Pushed::Log(_) => {}
             }
         }
         for kind in MetricKind::ALL {

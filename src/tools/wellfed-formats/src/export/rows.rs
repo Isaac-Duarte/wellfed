@@ -254,12 +254,14 @@ pub struct SampleMarks {
     pub version: i64,
 }
 
-/// The projection code's version the projections were built by. One row,
+/// The projection code's version the projections were built by, and the
+/// device API revision of the server that last read the events. One row,
 /// absent before the first build.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectionVersion {
     pub version: i64,
+    pub api_revision: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

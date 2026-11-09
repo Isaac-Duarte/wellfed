@@ -52,6 +52,8 @@ Every crate sets `license.workspace = true` and `publish.workspace = true`, and 
 - Hardware and fixture evidence tests are `#[ignore]`d and run only from `make check-fixtures`, which stays on `cargo test` for its `--ignored --exact` selection. An ignored or skipped test is never a pass.
 - Network tests bind loopback sockets with synthetic identities.
 - The network parsers carry bounded [proptest](https://proptest-rs.github.io/proptest/) properties (no panic on any input, and encode-then-decode round trips) over the device API server and codec, the Noise handshake reader, BLE setup, and the update manifest and writer. They run in the ordinary suite, so `make check` covers them, and their drivers back the cargo-fuzz targets ([fuzzing](README.md#fuzzing)).
+- Split a test file by behaviour once it passes about 1,500 lines. Keep it one binary: `tests/<name>/main.rs` declares a module per behaviour, and a `support` module holds the shared fakes and helpers. The binary keeps its name, so `cargo nextest run --test <name>` still works, and the build gains no binary. Each module opens with a `//!` line saying what it covers, so a failure's module path says where to look. Review enforces this; no check counts lines.
+- Keep each firmware stage (a step of the loop or the settings writer) in a file of its own, one concern per file, so the file's name says where its code is. Review enforces this too.
 - A proptest failure records its seed: commit it with the fix, in `<name>.proptest-regressions` beside a test under `tests/`, or in `proptest-regressions/<file>.txt` at the crate root for one in `src/` (proptest's default persistence).
 
 ## Dependencies

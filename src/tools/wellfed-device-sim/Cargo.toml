@@ -17,6 +17,7 @@ wellfed-core.workspace = true
 wellfed-device.workspace = true
 wellfed-device-api.workspace = true
 wellfed-hal.workspace = true
+wellfed-proto.workspace = true
 
 [features]
 # The test harness other crates' tests start simulators with; never built

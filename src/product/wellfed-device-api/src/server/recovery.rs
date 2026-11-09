@@ -3,14 +3,13 @@
 //! as an owner. Its responder's buffer would not fit a slot, so the server
 //! holds one, and one recovery session runs at a time.
 
-use super::handshake::fingerprint;
 use super::{Phase, Server, slot_id};
 use crate::clients::Role;
 use crate::pairing::{self, Pairing, Path};
 use crate::setup::{self as rescue, Offer, Received};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record};
 use wellfed_core::deadline_passed;
-use wellfed_proto::api::{self as proto, EventBody, Open};
+use wellfed_proto::api::{self as proto, Open};
 use wellfed_proto::setup::{
     Enrolled as SetupEnrolled, Refusal as SetupRefusal, Reply as SetupReply,
     WifiSaved as SetupWifiSaved,
@@ -179,6 +178,7 @@ impl Server {
                         key: offer.key,
                         label: offer.label,
                         role: Role::Owner,
+                        path: proto::Path::Recovery,
                     };
                     if let Some(ticket) = device.keys(change) {
                         let stage = Rescue::Enrolling {
@@ -210,12 +210,8 @@ impl Server {
                         );
                     }
                 };
-                let body = EventBody::Enrolled {
-                    client: fingerprint(&offer.key),
-                    role: proto::Role::Owner,
-                    path: proto::Path::Recovery,
-                };
-                device.record(now_ms, body);
+                // The writer recorded the enrollment as it made it, so a
+                // client gone before this answer cost no event.
                 let done = SetupReply::Done {
                     enrolled,
                     wifi: SetupWifiSaved::Unchanged,

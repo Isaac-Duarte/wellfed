@@ -16,7 +16,7 @@ use wellfed_formats::hex;
 use wellfed_install::event::Event;
 use wellfed_install::push::push;
 use wellfed_install::{Discovery, Review};
-use wellfed_model::{Answer, Op, Readiness, UpdateView};
+use wellfed_model::{Answer, Op, Readiness, Skew, UpdateView};
 use wellfed_session::noise::Keypair;
 
 use crate::api::error::{BridgeError, ErrorKind};
@@ -301,8 +301,8 @@ struct Reading {
 /// What a fresh session says it runs, or `None` while it cannot say. The
 /// bank comes from the update state and the build from the welcome, both
 /// frozen, so a trial that fell back to an older bank 0 reads as having
-/// gone back. Readiness is not frozen, so it is read only from a build of
-/// this app's revision; another build is not the served one anyway.
+/// gone back. A status this app cannot read, or a pre-revision build's,
+/// leaves it not ready.
 async fn reading(
     connect: &impl AsyncFn() -> Result<Connection, wellfed_install::Error>,
 ) -> Option<Reading> {
@@ -312,16 +312,19 @@ async fn reading(
     let Answer::Update(view) = session.ask(id, &Op::UpdateState).await.ok()? else {
         return None;
     };
-    let mut ready = false;
-    if session.same_schema() {
+    // A pre-revision build's status is no longer this app's to read: it is
+    // never asked, and it is not the served build anyway.
+    let ready = if session.skew() == Skew::Legacy {
+        false
+    } else {
         let id = wellfed_install::session::random().ok()?;
-        let Answer::Status(status) = session.ask(id, &Op::Status).await.ok()? else {
-            return None;
-        };
-        ready = status
-            .feeder()
-            .is_some_and(|feeder| feeder.readiness == Readiness::Ready);
-    }
+        match session.ask(id, &Op::Status).await.ok()? {
+            Answer::Status(status) => status
+                .feeder()
+                .is_some_and(|feeder| feeder.readiness == Readiness::Ready),
+            _ => false,
+        }
+    };
     Some(Reading { build, view, ready })
 }
 

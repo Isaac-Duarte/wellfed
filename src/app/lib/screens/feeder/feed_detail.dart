@@ -136,5 +136,6 @@ class FeedDetailBody extends StatelessWidget {
     FoodLevel.present => 'Enough',
     FoodLevel.low => 'Low',
     FoodLevel.unread => 'Not checked',
+    FoodLevel.unknown => 'Unknown to this app',
   };
 }

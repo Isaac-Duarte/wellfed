@@ -25,8 +25,8 @@ use wellfed_core::tone::Tune;
 use wellfed_device::update as wire;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
-    LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
-    TimeResult, WifiResult, WifiSource, WifiView,
+    Asked, LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView,
+    TimeFields, TimeResult, WifiResult, WifiSource, WifiView,
 };
 use wellfed_device_api::pairing::{Config, Pairing};
 use wellfed_device_api::wifi::Credentials;
@@ -384,7 +384,7 @@ impl Device for Feeder {
             reset_flags: 0,
             faults: 0,
             rssi: -40,
-            wifi: proto::WifiSource::Stored,
+            wifi: proto::WifiSource::Stored.into(),
             link_losses: 0,
             dns_losses: 0,
             clock_ms: None,
@@ -392,24 +392,26 @@ impl Device for Feeder {
             wifi_generation: 1,
             last_event: None,
             sessions: 0,
+            alerts_generation: 0,
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: Some(false),
                 settings_generation: 1,
                 desiccant: proto::Desiccant::Unset,
-                food: FoodLevel::Unread,
+                food: FoodLevel::Unread.into(),
                 feed_fault: None,
-                readiness: self.readiness(),
+                blocked: self.readiness().blocked(),
                 supply: proto::Supply {
                     adapter: None,
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
-                alerts_generation: 0,
+                ext: wellfed_proto::api::Tail::EMPTY,
             }),
+            ext: wellfed_proto::api::Tail::EMPTY,
         }
     }
 
-    fn wifi(&mut self, _change: Option<Option<Credentials>>) -> WifiResult {
+    fn wifi(&mut self, _change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         WifiResult::Current {
             view: WifiView {
                 stored_ssid_crc: None,
@@ -502,7 +504,7 @@ impl Device for Feeder {
 }
 
 impl FeederDevice for Feeder {
-    fn settings(&mut self, _change: SettingsFields) -> SettingsResult {
+    fn settings(&mut self, _change: Option<Asked<SettingsFields>>) -> SettingsResult {
         SettingsResult::Current {
             view: SettingsView::default(),
             pending: false,

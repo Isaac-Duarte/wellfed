@@ -28,7 +28,7 @@ use crate::setup::Responder;
 use crate::{BUFFER, Device, Reader, Reason, Record, SESSIONS};
 use wellfed_core::deadline_passed;
 use wellfed_proto::api::{
-    self as proto, DeviceMessage, FRAME_MAX, Open, OpenRefusal, Refusal, RequestId, Sample, Source,
+    self as proto, DeviceMessage, FRAME_MAX, Open, OpenRefusal, Refusal, RequestId, Sample,
 };
 
 use wellfed_session::noise::{Handshake, Keypair, Transport};
@@ -62,7 +62,6 @@ enum Waiting {
     },
     Keys {
         ticket: u32,
-        revoked: [u8; 32],
     },
     /// A write of the feeder's module.
     Feeder(FeederWait),
@@ -79,27 +78,6 @@ enum Waiting {
         ticket: u32,
         key: [u8; 32],
     },
-}
-
-/// A client store change that outlived the session waiting for it: the
-/// writer finishes a queued change whoever is waiting, so the passes that
-/// follow record what the session would have ([`Server::settle_left`]).
-#[derive(Clone, Copy)]
-struct Left {
-    ticket: u32,
-    /// The key enrolled or revoked.
-    key: [u8; 32],
-    change: LeftChange,
-}
-
-#[derive(Clone, Copy)]
-enum LeftChange {
-    /// A pressed update key's enrollment, from session slot `slot`.
-    Signer { slot: u8 },
-    /// A revocation the client `by` asked for.
-    Revoke { by: Source },
-    /// A redeemed invite's enrollment, as `role`.
-    Join { role: Role },
 }
 
 #[derive(Clone, Copy)]
@@ -187,16 +165,6 @@ pub struct Server {
     signer: Option<pairing::Event>,
     /// A session waiting for an update key's press ended: cancel the offer.
     cancel_signer: bool,
-    /// Sessions that ended waiting for a client store change, until the
-    /// writer has finished it. As many entries as slots: each slot holds
-    /// one waiting session, and an entry whose change is finished settles
-    /// at the start of the next pass. More would need a reused slot to
-    /// open, ask and end again within the pass its first entry's change
-    /// finished in; the oldest ticket's entry then gives way. An entry whose
-    /// ticket the mailbox no longer remembers would wait until it gives way,
-    /// and its event would be lost: the mailbox's ring is sized so a result
-    /// outlives the pass it is read in.
-    left: [Option<Left>; SESSIONS],
     /// Subscribers that ended since the last pass, by slot: the device
     /// hears of each on the next.
     readers_left: [bool; SESSIONS],
@@ -243,7 +211,6 @@ impl Server {
             cancel_rescue: false,
             signer: None,
             cancel_signer: false,
-            left: [None; SESSIONS],
             readers_left: [false; SESSIONS],
             feeding: false,
             handshook: false,
@@ -375,108 +342,22 @@ impl Server {
 
     /// A session ended with a write pending. One that waits for an update
     /// key's press: the next pass cancels the offer, so the next Dispense
-    /// press feeds again. One past its press has queued the key, one that
-    /// asked for a revocation has queued it, and a joining one has queued
-    /// its own key: each lands anyway, and the passes that follow record it
-    /// ([`Self::settle_left`]). Out of line, as [`Self::settle_left`] is: it
-    /// copies the session's key, which must not grow `step`'s frame through
-    /// `end`.
-    #[inline(never)]
+    /// press feeds again. A client store change it queued (a revocation, a
+    /// pressed key, its own key from an invite or recovery) lands anyway,
+    /// and the settings writer records its event in the same turn as the
+    /// store write ([`KeyChange::event`](crate::KeyChange::event)), so
+    /// nothing is left to record here.
     fn forget_waiting(&mut self, index: usize) {
-        let left = match self.slots[index].phase {
-            // A joining session's ticket is cleared once it reads the
-            // outcome, so one still held is a change nobody has recorded.
-            Phase::Joining {
-                key,
-                role,
-                ticket: Some(ticket),
-                ..
-            } => Left {
-                ticket,
-                key,
-                change: LeftChange::Join { role },
-            },
-            Phase::Open {
-                pending: Some(Pending { waiting, .. }),
-                key: session,
-                ..
-            } => match Self::left_open(index, waiting, &session) {
-                Some(left) => left,
-                None => {
-                    self.cancel_signer |= matches!(waiting, Waiting::Signer { .. });
-                    return;
-                }
-            },
-            _ => return,
-        };
-
-        // A free entry, else the oldest ticket's: see `left`.
-        let age = |entry: &Option<Left>| {
-            entry.map_or(u32::MAX, |old| left.ticket.wrapping_sub(old.ticket))
-        };
-        if let Some(entry) = self.left.iter_mut().max_by_key(|entry| age(entry)) {
-            *entry = Some(left);
-        }
-    }
-
-    /// What an open session ending while `waiting` leaves to record.
-    fn left_open(index: usize, waiting: Waiting, session: &[u8; 32]) -> Option<Left> {
-        let left = match waiting {
-            Waiting::SignerKeys { ticket, key } => Left {
-                ticket,
-                key,
-                change: LeftChange::Signer {
-                    slot: slot_id(index),
-                },
-            },
-            Waiting::Keys { ticket, revoked } => Left {
-                ticket,
-                key: revoked,
-                change: LeftChange::Revoke {
-                    by: Source::Client(handshake::fingerprint(session)),
-                },
-            },
-            _ => return None,
-        };
-        Some(left)
-    }
-
-    /// Record each change whose session has gone, once the writer has
-    /// finished it, as the session would have. Out of line, as
-    /// [`Self::tell_readers_left`] is, so it does not grow `step`'s frame.
-    #[inline(never)]
-    fn settle_left<D: Device>(
-        &mut self,
-        now_ms: u32,
-        device: &mut D,
-        record: &mut impl FnMut(Record),
-    ) {
-        for entry in &mut self.left {
-            let Some(left) = *entry else {
-                continue;
-            };
-            let Some(outcome) = device.keys_outcome(left.ticket) else {
-                continue;
-            };
-
-            *entry = None;
-            // Only a change that went through is news. A duplicate key may
-            // belong to a session client, which the live path refuses, so it
-            // must not read as enrolled here, and a joining key already
-            // enrolled had its event when it was; a refused revocation or a
-            // full table changed nothing.
-            if !matches!(outcome, crate::KeyOutcome::Done) {
-                continue;
-            }
-            match left.change {
-                LeftChange::Signer { slot } => {
-                    pending::signer_landed(now_ms, device, outcome, slot, &left.key, record);
-                }
-                LeftChange::Revoke { by } => pending::revoked(now_ms, device, &left.key, by),
-                LeftChange::Join { role } => {
-                    session::joined_event(now_ms, device, &left.key, role);
-                }
-            }
+        if let Phase::Open {
+            pending:
+                Some(Pending {
+                    waiting: Waiting::Signer { .. },
+                    ..
+                }),
+            ..
+        } = self.slots[index].phase
+        {
+            self.cancel_signer = true;
         }
     }
 
@@ -545,7 +426,6 @@ impl Server {
             self.signer = None;
         }
         self.tell_readers_left(device);
-        self.settle_left(now_ms, device, &mut record);
 
         // A feed queued before the deadline (a Dispense press: the server
         // refuses its own) holds the restart until it has ended, so the

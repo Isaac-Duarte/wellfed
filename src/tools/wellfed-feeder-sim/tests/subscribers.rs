@@ -128,6 +128,9 @@ async fn until_fed(connection: &mut Connection, after: Option<u64>) -> Vec<(u64,
                 }
             }
             Pushed::Gap(gap) => panic!("events lost: {gap:?}"),
+            Pushed::Unknown(event) => {
+                panic!("this build recorded a body it cannot read: {event:?}")
+            }
             Pushed::Sample(_) | Pushed::Log(_) => {}
         }
     }

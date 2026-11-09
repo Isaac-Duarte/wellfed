@@ -206,7 +206,8 @@ class FakeSession with FakeOpaque implements FeederSession {
   @override
   void close() => closes++;
 
-  void opened() => updates.add(const SessionUpdate.opened(build: 'test', role: ClientRole.owner));
+  void opened({Skew skew = Skew.same}) =>
+      updates.add(SessionUpdate.opened(build: 'test', role: ClientRole.owner, skew: skew));
 
   void status(Card card) => updates.add(SessionUpdate.status(card: card));
 

@@ -89,6 +89,17 @@ To restore from a backup:
 4. Put `keys/server.key` back.
 5. Start the server, then run `curl http://127.0.0.1:8080/health` (or your `listen` address). You should see the server's version.
 
+## Upgrade it
+
+Until the first server release, migrations are squashed in place, so a build can change one that an existing `server.db` already ran. sqlx then refuses to start on that database: the applied migration's checksum no longer matches. Such a build says so in its commit. To move to it:
+
+1. Stop the server.
+2. Move `server.db` (and any `server.db-wal` and `server.db-shm`) aside. Keep `keys/server.key`.
+3. Start the server; it makes an empty database.
+4. Set it up and adopt the feeders again.
+
+An export from the old build doesn't carry over either, since the archive's rows changed with the tables. The November 8, 2026 change added `api_revision` to the `projection_version` row (migration `0004_projections.sql`) and to the export's row of that table.
+
 ## Settings
 
 `server.toml` in the data directory holds what is neither a secret nor a setting of the home (the home's time zone lives in the database). [`server.example.toml`](../../src/server/wellfed-server/server.example.toml) lists every key with its default and a comment: copy it and keep only the keys you change.

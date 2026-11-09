@@ -112,12 +112,12 @@ impl Service {
                     refusal: refusal.into(),
                 },
                 Ok(_) | Err(AskError::Unknown) => RevokeAttempt::Unknown,
-                // A feeder of another build takes the revocation once it
-                // is updated, as an offline one does once it is back.
+                // A pre-revision build takes the revocation once it is
+                // updated, as an offline one does once it is back.
                 Err(
                     AskError::Offline
-                    | AskError::OtherBuild
                     | AskError::NotRunning
+                    | AskError::Legacy
                     | AskError::Unsendable,
                 ) => RevokeAttempt::Offline,
             };
@@ -232,7 +232,7 @@ pub(crate) fn own_revoke(sent: Result<CommandOutcome>) -> Result<Option<RevokeAt
             Ok(Some(RevokeAttempt::Unknown))
         }
         Err(
-            Error::Command(CommandError::Offline | CommandError::OtherBuild)
+            Error::Command(CommandError::Offline | CommandError::Legacy)
             | Error::NotFound(Resource::Feeder),
         ) => Ok(Some(RevokeAttempt::Offline)),
         Err(other) => Err(other),

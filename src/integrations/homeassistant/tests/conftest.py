@@ -71,9 +71,9 @@ def simulator(tmp_path: Path, socket_enabled: None) -> Iterator[Simulator]:
     cli = _binary("wellfed")
     sim = _binary("wellfed-feeder-sim")
     keys = tmp_path / "owner.json"
-    # Any command makes the key file; this one then fails to connect.
+    # The CLI makes a key only when asked: this makes it, then fails to connect.
     subprocess.run(
-        [cli, "clients", "--keys", keys, "--address", f"127.0.0.1:{_free_port()}"],
+        [cli, "recover", "--create-key", "--keys", keys, "--address", f"127.0.0.1:{_free_port()}"],
         capture_output=True,
         timeout=30,
     )

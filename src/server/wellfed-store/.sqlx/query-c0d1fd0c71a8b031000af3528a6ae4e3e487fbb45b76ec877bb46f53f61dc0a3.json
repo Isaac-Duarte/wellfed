@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT feeder_id, epoch, seq, at_s, received_ms, body FROM events\n                   WHERE ?1 IS NULL OR (feeder_id, epoch, seq) > (?1, ?2, ?3)\n                   ORDER BY feeder_id, epoch, seq LIMIT ?4",
+  "query": "SELECT feeder_id, epoch, seq, at_s, received_ms, kind, body FROM events\n                   WHERE ?1 IS NULL OR (feeder_id, epoch, seq) > (?1, ?2, ?3)\n                   ORDER BY feeder_id, epoch, seq LIMIT ?4",
   "describe": {
     "columns": [
       {
@@ -59,8 +59,19 @@
         }
       },
       {
-        "name": "body",
+        "name": "kind",
         "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "body",
+        "ordinal": 6,
         "type_info": "Blob",
         "origin": {
           "Table": {
@@ -79,8 +90,9 @@
       false,
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "ee88d9d89ba8800ff1d71e3f1873e01e500332569ec86f1f386b40a7736e3131"
+  "hash": "c0d1fd0c71a8b031000af3528a6ae4e3e487fbb45b76ec877bb46f53f61dc0a3"
 }

@@ -160,12 +160,10 @@ fn send(slot: &mut Slot, command: Command, connection: &mut Connection) -> Resul
             command.reply(Err(AskError::Unsendable));
             Ok(())
         }
-        // A feeder of another build: nothing was sent, and the session
-        // still carries the update path.
-        Err(wellfed_connect::Error::Session(wellfed_client::api::Error::OtherSchema {
-            ..
-        })) => {
-            command.reply(Err(AskError::OtherBuild));
+        // A pre-revision build takes the frozen update path alone; the
+        // session refused this op before a byte went.
+        Err(wellfed_connect::Error::Legacy) => {
+            command.reply(Err(AskError::Legacy));
             Ok(())
         }
         Err(error) => {

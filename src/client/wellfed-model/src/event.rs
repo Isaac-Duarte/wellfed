@@ -17,6 +17,8 @@ use crate::{Battery, Blocked, DeviceKind, Generation, Hex, UpdateCandidate, Upda
 #[serde(rename_all = "snake_case")]
 pub enum Pushed {
     Event(Event),
+    /// An event whose body this build does not know: a newer feeder's.
+    Unknown(UnknownEvent),
     Gap(Gap),
     Sample(Sample),
     Log(LogLines),
@@ -46,6 +48,18 @@ pub struct Event {
     /// The feeder's clock when it happened; `None` while that was invalid.
     pub at: Option<Timestamp>,
     pub body: EventBody,
+}
+
+/// An event the feeder recorded whose body this build cannot read, since a
+/// newer build added it. It still counts in the history: a cursor moves
+/// past it, and a host that keeps the body can read it once it is updated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnknownEvent {
+    pub epoch: u32,
+    pub seq: u64,
+    pub at: Option<Timestamp>,
+    /// The body as the feeder's ring keeps it, zero-padded.
+    pub raw: Hex<16>,
 }
 
 /// Events `from..=to` of `epoch` left the feeder's ring before this session
@@ -226,6 +240,8 @@ pub enum FoodLevel {
     /// No food in front of the beam, which sits above the rotor, so about five
     /// portions remain (at any time during a feed, for a `Fed` event).
     Low,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -241,6 +257,8 @@ pub enum FeedOutcome {
     /// When a power cut lost the reservation itself, `requested` is the
     /// feeder's cap on one feed, not what was asked.
     Uncertain,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 /// Why a feed ended.
@@ -279,6 +297,8 @@ pub enum FeedReason {
     /// A reset (power cut, watchdog, fault) cut the feed short, and the
     /// next boot resolved it: always `Uncertain`.
     Interrupted,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 impl FeedOutcome {
@@ -298,11 +318,15 @@ impl FeedOutcome {
             Self::Expired => "expired",
             Self::Failed => "failed",
             Self::Uncertain => "uncertain",
+            Self::Unknown => "unknown",
         }
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|outcome| outcome.code() == code)
+        Self::ALL
+            .into_iter()
+            .chain([Self::Unknown])
+            .find(|outcome| outcome.code() == code)
     }
 }
 
@@ -343,11 +367,15 @@ impl FeedReason {
             Self::Jammed => "jammed",
             Self::MarkStuck => "mark_stuck",
             Self::Interrupted => "interrupted",
+            Self::Unknown => "unknown",
         }
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|reason| reason.code() == code)
+        Self::ALL
+            .into_iter()
+            .chain([Self::Unknown])
+            .find(|reason| reason.code() == code)
     }
 }
 

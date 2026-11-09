@@ -67,6 +67,7 @@ use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use wellfed_api::{Connection as Link, FeederId, FeederSample, Gap, HistoryEvent};
+use wellfed_model::Skew;
 use wellfed_session::noise::Keypair;
 use wellfed_store::Store;
 
@@ -335,6 +336,12 @@ impl Mirror {
     /// counts in.
     pub fn epoch(&self, id: FeederId) -> Option<u32> {
         self.handles().get(&id).and_then(task::Handle::epoch)
+    }
+
+    /// How the feeder's API revision stands against this server's, from
+    /// its last welcome: `None` before one.
+    pub fn skew(&self, id: FeederId) -> Option<Skew> {
+        self.handles().get(&id).and_then(task::Handle::skew)
     }
 
     /// Whether the feeder has an open session, welcomed.
