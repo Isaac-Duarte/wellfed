@@ -6,10 +6,11 @@
 use serde::de::DeserializeOwned;
 use wellfed_api::{
     Blocked, Bowl, ClientRole, CommandKind, CommandOutcome, CommandState, Connection, CurrentUnit,
-    Desiccant, ErrorCode, FeedOutcome, FeedReason, FeederRefusal, FoodLevel, InstallState,
-    MealReminder, Phase, Problem, Role, Source, Units, WifiSource, Window,
+    Desiccant, DeviceKind, DeviceStatus, ErrorCode, FeedOutcome, FeedReason, Feeder, FeederRefusal,
+    FoodLevel, InstallState, MaybeKnown, MealReminder, Model, Phase, Problem, Role, Settings,
+    Source, Units, WifiSource, Window,
 };
-use wellfed_model::Skew;
+use wellfed_model::{Bank0Blocked, Bank0Check, Skew};
 
 fn read<T: DeserializeOwned>(json: &str) -> T {
     serde_json::from_str(json).unwrap_or_else(|error| panic!("{json} does not read: {error}"))
@@ -84,4 +85,76 @@ fn a_refusal_with_a_newer_code_is_still_a_refusal() {
     );
     assert_eq!(problem.code, ErrorCode::Unknown);
     assert_eq!(problem.status, 409);
+}
+
+/// A device of a kind or model a newer server added still lists, as
+/// unknown, so a client shows it as needing an update and reads the rest
+/// of `GET /feeders`.
+#[test]
+fn a_device_a_newer_build_added_lists_as_unknown() {
+    let entry = |kind: &str, model: &str| {
+        format!(
+            r#"{{"id":"7f3d1c2e-0000-4000-8000-000000000001","home":"7f3d1c2e-0000-4000-8000-000000000002",
+            "kind":"{kind}","model":"{model}","name":"x","identity":"{identity}","role":"owner",
+            "address":null,"connection":"online","skew":null,"synced":null,"epoch":null,"archived":null}}"#,
+            identity = "ab".repeat(32),
+        )
+    };
+    let list = format!(
+        "[{},{},{}]",
+        entry("feeder", Model::ALL[0].name()),
+        entry("a_newer_kind", "a_newer_model"),
+        entry("feeder", "a_newer_model"),
+    );
+
+    let feeders = read::<Vec<Feeder>>(&list);
+    assert_eq!(
+        feeders
+            .iter()
+            .map(|feeder| (feeder.kind, feeder.model))
+            .collect::<Vec<_>>(),
+        [
+            (
+                MaybeKnown::Known(DeviceKind::Feeder),
+                MaybeKnown::Known(Model::ALL[0])
+            ),
+            (MaybeKnown::Unknown, MaybeKnown::Unknown),
+            (MaybeKnown::Known(DeviceKind::Feeder), MaybeKnown::Unknown),
+        ]
+    );
+
+    let status = read::<DeviceStatus>(r#"{"kind":"a_newer_kind","pump":"on"}"#);
+    assert_eq!(status, DeviceStatus::Unknown);
+    assert_eq!(status.kind(), MaybeKnown::Unknown);
+    let settings = read::<Settings>(r#"{"kind":"a_newer_kind","generation":3,"flow":2}"#);
+    assert_eq!(settings, Settings::Unknown);
+    assert_eq!(settings.generation(), None);
+}
+
+/// Bank 0's check is adjacently tagged, where serde's own catch-all fails
+/// on a newer state that carries a reason: any newer state reads as
+/// unknown, and the known ones read as written.
+#[test]
+fn a_bank0_check_a_newer_build_added_reads_as_unknown() {
+    for newer in [
+        r#"{"state":"x"}"#,
+        r#"{"state":"x","reason":"y"}"#,
+        r#"{"state":"x","reason":{"z":1}}"#,
+    ] {
+        assert_eq!(read::<Bank0Check>(newer), Bank0Check::Unknown, "{newer}");
+    }
+
+    for known in [
+        Bank0Check::Unchecked,
+        Bank0Check::Match,
+        Bank0Check::Blocked(Bank0Blocked::Marker),
+    ] {
+        let json = serde_json::to_string(&known).unwrap();
+        assert_eq!(read::<Bank0Check>(&json), known, "{json}");
+    }
+    assert_eq!(
+        read::<Bank0Check>(r#"{"state":"blocked","reason":"a_newer_reason"}"#),
+        Bank0Check::Blocked(Bank0Blocked::Unknown)
+    );
+    assert!(serde_json::from_str::<Bank0Check>(r#"{"state":"blocked"}"#).is_err());
 }

@@ -1187,6 +1187,15 @@
           ],
           "type": "string"
         },
+        "CommandStateFilter": {
+          "enum": [
+            "sent",
+            "answered",
+            "resolved",
+            "unknown"
+          ],
+          "type": "string"
+        },
         "Connection": {
           "enum": [
             "offline",
@@ -1571,6 +1580,20 @@
                   "type": "object"
                 }
               ]
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -1651,6 +1674,33 @@
             }
           ]
         },
+        "EventKind": {
+          "enum": [
+            "boot",
+            "lock",
+            "settings",
+            "wifi",
+            "enrolled",
+            "revoked",
+            "clock_sync",
+            "lost",
+            "fed",
+            "feeding_blocked",
+            "supply",
+            "plans",
+            "missed",
+            "dispense_refused",
+            "meal_soon",
+            "food",
+            "skipped",
+            "unskipped",
+            "update_stop",
+            "update_at_boot",
+            "restarting",
+            "update_confirmed"
+          ],
+          "type": "string"
+        },
         "EventPage": {
           "properties": {
             "epoch": {
@@ -1687,6 +1737,13 @@
             "gaps"
           ],
           "type": "object"
+        },
+        "ExportFormat": {
+          "enum": [
+            "json",
+            "csv"
+          ],
+          "type": "string"
         },
         "FeedAnomaly": {
           "oneOf": [
@@ -2084,14 +2141,16 @@
               "enum": [
                 "feeder",
                 "fountain",
-                "litter_box"
+                "litter_box",
+                "unknown"
               ],
               "type": "string"
             },
             "model": {
               "enum": [
                 "plaf103",
-                "plwf106"
+                "plwf106",
+                "unknown"
               ],
               "type": "string"
             },
@@ -3957,6 +4016,18 @@
           ],
           "type": "object"
         },
+        "MetricKind": {
+          "enum": [
+            "power",
+            "rssi",
+            "heap",
+            "loop",
+            "gateway",
+            "wifi",
+            "supply"
+          ],
+          "type": "string"
+        },
         "MissedReason": {
           "oneOf": [
             {
@@ -4962,7 +5033,8 @@
             "model": {
               "enum": [
                 "plaf103",
-                "plwf106"
+                "plwf106",
+                "unknown"
               ],
               "type": "string"
             },
@@ -5188,6 +5260,13 @@
             "other"
           ],
           "type": "object"
+        },
+        "Resolution": {
+          "enum": [
+            "raw",
+            "hour"
+          ],
+          "type": "string"
         },
         "RevokeAttempt": {
           "oneOf": [
@@ -5605,6 +5684,20 @@
                   "type": "object"
                 }
               ]
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -7420,7 +7513,7 @@
               "name": "state",
               "required": false,
               "schema": {
-                "$ref": "#/components/schemas/CommandState"
+                "$ref": "#/components/schemas/CommandStateFilter"
               }
             },
             {

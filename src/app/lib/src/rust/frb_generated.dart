@@ -8068,6 +8068,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerDevice dco_decode_server_device(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ServerDevice.values[raw as int];
+  }
+
+  @protected
   ServerEntry dco_decode_server_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -8145,19 +8151,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ServerFeeder dco_decode_server_feeder(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return ServerFeeder(
       id: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
-      identity: dco_decode_String(arr[2]),
-      role: dco_decode_client_role(arr[3]),
-      address: dco_decode_opt_String(arr[4]),
-      connection: dco_decode_server_connection(arr[5]),
-      skew: dco_decode_opt_box_autoadd_skew(arr[6]),
-      synced: dco_decode_opt_box_autoadd_u_64(arr[7]),
-      epoch: dco_decode_opt_box_autoadd_u_32(arr[8]),
-      archivedMs: dco_decode_opt_box_autoadd_i_64(arr[9]),
+      device: dco_decode_server_device(arr[2]),
+      identity: dco_decode_String(arr[3]),
+      role: dco_decode_client_role(arr[4]),
+      address: dco_decode_opt_String(arr[5]),
+      connection: dco_decode_server_connection(arr[6]),
+      skew: dco_decode_opt_box_autoadd_skew(arr[7]),
+      synced: dco_decode_opt_box_autoadd_u_64(arr[8]),
+      epoch: dco_decode_opt_box_autoadd_u_32(arr[9]),
+      archivedMs: dco_decode_opt_box_autoadd_i_64(arr[10]),
     );
   }
 
@@ -13284,6 +13291,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerDevice sse_decode_server_device(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ServerDevice.values[inner];
+  }
+
+  @protected
   ServerEntry sse_decode_server_entry(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_epoch = sse_decode_u_32(deserializer);
@@ -13364,6 +13378,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
+    var var_device = sse_decode_server_device(deserializer);
     var var_identity = sse_decode_String(deserializer);
     var var_role = sse_decode_client_role(deserializer);
     var var_address = sse_decode_opt_String(deserializer);
@@ -13375,6 +13390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return ServerFeeder(
       id: var_id,
       name: var_name,
+      device: var_device,
       identity: var_identity,
       role: var_role,
       address: var_address,
@@ -18471,6 +18487,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_server_device(ServerDevice self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_server_entry(ServerEntry self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.epoch, serializer);
@@ -18537,6 +18559,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
     sse_encode_String(self.name, serializer);
+    sse_encode_server_device(self.device, serializer);
     sse_encode_String(self.identity, serializer);
     sse_encode_client_role(self.role, serializer);
     sse_encode_opt_String(self.address, serializer);

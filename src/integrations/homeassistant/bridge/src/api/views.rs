@@ -56,10 +56,11 @@ pub struct Status {
     pub sessions: u8,
 }
 
-impl From<&model::Status> for Status {
-    fn from(status: &model::Status) -> Self {
-        // The integration serves feeders alone.
-        let model::DeviceStatus::Feeder(feeder) = &status.device;
+impl Status {
+    /// The view of a feeder's `status`; `None` for a kind of device this
+    /// integration does not serve, or one a newer build added.
+    pub(crate) fn of(status: &model::Status) -> Option<Self> {
+        let feeder = status.feeder()?;
         let supply = feeder.supply;
         let battery_percent = match supply.battery {
             model::Battery::Reading { percent, .. } => Some(percent),
@@ -70,7 +71,7 @@ impl From<&model::Status> for Status {
             model::Desiccant::Unset | model::Desiccant::Unknown => (None, false),
         };
 
-        Self {
+        Some(Self {
             build: status.build.clone(),
             bank: status.bank,
             uptime_ms: status.uptime_ms,
@@ -88,7 +89,7 @@ impl From<&model::Status> for Status {
             desiccant_due,
             last_event: status.last_event,
             sessions: status.sessions,
-        }
+        })
     }
 }
 

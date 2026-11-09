@@ -68,11 +68,14 @@ impl IntoResponse for ApiError {
         let (code, detail, refusal) = match self {
             Self::Code(code, detail) => (code, detail, None),
             Self::Service(Error::Stale(settings)) => {
+                // The server only ever holds settings it can read.
                 return stale(&settings, settings.generation());
             }
-            Self::Service(Error::StalePlans(plans)) => return stale(&plans, plans.generation),
+            Self::Service(Error::StalePlans(plans)) => {
+                return stale(&plans, Some(plans.generation));
+            }
             Self::Service(Error::StaleCalibration(calibration)) => {
-                return stale(&calibration, calibration.generation);
+                return stale(&calibration, Some(calibration.generation));
             }
             Self::Service(error) => service(&error),
         };
@@ -101,9 +104,10 @@ impl IntoResponse for ApiError {
 
 /// A stale edit gets `412` with the current resource (the settings, the
 /// plans or the calibration), so the client can show it and decide again.
-fn stale(current: &impl Serialize, generation: Generation) -> Response {
+fn stale(current: &impl Serialize, generation: Option<Generation>) -> Response {
     let mut response = (StatusCode::PRECONDITION_FAILED, Json(current)).into_response();
-    if let Ok(tag) = HeaderValue::from_str(&crate::routes::feeders::etag(generation)) {
+    let tag = generation.map(crate::routes::feeders::etag);
+    if let Some(Ok(tag)) = tag.as_deref().map(HeaderValue::from_str) {
         response.headers_mut().insert(header::ETAG, tag);
     }
     response

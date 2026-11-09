@@ -152,7 +152,7 @@
             "description": "Writes in this state only: `unknown` is the uncertain list.",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/CommandState"
+              "$ref": "#/components/schemas/CommandStateFilter"
             }
           },
           {
@@ -7169,6 +7169,16 @@
           "unknown"
         ]
       },
+      "CommandStateFilter": {
+        "type": "string",
+        "description": "A state to list writes in. Only in a query, so it has no catch-all: a\nserver refuses a state it can't name (`400`) rather than listing none.",
+        "enum": [
+          "sent",
+          "answered",
+          "resolved",
+          "unknown"
+        ]
+      },
       "Connection": {
         "type": "string",
         "description": "The server's session with a feeder.",
@@ -7574,6 +7584,21 @@
                 }
               }
             ]
+          },
+          {
+            "type": "object",
+            "description": "A kind a newer build added, which this one cannot read: a client\nshows the device as needing an update. Never written to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "The part of [`Status`] only one kind of device reports, tagged by the\nkind in JSON (`\"kind\": \"feeder\"`)."
@@ -7658,6 +7683,34 @@
         ],
         "description": "What an event says: one of the shared core's, which every kind of\ndevice records, or one of its own kind's. The JSON is flat, tagged by\nthe event's `kind` alone, as the history stores it; [`Self::device`]\nnames the kind whose module records it."
       },
+      "EventKind": {
+        "type": "string",
+        "description": "An event's kind, for filtering.",
+        "enum": [
+          "boot",
+          "lock",
+          "settings",
+          "wifi",
+          "enrolled",
+          "revoked",
+          "clock_sync",
+          "lost",
+          "fed",
+          "feeding_blocked",
+          "supply",
+          "plans",
+          "missed",
+          "dispense_refused",
+          "meal_soon",
+          "food",
+          "skipped",
+          "unskipped",
+          "update_stop",
+          "update_at_boot",
+          "restarting",
+          "update_confirmed"
+        ]
+      },
       "EventPage": {
         "type": "object",
         "description": "A page of history, oldest first.",
@@ -7698,6 +7751,14 @@
             "minimum": 0
           }
         }
+      },
+      "ExportFormat": {
+        "type": "string",
+        "description": "How the tables are written.",
+        "enum": [
+          "json",
+          "csv"
+        ]
       },
       "FeedAnomaly": {
         "oneOf": [
@@ -8127,19 +8188,21 @@
           },
           "kind": {
             "type": "string",
-            "description": "A kind of device, which one module of the device API serves.",
+            "description": "A kind of device, which one module of the device API serves; `unknown` when a newer build added it.",
             "enum": [
               "feeder",
               "fountain",
-              "litter_box"
+              "litter_box",
+              "unknown"
             ]
           },
           "model": {
             "type": "string",
-            "description": "A device model, which names its kind.",
+            "description": "A device model, which names its kind; `unknown` when a newer build added it.",
             "enum": [
               "plaf103",
-              "plwf106"
+              "plwf106",
+              "unknown"
             ]
           },
           "name": {
@@ -10144,6 +10207,18 @@
           }
         }
       },
+      "MetricKind": {
+        "type": "string",
+        "enum": [
+          "power",
+          "rssi",
+          "heap",
+          "loop",
+          "gateway",
+          "wifi",
+          "supply"
+        ]
+      },
       "MissedReason": {
         "oneOf": [
           {
@@ -11244,10 +11319,11 @@
           },
           "model": {
             "type": "string",
-            "description": "A device model, which names its kind.",
+            "description": "A device model, which names its kind; `unknown` when a newer build added it.",
             "enum": [
               "plaf103",
-              "plwf106"
+              "plwf106",
+              "unknown"
             ]
           },
           "signer": {
@@ -11476,6 +11552,14 @@
             "minimum": 0
           }
         }
+      },
+      "Resolution": {
+        "type": "string",
+        "description": "How finely samples are read.",
+        "enum": [
+          "raw",
+          "hour"
+        ]
       },
       "RevokeAttempt": {
         "oneOf": [
@@ -11914,6 +11998,21 @@
                 }
               }
             ]
+          },
+          {
+            "type": "object",
+            "description": "A kind a newer build added, which this one can neither read nor\nchange. Never written to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "A device's settings, by its kind, tagged by the kind in JSON (`\"kind\":\n\"feeder\"`). Each kind reads and writes its own through its own ops; this\nis what a host holds and serves without caring which kind it is."

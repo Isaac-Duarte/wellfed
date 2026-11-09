@@ -50,7 +50,8 @@ pub use clients::{
     WifiCredentials,
 };
 pub use commands::{
-    Command, CommandKind, CommandOutcome, CommandPage, CommandQuery, CommandState, FeedRequest,
+    Command, CommandKind, CommandOutcome, CommandPage, CommandQuery, CommandState,
+    CommandStateFilter, FeedRequest,
 };
 pub use diagnostics::{FeedTrace, FeederStats, LogEvent, StatsRead, TraceQuery, TraceRecord};
 pub use error::{ErrorCode, FeederRefusal, Problem};
@@ -95,10 +96,10 @@ pub use wellfed_model::{
     Battery, Blocked, Bowl, CALL_BYTES_MAX, Calibration, CalibrationView, CallClip, CallView,
     ClientRole, CoreEvent, CurrentUnit, Desiccant, DeviceKind, DeviceStatus, EnrollPath, EventBody,
     EventKind, FeedOutcome, FeedReason, FeederEvent, FeederSettings, FeederSettingsPatch,
-    FeederStatus, Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind,
-    MissedReason, Model, NextMeal, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan, Plans,
-    Power, Readiness, SampleValue, Settings, Source, Stats, StatsSection, Status, Supply, Trace,
-    TraceEntry, TraceSummary, Weekday, Weekdays, WifiSource, Window,
+    FeederStatus, Food as FoodStats, FoodLevel, Generation, Hex, MaybeKnown, MealReminder,
+    MetricKind, MissedReason, Model, NextMeal, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan,
+    Plans, Power, Readiness, SampleValue, Settings, Source, Stats, StatsSection, Status, Supply,
+    Trace, TraceEntry, TraceSummary, Weekday, Weekdays, WifiSource, Window,
 };
 
 /// The prefix every resource lives under.

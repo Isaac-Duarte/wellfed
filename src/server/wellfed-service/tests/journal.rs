@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use uuid::Uuid;
 use wellfed_api::{
-    CommandKind, CommandOutcome, CommandQuery, CommandState, Connection as Link, EventKind,
-    EventQuery, FeederId, FeederSettingsPatch, Role, User, UserId,
+    CommandKind, CommandOutcome, CommandQuery, CommandState, CommandStateFilter,
+    Connection as Link, EventKind, EventQuery, FeederId, FeederSettingsPatch, Role, User, UserId,
 };
 use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::{TestService, ada, config, local, owner_user, until};
@@ -130,7 +130,7 @@ fn a_restart_between_send_and_answer_leaves_the_write_unknown() {
         assert_eq!(entry.state, CommandState::Unknown);
         assert_eq!(entry.outcome, None);
         let uncertain = CommandQuery {
-            state: Some(CommandState::Unknown),
+            state: Some(CommandStateFilter::Unknown),
             ..CommandQuery::default()
         };
         let page = service.commands(&ada(), uncertain).await.unwrap();
@@ -309,7 +309,13 @@ fn a_key_reused_for_another_request_is_refused_unsent() {
         let reused = [
             service.set_lock(&ada().into(), id, false, Some(key)).await,
             service
-                .put_settings(&ada().into(), id, settings.generation(), patch, Some(key))
+                .put_settings(
+                    &ada().into(),
+                    id,
+                    settings.generation().unwrap(),
+                    patch,
+                    Some(key),
+                )
                 .await
                 .map(drop),
             service
@@ -454,7 +460,7 @@ fn each_user_reads_their_own_entries_and_an_owner_reads_all() {
 
         let filtered = CommandQuery {
             feeder: Some(id),
-            state: Some(CommandState::Answered),
+            state: Some(CommandStateFilter::Answered),
             ..CommandQuery::default()
         };
         assert_eq!(
@@ -467,7 +473,7 @@ fn each_user_reads_their_own_entries_and_an_owner_reads_all() {
             5
         );
         let unknown = CommandQuery {
-            state: Some(CommandState::Unknown),
+            state: Some(CommandStateFilter::Unknown),
             ..CommandQuery::default()
         };
         assert!(

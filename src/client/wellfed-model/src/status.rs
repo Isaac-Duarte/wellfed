@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 
 use crate::{
     DeviceKind, FeedOutcome, FeedReason, FoodLevel, Generation, MEAL_REMINDER_MINUTES_MAX,
-    MEAL_REMINDER_MINUTES_MIN,
+    MEAL_REMINDER_MINUTES_MIN, MaybeKnown,
 };
 
 /// What a device reports about itself: the shared core every kind
@@ -51,8 +51,8 @@ pub struct Status {
 }
 
 impl Status {
-    /// The kind of device that reported it.
-    pub const fn kind(&self) -> DeviceKind {
+    /// The kind of device that reported it, when this build knows it.
+    pub const fn kind(&self) -> MaybeKnown<DeviceKind> {
         self.device.kind()
     }
 
@@ -60,6 +60,7 @@ impl Status {
     pub const fn feeder(&self) -> Option<&FeederStatus> {
         match &self.device {
             DeviceStatus::Feeder(feeder) => Some(feeder),
+            DeviceStatus::Unknown => None,
         }
     }
 
@@ -67,6 +68,7 @@ impl Status {
     pub const fn feeder_mut(&mut self) -> Option<&mut FeederStatus> {
         match &mut self.device {
             DeviceStatus::Feeder(feeder) => Some(feeder),
+            DeviceStatus::Unknown => None,
         }
     }
 }
@@ -77,12 +79,18 @@ impl Status {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DeviceStatus {
     Feeder(FeederStatus),
+    /// A kind a newer build added, which this one cannot read: a client
+    /// shows the device as needing an update. Never written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 impl DeviceStatus {
-    pub const fn kind(&self) -> DeviceKind {
+    /// The kind that reported it, when this build knows it.
+    pub const fn kind(&self) -> MaybeKnown<DeviceKind> {
         match self {
-            Self::Feeder(_) => DeviceKind::Feeder,
+            Self::Feeder(_) => MaybeKnown::Known(DeviceKind::Feeder),
+            Self::Unknown => MaybeKnown::Unknown,
         }
     }
 }
@@ -302,20 +310,28 @@ pub enum Battery {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Settings {
     Feeder(FeederSettings),
+    /// A kind a newer build added, which this one can neither read nor
+    /// change. Never written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Settings {
-    pub const fn kind(&self) -> DeviceKind {
+    /// The kind whose settings these are, when this build knows it.
+    pub const fn kind(&self) -> MaybeKnown<DeviceKind> {
         match self {
-            Self::Feeder(_) => DeviceKind::Feeder,
+            Self::Feeder(_) => MaybeKnown::Known(DeviceKind::Feeder),
+            Self::Unknown => MaybeKnown::Unknown,
         }
     }
 
     /// The settings store's generation: it goes back in `If-Match` with a
-    /// change, and is the `ETag` of a read.
-    pub const fn generation(&self) -> Generation {
+    /// change, and is the `ETag` of a read. `None` for a kind this build
+    /// cannot read, whose settings it never changes.
+    pub const fn generation(&self) -> Option<Generation> {
         match self {
-            Self::Feeder(settings) => settings.generation,
+            Self::Feeder(settings) => Some(settings.generation),
+            Self::Unknown => None,
         }
     }
 
@@ -323,6 +339,7 @@ impl Settings {
     pub const fn feeder(&self) -> Option<&FeederSettings> {
         match self {
             Self::Feeder(settings) => Some(settings),
+            Self::Unknown => None,
         }
     }
 }

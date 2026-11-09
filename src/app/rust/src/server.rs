@@ -10,7 +10,7 @@ use wellfed_api::{
     PetIntake, Refill, RefillPage, Role, SinceRefill, StatusSnapshot, StreamEvent, User, Weight,
     WeightPage,
 };
-use wellfed_model::{Event, Gap};
+use wellfed_model::{DeviceKind, Event, Gap, MaybeKnown};
 use wellfed_server_client::Error;
 
 use crate::api::server::{
@@ -18,11 +18,11 @@ use crate::api::server::{
 };
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::{
-    ServerAccount, ServerAnomaly, ServerConnection, ServerEntry, ServerEventPage, ServerFeeder,
-    ServerFeederDetail, ServerFeederFood, ServerFeederPortions, ServerFood, ServerFoodLeft,
-    ServerFoodPeriod, ServerIntakeDay, ServerIntakeFeeder, ServerNextMeal, ServerPet,
-    ServerPetIntake, ServerRefill, ServerRefillPage, ServerRole, ServerSinceRefill, ServerSnapshot,
-    ServerWeight, ServerWeightPage,
+    ServerAccount, ServerAnomaly, ServerConnection, ServerDevice, ServerEntry, ServerEventPage,
+    ServerFeeder, ServerFeederDetail, ServerFeederFood, ServerFeederPortions, ServerFood,
+    ServerFoodLeft, ServerFoodPeriod, ServerIntakeDay, ServerIntakeFeeder, ServerNextMeal,
+    ServerPet, ServerPetIntake, ServerRefill, ServerRefillPage, ServerRole, ServerSinceRefill,
+    ServerSnapshot, ServerWeight, ServerWeightPage,
 };
 use crate::today::{Facts, event_entry, gap_entry};
 
@@ -182,9 +182,15 @@ impl From<User> for ServerAccount {
 
 impl From<Feeder> for ServerFeeder {
     fn from(feeder: Feeder) -> Self {
+        let device = match (feeder.kind, feeder.model) {
+            (MaybeKnown::Known(DeviceKind::Feeder), MaybeKnown::Known(_)) => ServerDevice::Feeder,
+            (MaybeKnown::Known(_), MaybeKnown::Known(_)) => ServerDevice::OtherKind,
+            (MaybeKnown::Unknown, _) | (_, MaybeKnown::Unknown) => ServerDevice::Newer,
+        };
         Self {
             id: feeder.id.to_string(),
             name: feeder.name,
+            device,
             identity: feeder.identity.to_string(),
             role: feeder.role,
             address: feeder.address,

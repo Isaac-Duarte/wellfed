@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
+import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -88,3 +89,13 @@ class Muted extends StatelessWidget {
     style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
   );
 }
+
+/// What the home screen says of a device the server lists that this app
+/// does not serve as a feeder.
+String otherDeviceWords(OtherDevice other) => switch (other.device) {
+  ServerDevice.newer => '${other.name} is a kind of device this app does not know yet. Update the app to use it.',
+  ServerDevice.otherKind =>
+    "${other.name} is on the home server, but this app doesn't control that kind of device yet.",
+  // Never an other device: a feeder is listed as one.
+  ServerDevice.feeder => '${other.name} is a feeder.',
+};

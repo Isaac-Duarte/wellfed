@@ -13,7 +13,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 import 'session.dart';
 part 'server_views.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 enum CommandKind {
   settings,
@@ -211,6 +211,20 @@ enum ServerConnection {
   refused,
 }
 
+/// What a device the server lists is to this app.
+enum ServerDevice {
+  /// A feeder of a model this app knows.
+  feeder,
+
+  /// A kind of device this app knows but has no screens for yet, such as
+  /// a fountain.
+  otherKind,
+
+  /// A kind or model a newer server added, which this app cannot read:
+  /// update the app to use it.
+  newer,
+}
+
 /// One history entry, with when the server received it.
 class ServerEntry {
   final int epoch;
@@ -265,6 +279,9 @@ class ServerFeeder {
   final String id;
   final String name;
 
+  /// Whether this app serves the device: only a feeder is shown as one.
+  final ServerDevice device;
+
   /// The feeder's identity key, lowercase hex: what the phone's store and
   /// NSD's `id` match.
   final String identity;
@@ -288,6 +305,7 @@ class ServerFeeder {
   const ServerFeeder({
     required this.id,
     required this.name,
+    required this.device,
     required this.identity,
     required this.role,
     this.address,
@@ -302,6 +320,7 @@ class ServerFeeder {
   int get hashCode =>
       id.hashCode ^
       name.hashCode ^
+      device.hashCode ^
       identity.hashCode ^
       role.hashCode ^
       address.hashCode ^
@@ -318,6 +337,7 @@ class ServerFeeder {
           runtimeType == other.runtimeType &&
           id == other.id &&
           name == other.name &&
+          device == other.device &&
           identity == other.identity &&
           role == other.role &&
           address == other.address &&

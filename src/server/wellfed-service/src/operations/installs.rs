@@ -85,7 +85,7 @@ impl Service {
         let (release, file) = self.release_file(request.release).await?;
         // An image for another model is never offered: the device would
         // refuse it too, but only once it is sent.
-        if release.model != row.model {
+        if release.model != row.model.into() {
             return Err(InstallError::OtherModel {
                 release: release.model,
                 device: row.model,

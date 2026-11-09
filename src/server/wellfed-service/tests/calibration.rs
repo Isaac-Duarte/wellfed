@@ -58,8 +58,9 @@ fn the_calibration_changes_against_the_current_generation_only() {
         };
         assert_eq!(current, changed);
 
-        // A weight out of range is refused before anything is sent; a bowl
-        // mode the feeder has not verified, by the feeder.
+        // A weight out of range or a bowl mode this server can't name is
+        // refused before anything is sent; a bowl mode the feeder has not
+        // verified, by the feeder.
         let heavy = Calibration {
             portion_mg: Some(PORTION_MG_MAX + 1),
             ..WEIGHED
@@ -69,6 +70,17 @@ fn the_calibration_changes_against_the_current_generation_only() {
             .await;
         assert!(
             matches!(refused, Err(Error::Invalid(Invalid::PortionWeight))),
+            "{refused:?}"
+        );
+        let newer = Calibration {
+            bowl: Bowl::Unknown,
+            ..WEIGHED
+        };
+        let refused = service
+            .put_calibration(&caller, id, changed.generation, newer, Some([5; 16]))
+            .await;
+        assert!(
+            matches!(refused, Err(Error::Invalid(Invalid::Bowl))),
             "{refused:?}"
         );
         let double = Calibration {

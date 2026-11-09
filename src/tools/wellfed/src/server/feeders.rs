@@ -13,8 +13,9 @@ use anyhow::{Result, bail};
 use clap::{Args, ValueEnum};
 use uuid::Uuid;
 use wellfed_server_client::api::{
-    Command, CommandOutcome, CommandQuery, CommandState, EventQuery, FeedOutcome, Feeder, FeederId,
-    FeederSettingsPatch, MealReminder, StreamEvent, StreamQuery, Window,
+    Command, CommandOutcome, CommandQuery, CommandState, CommandStateFilter, EventQuery,
+    FeedOutcome, Feeder, FeederId, FeederSettingsPatch, MealReminder, StreamEvent, StreamQuery,
+    Window,
 };
 use wellfed_server_client::{Client, Lock, Updates};
 
@@ -170,12 +171,12 @@ enum State {
 }
 
 impl State {
-    const fn api(self) -> CommandState {
+    const fn api(self) -> CommandStateFilter {
         match self {
-            Self::Sent => CommandState::Sent,
-            Self::Answered => CommandState::Answered,
-            Self::Unknown => CommandState::Unknown,
-            Self::Resolved => CommandState::Resolved,
+            Self::Sent => CommandStateFilter::Sent,
+            Self::Answered => CommandStateFilter::Answered,
+            Self::Unknown => CommandStateFilter::Unknown,
+            Self::Resolved => CommandStateFilter::Resolved,
         }
     }
 }
@@ -214,7 +215,10 @@ pub(super) async fn settings(client: &Client, args: SettingsArgs, out: Output) -
     }
 
     let key = Uuid::new_v4();
-    let sent = client.put_settings(id, current.generation(), &patch, key);
+    let Some(base) = current.generation() else {
+        bail!("{}", crate::text::UPDATE_FOR_DEVICE.trim_end());
+    };
+    let sent = client.put_settings(id, base, &patch, key);
     let Written::Answered(settings) = write(out, key, sent).await? else {
         return Ok(Settled::Unknown);
     };

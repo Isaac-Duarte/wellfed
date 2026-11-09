@@ -86,6 +86,7 @@ What an older client does with what it doesn't know:
 | An error code it doesn't know | `unknown`: a refusal for a reason it can't name |
 | A command outcome it doesn't know | `unknown`: the write may have run, so it's never sent again |
 | A feeder connection state it doesn't know | `unknown`, shown as not online |
+| A device's kind or model it doesn't know, or that device's status or settings | `unknown`: the device still lists, and the client asks to be updated to use it |
 | A role it doesn't know | `unknown`, which grants nothing: the client offers no more than a viewer's |
 | A journal state it doesn't know | `unknown`: uncertain, never sent again |
 | Any other value it doesn't know, in an enum with a catch-all | `unknown` (`newer` for the rotor's phase), shown as unknown to that client |
@@ -110,7 +111,6 @@ A few enums are closed, since nothing can be added to them without changing what
 | `TuneName`, `NewRefill` | Only in requests: a server refuses what it doesn't know |
 | `CoreEvent`, `FeederEvent`, `EventBody` | Events go only in pages and stream updates, which skip what they can't read. A catch-all on either half of the untagged body would swallow the other half's events |
 | `StreamEvent`, `Stats`, `StatsSection`, `SampleValue` | Read only in entries a client skips, or by a metric it names |
-| `DeviceStatus`, `Settings`, and a device's `kind` and `model` | One per kind or model of device, carried as the device API names them |
 
 The `api_growth` test in `wellfed-server` checks each build's document against the published one in `tests/fixtures/api-v1.json`. A change in place fails it, and no blessing stores one. A growth fails it until the revision is raised and the fixture blessed (`WELLFED_BLESS=1`).
 

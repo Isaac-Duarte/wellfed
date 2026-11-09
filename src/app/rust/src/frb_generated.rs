@@ -10428,6 +10428,19 @@ impl SseDecode for crate::api::server_views::ServerConnection {
     }
 }
 
+impl SseDecode for crate::api::server_views::ServerDevice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::server_views::ServerDevice::Feeder,
+            1 => crate::api::server_views::ServerDevice::OtherKind,
+            2 => crate::api::server_views::ServerDevice::Newer,
+            _ => unreachable!("Invalid variant for ServerDevice: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::server_views::ServerEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10554,6 +10567,7 @@ impl SseDecode for crate::api::server_views::ServerFeeder {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_id = <String>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_device = <crate::api::server_views::ServerDevice>::sse_decode(deserializer);
         let mut var_identity = <String>::sse_decode(deserializer);
         let mut var_role = <crate::api::model::ClientRole>::sse_decode(deserializer);
         let mut var_address = <Option<String>>::sse_decode(deserializer);
@@ -10566,6 +10580,7 @@ impl SseDecode for crate::api::server_views::ServerFeeder {
         return crate::api::server_views::ServerFeeder {
             id: var_id,
             name: var_name,
+            device: var_device,
             identity: var_identity,
             role: var_role,
             address: var_address,
@@ -15631,6 +15646,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::server_views::ServerConnectio
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerDevice {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Feeder => 0.into_dart(),
+            Self::OtherKind => 1.into_dart(),
+            Self::Newer => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::server_views::ServerDevice
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::server_views::ServerDevice>
+    for crate::api::server_views::ServerDevice
+{
+    fn into_into_dart(self) -> crate::api::server_views::ServerDevice {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerEntry {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -15784,6 +15821,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerFeeder {
         [
             self.id.into_into_dart().into_dart(),
             self.name.into_into_dart().into_dart(),
+            self.device.into_into_dart().into_dart(),
             self.identity.into_into_dart().into_dart(),
             self.role.into_into_dart().into_dart(),
             self.address.into_into_dart().into_dart(),
@@ -20981,6 +21019,23 @@ impl SseEncode for crate::api::server_views::ServerConnection {
     }
 }
 
+impl SseEncode for crate::api::server_views::ServerDevice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::server_views::ServerDevice::Feeder => 0,
+                crate::api::server_views::ServerDevice::OtherKind => 1,
+                crate::api::server_views::ServerDevice::Newer => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::server_views::ServerEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -21082,6 +21137,7 @@ impl SseEncode for crate::api::server_views::ServerFeeder {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.id, serializer);
         <String>::sse_encode(self.name, serializer);
+        <crate::api::server_views::ServerDevice>::sse_encode(self.device, serializer);
         <String>::sse_encode(self.identity, serializer);
         <crate::api::model::ClientRole>::sse_encode(self.role, serializer);
         <Option<String>>::sse_encode(self.address, serializer);

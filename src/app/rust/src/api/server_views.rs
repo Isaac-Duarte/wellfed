@@ -106,6 +106,8 @@ pub enum ServerConnection {
 pub struct ServerFeeder {
     pub id: String,
     pub name: String,
+    /// Whether this app serves the device: only a feeder is shown as one.
+    pub device: ServerDevice,
     /// The feeder's identity key, lowercase hex: what the phone's store and
     /// NSD's `id` match.
     pub identity: String,
@@ -121,6 +123,19 @@ pub struct ServerFeeder {
     pub epoch: Option<u32>,
     /// When it was removed from the server; its history stays readable.
     pub archived_ms: Option<i64>,
+}
+
+/// What a device the server lists is to this app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServerDevice {
+    /// A feeder of a model this app knows.
+    Feeder,
+    /// A kind of device this app knows but has no screens for yet, such as
+    /// a fountain.
+    OtherKind,
+    /// A kind or model a newer server added, which this app cannot read:
+    /// update the app to use it.
+    Newer,
 }
 
 /// One feeder with its last status and next meal.

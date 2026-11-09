@@ -7,8 +7,8 @@
 use serde::Serialize;
 use tracing::warn;
 use wellfed_api::{
-    Calibration, CalibrationView, CommandKind, CommandOutcome, FeederId, FeederRefusal, Generation,
-    PORTION_MG_MAX, PORTION_MG_MIN,
+    Bowl, Calibration, CalibrationView, CommandKind, CommandOutcome, FeederId, FeederRefusal,
+    Generation, PORTION_MG_MAX, PORTION_MG_MIN,
 };
 use wellfed_model::{Answer, Op, StatsSection};
 
@@ -51,6 +51,11 @@ impl Service {
             .is_some_and(|mg| !(PORTION_MG_MIN..=PORTION_MG_MAX).contains(&mg))
         {
             return Err(Invalid::PortionWeight.into());
+        }
+        // A mode this server can't name is refused here, not sent for the
+        // feeder to refuse.
+        if calibration.bowl == Bowl::Unknown {
+            return Err(Invalid::Bowl.into());
         }
         self.live_row(id).await?;
 

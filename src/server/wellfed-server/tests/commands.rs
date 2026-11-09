@@ -3,8 +3,8 @@
 
 use uuid::Uuid;
 use wellfed_api::{
-    AdoptFeeder, ClientRole, CommandKind, CommandOutcome, CommandQuery, CommandState, Connection,
-    Desiccant, ErrorCode, FeederSettingsPatch, PREFIX,
+    AdoptFeeder, ClientRole, CommandKind, CommandOutcome, CommandQuery, CommandState,
+    CommandStateFilter, Connection, Desiccant, ErrorCode, FeederSettingsPatch, PREFIX,
 };
 use wellfed_server_client::{Lock, Method, StatusCode};
 use wellfed_server_testkit::{TestServer, ada_setup, feeder, local, refused, refused_for, until};
@@ -86,7 +86,7 @@ fn the_journal_reads_by_key_and_in_pages() {
         let uncertain = http
             .commands(&CommandQuery {
                 feeder: Some(kitchen),
-                state: Some(CommandState::Unknown),
+                state: Some(CommandStateFilter::Unknown),
                 ..CommandQuery::default()
             })
             .await
@@ -178,7 +178,7 @@ fn the_desiccant_reminder_resets_through_the_journal() {
             ..FeederSettingsPatch::default()
         };
         refused(
-            http.put_settings(kitchen, settings.generation(), &too_long, key(2))
+            http.put_settings(kitchen, settings.generation().unwrap(), &too_long, key(2))
                 .await,
             StatusCode::BAD_REQUEST,
             ErrorCode::Invalid,
@@ -188,7 +188,7 @@ fn the_desiccant_reminder_resets_through_the_journal() {
             ..FeederSettingsPatch::default()
         };
         let changed = http
-            .put_settings(kitchen, settings.generation(), &monthly, key(3))
+            .put_settings(kitchen, settings.generation().unwrap(), &monthly, key(3))
             .await
             .unwrap();
         assert_eq!(changed.feeder().unwrap().desiccant_days, 30);

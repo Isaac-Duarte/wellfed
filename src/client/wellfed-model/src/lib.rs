@@ -49,7 +49,8 @@ pub use request::{
     Refusal, TimeChanges, TimeSource, TimeSync, TimeView, Tune, Wifi,
 };
 pub use session::{
-    DeviceKind, Hello, Joined, LEGACY_SCHEMA_FROM, Model, OpenRefusal, Skew, schema,
+    DeviceKind, DeviceName, Hello, Joined, LEGACY_SCHEMA_FROM, MaybeKnown, Model, OpenRefusal,
+    Skew, schema,
 };
 pub use stats::{
     Counters, Counts, Erases, FeedStats, Flash, Food, Memory, Portions, PowerStats, ResetCause,

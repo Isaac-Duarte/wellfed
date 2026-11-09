@@ -188,8 +188,8 @@ impl Service {
         Feeder {
             id: row.id,
             home: row.home,
-            kind: row.kind,
-            model: row.model,
+            kind: row.kind.into(),
+            model: row.model.into(),
             name: row.name,
             identity: Hex(row.identity),
             role: row.role,

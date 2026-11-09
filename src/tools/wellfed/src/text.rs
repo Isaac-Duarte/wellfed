@@ -102,6 +102,7 @@ pub(crate) fn status(status: &Status, zone: &TimeZone) -> String {
     );
     match &status.device {
         DeviceStatus::Feeder(feeder) => feeder_status(&mut text, feeder),
+        DeviceStatus::Unknown => text.push_str(UPDATE_FOR_DEVICE),
     }
     // Writing to a String cannot fail.
     let _ = write!(
@@ -264,8 +265,14 @@ fn uptime(ms: u32) -> String {
 pub(crate) fn settings(settings: &Settings) -> String {
     match settings {
         Settings::Feeder(settings) => feeder_settings(settings),
+        Settings::Unknown => UPDATE_FOR_DEVICE.trim_end().to_owned(),
     }
 }
+
+/// What a device of a kind or model this CLI does not know shows, for its
+/// status and its settings.
+pub(crate) const UPDATE_FOR_DEVICE: &str =
+    "a kind of device this CLI does not know: update the CLI to use it\n";
 
 pub(crate) fn feeder_settings(settings: &FeederSettings) -> String {
     format!(

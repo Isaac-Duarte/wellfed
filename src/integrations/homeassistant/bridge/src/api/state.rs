@@ -119,6 +119,17 @@ impl Capabilities {
     /// What a device of `kind` serves: the shared core (time, updates) for
     /// any kind, and the feeder's module (feeds, plans, the desiccant and
     /// the calibration) for a feeder.
+    /// What a device of a kind this build does not know serves here:
+    /// nothing.
+    pub(crate) const NONE: Self = Self {
+        feed: false,
+        plans: false,
+        desiccant: false,
+        calibration: false,
+        time: false,
+        update: false,
+    };
+
     pub(crate) const fn of(kind: model::DeviceKind) -> Self {
         let feeder = matches!(kind, model::DeviceKind::Feeder);
         Self {
@@ -165,7 +176,8 @@ impl State {
         calibration: Option<&model::CalibrationView>,
         fallback: &TimeZone,
     ) -> Option<Self> {
-        let status = facts.status.as_ref()?;
+        // A device this integration cannot read has no state to show.
+        let status = Status::of(facts.status.as_ref()?)?;
         let today = facts.today(fallback.clone());
         let plans = facts.plans.as_ref().map(|plans| {
             plans
@@ -186,7 +198,7 @@ impl State {
         });
 
         Some(Self {
-            status: status.into(),
+            status,
             settings: facts.settings.as_ref().map(Settings::from),
             plans,
             next_meal: today.next.map(|meal| NextMeal {

@@ -224,8 +224,8 @@ impl TestService {
             .expect("the service adopts the simulator");
         assert_eq!(feeder.role, role);
         // The session at adoption names the simulator's model.
-        assert_eq!(feeder.model, wellfed_api::Model::Plaf103);
-        assert_eq!(feeder.kind, wellfed_api::DeviceKind::Feeder);
+        assert_eq!(feeder.model, wellfed_api::Model::Plaf103.into());
+        assert_eq!(feeder.kind, wellfed_api::DeviceKind::Feeder.into());
         feeder.id
     }
 

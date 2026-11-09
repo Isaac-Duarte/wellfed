@@ -30,7 +30,7 @@ pub(crate) async fn send(
         SentWrite::Settings { base, changes } => client
             .put_settings(id, Generation(base), &changes, key)
             .await
-            .map(|settings| done(Some(settings.generation().0))),
+            .map(|settings| done(settings.generation().map(|generation| generation.0))),
         SentWrite::Lock { locked } => {
             let lock = if locked { Lock::Locked } else { Lock::Unlocked };
             client.set_lock(id, lock, key).await.map(|()| done(None))
@@ -80,6 +80,8 @@ pub(crate) async fn read(
             Settings::Feeder(settings) => FeederReply::Settings {
                 settings: settings_view(&settings),
             },
+            // A kind of device a newer server added: nothing here reads it.
+            Settings::Unknown => FeederReply::Unreadable,
         }),
         FeederRequest::GetPlans => client.plans(id).await.map(|plans| FeederReply::Plans {
             plans: plans_view(&plans),
@@ -105,7 +107,7 @@ pub(crate) fn refusal(error: &Error) -> Option<FeederRefusal> {
     use wellfed_api::FeederRefusal as Api;
     match error {
         Error::Stale(settings) => Some(FeederRefusal::Stale {
-            current: settings.generation().0,
+            current: settings.generation().map_or(0, |generation| generation.0),
         }),
         Error::StalePlans(plans) => Some(FeederRefusal::Stale {
             current: plans.generation.0,

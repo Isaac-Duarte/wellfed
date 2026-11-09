@@ -271,6 +271,29 @@ pub struct CommandPage {
     pub next: Option<String>,
 }
 
+/// A state to list writes in. Only in a query, so it has no catch-all: a
+/// server refuses a state it can't name (`400`) rather than listing none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandStateFilter {
+    Sent,
+    Answered,
+    Resolved,
+    /// The uncertain list: writes the feeder may have run.
+    Unknown,
+}
+
+impl From<CommandStateFilter> for CommandState {
+    fn from(filter: CommandStateFilter) -> Self {
+        match filter {
+            CommandStateFilter::Sent => Self::Sent,
+            CommandStateFilter::Answered => Self::Answered,
+            CommandStateFilter::Resolved => Self::Resolved,
+            CommandStateFilter::Unknown => Self::Unknown,
+        }
+    }
+}
+
 /// Which entries to list. A member sees their own; an owner, everyone's.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -279,7 +302,7 @@ pub struct CommandQuery {
     #[param(value_type = Option<String>, format = Uuid)]
     pub feeder: Option<FeederId>,
     /// Writes in this state only: `unknown` is the uncertain list.
-    pub state: Option<CommandState>,
+    pub state: Option<CommandStateFilter>,
     /// The previous page's `next`, as it came.
     pub after: Option<String>,
     /// At most this many (1-1000, default 100).

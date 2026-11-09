@@ -197,7 +197,9 @@ struct Session<'a> {
     updates: &'a std_mpsc::Sender<Update>,
     /// What the token's account may do, as the writes' gate reads it.
     role: ClientRole,
-    kind: DeviceKind,
+    /// The device's kind; `None` for one a newer server added, which this
+    /// integration serves nothing of and names as needing an update.
+    kind: Option<DeviceKind>,
     /// The home's zone: the feeder's, which the server keeps on it.
     zone: TimeZone,
     /// Whether the server reaches the feeder now.
@@ -224,7 +226,7 @@ impl<'a> Session<'a> {
             memory,
             updates,
             role: ClientRole::Unknown,
-            kind: DeviceKind::Feeder,
+            kind: None,
             zone: TimeZone::system(),
             online: false,
             legacy: false,
@@ -353,7 +355,7 @@ impl<'a> Session<'a> {
 
     /// Keep what the detail says of the feeder.
     fn took(&mut self, detail: &FeederDetail) {
-        self.kind = detail.feeder.kind;
+        self.kind = detail.feeder.kind.known();
         self.legacy = detail.feeder.skew == Some(model::Skew::Legacy);
         if let Some(snapshot) = &detail.status {
             self.memory.facts.status = Some(snapshot.status.clone());
@@ -373,8 +375,11 @@ impl<'a> Session<'a> {
         self.send(Update::connected_as(
             build,
             Role::from(self.account),
-            Capabilities::of(self.kind),
-            skew(self.server, detail.feeder.skew),
+            self.kind.map_or(Capabilities::NONE, Capabilities::of),
+            match self.kind {
+                Some(_) => skew(self.server, detail.feeder.skew),
+                None => Skew::NewerBuild,
+            },
         ))?;
         self.read_facts().await
     }
@@ -405,7 +410,7 @@ impl<'a> Session<'a> {
 
     /// Whether the feeder's kind serves `op`, by the op's own kind.
     fn serves(&self, op: &Op) -> bool {
-        op.kind().is_none_or(|kind| kind == self.kind)
+        op.kind().is_none_or(|kind| Some(kind) == self.kind)
     }
 
     /// Replay the history from the cursor, or the newest of it.
@@ -621,7 +626,7 @@ impl<'a> Session<'a> {
             calibration: self.memory.calibration.as_ref(),
         };
         let (op, kind) = writes::build(write, &read)?;
-        writes::served(&op, self.kind)?;
+        writes::served(&op, self.kind.ok_or(NotSent::Unsupported)?)?;
         Ok((op, kind))
     }
 
@@ -645,8 +650,8 @@ impl<'a> Session<'a> {
             Op::Play { tune } => client.play(id, tune.into(), key).await.map(done),
             Op::PutSettings { base, changes } => {
                 match client.put_settings(id, base, &changes, key).await {
-                    Ok(Settings::Feeder(settings)) => {
-                        self.memory.facts.settings = Some(settings);
+                    Ok(settings) => {
+                        self.memory.facts.settings = settings.feeder().copied();
                         Ok(Written::done())
                     }
                     Err(error) => Err(error),
@@ -755,8 +760,7 @@ impl<'a> Session<'a> {
         use wellfed_server_client::Error as E;
         match error {
             E::Stale(settings) => {
-                let Settings::Feeder(settings) = settings.as_ref();
-                self.memory.facts.settings = Some(*settings);
+                self.memory.facts.settings = settings.feeder().copied();
             }
             E::StalePlans(plans) => self.memory.facts.plans = Some(**plans),
             E::StaleCalibration(view) => self.memory.calibration = Some(**view),

@@ -148,7 +148,10 @@ fn objects(
 
         match key.as_str() {
             _ if names => compare(was, is, &here, false, found),
-            "required" => same_set(was, is, &here, found),
+            // A schema's list of required fields is a set; a parameter's
+            // or a request body's `required` is a flag, and either way a
+            // change is a change in place.
+            "required" if was.is_array() && is.is_array() => same_set(was, is, &here, found),
             "enum" => grown_list(was, is, &here, found, |_, _, _, _| {}),
             "oneOf" => grown_list(was, is, &here, found, |then, now, at, found| {
                 compare(then, now, at, false, found);
@@ -393,9 +396,16 @@ fn sample() -> Value {
                 { "type": "object", "properties": { "kind": { "type": "string", "enum": ["boot"] } } }
             ] }
         } },
-        "paths": { "/x": { "get": { "parameters": [
-            { "name": "after", "in": "query", "required": false, "schema": { "type": "integer" } }
-        ] } } }
+        "paths": {
+            "/x": { "get": { "parameters": [
+                { "name": "after", "in": "query", "required": false, "schema": { "type": "integer" } },
+                { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+            ] } },
+            "/settings": { "patch": { "requestBody": {
+                "required": false,
+                "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Body" } } }
+            } } }
+        }
     })
 }
 
@@ -438,7 +448,7 @@ fn growth_reads_as_growth() {
 #[test]
 fn a_change_in_place_is_named() {
     type Edit = fn(&mut Value);
-    let cases: [(&str, Edit); 9] = [
+    let cases: [(&str, Edit); 12] = [
         ("removed", |now| {
             now["components"]["schemas"]["Body"]["properties"]
                 .as_object_mut()
@@ -471,6 +481,15 @@ fn a_change_in_place_is_named() {
                 .unwrap()
                 .push(json!({ "name": "must", "in": "query", "required": true }));
         }),
+        ("an optional parameter made required", |now| {
+            now["paths"]["/x"]["get"]["parameters"][0]["required"] = json!(true);
+        }),
+        ("a required parameter made optional", |now| {
+            now["paths"]["/x"]["get"]["parameters"][1]["required"] = json!(false);
+        }),
+        ("a request body made required", |now| {
+            now["paths"]["/settings"]["patch"]["requestBody"]["required"] = json!(true);
+        }),
         ("an operation removed", |now| {
             now["paths"]["/x"].as_object_mut().unwrap().remove("get");
         }),
@@ -479,4 +498,48 @@ fn a_change_in_place_is_named() {
     for (case, edit) in cases {
         assert!(!edited(edit).is_empty(), "{case} passed as growth");
     }
+}
+
+/// Every `$ref` in `value`, with where it is.
+fn refs(value: &Value, at: &str, found: &mut Vec<(String, String)>) {
+    match value {
+        Value::Object(fields) => {
+            for (key, field) in fields {
+                match (key.as_str(), field) {
+                    ("$ref", Value::String(target)) => found.push((at.to_owned(), target.clone())),
+                    _ => refs(field, &format!("{at}/{key}"), found),
+                }
+            }
+        }
+        Value::Array(values) => {
+            for (index, value) in values.iter().enumerate() {
+                refs(value, &format!("{at}/{index}"), found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A `$ref` to a schema the document does not hold hides that schema's
+/// values from the growth check, so every one must resolve.
+#[test]
+fn every_ref_resolves() {
+    let document = current();
+    let mut found = Vec::new();
+    refs(&document, "", &mut found);
+
+    let dangling: Vec<String> = found
+        .into_iter()
+        .filter(|(_, target)| {
+            target
+                .strip_prefix('#')
+                .is_none_or(|pointer| document.pointer(pointer).is_none())
+        })
+        .map(|(at, target)| format!("{at}: {target}"))
+        .collect();
+    assert!(
+        dangling.is_empty(),
+        "register these schemas in the document's components:\n{}",
+        dangling.join("\n")
+    );
 }

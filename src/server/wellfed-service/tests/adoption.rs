@@ -44,7 +44,10 @@ fn an_adoption_stores_the_model_the_redemption_names_in_the_home() {
         assert_eq!(row.model, Model::Plaf103);
         assert_eq!(row.kind, DeviceKind::Feeder);
         assert_eq!(row.home, service.home().await.unwrap().id);
-        assert_eq!((adopted.model, adopted.kind), (row.model, row.kind));
+        assert_eq!(
+            (adopted.model, adopted.kind),
+            (row.model.into(), row.kind.into())
+        );
     });
 }
 

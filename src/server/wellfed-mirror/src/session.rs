@@ -350,7 +350,8 @@ impl Task {
     /// until this is answered. The feeder answers in order, so this one
     /// may wait behind a slow write on a lane; running out of time then does
     /// not end the session, which would make the lanes' writes in flight
-    /// unknown. Its late answer is dropped.
+    /// unknown. Its late answer is dropped. A request refused before a byte
+    /// went is unanswered too, for the same reason.
     pub(crate) async fn ask(
         &mut self,
         connection: &mut Connection,
@@ -358,7 +359,14 @@ impl Task {
         op: &Op,
     ) -> Result<Option<Answer>, End> {
         let id = self.shared.random()?;
-        connection.request(id, op).map_err(End::Lost)?;
+        match connection.request(id, op) {
+            Ok(()) => {}
+            Err(wellfed_connect::Error::ReservedId | wellfed_connect::Error::Encode) => {
+                warn!(feeder = %self.id, "a request of the server's own did not encode: {op:?}");
+                return Ok(None);
+            }
+            Err(error) => return Err(End::Lost(error)),
+        }
         loop {
             match connection.receive(QUIET).await {
                 Ok(Received::Answer {
