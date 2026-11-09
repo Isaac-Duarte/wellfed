@@ -189,10 +189,13 @@ impl RestoreThread {
         let stop = self.stop.subscribe();
         let last = deliver.clone();
         let offering = Offering::default();
+        // Held by the thread itself, which outlives an engine swiped away.
+        let held = crate::alerts::RunThread::hold();
         let thread = std::thread::Builder::new()
             .name("wellfed-restore".into())
             .stack_size(STACK)
             .spawn(move || {
+                let _held = held;
                 let shown = offering.clone();
                 let end = guarded(
                     || match plan {

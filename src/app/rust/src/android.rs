@@ -10,10 +10,10 @@
 //! lockfile pins for `rustls-platform-verifier-android`.
 //!
 //! `KeepAliveService` calls the second when the owner swipes the app's task
-//! away: the runs that held catch-ups off (an install, a restore, an update)
-//! ended with the app's engine and never said so, and this process may live
-//! on in the instant service, so their holds go here rather than lapsing two
-//! hours later.
+//! away: the engine's holds on catch-ups go with the engine, since none of
+//! its runs is left to let go. A run's thread that still lives (an update
+//! pushing chunks or waiting out the restart, an install's listener) keeps
+//! its own hold until it ends.
 
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;

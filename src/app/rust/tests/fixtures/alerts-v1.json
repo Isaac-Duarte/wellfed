@@ -5,9 +5,28 @@
       "instant": true,
       "mutes": {
         "kinds": [
-          "food_low"
+          "meal_failed",
+          "meal_uncertain",
+          "meal_missed",
+          "meal_no_record",
+          "power_was_out",
+          "update_failed",
+          "rolled_back",
+          "client_joined",
+          "client_revoked",
+          "repeated_restarts",
+          "no_clock",
+          "cannot_feed",
+          "food_low",
+          "food_likely_out",
+          "desiccant_due",
+          "battery_below_floor",
+          "plans_stuck",
+          "unreachable"
         ],
         "levels": [
+          "urgent",
+          "soon",
           "security"
         ]
       },
@@ -30,17 +49,106 @@
                 "epoch": 3,
                 "key": {
                   "key": "feed",
-                  "feed": 7
+                  "feed": 1
                 }
               },
               "notice": {
                 "notice": "alert",
                 "open": {
-                  "at": "2027-01-15T08:00:00Z",
+                  "at": "2027-01-15T08:00:01Z",
                   "alert": {
                     "kind": "meal_failed",
-                    "feed": 7,
+                    "feed": 1,
                     "plan": 1,
+                    "requested": 2,
+                    "completed": 1,
+                    "outcome": "done",
+                    "reason": "jammed"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:05Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:30Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 2
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:02Z",
+                  "alert": {
+                    "kind": "meal_failed",
+                    "feed": 2,
+                    "plan": null,
+                    "requested": 2,
+                    "completed": 1,
+                    "outcome": "cancelled",
+                    "reason": "jammed"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:06Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 3
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:03Z",
+                  "alert": {
+                    "kind": "meal_failed",
+                    "feed": 3,
+                    "plan": 1,
+                    "requested": 2,
+                    "completed": 1,
+                    "outcome": "expired",
+                    "reason": "jammed"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:07Z",
+              "delivery": "quiet",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 4
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:04Z",
+                  "alert": {
+                    "kind": "meal_failed",
+                    "feed": 4,
+                    "plan": null,
                     "requested": 2,
                     "completed": 1,
                     "outcome": "failed",
@@ -48,7 +156,67 @@
                   }
                 }
               },
-              "seen": "2027-01-15T08:00:05Z",
+              "seen": "2027-01-15T08:00:08Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:33Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 5
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:05Z",
+                  "alert": {
+                    "kind": "meal_failed",
+                    "feed": 5,
+                    "plan": 1,
+                    "requested": 2,
+                    "completed": 1,
+                    "outcome": "uncertain",
+                    "reason": "jammed"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:09Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 6
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:06Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 6,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "done"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:10Z",
               "delivery": "posted",
               "absent": null
             },
@@ -57,9 +225,1090 @@
                 "notice": "alert",
                 "epoch": 3,
                 "key": {
+                  "key": "feed",
+                  "feed": 7
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:07Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 7,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "cancelled"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:11Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:36Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 8
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:08Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 8,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "clock"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:12Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 9
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:09Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 9,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "observation_gap"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:13Z",
+              "delivery": "due",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 10
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:10Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 10,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "timeout"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:14Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:39Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 11
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:11Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 11,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "no_feedback"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:15Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 12
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:12Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 12,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "power"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:16Z",
+              "delivery": "dismissed",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 13
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:13Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 13,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "sensor"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:17Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:42Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 14
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:14Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 14,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "outlet_blocked"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:18Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 15
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:15Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 15,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "overcurrent"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:19Z",
+              "delivery": "quiet",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 16
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:16Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 16,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "feedback_stream"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:20Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:45Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 17
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:17Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 17,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "output"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:21Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 18
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:18Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 18,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "jammed"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:22Z",
+              "delivery": "posted",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 19
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:19Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 19,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "mark_stuck"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:23Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:48Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 20
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:20Z",
+                  "alert": {
+                    "kind": "meal_uncertain",
+                    "feed": 20,
+                    "plan": null,
+                    "requested": 3,
+                    "completed": 0,
+                    "reason": "interrupted"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:24Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 0,
+                  "due": "2027-01-15T07:00:00Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 0,
+                    "due": "2027-01-15T07:00:00Z",
+                    "reason": {
+                      "kind": "late"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:25Z",
+              "delivery": "due",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 1,
+                  "due": "2027-01-15T06:59:59Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 1,
+                    "due": "2027-01-15T06:59:59Z",
+                    "reason": {
+                      "kind": "interrupted"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:26Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:51Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 2,
+                  "due": "2027-01-15T06:59:58Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 2,
+                    "due": "2027-01-15T06:59:58Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "starting"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:27Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 3,
+                  "due": "2027-01-15T06:59:57Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 3,
+                    "due": "2027-01-15T06:59:57Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "journal"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:28Z",
+              "delivery": "dismissed",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 4,
+                  "due": "2027-01-15T06:59:56Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 4,
+                    "due": "2027-01-15T06:59:56Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "fault"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:29Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:54Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 5,
+                  "due": "2027-01-15T06:59:55Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 5,
+                    "due": "2027-01-15T06:59:55Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "resolving"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:30Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 6,
+                  "due": "2027-01-15T06:59:54Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 6,
+                    "due": "2027-01-15T06:59:54Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "feeding"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:31Z",
+              "delivery": "quiet",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 7,
+                  "due": "2027-01-15T06:59:53Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 7,
+                    "due": "2027-01-15T06:59:53Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "joining"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:32Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:00:57Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 8,
+                  "due": "2027-01-15T06:59:52Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 8,
+                    "due": "2027-01-15T06:59:52Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "updating"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:33Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 9,
+                  "due": "2027-01-15T06:59:51Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 9,
+                    "due": "2027-01-15T06:59:51Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "setup"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:34Z",
+              "delivery": "posted",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 10,
+                  "due": "2027-01-15T06:59:50Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 10,
+                    "due": "2027-01-15T06:59:50Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "unserved"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:35Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:00Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 11,
+                  "due": "2027-01-15T06:59:49Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 11,
+                    "due": "2027-01-15T06:59:49Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "battery"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:36Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 12,
+                  "due": "2027-01-15T06:59:48Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:40Z",
+                  "alert": {
+                    "kind": "meal_missed",
+                    "plan": 12,
+                    "due": "2027-01-15T06:59:48Z",
+                    "reason": {
+                      "kind": "blocked",
+                      "reason": "restarting"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:37Z",
+              "delivery": "due",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "meal",
+                  "plan": 20,
+                  "due": "2027-01-15T07:59:00Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:41Z",
+                  "alert": {
+                    "kind": "meal_no_record",
+                    "plan": 20,
+                    "due": "2027-01-15T07:59:00Z"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:38Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:03Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "power_was_out",
+                  "at": "2027-01-15T08:01:42Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:42Z",
+                  "alert": {
+                    "kind": "power_was_out"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:39Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "rolled_back",
+                  "at": "2027-01-15T08:01:43Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:01:43Z",
+                  "alert": {
+                    "kind": "rolled_back"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:40Z",
+              "delivery": "dismissed",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "update_failed",
+                  "at": "2027-01-15T08:03:20Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:03:20Z",
+                  "alert": {
+                    "kind": "update_failed",
+                    "stop": "timeout"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:41Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:06Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "update_failed",
+                  "at": "2027-01-15T08:03:21Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:03:21Z",
+                  "alert": {
+                    "kind": "update_failed",
+                    "stop": "cancelled"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:42Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "update_failed",
+                  "at": "2027-01-15T08:03:22Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:03:22Z",
+                  "alert": {
+                    "kind": "update_failed",
+                    "stop": "order"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:43Z",
+              "delivery": "quiet",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "update_failed",
+                  "at": "2027-01-15T08:03:23Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:03:23Z",
+                  "alert": {
+                    "kind": "update_failed",
+                    "stop": "marker"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:44Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:09Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "update_failed",
+                  "at": "2027-01-15T08:03:24Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:03:24Z",
+                  "alert": {
+                    "kind": "update_failed",
+                    "stop": "write"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:45Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "update_failed",
+                  "at": "2027-01-15T08:03:25Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:03:25Z",
+                  "alert": {
+                    "kind": "update_failed",
+                    "stop": "hash"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:46Z",
+              "delivery": "posted",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "update_failed",
+                  "at": "2027-01-15T08:03:26Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:03:26Z",
+                  "alert": {
+                    "kind": "update_failed",
+                    "stop": "activate"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:47Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:12Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "timed",
+                  "kind": "update_failed",
+                  "at": "2027-01-15T08:03:27Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:03:27Z",
+                  "alert": {
+                    "kind": "update_failed",
+                    "stop": "store"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:48Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
                   "key": "client",
                   "kind": "client_joined",
-                  "client": "deadbeef",
+                  "client": "deadbe00",
                   "at": null
                 }
               },
@@ -69,27 +1318,295 @@
                   "at": null,
                   "alert": {
                     "kind": "client_joined",
-                    "client": "deadbeef",
+                    "client": "deadbe00",
+                    "role": "owner",
+                    "path": "setup"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:49Z",
+              "delivery": "due",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "client",
+                  "kind": "client_joined",
+                  "client": "deadbe01",
+                  "at": "2027-01-15T08:05:01Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:05:01Z",
+                  "alert": {
+                    "kind": "client_joined",
+                    "client": "deadbe01",
                     "role": "member",
                     "path": "invite"
                   }
                 }
               },
-              "seen": "2027-01-15T08:00:05Z",
-              "delivery": "quiet",
-              "absent": "2027-01-15T08:00:30Z"
+              "seen": "2027-01-15T08:00:50Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:15Z"
+              }
             },
             {
               "key": {
-                "notice": "unreachable"
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "client",
+                  "kind": "client_joined",
+                  "client": "deadbe02",
+                  "at": "2027-01-15T08:05:02Z"
+                }
               },
               "notice": {
-                "notice": "unreachable",
-                "since": "2027-01-15T08:00:40Z"
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:05:02Z",
+                  "alert": {
+                    "kind": "client_joined",
+                    "client": "deadbe02",
+                    "role": "server",
+                    "path": "recovery"
+                  }
+                }
               },
-              "seen": "2027-01-15T08:00:50Z",
-              "delivery": "due",
+              "seen": "2027-01-15T08:00:51Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "client",
+                  "kind": "client_joined",
+                  "client": "deadbe03",
+                  "at": "2027-01-15T08:05:03Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:05:03Z",
+                  "alert": {
+                    "kind": "client_joined",
+                    "client": "deadbe03",
+                    "role": "update_signer",
+                    "path": "press"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:52Z",
+              "delivery": "dismissed",
               "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "client",
+                  "kind": "client_revoked",
+                  "client": "beef0000",
+                  "at": "2027-01-15T08:06:40Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:06:40Z",
+                  "alert": {
+                    "kind": "client_revoked",
+                    "client": "beef0000",
+                    "by": {
+                      "kind": "panel"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:53Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:18Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "client",
+                  "kind": "client_revoked",
+                  "client": "beef0001",
+                  "at": "2027-01-15T08:06:40Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:06:40Z",
+                  "alert": {
+                    "kind": "client_revoked",
+                    "client": "beef0001",
+                    "by": {
+                      "kind": "client",
+                      "client": "01020304"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:54Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "client",
+                  "kind": "client_revoked",
+                  "client": "beef0002",
+                  "at": "2027-01-15T08:06:40Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:06:40Z",
+                  "alert": {
+                    "kind": "client_revoked",
+                    "client": "beef0002",
+                    "by": {
+                      "kind": "feeder"
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:55Z",
+              "delivery": "quiet",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "client",
+                  "kind": "client_revoked",
+                  "client": "beef0003",
+                  "at": "2027-01-15T08:06:40Z"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:06:40Z",
+                  "alert": {
+                    "kind": "client_revoked",
+                    "client": "beef0003",
+                    "by": {
+                      "kind": "schedule",
+                      "plan": 2
+                    }
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:56Z",
+              "delivery": "dismissed",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:21Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "kind",
+                  "kind": "repeated_restarts"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T07:59:00Z",
+                  "alert": {
+                    "kind": "repeated_restarts"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:57Z",
+              "delivery": "due",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "kind",
+                  "kind": "no_clock"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T07:59:00Z",
+                  "alert": {
+                    "kind": "no_clock"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:58Z",
+              "delivery": "posted",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "kind",
+                  "kind": "cannot_feed"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T07:59:00Z",
+                  "alert": {
+                    "kind": "cannot_feed",
+                    "reason": "fault"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:59Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:24Z"
+              }
             },
             {
               "key": {
@@ -109,19 +1626,131 @@
                   }
                 }
               },
-              "seen": "2027-01-15T08:00:05Z",
+              "seen": "2027-01-15T08:01:00Z",
               "delivery": "dismissed",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "kind",
+                  "kind": "food_likely_out"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T07:59:00Z",
+                  "alert": {
+                    "kind": "food_likely_out",
+                    "confirmed": 3
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:01:01Z",
+              "delivery": "due",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "kind",
+                  "kind": "desiccant_due"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T07:59:00Z",
+                  "alert": {
+                    "kind": "desiccant_due",
+                    "days": -2
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:01:02Z",
+              "delivery": "posted",
+              "absent": {
+                "absence": "since",
+                "since": "2027-01-15T08:01:27Z"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "kind",
+                  "kind": "battery_below_floor"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T07:59:00Z",
+                  "alert": {
+                    "kind": "battery_below_floor"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:01:03Z",
+              "delivery": "quiet",
+              "absent": {
+                "absence": "no_clock"
+              }
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "kind",
+                  "kind": "plans_stuck"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T07:59:00Z",
+                  "alert": {
+                    "kind": "plans_stuck"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:01:04Z",
+              "delivery": "dismissed",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "unreachable"
+              },
+              "notice": {
+                "notice": "unreachable",
+                "since": "2027-01-15T08:00:40Z"
+              },
+              "seen": "2027-01-15T08:00:50Z",
+              "delivery": "due",
               "absent": null
             }
           ],
           "removing": [
             {
               "notice": "alert",
-              "epoch": 2,
+              "epoch": 3,
               "key": {
                 "key": "feed",
-                "feed": 7
+                "feed": 1
               }
+            },
+            {
+              "notice": "unreachable"
             }
           ],
           "unread": 1,

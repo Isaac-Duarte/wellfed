@@ -214,52 +214,102 @@ impl Drop for Sitting {
     }
 }
 
-/// How long a run's hold lasts unrenewed. A run ends its hold when it ends,
-/// but an app swiped away mid-run says nothing while this process lives on,
-/// so a hold lapses by itself. The longest run is a stock install with its
-/// 30-minute listener.
+/// How long a hold lasts. A run lets go when it ends, so this is only for a
+/// run that never does: an engine swiped away mid-run whose task ended with
+/// nothing said, or a thread that hangs. The longest run is a stock install
+/// with its 30-minute listener.
 const HOLD_LIMIT: Duration = Duration::from_secs(2 * 60 * 60);
 
-static HELD: Blocking<BTreeMap<AlertHold, Instant>> = Blocking::new(BTreeMap::new());
-
-fn holds() -> std::sync::MutexGuard<'static, BTreeMap<AlertHold, Instant>> {
-    let mut held = HELD.lock().unwrap_or_else(PoisonError::into_inner);
-    held.retain(|_, at| at.elapsed() < HOLD_LIMIT);
-    held
+/// Two kinds of hold keep catch-ups off. The engine's, keyed by run, cover
+/// what a run does in Dart (joining the feeder's network, the screens before
+/// its thread starts) and go with the engine. A run's thread holds its own
+/// ([`RunThread`]) for as long as it lives: an update's chunks, the
+/// give-way and the bank-0 restart, or the install listener's wait, all of
+/// which outlive an engine swiped away.
+struct Holds {
+    engine: BTreeMap<AlertHold, Instant>,
+    threads: BTreeMap<u64, Instant>,
+    next: u64,
 }
 
-/// Keep catch-ups off for `run`, or let go.
-pub(crate) fn hold(run: AlertHold, held: bool) {
-    let mut holds = holds();
-    if held {
-        holds.insert(run, Instant::now());
-    } else {
-        holds.remove(&run);
+impl Holds {
+    fn lapse(&mut self) {
+        self.engine.retain(|_, at| at.elapsed() < HOLD_LIMIT);
+        self.threads.retain(|_, at| at.elapsed() < HOLD_LIMIT);
     }
 }
 
-/// Let go of every run's hold: the app's task was swiped away, so no run of
-/// its engine is left to end its own.
+static HELD: Blocking<Holds> = Blocking::new(Holds {
+    engine: BTreeMap::new(),
+    threads: BTreeMap::new(),
+    next: 0,
+});
+
+fn holds() -> std::sync::MutexGuard<'static, Holds> {
+    // Plain maps are whole even if a holder panicked.
+    let mut held = HELD.lock().unwrap_or_else(PoisonError::into_inner);
+    held.lapse();
+    held
+}
+
+/// Keep catch-ups off for the engine's `run`, or let go.
+pub(crate) fn hold(run: AlertHold, held: bool) {
+    let mut holds = holds();
+    if held {
+        holds.engine.insert(run, Instant::now());
+    } else {
+        holds.engine.remove(&run);
+    }
+}
+
+/// A run's thread keeping catch-ups off while it lives. Taken before the
+/// thread is spawned and moved into it, so it drops when the thread ends,
+/// by its end, an error or a panic, and with the closure if no thread
+/// started.
+pub(crate) struct RunThread(u64);
+
+impl RunThread {
+    pub(crate) fn hold() -> Self {
+        let mut holds = holds();
+        let id = holds.next;
+        holds.next = holds.next.wrapping_add(1);
+        holds.threads.insert(id, Instant::now());
+        Self(id)
+    }
+}
+
+impl Drop for RunThread {
+    fn drop(&mut self) {
+        holds().threads.remove(&self.0);
+    }
+}
+
+/// Let go of the engine's holds: the app's task was swiped away, and the
+/// engine went with it, so none of its runs is left to let go. A run's
+/// thread still alive keeps its own.
 #[cfg_attr(
     not(any(target_os = "android", test)),
     expect(dead_code, reason = "only Android's keep-alive service calls it")
 )]
 pub(crate) fn clear_holds() {
-    holds().clear();
+    holds().engine.clear();
 }
 
 /// Whether a run keeps catch-ups off.
 pub(crate) fn held() -> bool {
-    !holds().is_empty()
+    let holds = holds();
+    !holds.engine.is_empty() || !holds.threads.is_empty()
 }
 
 #[cfg(test)]
 mod tests {
     use jiff::Timestamp;
-    use wellfed_client::alerts::{Cursor, Delivery, Notice, NoticeKey, NoticeKind, Reach, Tracked};
+    use wellfed_client::alerts::{
+        Absence, Cursor, Delivery, Notice, NoticeKey, NoticeKind, Reach, Tracked,
+    };
     use wellfed_model::{
-        Alert, AlertLevel, ClientRole, EnrollPath, FeedOutcome, FeedReason, Generation, Hex,
-        OpenAlert,
+        Alert, AlertKind, AlertLevel, Blocked, ClientRole, EnrollPath, FeedOutcome, FeedReason,
+        Generation, Hex, MissedReason, OpenAlert, Source, UpdateStop,
     };
 
     use super::*;
@@ -295,46 +345,173 @@ mod tests {
     }
 
     /// Every field of the file, with a value in each.
+    /// One open alert per `Alert` variant, and enough more that every value
+    /// of each enum inside them (outcome, reason, missed reason, blocked
+    /// reason, update stop, role, enrollment, source) is written, and every
+    /// alert key. Unknown values are never written, so none is here.
+    fn every_alert() -> Vec<OpenAlert> {
+        let open = |second: i64, alert| OpenAlert {
+            at: Some(at(second)),
+            alert,
+        };
+        let mut alerts = Vec::new();
+        let mut feed = 0;
+        for (n, outcome) in FeedOutcome::ALL.into_iter().enumerate() {
+            feed += 1;
+            alerts.push(open(
+                feed,
+                Alert::MealFailed {
+                    feed: u32::try_from(feed).unwrap(),
+                    plan: (n % 2 == 0).then_some(1),
+                    requested: 2,
+                    completed: 1,
+                    outcome,
+                    reason: FeedReason::Jammed,
+                },
+            ));
+        }
+        for reason in FeedReason::ALL {
+            feed += 1;
+            alerts.push(open(
+                feed,
+                Alert::MealUncertain {
+                    feed: u32::try_from(feed).unwrap(),
+                    plan: None,
+                    requested: 3,
+                    completed: 0,
+                    reason,
+                },
+            ));
+        }
+        let missed = [MissedReason::Late, MissedReason::Interrupted]
+            .into_iter()
+            .chain(Blocked::ALL.map(|reason| MissedReason::Blocked { reason }));
+        for (plan, reason) in missed.enumerate() {
+            let plan = u8::try_from(plan).unwrap();
+            alerts.push(open(
+                100,
+                Alert::MealMissed {
+                    plan,
+                    due: at(-3600 - i64::from(plan)),
+                    reason,
+                },
+            ));
+        }
+        alerts.push(open(
+            101,
+            Alert::MealNoRecord {
+                plan: 20,
+                due: at(-60),
+            },
+        ));
+        alerts.push(open(102, Alert::PowerWasOut));
+        alerts.push(open(103, Alert::RolledBack));
+        let stops = [
+            UpdateStop::Timeout,
+            UpdateStop::Cancelled,
+            UpdateStop::Order,
+            UpdateStop::Marker,
+            UpdateStop::Write,
+            UpdateStop::Hash,
+            UpdateStop::Activate,
+            UpdateStop::Store,
+        ];
+        for (n, stop) in (0..).zip(stops) {
+            alerts.push(open(200 + n, Alert::UpdateFailed { stop }));
+        }
+        let joins = [
+            (ClientRole::Owner, EnrollPath::Setup),
+            (ClientRole::Member, EnrollPath::Invite),
+            (ClientRole::Server, EnrollPath::Recovery),
+            (ClientRole::UpdateSigner, EnrollPath::Press),
+        ];
+        for (n, (role, path)) in (0..).zip(joins) {
+            alerts.push(OpenAlert {
+                // A join on a feeder with no clock has no time.
+                at: (n > 0).then(|| at(300 + i64::from(n))),
+                alert: Alert::ClientJoined {
+                    client: Hex([0xde, 0xad, 0xbe, n]),
+                    role,
+                    path,
+                },
+            });
+        }
+        let sources = [
+            Source::Panel,
+            Source::Client {
+                client: Hex([1, 2, 3, 4]),
+            },
+            Source::Feeder,
+            Source::Schedule { plan: 2 },
+        ];
+        for (n, by) in (0..).zip(sources) {
+            alerts.push(open(
+                400,
+                Alert::ClientRevoked {
+                    client: Hex([0xbe, 0xef, 0, n]),
+                    by,
+                },
+            ));
+        }
+        for alert in [
+            Alert::RepeatedRestarts,
+            Alert::NoClock,
+            Alert::CannotFeed {
+                reason: Blocked::Fault,
+            },
+            Alert::FoodLow,
+            Alert::FoodLikelyOut { confirmed: 3 },
+            Alert::DesiccantDue { days: -2 },
+            Alert::BatteryBelowFloor,
+            Alert::PlansStuck,
+        ] {
+            alerts.push(open(-60, alert));
+        }
+        alerts
+    }
+
+    /// Every field of the file, with a value in each, and every value of
+    /// each enum it holds.
     fn every_field() -> AlertState {
-        let failed = OpenAlert {
-            at: Some(at(0)),
-            alert: Alert::MealFailed {
-                feed: 7,
-                plan: Some(1),
-                requested: 2,
-                completed: 1,
-                outcome: FeedOutcome::Failed,
-                reason: FeedReason::Jammed,
-            },
-        };
-        let joined = OpenAlert {
-            at: None,
-            alert: Alert::ClientJoined {
-                client: Hex([0xde, 0xad, 0xbe, 0xef]),
-                role: ClientRole::Member,
-                path: EnrollPath::Invite,
-            },
-        };
-        let food = OpenAlert {
-            at: Some(at(-60)),
-            alert: Alert::FoodLow,
-        };
-        let tracked = |open: OpenAlert, delivery, absent| Tracked {
-            key: NoticeKey::Alert {
-                epoch: 3,
-                key: open.key(),
-            },
-            notice: Notice::Alert { open },
-            seen: at(5),
-            delivery,
-            absent,
-        };
+        let deliveries = [
+            Delivery::Due,
+            Delivery::Posted,
+            Delivery::Quiet,
+            Delivery::Dismissed,
+        ];
+        let mut open: Vec<Tracked> = every_alert()
+            .into_iter()
+            .zip((0..).zip(deliveries.into_iter().cycle()))
+            .map(|(open, (n, delivery))| Tracked {
+                key: NoticeKey::Alert {
+                    epoch: 3,
+                    key: open.key(),
+                },
+                notice: Notice::Alert { open },
+                seen: at(5 + n),
+                delivery,
+                absent: match n % 3 {
+                    0 => Some(Absence::Since { since: at(30 + n) }),
+                    1 => Some(Absence::NoClock),
+                    _ => None,
+                },
+            })
+            .collect();
+        open.push(Tracked {
+            key: NoticeKey::Unreachable,
+            notice: Notice::Unreachable { since: at(40) },
+            seen: at(50),
+            delivery: Delivery::Due,
+            absent: None,
+        });
+        let removing = vec![open[0].key, NoticeKey::Unreachable];
+
         AlertState {
             settings: AlertSettings {
                 instant: true,
                 mutes: Mutes {
-                    kinds: vec![NoticeKind::FoodLow],
-                    levels: vec![AlertLevel::Security],
+                    kinds: NoticeKind::all().collect(),
+                    levels: vec![AlertLevel::Urgent, AlertLevel::Soon, AlertLevel::Security],
                 },
                 asked: true,
             },
@@ -347,22 +524,8 @@ mod tests {
                         boot: 12,
                         generation: Generation(9),
                     }),
-                    open: vec![
-                        tracked(failed, Delivery::Posted, None),
-                        tracked(joined, Delivery::Quiet, Some(at(30))),
-                        Tracked {
-                            key: NoticeKey::Unreachable,
-                            notice: Notice::Unreachable { since: at(40) },
-                            seen: at(50),
-                            delivery: Delivery::Due,
-                            absent: None,
-                        },
-                        tracked(food, Delivery::Dismissed, None),
-                    ],
-                    removing: vec![NoticeKey::Alert {
-                        epoch: 2,
-                        key: failed.key(),
-                    }],
+                    open,
+                    removing,
                     unread: 1,
                     reach: Reach {
                         home: Some("5f3a".into()),
@@ -382,10 +545,20 @@ mod tests {
         }
     }
 
-    /// Pinned: the beta freezes this file's shape, `wellfed_model`'s alert
-    /// values inside it included. A change here is a new version with a
-    /// reader for this one ([`Versioned::earlier`]), never an edit to the
-    /// sample.
+    #[test]
+    fn the_sample_has_every_alert_kind_and_key() {
+        let kinds: std::collections::BTreeSet<_> = every_alert()
+            .iter()
+            .map(|open| format!("{:?}", open.alert.kind()))
+            .collect();
+        assert_eq!(kinds.len(), AlertKind::ALL.len());
+        let keys: HashSet<_> = every_alert()
+            .iter()
+            .map(|open| std::mem::discriminant(&open.key()))
+            .collect();
+        assert_eq!(keys.len(), 5, "feed, meal, client, timed and kind");
+    }
+
     #[test]
     fn version_1_reads_and_writes_as_its_sample() {
         let sample = include_str!("../tests/fixtures/alerts-v1.json");
@@ -414,7 +587,12 @@ mod tests {
             .unwrap();
         assert!(!applied);
         assert_eq!(state.feeders, []);
-        assert_eq!(changes.len(), 5, "four open and one being removed");
+        let watch = &every_field().feeders[0].watch;
+        assert_eq!(
+            changes.len(),
+            watch.open.len() + watch.removing.len(),
+            "everything open and everything being removed"
+        );
         assert!(
             changes
                 .iter()
@@ -457,13 +635,42 @@ mod tests {
     }
 
     #[test]
+    fn a_sweep_keeps_what_a_watch_knows() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_name = dir.path().display().to_string();
+        run(async {
+            let state = every_field();
+            let feeder =
+                wellfed_session::hex::decode_array_either_case::<32>(KITCHEN.as_bytes()).unwrap();
+            let known = state.feeders[0].watch.open[0].key.notification_id(&feeder);
+            change(dir.path(), |stored| *stored = state).await.unwrap();
+
+            let sweep =
+                || crate::api::alerts::alerts_to_sweep(dir_name.clone(), vec![known, 0x4000_0abc]);
+            assert_eq!(
+                sweep().await.unwrap(),
+                [0x4000_0abc],
+                "only the unknown one"
+            );
+            crate::api::alerts::alerts_swept(dir_name.clone())
+                .await
+                .unwrap();
+            assert!(sweep().await.unwrap().is_empty(), "done");
+        });
+    }
+
+    #[test]
     fn the_app_asks_for_notifications_once_and_posts_what_is_still_due() {
         let dir = tempfile::tempdir().unwrap();
         let dir_name = dir.path().display().to_string();
         run(async {
-            let ask = || crate::api::alerts::ask_for_notifications_once(dir_name.clone());
-            assert!(ask().await.unwrap());
-            assert!(!ask().await.unwrap(), "the owner asks after that");
+            let due = || crate::api::alerts::notifications_offer_due(dir_name.clone());
+            assert!(due().await.unwrap());
+            assert!(due().await.unwrap(), "not until the request has run");
+            crate::api::alerts::notifications_offered(dir_name.clone())
+                .await
+                .unwrap();
+            assert!(!due().await.unwrap(), "the owner asks after that");
 
             let mut state = every_field();
             state.set_aside = None;
@@ -474,24 +681,53 @@ mod tests {
             let [kitchen] = pending.as_slice() else {
                 panic!("{pending:?}");
             };
-            // The unreachable notice is due; the posted, quiet and
-            // dismissed ones are not posted again, and the removal stays.
+            // Only the due ones post; the posted, quiet and dismissed ones
+            // are not posted again, and the removals stay.
+            let watch = &every_field().feeders[0].watch;
+            let due = watch
+                .open
+                .iter()
+                .filter(|tracked| tracked.delivery == Delivery::Due)
+                .count();
             let posts = kitchen
                 .changes
                 .iter()
                 .filter(|change| matches!(change, crate::api::alerts::NoticeChange::Post { .. }))
                 .count();
-            assert_eq!((kitchen.changes.len(), posts), (2, 1));
+            assert_eq!(posts, due);
+            assert_eq!(kitchen.changes.len(), due + watch.removing.len());
         });
     }
 
+    /// One test, as the holds are the process's: a swipe takes the engine's
+    /// and leaves a live run thread's, which goes when its thread ends,
+    /// a panic included.
     #[test]
-    fn a_swipe_lets_go_of_every_hold() {
+    fn a_swipe_leaves_a_live_run_threads_hold() {
         hold(AlertHold::Install, true);
         hold(AlertHold::Restore, true);
-        assert!(held());
         clear_holds();
-        assert!(!held());
+        assert!(!held(), "the engine's holds went with it");
+
+        let (finish, finished) = std::sync::mpsc::channel::<()>();
+        let guard = RunThread::hold();
+        let thread = std::thread::spawn(move || {
+            let _guard = guard;
+            finished.recv().unwrap();
+        });
+        clear_holds();
+        assert!(held(), "the update's thread still runs");
+        finish.send(()).unwrap();
+        thread.join().unwrap();
+        assert!(!held(), "its thread ended");
+
+        let guard = RunThread::hold();
+        let panicked = std::thread::spawn(move || {
+            let _guard = guard;
+            panic!("a run that fails");
+        });
+        assert!(panicked.join().is_err());
+        assert!(!held(), "a panic lets go too");
     }
 
     #[test]

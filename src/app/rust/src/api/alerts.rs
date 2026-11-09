@@ -350,14 +350,17 @@ pub async fn alert_settings(dir: String) -> Result<AlertSettingsView, BridgeErro
     })
 }
 
-/// Whether to ask Android now to let the app post: the first time only, at
-/// a moment the owner sees why (a feeder to hear from). Later asks are the
-/// owner's, from the alert screens.
-pub async fn ask_for_notifications_once(dir: String) -> Result<bool, BridgeError> {
-    alerts::change(Path::new(&dir), |state| {
-        !std::mem::replace(&mut state.settings.asked, true)
-    })
-    .await
+/// Whether the app has yet to ask Android, unprompted, to let it post. It
+/// asks once, at a moment the owner sees why (Home with a feeder), and says
+/// so with [`notifications_offered`] once the request has run. Later asks
+/// are the owner's, from the alert screens.
+pub async fn notifications_offer_due(dir: String) -> Result<bool, BridgeError> {
+    Ok(!alerts::read(Path::new(&dir)).await?.settings.asked)
+}
+
+/// The app asked Android, unprompted: it does not again.
+pub async fn notifications_offered(dir: String) -> Result<(), BridgeError> {
+    alerts::change(Path::new(&dir), |state| state.settings.asked = true).await
 }
 
 /// Every feeder's changes still to make, with no catch-up: for when Android
@@ -459,14 +462,37 @@ pub async fn alerts_set_aside(dir: String) -> Result<Option<SetAside>, BridgeErr
     Ok(alerts::read(Path::new(&dir)).await?.set_aside)
 }
 
-/// Whether `alerts.json` was set aside with notifications it posted maybe
-/// still up: the app takes every alert notification off, then calls
-/// [`alerts_swept`].
-pub async fn alerts_sweep_due(dir: String) -> Result<bool, BridgeError> {
-    Ok(alerts::read(Path::new(&dir)).await?.sweep)
+/// Of the alert notifications `showing` on the phone, those to take off
+/// since `alerts.json` was set aside: the ones no watch in the file knows,
+/// which nothing would ever take off. None once the sweep is done. Chosen
+/// under the file's lock, and a catch-up writes a notice's key before Dart
+/// posts it, so a notification another engine posts meanwhile is known and
+/// kept. Taking off one of those ids again is harmless, so the sweep is done
+/// only with [`alerts_swept`], once they are off.
+pub async fn alerts_to_sweep(dir: String, showing: Vec<i32>) -> Result<Vec<i32>, BridgeError> {
+    alerts::change(Path::new(&dir), |state| {
+        if !state.sweep {
+            return Ok(Vec::new());
+        }
+        let mut known = Vec::new();
+        for watched in &state.feeders {
+            let feeder = identity_of(&watched.identity)?;
+            known.extend(
+                watched
+                    .watch
+                    .every_key()
+                    .map(|key| key.notification_id(&feeder)),
+            );
+        }
+        Ok(showing
+            .into_iter()
+            .filter(|id| !known.contains(id))
+            .collect())
+    })
+    .await?
 }
 
-/// Every alert notification is off since `alerts.json` was set aside.
+/// The notifications [`alerts_to_sweep`] chose are off.
 pub async fn alerts_swept(dir: String) -> Result<(), BridgeError> {
     alerts::change(Path::new(&dir), |state| state.sweep = false).await
 }

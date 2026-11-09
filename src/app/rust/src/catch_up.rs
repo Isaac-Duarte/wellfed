@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use tokio::time::timeout;
-use wellfed_client::alerts::{Change, Context, Cursor, Watch};
+use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Watch};
 use wellfed_connect::{Connection, Error};
 use wellfed_model::{Answer, Hex, Op};
 use wellfed_session::noise::Keypair;
@@ -70,9 +70,10 @@ pub(crate) struct Target<'a> {
 
 /// What the session found.
 enum Visit {
-    /// The table and the cursor it was read under.
-    Table(Cursor, Box<wellfed_model::AlertsView>),
-    Unchanged,
+    /// The table and the cursor it was read under, and the feeder's clock
+    /// as its status showed it.
+    Table(Cursor, Box<wellfed_model::AlertsView>, FeederClock),
+    Unchanged(FeederClock),
     Answered,
     NoAnswer,
 }
@@ -115,7 +116,7 @@ pub(crate) async fn catch_up(
     };
     let end = match (&visit, &address) {
         (Visit::Table(..), _) => CatchUpEnd::Read,
-        (Visit::Unchanged, _) => CatchUpEnd::Unchanged,
+        (Visit::Unchanged(_), _) => CatchUpEnd::Unchanged,
         (Visit::Answered, _) => CatchUpEnd::Answered,
         (Visit::NoAnswer, None) if target.network.is_none() => CatchUpEnd::Away,
         (Visit::NoAnswer, _) if *target.attempt == Attempt::First => CatchUpEnd::Unanswered,
@@ -126,19 +127,24 @@ pub(crate) async fn catch_up(
     let own = Hex([a, b, c, d]);
     let changes = alerts::change(dir, |state| {
         state.catch_up(dir, &identity, |watched, mutes| {
+            let clock = match visit {
+                Visit::Table(.., clock) | Visit::Unchanged(clock) => clock,
+                Visit::Answered | Visit::NoAnswer => FeederClock::Unknown,
+            };
             let context = Context {
                 now: now(),
                 mutes,
                 own,
+                clock,
             };
             match visit {
-                Visit::Table(cursor, view) => {
+                Visit::Table(cursor, view, _) => {
                     watched.watch.apply(cursor, &view, &context);
                     watched.watch.reached(target.network.clone(), context.now);
                     watched.address = address;
                 }
-                Visit::Unchanged => {
-                    watched.watch.lapse(context.now);
+                Visit::Unchanged(_) => {
+                    watched.watch.lapse(&context);
                     watched.watch.reached(target.network.clone(), context.now);
                     watched.address = address;
                 }
@@ -200,8 +206,12 @@ async fn read(
         boot: status.boot_count,
         generation: status.alerts_generation,
     };
+    let clock = match status.clock {
+        Some(_) => FeederClock::Known,
+        None => FeederClock::Unknown,
+    };
     if !watch.needs_read(cursor) {
-        return Ok(Visit::Unchanged);
+        return Ok(Visit::Unchanged(clock));
     }
 
     let Answer::Alerts(view) = ask(&mut connection, Read::Alerts).await? else {
@@ -214,7 +224,7 @@ async fn read(
         generation: view.generation,
         ..cursor
     };
-    Ok(Visit::Table(cursor, Box::new(view)))
+    Ok(Visit::Table(cursor, Box::new(view), clock))
 }
 
 async fn ask(connection: &mut Connection, read: Read) -> Result<Answer, Error> {

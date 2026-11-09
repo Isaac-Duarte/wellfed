@@ -1008,10 +1008,13 @@ impl Run {
         let pin = self.pin;
         let poll = self.poll;
 
+        // Held by the thread itself, which outlives an engine swiped away.
+        let held = crate::alerts::RunThread::hold();
         let thread = std::thread::Builder::new()
             .name("wellfed-install".into())
             .stack_size(STACK)
             .spawn(move || {
+                let _held = held;
                 let end = guarded(
                     || match spec {
                         Some(spec) => {
@@ -1209,10 +1212,13 @@ impl Listener {
         let stop = self.stop.subscribe();
         let deliver = Arc::new(deliver);
         let on_thread = deliver.clone();
+        // The feeder may be restarting into its new build all the while.
+        let held = crate::alerts::RunThread::hold();
         let thread = std::thread::Builder::new()
             .name("wellfed-listen".into())
             .stack_size(STACK)
             .spawn(move || {
+                let _held = held;
                 let last = guarded(
                     || listen_on_this_thread(&config, wait, on_thread.as_ref(), stop),
                     |detail| ListenUpdate::Failed { detail },

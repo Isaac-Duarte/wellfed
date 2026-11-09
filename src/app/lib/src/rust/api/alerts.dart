@@ -84,11 +84,16 @@ Future<List<NoticeChange>> dismissNotice({
 Future<AlertSettingsView> alertSettings({required String dir}) =>
     RustLib.instance.api.crateApiAlertsAlertSettings(dir: dir);
 
-/// Whether to ask Android now to let the app post: the first time only, at
-/// a moment the owner sees why (a feeder to hear from). Later asks are the
-/// owner's, from the alert screens.
-Future<bool> askForNotificationsOnce({required String dir}) =>
-    RustLib.instance.api.crateApiAlertsAskForNotificationsOnce(dir: dir);
+/// Whether the app has yet to ask Android, unprompted, to let it post. It
+/// asks once, at a moment the owner sees why (Home with a feeder), and says
+/// so with [`notifications_offered`] once the request has run. Later asks
+/// are the owner's, from the alert screens.
+Future<bool> notificationsOfferDue({required String dir}) =>
+    RustLib.instance.api.crateApiAlertsNotificationsOfferDue(dir: dir);
+
+/// The app asked Android, unprompted: it does not again.
+Future<void> notificationsOffered({required String dir}) =>
+    RustLib.instance.api.crateApiAlertsNotificationsOffered(dir: dir);
 
 /// Every feeder's changes still to make, with no catch-up: for when Android
 /// starts letting the app post. Only alerts still open are posted; one that
@@ -128,13 +133,22 @@ Future<Int32List> forgetAlerts({
 Future<SetAside?> alertsSetAside({required String dir}) =>
     RustLib.instance.api.crateApiAlertsAlertsSetAside(dir: dir);
 
-/// Whether `alerts.json` was set aside with notifications it posted maybe
-/// still up: the app takes every alert notification off, then calls
-/// [`alerts_swept`].
-Future<bool> alertsSweepDue({required String dir}) =>
-    RustLib.instance.api.crateApiAlertsAlertsSweepDue(dir: dir);
+/// Of the alert notifications `showing` on the phone, those to take off
+/// since `alerts.json` was set aside: the ones no watch in the file knows,
+/// which nothing would ever take off. None once the sweep is done. Chosen
+/// under the file's lock, and a catch-up writes a notice's key before Dart
+/// posts it, so a notification another engine posts meanwhile is known and
+/// kept. Taking off one of those ids again is harmless, so the sweep is done
+/// only with [`alerts_swept`], once they are off.
+Future<Int32List> alertsToSweep({
+  required String dir,
+  required List<int> showing,
+}) => RustLib.instance.api.crateApiAlertsAlertsToSweep(
+  dir: dir,
+  showing: showing,
+);
 
-/// Every alert notification is off since `alerts.json` was set aside.
+/// The notifications [`alerts_to_sweep`] chose are off.
 Future<void> alertsSwept({required String dir}) =>
     RustLib.instance.api.crateApiAlertsAlertsSwept(dir: dir);
 
