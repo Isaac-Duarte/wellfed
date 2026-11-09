@@ -42,7 +42,16 @@ pub const UNREACHABLE_FOR: SignedDuration = SignedDuration::from_mins(10);
 /// flag for the whole table, and a reading that stays unknown keeps it set
 /// for good (the desiccant's days with no clock), so without this a cleared
 /// condition would stay posted. Twice the longest threshold that starts again
-/// at a boot (no clock, 1 hour), so a boot's own settling never ends one.
+/// at a boot (no clock, 1 hour), so a boot's own thresholds never end one.
+///
+/// A condition that waits for the clock (the desiccant's days, and plans
+/// stuck, whose threshold runs from the clock's arrival) isn't held to this
+/// while the feeder's clock is unknown: its hold counts from the first read
+/// with a clock, so a reboot with no clock neither ends it nor, when the
+/// clock comes, posts it again and loses a dismissal. Held longer than this
+/// by another reading still unknown (the food beam before its first reading,
+/// a fitted pack's verdict), a condition does come off, and posts again if
+/// the feeder reopens it.
 pub const SETTLING_HOLD: SignedDuration = SignedDuration::from_hours(2);
 /// The most notices a watch tracks. The feeder's table holds 12; reports kept
 /// past it while the feeder can't vouch for their end, and a phone's own,
@@ -247,9 +256,20 @@ pub struct Tracked {
     /// When this phone first saw it, by the phone's clock.
     pub seen: Timestamp,
     pub delivery: Delivery,
-    /// When a table this phone read first left it out, while the feeder
-    /// could not vouch that it ended; `None` while tables list it.
-    pub absent: Option<Timestamp>,
+    /// Since when tables this phone read have left it out, while the
+    /// feeder could not vouch that it ended; `None` while tables list it.
+    pub absent: Option<Absence>,
+}
+
+/// How long a tracked alert has been left out of the table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "absence", rename_all = "snake_case")]
+pub enum Absence {
+    /// Left out since `since`, by the phone's clock.
+    Since { since: Timestamp },
+    /// Left out while the feeder had no clock, for a condition that waits
+    /// for one: its hold starts at the first read with a clock.
+    NoClock,
 }
 
 /// The alert table a catch-up last applied.
@@ -287,7 +307,8 @@ pub enum Change {
     Remove(NoticeKey),
 }
 
-/// Who the phone is and what it mutes, for one catch-up.
+/// Who the phone is and what it mutes, for one catch-up, and what the
+/// feeder's status said of its clock.
 #[derive(Clone, Copy, Debug)]
 pub struct Context<'a> {
     pub now: Timestamp,
@@ -295,6 +316,15 @@ pub struct Context<'a> {
     /// This phone's fingerprint (its key's first 4 bytes): its own joining
     /// is listed, never posted.
     pub own: Hex<4>,
+    pub clock: FeederClock,
+}
+
+/// Whether the feeder's status this catch-up showed a valid clock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FeederClock {
+    Known,
+    /// Invalid, or no status was read.
+    Unknown,
 }
 
 /// What a phone keeps of one feeder's alerts.
@@ -399,8 +429,13 @@ impl Watch {
             } else {
                 !view.settling && !view.more
             };
-            let absent = *tracked.absent.get_or_insert(context.now);
-            if vouched || unvouched_over(&open, absent, context.now) {
+            if vouched {
+                ended.push(tracked.key);
+                continue;
+            }
+            if let Some(absent) = tracked.hold(&open, context)
+                && unvouched_over(&open, absent, context.now)
+            {
                 ended.push(tracked.key);
             }
         }
@@ -411,16 +446,21 @@ impl Watch {
     /// Alerts the last table left out without vouching for their end, once
     /// they have been absent past their hold: for a catch-up that found the
     /// table unchanged.
-    pub fn lapse(&mut self, now: Timestamp) {
-        let lapsed: Vec<NoticeKey> = self
-            .open
-            .iter()
-            .filter(|tracked| match (tracked.notice, tracked.absent) {
-                (Notice::Alert { open }, Some(absent)) => unvouched_over(&open, absent, now),
-                _ => false,
-            })
-            .map(|tracked| tracked.key)
-            .collect();
+    pub fn lapse(&mut self, context: &Context<'_>) {
+        let mut lapsed = Vec::new();
+        for tracked in &mut self.open {
+            let Notice::Alert { open } = tracked.notice else {
+                continue;
+            };
+            if tracked.absent.is_none() {
+                continue;
+            }
+            if let Some(absent) = tracked.hold(&open, context)
+                && unvouched_over(&open, absent, context.now)
+            {
+                lapsed.push(tracked.key);
+            }
+        }
         self.end(|key| lapsed.contains(key));
     }
 
@@ -571,6 +611,32 @@ impl Watch {
             self.end(|key| *key == oldest);
         }
     }
+}
+
+impl Tracked {
+    /// Since when this alert, absent from the table now, has counted as
+    /// absent, or `None` while its hold doesn't run: one that waits for the
+    /// clock, while the feeder has none, starts its hold at the first read
+    /// with a clock.
+    fn hold(&mut self, open: &OpenAlert, context: &Context<'_>) -> Option<Timestamp> {
+        if waits_for_clock(open.alert.kind()) && context.clock == FeederClock::Unknown {
+            self.absent = Some(Absence::NoClock);
+            return None;
+        }
+        match self.absent {
+            Some(Absence::Since { since }) => Some(since),
+            None | Some(Absence::NoClock) => {
+                self.absent = Some(Absence::Since { since: context.now });
+                Some(context.now)
+            }
+        }
+    }
+}
+
+/// A condition the feeder can't judge without a clock: the desiccant's days,
+/// and plans stuck, whose threshold runs from the clock's arrival.
+const fn waits_for_clock(kind: AlertKind) -> bool {
+    matches!(kind, AlertKind::DesiccantDue | AlertKind::PlansStuck)
 }
 
 /// Whether an alert tables have left out since `absent`, though the feeder

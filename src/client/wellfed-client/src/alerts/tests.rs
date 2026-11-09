@@ -12,11 +12,20 @@ fn at(second: i64) -> Timestamp {
     Timestamp::from_second(1_800_000_000 + second).unwrap()
 }
 
+/// A catch-up whose status showed no valid clock.
+fn clockless(now: Timestamp, mutes: &Mutes) -> Context<'_> {
+    Context {
+        clock: FeederClock::Unknown,
+        ..context(now, mutes)
+    }
+}
+
 fn context(now: Timestamp, mutes: &Mutes) -> Context<'_> {
     Context {
         now,
         mutes,
         own: OWN,
+        clock: FeederClock::Known,
     }
 }
 
@@ -202,7 +211,10 @@ fn an_absent_alert_stays_while_the_feeder_cannot_vouch_for_its_end() {
     assert_eq!(left, [NoticeKind::MealFailed]);
 
     // Past the report's life it has lapsed, whatever the table says.
-    watch.lapse(at(0) + REPORT_LIFE + SignedDuration::from_secs(1));
+    watch.lapse(&context(
+        at(0) + REPORT_LIFE + SignedDuration::from_secs(1),
+        &mutes,
+    ));
     assert_eq!(watch.listed().count(), 0);
 }
 
@@ -272,14 +284,78 @@ fn a_cleared_condition_comes_off_while_the_feeder_settles_for_good() {
     // settles, and FoodLow has been cleared.
     let mut settling = view(1, &[]);
     settling.settling = true;
-    watch.apply(cursor(1, 1, 2), &settling, &context(at(60), &mutes));
+    watch.apply(cursor(1, 1, 2), &settling, &clockless(at(60), &mutes));
     assert_eq!(watch.listed().count(), 1, "held while a boot may settle");
 
-    watch.lapse(at(60) + SETTLING_HOLD);
+    watch.lapse(&clockless(at(60) + SETTLING_HOLD, &mutes));
     assert_eq!(watch.listed().count(), 1, "not before the hold is over");
-    watch.lapse(at(61) + SETTLING_HOLD);
+    watch.lapse(&clockless(at(61) + SETTLING_HOLD, &mutes));
     assert_eq!(watch.listed().count(), 0);
     assert_eq!(removals(&watch), 1);
+}
+
+#[test]
+fn a_condition_that_waits_for_the_clock_stays_while_there_is_none() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let due = condition(Alert::DesiccantDue { days: -1 });
+    watch.apply(cursor(1, 1, 1), &view(1, &[due]), &context(at(0), &mutes));
+    deliver(&mut watch);
+    let key = watch.open[0].key;
+    assert!(watch.dismiss(key));
+    deliver(&mut watch);
+
+    // A reboot with no clock: its days are unknown, so the table leaves it
+    // out and settles, for as long as the clock is missing.
+    let mut settling = view(1, &[]);
+    settling.settling = true;
+    watch.apply(cursor(1, 2, 0), &settling, &clockless(at(60), &mutes));
+    for hours in 1..12 {
+        watch.lapse(&clockless(
+            at(60) + SignedDuration::from_hours(hours),
+            &mutes,
+        ));
+    }
+    assert_eq!(watch.open.len(), 1, "never ended by its hold with no clock");
+    assert!(watch.changes().is_empty());
+
+    // The clock comes back and the feeder lists it again: still dismissed,
+    // so nothing posts.
+    let back = at(60) + SignedDuration::from_hours(12);
+    watch.apply(cursor(1, 2, 1), &view(1, &[due]), &context(back, &mutes));
+    assert!(watch.changes().is_empty());
+    assert_eq!(watch.open[0].delivery, Delivery::Dismissed);
+}
+
+#[test]
+fn a_condition_that_waits_for_the_clock_counts_its_hold_from_the_clock() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    watch.apply(
+        cursor(1, 1, 1),
+        &view(1, &[condition(Alert::PlansStuck)]),
+        &context(at(0), &mutes),
+    );
+    deliver(&mut watch);
+
+    let mut settling = view(1, &[]);
+    settling.settling = true;
+    watch.apply(cursor(1, 2, 0), &settling, &clockless(at(60), &mutes));
+    let clock = at(60) + SignedDuration::from_hours(5);
+    watch.lapse(&context(clock, &mutes));
+    assert_eq!(
+        watch.open.len(),
+        1,
+        "its threshold runs from the clock's arrival"
+    );
+
+    watch.lapse(&context(clock + SETTLING_HOLD, &mutes));
+    assert_eq!(watch.open.len(), 1);
+    watch.lapse(&context(
+        clock + SETTLING_HOLD + SignedDuration::from_secs(1),
+        &mutes,
+    ));
+    assert_eq!(watch.open.len(), 0);
 }
 
 #[test]
@@ -293,7 +369,7 @@ fn a_condition_listed_again_starts_its_hold_over() {
     watch.apply(cursor(1, 1, 2), &settling, &context(at(60), &mutes));
     watch.apply(cursor(1, 1, 3), &food, &context(at(120), &mutes));
 
-    watch.lapse(at(61) + SETTLING_HOLD);
+    watch.lapse(&context(at(61) + SETTLING_HOLD, &mutes));
     assert_eq!(watch.listed().count(), 1);
 }
 
@@ -315,10 +391,10 @@ fn a_report_with_no_clock_lapses_by_how_long_it_has_been_absent() {
     let mut more = view(1, &[]);
     more.more = true;
     watch.apply(cursor(1, 1, 2), &more, &context(at(100), &mutes));
-    watch.lapse(at(100) + REPORT_LIFE);
+    watch.lapse(&context(at(100) + REPORT_LIFE, &mutes));
     assert_eq!(watch.listed().count(), 1);
 
-    watch.lapse(at(101) + REPORT_LIFE);
+    watch.lapse(&context(at(101) + REPORT_LIFE, &mutes));
     assert_eq!(watch.listed().count(), 0);
 }
 
