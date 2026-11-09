@@ -25,9 +25,27 @@ use wellfed_signing::{self as signing, Frozen, Key, Motion};
 #[command(about = "Build firmware images locally, without connecting to the feeder")]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Invocation,
 }
 
+/// The release key is made offline, perhaps by a copy of this binary on a
+/// machine without the checkout, so it alone needs no checkout.
+#[derive(Subcommand)]
+enum Invocation {
+    /// Create the project release key on offline media, with its public
+    /// half beside it as `<stem>.pub.json`, the file consumer builds read
+    /// from `private/release-key.pub.json`. Refuses a relative path, a path
+    /// inside a Git working tree and an existing file. Run it offline.
+    ReleaseKeygen {
+        /// New key file, an absolute path on removable media.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    #[command(flatten)]
+    Checkout(Command),
+}
+
+/// The commands that work in this checkout: its sources, `private/` and keys.
 #[derive(Subcommand)]
 enum Command {
     /// Fetch and verify the device platform's pinned SDK and toolchain.
@@ -79,8 +97,8 @@ enum Command {
         output: PathBuf,
     },
     /// Create the bench update-signing key; never replaces one. Prints the
-    /// public key that first-boot builds embed. A public release needs an
-    /// offline release key instead, which this tool never creates.
+    /// public key that bench first-boot builds embed. The release key comes
+    /// from `release-keygen` instead.
     Keygen {
         #[arg(long, default_value = signing::KEY_PATH)]
         output: PathBuf,
@@ -233,6 +251,18 @@ impl Target {
             provisioning: self.provisioning,
         })
     }
+}
+
+fn release_keygen(output: &std::path::Path) -> Result<()> {
+    let written = signing::release_keygen(output)?;
+    println!(
+        "Wrote the release key {} and its public half {}; public key {}, key id {}",
+        written.private.display(),
+        written.public.display(),
+        written.public_key,
+        wellfed_session::hex::Lower(&written.id)
+    );
+    Ok(())
 }
 
 fn run(command: Command) -> Result<()> {
@@ -423,7 +453,11 @@ fn private_outputs() {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse().command) {
+    let result = match Cli::parse().command {
+        Invocation::ReleaseKeygen { output } => release_keygen(&output),
+        Invocation::Checkout(command) => run(command),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");

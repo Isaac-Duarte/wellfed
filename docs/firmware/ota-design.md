@@ -135,7 +135,7 @@ Version 1 (`PLOTA1`) is deleted: an offer carrying its magic is refused as the w
 
 The bench key enrolls the same way, so a feeder whose image embeds no key still takes the updates `wellfed-bench ota` signs. An owner's key signs manifests and downgrade statements, which the firmware checks against every trusted key. It never signs a key statement, and no image embeds it: `wellfed-build revoke`, `add-key` and the build itself refuse it. The client side is `wellfed_client::update_key`, which the installer reuses.
 
-A `PLREV1` statement retires any key id for good. Built-in keys and the release slot's key sign key statements, so retiring the bench key leaves rotation to the release key; a retired key signs nothing. The bench key stays in `private/ota-key.json`, for the bench only. An offline release key is required before any public release.
+A `PLREV1` statement retires any key id for good. Built-in keys and the release slot's key sign key statements, so retiring the bench key leaves rotation to the release key; a retired key signs nothing. The bench key stays in `private/ota-key.json`, for the bench only. The release key is made offline with `wellfed-build release-keygen` and never enters a checkout; consumer images build in its public half ([the release key](../development/firmware-builds.md#the-release-key)).
 
 **The floor** (`min_version`) is the highest version a build confirmed at.
 

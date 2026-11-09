@@ -1,9 +1,10 @@
 //! The private credential and key files: the hotspot's Wi-Fi credentials,
 //! the bench update key `wellfed-build keygen` writes and the release key's
 //! public half a consumer build embeds, which `wellfed-build` turns into
-//! headers and build settings, and an owner's update key
+//! headers and build settings, an owner's update key
 //! `wellfed update-key new` writes, which a feeder trusts only once the
-//! owner enrolls it.
+//! owner enrolls it, and the project release key
+//! `wellfed-build release-keygen` writes onto offline media.
 
 use serde::{Deserialize, Serialize};
 
@@ -23,10 +24,10 @@ impl std::fmt::Debug for WifiCredential {
     }
 }
 
-/// An update-signing key; `seed` never leaves the file. The bench key and
-/// an owner's key share the format: both are an Ed25519 seed that signs
-/// the same version 2 manifests, and differ only in how a feeder comes to
-/// trust them, which `scope` names.
+/// An update-signing key; `seed` never leaves the file. The bench key, an
+/// owner's key and the release key share the format: each is an Ed25519
+/// seed that signs the same version 2 manifests, and they differ only in how
+/// a feeder comes to trust them, which `scope` names.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OtaKeyFile {
     pub version: u32,
@@ -39,9 +40,6 @@ pub struct OtaKeyFile {
 }
 
 /// What an update-signing key is for.
-///
-/// Neither is a release key: a public release needs an offline release
-/// key first, which never becomes a file here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KeyScope {
@@ -53,13 +51,19 @@ pub enum KeyScope {
     /// image embeds it, and a feeder that did not enroll it refuses what it
     /// signs.
     Owner,
+    /// The project release key, kept offline and never in a checkout. A
+    /// consumer image embeds its public half from [`RELEASE_KEY_PATH`],
+    /// never from this file, and it signs manifests and key statements as
+    /// any built-in key does.
+    Release,
 }
 
 /// The project release key's public half, `private/release-key.pub.json`,
 /// which a consumer build embeds as its built-in update key.
 ///
-/// The release key itself is kept offline and never becomes a file in a
-/// checkout. Unknown fields are refused, so a file that also carries a
+/// The release key itself ([`KeyScope::Release`]) is kept offline and never
+/// becomes a file in a checkout; `wellfed-build release-keygen` writes this
+/// file beside it, to be copied in. Unknown fields are refused, so a file that also carries a
 /// `seed` (an [`OtaKeyFile`] copied by mistake) never feeds a build.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

@@ -44,6 +44,26 @@ pub enum KeyError {
     OwnerRevoke,
     #[error("An owner's update key signs no release-slot key (PLKEY1)")]
     OwnerAddKey,
+    /// The release key is written only by `release-keygen`, which keeps it
+    /// out of a checkout.
+    #[error("keygen writes bench and owner keys; use release-keygen for the release key")]
+    ReleaseKeygen,
+    #[error("{} is relative; give the release key an absolute path on offline media", path.display())]
+    RelativePath { path: PathBuf },
+    #[error("{} names no file", path.display())]
+    NoFileName { path: PathBuf },
+    #[error("{} is not an existing directory", path.display())]
+    NoDirectory { path: PathBuf },
+    /// A Git working tree is no place for the release key: a stray
+    /// `git add` or a synced checkout would carry its seed off.
+    #[error(
+        "{} is inside the Git working tree {}; write the release key to offline media",
+        path.display(),
+        checkout.display()
+    )]
+    InCheckout { path: PathBuf, checkout: PathBuf },
+    #[error("{} already exists; a key is never replaced", path.display())]
+    Exists { path: PathBuf },
 }
 
 /// A frozen review the image checks accept but the signer does not: what

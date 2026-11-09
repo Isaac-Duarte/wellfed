@@ -60,9 +60,9 @@ The release key file holds only the public half:
 {"version": 1, "public_key": "<64 lowercase hex characters>"}
 ```
 
-Any other field is refused, so a file that also holds a `seed` never reaches a build. The release key itself stays offline.
+Any other field is refused, so a file that also holds a `seed` never reaches a build. The release key itself stays offline: `wellfed-build release-keygen` writes it and this file side by side on removable media ([the release key](#the-release-key)).
 
-A manifest for the app's installer must be signed by this key's private half, with `wellfed-build sign --key <file>`. The default, `private/ota-key.json`, is the bench key, whose manifest a consumer image refuses at promotion once the handover from stock has cleared enrolled keys. Until the real release key exists, create a bench-only stand-in with `wellfed-build keygen --output private/release-standin-key.json` and put its public half in `private/release-key.pub.json`. `make app-installer-input` refuses a manifest this key did not sign, or one for another build.
+A manifest for the app's installer must be signed by this key's private half, with `wellfed-build sign --key <file>`. The default, `private/ota-key.json`, is the bench key, whose manifest a consumer image refuses at promotion once the handover from stock has cleared enrolled keys. For bench tests without the real release key, create a bench-only stand-in with `wellfed-build keygen --output private/release-standin-key.json` and put its public half in `private/release-key.pub.json`. `make app-installer-input` refuses a manifest this key did not sign, or one for another build.
 
 The manifest records `provisioning`, which the source identity binds, so bench and consumer images of the same sources never share an identity; `source-id` and `inputs` take `--provisioning` too. The builder sets `WELLFED_BUILD_WIFI` exactly when the generated header names a network, and the image's Rust reads build Wi-Fi from its presence. The header defines a macro of the same name, and the entry reads a runtime symbol only the matching Rust build defines, so a disagreeing header and runtime fail the link. The loop reads the same answer (`Platform::build_wifi`): a consumer image with no Wi-Fi stored starts BLE setup mode at boot ([product architecture](../firmware/product-architecture.md#setup-and-pairing)).
 
@@ -176,9 +176,10 @@ The firmware installs an update only if its manifest is signed by the key the bu
 ```
 
 - **`keygen`** writes a new Ed25519 key to `private/ota-key.json` (mode 600), marked `"scope": "bench"`, and prints the public key first-boot builds embed, which joins their identity. It never replaces an existing key.
-- **`sign`** writes the version 2 manifest the device API takes (`wellfed_signed::offer`), naming the bench key's id and the image's kind. `--version` must exceed the feeder's floor (the highest version it confirmed), or come with a downgrade statement.
+- **`release-keygen --output PATH`** writes the project release key onto offline media ([the release key](#the-release-key)).
+- **`sign`** writes the version 2 manifest the device API takes (`wellfed_signed::offer`), naming the signing key's id (the bench key's by default) and the image's kind. `--version` must exceed the feeder's floor (the highest version it confirmed), or come with a downgrade statement.
 - **`downgrade --manifest M --device HEX --floor N`** is a statement letting the feeder whose identity key is `HEX` install the version 2 manifest `M` while its floor is `N`. A version at or below the floor, or any stock image, needs one.
-- **`revoke --key-id HEX`** retires an update key id for good, and **`add-key --public HEX`** fills the firmware's release slot ([OTA design](../firmware/ota-design.md#keys-and-anti-rollback)). Only a key built into the firmware signs these key statements. `keygen` prints the bench key's id.
+- **`revoke --key-id HEX`** retires an update key id for good, and **`add-key --public HEX`** fills the firmware's release slot ([OTA design](../firmware/ota-design.md#keys-and-anti-rollback)). Only a key built into the firmware signs these key statements: the bench key or the release key. `keygen` and `release-keygen` print the key id.
 
 `wellfed-bench ota` links the same library and signs with `private/ota-key.json`.
 
@@ -200,9 +201,58 @@ The build ID comes from the verified manifest (for the stock image, the review's
 
 ### The bench key
 
-`keygen`'s key is the bench key: it lives in a checkout's `private/` and signs development images for the bench's own units only. Every key file names its `scope`. The signer also loads an owner's key (`"scope": "owner"`, written by `wellfed update-key new`), which a feeder trusts only once the owner enrolls it there ([OTA design](../firmware/ota-design.md#keys-and-anti-rollback)), which signs no key statement (`revoke` and `add-key` refuse it), and which no image embeds. No other scope loads.
+`keygen`'s key is the bench key: it lives in a checkout's `private/` and signs development images for the bench's own units only. Every key file names its `scope`. The signer also loads an owner's key (`"scope": "owner"`, written by `wellfed update-key new`), which a feeder trusts only once the owner enrolls it there ([OTA design](../firmware/ota-design.md#keys-and-anti-rollback)), which signs no key statement (`revoke` and `add-key` refuse it), and which no image embeds. It loads the release key (`"scope": "release"`) too. No other scope loads.
 
-A public release first needs an offline release key, which never sits in a checkout and which this tool does not create.
+A bench build refuses an owner's key or the release key in `private/ota-key.json`: it embeds only the bench key from there.
+
+### The release key
+
+The release key signs everything a consumer image takes: its update manifests, and `revoke` and `add-key` statements. Every consumer image builds in its public half, and bank 0 keeps the build it was written with.
+
+> [!WARNING]
+> If you lose the release key, no beta feeder can take another update over the air. Each could then only be updated over UART, with the case open. If it leaks, anyone can sign updates those feeders install. Keep two copies, offline, in different places.
+
+You make it once, on a machine with no network, onto removable media. Only its public half ever enters a checkout.
+
+1. While you still have the network, build the tool: `cargo build --release --locked -p wellfed-build`. `release-keygen` needs no checkout, so you can also copy `target/release/wellfed-build` to another Linux machine and run it there.
+2. Unplug the network: pull the cable and turn Wi-Fi off. `ping -c 1 1.1.1.1` should fail.
+3. Insert a removable drive and note where it is mounted, for example `/run/media/$USER/KEY1`.
+4. Write the key:
+
+   ```sh
+   ./target/release/wellfed-build release-keygen --output /run/media/$USER/KEY1/wellfed-release-key.json
+   ```
+
+   It prints both paths, the public key and the key id. Write the key id down on paper. The drive now holds `wellfed-release-key.json` (the key, mode 600) and `wellfed-release-key.pub.json` (the public half).
+5. Insert a second drive and copy both files to it, then check the copies: `cmp /run/media/$USER/KEY1/wellfed-release-key.json /run/media/$USER/KEY2/wellfed-release-key.json`.
+6. Copy only the public half into the checkout: `cp /run/media/$USER/KEY1/wellfed-release-key.pub.json private/release-key.pub.json`. Never copy `wellfed-release-key.json` itself anywhere but removable media.
+7. Unmount and remove both drives, then reconnect the network. Keep the drives in two different places.
+
+`release-keygen` refuses:
+
+- a relative `--output` path;
+- a path inside a Git working tree: it looks for `.git` in every directory above the path, as written and with its symlinks resolved;
+- a key file or a `.pub.json` that already exists, so it never replaces a key;
+- a directory that does not exist.
+
+To sign a release, unplug the network again, insert one drive, and name the key:
+
+```sh
+./target/release/wellfed-build sign --key /run/media/$USER/KEY1/wellfed-release-key.json \
+  --review private/<review> --version <N> --output private/<name>.manifest
+```
+
+`revoke` and `add-key` take the same `--key`. Unmount the drive before you reconnect.
+
+#### A stand-in you already moved offline
+
+If you made a key with `keygen` and moved it to offline media to serve as the release key, it says `"scope": "bench"`. Change that one word to `"scope": "release"` and nothing else:
+
+```json
+{"version": 1, "scope": "release", "seed": "…", "public_key": "…"}
+```
+
+The signer then loads it as the release key. Its public half in `private/release-key.pub.json` stays as it is. If you don't have that file, write it by hand, with the key file's `public_key`: `{"version": 1, "public_key": "<64 hex>"}`. Delete any copy of the key left in a checkout.
 
 ## Next steps
 
