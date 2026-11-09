@@ -13,9 +13,9 @@ use std::path::PathBuf;
 use wellfed_formats::credentials::{
     KeyScope, OtaKeyFile, RELEASE_KEY_PATH, RELEASE_KEY_VERSION, ReleaseKeyFile,
 };
-use wellfed_formats::hex::is_lower_hex;
 use wellfed_formats::manifest::IdentitySnapshot;
 use wellfed_formats::require;
+use wellfed_session::hex;
 
 use crate::{
     Device, Firmware, Profile, Provisioning, Repo, Result, Stage, Variant, digest, relative,
@@ -201,7 +201,10 @@ pub(crate) fn ota_public_key(
         }
     };
 
-    require(is_lower_hex(&public_key, 64), || IdentityError::PublicKey)?;
+    require(
+        public_key.len() == 64 && hex::is_lower(public_key.as_bytes()),
+        || IdentityError::PublicKey,
+    )?;
     Ok(Some(public_key))
 }
 

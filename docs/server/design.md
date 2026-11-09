@@ -98,7 +98,7 @@ wellfed-homeassistant (Home Assistant's bridge) ─► wellfed-server-client
 | `wellfed-store` | `wellfed-api` (its ids and enums), `wellfed-formats` (the export archive's rows, which it reads and inserts) |
 | `wellfed-mirror` | `wellfed-store`, `wellfed-api`, `wellfed-connect`, `wellfed-client`, `wellfed-model`, `wellfed-proto`, `wellfed-session` |
 | `wellfed-releases` | `wellfed-store`, `wellfed-api`, `wellfed-client`, `wellfed-model`; the verifier is `wellfed_client::release`, over the firmware's own offer check |
-| `wellfed-service` | `wellfed-mirror`, `wellfed-releases`, `wellfed-store`, `wellfed-api`, `wellfed-model`, `wellfed-formats` |
+| `wellfed-service` | `wellfed-mirror`, `wellfed-releases`, `wellfed-store`, `wellfed-api`, `wellfed-model`, `wellfed-formats`, `wellfed-session` (hex) |
 | `wellfed-server` | `wellfed-service`, `wellfed-api`, `wellfed-store` |
 | `wellfed-server-testkit` | `wellfed-server`, `wellfed-service`, `wellfed-store`, `wellfed-api`, `wellfed-server-client`, `wellfed-feeder-sim`, `wellfed-client`, `wellfed-connect`, `wellfed-model`, `wellfed-session`, `wellfed-signed` (to sign test releases) |
 | `wellfed-server-client` | `wellfed-api` |

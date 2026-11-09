@@ -99,7 +99,7 @@ pub fn parse_pin(text: &'static str) -> Option<Pin> {
     if parts.next().is_some()
         || !hashes
             .iter()
-            .all(|hash| wellfed_formats::hex::is_sha256(hash))
+            .all(|hash| wellfed_formats::canonical::is_sha256(hash))
     {
         return None;
     }
@@ -145,7 +145,8 @@ pub fn check_image(dir: &Path, pin: Option<&Pin>) -> ImageCheck {
     };
     // Refused here rather than at the promotion, with stock already overwritten
     // in bank 0 and a manifest no feeder would take for this build.
-    let names = manifest_build(&manifest).map(|build| wellfed_formats::hex::encode(&build));
+    let names =
+        manifest_build(&manifest).map(|build| wellfed_session::hex::Lower(&build).to_string());
     if names.as_deref() != Some(opened.build()) {
         return mismatch("the update manifest names another build".to_string());
     }
@@ -440,7 +441,7 @@ pub(crate) struct AppDiscovery(pub(crate) Arc<Asks>);
 
 impl Discovery for AppDiscovery {
     async fn locate(&self, identity: [u8; 32]) -> Option<SocketAddr> {
-        let identity = wellfed_formats::hex::encode(&identity);
+        let identity = wellfed_session::hex::Lower(&identity).to_string();
         let asked = self.0.ask(InstallAsk::Locate { identity });
         match tokio::time::timeout(LOCATE_WAIT, asked).await {
             Ok(Ok(InstallAnswer::Located {
@@ -474,7 +475,11 @@ impl Keys for AppKeys {
 
     fn feeder(&self, prefix: Option<&str>) -> Option<[u8; 32]> {
         let matches = |identity: &&[u8; 32]| {
-            prefix.is_none_or(|prefix| wellfed_formats::hex::encode(*identity).starts_with(prefix))
+            prefix.is_none_or(|prefix| {
+                wellfed_session::hex::Lower(*identity)
+                    .to_string()
+                    .starts_with(prefix)
+            })
         };
         let mut known = self.feeders.iter().filter(matches);
         match (known.next(), known.next()) {
@@ -494,7 +499,7 @@ impl Keys for AppKeys {
 
         let store = self.store.to_string_lossy().into_owned();
         let mut saved = load_store(&store)?;
-        let hex = wellfed_formats::hex::encode(identity);
+        let hex = wellfed_session::hex::Lower(identity).to_string();
         if !saved.feeders.iter().any(|known| known.identity == hex) {
             saved.feeders.push(KnownFeeder {
                 identity: hex,
@@ -939,7 +944,8 @@ fn plan(
         .known_feeders
         .iter()
         .filter_map(|feeder| {
-            let identity = wellfed_formats::hex::decode::<32>(&feeder.identity)?;
+            let identity =
+                wellfed_session::hex::decode_array_either_case::<32>(feeder.identity.as_bytes())?;
             let address = feeder
                 .address
                 .as_deref()

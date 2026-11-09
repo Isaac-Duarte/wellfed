@@ -281,7 +281,7 @@ fn path(dir: &tempfile::TempDir) -> String {
 }
 
 fn identity(sim: &Running) -> String {
-    wellfed_formats::hex::encode(&sim.identity)
+    wellfed_session::hex::Lower(&sim.identity).to_string()
 }
 
 fn uncertain(routed: RoutedFeed) -> PendingWrite {

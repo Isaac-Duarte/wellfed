@@ -42,10 +42,10 @@ use wellfed_formats::bench::live::{
 };
 use wellfed_formats::bench::notes::Seen;
 use wellfed_formats::bench::now;
-use wellfed_formats::hex;
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_model::{Answer, LogLines, Op, Pushed, Skew, Status};
 use wellfed_rig::device::{self, DeviceError, DeviceLink, Owner};
+use wellfed_session::hex;
 
 use crate::server::banks::Banks;
 use crate::server::files;
@@ -181,8 +181,8 @@ impl Feeder {
         let info = owner.as_ref().ok().map(|owner| SessionInfo {
             root: root.to_path_buf(),
             keys,
-            owner: hex::encode(owner.keys().public()),
-            identity: hex::encode(&owner.identity()),
+            owner: hex::Lower(owner.keys().public()).to_string(),
+            identity: hex::Lower(&owner.identity()).to_string(),
             opened: None,
         });
         let (requests, receiver) = mpsc::unbounded_channel();
@@ -734,7 +734,7 @@ impl Task {
 
 fn refuse_duplicate(request: Request) {
     let _ = request.reply.send(Err(Unavailable::DuplicateId {
-        id: hex::encode(&request.id),
+        id: hex::Lower(&request.id).to_string(),
     }));
 }
 

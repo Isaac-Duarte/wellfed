@@ -8,9 +8,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use wellfed_formats::hex;
 use wellfed_formats::owner::{self, EnrolledFeeder, OwnerKeyFile, VERSION};
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
+use wellfed_session::hex;
 use wellfed_session::noise::Keypair;
 
 use crate::home::HOME_VAR;
@@ -93,7 +93,7 @@ impl OwnerKey {
         let secret: [u8; 32] = private::random(random).context("read the system random source")?;
         let file = OwnerKeyFile {
             version: VERSION,
-            secret: hex::encode(&secret),
+            secret: hex::Lower(&secret).to_string(),
             label: label.unwrap_or(DEFAULT_LABEL).into(),
             feeders: Vec::new(),
         };
@@ -121,7 +121,7 @@ impl OwnerKey {
     }
 
     fn of(path: &Path, file: OwnerKeyFile) -> Result<Self> {
-        let secret = hex::decode::<32>(&file.secret)
+        let secret = hex::decode_array_either_case::<32>(file.secret.as_bytes())
             .with_context(|| format!("{}: the secret is not 32 bytes of hex", path.display()))?;
         Ok(Self {
             path: path.to_path_buf(),
@@ -159,12 +159,13 @@ impl OwnerKey {
                 matching.len()
             );
         };
-        hex::decode::<32>(&feeder.identity).context("a feeder identity in the key file")
+        hex::decode_array_either_case::<32>(feeder.identity.as_bytes())
+            .context("a feeder identity in the key file")
     }
 
     /// Note a feeder that enrolled this key.
     pub(crate) fn remember(&mut self, identity: &[u8; 32]) -> Result<()> {
-        let identity = hex::encode(identity);
+        let identity = hex::Lower(identity).to_string();
         if self.file.feeders.iter().any(|f| f.identity == identity) {
             return Ok(());
         }
@@ -200,7 +201,7 @@ impl wellfed_install::Keys for OwnerKey {
 
 /// The identity's first 8 bytes, as the feeder logs them (`PLID1`).
 pub(crate) fn fingerprint(identity: &[u8; 32]) -> String {
-    hex::encode(&identity[..8])
+    hex::Lower(&identity[..8]).to_string()
 }
 
 #[cfg(test)]

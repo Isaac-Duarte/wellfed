@@ -61,9 +61,9 @@ impl Checkout {
     fn enroll_identity(&self, identity: &[u8; 32]) {
         let file = serde_json::json!({
             "version": 1,
-            "secret": wellfed_formats::hex::encode(&OWNER),
+            "secret": wellfed_session::hex::Lower(&OWNER).to_string(),
             "label": "bench",
-            "feeders": [{ "identity": wellfed_formats::hex::encode(identity) }],
+            "feeders": [{ "identity": wellfed_session::hex::Lower(identity).to_string() }],
         });
         fs::write(
             self.root().join("private/wellfed-owner.json"),
@@ -213,7 +213,7 @@ async fn the_session_reads_status_sets_the_clock_and_resumes_after_its_cursor() 
     let info = server.client.session().await.unwrap();
     assert_eq!(
         info.identity,
-        wellfed_formats::hex::encode(&feeder.identity)
+        wellfed_session::hex::Lower(&feeder.identity).to_string()
     );
 
     // A job's sequence asks through the same session, from its own thread.

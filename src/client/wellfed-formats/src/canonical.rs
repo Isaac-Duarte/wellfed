@@ -10,10 +10,17 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::{Error, Result, hex};
+use crate::{Error, Result};
+use wellfed_session::hex;
 
 pub fn sha256(data: &[u8]) -> String {
-    hex::encode(&Sha256::digest(data))
+    hex::Lower(&Sha256::digest(data)).to_string()
+}
+
+/// A digest as [`sha256`] writes it: 64 lowercase hex digits, so digests
+/// compare as plain strings.
+pub fn is_sha256(value: &str) -> bool {
+    value.len() == 64 && hex::is_lower(value.as_bytes())
 }
 
 /// Canonical bytes; only integers are accepted as numbers, since no plan,
@@ -125,7 +132,7 @@ mod tests {
             sha256(b""),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
-        assert!(hex::is_sha256(&sha256(b"x")));
-        assert!(!hex::is_sha256(&sha256(b"x").to_uppercase()));
+        assert!(is_sha256(&sha256(b"x")));
+        assert!(!is_sha256(&sha256(b"x").to_uppercase()));
     }
 }

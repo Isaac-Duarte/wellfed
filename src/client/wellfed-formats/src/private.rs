@@ -175,7 +175,7 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     fs::create_dir_all(parent)?;
-    let tag = crate::hex::encode(&random::<8>(Path::new(SYSTEM_RANDOM))?);
+    let tag = wellfed_session::hex::Lower(&random::<8>(Path::new(SYSTEM_RANDOM))?).to_string();
     let temp = parent.join(format!(".{tag}.tmp"));
 
     let result = (|| {

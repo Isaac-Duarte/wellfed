@@ -302,7 +302,7 @@ fn run(command: Command) -> Result<()> {
             println!(
                 "Wrote bench key {}; public key {public}, key id {}",
                 output.display(),
-                wellfed_formats::hex::encode(&id)
+                wellfed_session::hex::Lower(&id)
             );
         }
         Command::Sign {
@@ -337,10 +337,11 @@ fn run(command: Command) -> Result<()> {
             floor,
             output,
         } => {
-            let device = wellfed_formats::hex::decode::<32>(&device).ok_or(Failure::Hex {
-                flag: "device",
-                characters: 64,
-            })?;
+            let device = wellfed_session::hex::decode_array_either_case::<32>(device.as_bytes())
+                .ok_or(Failure::Hex {
+                    flag: "device",
+                    characters: 64,
+                })?;
             let manifest = std::fs::read(repo.root.join(manifest))?;
             let key = Key::load(&repo.root.join(key))?;
             let statement = key.downgrade(&manifest, &device, floor)?;
@@ -356,10 +357,12 @@ fn run(command: Command) -> Result<()> {
             key_id,
             output,
         } => {
-            let id = wellfed_formats::hex::decode::<8>(&key_id).ok_or(Failure::Hex {
-                flag: "key-id",
-                characters: 16,
-            })?;
+            let id = wellfed_session::hex::decode_array_either_case::<8>(key_id.as_bytes()).ok_or(
+                Failure::Hex {
+                    flag: "key-id",
+                    characters: 16,
+                },
+            )?;
             let statement = Key::load(&repo.root.join(key))?.revoke(&id)?;
             let output = repo.root.join(output);
             wellfed_formats::private::write_new(&output, &statement)?;
@@ -370,16 +373,17 @@ fn run(command: Command) -> Result<()> {
             public,
             output,
         } => {
-            let added = wellfed_formats::hex::decode::<32>(&public).ok_or(Failure::Hex {
-                flag: "public",
-                characters: 64,
-            })?;
+            let added = wellfed_session::hex::decode_array_either_case::<32>(public.as_bytes())
+                .ok_or(Failure::Hex {
+                    flag: "public",
+                    characters: 64,
+                })?;
             let statement = Key::load(&repo.root.join(key))?.add_key(&added)?;
             let output = repo.root.join(output);
             wellfed_formats::private::write_new(&output, &statement)?;
             println!(
                 "Signed adding key id {} in {}",
-                wellfed_formats::hex::encode(&wellfed_signed::offer::key_id(&added)),
+                wellfed_session::hex::Lower(&wellfed_signed::offer::key_id(&added)),
                 output.display()
             );
         }

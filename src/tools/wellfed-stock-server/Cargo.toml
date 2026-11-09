@@ -25,6 +25,7 @@ uuid = { workspace = true, features = ["v4"] }
 wellfed-client.workspace = true
 wellfed-formats = { workspace = true, features = ["clap"] }
 wellfed-stock.workspace = true
+wellfed-session.workspace = true
 
 [dev-dependencies]
 chrono = "0.4.45"

@@ -65,6 +65,7 @@ const ARROWS: [(&str, &[&str]); 8] = [
             API,
             "wellfed-model",
             "wellfed-formats",
+            "wellfed-session",
         ],
     ),
     ("wellfed-server", &["wellfed-service", API, STORE]),

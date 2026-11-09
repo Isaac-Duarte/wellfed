@@ -13,14 +13,14 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use wellfed_client::install::{STOCK_VERSION, StockBackup};
-use wellfed_formats::hex;
+use wellfed_session::hex;
 
 use crate::Error;
 
 /// The directory under `backups` that holds what is kept for the feeder
 /// `identity`.
 pub fn feeder_directory(backups: &Path, identity: &[u8; 32]) -> PathBuf {
-    backups.join(hex::encode(identity))
+    backups.join(hex::Lower(identity).to_string())
 }
 
 /// Where the feeder `identity`'s backup is kept under `backups`.
@@ -115,7 +115,11 @@ pub fn kept_backups(backups: &Path) -> Result<Vec<KeptBackup>, Error> {
     let mut kept = Vec::new();
     for entry in entries {
         let entry = entry.map_err(read_error)?;
-        let Some(identity) = entry.file_name().to_str().and_then(hex::decode::<32>) else {
+        let Some(identity) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| hex::decode_array_either_case::<32>(name.as_bytes()))
+        else {
             continue;
         };
         let path = backup_path(backups, &identity);

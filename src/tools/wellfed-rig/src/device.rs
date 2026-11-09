@@ -37,7 +37,6 @@ use serde::{Deserialize, Serialize};
 use wellfed_client::api::{Error as SessionError, Incoming, Session};
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
 use wellfed_formats::bench::live::Unavailable;
-use wellfed_formats::hex;
 use wellfed_formats::owner::{self, OwnerKeyFile};
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_model::{
@@ -45,6 +44,7 @@ use wellfed_model::{
     Status, TimeView, UpdateView, Wifi, WifiSource,
 };
 use wellfed_proto::api::{PORT, RequestId};
+use wellfed_session::hex;
 use wellfed_session::noise::Keypair;
 
 use crate::server::NotReady;
@@ -508,8 +508,8 @@ impl Owner {
                 path: keys.to_path_buf(),
                 error,
             })?;
-        let secret =
-            hex::decode::<32>(&file.secret).ok_or_else(|| DeviceError::BadKey(keys.into()))?;
+        let secret = hex::decode_array_either_case::<32>(file.secret.as_bytes())
+            .ok_or_else(|| DeviceError::BadKey(keys.into()))?;
         let [feeder] = file.feeders.as_slice() else {
             return Err(DeviceError::Feeders {
                 path: keys.into(),
@@ -517,8 +517,8 @@ impl Owner {
             }
             .into());
         };
-        let identity =
-            hex::decode::<32>(&feeder.identity).ok_or_else(|| DeviceError::BadKey(keys.into()))?;
+        let identity = hex::decode_array_either_case::<32>(feeder.identity.as_bytes())
+            .ok_or_else(|| DeviceError::BadKey(keys.into()))?;
 
         let hotspot: Hotspot = crate::load(root, config)?;
         let zone = jiff::tz::TimeZone::get(&hotspot.timezone)
@@ -553,7 +553,7 @@ impl Owner {
             .ok()
             .or_else(|| neighbour(&self.hotspot));
         found.ok_or_else(|| DeviceError::NotFound {
-            fingerprint: hex::encode(&self.identity[..8]),
+            fingerprint: hex::Lower(&self.identity[..8]).to_string(),
             interface: self.hotspot.hotspot_interface.clone(),
             mac: self.hotspot.target_mac.clone(),
         })
@@ -901,7 +901,7 @@ impl Device {
                             note(format!(
                                 "A feeder message did not decode ({garbled} of {GARBLED_MAX} allowed) on bank {bank}: {} bytes, starting {}; outstanding {}; resuming on a new session",
                                 evidence.len,
-                                hex::encode(evidence.prefix()),
+                                hex::Lower(evidence.prefix()),
                                 outstanding(&out, unwanted)
                             ));
                             lost = true;

@@ -272,7 +272,7 @@ fn lookup(
     located: Located,
 ) -> Lookup {
     let ours = record.filter(|record| {
-        let identity = wellfed_formats::hex::encode(&record.identity.0);
+        let identity = wellfed_session::hex::Lower(&record.identity.0).to_string();
         device == Some(record.device.as_str()) && prefix.is_none_or(|p| identity.starts_with(p))
     });
     match (ours, known) {

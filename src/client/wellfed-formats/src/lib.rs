@@ -24,7 +24,6 @@ pub mod device;
 #[cfg(feature = "export")]
 pub mod export;
 pub mod flash_plan;
-pub mod hex;
 pub mod layout;
 pub mod lock;
 pub mod manifest;

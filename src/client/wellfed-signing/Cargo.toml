@@ -13,6 +13,7 @@ wellfed-signed.workspace = true
 wellfed-formats.workspace = true
 wellfed-image.workspace = true
 wellfed-proto.workspace = true
+wellfed-session.workspace = true
 serde_json.workspace = true
 sha2 = "0.11"
 thiserror.workspace = true

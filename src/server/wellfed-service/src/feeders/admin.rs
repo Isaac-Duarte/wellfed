@@ -70,7 +70,7 @@ impl Service {
                 // with the sealing of the feeder keys.
                 let subkey = hmac_sha256(&self.shared.config.key, &[b"wellfed-server wifi v1"]);
                 let digest = hmac_sha256(&subkey, &[wifi.psk.as_bytes()]);
-                wellfed_formats::hex::encode(&digest)
+                wellfed_session::hex::Lower(&digest).to_string()
             }),
         };
         let wifi = change.wifi.map(|wifi| Wifi {

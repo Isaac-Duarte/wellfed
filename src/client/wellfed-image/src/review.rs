@@ -13,11 +13,11 @@ use crate::bank::{Layout, payload};
 use crate::error::Result;
 use crate::root::Root;
 use wellfed_formats::canonical::sha256;
-use wellfed_formats::hex::is_lower_hex;
 use wellfed_formats::manifest::BuildManifest;
 use wellfed_formats::require;
 use wellfed_formats::review::{BuildDetails, Details, ImageKind, ImageReview, ReviewKind};
 use wellfed_proto::device::Model;
+use wellfed_session::hex;
 
 /// A frozen review that is incomplete or no longer matches what it froze.
 /// The signer and the rig tell these apart, so each binding is its own
@@ -145,7 +145,10 @@ fn build(
     // built: a later SDK or toolchain bump must not strand the recovery
     // images the procedures name, so only the recorded pins are checked.
     require(
-        is_lower_hex(&m.sdk_revision, 40) && is_lower_hex(&m.toolchain_sha256, 64),
+        m.sdk_revision.len() == 40
+            && hex::is_lower(m.sdk_revision.as_bytes())
+            && m.toolchain_sha256.len() == 64
+            && hex::is_lower(m.toolchain_sha256.as_bytes()),
         || ReviewError::BuildPins,
     )?;
 

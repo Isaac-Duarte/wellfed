@@ -216,7 +216,7 @@ async fn main() -> Result<()> {
                 Some(answer) => println!(
                     "Sent once to {to}; the feeder answered {} bytes: {}",
                     answer.len(),
-                    wellfed_formats::hex::encode(&answer)
+                    wellfed_session::hex::Lower(&answer)
                 ),
                 None => println!("Sent once to {to}; no answer within 5 s (not resent)"),
             }

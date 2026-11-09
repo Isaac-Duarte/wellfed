@@ -146,7 +146,7 @@ impl TableSum {
             table: self.table,
             rows: self.rows,
             bytes: self.bytes,
-            sha256: crate::hex::encode(&self.hash.finalize()),
+            sha256: wellfed_session::hex::Lower(&self.hash.finalize()).to_string(),
         }
     }
 }

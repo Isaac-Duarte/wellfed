@@ -499,9 +499,10 @@ pub struct Refill {
 /// Bytes as lowercase hex.
 mod hex_bytes {
     use serde::{Deserialize, Deserializer, Serializer, de::Error};
+    use wellfed_session::hex::{self, Lower};
 
     pub(super) fn serialize<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&crate::hex::encode(bytes))
+        serializer.collect_str(&Lower(bytes))
     }
 
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(
@@ -514,10 +515,9 @@ mod hex_bytes {
     /// Lowercase only, the one spelling an export writes, so a row reads
     /// back to the same bytes.
     pub(super) fn decode(text: &str) -> Option<Vec<u8>> {
-        if !crate::hex::is_lower_hex(text, text.len()) {
-            return None;
-        }
-        crate::hex::decode_vec(text)
+        let mut bytes = vec![0; text.len() / 2];
+        hex::decode(text.as_bytes(), &mut bytes)?;
+        Some(bytes)
     }
 }
 

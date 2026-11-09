@@ -81,7 +81,7 @@ impl Review {
     /// Whether the image builds `key` in, so the feeder trusts it without
     /// an enrollment.
     pub fn builds_in(&self, key: &Key) -> bool {
-        let public = wellfed_formats::hex::encode(&key.public());
+        let public = wellfed_session::hex::Lower(&key.public()).to_string();
         self.manifest
             .ota_public_key
             .as_deref()
@@ -120,8 +120,11 @@ mod tests {
             container: Vec::new(),
         };
         assert!(!review.builds_in(&key));
-        review.manifest.ota_public_key =
-            Some(wellfed_formats::hex::encode(&key.public()).to_uppercase());
+        review.manifest.ota_public_key = Some(
+            wellfed_session::hex::Lower(&key.public())
+                .to_string()
+                .to_uppercase(),
+        );
         assert!(review.builds_in(&key));
         review.manifest.ota_public_key = Some("ab".repeat(32));
         assert!(!review.builds_in(&key));

@@ -49,7 +49,8 @@ fn holds(haystack: &[u8], needle: &[u8]) -> bool {
 fn needles(root: &Path) -> Vec<(&'static str, Vec<u8>)> {
     let wifi: WifiCredential = wellfed_formats::load(&root.join("private/hotspot.json")).unwrap();
     let bench: OtaKeyFile = wellfed_formats::load(&root.join(wellfed_signing::KEY_PATH)).unwrap();
-    let raw = wellfed_formats::hex::decode::<32>(&bench.public_key).unwrap();
+    let raw =
+        wellfed_session::hex::decode_array_either_case::<32>(bench.public_key.as_bytes()).unwrap();
     vec![
         ("the hotspot's SSID", wifi.ssid.into_bytes()),
         ("the hotspot's passphrase", wifi.password.into_bytes()),

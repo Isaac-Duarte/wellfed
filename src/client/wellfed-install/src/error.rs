@@ -132,7 +132,7 @@ pub enum Error {
     /// last seen, where stock connected from, or by discovery.
     #[error(
         "feeder {}, which this install paired with, did not answer where it last did, where stock connected from, or by discovery",
-        wellfed_formats::hex::encode(&feeder[..8])
+        wellfed_session::hex::Lower(&feeder[..8]).to_string()
     )]
     NotAnswering { feeder: [u8; 32] },
     #[error("a consumer image joins no network until Bluetooth setup gives it one")]
@@ -145,8 +145,8 @@ pub enum Error {
     /// Bluetooth setup went through on another feeder than this install's.
     #[error(
         "the feeder that took setup is {}, not this install's {}: it has this client's key and the Wi-Fi, and nothing else of this install was done to it",
-        wellfed_formats::hex::encode(found),
-        wellfed_formats::hex::encode(expected)
+        wellfed_session::hex::Lower(found).to_string(),
+        wellfed_session::hex::Lower(expected).to_string()
     )]
     OtherFeeder { expected: [u8; 32], found: [u8; 32] },
     #[error("the feeder refused: {}", refusal_text(*.0))]

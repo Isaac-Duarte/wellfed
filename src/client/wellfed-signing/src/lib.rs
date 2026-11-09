@@ -46,7 +46,6 @@ use wellfed_signed::offer::{self, ImageKind as OfferKind, KeyId, Signed};
 use wellfed_formats::bench::VERIFICATION;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::credentials::{KeyScope, OtaKeyFile};
-use wellfed_formats::hex;
 use wellfed_formats::manifest::BuildManifest;
 use wellfed_formats::private::{SYSTEM_RANDOM, random, write_new_whole};
 use wellfed_formats::require;
@@ -56,6 +55,7 @@ use wellfed_image::ota::STOCK_SHA256;
 use wellfed_image::review::frozen;
 use wellfed_image::root::Root;
 use wellfed_proto::device::Model;
+use wellfed_session::hex;
 use wellfed_signed::{MARKER, Manifest};
 
 mod error;
@@ -66,16 +66,16 @@ fn require_built_in_signer(built_in: &str, build_id: &[u8; 32], manifest: &[u8])
     let signed = offer::parse_manifest(manifest).map_err(Error::NotManifest)?;
     require(signed.manifest.build_id == *build_id, || {
         FrozenError::OtherBuild {
-            manifest: hex::encode(&signed.manifest.build_id),
-            review: hex::encode(build_id),
+            manifest: hex::Lower(&signed.manifest.build_id).to_string(),
+            review: hex::Lower(build_id).to_string(),
         }
     })?;
 
     let public = id_bytes(built_in)?;
     require(signed.key_id == offer::key_id(&public), || {
         FrozenError::NotBuiltInSigner {
-            signer: hex::encode(&signed.key_id),
-            built_in: hex::encode(&offer::key_id(&public)),
+            signer: hex::Lower(&signed.key_id).to_string(),
+            built_in: hex::Lower(&offer::key_id(&public)).to_string(),
         }
     })?;
     Ok(())
@@ -128,12 +128,13 @@ pub const CONTAINER_HEADER: usize = 32;
 /// and an owner enrolls theirs on each feeder.
 pub fn keygen(output: &Path, scope: KeyScope) -> Result<String> {
     let seed: [u8; 32] = random(Path::new(SYSTEM_RANDOM))?;
-    let public_key = hex::encode(&SigningKey::from_bytes(&seed).verifying_key().to_bytes());
+    let public_key =
+        hex::Lower(&SigningKey::from_bytes(&seed).verifying_key().to_bytes()).to_string();
 
     let file = OtaKeyFile {
         version: 1,
         scope,
-        seed: hex::encode(&seed),
+        seed: hex::Lower(&seed).to_string(),
         public_key: public_key.clone(),
     };
     let mut text = serde_json::to_vec_pretty(&file)?;
@@ -157,11 +158,12 @@ impl Key {
         require(file.version == 1, || KeyError::Version {
             version: file.version,
         })?;
-        let seed = hex::decode::<32>(&file.seed).ok_or(KeyError::Seed)?;
+        let seed =
+            hex::decode_array_either_case::<32>(file.seed.as_bytes()).ok_or(KeyError::Seed)?;
 
         let key = SigningKey::from_bytes(&seed);
         require(
-            hex::encode(&key.verifying_key().to_bytes()) == file.public_key,
+            hex::Lower(&key.verifying_key().to_bytes()).to_string() == file.public_key,
             || KeyError::PublicKey,
         )?;
         Ok(Self {
@@ -298,8 +300,8 @@ impl Frozen {
         let image: [u8; 32] = Sha256::digest(self.payload()).into();
         require(signed.manifest.image_sha256 == image, || {
             FrozenError::OtherImage {
-                manifest: hex::encode(&signed.manifest.image_sha256),
-                review: hex::encode(&image),
+                manifest: hex::Lower(&signed.manifest.image_sha256).to_string(),
+                review: hex::Lower(&image).to_string(),
             }
             .into()
         })
@@ -363,7 +365,7 @@ impl Frozen {
 
     /// The build ID the manifest will carry, as lowercase hex.
     pub fn build_id(&self) -> String {
-        hex::encode(&self.build_id)
+        hex::Lower(&self.build_id).to_string()
     }
 
     /// A build's frozen manifest; `None` for stock.
@@ -448,8 +450,7 @@ fn bank_manifest(container: &[u8], version: u32, build_id: [u8; 32]) -> Result<M
 }
 
 fn id_bytes(text: &str) -> Result<[u8; 32]> {
-    require(hex::is_lower_hex(text, 64), || FrozenError::BuildId)?;
-    hex::decode(text).ok_or_else(|| FrozenError::BuildId.into())
+    hex::decode_array(text.as_bytes()).ok_or_else(|| FrozenError::BuildId.into())
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -545,7 +546,7 @@ mod tests {
         let file: OtaKeyFile = wellfed_formats::load(&path).unwrap();
         assert_eq!(file.scope, KeyScope::Bench);
         let key = Key::load(&path).unwrap();
-        assert_eq!(hex::encode(&key.public()), public);
+        assert_eq!(hex::Lower(&key.public()).to_string(), public);
 
         let image = build_image();
         let (checkout, review) = freeze(&image, None);
@@ -561,7 +562,7 @@ mod tests {
             (
                 parsed.manifest.version,
                 parsed.manifest.image_len as usize,
-                hex::encode(&parsed.manifest.build_id),
+                hex::Lower(&parsed.manifest.build_id).to_string(),
                 parsed.key_id
             ),
             (
@@ -613,7 +614,10 @@ mod tests {
         let admitted = admit_offer(&signed, None, &context(8)).unwrap();
         assert_eq!(admitted.trust, Trust::BuiltIn);
         assert_eq!(admitted.signed.kind, OfferKind::Replacement);
-        assert_eq!(hex::encode(&admitted.signed.manifest.build_id), BUILD);
+        assert_eq!(
+            hex::Lower(&admitted.signed.manifest.build_id).to_string(),
+            BUILD
+        );
 
         assert_eq!(
             admit_offer(&signed, None, &context(9)),
@@ -678,7 +682,7 @@ mod tests {
         let file: OtaKeyFile = wellfed_formats::load(&path).unwrap();
         assert_eq!(file.scope, KeyScope::Owner);
         let key = Key::load(&path).unwrap();
-        assert_eq!(hex::encode(&key.public()), public);
+        assert_eq!(hex::Lower(&key.public()).to_string(), public);
 
         let (checkout, review) = freeze(&build_image(), None);
         let signed = Frozen::open(checkout.path(), &review)

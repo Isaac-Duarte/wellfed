@@ -19,10 +19,10 @@ use wellfed_feeder_sim::console::{self, HELP};
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::platform::Random;
 use wellfed_feeder_sim::serve::{self, Advertise, Control, Event, Feeder};
-use wellfed_formats::hex;
 use wellfed_formats::owner::{self, EnrolledFeeder};
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_proto::api::PORT;
+use wellfed_session::hex;
 use wellfed_session::hex::Lower;
 use wellfed_session::noise::Keypair;
 
@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 fn owner_key(path: &Path) -> Result<([u8; 32], Label)> {
     let file =
         owner::load(path).with_context(|| format!("read the key file {}", path.display()))?;
-    let secret = hex::decode::<32>(&file.secret)
+    let secret = hex::decode_array_either_case::<32>(file.secret.as_bytes())
         .with_context(|| format!("{}: the secret is not 32 bytes of hex", path.display()))?;
     let label = Label::new(file.label.as_bytes())
         .with_context(|| format!("{}: the label is not 1-16 bytes", path.display()))?;
@@ -78,7 +78,7 @@ fn owner_key(path: &Path) -> Result<([u8; 32], Label)> {
 fn remember(path: &Path, identity: &[u8; 32]) -> Result<()> {
     let mut file =
         owner::load(path).with_context(|| format!("read the key file {}", path.display()))?;
-    let identity = hex::encode(identity);
+    let identity = hex::Lower(identity).to_string();
     if file.feeders.iter().any(|f| f.identity == identity) {
         return Ok(());
     }
