@@ -217,6 +217,7 @@ mod tests {
                 unread: 0,
                 clock_valid: true,
                 at: Timestamp::UNIX_EPOCH,
+                checked: Timestamp::UNIX_EPOCH,
             }),
             alerts: alerts.to_vec(),
             unreachable: None,

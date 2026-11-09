@@ -412,6 +412,10 @@
               "minimum": 0,
               "type": "integer"
             },
+            "checked": {
+              "format": "date-time",
+              "type": "string"
+            },
             "clock_valid": {
               "type": "boolean"
             },
@@ -443,7 +447,8 @@
             "settling",
             "unread",
             "clock_valid",
-            "at"
+            "at",
+            "checked"
           ],
           "type": "object"
         },

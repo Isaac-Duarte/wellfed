@@ -402,13 +402,13 @@ pub struct Relayed<'a> {
     pub unreachable: Option<Timestamp>,
 }
 
-/// A server's copy of the table: as read, under which cursor, and when by
-/// the server's clock.
+/// A server's copy of the table: as read, under which cursor, and until
+/// when, by the server's clock, it found the table unchanged.
 #[derive(Clone, Copy, Debug)]
 pub struct RelayedTable<'a> {
     pub cursor: Cursor,
     pub view: &'a AlertsView,
-    pub read_at: Timestamp,
+    pub checked_at: Timestamp,
 }
 
 /// What a phone keeps of one feeder's alerts.
@@ -501,20 +501,20 @@ impl Watch {
     ///
     /// A copy can be older than what this watch read itself, and applying
     /// it would end alerts the newer table lists and bring back ones it no
-    /// longer does. Cursors can't say which is newer: the boot count lives
-    /// in a register a power loss clears, and a server the feeder turned
-    /// away keeps serving the old ring. So a copy counts only when the
-    /// server read it clearly after this watch last reached the feeder
-    /// ([`RELAY_MARGIN`]), and not while the server can't reach the feeder,
-    /// since then its copy is as old as its last read. Within one boot of
-    /// one ring, a lower generation is older whatever the clocks say. A
-    /// copy that doesn't count only lets held alerts lapse, as an
-    /// unchanged table does.
+    /// longer does. Within one boot of one ring the generation says which
+    /// is newer, whatever the clocks do. Across boots cursors can't say:
+    /// the boot count lives in a register a power loss clears, and a server
+    /// the feeder turned away keeps serving the old ring. So there a copy
+    /// counts only when the server last found it current clearly after this
+    /// watch last reached the feeder ([`RELAY_MARGIN`]). No copy counts
+    /// while the server can't reach the feeder, since then it is as old as
+    /// the server's last read. A copy that doesn't count only lets held
+    /// alerts lapse, as an unchanged table does.
     pub fn apply_relayed(&mut self, relayed: Relayed<'_>, context: &Context<'_>) {
         let fresh = relayed.unreachable.is_none()
             && relayed
                 .table
-                .is_some_and(|table| self.counts(table.cursor, table.read_at));
+                .is_some_and(|table| self.counts(table.cursor, table.checked_at));
         match relayed.table {
             Some(table) if fresh && self.needs_read(table.cursor) => {
                 self.apply(table.cursor, table.view, context);
@@ -524,19 +524,22 @@ impl Watch {
         self.relayed_reach(relayed.unreachable, context);
     }
 
-    /// Whether a server's copy read under `cursor` at `read_at` is newer
-    /// than what this watch knows.
-    fn counts(&self, cursor: Cursor, read_at: Timestamp) -> bool {
-        let lower = self.cursor.is_some_and(|applied| {
-            applied.epoch == cursor.epoch
-                && applied.boot == cursor.boot
-                && cursor.generation < applied.generation
-        });
-        !lower
-            && self
+    /// Whether a server's copy read under `cursor`, last found current at
+    /// `checked_at`, is newer than what this watch knows. Within one boot
+    /// of one ring the generation says, whatever the clocks do: a higher
+    /// one can't be stale, nor a lower one fresh. Across boots or rings
+    /// only time can say.
+    fn counts(&self, cursor: Cursor, checked_at: Timestamp) -> bool {
+        let same_boot = self
+            .cursor
+            .filter(|applied| applied.epoch == cursor.epoch && applied.boot == cursor.boot);
+        match same_boot {
+            Some(applied) => cursor.generation > applied.generation,
+            None => self
                 .reach
                 .reached
-                .is_none_or(|reached| read_at.duration_since(reached) >= RELAY_MARGIN)
+                .is_none_or(|reached| checked_at.duration_since(reached) >= RELAY_MARGIN),
+        }
     }
 
     /// Whether this watch reached the feeder itself clearly after `at`.

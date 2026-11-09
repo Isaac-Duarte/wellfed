@@ -254,7 +254,7 @@ fn relayed(watch: &mut Watch, alerts: &FeederAlerts, context: &Context<'_>) {
                 generation: read.generation,
             },
             view,
-            read_at: read.at,
+            checked_at: read.checked,
         });
     let relayed = Relayed {
         table,
@@ -383,6 +383,7 @@ mod tests {
                 unread: 0,
                 clock_valid: true,
                 at: read_at,
+                checked: read_at,
             }),
             alerts: alerts.to_vec(),
             unreachable: None,

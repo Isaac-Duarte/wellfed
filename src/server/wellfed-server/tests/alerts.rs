@@ -253,6 +253,61 @@ fn a_feeder_adopted_again_starts_afresh_and_quietly() {
     });
 }
 
+#[test]
+fn a_table_found_unchanged_is_served_as_checked_since() {
+    local(async {
+        let (url, _bodies) = receiver().await;
+        let clock = Arc::new(ManualClock::new());
+        let sim = feeder::start().await;
+        let server = server(url, Arc::clone(&clock)).await;
+        let mut http = server.client();
+        http.setup(&ada_setup()).await.unwrap();
+        let kitchen = adopt(&http, &sim).await;
+        until("the server reads the table", || async {
+            http.feeder_alerts(kitchen).await.unwrap().read.is_some()
+        })
+        .await;
+        let read = http.feeder_alerts(kitchen).await.unwrap().read.unwrap();
+
+        // Later polls find the table as it was: it keeps its read time,
+        // and its check moves on.
+        clock.advance(Duration::from_secs(10 * 60));
+        until("a later poll checks the table", || async {
+            let now = http.feeder_alerts(kitchen).await.unwrap().read.unwrap();
+            now.checked > read.at
+        })
+        .await;
+        let now = http.feeder_alerts(kitchen).await.unwrap().read.unwrap();
+        assert_eq!((now.at, now.generation), (read.at, read.generation));
+        server.stop().await;
+    });
+}
+
+#[test]
+fn removing_a_feeder_sends_no_word_of_its_revoked_key() {
+    local(async {
+        let (url, mut bodies) = receiver().await;
+        let clock = Arc::new(ManualClock::new());
+        let sim = feeder::start().await;
+        let server = server(url, Arc::clone(&clock)).await;
+        let mut http = server.client();
+        http.setup(&ada_setup()).await.unwrap();
+        let kitchen = adopt(&http, &sim).await;
+        until("the server reads the table", || async {
+            http.feeder_alerts(kitchen).await.unwrap().read.is_some()
+        })
+        .await;
+
+        // The removal revokes the server's key, which the feeder then
+        // refuses: no "can't reach it" for a feeder being removed.
+        http.remove_feeder(kitchen).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let sent: Vec<_> = std::iter::from_fn(|| bodies.try_recv().ok()).collect();
+        assert!(sent.is_empty(), "{sent:?}");
+        server.stop().await;
+    });
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

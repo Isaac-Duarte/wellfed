@@ -128,6 +128,8 @@ impl Kept {
             unread: table.view.unread,
             clock_valid: table.clock_valid,
             at: table.at,
+            // The service sets the later check it keeps in memory.
+            checked: table.at,
         });
         FeederAlerts {
             read,

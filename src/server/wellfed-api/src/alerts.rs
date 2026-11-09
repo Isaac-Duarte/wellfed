@@ -51,4 +51,9 @@ pub struct AlertsRead {
     /// When the server read it. The table may have moved since while the
     /// feeder was out of reach.
     pub at: Timestamp,
+    /// When the server last found the table unchanged, or read it: the
+    /// table was the feeder's own at least until then. A client weighs a
+    /// copy against its own last read by this, not `at`, since a table
+    /// that stays the same keeps its `at` for good.
+    pub checked: Timestamp,
 }

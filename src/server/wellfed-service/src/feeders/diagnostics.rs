@@ -47,7 +47,11 @@ impl Service {
         let kept = wellfed_mirror::load_kept(&self.shared.store, id)
             .await
             .map_err(InternalError::from)?;
-        Ok(kept.body())
+        let mut body = kept.body();
+        if let (Some(read), Some(checked)) = (&mut body.read, self.mirror.alerts_checked(id)) {
+            read.checked = read.checked.max(checked);
+        }
+        Ok(body)
     }
 
     /// Feed `feed`'s trace as the server fetched it after the feed.

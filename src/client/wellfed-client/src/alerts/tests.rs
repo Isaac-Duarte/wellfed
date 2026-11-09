@@ -860,13 +860,14 @@ fn a_key_reads_as_the_same_text_for_the_same_alert() {
     }
 }
 
-/// A server's copy of `table`, read under `cursor` at `read_at`.
-fn relayed<'a>(cursor: Cursor, table: &'a AlertsView, read_at: Timestamp) -> Relayed<'a> {
+/// A server's copy of `table`, read under `cursor` and found current at
+/// `checked_at`.
+fn relayed<'a>(cursor: Cursor, table: &'a AlertsView, checked_at: Timestamp) -> Relayed<'a> {
     Relayed {
         table: Some(RelayedTable {
             cursor,
             view: table,
-            read_at,
+            checked_at,
         }),
         unreachable: None,
     }
@@ -893,18 +894,17 @@ fn a_server_copy_read_before_a_home_read_ends_nothing() {
         &mutes,
     );
 
-    // The server read generation 4, from before the meal, a minute before
-    // the phone's own read, and even one "newer" by its cursor counts no
-    // more while it is not clearly later.
+    // The server read generation 4, from before the meal: lower in the
+    // same boot, it is older whatever its time says.
     let away = context(at(900), &mutes);
     let empty = view(1, &[]);
     watch.apply_relayed(relayed(cursor(1, 4, 4), &empty, at(540)), &away);
-    watch.apply_relayed(relayed(cursor(1, 4, 6), &empty, at(660)), &away);
+    watch.apply_relayed(relayed(cursor(1, 4, 4), &empty, at(4000)), &away);
     assert!(watch.changes().is_empty(), "nothing ends, nothing posts");
     assert_eq!(watch.cursor, Some(cursor(1, 4, 5)));
 
-    // Read clearly after, it counts.
-    watch.apply_relayed(relayed(cursor(1, 4, 6), &empty, at(600 + 300)), &away);
+    // A higher generation of the same boot is newer, however soon.
+    watch.apply_relayed(relayed(cursor(1, 4, 6), &empty, at(610)), &away);
     assert_eq!(watch.cursor, Some(cursor(1, 4, 6)));
 }
 
@@ -1014,4 +1014,48 @@ fn a_server_that_reaches_the_feeder_clears_the_phone_s_count() {
     watch.unanswered(Some("home"), &context(at(900), &mutes));
     watch.unanswered(Some("home"), &context(at(1500), &mutes));
     assert!(watch.changes().is_empty());
+}
+
+#[test]
+fn a_meal_that_fails_just_after_the_phone_leaves_posts_away_in_the_same_boot() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    // At home at 08:00, generation 5.
+    home_read(&mut watch, cursor(1, 4, 5), &view(1, &[]), at(0), &mutes);
+
+    // The meal fails at 08:02; the server reads generation 6 then, and the
+    // table never changes after, so the server's read time stays 08:02.
+    let failed_table = view(1, &[failed(3)]);
+    for minute in [5, 30, 120] {
+        watch.apply_relayed(
+            relayed(cursor(1, 4, 6), &failed_table, at(120)),
+            &context(at(minute * 60), &mutes),
+        );
+    }
+    let posted = watch.changes();
+    assert!(
+        matches!(posted.as_slice(), [Change::Post(tracked)] if tracked.notice.kind() == NoticeKind::MealFailed),
+        "{posted:?}"
+    );
+}
+
+#[test]
+fn after_a_reboot_a_copy_found_current_later_posts_away() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    home_read(&mut watch, cursor(1, 4, 5), &view(1, &[]), at(0), &mutes);
+
+    // The feeder restarts at 08:01 and the server reads its first table of
+    // the new boot at 08:02. Read only then, the copy is too close to the
+    // phone's own read to count...
+    let failed_table = view(1, &[failed(3)]);
+    let copy = |checked| relayed(cursor(1, 5, 1), &failed_table, checked);
+    watch.apply_relayed(copy(at(120)), &context(at(180), &mutes));
+    assert!(watch.changes().is_empty());
+
+    // ...but the server's later polls find it unchanged, and once one is
+    // clearly after the phone's read, it counts.
+    watch.apply_relayed(copy(at(600)), &context(at(660), &mutes));
+    assert_eq!(watch.changes().len(), 1);
+    assert_eq!(watch.cursor, Some(cursor(1, 5, 1)));
 }

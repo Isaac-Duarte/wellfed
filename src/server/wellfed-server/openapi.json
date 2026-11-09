@@ -6361,7 +6361,8 @@
           "settling",
           "unread",
           "clock_valid",
-          "at"
+          "at",
+          "checked"
         ],
         "properties": {
           "at": {
@@ -6374,6 +6375,11 @@
             "format": "int32",
             "description": "The feeder's boot count: the generation counts from 0 at each boot.",
             "minimum": 0
+          },
+          "checked": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the server last found the table unchanged, or read it: the\ntable was the feeder's own at least until then. A client weighs a\ncopy against its own last read by this, not `at`, since a table\nthat stays the same keeps its `at` for good."
           },
           "clock_valid": {
             "type": "boolean",

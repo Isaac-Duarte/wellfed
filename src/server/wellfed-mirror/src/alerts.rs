@@ -193,6 +193,9 @@ impl Reader {
         let Some(opened) = *self.opened.borrow() else {
             return;
         };
+        if self.shared.desk.held(self.id) {
+            return;
+        }
         // A pre-revision build takes only an update.
         if opened.skew == Skew::Legacy {
             return;
@@ -218,6 +221,7 @@ impl Reader {
             }
         };
         if !kept.watch.needs_read(cursor) {
+            self.shared.desk.check(self.id, self.shared.clock.now());
             self.keep(clock, |kept, context| kept.watch.lapse(context))
                 .await;
             return;
@@ -244,11 +248,15 @@ impl Reader {
             kept.take(table, context);
         })
         .await;
+        self.shared.desk.check(self.id, at);
         debug!(generation = %cursor.generation, alerts = view.alerts.len(), "alert table read");
     }
 
     /// Count a connect towards the feeder's reach.
     async fn reach(&self, attempt: Attempt) {
+        if self.shared.desk.held(self.id) {
+            return;
+        }
         self.keep(FeederClock::Unknown, |kept, context| {
             let watch = &mut kept.watch;
             match attempt {
