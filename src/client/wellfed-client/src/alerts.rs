@@ -319,7 +319,9 @@ pub struct Context<'a> {
     pub clock: FeederClock,
 }
 
-/// Whether the feeder's status this catch-up showed a valid clock.
+/// Whether the feeder's status this catch-up showed a valid clock. The
+/// watch also counts a clock with no zone offset as unknown, by the table's
+/// `NoClock`: the plans need local time, which the status doesn't show.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FeederClock {
     Known,
@@ -415,6 +417,11 @@ impl Watch {
                     }
             })
         };
+        let lists_no_clock = view
+            .alerts
+            .iter()
+            .any(|open| open.alert.kind() == AlertKind::NoClock);
+        let clock = local_time(context.clock, lists_no_clock);
         let mut ended = Vec::new();
         for tracked in &mut self.open {
             let Notice::Alert { open } = tracked.notice else {
@@ -433,7 +440,7 @@ impl Watch {
                 ended.push(tracked.key);
                 continue;
             }
-            if let Some(absent) = tracked.hold(&open, context)
+            if let Some(absent) = tracked.hold(&open, clock, context.now)
                 && unvouched_over(&open, absent, context.now)
             {
                 ended.push(tracked.key);
@@ -447,6 +454,11 @@ impl Watch {
     /// they have been absent past their hold: for a catch-up that found the
     /// table unchanged.
     pub fn lapse(&mut self, context: &Context<'_>) {
+        let lists_no_clock = self.open.iter().any(|tracked| {
+            tracked.absent.is_none()
+                && matches!(tracked.notice, Notice::Alert { open } if open.alert.kind() == AlertKind::NoClock)
+        });
+        let clock = local_time(context.clock, lists_no_clock);
         let mut lapsed = Vec::new();
         for tracked in &mut self.open {
             let Notice::Alert { open } = tracked.notice else {
@@ -455,7 +467,7 @@ impl Watch {
             if tracked.absent.is_none() {
                 continue;
             }
-            if let Some(absent) = tracked.hold(&open, context)
+            if let Some(absent) = tracked.hold(&open, clock, context.now)
                 && unvouched_over(&open, absent, context.now)
             {
                 lapsed.push(tracked.key);
@@ -616,20 +628,31 @@ impl Watch {
 impl Tracked {
     /// Since when this alert, absent from the table now, has counted as
     /// absent, or `None` while its hold doesn't run: one that waits for the
-    /// clock, while the feeder has none, starts its hold at the first read
-    /// with a clock.
-    fn hold(&mut self, open: &OpenAlert, context: &Context<'_>) -> Option<Timestamp> {
-        if waits_for_clock(open.alert.kind()) && context.clock == FeederClock::Unknown {
+    /// clock, while the feeder has no local time (`clock`), starts its hold
+    /// at the first read with it.
+    fn hold(&mut self, open: &OpenAlert, clock: FeederClock, now: Timestamp) -> Option<Timestamp> {
+        if waits_for_clock(open.alert.kind()) && clock == FeederClock::Unknown {
             self.absent = Some(Absence::NoClock);
             return None;
         }
         match self.absent {
             Some(Absence::Since { since }) => Some(since),
             None | Some(Absence::NoClock) => {
-                self.absent = Some(Absence::Since { since: context.now });
-                Some(context.now)
+                self.absent = Some(Absence::Since { since: now });
+                Some(now)
             }
         }
+    }
+}
+
+/// Whether the feeder has local time, as the plans need it: a valid clock
+/// (`status`), and no `NoClock` in the table (`lists_no_clock`), which the
+/// feeder opens also for a clock with no zone offset.
+const fn local_time(status: FeederClock, lists_no_clock: bool) -> FeederClock {
+    if lists_no_clock {
+        FeederClock::Unknown
+    } else {
+        status
     }
 }
 

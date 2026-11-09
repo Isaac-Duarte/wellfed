@@ -358,6 +358,51 @@ fn a_condition_that_waits_for_the_clock_counts_its_hold_from_the_clock() {
     assert_eq!(watch.open.len(), 0);
 }
 
+/// A feeder with no desiccant count and no pack, whose clock is valid but
+/// has no zone offset: its status shows a clock, and only the table's
+/// `NoClock` says it has no local time, so stuck plans can't be judged.
+#[test]
+fn a_clock_with_no_zone_holds_stuck_plans_as_no_clock_does() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    watch.apply(
+        cursor(1, 1, 1),
+        &view(1, &[condition(Alert::PlansStuck)]),
+        &context(at(0), &mutes),
+    );
+    deliver(&mut watch);
+
+    // A reboot that kept the clock and lost the zone: the feeder settles
+    // for as long as it has no local time, and lists NoClock after an hour.
+    let mut zoneless = view(1, &[condition(Alert::NoClock)]);
+    zoneless.settling = true;
+    watch.apply(cursor(1, 2, 1), &zoneless, &context(at(3600), &mutes));
+    deliver(&mut watch);
+    for hours in 2..24 {
+        watch.lapse(&context(at(0) + SignedDuration::from_hours(hours), &mutes));
+    }
+    let stuck = |watch: &Watch| {
+        watch
+            .open
+            .iter()
+            .any(|tracked| tracked.notice.kind() == NoticeKind::PlansStuck)
+    };
+    assert!(stuck(&watch), "never ended while there is no local time");
+
+    // Local time back: its hold counts from here.
+    let mut back = view(1, &[]);
+    back.settling = true;
+    let zoned = at(0) + SignedDuration::from_hours(24);
+    watch.apply(cursor(1, 2, 2), &back, &context(zoned, &mutes));
+    watch.lapse(&context(zoned + SETTLING_HOLD, &mutes));
+    assert!(stuck(&watch));
+    watch.lapse(&context(
+        zoned + SETTLING_HOLD + SignedDuration::from_secs(1),
+        &mutes,
+    ));
+    assert!(!stuck(&watch));
+}
+
 #[test]
 fn a_condition_listed_again_starts_its_hold_over() {
     let mutes = Mutes::default();
