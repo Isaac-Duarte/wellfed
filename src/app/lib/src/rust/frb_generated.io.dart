@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/alerts.dart';
 import 'api/discovery.dart';
 import 'api/error.dart';
 import 'api/feeder.dart';
@@ -337,10 +338,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Adoption dco_decode_adoption(dynamic raw);
 
   @protected
+  AlertHold dco_decode_alert_hold(dynamic raw);
+
+  @protected
+  AlertLevel dco_decode_alert_level(dynamic raw);
+
+  @protected
+  AlertSettingsView dco_decode_alert_settings_view(dynamic raw);
+
+  @protected
   AppStore dco_decode_app_store(dynamic raw);
 
   @protected
   Appearance dco_decode_appearance(dynamic raw);
+
+  @protected
+  Attempt dco_decode_attempt(dynamic raw);
 
   @protected
   BackupCheck dco_decode_backup_check(dynamic raw);
@@ -367,6 +380,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AppStore dco_decode_box_autoadd_app_store(dynamic raw);
 
   @protected
+  Attempt dco_decode_box_autoadd_attempt(dynamic raw);
+
+  @protected
   Blocked dco_decode_box_autoadd_blocked(dynamic raw);
 
   @protected
@@ -385,6 +401,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Card dco_decode_box_autoadd_card(dynamic raw);
 
   @protected
+  ClientRole dco_decode_box_autoadd_client_role(dynamic raw);
+
+  @protected
   Counters dco_decode_box_autoadd_counters(dynamic raw);
 
   @protected
@@ -398,6 +417,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FedBy dco_decode_box_autoadd_fed_by(dynamic raw);
+
+  @protected
+  FeedOutcome dco_decode_box_autoadd_feed_outcome(dynamic raw);
 
   @protected
   FeedRate dco_decode_box_autoadd_feed_rate(dynamic raw);
@@ -463,6 +485,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MissedReason dco_decode_box_autoadd_missed_reason(dynamic raw);
 
   @protected
+  MuteTarget dco_decode_box_autoadd_mute_target(dynamic raw);
+
+  @protected
   NewRefill dco_decode_box_autoadd_new_refill(dynamic raw);
 
   @protected
@@ -472,6 +497,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NotSentReason dco_decode_box_autoadd_not_sent_reason(dynamic raw);
 
   @protected
+  NoticeView dco_decode_box_autoadd_notice_view(dynamic raw);
+
+  @protected
   NtpResult dco_decode_box_autoadd_ntp_result(dynamic raw);
 
   @protected
@@ -479,6 +507,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Phase dco_decode_box_autoadd_phase(dynamic raw);
+
+  @protected
+  PhoneNetwork dco_decode_box_autoadd_phone_network(dynamic raw);
 
   @protected
   PlanEdit dco_decode_box_autoadd_plan_edit(dynamic raw);
@@ -651,6 +682,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Card dco_decode_card(dynamic raw);
 
   @protected
+  CatchUp dco_decode_catch_up(dynamic raw);
+
+  @protected
+  CatchUpEnd dco_decode_catch_up_end(dynamic raw);
+
+  @protected
   ClientRole dco_decode_client_role(dynamic raw);
 
   @protected
@@ -706,6 +743,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FeedStats dco_decode_feed_stats(dynamic raw);
+
+  @protected
+  FeederAlerts dco_decode_feeder_alerts(dynamic raw);
+
+  @protected
+  FeederNotices dco_decode_feeder_notices(dynamic raw);
 
   @protected
   FeederRefusal dco_decode_feeder_refusal(dynamic raw);
@@ -780,6 +823,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   KeptBackup dco_decode_kept_backup(dynamic raw);
 
   @protected
+  KindLevel dco_decode_kind_level(dynamic raw);
+
+  @protected
   KnownFeeder dco_decode_known_feeder(dynamic raw);
 
   @protected
@@ -789,13 +835,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<AlertLevel> dco_decode_list_alert_level(dynamic raw);
+
+  @protected
   List<ClientView> dco_decode_list_client_view(dynamic raw);
+
+  @protected
+  List<FeederNotices> dco_decode_list_feeder_notices(dynamic raw);
 
   @protected
   List<HistoryEntry> dco_decode_list_history_entry(dynamic raw);
 
   @protected
   List<KeptBackup> dco_decode_list_kept_backup(dynamic raw);
+
+  @protected
+  List<KindLevel> dco_decode_list_kind_level(dynamic raw);
 
   @protected
   List<KnownFeeder> dco_decode_list_known_feeder(dynamic raw);
@@ -810,6 +865,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MealView> dco_decode_list_meal_view(dynamic raw);
 
   @protected
+  List<NoticeChange> dco_decode_list_notice_change(dynamic raw);
+
+  @protected
+  List<NoticeKind> dco_decode_list_notice_kind(dynamic raw);
+
+  @protected
+  List<NoticeView> dco_decode_list_notice_view(dynamic raw);
+
+  @protected
   List<PlanView?> dco_decode_list_opt_box_autoadd_plan_view(dynamic raw);
 
   @protected
@@ -817,6 +881,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<PendingWrite> dco_decode_list_pending_write(dynamic raw);
+
+  @protected
+  List<int> dco_decode_list_prim_i_32_loose(dynamic raw);
+
+  @protected
+  Int32List dco_decode_list_prim_i_32_strict(dynamic raw);
 
   @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
@@ -896,6 +966,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MissedReason dco_decode_missed_reason(dynamic raw);
 
   @protected
+  MuteTarget dco_decode_mute_target(dynamic raw);
+
+  @protected
   NewRefill dco_decode_new_refill(dynamic raw);
 
   @protected
@@ -906,6 +979,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NotSentReason dco_decode_not_sent_reason(dynamic raw);
+
+  @protected
+  NoticeChange dco_decode_notice_change(dynamic raw);
+
+  @protected
+  NoticeDetail dco_decode_notice_detail(dynamic raw);
+
+  @protected
+  NoticeKind dco_decode_notice_kind(dynamic raw);
+
+  @protected
+  NoticeView dco_decode_notice_view(dynamic raw);
 
   @protected
   NtpResult dco_decode_ntp_result(dynamic raw);
@@ -929,6 +1014,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BridgeError? dco_decode_opt_box_autoadd_bridge_error(dynamic raw);
 
   @protected
+  ClientRole? dco_decode_opt_box_autoadd_client_role(dynamic raw);
+
+  @protected
   Counts? dco_decode_opt_box_autoadd_counts(dynamic raw);
 
   @protected
@@ -936,6 +1024,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FaultView? dco_decode_opt_box_autoadd_fault_view(dynamic raw);
+
+  @protected
+  FeedOutcome? dco_decode_opt_box_autoadd_feed_outcome(dynamic raw);
 
   @protected
   FeedRate? dco_decode_opt_box_autoadd_feed_rate(dynamic raw);
@@ -960,6 +1051,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MealReminder? dco_decode_opt_box_autoadd_meal_reminder(dynamic raw);
+
+  @protected
+  MissedReason? dco_decode_opt_box_autoadd_missed_reason(dynamic raw);
 
   @protected
   NextMealView? dco_decode_opt_box_autoadd_next_meal_view(dynamic raw);
@@ -1084,6 +1178,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Phase dco_decode_phase(dynamic raw);
+
+  @protected
+  PhoneNetwork dco_decode_phone_network(dynamic raw);
 
   @protected
   PlanEdit dco_decode_plan_edit(dynamic raw);
@@ -1641,10 +1738,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Adoption sse_decode_adoption(SseDeserializer deserializer);
 
   @protected
+  AlertHold sse_decode_alert_hold(SseDeserializer deserializer);
+
+  @protected
+  AlertLevel sse_decode_alert_level(SseDeserializer deserializer);
+
+  @protected
+  AlertSettingsView sse_decode_alert_settings_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   AppStore sse_decode_app_store(SseDeserializer deserializer);
 
   @protected
   Appearance sse_decode_appearance(SseDeserializer deserializer);
+
+  @protected
+  Attempt sse_decode_attempt(SseDeserializer deserializer);
 
   @protected
   BackupCheck sse_decode_backup_check(SseDeserializer deserializer);
@@ -1671,6 +1782,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AppStore sse_decode_box_autoadd_app_store(SseDeserializer deserializer);
 
   @protected
+  Attempt sse_decode_box_autoadd_attempt(SseDeserializer deserializer);
+
+  @protected
   Blocked sse_decode_box_autoadd_blocked(SseDeserializer deserializer);
 
   @protected
@@ -1691,6 +1805,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Card sse_decode_box_autoadd_card(SseDeserializer deserializer);
 
   @protected
+  ClientRole sse_decode_box_autoadd_client_role(SseDeserializer deserializer);
+
+  @protected
   Counters sse_decode_box_autoadd_counters(SseDeserializer deserializer);
 
   @protected
@@ -1704,6 +1821,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FedBy sse_decode_box_autoadd_fed_by(SseDeserializer deserializer);
+
+  @protected
+  FeedOutcome sse_decode_box_autoadd_feed_outcome(SseDeserializer deserializer);
 
   @protected
   FeedRate sse_decode_box_autoadd_feed_rate(SseDeserializer deserializer);
@@ -1781,6 +1901,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MuteTarget sse_decode_box_autoadd_mute_target(SseDeserializer deserializer);
+
+  @protected
   NewRefill sse_decode_box_autoadd_new_refill(SseDeserializer deserializer);
 
   @protected
@@ -1794,6 +1917,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  NoticeView sse_decode_box_autoadd_notice_view(SseDeserializer deserializer);
+
+  @protected
   NtpResult sse_decode_box_autoadd_ntp_result(SseDeserializer deserializer);
 
   @protected
@@ -1803,6 +1929,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Phase sse_decode_box_autoadd_phase(SseDeserializer deserializer);
+
+  @protected
+  PhoneNetwork sse_decode_box_autoadd_phone_network(
+    SseDeserializer deserializer,
+  );
 
   @protected
   PlanEdit sse_decode_box_autoadd_plan_edit(SseDeserializer deserializer);
@@ -2011,6 +2142,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Card sse_decode_card(SseDeserializer deserializer);
 
   @protected
+  CatchUp sse_decode_catch_up(SseDeserializer deserializer);
+
+  @protected
+  CatchUpEnd sse_decode_catch_up_end(SseDeserializer deserializer);
+
+  @protected
   ClientRole sse_decode_client_role(SseDeserializer deserializer);
 
   @protected
@@ -2066,6 +2203,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FeedStats sse_decode_feed_stats(SseDeserializer deserializer);
+
+  @protected
+  FeederAlerts sse_decode_feeder_alerts(SseDeserializer deserializer);
+
+  @protected
+  FeederNotices sse_decode_feeder_notices(SseDeserializer deserializer);
 
   @protected
   FeederRefusal sse_decode_feeder_refusal(SseDeserializer deserializer);
@@ -2140,6 +2283,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   KeptBackup sse_decode_kept_backup(SseDeserializer deserializer);
 
   @protected
+  KindLevel sse_decode_kind_level(SseDeserializer deserializer);
+
+  @protected
   KnownFeeder sse_decode_known_feeder(SseDeserializer deserializer);
 
   @protected
@@ -2149,7 +2295,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<AlertLevel> sse_decode_list_alert_level(SseDeserializer deserializer);
+
+  @protected
   List<ClientView> sse_decode_list_client_view(SseDeserializer deserializer);
+
+  @protected
+  List<FeederNotices> sse_decode_list_feeder_notices(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<HistoryEntry> sse_decode_list_history_entry(
@@ -2158,6 +2312,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<KeptBackup> sse_decode_list_kept_backup(SseDeserializer deserializer);
+
+  @protected
+  List<KindLevel> sse_decode_list_kind_level(SseDeserializer deserializer);
 
   @protected
   List<KnownFeeder> sse_decode_list_known_feeder(SseDeserializer deserializer);
@@ -2176,6 +2333,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MealView> sse_decode_list_meal_view(SseDeserializer deserializer);
 
   @protected
+  List<NoticeChange> sse_decode_list_notice_change(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NoticeKind> sse_decode_list_notice_kind(SseDeserializer deserializer);
+
+  @protected
+  List<NoticeView> sse_decode_list_notice_view(SseDeserializer deserializer);
+
+  @protected
   List<PlanView?> sse_decode_list_opt_box_autoadd_plan_view(
     SseDeserializer deserializer,
   );
@@ -2187,6 +2355,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<PendingWrite> sse_decode_list_pending_write(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<int> sse_decode_list_prim_i_32_loose(SseDeserializer deserializer);
+
+  @protected
+  Int32List sse_decode_list_prim_i_32_strict(SseDeserializer deserializer);
 
   @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
@@ -2278,6 +2452,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MissedReason sse_decode_missed_reason(SseDeserializer deserializer);
 
   @protected
+  MuteTarget sse_decode_mute_target(SseDeserializer deserializer);
+
+  @protected
   NewRefill sse_decode_new_refill(SseDeserializer deserializer);
 
   @protected
@@ -2288,6 +2465,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NotSentReason sse_decode_not_sent_reason(SseDeserializer deserializer);
+
+  @protected
+  NoticeChange sse_decode_notice_change(SseDeserializer deserializer);
+
+  @protected
+  NoticeDetail sse_decode_notice_detail(SseDeserializer deserializer);
+
+  @protected
+  NoticeKind sse_decode_notice_kind(SseDeserializer deserializer);
+
+  @protected
+  NoticeView sse_decode_notice_view(SseDeserializer deserializer);
 
   @protected
   NtpResult sse_decode_ntp_result(SseDeserializer deserializer);
@@ -2313,6 +2502,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ClientRole? sse_decode_opt_box_autoadd_client_role(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Counts? sse_decode_opt_box_autoadd_counts(SseDeserializer deserializer);
 
   @protected
@@ -2320,6 +2514,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FaultView? sse_decode_opt_box_autoadd_fault_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  FeedOutcome? sse_decode_opt_box_autoadd_feed_outcome(
     SseDeserializer deserializer,
   );
 
@@ -2354,6 +2553,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MealReminder? sse_decode_opt_box_autoadd_meal_reminder(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MissedReason? sse_decode_opt_box_autoadd_missed_reason(
     SseDeserializer deserializer,
   );
 
@@ -2522,6 +2726,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Phase sse_decode_phase(SseDeserializer deserializer);
+
+  @protected
+  PhoneNetwork sse_decode_phone_network(SseDeserializer deserializer);
 
   @protected
   PlanEdit sse_decode_plan_edit(SseDeserializer deserializer);
@@ -3135,10 +3342,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_adoption(Adoption self, SseSerializer serializer);
 
   @protected
+  void sse_encode_alert_hold(AlertHold self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_alert_level(AlertLevel self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_alert_settings_view(
+    AlertSettingsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_app_store(AppStore self, SseSerializer serializer);
 
   @protected
   void sse_encode_appearance(Appearance self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_attempt(Attempt self, SseSerializer serializer);
 
   @protected
   void sse_encode_backup_check(BackupCheck self, SseSerializer serializer);
@@ -3168,6 +3390,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_attempt(Attempt self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_blocked(Blocked self, SseSerializer serializer);
 
   @protected
@@ -3195,6 +3420,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_card(Card self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_client_role(
+    ClientRole self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_counters(Counters self, SseSerializer serializer);
 
   @protected
@@ -3211,6 +3442,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_fed_by(FedBy self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_feed_outcome(
+    FeedOutcome self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_feed_rate(
@@ -3327,6 +3564,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_mute_target(
+    MuteTarget self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_new_refill(
     NewRefill self,
     SseSerializer serializer,
@@ -3345,6 +3588,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_notice_view(
+    NoticeView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_ntp_result(
     NtpResult self,
     SseSerializer serializer,
@@ -3358,6 +3607,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_phase(Phase self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_phone_network(
+    PhoneNetwork self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_plan_edit(
@@ -3654,6 +3909,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_card(Card self, SseSerializer serializer);
 
   @protected
+  void sse_encode_catch_up(CatchUp self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_catch_up_end(CatchUpEnd self, SseSerializer serializer);
+
+  @protected
   void sse_encode_client_role(ClientRole self, SseSerializer serializer);
 
   @protected
@@ -3709,6 +3970,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_feed_stats(FeedStats self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_feeder_alerts(FeederAlerts self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_feeder_notices(FeederNotices self, SseSerializer serializer);
 
   @protected
   void sse_encode_feeder_refusal(FeederRefusal self, SseSerializer serializer);
@@ -3786,6 +4053,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_kept_backup(KeptBackup self, SseSerializer serializer);
 
   @protected
+  void sse_encode_kind_level(KindLevel self, SseSerializer serializer);
+
+  @protected
   void sse_encode_known_feeder(KnownFeeder self, SseSerializer serializer);
 
   @protected
@@ -3795,8 +4065,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_alert_level(
+    List<AlertLevel> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_client_view(
     List<ClientView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_feeder_notices(
+    List<FeederNotices> self,
     SseSerializer serializer,
   );
 
@@ -3809,6 +4091,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_kept_backup(
     List<KeptBackup> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_kind_level(
+    List<KindLevel> self,
     SseSerializer serializer,
   );
 
@@ -3834,6 +4122,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_meal_view(List<MealView> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_notice_change(
+    List<NoticeChange> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_notice_kind(
+    List<NoticeKind> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_notice_view(
+    List<NoticeView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_opt_box_autoadd_plan_view(
     List<PlanView?> self,
     SseSerializer serializer,
@@ -3848,6 +4154,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_pending_write(
     List<PendingWrite> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_i_32_loose(
+    List<int> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_i_32_strict(
+    Int32List self,
     SseSerializer serializer,
   );
 
@@ -3972,6 +4290,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_missed_reason(MissedReason self, SseSerializer serializer);
 
   @protected
+  void sse_encode_mute_target(MuteTarget self, SseSerializer serializer);
+
+  @protected
   void sse_encode_new_refill(NewRefill self, SseSerializer serializer);
 
   @protected
@@ -3982,6 +4303,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_not_sent_reason(NotSentReason self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_notice_change(NoticeChange self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_notice_detail(NoticeDetail self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_notice_kind(NoticeKind self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_notice_view(NoticeView self, SseSerializer serializer);
 
   @protected
   void sse_encode_ntp_result(NtpResult self, SseSerializer serializer);
@@ -4011,6 +4344,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_client_role(
+    ClientRole? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_counts(
     Counts? self,
     SseSerializer serializer,
@@ -4025,6 +4364,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_fault_view(
     FaultView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_feed_outcome(
+    FeedOutcome? self,
     SseSerializer serializer,
   );
 
@@ -4070,6 +4415,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_meal_reminder(
     MealReminder? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_missed_reason(
+    MissedReason? self,
     SseSerializer serializer,
   );
 
@@ -4288,6 +4639,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_phase(Phase self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_phone_network(PhoneNetwork self, SseSerializer serializer);
 
   @protected
   void sse_encode_plan_edit(PlanEdit self, SseSerializer serializer);

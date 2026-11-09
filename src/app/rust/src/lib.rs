@@ -9,10 +9,11 @@
 //! With a server configured, every feeder request goes through the path
 //! router (`route`, exposed as [`api::router`]).
 
-pub mod alerts;
+pub(crate) mod alerts;
 #[cfg(target_os = "android")]
 pub mod android;
 pub mod api;
+mod catch_up;
 // `allow`, not `expect`: `make check-rust`'s production pass fires lints
 // here that its first pass does not enable. Unformatted, so a regeneration
 // matches the committed file byte for byte.
