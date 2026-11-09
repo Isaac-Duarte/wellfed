@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:path_provider/path_provider.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/notices.dart';
@@ -41,8 +40,13 @@ abstract interface class AlertPorts {
   /// Whether Android lets this app post notifications.
   Future<bool> notificationsAllowed();
 
-  /// Ask Android to let it; whether it does now. Once it does, alerts still
-  /// open for `feeders` are posted.
+  /// What the button does while notifications are off.
+  Future<NotificationAsk> notificationAsk();
+
+  /// Do what [notificationAsk] says: ask Android, or open its notification
+  /// settings. Whether it lets the app post now. Once it does, alerts still
+  /// open for `feeders` are posted; a refusal is noted, and the owner stays
+  /// where they were.
   Future<bool> askForNotifications(List<KnownFeeder> feeders);
 
   /// Post what is still open for `feeders`: for notifications allowed in
@@ -164,24 +168,19 @@ class AppAlertPorts implements AlertPorts {
   Future<bool> notificationsAllowed() => Notices.allowed();
 
   @override
-  Future<bool> askForNotifications(List<KnownFeeder> feeders) => _asked(() async {
-    // Android's dialog takes the screen, so the app goes inactive while it
-    // shows. An ask that never does showed none.
-    var shown = false;
-    final AppLifecycleListener listener = AppLifecycleListener(onInactive: () => shown = true);
-    final bool allowed;
-    try {
-      allowed = await Notices.ask() ?? await Notices.allowed();
-    } finally {
-      listener.dispose();
+  Future<NotificationAsk> notificationAsk() => _notificationAsk();
+
+  @override
+  Future<bool> askForNotifications(List<KnownFeeder> feeders) async {
+    switch (await _notificationAsk()) {
+      case NotificationAsk.openSettings:
+        // Back from them, the screens read Android's word again.
+        await alertsChannel.invokeMethod<void>('notificationSettings');
+        return false;
+      case NotificationAsk.request:
+        return _request(feeders);
     }
-    if (allowed) {
-      await postPending(feeders);
-    } else if (opensNotificationSettings(allowed: allowed, dialogShown: shown)) {
-      await alertsChannel.invokeMethod<void>('notificationSettings');
-    }
-    return allowed;
-  });
+  }
 
   @override
   Future<void> postOpen(List<KnownFeeder> feeders) => postPending(feeders);
@@ -202,11 +201,42 @@ Future<T> _asked<T>(Future<T> Function() ask) async {
   }
 }
 
-/// Whether an Allow tap Android refused leaves only its settings to let
-/// alerts through: when no dialog showed on that tap, as after a lasting
-/// denial or below Android 13. A refusal made in the dialog, or a dialog
-/// dismissed, is the owner's answer, and the app takes it.
-bool opensNotificationSettings({required bool allowed, required bool dialogShown}) => !allowed && !dialogShown;
+/// What the alert screens' button does while notifications are off.
+enum NotificationAsk {
+  /// "Allow notifications": Android's own request.
+  request,
+
+  /// "Open notification settings": the app's page in Android's settings.
+  openSettings,
+}
+
+/// Ask Android's dialog only while it can still show: from Android 13, and
+/// until a request on this install was refused. Past a refusal the dialog may
+/// never show again, and nothing tells the app whether it would, so it opens
+/// the settings instead. Below Android 13 there is no request at all.
+NotificationAsk notificationAskFor({required bool sdkAtLeast33, required bool refusedBefore}) =>
+    sdkAtLeast33 && !refusedBefore ? NotificationAsk.request : NotificationAsk.openSettings;
+
+Future<NotificationAsk> _notificationAsk() async => notificationAskFor(
+  sdkAtLeast33: (await alertsChannel.invokeMethod<int>('sdk') ?? 0) >= 33,
+  refusedBefore: await notificationsRefused(dir: await AppAlertPorts._dir()),
+);
+
+/// Android's request, then what it answered: the open alerts post once it
+/// allows, and a refusal is noted for good. `null`, Android could not ask
+/// now, notes nothing.
+Future<bool> _request(List<KnownFeeder> feeders) => _asked(() async {
+  switch (await Notices.ask()) {
+    case true:
+      await postPending(feeders);
+      return true;
+    case false:
+      await noteNotificationsRefused(dir: await AppAlertPorts._dir());
+      return false;
+    case null:
+      return Notices.allowed();
+  }
+});
 
 /// Post every change still to make for `feeders`, with no catch-up. A
 /// feeder not in `feeders` keeps its own for its next catch-up.
@@ -230,11 +260,16 @@ Future<bool> offerNotifications(List<KnownFeeder> feeders) async {
     if (await Notices.allowed()) return true;
     final String dir = await AppAlertPorts._dir();
     if (!await notificationsOfferDue(dir: dir)) return true;
+    if (await _notificationAsk() != NotificationAsk.request) return true;
     // `null`: Android could not ask now, so the offer stays due.
     final bool? allowed = await _asked(Notices.ask);
     if (allowed == null) return false;
     await notificationsOffered(dir: dir);
-    if (allowed) await postPending(feeders);
+    if (allowed) {
+      await postPending(feeders);
+    } else {
+      await noteNotificationsRefused(dir: dir);
+    }
   } on PlatformException catch (error) {
     debugPrint('notifications were not asked for: ${error.message ?? error.code}');
   } on BridgeError catch (error) {

@@ -1,3 +1,4 @@
+import 'package:wellfed/platform/alert_ports.dart' show NotificationAsk;
 import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 
@@ -135,4 +136,11 @@ String kindName(NoticeKind kind) => switch (kind) {
   NoticeKind.batteryBelowFloor => 'Batteries are low',
   NoticeKind.plansStuck => "Can't read its meals",
   NoticeKind.unreachable => "Can't reach it at home",
+};
+
+/// The words on the button that lets alerts through while notifications are
+/// off, for what it does.
+String notificationAskLabel(NotificationAsk ask) => switch (ask) {
+  NotificationAsk.request => 'Allow notifications',
+  NotificationAsk.openSettings => 'Open notification settings',
 };

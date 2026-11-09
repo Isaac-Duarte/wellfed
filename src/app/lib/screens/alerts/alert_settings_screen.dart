@@ -125,7 +125,7 @@ class _Choices extends StatelessWidget {
             children: [
               if (!shown.notificationsAllowed)
                 SettingsLink(
-                  'Allow notifications',
+                  notificationAskLabel(shown.notificationAsk),
                   'Android is keeping alerts off this phone.',
                   first: true,
                   onTap: () => unawaited(settings.allowNotifications()),

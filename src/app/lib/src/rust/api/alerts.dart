@@ -91,6 +91,15 @@ Future<AlertSettingsView> alertSettings({required String dir}) =>
 Future<bool> notificationsOfferDue({required String dir}) =>
     RustLib.instance.api.crateApiAlertsNotificationsOfferDue(dir: dir);
 
+/// Whether Android has refused a request to post on this install: then the
+/// app opens Android's notification settings rather than ask again.
+Future<bool> notificationsRefused({required String dir}) =>
+    RustLib.instance.api.crateApiAlertsNotificationsRefused(dir: dir);
+
+/// Android refused a request to post.
+Future<void> noteNotificationsRefused({required String dir}) =>
+    RustLib.instance.api.crateApiAlertsNoteNotificationsRefused(dir: dir);
+
 /// The app asked Android, unprompted: it does not again.
 Future<void> notificationsOffered({required String dir}) =>
     RustLib.instance.api.crateApiAlertsNotificationsOffered(dir: dir);

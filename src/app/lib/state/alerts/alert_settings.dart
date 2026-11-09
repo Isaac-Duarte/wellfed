@@ -25,6 +25,7 @@ final class AlertSettingsShown extends AlertSettingsState {
   /// notifications.
   AlertSettingsShown({
     required this.notificationsAllowed,
+    required this.notificationAsk,
     required this.instant,
     required this.instantRunning,
     required List<KindLevel> kinds,
@@ -37,6 +38,9 @@ final class AlertSettingsShown extends AlertSettingsState {
 
   /// Android lets this app post notifications.
   final bool notificationsAllowed;
+
+  /// What the button does while notifications are off.
+  final NotificationAsk notificationAsk;
 
   /// "Instant while home" is on.
   final bool instant;
@@ -100,6 +104,7 @@ class AlertSettingsController extends ChangeNotifier {
       if (settings.instant && !running) running = await _ports.resumeInstant();
       next = AlertSettingsShown(
         notificationsAllowed: await _ports.notificationsAllowed(),
+        notificationAsk: await _ports.notificationAsk(),
         instant: settings.instant,
         instantRunning: running,
         kinds: settings.kinds,

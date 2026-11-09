@@ -16,19 +16,11 @@ void main() {
     expect(showsWords(const [], 7, words), isFalse, reason: 'swiped away, or never shown');
   });
 
-  test("an Allow tap opens Android's settings only when no dialog showed", () {
-    expect(
-      opensNotificationSettings(allowed: false, dialogShown: false),
-      isTrue,
-      reason: 'a lasting denial, or Android 12',
-    );
-    expect(
-      opensNotificationSettings(allowed: false, dialogShown: true),
-      isFalse,
-      reason: "the owner's own Don't allow, or the dialog dismissed",
-    );
-    expect(opensNotificationSettings(allowed: true, dialogShown: true), isFalse);
-    expect(opensNotificationSettings(allowed: true, dialogShown: false), isFalse);
+  test('the button asks Android until a request was refused, and below 13 opens the settings', () {
+    expect(notificationAskFor(sdkAtLeast33: true, refusedBefore: false), NotificationAsk.request);
+    expect(notificationAskFor(sdkAtLeast33: true, refusedBefore: true), NotificationAsk.openSettings);
+    expect(notificationAskFor(sdkAtLeast33: false, refusedBefore: false), NotificationAsk.openSettings);
+    expect(notificationAskFor(sdkAtLeast33: false, refusedBefore: true), NotificationAsk.openSettings);
   });
 
   test('a sweep takes only alert notifications', () {

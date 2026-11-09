@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex as Blocking, PoisonError};
 use std::time::{Duration, Instant};
 
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use wellfed_client::alerts::{Change, Mutes, Watch};
@@ -44,10 +45,25 @@ pub(crate) struct AlertState {
     /// be up with nothing that knows their ids: the app takes those off,
     /// then [`AlertState::sweep`] goes back to `false`.
     pub(crate) sweep: bool,
-    /// The ids the sweep chose to take off, until it says they are off. A
-    /// post of one meanwhile isn't confirmed, so the next catch-up hands it
-    /// over again after the sweep took it down.
-    pub(crate) sweeping: Vec<i32>,
+    /// The ids a sweep chose to take off, until it says they are off or
+    /// [`SWEEP_HOLD`] has passed. A post of one meanwhile isn't confirmed,
+    /// so the next catch-up hands it over again after the sweep took it
+    /// down.
+    pub(crate) sweeping: Vec<SweepHold>,
+}
+
+/// How long a sweep's choice holds a post back. A sweep takes a few
+/// notifications off in well under a second; one killed before it said so
+/// lets go by itself, so a post is never held back for good.
+pub(crate) const SWEEP_HOLD: SignedDuration = SignedDuration::from_mins(1);
+
+/// One notification a sweep is taking off, since `since` by the phone's
+/// clock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SweepHold {
+    pub(crate) id: i32,
+    pub(crate) since: Timestamp,
 }
 
 impl Versioned for AlertState {
@@ -64,6 +80,10 @@ pub(crate) struct AlertSettings {
     /// The app has asked Android once, unprompted, to let it post: it asks
     /// again only when the owner taps to.
     pub(crate) asked: bool,
+    /// Android refused a request to post at least once on this install, so
+    /// the alert screens open its notification settings rather than ask:
+    /// past a refusal, its dialog may never show again.
+    pub(crate) refused: bool,
 }
 
 /// One feeder's watch.
@@ -106,6 +126,60 @@ impl AlertState {
             });
         }
         self.watched_mut(identity)
+    }
+
+    /// Hold posts of `ids` back while a sweep takes them off, beside any
+    /// other engine's sweep under way.
+    pub(crate) fn hold_sweep(&mut self, ids: &[i32], now: Timestamp) {
+        self.lapse_sweeps(now);
+        for &id in ids {
+            if !self.sweeping.iter().any(|held| held.id == id) {
+                self.sweeping.push(SweepHold { id, since: now });
+            }
+        }
+    }
+
+    /// A sweep took `ids` off: their posts go through again.
+    pub(crate) fn release_sweep(&mut self, ids: &[i32]) {
+        self.sweeping.retain(|held| !ids.contains(&held.id));
+    }
+
+    fn lapse_sweeps(&mut self, now: Timestamp) {
+        self.sweeping
+            .retain(|held| now.duration_since(held.since) <= SWEEP_HOLD);
+    }
+
+    /// The changes Dart made for the feeder `identity`: each posted
+    /// notification's id and each removed one's. The ids to take off again:
+    /// everything posted for a feeder forgotten while its changes were on the
+    /// way. A post a sweep is taking down stays unconfirmed.
+    pub(crate) fn confirm(
+        &mut self,
+        identity: &str,
+        feeder: &[u8; 32],
+        made: (&[i32], &[i32]),
+        now: Timestamp,
+    ) -> Vec<i32> {
+        let (posted, removed) = made;
+        self.lapse_sweeps(now);
+        let sweeping: Vec<i32> = self.sweeping.iter().map(|held| held.id).collect();
+        let Some(watched) = self.watched_mut(identity) else {
+            return posted.to_vec();
+        };
+        let watch = &mut watched.watch;
+        for change in watch.changes() {
+            let done = match &change {
+                Change::Post(tracked) => {
+                    let id = tracked.key.notification_id(feeder);
+                    posted.contains(&id) && !sweeping.contains(&id)
+                }
+                Change::Remove(key) => removed.contains(&key.notification_id(feeder)),
+            };
+            if done {
+                watch.confirm(&change);
+            }
+        }
+        Vec::new()
     }
 
     /// Drop the feeder's entry: a removal for every notice it may have up.
@@ -521,6 +595,7 @@ mod tests {
                     levels: vec![AlertLevel::Urgent, AlertLevel::Soon, AlertLevel::Security],
                 },
                 asked: true,
+                refused: true,
             },
             feeders: vec![Watched {
                 identity: KITCHEN.into(),
@@ -549,7 +624,10 @@ mod tests {
                 at_ms: 1_800_000_000_000,
             }),
             sweep: true,
-            sweeping: vec![0x4000_0abc],
+            sweeping: vec![SweepHold {
+                id: 0x4000_0abc,
+                since: at(70),
+            }],
         }
     }
 
@@ -779,12 +857,64 @@ mod tests {
             crate::api::alerts::alerts_swept(dir_name.clone(), first)
                 .await
                 .unwrap();
-            assert_eq!(read(dir.path()).await.unwrap().sweeping, [0x4000_0002]);
+            let held: Vec<i32> = read(dir.path())
+                .await
+                .unwrap()
+                .sweeping
+                .iter()
+                .map(|held| held.id)
+                .collect();
+            assert_eq!(held, [0x4000_0002]);
             crate::api::alerts::alerts_swept(dir_name.clone(), second)
                 .await
                 .unwrap();
             assert!(read(dir.path()).await.unwrap().sweeping.is_empty());
         });
+    }
+
+    /// A sweep killed before it said its notifications were off holds their
+    /// posts back for a minute, then lets them be confirmed as any other.
+    #[test]
+    fn a_killed_sweep_lets_go_by_itself() {
+        let mut state = every_field();
+        state.sweeping.clear();
+        let feeder =
+            wellfed_session::hex::decode_array_either_case::<32>(KITCHEN.as_bytes()).unwrap();
+        let due = state.feeders[0]
+            .watch
+            .open
+            .iter()
+            .find(|tracked| tracked.delivery == Delivery::Due)
+            .unwrap()
+            .key;
+        let id = due.notification_id(&feeder);
+        let delivery = |state: &AlertState| {
+            state.feeders[0]
+                .watch
+                .open
+                .iter()
+                .find(|tracked| tracked.key == due)
+                .unwrap()
+                .delivery
+        };
+
+        // Chosen, then the engine dies: no `alerts_swept`.
+        state.hold_sweep(&[id], at(0));
+        state.confirm(KITCHEN, &feeder, (&[id], &[]), at(30));
+        assert_eq!(
+            delivery(&state),
+            Delivery::Due,
+            "held while it may still go"
+        );
+
+        state.confirm(
+            KITCHEN,
+            &feeder,
+            (&[id], &[]),
+            at(0) + SWEEP_HOLD + SignedDuration::from_secs(1),
+        );
+        assert_eq!(delivery(&state), Delivery::Posted);
+        assert!(state.sweeping.is_empty());
     }
 
     /// A catch-up that tracks a notice the sweep is about to take off: its
@@ -806,7 +936,10 @@ mod tests {
                 .key;
             let id = due.notification_id(&feeder);
             // Chosen while the file did not know it yet.
-            state.sweeping = vec![id];
+            state.sweeping = vec![SweepHold {
+                id,
+                since: Timestamp::now(),
+            }];
             change(dir.path(), |stored| *stored = state).await.unwrap();
 
             crate::api::alerts::confirm_notices(dir_name.clone(), KITCHEN.into(), vec![id], vec![])
@@ -850,6 +983,13 @@ mod tests {
             let due = || crate::api::alerts::notifications_offer_due(dir_name.clone());
             assert!(due().await.unwrap());
             assert!(due().await.unwrap(), "not until the request has run");
+            let refused = || crate::api::alerts::notifications_refused(dir_name.clone());
+            assert!(!refused().await.unwrap());
+            crate::api::alerts::note_notifications_refused(dir_name.clone())
+                .await
+                .unwrap();
+            assert!(refused().await.unwrap(), "kept for good on this install");
+
             crate::api::alerts::notifications_offered(dir_name.clone())
                 .await
                 .unwrap();

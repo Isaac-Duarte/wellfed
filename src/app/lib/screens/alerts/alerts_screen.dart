@@ -121,7 +121,7 @@ class _List extends StatelessWidget {
             alignment: AlignmentDirectional.centerStart,
             child: FilledButton(
               onPressed: () => unawaited(alerts.allowNotifications()),
-              child: const Text('Allow notifications'),
+              child: Text(notificationAskLabel(shown.notificationAsk)),
             ),
           ),
           const SizedBox(height: Space.s3),

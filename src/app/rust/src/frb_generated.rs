@@ -48,7 +48,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -802363851;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -301026685;
 
 // Section: executor
 
@@ -6134,6 +6134,43 @@ fn wire__crate__api__store__load_store_impl(
         },
     )
 }
+fn wire__crate__api__alerts__note_notifications_refused_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "note_notifications_refused",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::error::BridgeError>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::alerts::note_notifications_refused(api_dir).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__alerts__notifications_offer_due_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -6199,6 +6236,42 @@ fn wire__crate__api__alerts__notifications_offered_impl(
                 transform_result_sse::<_, crate::api::error::BridgeError>(
                     (move || async move {
                         let output_ok = crate::api::alerts::notifications_offered(api_dir).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__alerts__notifications_refused_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "notifications_refused",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::error::BridgeError>(
+                    (move || async move {
+                        let output_ok = crate::api::alerts::notifications_refused(api_dir).await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -13358,24 +13431,33 @@ fn pde_ffi_dispatcher_primary_impl(
         117 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
         120 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
         123 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
-        124 => wire__crate__api__alerts__notifications_offer_due_impl(
+        124 => wire__crate__api__alerts__note_notifications_refused_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        125 => {
+        125 => wire__crate__api__alerts__notifications_offer_due_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        126 => {
             wire__crate__api__alerts__notifications_offered_impl(port, ptr, rust_vec_len, data_len)
         }
-        126 => wire__crate__api__store__open_store_impl(port, ptr, rust_vec_len, data_len),
-        128 => wire__crate__api__alerts__pending_notices_impl(port, ptr, rust_vec_len, data_len),
-        129 => {
+        127 => {
+            wire__crate__api__alerts__notifications_refused_impl(port, ptr, rust_vec_len, data_len)
+        }
+        128 => wire__crate__api__store__open_store_impl(port, ptr, rust_vec_len, data_len),
+        130 => wire__crate__api__alerts__pending_notices_impl(port, ptr, rust_vec_len, data_len),
+        131 => {
             wire__crate__api__restore__read_restore_feeder_impl(port, ptr, rust_vec_len, data_len)
         }
-        130 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
-        131 => wire__crate__api__store__save_store_impl(port, ptr, rust_vec_len, data_len),
-        134 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
-        135 => wire__crate__api__feeder__settings_changes_default_impl(
+        132 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
+        133 => wire__crate__api__store__save_store_impl(port, ptr, rust_vec_len, data_len),
+        136 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
+        137 => wire__crate__api__feeder__settings_changes_default_impl(
             port,
             ptr,
             rust_vec_len,
@@ -13463,13 +13545,13 @@ fn pde_ffi_dispatcher_sync_impl(
         119 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
         121 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
         122 => wire__crate__api__install__kept_backups_impl(ptr, rust_vec_len, data_len),
-        127 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
-        132 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
-        133 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
-        136 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
-        137 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
-        138 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
-        139 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
+        129 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
+        134 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
+        135 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
+        138 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
+        139 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
+        140 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
+        141 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

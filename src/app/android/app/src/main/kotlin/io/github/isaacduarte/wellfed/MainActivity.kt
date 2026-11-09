@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -112,6 +113,7 @@ class MainActivity : FlutterActivity() {
                 "instant" -> result.success(KeepAliveService.setInstant(applicationContext, call.arguments == true))
                 "hold" -> result.success(KeepAliveService.hold(applicationContext, call.arguments as? String))
                 "instantRunning" -> result.success(KeepAliveService.instantRunning())
+                "sdk" -> result.success(Build.VERSION.SDK_INT)
                 "notificationSettings" -> {
                     openNotificationSettings()
                     result.success(null)

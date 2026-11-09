@@ -268,25 +268,7 @@ pub async fn confirm_notices(
 ) -> Result<Vec<i32>, BridgeError> {
     let feeder = identity_of(&identity)?;
     alerts::change(Path::new(&dir), |state| {
-        let sweeping = state.sweeping.clone();
-        let Some(watched) = state.watched_mut(&identity) else {
-            return posted;
-        };
-        let watch = &mut watched.watch;
-        for change in watch.changes() {
-            let made = match &change {
-                // The sweep may take it down after it went up.
-                Change::Post(tracked) => {
-                    let id = tracked.key.notification_id(&feeder);
-                    posted.contains(&id) && !sweeping.contains(&id)
-                }
-                Change::Remove(key) => removed.contains(&key.notification_id(&feeder)),
-            };
-            if made {
-                watch.confirm(&change);
-            }
-        }
-        Vec::new()
+        state.confirm(&identity, &feeder, (&posted, &removed), Timestamp::now())
     })
     .await
 }
@@ -361,6 +343,17 @@ pub async fn alert_settings(dir: String) -> Result<AlertSettingsView, BridgeErro
 /// are the owner's, from the alert screens.
 pub async fn notifications_offer_due(dir: String) -> Result<bool, BridgeError> {
     Ok(!alerts::read(Path::new(&dir)).await?.settings.asked)
+}
+
+/// Whether Android has refused a request to post on this install: then the
+/// app opens Android's notification settings rather than ask again.
+pub async fn notifications_refused(dir: String) -> Result<bool, BridgeError> {
+    Ok(alerts::read(Path::new(&dir)).await?.settings.refused)
+}
+
+/// Android refused a request to post.
+pub async fn note_notifications_refused(dir: String) -> Result<(), BridgeError> {
+    alerts::change(Path::new(&dir), |state| state.settings.refused = true).await
 }
 
 /// The app asked Android, unprompted: it does not again.
@@ -494,12 +487,7 @@ pub async fn alerts_to_sweep(dir: String, showing: Vec<i32>) -> Result<Vec<i32>,
             .into_iter()
             .filter(|id| !known.contains(id))
             .collect();
-        // Another engine's sweep may be under way: its ids stay held too.
-        for id in &stale {
-            if !state.sweeping.contains(id) {
-                state.sweeping.push(*id);
-            }
-        }
+        state.hold_sweep(&stale, Timestamp::now());
         Ok(stale)
     })
     .await?
@@ -510,7 +498,7 @@ pub async fn alerts_to_sweep(dir: String, showing: Vec<i32>) -> Result<Vec<i32>,
 pub async fn alerts_swept(dir: String, taken_off: Vec<i32>) -> Result<(), BridgeError> {
     alerts::change(Path::new(&dir), |state| {
         state.sweep = false;
-        state.sweeping.retain(|id| !taken_off.contains(id));
+        state.release_sweep(&taken_off);
     })
     .await
 }

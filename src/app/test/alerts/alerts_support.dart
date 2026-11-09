@@ -135,9 +135,24 @@ class FakeAlertPorts implements AlertPorts {
   @override
   bool asking = false;
 
+  /// What the button does, and whether a request is granted.
+  NotificationAsk ask = NotificationAsk.request;
+  bool grants = true;
+  int openedSettings = 0;
+
+  @override
+  Future<NotificationAsk> notificationAsk() async => ask;
+
   @override
   Future<bool> askForNotifications(List<KnownFeeder> feeders) async {
-    asked.add(feeders);
-    return allowed = true;
+    switch (ask) {
+      case NotificationAsk.openSettings:
+        openedSettings++;
+        return false;
+      case NotificationAsk.request:
+        asked.add(feeders);
+        if (!grants) ask = NotificationAsk.openSettings;
+        return allowed = grants;
+    }
   }
 }

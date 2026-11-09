@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/platform/alert_ports.dart';
 import 'package:wellfed/screens/alerts/alert_settings_screen.dart';
 import 'package:wellfed/screens/alerts/alerts_screen.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
@@ -133,6 +134,25 @@ void main() {
       await settle(tester);
       expect(find.textContaining('Notifications are off.', findRichText: true), findsNothing);
       expect(ports.postedOpen.single.single.identity, 'ab');
+    });
+
+    testWidgets('a refused request turns the button to the settings, which it opens without asking', (tester) async {
+      final ports = FakeAlertPorts()
+        ..notices = [failedMeal()]
+        ..allowed = false
+        ..grants = false;
+      await _showAlerts(tester, ports);
+
+      await tester.tap(find.text('Allow notifications'));
+      await settle(tester);
+      expect(ports.asked, hasLength(1));
+      expect(ports.openedSettings, 0, reason: "the owner's own answer, left where it was");
+      expect(find.textContaining('Notifications are off.', findRichText: true), findsOneWidget);
+
+      await tester.tap(find.text('Open notification settings'));
+      await settle(tester);
+      expect(ports.openedSettings, 1);
+      expect(ports.asked, hasLength(1), reason: 'never asks again');
     });
 
     testWidgets('nothing wrong, and alerts too new for this app, say so', (tester) async {
@@ -275,6 +295,18 @@ void main() {
       expect(ports.mutedLevels, {AlertLevel.security});
       await tester.scrollUntilVisible(find.text('Off with Security'), 100);
       expect(find.text('Off with Security'), findsOneWidget);
+    });
+
+    testWidgets("below Android 13, or once refused, the settings page opens Android's settings", (tester) async {
+      final ports = FakeAlertPorts()
+        ..allowed = false
+        ..ask = NotificationAsk.openSettings;
+      await _showSettings(tester, ports);
+      expect(find.text('Allow notifications'), findsNothing);
+      await tester.tap(find.text('Open notification settings'));
+      await settle(tester);
+      expect(ports.openedSettings, 1);
+      expect(ports.asked, isEmpty);
     });
 
     for (final Brightness brightness in Brightness.values) {

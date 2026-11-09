@@ -26,6 +26,7 @@ final class AlertsShown extends AlertsState {
     required this.unread,
     required this.reachedMs,
     required this.notificationsAllowed,
+    required this.notificationAsk,
     this.checking = false,
     this.problem,
   }) : notices = List.unmodifiable(notices);
@@ -42,6 +43,9 @@ final class AlertsShown extends AlertsState {
   /// Android lets this app post: without it, alerts only list here.
   final bool notificationsAllowed;
 
+  /// What the button does while they are off.
+  final NotificationAsk notificationAsk;
+
   /// A catch-up runs now.
   final bool checking;
 
@@ -54,6 +58,7 @@ final class AlertsShown extends AlertsState {
     unread: unread,
     reachedMs: reachedMs,
     notificationsAllowed: notificationsAllowed,
+    notificationAsk: notificationAsk,
     checking: checking,
     problem: problem,
   );
@@ -93,6 +98,7 @@ class FeederAlertsController extends ChangeNotifier {
         unread: found.unread,
         reachedMs: found.reachedMs,
         notificationsAllowed: await _ports.notificationsAllowed(),
+        notificationAsk: await _ports.notificationAsk(),
       );
     } on BridgeError catch (error) {
       next = AlertsFailed(error.message);
@@ -121,7 +127,8 @@ class FeederAlertsController extends ChangeNotifier {
     }
   }
 
-  /// Ask Android to let alerts through; this feeder's alerts still open are
+  /// Ask Android to let alerts through, or open its settings, as
+  /// [AlertsShown.notificationAsk] says; this feeder's alerts still open are
   /// posted once it does.
   Future<void> allowNotifications() async {
     String? problem;

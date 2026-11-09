@@ -30,7 +30,8 @@
           "security"
         ]
       },
-      "asked": true
+      "asked": true,
+      "refused": true
     },
     "feeders": [
       {
@@ -1771,7 +1772,10 @@
     },
     "sweep": true,
     "sweeping": [
-      1073744572
+      {
+        "id": 1073744572,
+        "since": "2027-01-15T08:01:10Z"
+      }
     ]
   }
 }
