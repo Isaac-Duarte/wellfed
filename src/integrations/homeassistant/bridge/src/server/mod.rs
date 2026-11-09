@@ -345,8 +345,10 @@ impl<'a> Session<'a> {
         }
         self.backlog(&detail).await?;
         self.recheck().await?;
-        self.state()?;
+        // Before the state: once it is out, the session takes writes, and
+        // one sent while this read waited would be refused unsent.
         self.read_alerts().await?;
+        self.state()?;
         Ok(stream)
     }
 
