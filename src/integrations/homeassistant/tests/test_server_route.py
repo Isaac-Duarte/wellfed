@@ -1,7 +1,9 @@
 """The server route against the owner's server in front of a simulated
 feeder (simulation, not hardware): setup by sign-in, a feed through the
-server, the same entities on both routes when an entry switches, reauth
-after a revoked token, and setup's refusals."""
+server, the same entities on both routes when an entry switches with no
+reauth on the way, reauth after a revoked token, setup's refusals, a plain
+`http://` address confirmed first, and a token revoked whenever a flow
+ends without keeping it."""
 
 from __future__ import annotations
 
@@ -92,6 +94,25 @@ async def _direct_entry(hass: HomeAssistant, simulator: Simulator) -> ConfigEntr
     return entry
 
 
+def _reauth_flows(hass: HomeAssistant) -> list[str]:
+    return [
+        flow["flow_id"]
+        for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+        if flow["context"].get("source") == SOURCE_REAUTH
+    ]
+
+
+async def _at_picker(hass: HomeAssistant, server: Server) -> str:
+    """A setup flow signed in and showing the server's feeders: its id."""
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "server"}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], _sign_in(server))
+    assert result["step_id"] == "server_feeder"
+    return str(result["flow_id"])
+
+
 def _unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
     registry = er.async_get(hass)
     return {e.unique_id for e in er.async_entries_for_config_entry(registry, entry.entry_id)}
@@ -157,6 +178,10 @@ async def test_switching_routes_keeps_the_entities_and_drops_the_old_route(
     # The server, an owner on the feeder, removed the key held directly.
     assert old_key not in simulator.owner("clients")
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"leftover_key_{entry.unique_id}") is None
+    # The direct session stopped first, so its key's removal started no reauth.
+    await asyncio.sleep(3)
+    await hass.async_block_till_done()
+    assert _reauth_flows(hass) == []
 
     await _reconfigure(
         hass,
@@ -187,11 +212,7 @@ async def test_a_revoked_token_asks_to_sign_in_again(
     assert raised.value.translation_key == "not_sent_stopped"
 
     def reauth_flows() -> list[str]:
-        return [
-            flow["flow_id"]
-            for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
-            if flow["context"].get("source") == SOURCE_REAUTH
-        ]
+        return _reauth_flows(hass)
 
     await _until(hass, lambda: len(reauth_flows()) == 1)
     assert entry.runtime_data.token_refused
@@ -242,3 +263,50 @@ async def test_setup_refuses_a_viewer_a_wrong_address_and_a_server_with_no_feede
     assert empty["reason"] == "no_feeders"
     # Neither left a token behind.
     assert server.call("GET", "/tokens") == []
+
+
+async def test_a_flow_closed_or_refused_at_the_feeder_picker_revokes_its_token(
+    hass: HomeAssistant, simulator: Simulator, server: Server
+) -> None:
+    server.adopt(simulator)
+    closed = await _at_picker(hass, server)
+    hass.config_entries.flow.async_abort(closed)
+    await _until(hass, lambda: server.call("GET", "/tokens") == [])
+
+    # Two flows reach the picker; the first sets the feeder up, and the
+    # second, picking it too, is refused with its token revoked.
+    first = await _at_picker(hass, server)
+    second = await _at_picker(hass, server)
+    feeder = server.call("GET", "/feeders")[0]["id"]
+    result = await hass.config_entries.flow.async_configure(first, {CONF_FEEDER: feeder})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    result = await hass.config_entries.flow.async_configure(second, {CONF_FEEDER: feeder})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    await hass.async_block_till_done()
+    entry: ConfigEntry = hass.config_entries.async_entries(DOMAIN)[0]
+    tokens = server.call("GET", "/tokens")
+    assert [token["id"] for token in tokens] == [entry.data[CONF_TOKEN_ID]]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_plain_http_address_off_this_host_is_confirmed_first(
+    hass: HomeAssistant, server: Server
+) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "server"}
+    )
+    away = {**_sign_in(server), CONF_URL: "http://wellfed.invalid:9"}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], away)
+    assert result["step_id"] == "plain_http"
+    assert result["description_placeholders"] == {CONF_URL: "http://wellfed.invalid:9"}
+
+    # Confirmed, the sign-in goes on with what was typed.
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["step_id"] == "server"
+    assert result["errors"] == {"base": "server_unreachable"}
+    hass.config_entries.flow.async_abort(result["flow_id"])
+
+    # This host's own address on plain `http://` needs no confirmation.
+    assert server.url.startswith("http://127.0.0.1")

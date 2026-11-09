@@ -1,7 +1,8 @@
+from _typeshed import SupportsGetItem
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["AccountRole", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
+__all__ = ["AccountRole", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
 
 @final
 class AccountRole:
@@ -307,7 +308,11 @@ class Feeder:
     """
     One feeder's session, on a thread of its own until this is dropped.
     """
-    def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None) -> Feeder: ...
+    def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None, pending: SupportsGetItem[int, Pending] = ..., answered: SupportsGetItem[int, SupportsIndex] = ...) -> Feeder:
+        """
+        `pending` and `answered` are what the last run left: the feeds
+        still unsettled, and the feed numbers answered since the oldest.
+        """
     def cancel_feed(self, /, feed: SupportsIndex) -> Written:
         """
         Stop the feed the feeder numbered `feed`, if it still runs.
@@ -336,11 +341,12 @@ class Feeder:
         Record a fresh desiccant pack today.
         """
     @staticmethod
-    def server(url: str, token: str, feeder_id: str, identity: bytes) -> Feeder:
+    def server(url: str, token: str, feeder_id: str, identity: bytes, pending: SupportsGetItem[int, Pending] = ...) -> Feeder:
         """
         The session to the feeder `feeder_id` on the owner's server at
         `url`, signed in with `token`; `identity` is the feeder's, and a
         feeder under that id with another one is never served as this one.
+        `pending` is what the last run left unsettled.
         """
     def set_lock(self, /, locked: bool) -> Written:
         """
@@ -491,6 +497,41 @@ class NotSent:
     def key(self, /) -> str:
         """
         The snake_case name: an entity's state and its translation key.
+        """
+
+@final
+class Pending:
+    """
+    A feed whose answer never came, until it is settled: what the
+    integration keeps across a restart, and hands back to the next session
+    so it is settled then.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None = None) -> Pending:
+        """
+        A pending feed as the integration kept it, to hand back to a new
+        session.
+        """
+    @property
+    def after(self, /) -> int | None:
+        """
+        Directly: the newest event known when it went out, which its `Fed`
+        comes after.
+        """
+    @property
+    def id(self, /) -> str:
+        """
+        Names it: through the owner's server, the idempotency key it went
+        under, which the server's journal answers by.
+        """
+    @property
+    def portions(self, /) -> int: ...
+    @property
+    def sent_ms(self, /) -> int:
+        """
+        When it went out, in Unix milliseconds: it is still unknown once
+        the settle window has passed since.
         """
 
 @final
@@ -958,8 +999,7 @@ class Update:
     @property
     def feed(self, /) -> Feed | None:
         """
-        For [`UpdateKind::Settled`]: the feed whose answer never came;
-        `None` when the server's journal found it refused, so nothing ran.
+        For [`UpdateKind::Settled`]: the feed whose answer never came.
         """
     @property
     def gap_from(self, /) -> int | None:
@@ -971,6 +1011,12 @@ class Update:
     def gap_to(self, /) -> int | None: ...
     @property
     def kind(self, /) -> UpdateKind: ...
+    @property
+    def pending(self, /) -> Pending | None:
+        """
+        For [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`] and
+        [`UpdateKind::StillUnknown`]: the pending feed it accounts for.
+        """
     @property
     def portions(self, /) -> int | None:
         """
@@ -1031,7 +1077,13 @@ class UpdateKind:
     """
     Settled: Final[UpdateKind]
     """
-    A feed whose answer never came has its `Fed` event.
+    A feed whose answer never came ran: its `Fed` event, or the
+    server's journal, says how.
+    """
+    SettledUnfed: Final[UpdateKind]
+    """
+    A feed whose answer never came did not run: the feeder refused
+    it, as the server's journal learned.
     """
     State: Final[UpdateKind]
     """
@@ -1119,6 +1171,11 @@ class Written:
         Why it never went out, for [`WriteResult::NotSent`].
         """
     @property
+    def pending(self, /) -> Pending | None:
+        """
+        For an uncertain feed: what to keep until an update settles it.
+        """
+    @property
     def refusal(self, /) -> RefusalKind | None:
         """
         Why it refused, for [`WriteResult::Refused`].
@@ -1146,6 +1203,13 @@ def join(secret: bytes, invite: str, label: str, address: str | None = None) -> 
 def public_key(secret: bytes) -> bytes:
     """
     The public key of `secret`, as the feeder lists this client.
+    """
+
+def server_client_listed(url: str, token: str, feeder_id: str, key: bytes) -> bool | None:
+    """
+    Whether the feeder `feeder_id` still lists the client key `key`, as the
+    server reads it now; `None` when the server cannot say (the feeder is
+    offline, or the account may not list its clients).
     """
 
 def server_feeders(url: str, token: str) -> list[ServerFeeder]:

@@ -46,17 +46,17 @@ The invite works once. If pairing fails, make a new one rather than trying the o
 ## Set it up through your server
 
 1. In Home Assistant, open **Settings**, **Devices & services**, choose **Add integration**, search for Wellfed, and choose **Through my Wellfed server**.
-2. Give the server's address, such as `http://192.168.1.20:8080`, and the name and password of an owner or member account. Home Assistant uses the password once: it gets a token of its own, which the server lists as `home-assistant`, and keeps only that. A viewer account is refused, since it can't change anything.
+2. Give the server's address, such as `https://wellfed.example.com`, and the name and password of an owner or member account. Home Assistant uses the password once: it gets a token of its own, which the server lists as `home-assistant`, and keeps only that. A viewer account is refused, since it can't change anything.
 3. Choose the feeder. You should see the feeder's device with its entities. Add each further feeder the same way: each is its own entry.
 
 > [!NOTE]
-> Home Assistant checks the server's certificate against the certificates its own system trusts. A server with a self-signed certificate is refused unless its certificate authority is installed on the Home Assistant host. Plain `http://` works on your own network, but the token then crosses it unencrypted.
+> Home Assistant checks the server's certificate against the certificates its own system trusts. A server with a self-signed certificate is refused unless its certificate authority is installed on the Home Assistant host. Plain `http://` works, but the password and the token then cross your network unencrypted, so Home Assistant asks you to confirm such an address unless the server runs on the Home Assistant host itself.
 
 ## Switch to the other route
 
 Choose **Reconfigure** on the feeder's entry, then the route you want. The entities, their history and your automations stay as they are.
 
-- **To your server:** sign in as in [Set it up through your server](#set-it-up-through-your-server). The feeder must already be adopted there. Home Assistant asks the server to remove the key it held on the feeder directly. A member can't remove its own key, so if the server can't either, a repair asks you to remove `home-assistant` from the feeder's people in the app.
+- **To your server:** sign in as in [Set it up through your server](#set-it-up-through-your-server). The feeder must already be adopted there. Home Assistant asks the server to remove the key it held on the feeder directly. A member can't remove its own key, so if the server can't either, a repair asks you to remove `home-assistant` from the feeder's people in the app. The repair clears once the server no longer sees the key on the feeder.
 - **Directly:** paste a member invite for the feeder. Home Assistant revokes its token on the server.
 
 ## What you get
@@ -78,6 +78,8 @@ Every state comes from the feeder itself, never from the last button you pressed
 | **Portion weight** | What one portion weighs, 1 to 50 g, for portions counted in grams. |
 
 The **wellfed.feed** action feeds a feeder from an automation and answers the feeder's number for the feed. **wellfed.cancel_feed** stops a feed. Every event the feeder records also fires `wellfed_event`, which an automation can trigger on.
+
+Through the server, Home Assistant can do what its account can. If the account is made a viewer, the buttons, switches and numbers that change the feeder are hidden and unavailable, and they come back, with their history, once the account can change things again.
 
 ### Example: feed at sunrise on weekends
 
@@ -103,6 +105,8 @@ For meals at fixed times, use the feeder's own meal plans instead. They run on t
 
 The feeder pushes each event as it happens, directly or through the server's event stream, and Home Assistant reads the feeder's status again every 30 seconds. When the connection drops, it reconnects every 10 seconds and catches up on the events it missed, so a feed that ended meanwhile still shows. Through the server, the feeder shows as disconnected while the server can't reach it.
 
+Catching up brings the entities up to date, not your automations: the events it reads back don't fire `wellfed_event` again. That is on purpose, so an automation never runs on something that happened hours ago. A button pressed while Home Assistant is still connecting, or one that waits more than a few seconds behind another change, isn't sent: you get an error, and you can press it again.
+
 It supports the PETLIBRO Granary PLAF103 running Wellfed, the one feeder Wellfed runs on ([supported devices](../devices/README.md)). It does not work with the vendor's firmware.
 
 Known limits:
@@ -116,7 +120,7 @@ Known limits:
 
 ## When a feed's answer is lost
 
-Home Assistant sends a feed once and never sends it again on its own, on either route. If the answer doesn't arrive, you get an error that says the feed may have run, and a repair appears under **Settings**, **Repairs**. It clears itself once the feeder's history shows the feed, or, through the server, once the server learns the feeder refused it. If the history holds no record of it, the repair says so: check the bowl before you feed again.
+Home Assistant sends a feed once and never sends it again on its own, on either route. If the answer doesn't arrive, you get an error that says the feed may have run, and a repair appears under **Settings**, **Repairs**. It clears itself once the feeder's history shows the feed, or, through the server, once the server learns how it ended, even if Home Assistant restarts in between. If the history holds no record of it, the repair says so: check the bowl before you feed again.
 
 ## Firmware updates
 
@@ -124,12 +128,13 @@ Home Assistant doesn't install firmware: that takes an owner, and Home Assistant
 
 ## Remove it
 
-1. In **Devices & services**, open Wellfed, and **Delete** the feeder's entry. Through the server, this revokes Home Assistant's token there.
+1. In **Devices & services**, open Wellfed, and **Delete** the feeder's entry. Through the server, this tries to revoke Home Assistant's token there. If the server can't be reached, a repair names the token's id: revoke it in the app or with the CLI.
 2. Directly: on the app or with `wellfed clients`, find Home Assistant's key (listed as `home-assistant`) and revoke it. Deleting the entry doesn't remove the key from the feeder.
 3. Optionally remove the integration in HACS.
 
 ## Common mistakes
 
+- **"Migration failed" on an entry.** The entry was made by an early test build, before the two routes. It can't be carried over: delete the entry and pair the feeder again.
 - **The invite ran out.** An invite lasts 10 minutes, and works once. Make a new one.
 - **Home Assistant doesn't find the feeder.** Discovery uses mDNS, which doesn't cross a Docker bridge network. Run Home Assistant with host networking, or give the feeder's IP address when you pair. If the feeder's address changes, choose **Reconfigure** on its entry.
 - **"The feeder no longer knows this Home Assistant".** Its key was revoked. Home Assistant asks you to pair again: make a new invite and paste it.
@@ -152,3 +157,4 @@ Home Assistant doesn't install firmware: that takes an owner, and Home Assistant
 - **Observed, November 3, 2026.** On one research feeder, Home Assistant paired again after its key was revoked, and fed once from its Feed button.
 - **Modeled, November 2026.** Pairing, discovery, every entity and action, repairs, re-pairing and refusing an owner invite ran against the simulated feeder, which runs the feeder's own pairing, stores and feeding code. The [roadmap](../roadmap.md) tracks what has run on a real feeder.
 - **Modeled, November 2026.** The server route ran against the Wellfed server in front of the simulated feeder: setup by sign-in, a feed, switching routes both ways with the same entity ids, signing in again after a revoked token, and refusing a viewer. A feed whose answer was lost was reported uncertain, sent once, and settled from the server's journal. Simulation only; it has not run on a real feeder or a Home Assistant host.
+- **Modeled, November 2026.** A lost feed kept across a Home Assistant restart was settled afterwards on both routes, and a token or key left behind was named in a repair that clears itself. Simulation only.

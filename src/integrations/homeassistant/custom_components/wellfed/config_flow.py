@@ -16,17 +16,30 @@ Either way the entry is one feeder, named by its identity key, so its
 entities and their history are the same on both routes. Reauth asks for a
 new invite (direct) or a new sign-in (server); reconfigure changes the
 address, or moves the entry to the other route.
+
+A token this flow made is revoked whenever the flow ends without an entry
+keeping it: refused, aborted, or closed at any step. A server address on
+plain `http://` beyond this host is confirmed first, since the token would
+cross the network unencrypted.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from ipaddress import ip_address
 import logging
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigEntryState,
+    ConfigFlow,
+    ConfigFlowResult,
+)
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.selector import (
     SelectOptionDict,
@@ -54,10 +67,12 @@ from .const import (
     CONF_TOKEN_ID,
     CONF_URL,
     DOMAIN,
+    LEFTOVER_KEY_ISSUE,
     ROUTE_DIRECT,
     ROUTE_SERVER,
 )
-from .session import forget_token
+from .kept import kept
+from .session import forget_token, token_left
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,10 +85,6 @@ SIGN_IN_SCHEMA = probatio.Schema(
 
 # The identity a feeder advertises: its key, 64 hex digits.
 KEY = re.compile(r"^[0-9a-fA-F]{64}$")
-
-# The repair raised when the key of an entry moved to the server route
-# could not be removed from the feeder.
-LEFTOVER_KEY_ISSUE = "leftover_key"
 
 
 class NotMember(Exception):
@@ -100,6 +111,21 @@ def _invite_feeder(invite: str) -> bytes | None:
         return bridge.invite_feeder(invite)
     except bridge.WellfedError:
         return None
+
+
+def _plain_http(url: str) -> bool:
+    """Whether `url` would carry the token unencrypted across the network:
+    plain `http://` to anything but this host."""
+    parts = urlsplit(url)
+    if parts.scheme != "http":
+        return False
+    host = parts.hostname or ""
+    if host == "localhost":
+        return False
+    try:
+        return not ip_address(host).is_loopback
+    except ValueError:
+        return True
 
 
 def _server_schema(url: str = "") -> probatio.Schema:
@@ -131,7 +157,7 @@ def _server_data(url: str, login: bridge.Login, feeder: bridge.ServerFeeder) -> 
 class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up one feeder, directly or through the owner's server."""
 
-    VERSION = 1
+    VERSION = 2
     MINOR_VERSION = 1
 
     def __init__(self) -> None:
@@ -140,6 +166,16 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         self._url = ""
         self._login: bridge.Login | None = None
         self._feeders: list[bridge.ServerFeeder] = []
+        # A sign-in held while a plain `http://` address is confirmed, the
+        # step it came from, and the address confirmed.
+        self._held: dict[str, Any] = {}
+        self._held_step = ""
+        self._confirmed = ""
+
+    def async_remove(self) -> None:
+        """The flow ended: a token it made and no entry kept is revoked."""
+        if self._login is not None:
+            self.hass.async_create_task(self._drop_login(), eager_start=False)
 
     # Setup.
 
@@ -168,12 +204,39 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             url = user_input[CONF_URL].strip().rstrip("/")
+            if self._unconfirmed(url, user_input, "server"):
+                return await self.async_step_plain_http()
             if await self._sign_in(url, user_input, errors):
                 return await self.async_step_server_feeder()
 
         return self.async_show_form(
             step_id="server", data_schema=_server_schema(self._url), errors=errors
         )
+
+    async def async_step_plain_http(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm a server address on plain `http://`: the password and the
+        token would cross the network unencrypted."""
+        if user_input is not None:
+            self._confirmed = self._url
+            held, self._held = self._held, {}
+            if self._held_step == "reconfigure_server":
+                return await self.async_step_reconfigure_server(held)
+            return await self.async_step_server(held)
+        return self.async_show_form(
+            step_id="plain_http", description_placeholders={CONF_URL: self._url}
+        )
+
+    def _unconfirmed(self, url: str, user_input: dict[str, Any], step: str) -> bool:
+        """Whether `url` is plain `http://` and not confirmed yet; if so the
+        sign-in is held for after the confirmation."""
+        self._url = url
+        if not _plain_http(url) or self._confirmed == url:
+            return False
+        self._held = dict(user_input)
+        self._held_step = step
+        return True
 
     async def async_step_server_feeder(
         self, user_input: dict[str, Any] | None = None
@@ -183,8 +246,13 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             feeder = next(f for f in self._feeders if f.id == user_input[CONF_FEEDER])
             await self.async_set_unique_id(feeder.identity.hex())
-            self._abort_if_unique_id_configured()
-            return self._entry(feeder.identity, _server_data(self._url, self._login, feeder))
+            try:
+                self._abort_if_unique_id_configured()
+            except AbortFlow:
+                # Revoked before the flow ends, not left to its removal.
+                await self._drop_login()
+                raise
+            return self._entry(feeder.identity, _server_data(self._url, self._keep_login(), feeder))
 
         configured = {entry.unique_id for entry in self._async_current_entries()}
         self._feeders = [f for f in self._feeders if f.identity.hex() not in configured]
@@ -245,6 +313,8 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
     # Reauth: a new invite directly, a new sign-in through the server.
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        if CONF_ROUTE not in entry_data:
+            return self.async_abort(reason="pair_again")
         if entry_data[CONF_ROUTE] == ROUTE_SERVER:
             return await self.async_step_reauth_server()
         return await self.async_step_reauth_confirm()
@@ -274,11 +344,10 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         entry = self._get_reauth_entry()
         errors: dict[str, str] = {}
         if user_input is not None and await self._sign_in(entry.data[CONF_URL], user_input, errors):
-            assert self._login is not None
             feeder = self._serves(entry)
             if feeder is not None:
                 return self.async_update_reload_and_abort(
-                    entry, data=_server_data(self._url, self._login, feeder)
+                    entry, data=_server_data(self._url, self._keep_login(), feeder)
                 )
             await self._drop_login()
             errors["base"] = "not_on_server"
@@ -296,6 +365,8 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         entry = self._get_reconfigure_entry()
+        if CONF_ROUTE not in entry.data:
+            return self.async_abort(reason="pair_again")
         if entry.data[CONF_ROUTE] == ROUTE_SERVER:
             options = ["reconfigure_server", "reconfigure_direct"]
         else:
@@ -323,8 +394,9 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             url = user_input[CONF_URL].strip().rstrip("/")
+            if self._unconfirmed(url, user_input, "reconfigure_server"):
+                return await self.async_step_plain_http()
             if await self._sign_in(url, user_input, errors):
-                assert self._login is not None
                 feeder = self._serves(entry)
                 if feeder is not None:
                     return await self._moved_to_server(entry, feeder)
@@ -347,7 +419,10 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             joined = await self._rejoin(entry, user_input, address, errors)
             if joined is not None:
                 secret, identity = joined
-                await self.hass.async_add_executor_job(forget_token, dict(entry.data))
+                await self._forget(dict(entry.data))
+                # Back on the direct route: no key is left over.
+                kept(self.hass, entry.entry_id).set_leftover_key(None)
+                ir.async_delete_issue(self.hass, DOMAIN, f"{LEFTOVER_KEY_ISSUE}_{identity.hex()}")
                 return self.async_update_reload_and_abort(
                     entry, data=_direct_data(secret, identity, address)
                 )
@@ -360,18 +435,27 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         self, entry: ConfigEntry, feeder: bridge.ServerFeeder
     ) -> ConfigFlowResult:
         """Write the server route over `entry`, and drop what the old route held."""
-        assert self._login is not None
+        login = self._keep_login()
         old = dict(entry.data)
         if old[CONF_ROUTE] == ROUTE_SERVER:
-            await self.hass.async_add_executor_job(forget_token, old)
+            await self._forget(old)
         else:
+            # The direct session stops first: the key it holds is about to
+            # go, and its refusal must not start a reauth.
+            if entry.state is ConfigEntryState.LOADED:
+                session = entry.runtime_data
+                session.on_revoked = None
+                await self.hass.async_add_executor_job(session.stop)
             # A member may not remove its own key, so the server removes it
             # when it can (an owner's account, on a server the feeder made
             # an owner); otherwise the owner removes it in the app.
             public = bridge.public_key(bytes.fromhex(old[CONF_SECRET]))
             removed = await self.hass.async_add_executor_job(
-                bridge.server_revoke_client, self._url, self._login.token, feeder.id, public
+                bridge.server_revoke_client, self._url, login.token, feeder.id, public
             )
+            store = kept(self.hass, entry.entry_id)
+            await store.load()
+            store.set_leftover_key(None if removed else public)
             if not removed:
                 ir.async_create_issue(
                     self.hass,
@@ -387,7 +471,7 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
                     },
                 )
         return self.async_update_reload_and_abort(
-            entry, data=_server_data(self._url, self._login, feeder)
+            entry, data=_server_data(self._url, login, feeder)
         )
 
     # Shared steps.
@@ -448,11 +532,23 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         """The server's feeder that is `entry`'s, by its identity."""
         return next((f for f in self._feeders if f.identity.hex() == entry.unique_id), None)
 
+    def _keep_login(self) -> bridge.Login:
+        """Hand the sign-in to the entry being written: the flow's end no
+        longer revokes it."""
+        login, self._login = self._login, None
+        assert login is not None
+        return login
+
     async def _drop_login(self) -> None:
         """Revoke a token this flow made and will not keep."""
         login, self._login = self._login, None
         if login is not None:
-            await self.hass.async_add_executor_job(
-                forget_token,
-                {CONF_URL: self._url, CONF_TOKEN: login.token, CONF_TOKEN_ID: login.token_id},
+            await self._forget(
+                {CONF_URL: self._url, CONF_TOKEN: login.token, CONF_TOKEN_ID: login.token_id}
             )
+
+    async def _forget(self, data: Mapping[str, Any]) -> None:
+        """Revoke a token; one the server could not revoke now is named in a
+        repair for the owner."""
+        if not await self.hass.async_add_executor_job(forget_token, data):
+            token_left(self.hass, data[CONF_URL], data[CONF_TOKEN_ID])

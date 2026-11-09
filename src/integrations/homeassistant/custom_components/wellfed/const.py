@@ -4,7 +4,8 @@ from typing import Final
 
 DOMAIN: Final = "wellfed"
 
-# Version 1 of the entry's data: `route` and `identity` on both routes,
+# Version 2 of the entry's data (version 1 had no routes, and is not
+# migrated): `route` and `identity` on both routes,
 # then `secret` and `address` directly, or `url`, `token`, `token_id` and
 # `feeder_id` through the owner's server.
 CONF_ROUTE: Final = "route"
@@ -31,6 +32,12 @@ CLIENT_LABEL: Final = "home-assistant"
 
 # Fired on the bus for every event the feeder records as it happens.
 EVENT_FEEDER: Final = "wellfed_event"
+
+# Repairs that outlive an entry or a route: a client key a move to the
+# server route could not remove, and a token a deleted entry could not
+# revoke.
+LEFTOVER_KEY_ISSUE: Final = "leftover_key"
+TOKEN_LEFT_ISSUE: Final = "token_left"
 
 SERVICE_FEED: Final = "feed"
 SERVICE_CANCEL_FEED: Final = "cancel_feed"

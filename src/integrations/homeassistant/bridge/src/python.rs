@@ -12,8 +12,8 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::FeederSettingsPatch;
 
-use crate::api::{ServerProblem, Tune, Update, Written};
-use crate::feeder::{self, Clocks, Target};
+use crate::api::{Pending, ServerProblem, Tune, Update, Written};
+use crate::feeder::{self, Carried, Clocks, Target};
 use crate::key::{self, ClientKey, Joined, bytes32};
 use crate::server::{self, Login, ServerFeeder};
 
@@ -142,10 +142,41 @@ fn server_revoke_client(
     Ok(py.detach(|| block_on(server::revoke_client(url, token, feeder_id, key)).is_ok()))
 }
 
+/// Whether the feeder `feeder_id` still lists the client key `key`, as the
+/// server reads it now; `None` when the server cannot say (the feeder is
+/// offline, or the account may not list its clients).
+#[pyfunction]
+fn server_client_listed(
+    py: Python<'_>,
+    url: &str,
+    token: &str,
+    feeder_id: &str,
+    key: &[u8],
+) -> PyResult<Option<bool>> {
+    let key = bytes32(key, Error::KeyLength)?;
+    Ok(py.detach(|| block_on(server::client_listed(url, token, feeder_id, key)).ok()))
+}
+
 /// Revoke the token `token_id` with itself.
 #[pyfunction]
 fn server_revoke_token(py: Python<'_>, url: &str, token: &str, token_id: &str) -> PyResult<()> {
     py.detach(|| block_on(server::revoke_token(url, token, token_id)))
+}
+
+#[pymethods]
+impl Pending {
+    /// A pending feed as the integration kept it, to hand back to a new
+    /// session.
+    #[new]
+    #[pyo3(signature = (id, portions, sent_ms, after=None))]
+    fn new(id: String, portions: u8, sent_ms: i64, after: Option<u64>) -> Self {
+        Self {
+            id,
+            portions,
+            sent_ms,
+            after,
+        }
+    }
 }
 
 /// One feeder's session, on a thread of its own until this is dropped.
@@ -154,23 +185,40 @@ struct Feeder(feeder::Feeder);
 
 #[pymethods]
 impl Feeder {
+    /// `pending` and `answered` are what the last run left: the feeds
+    /// still unsettled, and the feed numbers answered since the oldest.
     #[new]
-    #[pyo3(signature = (secret, identity, address=None))]
-    fn new(secret: &[u8], identity: &[u8], address: Option<String>) -> PyResult<Self> {
+    #[pyo3(signature = (secret, identity, address=None, pending=Vec::new(), answered=Vec::new()))]
+    fn new(
+        secret: &[u8],
+        identity: &[u8],
+        address: Option<String>,
+        pending: Vec<Pending>,
+        answered: Vec<u32>,
+    ) -> PyResult<Self> {
         let key = ClientKey::restore(secret)?;
         let identity = bytes32(identity, Error::IdentityLength)?;
         Ok(Self(feeder::Feeder::start(
             key,
             Target { identity, address },
             Clocks::DEFAULT,
+            Carried { pending, answered },
         )?))
     }
 
     /// The session to the feeder `feeder_id` on the owner's server at
     /// `url`, signed in with `token`; `identity` is the feeder's, and a
     /// feeder under that id with another one is never served as this one.
+    /// `pending` is what the last run left unsettled.
     #[staticmethod]
-    fn server(url: &str, token: String, feeder_id: &str, identity: &[u8]) -> PyResult<Self> {
+    #[pyo3(signature = (url, token, feeder_id, identity, pending=Vec::new()))]
+    fn server(
+        url: &str,
+        token: String,
+        feeder_id: &str,
+        identity: &[u8],
+        pending: Vec<Pending>,
+    ) -> PyResult<Self> {
         let target = server::Target {
             url: server::address(url)?,
             token,
@@ -180,6 +228,7 @@ impl Feeder {
         Ok(Self(feeder::Feeder::start_server(
             target,
             server::Clocks::DEFAULT,
+            pending,
         )?))
     }
 
@@ -257,12 +306,13 @@ mod wellfed_homeassistant {
     #[pymodule_export]
     use super::{
         Feeder, ServerRefused, WellfedError, generate_secret, invite_feeder, join, public_key,
-        server_feeders, server_login, server_revoke_client, server_revoke_token,
+        server_client_listed, server_feeders, server_login, server_revoke_client,
+        server_revoke_token,
     };
     #[pymodule_export]
     use crate::api::{
         AccountRole, By, Capabilities, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason,
-        FoodLevel, NextMeal, NotSent, Plan, PortionsToday, Readiness, RefusalKind, Role,
+        FoodLevel, NextMeal, NotSent, Pending, Plan, PortionsToday, Readiness, RefusalKind, Role,
         ServerProblem, Settings, Skew, State, Status, Tune, Update, UpdateKind, WriteResult,
         Written,
     };

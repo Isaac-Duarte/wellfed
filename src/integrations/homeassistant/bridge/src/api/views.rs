@@ -168,6 +168,35 @@ impl From<&history::Feed> for Feed {
     }
 }
 
+impl Feed {
+    /// A feed as the server's journal records its end, for a feed whose
+    /// answer never came: its number and result, at the time the journal
+    /// learned it. Who asked is this integration, through the server.
+    pub fn journalled(
+        feed: u32,
+        requested: u8,
+        completed: u8,
+        outcome: model::FeedOutcome,
+        reason: model::FeedReason,
+        at: jiff::Timestamp,
+    ) -> Self {
+        let (completed, at_most) = history::Delivered::of(outcome, completed, requested).bounds();
+        Self {
+            feed,
+            at_ms: Some(at.as_millisecond()),
+            requested,
+            completed,
+            at_most,
+            outcome: outcome.into(),
+            reason: reason.into(),
+            hopper: FoodLevel::Unread,
+            by: None,
+            client: None,
+            plan: None,
+        }
+    }
+}
+
 /// One event from the feeder's history.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(

@@ -427,8 +427,12 @@ view_enum! {
         /// Events this session never received: what happened meanwhile is
         /// not known.
         Gap => "gap",
-        /// A feed whose answer never came has its `Fed` event.
+        /// A feed whose answer never came ran: its `Fed` event, or the
+        /// server's journal, says how.
         Settled => "settled",
+        /// A feed whose answer never came did not run: the feeder refused
+        /// it, as the server's journal learned.
+        SettledUnfed => "settled_unfed",
         /// A feed whose answer never came has no `Fed` event this session
         /// could find: whether it ran is not known.
         StillUnknown => "still_unknown",

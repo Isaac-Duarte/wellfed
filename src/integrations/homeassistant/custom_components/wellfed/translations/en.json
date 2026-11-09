@@ -30,10 +30,14 @@
           "password": "Password"
         },
         "data_description": {
-          "url": "Where the Wellfed server answers, such as `http://192.168.1.20:8080`.",
+          "url": "Where the Wellfed server answers, such as `https://wellfed.example.com`. An `http://` address sends the password and Home Assistant's token unencrypted, so use it only on a network you trust; Home Assistant asks you to confirm one.",
           "username": "The name of an owner or member account on the server.",
           "password": "Used once, to sign in. Home Assistant keeps a token of its own instead, which the server lists as home-assistant."
         }
+      },
+      "plain_http": {
+        "title": "Use an unencrypted address?",
+        "description": "{url} is plain `http://`: the password you sign in with, and the token Home Assistant keeps, cross your network unencrypted, where anyone on it can read them. Use an `https://` address if the server has one. Continue only if you trust every device on this network."
       },
       "server_feeder": {
         "title": "Choose the feeder",
@@ -94,7 +98,7 @@
           "password": "Password"
         },
         "data_description": {
-          "url": "Where the Wellfed server answers, such as `http://192.168.1.20:8080`.",
+          "url": "Where the Wellfed server answers, such as `https://wellfed.example.com`. An `http://` address sends the password and Home Assistant's token unencrypted, so use it only on a network you trust; Home Assistant asks you to confirm one.",
           "username": "The name of an owner or member account on the server.",
           "password": "Used once, to sign in. Home Assistant keeps a token of its own instead, which the server lists as home-assistant."
         }
@@ -134,7 +138,8 @@
       "not_a_feeder": "That device does not look like a Wellfed feeder.",
       "reauth_successful": "Paired again.",
       "reconfigure_successful": "Saved.",
-      "no_feeders": "The server holds no feeder that Home Assistant does not have yet. Adopt one on the server first."
+      "no_feeders": "The server holds no feeder that Home Assistant does not have yet. Adopt one on the server first.",
+      "pair_again": "This entry is from an earlier test build of the integration. Delete it and pair the feeder again."
     },
     "flow_title": "{name}"
   },
@@ -415,7 +420,11 @@
     },
     "leftover_key": {
       "title": "Remove Home Assistant's old key from feeder {feeder}",
-      "description": "Feeder {feeder} is now reached through the Wellfed server, but Home Assistant could not remove the key it used to reach it directly (it starts {key}). Remove the client named home-assistant from the feeder's people in the app, then ignore this."
+      "description": "Feeder {feeder} is now reached through the Wellfed server, but Home Assistant could not remove the key it used to reach it directly (it starts {key}). Remove the client named home-assistant from the feeder's people in the app. This clears once the server no longer sees the key on the feeder."
+    },
+    "token_left": {
+      "title": "Revoke Home Assistant's token on the Wellfed server",
+      "description": "A Wellfed entry was deleted, but the server at {url} could not be reached to revoke the token Home Assistant used. The token still works until it is revoked. Revoke it in the app or with the Wellfed CLI: its id is {token_id}. Then ignore this."
     }
   }
 }

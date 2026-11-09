@@ -19,7 +19,11 @@
 //!   and settled from the server's journal: by its `Fed` event once the
 //!   journal names its number, as refused, or as unknown when the journal
 //!   says the feeder restarted with no record of it. One unsettled after
-//!   [`SETTLE`] is still unknown, never resent.
+//!   [`SETTLE`] is still unknown, never resent. A write that waited longer
+//!   than [`FRESH`](crate::feeder::FRESH) for the session, or arrived while it connects, is
+//!   refused unsent.
+//! - **The event stream** is read by a task of its own, so a slow write or
+//!   a long connect never leaves it unread past its read timeout.
 //! - **Ends.** A token the server no longer takes stops the session until a
 //!   new login. A feeder the server no longer holds (removed, another
 //!   feeder under its id, or its key dropped by the feeder) is reported
@@ -44,12 +48,15 @@ use wellfed_server_client::api::{
 use wellfed_server_client::{Auth, Client, Failure, Lock, Timeouts, Updates, Url};
 
 pub use account::{
-    Login, Refused, ServerFeeder, address, feeder, feeders, login, revoke_client, revoke_token,
+    Login, Refused, ServerFeeder, address, client_listed, feeder, feeders, login, revoke_client,
+    revoke_token,
 };
 
 use crate::Error;
-use crate::api::{self, Capabilities, NotSent, RefusalKind, Role, Skew, State, Update, Written};
-use crate::feeder::{self as direct, Command, SETTLE, TURN};
+use crate::api::{
+    self, Capabilities, NotSent, Pending, RefusalKind, Role, Skew, State, Update, Written,
+};
+use crate::feeder::{self as direct, Command, SETTLE, TURN, now_ms, refusing, sent_at, stale};
 use crate::writes::{self, Kind, Write};
 
 /// The newest events a first connect replays, of a history the server may
@@ -112,10 +119,10 @@ pub(crate) fn client(target: &Target, clocks: Clocks) -> Result<Client, Error> {
 }
 
 /// A feed that went out and was never answered, by the key it went under.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Uncertain {
     key: Uuid,
-    portions: u8,
+    pending: Pending,
     /// Its number, once the server's journal names it.
     feed: Option<u32>,
     sent: Instant,
@@ -151,16 +158,70 @@ enum Ended {
 /// The session's own failure, or the handle gone.
 type Step = Result<(), Ended>;
 
+/// One update off the event stream, as its reader hands it on.
+type Streamed = Result<wellfed_server_client::Update, wellfed_server_client::Error>;
+
+/// The event stream, read by a task of its own: the session may spend
+/// longer than the stream's read timeout on a write or a connect, and a
+/// stream left unpolled that long would fail even with its data waiting.
+/// The task ends with the stream or when this is dropped.
+struct Stream {
+    updates: mpsc::UnboundedReceiver<Streamed>,
+    reader: tokio::task::JoinHandle<()>,
+}
+
+impl Stream {
+    fn read(mut stream: Updates) -> Self {
+        let (sender, updates) = mpsc::unbounded_channel();
+        let reader = tokio::spawn(async move {
+            while let Some(update) = stream.next().await {
+                if sender.send(update).is_err() {
+                    return;
+                }
+            }
+        });
+        Self { updates, reader }
+    }
+
+    /// The next update, or `None` once the stream has ended.
+    async fn next(&mut self) -> Option<Streamed> {
+        self.updates.recv().await
+    }
+}
+
+impl Drop for Stream {
+    fn drop(&mut self) {
+        self.reader.abort();
+    }
+}
+
 /// Connect, serve until the session ends, and go again, until the handle is
 /// dropped or the server refuses the token.
 pub(crate) async fn run(
     client: Client,
     target: Target,
     clocks: Clocks,
+    pending: Vec<Pending>,
     mut commands: mpsc::UnboundedReceiver<Command>,
     updates: std_mpsc::Sender<Update>,
 ) {
     let mut memory = Memory::default();
+    for pending in pending {
+        // Only a key this integration drew names a command on the server.
+        match Uuid::parse_str(&pending.id) {
+            Ok(key) => memory.uncertain.push(Uncertain {
+                key,
+                sent: sent_at(pending.sent_ms),
+                pending,
+                feed: None,
+            }),
+            Err(_) => {
+                if updates.send(Update::still_unknown(pending)).is_err() {
+                    return;
+                }
+            }
+        }
+    }
     let mut lost_feeder = false;
 
     loop {
@@ -236,16 +297,17 @@ impl<'a> Session<'a> {
     }
 
     async fn serve(mut self, commands: &mut mpsc::UnboundedReceiver<Command>) -> Ended {
-        let stream = match self.open().await {
-            Ok(stream) => stream,
-            Err(ended) => return ended,
+        let stream = match refusing(self.open(), commands).await {
+            None => return Ended::Dropped,
+            Some(Ok(stream)) => stream,
+            Some(Err(ended)) => return ended,
         };
         self.follow(stream, commands).await
     }
 
     /// Check the server, the token and the feeder, open the stream, then
     /// read the facts and the history.
-    async fn open(&mut self) -> Result<Updates, Ended> {
+    async fn open(&mut self) -> Result<Stream, Ended> {
         self.server = self.client.skew().await.map_err(|error| ended(&error))?;
         self.account = self
             .client
@@ -258,6 +320,7 @@ impl<'a> Session<'a> {
             .stream(&StreamQuery::default(), None)
             .await
             .map_err(|error| ended(&error))?;
+        let stream = Stream::read(stream);
         let detail = self.detail().await?;
 
         self.role = match self.account {
@@ -285,7 +348,7 @@ impl<'a> Session<'a> {
 
     async fn follow(
         &mut self,
-        mut stream: Updates,
+        mut stream: Stream,
         commands: &mut mpsc::UnboundedReceiver<Command>,
     ) -> Ended {
         let mut turn = tokio::time::interval_at(tokio::time::Instant::now() + TURN, TURN);
@@ -293,7 +356,10 @@ impl<'a> Session<'a> {
             let step = tokio::select! {
                 command = commands.recv() => match command {
                     None => return Ended::Dropped,
-                    Some(Command::Write { write, reply }) => self.write(write, reply).await,
+                    Some(Command::Write { write, reply, queued }) => match stale(queued, reply) {
+                        Some(reply) => self.write(write, reply).await,
+                        None => Ok(()),
+                    },
                     Some(Command::Refresh) => self.refresh().await,
                 },
                 update = stream.next() => match update {
@@ -697,21 +763,26 @@ impl<'a> Session<'a> {
             }
             Some(CommandOutcome::Refused { refusal }) => Written::refused_for(refusal.into()),
             // Taken, with no answer yet: the journal settles it.
-            _ => {
-                self.unanswered(command.key, portions, command.feed);
-                Written::uncertain()
-            }
+            _ => self.unanswered(command.key, portions, command.feed),
         }
     }
 
-    /// A feed under `key` went out and its answer never came.
-    fn unanswered(&mut self, key: Uuid, portions: u8, feed: Option<u32>) {
+    /// A feed under `key` went out and its answer never came: uncertain,
+    /// and kept until the journal settles it.
+    fn unanswered(&mut self, key: Uuid, portions: u8, feed: Option<u32>) -> Written {
+        let pending = Pending {
+            id: key.to_string(),
+            portions,
+            sent_ms: now_ms(),
+            after: None,
+        };
         self.memory.uncertain.push(Uncertain {
             key,
-            portions,
+            pending: pending.clone(),
             feed,
             sent: Instant::now(),
         });
+        Written::uncertain_feed(pending)
     }
 
     /// How a write of `kind` under `key` that failed with `error` ended,
@@ -732,10 +803,11 @@ impl<'a> Session<'a> {
             Failure::FeederOffline => (Written::not_sent(NotSent::Disconnected), Ok(())),
             // It may have run: never sent again.
             Failure::Interrupted | Failure::OutcomeUnknown => {
-                if let Kind::Feed { portions } = kind {
-                    self.unanswered(key, portions, None);
-                }
-                (Written::uncertain(), Ok(()))
+                let written = match kind {
+                    Kind::Feed { portions } => self.unanswered(key, portions, None),
+                    _ => Written::uncertain(),
+                };
+                (written, Ok(()))
             }
             Failure::FeederRefused => {
                 let refusal = refusal_of(error).unwrap_or(RefusalKind::NewerBuild);
@@ -782,12 +854,32 @@ impl<'a> Session<'a> {
 
         match command.outcome {
             Some(CommandOutcome::Refused { .. }) => {
-                self.memory.uncertain.remove(index);
-                self.send(Update::settled_unfed())
+                let uncertain = self.memory.uncertain.remove(index);
+                self.send(Update::settled_unfed(uncertain.pending))
             }
             Some(CommandOutcome::Unrecorded) => {
                 let uncertain = self.memory.uncertain.remove(index);
-                self.send(Update::still_unknown(uncertain.portions))
+                self.send(Update::still_unknown(uncertain.pending))
+            }
+            // The journal has the feed's end: settled now, whether or not
+            // its event has come.
+            Some(CommandOutcome::Fed {
+                feed,
+                requested,
+                completed,
+                outcome,
+                reason,
+            }) => {
+                let uncertain = self.memory.uncertain.remove(index);
+                let fed = api::Feed::journalled(
+                    feed,
+                    requested,
+                    completed,
+                    outcome,
+                    reason,
+                    command.updated,
+                );
+                self.send(Update::settled(fed, uncertain.pending))
             }
             _ => {
                 let feed = command
@@ -825,8 +917,8 @@ impl<'a> Session<'a> {
         let Some(found) = found else {
             return Ok(());
         };
-        self.memory.uncertain.remove(found);
-        self.send(Update::settled(api::Feed::from(feed)))
+        let uncertain = self.memory.uncertain.remove(found);
+        self.send(Update::settled(api::Feed::from(feed), uncertain.pending))
     }
 
     /// Uncertain feeds past [`SETTLE`] the journal has not settled: still
@@ -838,7 +930,7 @@ impl<'a> Session<'a> {
             .partition(|uncertain| now.duration_since(uncertain.sent) >= SETTLE);
         self.memory.uncertain = kept;
         for uncertain in expired {
-            self.send(Update::still_unknown(uncertain.portions))?;
+            self.send(Update::still_unknown(uncertain.pending))?;
         }
         Ok(())
     }

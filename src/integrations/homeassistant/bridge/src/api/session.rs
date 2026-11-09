@@ -7,6 +7,27 @@ use super::enums::{NotSent, RefusalKind, Role, Skew, UpdateKind, WriteResult};
 use super::state::{Capabilities, State};
 use super::views::{Event, Feed};
 
+/// A feed whose answer never came, until it is settled: what the
+/// integration keeps across a restart, and hands back to the next session
+/// so it is settled then.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(frozen, get_all, eq, from_py_object, module = "wellfed_homeassistant")
+)]
+pub struct Pending {
+    /// Names it: through the owner's server, the idempotency key it went
+    /// under, which the server's journal answers by.
+    pub id: String,
+    pub portions: u8,
+    /// When it went out, in Unix milliseconds: it is still unknown once
+    /// the settle window has passed since.
+    pub sent_ms: i64,
+    /// Directly: the newest event known when it went out, which its `Fed`
+    /// comes after.
+    pub after: Option<u64>,
+}
+
 /// How a write ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
@@ -21,6 +42,8 @@ pub struct Written {
     pub refusal: Option<RefusalKind>,
     /// Why it never went out, for [`WriteResult::NotSent`].
     pub not_sent: Option<NotSent>,
+    /// For an uncertain feed: what to keep until an update settles it.
+    pub pending: Option<Pending>,
 }
 
 impl Written {
@@ -30,6 +53,7 @@ impl Written {
             feed: None,
             refusal: None,
             not_sent: None,
+            pending: None,
         }
     }
 
@@ -66,6 +90,14 @@ impl Written {
     pub fn uncertain() -> Self {
         Self::result(WriteResult::Uncertain)
     }
+
+    /// An uncertain feed, kept as `pending` until an update settles it.
+    pub fn uncertain_feed(pending: Pending) -> Self {
+        Self {
+            pending: Some(pending),
+            ..Self::uncertain()
+        }
+    }
 }
 
 /// What the session tells Home Assistant, in order.
@@ -90,11 +122,13 @@ pub struct Update {
     /// Whether the event came from the history read at connect: already
     /// part of the state, and not news.
     pub replayed: bool,
-    /// For [`UpdateKind::Settled`]: the feed whose answer never came;
-    /// `None` when the server's journal found it refused, so nothing ran.
+    /// For [`UpdateKind::Settled`]: the feed whose answer never came.
     pub feed: Option<Feed>,
     /// For [`UpdateKind::StillUnknown`]: the portions that feed asked for.
     pub portions: Option<u8>,
+    /// For [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`] and
+    /// [`UpdateKind::StillUnknown`]: the pending feed it accounts for.
+    pub pending: Option<Pending>,
     /// The first and last event lost, for a [`UpdateKind::Gap`] the feeder
     /// named; both `None` for a history that started over.
     pub gap_from: Option<u64>,
@@ -117,6 +151,7 @@ impl Update {
             replayed: false,
             feed: None,
             portions: None,
+            pending: None,
             gap_from: None,
             gap_to: None,
             reason: None,
@@ -172,22 +207,27 @@ impl Update {
         }
     }
 
-    pub fn settled(feed: Feed) -> Self {
+    pub fn settled(feed: Feed, pending: Pending) -> Self {
         Self {
             feed: Some(feed),
+            pending: Some(pending),
             ..Self::kind(UpdateKind::Settled)
         }
     }
 
     /// A feed whose answer never came did not run after all: the
     /// feeder refused it, as the server's journal later learned.
-    pub fn settled_unfed() -> Self {
-        Self::kind(UpdateKind::Settled)
+    pub fn settled_unfed(pending: Pending) -> Self {
+        Self {
+            pending: Some(pending),
+            ..Self::kind(UpdateKind::SettledUnfed)
+        }
     }
 
-    pub fn still_unknown(portions: u8) -> Self {
+    pub fn still_unknown(pending: Pending) -> Self {
         Self {
-            portions: Some(portions),
+            portions: Some(pending.portions),
+            pending: Some(pending),
             ..Self::kind(UpdateKind::StillUnknown)
         }
     }

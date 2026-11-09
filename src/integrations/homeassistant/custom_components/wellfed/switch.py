@@ -102,6 +102,7 @@ async def async_setup_entry(
 
 
 class WellfedSwitch(WellfedEntity, SwitchEntity):
+    _writes = True
     entity_description: WellfedSwitchDescription
 
     def __init__(self, session: FeederSession, description: WellfedSwitchDescription) -> None:
@@ -122,6 +123,7 @@ class WellfedSwitch(WellfedEntity, SwitchEntity):
 class PlanSwitch(WellfedEntity, SwitchEntity):
     """One feeding plan, on or off, named after its time: "Meal 07:30"."""
 
+    _writes = True
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, session: FeederSession, slot: int) -> None:

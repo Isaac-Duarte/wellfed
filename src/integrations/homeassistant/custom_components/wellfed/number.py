@@ -43,6 +43,9 @@ class Portions(WellfedEntity, RestoreNumber):
     """How many portions the Feed button asks for. Home Assistant's own
     choice, kept across restarts: the feeder stores no such number."""
 
+    # Only the Feed button reads it.
+    _writes = True
+
     _attr_native_min_value = PORTIONS_MIN
     _attr_native_max_value = PORTIONS_MAX
     _attr_native_step = 1
@@ -70,6 +73,8 @@ class Portions(WellfedEntity, RestoreNumber):
 class Volume(WellfedEntity, NumberEntity):
     """The speaker's volume, as the feeder's settings hold it."""
 
+    _writes = True
+
     _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 0
     _attr_native_max_value = 100
@@ -88,6 +93,8 @@ class Volume(WellfedEntity, NumberEntity):
 
 class PortionWeight(WellfedEntity, NumberEntity):
     """The weight of one portion, as it was measured."""
+
+    _writes = True
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_device_class = NumberDeviceClass.WEIGHT

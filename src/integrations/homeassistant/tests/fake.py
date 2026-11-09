@@ -76,6 +76,7 @@ def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
         "replayed": False,
         "feed": None,
         "portions": None,
+        "pending": None,
         "gap_from": None,
         "gap_to": None,
         "reason": None,
@@ -100,9 +101,25 @@ def connected(
 
 
 def written(result: bridge.WriteResult, **fields: Any) -> SimpleNamespace:
-    values: dict[str, Any] = {"result": result, "feed": None, "refusal": None, "not_sent": None}
+    values: dict[str, Any] = {
+        "result": result,
+        "feed": None,
+        "refusal": None,
+        "not_sent": None,
+        "pending": None,
+    }
     values.update(fields)
     return SimpleNamespace(**values)
+
+
+def pending(id: str = "a-lost-feed", portions: int = 1) -> bridge.Pending:
+    """A feed whose answer was lost, as the bridge hands it out."""
+    return bridge.Pending(id, portions, 1_793_793_600_000, None)
+
+
+def uncertain(lost: bridge.Pending) -> SimpleNamespace:
+    """A feed write whose answer was lost, kept as `lost`."""
+    return written(bridge.WriteResult.Uncertain, pending=lost)
 
 
 def feed(number: int, outcome: bridge.FeedOutcome = bridge.FeedOutcome.Done) -> SimpleNamespace:

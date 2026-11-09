@@ -5,7 +5,8 @@
 //! - the session announces the feeder through the server, its state, and
 //!   a feed answered with its number;
 //! - a feed whose answer is lost is uncertain, sent once, and settled from
-//!   the server's journal by its `Fed` event;
+//!   the server's journal; one kept across a restart is settled by the
+//!   next session;
 //! - a revoked token stops the session, and every write after it is
 //!   refused unsent.
 
@@ -13,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use wellfed_homeassistant::api::{
-    NotSent, ServerProblem, Skew, Update, UpdateKind, WriteResult, Written,
+    NotSent, Pending, ServerProblem, Skew, Update, UpdateKind, WriteResult, Written,
 };
 use wellfed_homeassistant::feeder::Feeder;
 use wellfed_homeassistant::server::{self, Clocks, Refused, Target};
@@ -83,13 +84,23 @@ fn session(
     login: &server::Login,
     feeder: (FeederId, [u8; 32]),
 ) -> Arc<Feeder> {
+    resumed(server, login, feeder, Vec::new())
+}
+
+/// The same, handed the feeds a run before it left `pending`.
+fn resumed(
+    server: &TestServer,
+    login: &server::Login,
+    feeder: (FeederId, [u8; 32]),
+    pending: Vec<Pending>,
+) -> Arc<Feeder> {
     let target = Target {
         url: server::address(&url(server)).unwrap(),
         token: login.token.clone(),
         feeder: feeder.0,
         identity: feeder.1,
     };
-    Arc::new(Feeder::start_server(target, SHORT).unwrap())
+    Arc::new(Feeder::start_server(target, SHORT, pending).unwrap())
 }
 
 /// Run a blocking call off the test's runtime, which serves the server.
@@ -245,12 +256,47 @@ fn a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_settled_by_the_journal
         relay.hold_answers();
         let written = feed(&session, 1).await;
         assert_eq!(written.result, WriteResult::Uncertain);
+        let pending = written.pending.expect("an uncertain feed is kept pending");
 
         relay.cut();
         relay.resume();
         let settled = next(&session, UpdateKind::Settled).await;
+        assert_eq!(settled.pending, Some(pending));
         let fed = settled.feed.expect("the feed the journal settled");
         assert_eq!((fed.feed, fed.requested, fed.completed), (1, 1, 1));
+        assert_eq!(feeder::feeds(&flash), 1, "fed once, never resent");
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+#[test]
+fn a_lost_feed_carried_across_a_restart_is_settled_from_the_journal() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let relay = Relay::start(sim.address).await;
+        let mut config = config();
+        config.timing.answer = Duration::from_secs(2);
+        let (server, owner) = started(TestServer::start_with(config).await).await;
+        let kitchen = adopt(&owner, &sim, relay.address.to_string()).await;
+        let login = ada(&server).await;
+        let session = session(&server, &login, kitchen);
+        next(&session, UpdateKind::Connected).await;
+        settled_reads(&session).await;
+
+        relay.hold_answers();
+        let written = feed(&session, 1).await;
+        let pending = written.pending.expect("an uncertain feed is kept pending");
+        // Home Assistant restarts before the journal settles it.
+        drop(session);
+        relay.cut();
+        relay.resume();
+
+        let restarted = resumed(&server, &login, kitchen, vec![pending.clone()]);
+        let settled = next(&restarted, UpdateKind::Settled).await;
+        assert_eq!(settled.pending, Some(pending));
+        assert_eq!(settled.feed.map(|fed| fed.completed), Some(1));
         assert_eq!(feeder::feeds(&flash), 1, "fed once, never resent");
         server.stop().await;
         sim.stop().await;

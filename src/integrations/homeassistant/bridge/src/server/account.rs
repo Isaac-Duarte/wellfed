@@ -167,6 +167,19 @@ pub async fn revoke_client(
     Ok(())
 }
 
+/// Whether the feeder `feeder_id` still lists the client key `client`, as
+/// the server reads its clients now.
+pub async fn client_listed(
+    url: &str,
+    token: &str,
+    feeder_id: &str,
+    client: [u8; 32],
+) -> Result<bool, Refused> {
+    let id = feeder(feeder_id)?;
+    let clients = setup_client(url, Some(token))?.clients(id).await?;
+    Ok(clients.iter().any(|listed| listed.key.0 == client))
+}
+
 /// A feeder id as the server names it.
 pub fn feeder(id: &str) -> Result<FeederId, Refused> {
     Uuid::parse_str(id)

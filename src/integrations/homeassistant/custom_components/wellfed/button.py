@@ -83,6 +83,7 @@ async def async_setup_entry(
 class WellfedButton(WellfedEntity, ButtonEntity):
     """Each press sends one request, under its own request id."""
 
+    _writes = True
     entity_description: WellfedButtonDescription
 
     def __init__(self, session: FeederSession, description: WellfedButtonDescription) -> None:
