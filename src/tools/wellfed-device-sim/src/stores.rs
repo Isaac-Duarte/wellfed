@@ -25,7 +25,9 @@ use std::rc::Rc;
 
 use wellfed_board::storage::{self, Sectors};
 use wellfed_core::clock::wall::WallClock;
-use wellfed_core::settings::{KindSettings, Saved, SettingsFields, SettingsResult, SettingsView};
+use wellfed_core::settings::{
+    KindSettings, NO_GENERATION, Saved, SettingsFields, SettingsResult, SettingsView,
+};
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::{SlotIo, crc32};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
@@ -80,6 +82,9 @@ pub struct DeviceStores<S: KindStore = ()> {
     /// How the settings changes taken this run finished, as the firmware's
     /// mailbox keeps them for a client's write waiting on its own.
     settings_saved: Saved,
+    /// A failed save left the records apart: the writer's next turn
+    /// repairs them once, as the firmware's does after its pause.
+    settings_repair: bool,
     net: NetStore<Region>,
     wifi_pending: Option<(Option<Credentials>, Option<Stamp>)>,
     time: TimeStore<Region>,
@@ -164,6 +169,7 @@ impl<S: KindStore> DeviceStores<S> {
             kind,
             settings_pending: None,
             settings_saved: Saved::default(),
+            settings_repair: false,
             net,
             wifi_pending: None,
             time,
@@ -458,6 +464,7 @@ impl<S: KindStore> DeviceStores<S> {
         let SaveBoth::Saved(generation) =
             save_both(&mut self.settings, &mut self.kind, &device, &kind)
         else {
+            self.settings_repair = self.settings().generation == NO_GENERATION;
             return true;
         };
         if let Some(asked) = asked {
@@ -475,9 +482,13 @@ impl<S: KindStore> DeviceStores<S> {
     /// generation they share, the device's first, as the firmware's writer
     /// does (`wellfed_device::store::settings::save_both`): a save that
     /// fails reads both again, records no event, and is the change's
-    /// outcome, which a client's write waiting on it is refused by. A
-    /// client's save records its event in the same turn, after both.
+    /// outcome, which a client's write waiting on it is refused by; records
+    /// it leaves apart are repaired once on the next turn. A client's save
+    /// records its event in the same turn, after both.
     pub fn apply_settings(&mut self) {
+        if std::mem::take(&mut self.settings_repair) {
+            repair(&mut self.settings, &mut self.kind);
+        }
         if let Some((fields, asked)) = self.settings_pending.take() {
             let failed = self.save_settings(&fields, asked);
             self.settings_saved.finish(failed);

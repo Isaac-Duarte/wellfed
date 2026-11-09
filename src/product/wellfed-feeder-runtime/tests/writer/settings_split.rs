@@ -16,7 +16,7 @@ use wellfed_device::store::settings::SettingsStatus;
 use wellfed_device_api::mailbox::{
     FeederFields, MealReminder, SaveOutcome, SettingsFields, SettingsResult, SettingsView, Stamp,
 };
-use wellfed_device_runtime::writer::{ErrorStage, SettingsPart};
+use wellfed_device_runtime::writer::{ErrorStage, REPAIR_RETRY_MS, SettingsPart};
 use wellfed_device_runtime::{asked, events};
 use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::writer::{Record, Writer};
@@ -189,6 +189,92 @@ fn a_feeder_save_that_fails_after_the_device_s_is_refused_and_publishes_no_gener
         ),
         (20, MealReminder::Off, 3, true)
     );
+}
+
+/// The steps a writer takes within `ms` of uptime, at most `steps`: the
+/// settings repairs and repair errors among their records.
+fn repairs_within(
+    writer: &mut Writer<Armed>,
+    provider: &mut Provider,
+    ms: u32,
+    steps: usize,
+) -> Vec<Record> {
+    let mut found = Vec::new();
+    for _ in 0..steps {
+        fake::with(|h| h.uptime_ms += ms / u32::try_from(steps).unwrap());
+        if let Some(
+            record @ (Record::Repaired { .. }
+            | Record::Error {
+                stage: ErrorStage::Repair,
+                ..
+            }),
+        ) = step(writer, provider)
+        {
+            found.push(record);
+        }
+    }
+    found
+}
+
+/// One feeder save failing after the device's landed leaves the records
+/// apart and the view read-only, but not until a restart: after
+/// `REPAIR_RETRY_MS` the writer repairs them once, at 3, two past the
+/// device's 1, and the view is writable there.
+#[test]
+fn records_a_failed_save_left_apart_are_repaired_after_a_pause() {
+    let (_guard, mut writer, mut provider) = opened();
+    PROGRAMS_FAIL_IN.with(|f| f.set(Some(storage::FEEDER_SETTINGS)));
+    ask(both(20, 15));
+    step(&mut writer, &mut provider);
+    PROGRAMS_FAIL_IN.with(|f| f.set(None));
+    assert_eq!(view().generation, NO_GENERATION);
+
+    let early = repairs_within(&mut writer, &mut provider, REPAIR_RETRY_MS - 1_000, 10);
+    assert_eq!(early, [], "not before the pause");
+    assert!(!view().writable);
+
+    let repaired = repairs_within(&mut writer, &mut provider, 2_000, 10);
+    assert_eq!(repaired, [Record::Repaired { generation: 3 }]);
+    let after = view();
+    assert_eq!(
+        (after.volume, after.generation, after.writable),
+        (20, 3, true)
+    );
+    let change = ask(both(30, 15));
+    assert!(matches!(
+        step(&mut writer, &mut provider),
+        Some(Record::Saved { generation: 4, .. })
+    ));
+    assert_eq!(view().saved.outcome(change), SaveOutcome::Done);
+}
+
+/// The retry is one: when it fails too, the records wait for the next
+/// boot's repair, so a failing record costs the other one repair per
+/// failed save and per boot, not one per pause.
+#[test]
+fn a_retry_that_fails_waits_for_the_next_boot() {
+    let (_guard, mut writer, mut provider) = opened();
+    PROGRAMS_FAIL_IN.with(|f| f.set(Some(storage::FEEDER_SETTINGS)));
+    ask(both(20, 15));
+    step(&mut writer, &mut provider);
+
+    let failed = repairs_within(&mut writer, &mut provider, REPAIR_RETRY_MS + 1_000, 10);
+    assert_eq!(
+        failed,
+        [Record::Error {
+            stage: ErrorStage::Repair,
+            store: SettingsPart::Kind,
+            status: SettingsStatus::Io,
+        }]
+    );
+    let later = repairs_within(&mut writer, &mut provider, 10 * REPAIR_RETRY_MS, 20);
+    assert_eq!(later, [], "no retry of a retry");
+    assert!(!view().writable);
+
+    // The device's record holds 3 from the retry: the boot goes to 5.
+    PROGRAMS_FAIL_IN.with(|f| f.set(None));
+    let (_writer, records) = restart_logged(&mut provider);
+    assert_eq!(records, [Record::Repaired { generation: 5 }]);
 }
 
 /// The device's save failing first: nothing lands, nothing is recorded,

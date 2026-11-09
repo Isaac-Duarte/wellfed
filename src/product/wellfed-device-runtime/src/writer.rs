@@ -7,7 +7,8 @@
 //! confirmation does, and then saves each change the device API queues: the
 //! device's part to its record and the kind's to the kind's, in one write
 //! turn. A boot that finds the two records apart saves both again once,
-//! before it takes any change (`wellfed_device::store::settings::repair`).
+//! before it takes any change (`wellfed_device::store::settings::repair`),
+//! and so does a failed save that leaves them apart, after a pause.
 //! Each save sets the arming attempt marker and clears it after, so a hang
 //! inside a save resets at most once per power cycle.
 //!
@@ -689,10 +690,27 @@ pub struct Core<F> {
     reset_attempted: bool,
     /// Arming skipped this boot: the boot before reset inside a write.
     skipped: bool,
-    /// This boot checked the settings records share a generation, and
-    /// repaired them if it could.
-    settings_checked: bool,
+    /// When the settings records are next checked for a shared generation,
+    /// and repaired if they have none.
+    settings_repair: RepairDue,
 }
+
+/// When the writer next checks the settings records share a generation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RepairDue {
+    /// At once: the boot's check.
+    Boot,
+    /// Once the uptime reaches this: the one retry a failed save left
+    /// apart earns.
+    At(u32),
+    /// Not until the next boot, or the next failed save.
+    Done,
+}
+
+/// How long after a failed save left the settings records apart the
+/// writer repairs them again, so a transient flash failure does not leave
+/// the settings read-only until a restart.
+pub const REPAIR_RETRY_MS: u32 = 10_000;
 
 impl<F> Default for Core<F> {
     fn default() -> Self {
@@ -719,7 +737,7 @@ impl<F> Default for Core<F> {
             handing_over: None,
             reset_attempted: false,
             skipped: false,
-            settings_checked: false,
+            settings_repair: RepairDue::Boot,
         }
     }
 }
@@ -1439,7 +1457,15 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 }),
             );
         }
-        if !core.settings_checked {
+        let repair_due = match core.settings_repair {
+            RepairDue::Boot => true,
+            RepairDue::At(at) => sdk::uptime_ms().wrapping_sub(at) < u32::MAX / 2,
+            RepairDue::Done => false,
+        };
+        if repair_due {
+            // The boot's check, or the retry after a failed save: both find
+            // the records as read from flash (a failed save reads them
+            // again), so the repair is the same.
             let writable = core.stage == Stage::Idle && H::armed();
             let apart = core.settings_generation(&self.product).is_none();
             let turn = if writable && apart {
@@ -1450,7 +1476,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             } else {
                 None
             };
-            core.settings_checked = true;
+            core.settings_repair = RepairDue::Done;
             if let Some(turn) = turn {
                 let record = self.repair_settings();
                 drop(turn);
@@ -1638,7 +1664,8 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
     /// them the change touches (`wellfed_core::settings` says why both).
     /// When either save fails, both are read again from flash and the view
     /// names what they then hold: a generation they share, or none,
-    /// read-only, until the next boot's repair. A failed save records no
+    /// read-only, until a repair [`REPAIR_RETRY_MS`] later or the next
+    /// boot's. A failed save records no
     /// history event, and the client's write is refused, never `Done`.
     ///
     /// A power cut between the two saves leaves the records apart, with no
@@ -1718,11 +1745,19 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 store: SettingsPart::Device,
                 status: core.store.status,
             },
-            SaveBoth::Failed { part, status } => Record::Error {
-                stage: ErrorStage::Save,
-                store: part.into(),
-                status,
-            },
+            SaveBoth::Failed { part, status } => {
+                // Records left apart get one repair after a pause, not just
+                // the next boot's; one that fails waits for the boot.
+                if core.settings_generation(&self.product).is_none() {
+                    let at = sdk::uptime_ms().wrapping_add(REPAIR_RETRY_MS);
+                    core.settings_repair = RepairDue::At(at);
+                }
+                Record::Error {
+                    stage: ErrorStage::Save,
+                    store: part.into(),
+                    status,
+                }
+            }
         };
         Some((record, true))
     }

@@ -40,17 +40,24 @@
 //!
 //! The `settings_model` test of `wellfed_device` checks this by brute
 //! force: the stores' own code over a flash whose writes stop at every
-//! step (an erase refused or cut short, a body half programmed, a marker
-//! missing, a write that landed and reported failure, each one the writer
-//! goes on from or a power cut) and newest slots lost, in every order. No
-//! generation is ever published for two different settings, through 9
-//! events (1.2 million states). Repairing the device's record first fails
-//! at 8 (three slots lost and two repairs failing), and repairing one past
-//! the larger at 5. Longer sequences are unchecked.
+//! step (an erase refused, cut short at either end, or finished and
+//! reported failed, a body half programmed, a marker missing, a write that
+//! landed and reported failure, each one the writer goes on from or a
+//! power cut), boots whose first read of a record fails, the retry after a
+//! failed save, and the newest or older valid slot of either record lost,
+//! in every order. No generation is ever published for two different
+//! settings, through 10 events (12.5 million states). Repairing the
+//! device's record first fails at 8 (three slots lost and two repairs
+//! failing), and repairing one past the larger at 5. Longer sequences are
+//! unchecked.
 //!
 //! The cost is wear: a repair spends two generations of the wear limit's
 //! count on each record, once per boot that finds the records apart, which
-//! only a cut or failed save or a lost slot causes.
+//! only a cut or failed save or a lost slot causes, and once more after a
+//! failed save's pause (`REPAIR_RETRY_MS` in the writer). A record whose
+//! saves keep failing makes every boot rewrite the other at two past, two
+//! of its 100 000 generations each time, until it reads `Worn` and refuses
+//! saves.
 
 /// Minutes in a local day: a window's bounds are below it.
 pub const DAY_MINUTES: u16 = 24 * 60;

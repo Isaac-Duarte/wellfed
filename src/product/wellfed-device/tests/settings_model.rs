@@ -1,23 +1,29 @@
 //! A brute-force model of the two settings records: every sequence of
 //! boots, saves, lost slots, failed writes and power cuts up to a depth,
 //! run on the stores' own code (`SettingsStore`, `repair`, `save_both`,
-//! `Settings::view`) over a NOR image whose writes can stop at any step.
-//! The writer's order is mirrored: a boot opens both records, publishes,
-//! repairs them if they share no generation, and publishes again; a save is
-//! taken only while the view is writable, and published unless the power
-//! was cut. The check, over the whole sequence: no generation a view
-//! reports (and so no event, which names a save's generation) ever names
-//! two different settings.
+//! `Settings::view`) over a NOR image whose writes can stop at any step and
+//! whose reads can fail at a boot. The writer's order is mirrored: a boot
+//! opens both records, publishes, repairs them if they share no generation,
+//! and publishes again; a save is taken only while the view is writable,
+//! and published unless the power was cut; a failed save that leaves the
+//! records apart earns one repair later, as the writer's retry. The check,
+//! over the whole sequence: no generation a view reports (and so no event,
+//! which names a save's generation) ever names two different settings.
 //!
-//! The depth here keeps the suite quick; the ignored `deep` test runs
-//! further, with `WELLFED_SETTINGS_MODEL_DEPTH` setting how far.
+//! The suite runs depth 5 (about 4 500 states, 5 s unoptimized). The
+//! ignored `deep` test runs depth 7 by default (131 000 states, about 3
+//! minutes unoptimized), and `WELLFED_SETTINGS_MODEL_DEPTH` sets another:
+//! in release, depth 8 takes about 35 s, 9 about 2.5 minutes and 10 (12.5
+//! million states) about 10 minutes.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
 
 use wellfed_core::settings::{KindSettings, NO_GENERATION};
 use wellfed_core::store::slot::{Extent, Layout, RECORD_BYTES, SlotIo, Version};
-use wellfed_device::store::settings::{Settings, SettingsRecord, SettingsStore, repair, save_both};
+use wellfed_device::store::settings::{
+    SaveBoth, Settings, SettingsRecord, SettingsStore, SlotState, repair, save_both,
+};
 
 const UNIT: usize = RECORD_BYTES;
 const BINDING: u64 = 0x4d4f_4445_4c00_0001;
@@ -84,8 +90,14 @@ enum Rec {
 enum Stop {
     /// The erase refused, the unit untouched.
     Unchanged,
-    /// The erase cut short: half the unit erased, the rest as it was.
+    /// The erase cut short: the first half of the unit erased, the rest
+    /// as it was.
     Torn,
+    /// The erase cut short the other way: the second half erased, the
+    /// first as it was.
+    TornTail,
+    /// The erase finished, and reported failure.
+    ErasedFalse,
     /// Erased, nothing programmed.
     Erased,
     /// Erased, half the body programmed.
@@ -96,9 +108,11 @@ enum Stop {
     Landed,
 }
 
-const STOPS: [Stop; 6] = [
+const STOPS: [Stop; 8] = [
     Stop::Unchanged,
     Stop::Torn,
+    Stop::TornTail,
+    Stop::ErasedFalse,
     Stop::Erased,
     Stop::PartBody,
     Stop::NoMarker,
@@ -121,6 +135,8 @@ struct World {
     fired: bool,
     /// The power is gone: nothing reads or writes.
     dead: bool,
+    /// The next read of this record fails.
+    read_fails: Option<Rec>,
 }
 
 thread_local! {
@@ -130,6 +146,7 @@ thread_local! {
             fault: None,
             fired: false,
             dead: false,
+            read_fails: None,
         })
     };
 }
@@ -173,8 +190,12 @@ impl SlotIo for Io {
     }
 
     fn read(&self, slot: u32, offset: u32, bytes: &mut [u8]) -> bool {
-        WORLD.with_borrow(|world| {
+        WORLD.with_borrow_mut(|world| {
             if world.dead {
+                return false;
+            }
+            if world.read_fails == Some(self.rec()) {
+                world.read_fails = None;
                 return false;
             }
             let at = self.unit(slot).start + offset as usize;
@@ -207,7 +228,11 @@ impl SlotIo for Io {
                         true
                     }
                     Stop::Landed => marker,
-                    Stop::NoMarker | Stop::Unchanged | Stop::Torn => false,
+                    Stop::NoMarker
+                    | Stop::Unchanged
+                    | Stop::Torn
+                    | Stop::TornTail
+                    | Stop::ErasedFalse => false,
                 };
                 if stops {
                     ok = false;
@@ -246,6 +271,26 @@ impl SlotIo for Io {
                     fire(world, fault);
                     false
                 }
+                Some(
+                    fault @ Fault {
+                        stop: Stop::TornTail,
+                        ..
+                    },
+                ) => {
+                    world.flash[unit.start + UNIT / 2..unit.end].fill(u8::MAX);
+                    fire(world, fault);
+                    false
+                }
+                Some(
+                    fault @ Fault {
+                        stop: Stop::ErasedFalse,
+                        ..
+                    },
+                ) => {
+                    world.flash[unit].fill(u8::MAX);
+                    fire(world, fault);
+                    false
+                }
                 _ => {
                     world.flash[unit].fill(u8::MAX);
                     true
@@ -271,6 +316,9 @@ struct State {
     kind: KindStoreOf,
     /// The power is gone until the next boot.
     off: bool,
+    /// A failed save left the records apart: the writer repairs them once
+    /// more, after its pause.
+    retry: bool,
     published: Vec<(u64, Contents)>,
     next: u8,
 }
@@ -278,12 +326,28 @@ struct State {
 /// A step of a sequence.
 #[derive(Clone, Copy, Debug)]
 enum Event {
-    /// A boot, its repair stopping as the fault says.
-    Boot(Option<Fault>),
+    /// A boot, its repair stopping as the fault says, and the first read of
+    /// a record failing.
+    Boot {
+        fault: Option<Fault>,
+        read_fails: Option<Rec>,
+    },
     /// A save of new contents, stopping as the fault says.
     Save(Option<Fault>),
-    /// The record's newest valid slot lost (a bit flipped in its body).
-    Lose(Rec),
+    /// The writer's one repair after a failed save left the records apart,
+    /// stopping as the fault says. A failed save has read both records
+    /// again, so this is the boot's repair without the boot.
+    Retry(Option<Fault>),
+    /// A record's valid slot lost (a bit flipped in its body): the newest,
+    /// or the older beside it.
+    Lose(Rec, Which),
+}
+
+/// Which of a record's valid slots a loss takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Which {
+    Newest,
+    Older,
 }
 
 /// A sequence that broke the rule.
@@ -301,10 +365,11 @@ impl State {
             device: DeviceStore::default(),
             kind: KindStoreOf::default(),
             off: true,
+            retry: false,
             published: Vec::new(),
             next: FIRST_CONTENTS,
         };
-        state.boot(None)?;
+        state.boot(None, None)?;
         Ok(state)
     }
 
@@ -353,11 +418,22 @@ impl State {
     /// Run `work` on the flash with `fault` armed: whether the fault fired
     /// (none armed counts as fired) and whether the power went.
     fn with_flash(&mut self, fault: Option<Fault>, work: impl FnOnce(&mut Self)) -> (bool, bool) {
+        self.with_reads(fault, None, work)
+    }
+
+    /// [`Self::with_flash`], the first read of `read_fails` failing.
+    fn with_reads(
+        &mut self,
+        fault: Option<Fault>,
+        read_fails: Option<Rec>,
+        work: impl FnOnce(&mut Self),
+    ) -> (bool, bool) {
         WORLD.with_borrow_mut(|world| {
             world.flash = self.flash;
             world.fault = fault;
             world.fired = false;
             world.dead = false;
+            world.read_fails = read_fails;
         });
         work(self);
         WORLD.with_borrow(|world| {
@@ -367,9 +443,10 @@ impl State {
     }
 
     /// The writer's boot: open, publish, repair, publish.
-    fn boot(&mut self, fault: Option<Fault>) -> Result<bool, Collision> {
+    fn boot(&mut self, fault: Option<Fault>, read_fails: Option<Rec>) -> Result<bool, Collision> {
         let mut published = Ok(());
-        let (fired, dead) = self.with_flash(fault, |state| {
+        self.retry = false;
+        let (fired, dead) = self.with_reads(fault, read_fails, |state| {
             state.device.open(Io { base: 0 }, BINDING);
             state.kind.open(Io { base: 2 }, BINDING);
             state.off = false;
@@ -395,8 +472,30 @@ impl State {
             volume: n,
             ..Settings::default()
         };
+        let mut saved = None;
         let (fired, dead) = self.with_flash(fault, |state| {
-            save_both(&mut state.device, &mut state.kind, &settings, &Kind(n));
+            saved = Some(save_both(
+                &mut state.device,
+                &mut state.kind,
+                &settings,
+                &Kind(n),
+            ));
+        });
+        if dead {
+            self.off = true;
+            return Ok(fired);
+        }
+        let failed = !matches!(saved, Some(SaveBoth::Saved(_)));
+        self.retry = failed && !self.writable();
+        self.publish()?;
+        Ok(fired)
+    }
+
+    /// The writer's repair after a failed save's pause.
+    fn retry(&mut self, fault: Option<Fault>) -> Result<bool, Collision> {
+        self.retry = false;
+        let (fired, dead) = self.with_flash(fault, |state| {
+            repair(&mut state.device, &mut state.kind);
         });
         if dead {
             self.off = true;
@@ -406,30 +505,36 @@ impl State {
         Ok(fired)
     }
 
-    /// Flip a bit in the body of the record's newest valid slot, if it has
-    /// one; the stores in memory do not notice.
-    fn lose(&mut self, rec: Rec) -> bool {
+    /// Flip a bit in the body of the record's newest valid slot, or the
+    /// older valid one beside it, if it has one; the stores in memory do
+    /// not notice.
+    fn lose(&mut self, rec: Rec, which: Which) -> bool {
         let base = match rec {
             Rec::Device => 0,
             Rec::Kind => 2,
         };
-        let mut newest = None;
+        let mut found = None;
         self.with_flash(None, |_| {
-            newest = match rec {
+            found = match rec {
                 Rec::Device => {
                     let mut probe = DeviceStore::default();
                     probe.open(Io { base }, BINDING);
-                    (probe.generation > 0).then_some(probe.slot)
+                    (probe.generation > 0).then_some((probe.slot, probe.slots))
                 }
                 Rec::Kind => {
                     let mut probe = KindStoreOf::default();
                     probe.open(Io { base }, BINDING);
-                    (probe.generation > 0).then_some(probe.slot)
+                    (probe.generation > 0).then_some((probe.slot, probe.slots))
                 }
             };
         });
-        let Some(slot) = newest else {
+        let Some((newest, slots)) = found else {
             return false;
+        };
+        let slot = match which {
+            Which::Newest => newest,
+            Which::Older if slots[(1 - newest) as usize] == SlotState::Valid => 1 - newest,
+            Which::Older => return false,
         };
         self.flash[(base + slot as usize) * UNIT + 40] ^= 1;
         true
@@ -440,10 +545,12 @@ impl State {
     fn apply(&self, event: Event) -> Option<Result<Self, Collision>> {
         let mut next = self.clone();
         let applied = match event {
-            Event::Boot(fault) => next.boot(fault),
+            Event::Boot { fault, read_fails } => next.boot(fault, read_fails),
             Event::Save(_) if !self.writable() => return None,
             Event::Save(fault) => next.save(fault),
-            Event::Lose(rec) => Ok(next.lose(rec)),
+            Event::Retry(_) if !self.retry || self.off => return None,
+            Event::Retry(fault) => next.retry(fault),
+            Event::Lose(rec, which) => Ok(next.lose(rec, which)),
         };
         match applied {
             Ok(true) => Some(Ok(next)),
@@ -457,6 +564,7 @@ impl State {
     fn key(&self) -> Vec<u8> {
         let mut key = self.flash.to_vec();
         key.push(u8::from(self.off));
+        key.push(u8::from(self.retry));
         key.push(self.next);
         for (generation, settings, status, slot) in [
             (
@@ -500,9 +608,28 @@ fn events() -> Vec<Event> {
         }
     }
 
-    let mut events: Vec<Event> = faults.iter().map(|&f| Event::Boot(f)).collect();
+    let mut events: Vec<Event> = faults
+        .iter()
+        .map(|&fault| Event::Boot {
+            fault,
+            read_fails: None,
+        })
+        .collect();
+    // A failed read leaves its record unreadable for the boot, so no
+    // repair runs and no fault could fire beside it.
+    for rec in [Rec::Device, Rec::Kind] {
+        events.push(Event::Boot {
+            fault: None,
+            read_fails: Some(rec),
+        });
+    }
     events.extend(faults.iter().map(|&f| Event::Save(f)));
-    events.extend([Event::Lose(Rec::Device), Event::Lose(Rec::Kind)]);
+    events.extend(faults.iter().map(|&f| Event::Retry(f)));
+    for rec in [Rec::Device, Rec::Kind] {
+        for which in [Which::Newest, Which::Older] {
+            events.push(Event::Lose(rec, which));
+        }
+    }
     events
 }
 
@@ -528,7 +655,7 @@ fn walk(
         return Ok(());
     }
     for &event in events {
-        if state.off && !matches!(event, Event::Boot(_) | Event::Lose(_)) {
+        if state.off && !matches!(event, Event::Boot { .. } | Event::Lose(..)) {
             continue;
         }
         trail.push(event);
@@ -559,7 +686,8 @@ fn no_generation_names_two_settings() {
     check(5);
 }
 
-/// Deeper, for the gate: `WELLFED_SETTINGS_MODEL_DEPTH` (7 by default).
+/// Deeper, for the gate: `WELLFED_SETTINGS_MODEL_DEPTH` (7 by default,
+/// about 3 minutes unoptimized).
 /// Depth 6 already fails for a store that counts a record which fell back
 /// from a torn slot as clean.
 #[test]
@@ -590,7 +718,7 @@ fn the_model_reaches_records_apart() {
     };
     assert!(state.save(Some(cut)).unwrap());
     assert!(state.off && !state.writable());
-    assert!(state.boot(None).unwrap());
+    assert!(state.boot(None, None).unwrap());
     assert_eq!(
         (state.device.generation, state.kind.generation),
         (5, 5),
@@ -599,7 +727,23 @@ fn the_model_reaches_records_apart() {
     assert!(state.writable());
 
     // A lost newest slot reads the older one, apart, and is repaired.
-    assert!(state.lose(Rec::Kind));
-    assert!(state.boot(None).unwrap());
+    assert!(state.lose(Rec::Kind, Which::Newest));
+    assert!(state.boot(None, None).unwrap());
     assert_eq!((state.device.generation, state.kind.generation), (7, 7));
+
+    // A failed kind save leaves them apart, and the retry repairs them.
+    let failed = Fault {
+        rec: Rec::Kind,
+        stop: Stop::ErasedFalse,
+        cut: false,
+    };
+    assert!(state.save(Some(failed)).unwrap());
+    assert!(state.retry && !state.writable());
+    assert!(state.retry(None).unwrap());
+    assert_eq!((state.device.generation, state.kind.generation), (10, 10));
+    assert!(state.writable());
+
+    // A boot whose first read of a record fails leaves it read-only.
+    assert!(state.boot(None, Some(Rec::Device)).unwrap());
+    assert!(!state.writable());
 }
