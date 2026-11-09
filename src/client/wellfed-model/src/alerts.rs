@@ -3,6 +3,7 @@
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::event::{ClientRole, EnrollPath, FeedOutcome, FeedReason, MissedReason, Source};
 use crate::{Blocked, Generation, Hex, UpdateStop};
@@ -172,7 +173,7 @@ impl Alert {
 /// An alert's identity: equal keys are one alert. A feed's key spans its
 /// outcomes, so an uncertain feed's second `Fed` replaces the first alert,
 /// and a meal's spans a report of no record and the `Missed` that answers it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "key", rename_all = "snake_case")]
 pub enum AlertKey {
     Feed {
@@ -184,16 +185,20 @@ pub enum AlertKey {
     },
     /// With its time, so a later rejoin alerts again.
     Client {
+        #[schema(value_type = String)]
         kind: AlertKind,
+        #[schema(value_type = String)]
         client: Hex<4>,
         at: Option<Timestamp>,
     },
     Timed {
+        #[schema(value_type = String)]
         kind: AlertKind,
         at: Option<Timestamp>,
     },
     /// A condition, present or absent.
     Kind {
+        #[schema(value_type = String)]
         kind: AlertKind,
     },
 }

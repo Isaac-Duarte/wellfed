@@ -403,6 +403,44 @@ fn a_clock_with_no_zone_holds_stuck_plans_as_no_clock_does() {
     assert!(!stuck(&watch));
 }
 
+/// The desiccant's days need a valid clock and no zone, so on a feeder with
+/// a clock and no zone, a desiccant the owner dealt with comes off within
+/// the hold, though NoClock stays listed.
+#[test]
+fn a_clock_with_no_zone_still_ends_a_cleared_desiccant() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let due = condition(Alert::DesiccantDue { days: -1 });
+    let no_clock = condition(Alert::NoClock);
+    watch.apply(
+        cursor(1, 1, 1),
+        &view(1, &[due, no_clock]),
+        &context(at(0), &mutes),
+    );
+    deliver(&mut watch);
+
+    // Replaced: the feeder drops it, but settles while it has no zone.
+    let mut replaced = view(1, &[no_clock]);
+    replaced.settling = true;
+    watch.apply(cursor(1, 1, 2), &replaced, &context(at(60), &mutes));
+    watch.lapse(&context(at(60) + SETTLING_HOLD, &mutes));
+    assert!(
+        watch
+            .open
+            .iter()
+            .any(|t| t.notice.kind() == NoticeKind::DesiccantDue)
+    );
+
+    watch.lapse(&context(at(61) + SETTLING_HOLD, &mutes));
+    assert!(
+        !watch
+            .open
+            .iter()
+            .any(|t| t.notice.kind() == NoticeKind::DesiccantDue)
+    );
+    assert_eq!(removals(&watch), 1, "its notification comes off");
+}
+
 #[test]
 fn a_condition_listed_again_starts_its_hold_over() {
     let mutes = Mutes::default();

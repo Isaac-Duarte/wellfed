@@ -421,7 +421,7 @@ impl Watch {
             .alerts
             .iter()
             .any(|open| open.alert.kind() == AlertKind::NoClock);
-        let clock = local_time(context.clock, lists_no_clock);
+        let clock = Clocks::new(context.clock, lists_no_clock);
         let mut ended = Vec::new();
         for tracked in &mut self.open {
             let Notice::Alert { open } = tracked.notice else {
@@ -458,7 +458,7 @@ impl Watch {
             tracked.absent.is_none()
                 && matches!(tracked.notice, Notice::Alert { open } if open.alert.kind() == AlertKind::NoClock)
         });
-        let clock = local_time(context.clock, lists_no_clock);
+        let clock = Clocks::new(context.clock, lists_no_clock);
         let mut lapsed = Vec::new();
         for tracked in &mut self.open {
             let Notice::Alert { open } = tracked.notice else {
@@ -628,10 +628,10 @@ impl Watch {
 impl Tracked {
     /// Since when this alert, absent from the table now, has counted as
     /// absent, or `None` while its hold doesn't run: one that waits for the
-    /// clock, while the feeder has no local time (`clock`), starts its hold
-    /// at the first read with it.
-    fn hold(&mut self, open: &OpenAlert, clock: FeederClock, now: Timestamp) -> Option<Timestamp> {
-        if waits_for_clock(open.alert.kind()) && clock == FeederClock::Unknown {
+    /// clock (`clock`), while the feeder lacks what it needs, starts its
+    /// hold at the first read with it.
+    fn hold(&mut self, open: &OpenAlert, clock: Clocks, now: Timestamp) -> Option<Timestamp> {
+        if clock.waits(open.alert.kind()) {
             self.absent = Some(Absence::NoClock);
             return None;
         }
@@ -645,21 +645,39 @@ impl Tracked {
     }
 }
 
-/// Whether the feeder has local time, as the plans need it: a valid clock
-/// (`status`), and no `NoClock` in the table (`lists_no_clock`), which the
-/// feeder opens also for a clock with no zone offset.
-const fn local_time(status: FeederClock, lists_no_clock: bool) -> FeederClock {
-    if lists_no_clock {
-        FeederClock::Unknown
-    } else {
-        status
-    }
+/// What the feeder's clock allows, for the conditions that wait for it.
+#[derive(Clone, Copy, Debug)]
+struct Clocks {
+    /// A valid clock, as the status shows it: the desiccant's days need no
+    /// more.
+    status: FeederClock,
+    /// Local time, as the plans need it: a valid clock, and no `NoClock` in
+    /// the table, which the feeder opens also for a clock with no zone
+    /// offset.
+    local: FeederClock,
 }
 
-/// A condition the feeder can't judge without a clock: the desiccant's days,
-/// and plans stuck, whose threshold runs from the clock's arrival.
-const fn waits_for_clock(kind: AlertKind) -> bool {
-    matches!(kind, AlertKind::DesiccantDue | AlertKind::PlansStuck)
+impl Clocks {
+    const fn new(status: FeederClock, lists_no_clock: bool) -> Self {
+        let local = if lists_no_clock {
+            FeederClock::Unknown
+        } else {
+            status
+        };
+        Self { status, local }
+    }
+
+    /// Whether the condition `kind` can't be judged now: the desiccant's
+    /// days with no valid clock, and stuck plans, whose threshold runs from
+    /// local time's arrival, with no local time.
+    fn waits(self, kind: AlertKind) -> bool {
+        let needs = match kind {
+            AlertKind::DesiccantDue => self.status,
+            AlertKind::PlansStuck => self.local,
+            _ => FeederClock::Known,
+        };
+        needs == FeederClock::Unknown
+    }
 }
 
 /// Whether an alert tables have left out since `absent`, though the feeder
