@@ -57,7 +57,14 @@ pub fn release_keygen(output: &Path) -> Result<ReleaseKey> {
     };
     let mut text = serde_json::to_vec_pretty(&file)?;
     text.push(b'\n');
-    write_new_whole(&public, &text)?;
+    if let Err(error) = write_new_whole(&public, &text) {
+        // This run created the key a moment ago and has shown nobody its
+        // id. Left alone, a rerun would meet "already exists" for a key with
+        // no public half, and the owner could not tell whether it was ever
+        // copied. A failed removal leaves the write error to report anyway.
+        let _removed = std::fs::remove_file(output);
+        return Err(error.into());
+    }
 
     // Read back as the signer will, so a key that would not load is caught
     // before the owner copies it anywhere.
@@ -87,8 +94,9 @@ fn require_outside_checkout(output: &Path) -> Result<()> {
     let directory = output.parent().ok_or_else(|| KeyError::NoFileName {
         path: output.to_path_buf(),
     })?;
-    let resolved = std::fs::canonicalize(directory).map_err(|_| KeyError::NoDirectory {
+    let resolved = std::fs::canonicalize(directory).map_err(|source| KeyError::NoDirectory {
         path: directory.to_path_buf(),
+        source,
     })?;
 
     let checkout = [directory, resolved.as_path()]

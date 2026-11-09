@@ -159,11 +159,13 @@ check-app:
 # the certificate it was signed with: with minSdk 31 it carries only the v2
 # and v3 signatures, which keytool cannot read.
 APP_RELEASE_APK = $(APP)/build/app/outputs/flutter-apk/app-release.apk
-ANDROID_SDK = $(shell flutter config --list 2>/dev/null | sed -n 's/^ *android-sdk: //p')
+ANDROID_SDK = $(or $(shell flutter config --list 2>/dev/null | sed -n 's/^ *android-sdk: //p'),$(ANDROID_HOME))
 APKSIGNER = $(ANDROID_SDK)/build-tools/36.0.0/apksigner
 app-release-apk:
 	@test -n "$$WELLFED_ANDROID_KEY_PROPERTIES" || \
 		{ echo "set WELLFED_ANDROID_KEY_PROPERTIES to the absolute path of the release key.properties"; exit 1; }
+	@test -x "$(APKSIGNER)" || \
+		{ echo "no apksigner at '$(APKSIGNER)': install build-tools 36.0.0, and set ANDROID_HOME or flutter config --android-sdk"; exit 1; }
 	cd $(APP) && flutter build apk --release --target-platform android-arm64
 	$(APKSIGNER) verify --print-certs $(APP_RELEASE_APK)
 

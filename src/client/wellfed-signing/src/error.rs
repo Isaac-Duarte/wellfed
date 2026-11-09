@@ -52,8 +52,12 @@ pub enum KeyError {
     RelativePath { path: PathBuf },
     #[error("{} names no file", path.display())]
     NoFileName { path: PathBuf },
-    #[error("{} is not an existing directory", path.display())]
-    NoDirectory { path: PathBuf },
+    #[error("{} is not a directory this user can reach", path.display())]
+    NoDirectory {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     /// A Git working tree is no place for the release key: a stray
     /// `git add` or a synced checkout would carry its seed off.
     #[error(

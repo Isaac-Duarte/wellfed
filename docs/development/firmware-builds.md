@@ -223,7 +223,7 @@ You make it once, on a machine with no network, onto removable media. Only its p
    ./target/release/wellfed-build release-keygen --output /run/media/$USER/KEY1/wellfed-release-key.json
    ```
 
-   It prints both paths, the public key and the key id. Write the key id down on paper. The drive now holds `wellfed-release-key.json` (the key, mode 600) and `wellfed-release-key.pub.json` (the public half).
+   It prints both paths, the public key and the key id. Write the key id down on paper. The drive now holds `wellfed-release-key.json` (the key) and `wellfed-release-key.pub.json` (the public half). The key is written mode 600, but a FAT or exFAT drive, as most USB sticks come, ignores that and lets every local user read it while it is mounted: format the drives ext4 first, or keep them mounted only for these steps.
 5. Insert a second drive and copy both files to it, then check the copies: `cmp /run/media/$USER/KEY1/wellfed-release-key.json /run/media/$USER/KEY2/wellfed-release-key.json`.
 6. Copy only the public half into the checkout: `cp /run/media/$USER/KEY1/wellfed-release-key.pub.json private/release-key.pub.json`. Never copy `wellfed-release-key.json` itself anywhere but removable media.
 7. Unmount and remove both drives, then reconnect the network. Keep the drives in two different places.
