@@ -74,7 +74,7 @@ Some conventions hold across the API:
 
 ## Alerts
 
-The feeder decides every alert ([alerts](../firmware/alerts.md)). The server reads each feeder's table over its own session whenever the status shows the table moved: a moment after each event, and every minute while the feeder is online. It keeps the latest table and what it made of it, and judges one thing itself: a feeder it has failed to reach three times in a row, over at least ten minutes, is unreachable. That is the rule the phone uses at home.
+The feeder decides every alert ([alerts](../firmware/alerts.md)). The server reads each feeder's table over its own session whenever the status shows the table moved: a moment after each event, and every minute while the feeder is online. It keeps the latest table and what it made of it, and judges one thing itself: a feeder it has failed to reach three times in a row, over at least ten minutes, is unreachable. That is the rule the phone uses at home. A feeder that answers counts as reached, even when it turns the session away because every session is taken. One that no longer knows the server's key (an owner revoked it) is unreachable at once: the server can't read it again until it is adopted anew, and the table it serves stays as old as its `read.at`.
 
 **`GET /api/v1/feeders/{id}/alerts`** answers, for any role:
 
@@ -123,7 +123,14 @@ Set `webhook.url` ([settings](running.md#settings)) and the server POSTs a small
 - **`words`** is one plain English sentence. **`at`** is the feeder's time for the alert, `null` without a valid clock; **`time`** is when the server saw the change.
 - **The body only grows.** A newer server adds fields and never changes these; `version` moves only if a field's meaning must.
 
-Each change goes once. A delivery that fails (no answer, `408`, `429` or a `5xx`) is tried again after 10 s, 30 s, 90 s, 4.5 min and 13.5 min, then given up; any other answer is final. Every try of one change carries the same `id`, so a receiver that keeps the ids it has seen never acts twice on a try whose answer was lost. A feeder's next change waits behind one that is being retried, so a clear never comes before its open. Delivery runs on its own, never in a feeder's session, and a stopped server resumes the deliveries it hadn't finished at its next start. An alert already open when the webhook is first set isn't sent until it opens again, and a clear goes only for an open that was sent.
+Delivery is at least once, under one `id` per change:
+
+- **Retries.** A delivery that fails (no answer, `408`, `429` or a `5xx`) is tried again after 10 s, 30 s, 90 s, 4.5 min and 13.5 min, then given up; any other answer is final.
+- **Duplicates.** Every try of one change carries the same `id`. A try whose answer was lost, or a server stopped between a delivery and noting it, sends the change again, so a receiver that must not act twice keeps the ids it has seen.
+- **Pairing.** Pair events by `key`: for each key, the latest event is the alert's state. An alert whose kind changes while it is open (an uncertain meal found failed) comes as `opened` again under the same key, with a new `id`.
+- **Order.** A feeder's next change waits behind one that is being retried, so a clear never comes before its open. Delivery runs on its own, never in a feeder's session, and a stopped server resumes the deliveries it hadn't finished at its next start.
+- **Clears.** A clear goes only for an alert whose opening the receiver took with a `2xx`, or one already open when the server first read the feeder. An opening refused or given up is never followed by its clear.
+- **What isn't sent.** The alerts open when the server first reads a feeder are taken quietly: just adopted, after an import (kept alerts aren't exported), or after the server's copy was reset (a row of another layout). So are alerts open while no webhook is set: an alert already open when you set the webhook isn't sent until it opens again. A feeder you remove is sent nothing more, not even the clears of what was open.
 
 The URL may be `https://` anywhere, checked by the server's own TLS stack. Plain `http://` goes only to this computer or the home network (a loopback, private or link-local address, `localhost`, or a `.local` name), unless you set `webhook.allow_plain_http`. The server never logs the URL, since a webhook's path is often its secret.
 
@@ -208,5 +215,6 @@ The `api_growth` test in `wellfed-server` checks each build's document against t
 - **Simulation**, October 24–27, 2026: the server's crates and their tests run against `wellfed-feeder-sim` over real TCP and Noise. Feeds, uncertain writes, installs, the stock backup and restore, export and import were exercised this way.
 - **Observed**, October 28, 2026: the server adopted the research unit by invite, mirrored its history, and changed its settings and lock. The history stayed whole across a server restart, a power cut and a Wi-Fi drop.
 - **Static analysis**, October 27, 2026: the route groups above match the committed `openapi.json`, and the role rules match `Permission::can` in `wellfed-service`.
+- **Simulation**, November 9, 2026 (later): against a test receiver, an opening answered `400`, or given up after six tries, was never followed by its clear, while one taken was cleared once; a change gone before its retry was forgotten; a removed feeder was sent nothing more. The server's first table was taken quietly, a server copy older than the phone's own read ended and revived nothing, the kept row's format 1 read back as its committed sample, and no error quoted the webhook URL.
 - **Simulation**, November 9, 2026: against `wellfed-feeder-sim`, the server served a feeder's alert table, POSTed a new client's joining to a webhook once, and judged a stopped feeder unreachable after ten minutes on a moved clock and reachable again once it answered, each sent once. The app read the same alert through the server away and directly at home, and posted it once. None of this has run on a feeder or a phone.
 - **Simulation**, November 8, 2026: the growth check refused a new required field even when blessed, and asked for revision 2 for a new optional one. An older client's reads of a newer value, outcome, error code, page entry and stream update ran as unit tests.

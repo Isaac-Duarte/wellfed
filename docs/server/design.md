@@ -38,7 +38,7 @@ src/server/wellfed-mirror    the per-feeder runtime: connect, sync, ingest and p
                               install, a stock restore or a read of bank 1 on the long one), and a typed broadcast of
                               each feeder's mirror events
 src/server/wellfed-releases  fetch, upload and verify releases, the release cache, and each feeder's verified stock backup
-src/server/wellfed-webhook   the alert webhook: each alert's opening and clearing POSTed to the owner's URL, once
+src/server/wellfed-webhook   the alert webhook: each alert's opening and clearing POSTed to the owner's URL, at least once under one id
 src/server/wellfed-service   the use cases: accounts and auth, the home, commands and their journal, pets and food,
                               derived views, audit, export, and the hub. No axum, no SQL
 src/server/wellfed-server    the binary: config, axum routers per resource, the auth extractors, SSE, the jobs
@@ -177,8 +177,8 @@ The feeder decides every alert ([alerts](../firmware/alerts.md)); the server rea
 
 - **The reader.** A task beside each feeder's session reads the status on the short lane, and the table (`GetAlerts`) only when the status shows its cursor moved: the ring's epoch, the boot count and the table's generation. It looks at each connect, 2 s after each new event (an event opens most reports), and every minute while the feeder is online (`AlertReads`), since a condition such as food running low opens with no event. Neither read changes the feeder.
 - **The judgement is the phone's.** The table goes into a `wellfed_client::alerts::Watch`, the tracker the app keeps, with no mutes and the server's own fingerprint, so its own joining stays quiet. It decides what opened, what ended and how long an absent alert is held, by the phone's rules. Each failed connect counts towards unreachable and each session opened resets it, by the phone's rule: three failures in a row over at least ten minutes.
-- **Kept in the store, not in memory.** `feeder_alerts` holds the last table, the watch and the alerts the webhook was told opened. A restart serves the last table at once and sends no alert twice, and a delivery the server never finished goes at the next start. The reader and the webhook both write the row, each over the version it read, so neither loses the other's change. The table is the feeder's RAM, so the row is derived and isn't exported; an import reads every table again.
-- **The webhook** (`wellfed-webhook`) is one task. It takes each feeder's changes from the watch in order, POSTs them, and confirms each in the row once delivered or given up. With no URL set it confirms them unsent ([alert webhook](README.md#alert-webhook)).
+- **Kept in the store, not in memory.** `feeder_alerts` holds the last table, the watch and the alerts the webhook was told opened. A restart serves the last table at once and doesn't announce what was already told, and a delivery the server never finished goes at the next start. The first table after a fresh row (an adoption, an import, a row of another layout) is taken quietly. The row's JSON is format 1, pinned against a committed sample, and a poll that changes nothing writes nothing. The reader and the webhook both write the row, each over the version it read, so neither loses the other's change. The table is the feeder's RAM, so the row is derived and isn't exported; an import reads every table again.
+- **The webhook** (`wellfed-webhook`) is one task. It takes each feeder's changes from the watch in order, POSTs them, and confirms each in the row once delivered or given up, at least once under one id; only an opening the receiver took (a `2xx`) is noted for its clear. A removed feeder's row is dropped unsent. With no URL set it confirms them unsent ([alert webhook](README.md#alert-webhook)).
 - **The route** serves the row (`GET /feeders/{id}/alerts`), and the stream says when it changed (`alerts`).
 
 ## Accounts and roles
