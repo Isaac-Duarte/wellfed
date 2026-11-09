@@ -5968,7 +5968,6 @@ dependencies = [
  "axum",
  "chrono",
  "chrono-tz",
- "clap",
  "hyper",
  "hyper-util",
  "mqtt5",
@@ -5981,12 +5980,33 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
  "wellfed-client",
  "wellfed-formats",
  "wellfed-model",
  "wellfed-signed",
+]
+
+[[package]]
+name = "wellfed-stock-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "reqwest",
+ "rumqttc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "wellfed-client",
+ "wellfed-formats",
+ "wellfed-stock",
 ]
 
 [[package]]

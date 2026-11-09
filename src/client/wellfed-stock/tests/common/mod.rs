@@ -1,6 +1,6 @@
 //! Shared fixtures: a synthetic stock configuration, the controller over
-//! it, and helpers that run the real `wellfed-stock serve` binary on
-//! loopback ports.
+//! it, and a server in this process on loopback ports. The tests that run
+//! the `wellfed-stock` binary are its crate's (`wellfed-stock-server`).
 
 #![allow(dead_code)]
 use wellfed_stock::{
@@ -11,7 +11,6 @@ use wellfed_stock::{
 use std::{
     net::{Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
-    process::{Child, Command, Stdio},
     time::Duration,
 };
 
@@ -89,57 +88,6 @@ pub fn runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-pub struct Service(Child);
-
-impl Service {
-    /// Run `command` (a `wellfed-stock` invocation) until dropped.
-    pub fn spawn(mut command: Command) -> Self {
-        Self(
-            command
-                .stdout(Stdio::null())
-                .stderr(Stdio::inherit())
-                .spawn()
-                .unwrap(),
-        )
-    }
-
-    /// Wait until the server accepts connections at `at`. A server that
-    /// exits first fails the test with its exit status (its errors are on
-    /// the test's standard error); one that never listens fails after a
-    /// minute, far past a loaded start, rather than at nextest's timeout.
-    pub async fn listening(&mut self, at: std::net::SocketAddr) {
-        let deadline = std::time::Instant::now() + Duration::from_secs(60);
-        while std::net::TcpStream::connect(at).is_err() {
-            if let Some(status) = self.0.try_wait().unwrap() {
-                panic!("the server exited before it listened on {at}: {status}");
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the server never listened on {at}"
-            );
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    }
-}
-
-impl Drop for Service {
-    fn drop(&mut self) {
-        let _ = Command::new("kill")
-            .args(["-INT", &self.0.id().to_string()])
-            .status();
-
-        for _ in 0..30 {
-            if self.0.try_wait().ok().flatten().is_some() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
 /// `N` distinct free loopback addresses, for the ports a spawned server
 /// binds once it has started.
 ///
@@ -193,22 +141,6 @@ pub fn addresses_on<const N: usize>(host: Ipv4Addr) -> std::io::Result<[SocketAd
     Ok(addresses
         .try_into()
         .expect("one address for each of the N listeners"))
-}
-
-/// The real `serve` binary on `path`.
-pub fn start(path: &std::path::Path) -> Service {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_wellfed-stock"));
-    // The stock model whose message set every action speaks.
-    command.args(["--device", "plaf103"]);
-    command.args(["serve", "--config"]).arg(path);
-
-    Service(
-        command
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .unwrap(),
-    )
 }
 
 /// Waits up to 10 s: a loaded host (a parallel test binary, a bench update)
@@ -267,15 +199,4 @@ pub fn device_session(config: &Config) -> MqttOptions {
     options.set_credentials(&config.device_username, &config.device_password);
     options.set_clean_session(true);
     options
-}
-
-/// A private directory holding [`config`] on free ports, with no plans.
-pub fn configured() -> (tempfile::TempDir, PathBuf, Config) {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("server.json");
-    let mut config = config();
-    config.plans = None;
-    [config.mqtt_listen, config.http_listen] = addresses().unwrap();
-    wellfed_stock::storage::write_json(&path, &config).unwrap();
-    (dir, path, config)
 }

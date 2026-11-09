@@ -21,16 +21,22 @@ Build them with `cargo build --locked --release`, and run the binaries from `tar
 | [wellfed-rig](wellfed-rig) | The bench's operator sequences, and the power, capture, server and device API steps the suite builds on. The bench's command line runs them | Yes (relays, serial) |
 | [wellfed-itest](wellfed-itest) | The real-device integration suite (`wellfed-bench itest`), run on the rig ([integration suite](../../docs/devices/plaf103/integration-suite.md)) | Yes (relays, serial) |
 | [wellfed-relay](wellfed-relay) | The SH-UR04A relay board driver, behind the `Board` trait another board can implement: feeder power, the loader strap and the UART lines | Yes (relays) |
-| [wellfed-stock](wellfed-stock) | What stock 1.1.15 speaks, as far as installing from it and rolling back need: its MQTT protocol and broker, the setup frame, the image server and the install-trial ledger, which `wellfed-install` runs in its own process. Its binary is the bench's stock server: `init-installer`, `serve` (which never asks stock to install), `status`, `setup-send`, and `ota-trial-resolve` and `ota-trial-answered`, which close an open request ([guide](../../docs/development/stock-server.md)) | No (network) |
+| [wellfed-stock-server](wellfed-stock-server) | The `wellfed-stock` binary, the bench's stock server over the [`wellfed-stock`](../client/wellfed-stock) library (what stock 1.1.15 speaks, as far as installing from it and rolling back need: its MQTT protocol and broker, the setup frame, the image server and the install-trial ledger, which `wellfed-install` runs in its own process): `init-installer`, `serve` (which never asks stock to install), `status`, `setup-send`, and `ota-trial-resolve` and `ota-trial-answered`, which close an open request ([guide](../../docs/development/stock-server.md)) | No (network) |
 | [wellfed-build](wellfed-build) | SDK firmware builds and their linked-image audits. `review` freezes a reviewed build or the stock OTA for `wellfed-flash`. `keygen` and `sign` sign a frozen review as an update ([firmware builds](../../docs/development/firmware-builds.md), [development updates](../../docs/development/uart-development.md)) | No |
 | [wellfed-audit](wellfed-audit) | Offline audits of finalized receive-only captures (startup, the QA self-test, driver transients), and full-flash backup comparison | No |
 | [wellfed-emu](wellfed-emu) | The vendor factory loader (mapping and bank selection) and UART flash helper, executed under Unicorn on supplied state. Backs the review's mapping check, the OTA marker fixtures and `wellfed-flash`'s emulated sessions | No |
-| [wellfed-signing](wellfed-signing) | Update signing, only ever of a frozen review: the bench key, version 2 manifests for the device API, and the downgrade and key statements. `wellfed-build keygen`/`sign`, the bench's offers and `wellfed restore-stock` use it | No |
-| [wellfed-image](wellfed-image) | The OTA image as every tool checks it: the container and core images, the two banks' layouts, the `private/` evidence root and frozen image reviews. The builder, the signer and the audits share these with `wellfed-flash` without linking it | No |
-| [wellfed-formats](wellfed-formats) | The files these tools pass to each other, typed once: build manifest, frozen review, stock layout, locks, captures, credentials and keys, flash plans, and the bench's config, progress record, live state, bank ledger, notes, run records and suite catalog. Also the private-file writer | No |
 | [xtask](xtask) | `cargo xtask check-repository`: documentation links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](../../docs/development/writing.md#what-the-checks-refuse)), portability, no Python under `src/`, transport isolation and the server's crate layering. `cargo xtask fuzz <target>`: one bounded cargo-fuzz run ([fuzzing](../../docs/development/README.md#fuzzing)) | No |
 
 Outside `src/tools/`, the simulator `wellfed-sim` (in `src/sdk/`) has the `virtual-feeder` binary ([the simulator](../../docs/development/README.md#the-simulator)), and the owner's server is `wellfed-server` (in `src/server/`).
+
+The libraries the tools share with the app, the server and the installer live in `src/client/`, since no crate outside `src/tools/` may link a tool's crate (`cargo xtask check-repository` refuses it):
+
+| Library | What it holds |
+| --- | --- |
+| [wellfed-formats](../client/wellfed-formats) | The files these tools pass to each other, typed once: build manifest, frozen review, stock layout, locks, captures, credentials and keys, flash plans, the export archive, and the bench's config, progress record, live state, bank ledger, notes, run records and suite catalog. Also the private-file writer |
+| [wellfed-image](../client/wellfed-image) | The OTA image as every tool checks it: the container and core images, the two banks' layouts, the `private/` evidence root and frozen image reviews. The builder, the signer and the audits share these with `wellfed-flash` without linking it |
+| [wellfed-signing](../client/wellfed-signing) | Update signing, only ever of a frozen review: the bench key, version 2 manifests for the device API, and the downgrade and key statements. `wellfed-build keygen`/`sign`, the bench's offers, the app's installer and `wellfed restore-stock` use it |
+| [wellfed-stock](../client/wellfed-stock) | What stock 1.1.15 speaks, run in the caller's process: the installer's and the `wellfed-stock` binary's |
 
 ## The `wellfed` command line
 
@@ -68,9 +74,10 @@ Each crate does one job, with one-way dependencies:
 ```text
 wellfed-client   lib, sans-IO   device API sessions and pairing; the installer's steps
 wellfed-model    lib            the device API's values, owned, as the CLI, the app and the server share them
-wellfed-stock    lib + binary   the stock 1.1.15 protocol, only what install and rollback need:
+wellfed-stock    lib            the stock 1.1.15 protocol, only what install and rollback need:
                                  the legacy MQTT 3.1 broker, OTA_UPGRADE and its trial ledger,
-                                 the setup frame; the binary is the bench's stock server
+                                 the setup frame
+wellfed-stock-server  binary    `wellfed-stock`, the bench's stock server over that library
 wellfed          CLI            the owner's command line
 wellfed-server   binary         the owner's optional server, and its installs of releases
 wellfed-build    CLI            builds, reviews, and update signing (keygen, sign)
@@ -93,7 +100,7 @@ wellfed-flash    CLI            every bench write goes through it as a process
 - **The relay board has a successor.** The [Wellfed Bench board](../hardware/bench/README.md) answers the same `AT+CHn` lines on one USB cable, with the UART bridge beside them. The owner ordered assembled boards in October 2026. No tool here drives one yet: `wellfed-relay`'s `Board` trait is where it plugs in.
 - **Shared files live in `wellfed-formats`**, since one crate writes each and another reads it ([conventions](../../AGENTS.md#rust-conventions)). Under `bench`: a command's progress record and its writer, the server's live state and job stream, the bank ledger, the operator's notes, the run record (`NAME-itest.json`), the bench config, the session evidence layout, and the suite's scenario catalog. Under `stock`: the stock server's config, status document and image lease.
 - **One server holds the bench.** `wellfed-bench serve --device plaf103` takes the lease and the relay board for its life, so a command is a job it runs, never a second process racing for the port. The relay board sits behind `wellfed-relay`'s `Board` trait, so another board can take its place.
-- **`wellfed-flash` stays a child process** for every read and write. It is the audited writer, with its own journals, reports and no-retry stops, and a fault in the bench must never take a write down with it. `cargo xtask check-repository` refuses any manifest under `src/` that names `wellfed-flash` or `wellfed-stock`, but for each crate's own. `wellfed-install`, the driver the app runs, may also name `wellfed-stock`, since it runs stock's server in-process.
+- **`wellfed-flash` stays a child process** for every read and write. It is the audited writer, with its own journals, reports and no-retry stops, and a fault in the bench must never take a write down with it. `cargo xtask check-repository` refuses any manifest under `src/` that names `wellfed-flash` or `wellfed-stock`, but for each crate's own. `wellfed-install`, the driver the app runs, may also name `wellfed-stock`, since it runs stock's server in-process, and so may `wellfed-stock-server`, the binary over it.
 - **The suite links the rig, not the bench.** So the server links the suite and runs `itest` in its own process.
 - **`wellfed restore-stock` stays a child process** of the server's `restore-stock` job, so it runs on its lease and the server never stops for it. Its questions cross as JSON lines (`wellfed_formats::bench::prompt`).
 - **The suite runs no stock server.** The bench signs by linking `wellfed-signing` and offers over the device API. The trip through stock is the `restore-stock` job and the app's install, which the suite does not cover ([before a release](../../docs/development/dart.md#before-a-release)).

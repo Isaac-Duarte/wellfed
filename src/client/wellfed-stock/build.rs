@@ -1,6 +1,7 @@
 //! Record the source commit so a running service can prove what it executes.
 //! Paths are relative to this package. The inputs are its own sources, the
-//! first-party crates it links (`wellfed-formats` the status types,
+//! bench's binary over it (`wellfed-stock-server`), the first-party crates it
+//! links (`wellfed-formats` the status types,
 //! `wellfed-core` and `wellfed-session` the update format and hex), the
 //! crates that decide and send the install request in another process
 //! (`wellfed-client`'s steps, `wellfed-install`'s driver and the Android
@@ -8,10 +9,12 @@
 //! workspace's manifest, lockfile and toolchain.
 use std::process::Command;
 
-const BUILD_INPUTS: [&str; 17] = [
+const BUILD_INPUTS: [&str; 19] = [
     "src",
     "build.rs",
     "Cargo.toml",
+    "../../tools/wellfed-stock-server/src",
+    "../../tools/wellfed-stock-server/Cargo.toml",
     "../wellfed-formats/src",
     "../wellfed-formats/Cargo.toml",
     "../../sdk/wellfed-core/src",

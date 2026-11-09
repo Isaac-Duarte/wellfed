@@ -59,8 +59,8 @@ const SDK_CRATES: [&str; 2] = ["src/sdk", "src/product"];
 const BUILDER_SOURCES: &str = "src/tools/wellfed-build/src";
 const BUILDER_SHARED: [&str; 3] = [
     "src/tools/wellfed-build/Cargo.toml",
-    "src/tools/wellfed-image/src/ota.rs",
-    "src/tools/wellfed-image/src/error.rs",
+    "src/client/wellfed-image/src/ota.rs",
+    "src/client/wellfed-image/src/error.rs",
 ];
 
 /// Tracked plus untracked, non-ignored files below the root-relative

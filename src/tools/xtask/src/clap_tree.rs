@@ -64,7 +64,7 @@ pub(crate) const TOOLS: [Tool; 8] = [
     },
     Tool {
         name: "wellfed-stock",
-        sources: &["src/tools/wellfed-stock/src/"],
+        sources: &["src/tools/wellfed-stock-server/src/"],
     },
     Tool {
         name: "wellfed-flash",

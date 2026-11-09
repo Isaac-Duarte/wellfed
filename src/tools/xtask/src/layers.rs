@@ -13,14 +13,17 @@
 //!   dependencies come from an allow-list;
 //! - the SDK's device-neutral crates link no kind's own crate by any path,
 //!   so a fountain's image carries no feeder code
-//!   (docs/firmware/device-kinds.md).
+//!   (docs/firmware/device-kinds.md);
+//! - a crate outside `src/tools/` links no host tool's crate, so what the
+//!   app, the server and the firmware build on is a library in its own
+//!   layer, never a tool's internals.
 //!
 //! The arrows name crates that do not exist yet, so a new crate is checked
 //! from its first manifest. Dev-dependencies are exempt from the arrows (a
 //! test may build a simulated feeder or a whole server), never from sqlx.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, io};
 
@@ -132,6 +135,14 @@ fn is_kind_sdk(name: &str) -> bool {
     matches!(name, "wellfed-core-feeder" | "wellfed-hal-feeder")
 }
 
+/// The host tools' folder: a crate whose manifest is under it is a tool.
+const TOOLS: &str = "src/tools/";
+
+/// The only edges from outside [`TOOLS`] into a tool's crate: the server's
+/// test kit is the harness the server crates' tests start, and the
+/// simulated feeder is the feeder it serves them.
+const INTO_TOOLS: [(&str, &str); 1] = [("wellfed-server-testkit", "wellfed-feeder-sim")];
+
 /// What `wellfed-api` may depend on: serde types, schemas, ids and times,
 /// all of which build for Android. A new entry needs that check.
 const API_ALLOWED: [&str; 5] = ["jiff", "wellfed-model", "serde", "utoipa", "uuid"];
@@ -159,6 +170,7 @@ pub(crate) enum Error {
 struct Metadata {
     packages: Vec<Package>,
     workspace_members: Vec<String>,
+    workspace_root: PathBuf,
     resolve: Option<Resolve>,
 }
 
@@ -166,6 +178,7 @@ struct Metadata {
 struct Package {
     id: String,
     name: String,
+    manifest_path: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -212,12 +225,25 @@ enum Use {
 struct Graph {
     names: BTreeMap<String, String>,
     members: BTreeSet<String>,
+    /// The members whose manifest is under [`TOOLS`].
+    tools: BTreeSet<String>,
     edges: BTreeMap<String, Vec<(String, Use)>>,
 }
 
 impl Graph {
     fn from_metadata(metadata: Metadata) -> Result<Self, Error> {
         let resolve = metadata.resolve.ok_or(Error::NoResolve)?;
+        let tools = metadata
+            .packages
+            .iter()
+            .filter(|package| {
+                package
+                    .manifest_path
+                    .strip_prefix(&metadata.workspace_root)
+                    .is_ok_and(|path| path.starts_with(TOOLS))
+            })
+            .map(|package| package.id.clone())
+            .collect();
         let names: BTreeMap<String, String> = metadata
             .packages
             .into_iter()
@@ -241,9 +267,11 @@ impl Graph {
             edges.insert(node.id, deps);
         }
 
+        let members: BTreeSet<String> = metadata.workspace_members.into_iter().collect();
         Ok(Self {
             names,
-            members: metadata.workspace_members.into_iter().collect(),
+            tools: members.intersection(&tools).cloned().collect(),
+            members,
             edges,
         })
     }
@@ -344,6 +372,14 @@ fn rules(graph: &Graph) -> Vec<String> {
             if !graph.members.contains(dep) {
                 continue;
             }
+            if !graph.tools.contains(member)
+                && graph.tools.contains(dep)
+                && !INTO_TOOLS.contains(&(from, to))
+            {
+                errors.push(format!(
+                    "dependency rule: {from} → {to}: a crate outside {TOOLS} links no host tool's crate"
+                ));
+            }
             if let Some(allowed) = arrows.get(from) {
                 if !allowed.contains(&to) {
                     errors.push(format!(
@@ -389,6 +425,11 @@ mod tests {
         let mut graph = Graph {
             names: BTreeMap::new(),
             members: members.iter().map(ToString::to_string).collect(),
+            tools: members
+                .iter()
+                .filter(|name| TOOL_MEMBERS.contains(name))
+                .map(ToString::to_string)
+                .collect(),
             edges: BTreeMap::new(),
         };
         for (from, to, used) in edges {
@@ -403,6 +444,15 @@ mod tests {
         }
         graph
     }
+
+    /// The members of [`MEMBERS`] (and the tests' own) under `src/tools/`.
+    const TOOL_MEMBERS: [&str; 5] = [
+        "wellfed",
+        "wellfed-bench",
+        "wellfed-build",
+        "wellfed-feeder-sim",
+        "wellfed-stock-server",
+    ];
 
     const MEMBERS: [&str; 13] = [
         "wellfed",
@@ -528,6 +578,42 @@ mod tests {
     }
 
     #[test]
+    fn nothing_outside_the_tools_links_a_tool() {
+        use Use::{Links, TestsOnly};
+        let members = [
+            "wellfed-install",
+            "wellfed-stock",
+            "wellfed-stock-server",
+            "wellfed-build",
+            "wellfed-feeder-sim",
+            "wellfed-server-testkit",
+            "wellfed-sim",
+        ];
+        let mut edges = vec![
+            ("wellfed-install", "wellfed-stock", Links),
+            ("wellfed-stock-server", "wellfed-stock", Links),
+            ("wellfed-build", "wellfed-stock", Links),
+            // The server's test kit serves its tests the simulated feeder.
+            ("wellfed-server-testkit", "wellfed-feeder-sim", Links),
+            // A test of a crate outside the tools may run one.
+            ("wellfed-install", "wellfed-feeder-sim", TestsOnly),
+        ];
+        assert!(rules(&graph(&members, &edges)).is_empty());
+
+        edges.extend([
+            ("wellfed-install", "wellfed-build", Links),
+            ("wellfed-sim", "wellfed-feeder-sim", Links),
+        ]);
+        assert_eq!(
+            rules(&graph(&members, &edges)),
+            [
+                "dependency rule: wellfed-install → wellfed-build: a crate outside src/tools/ links no host tool's crate",
+                "dependency rule: wellfed-sim → wellfed-feeder-sim: a crate outside src/tools/ links no host tool's crate",
+            ]
+        );
+    }
+
+    #[test]
     fn axum_through_the_api_is_named_from_every_crate_above_it() {
         let mut edges = layered();
         edges.push(("wellfed-api", "utoipa-axum", Use::Links));
@@ -598,17 +684,20 @@ mod tests {
     fn metadata_kinds_decide_what_links() {
         let json = r#"{
             "packages": [
-                {"id": "a 0.1.0", "name": "wellfed-service"},
-                {"id": "b 0.9.0", "name": "sqlx"},
-                {"id": "c 0.8.0", "name": "axum"},
-                {"id": "d 1.0.0", "name": "cc"}
+                {"id": "a 0.1.0", "name": "wellfed-service", "manifest_path": "/w/src/server/wellfed-service/Cargo.toml"},
+                {"id": "b 0.9.0", "name": "sqlx", "manifest_path": "/r/sqlx/Cargo.toml"},
+                {"id": "c 0.8.0", "name": "axum", "manifest_path": "/r/axum/Cargo.toml"},
+                {"id": "d 1.0.0", "name": "cc", "manifest_path": "/r/cc/Cargo.toml"},
+                {"id": "e 0.1.0", "name": "wellfed-bench", "manifest_path": "/w/src/tools/wellfed-bench/Cargo.toml"}
             ],
-            "workspace_members": ["a 0.1.0"],
+            "workspace_members": ["a 0.1.0", "e 0.1.0"],
+            "workspace_root": "/w",
             "resolve": {"nodes": [
                 {"id": "a 0.1.0", "deps": [
                     {"pkg": "b 0.9.0", "dep_kinds": [{"kind": "dev", "target": null}]},
                     {"pkg": "c 0.8.0", "dep_kinds": [{"kind": "dev", "target": null}]},
-                    {"pkg": "d 1.0.0", "dep_kinds": [{"kind": "build", "target": null}]}
+                    {"pkg": "d 1.0.0", "dep_kinds": [{"kind": "build", "target": null}]},
+                    {"pkg": "e 0.1.0", "dep_kinds": [{"kind": "dev", "target": null}]}
                 ]}
             ]}
         }"#;
@@ -621,8 +710,10 @@ mod tests {
                 ("b 0.9.0".to_string(), Use::TestsOnly),
                 ("c 0.8.0".to_string(), Use::TestsOnly),
                 ("d 1.0.0".to_string(), Use::Links),
+                ("e 0.1.0".to_string(), Use::TestsOnly),
             ]
         );
+        assert_eq!(graph.tools, BTreeSet::from(["e 0.1.0".to_string()]));
         assert_eq!(
             rules(&graph),
             ["dependency rule: wellfed-service → sqlx: only wellfed-store depends on sqlx"]
