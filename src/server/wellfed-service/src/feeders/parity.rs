@@ -36,9 +36,11 @@ pub enum NoRoute {
     /// It needs a press at the feeder, so the owner runs it at the feeder
     /// with the CLI.
     AtTheFeeder,
-    /// No app screen shows it, so the app never asks: the feeder's alert
-    /// table, which the CLI reads from the feeder.
-    NotInApp,
+    /// The app reads it straight from the feeder, at home only: the feeder's
+    /// alert table, which the app's catch-up reads over its own session. The
+    /// server has no route that reads the table, so a phone away from home
+    /// hears no alerts.
+    AppAtHomeOnly,
 }
 
 /// The server route for a device operation, or why it has none.
@@ -86,6 +88,6 @@ pub const fn parity(op: &Op) -> Parity {
         Op::PlayCall => Route(Post, "/feeders/{id}/call/play"),
         Op::SkipMeal { .. } => Route(Post, "/feeders/{id}/meals/skip"),
         Op::UnskipMeal { .. } => Route(Post, "/feeders/{id}/meals/unskip"),
-        Op::GetAlerts => Without(NoRoute::NotInApp),
+        Op::GetAlerts => Without(NoRoute::AppAtHomeOnly),
     }
 }

@@ -57,6 +57,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications needs it, for its scheduling API.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -136,4 +138,9 @@ dependencies {
     // The Bluetooth plugin's own RxJava, for its error handler in MainActivity.
     implementation("io.reactivex.rxjava2:rxjava:2.2.21")
     implementation("org.rustls:rustls-platform-verifier:$rustlsVerifierVersion")
+    // The periodic catch-up, scheduled from Kotlin rather than through a
+    // plugin: the plugins start their Flutter engine with every plugin
+    // attached, which takes the Bluetooth plugin's links over from the app.
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }

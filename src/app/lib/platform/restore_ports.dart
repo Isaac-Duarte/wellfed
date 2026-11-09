@@ -5,6 +5,7 @@ import 'package:file_selector/file_selector.dart';
 
 import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 import 'package:wellfed/src/rust/api/install.dart' as install;
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/restore.dart';
@@ -107,8 +108,8 @@ class AppRestorePorts implements RestorePorts {
       rust.forgetRestoreKey(dataDir: dataDir, identity: Uint8List.fromList(identity));
 
   @override
-  Future<bool> holdProcess(String text) => _install.holdProcess(text);
+  Future<bool> holdProcess(String text) => _install.holdFor(AlertHold.restore, text);
 
   @override
-  Future<void> releaseProcess() => _install.releaseProcess();
+  Future<void> releaseProcess() => _install.releaseFor(AlertHold.restore);
 }

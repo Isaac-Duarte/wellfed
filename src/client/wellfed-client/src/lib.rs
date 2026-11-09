@@ -31,6 +31,7 @@
 //! [API design]: ../../../../docs/firmware/device-api.md
 #![forbid(unsafe_code)]
 
+pub mod alerts;
 pub mod api;
 pub mod calibration;
 pub mod call;

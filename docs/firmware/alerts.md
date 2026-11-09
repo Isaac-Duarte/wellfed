@@ -2,7 +2,7 @@
 
 This page explains how the feeder decides what is wrong and how a client reads it. It is for contributors. An alert only reports: no rule feeds, retries or changes anything.
 
-The feeder is the only thing that knows what is wrong, so it decides. It keeps a small table of open alerts in RAM, and every client reads that table, so a phone, the CLI and a server can't disagree. `wellfed alerts` prints it. Nothing on the phone or the server judges these alerts yet: the app shows none of them so far ([roadmap](../roadmap.md)).
+The feeder is the only thing that knows what is wrong, so it decides. It keeps a small table of open alerts in RAM, and every client reads that table, so a phone, the CLI and a server can't disagree. `wellfed alerts` prints it. The Android app catches up with the table at home and notifies each alert once, clearing the notification when the feeder clears the alert ([alerts at home](../../src/app/README.md#alerts-at-home)); the server doesn't read it yet ([roadmap](../roadmap.md)). Neither judges an alert: the phone's one judgement of its own is that it can't reach the feeder.
 
 ## One failed meal
 
@@ -82,9 +82,9 @@ The epoch holds for a boot, so a read carries it once rather than in each entry.
 
 - **`generation`** changes whenever anything in the view does. It counts from 0 at each boot, and a session doesn't outlive a boot.
 - **`more`** says a report left for want of room, or the boot read didn't reach all of the ring, and what is missing could still have been listed.
-- **`settling`** is set until the boot read has ended and the thresholds that began at boot have run out, and while a reading a condition needs is unknown: the desiccant's days with no clock, the food beam before its first reading, or the verdict on a fitted pack.
+- **`settling`** is set until the boot read has ended and the thresholds that began at boot have run out, and while a reading a condition needs is unknown: the desiccant's days with no clock, the food beam before its first reading, the verdict on a fitted pack, or local time (no valid clock, or one with no zone offset). With no local time the feeder closes `PlansStuck` because its threshold can't run, not because the plans settled, so the table doesn't vouch for that absence; the feeder counts it as an unknown reading rather than keep the alert open, since a restart empties the table anyway.
 
-While either flag is set, a client doesn't take an absent alert to mean it ended.
+While either flag is set, a client doesn't take an absent alert to mean it ended, though not for good. `settling` is one flag for the whole table, so it can't say which condition it holds back, and a reading that stays unknown (the desiccant's days with no clock) keeps it set as long as the clock is missing. The app takes an absent condition as ended once tables have left it out for 2 hours, twice the longest threshold that starts again at a boot, so a cleared `FoodLow` doesn't stay posted while the clock is unknown. `DesiccantDue` waits for a valid clock, which counts its days, and `PlansStuck` for local time, whose arrival starts its threshold. So `DesiccantDue` isn't ended this way while the status shows no valid clock, nor `PlansStuck` while the feeder has no local time (no valid clock, or the table lists `NoClock`, which also covers a clock with no zone offset), and each one's 2 hours count from the first read with what it waits for. A condition held absent longer than 2 hours by another unknown reading (the food beam before its first reading, a fitted pack's verdict) does come off, and posts again if the feeder reopens it. An absent report ends once it is past the feeder's own 48 hours: by its time, or, made with no valid clock, by how long tables have left it out.
 
 **When room runs out.** There are at most 7 conditions in 12 slots, so a condition always fits. A report pushes out the oldest of the least urgent reports: `Soon`, then `Security`, then `Urgent`. A report less urgent than all of them is dropped itself.
 

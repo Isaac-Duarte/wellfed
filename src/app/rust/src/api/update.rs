@@ -130,11 +130,15 @@ impl FirmwareUpdate {
         let image_dir = self.image_dir.clone();
         let asks = self.asks.clone();
 
+        // Held by the thread itself, through the give-way and bank 0's
+        // restart, which outlive an engine swiped away.
+        let held = crate::alerts::RunThread::hold();
         // The driver's futures are not Send, so it keeps a thread.
         let thread = std::thread::Builder::new()
             .name("wellfed-update".into())
             .stack_size(STACK)
             .spawn(move || {
+                let _held = held;
                 let updates = Arc::new(updates);
                 let heard = updates.clone();
                 *asks.deliver() = Some(Box::new(move |update| match update {

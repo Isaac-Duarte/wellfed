@@ -33,7 +33,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use utoipa::ToSchema;
 
-pub use alerts::{Alert, AlertsView, OpenAlert};
+pub use alerts::{Alert, AlertKey, AlertKind, AlertLevel, AlertsView, OpenAlert};
 pub use call::{CALL_BYTES_MAX, CALL_CHUNK_MAX, CALL_PLAYS_MAX, CALL_RATE_HZ, CallClip, CallView};
 pub use event::{
     ClientRole, CoreEvent, EnrollPath, Event, EventBody, EventKind, FeedOutcome, FeedReason,

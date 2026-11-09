@@ -3,6 +3,7 @@
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::event::{ClientRole, EnrollPath, FeedOutcome, FeedReason, MissedReason, Source};
 use crate::{Blocked, Generation, Hex, UpdateStop};
@@ -102,4 +103,196 @@ pub enum Alert {
     /// With a valid clock, the plans have stayed out of reach, or a change to
     /// them has never finished, so nothing can say whether meals ran.
     PlansStuck,
+}
+
+impl OpenAlert {
+    /// What makes this the same alert across reads and restarts, within one
+    /// feeder, as the feeder's rules key it ([alerts]). A feed's number
+    /// counts within the ring's epoch, which the view carries.
+    ///
+    /// [alerts]: ../../../../docs/firmware/alerts.md#identity
+    pub const fn key(&self) -> AlertKey {
+        let kind = self.alert.kind();
+        match self.alert {
+            Alert::MealFailed { feed, .. } | Alert::MealUncertain { feed, .. } => {
+                AlertKey::Feed { feed }
+            }
+            Alert::MealMissed { plan, due, .. } | Alert::MealNoRecord { plan, due } => {
+                AlertKey::Meal { plan, due }
+            }
+            Alert::ClientJoined { client, .. } | Alert::ClientRevoked { client, .. } => {
+                AlertKey::Client {
+                    kind,
+                    client,
+                    at: self.at,
+                }
+            }
+            Alert::PowerWasOut | Alert::UpdateFailed { .. } | Alert::RolledBack => {
+                AlertKey::Timed { kind, at: self.at }
+            }
+            Alert::RepeatedRestarts
+            | Alert::NoClock
+            | Alert::CannotFeed { .. }
+            | Alert::FoodLow
+            | Alert::FoodLikelyOut { .. }
+            | Alert::DesiccantDue { .. }
+            | Alert::BatteryBelowFloor
+            | Alert::PlansStuck => AlertKey::Kind { kind },
+        }
+    }
+}
+
+impl Alert {
+    pub const fn kind(&self) -> AlertKind {
+        match self {
+            Self::MealFailed { .. } => AlertKind::MealFailed,
+            Self::MealUncertain { .. } => AlertKind::MealUncertain,
+            Self::MealMissed { .. } => AlertKind::MealMissed,
+            Self::MealNoRecord { .. } => AlertKind::MealNoRecord,
+            Self::PowerWasOut => AlertKind::PowerWasOut,
+            Self::UpdateFailed { .. } => AlertKind::UpdateFailed,
+            Self::RolledBack => AlertKind::RolledBack,
+            Self::ClientJoined { .. } => AlertKind::ClientJoined,
+            Self::ClientRevoked { .. } => AlertKind::ClientRevoked,
+            Self::RepeatedRestarts => AlertKind::RepeatedRestarts,
+            Self::NoClock => AlertKind::NoClock,
+            Self::CannotFeed { .. } => AlertKind::CannotFeed,
+            Self::FoodLow => AlertKind::FoodLow,
+            Self::FoodLikelyOut { .. } => AlertKind::FoodLikelyOut,
+            Self::DesiccantDue { .. } => AlertKind::DesiccantDue,
+            Self::BatteryBelowFloor => AlertKind::BatteryBelowFloor,
+            Self::PlansStuck => AlertKind::PlansStuck,
+        }
+    }
+
+    pub const fn level(&self) -> AlertLevel {
+        self.kind().level()
+    }
+}
+
+/// An alert's identity: equal keys are one alert. A feed's key spans its
+/// outcomes, so an uncertain feed's second `Fed` replaces the first alert,
+/// and a meal's spans a report of no record and the `Missed` that answers it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "key", rename_all = "snake_case")]
+pub enum AlertKey {
+    Feed {
+        feed: u32,
+    },
+    Meal {
+        plan: u8,
+        due: Timestamp,
+    },
+    /// With its time, so a later rejoin alerts again.
+    Client {
+        #[schema(value_type = String)]
+        kind: AlertKind,
+        #[schema(value_type = String)]
+        client: Hex<4>,
+        at: Option<Timestamp>,
+    },
+    Timed {
+        #[schema(value_type = String)]
+        kind: AlertKind,
+        at: Option<Timestamp>,
+    },
+    /// A condition, present or absent.
+    Kind {
+        #[schema(value_type = String)]
+        kind: AlertKind,
+    },
+}
+
+/// An alert's kind, without what it says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertKind {
+    MealFailed,
+    MealUncertain,
+    MealMissed,
+    MealNoRecord,
+    PowerWasOut,
+    UpdateFailed,
+    RolledBack,
+    ClientJoined,
+    ClientRevoked,
+    RepeatedRestarts,
+    NoClock,
+    CannotFeed,
+    FoodLow,
+    FoodLikelyOut,
+    DesiccantDue,
+    BatteryBelowFloor,
+    PlansStuck,
+}
+
+impl AlertKind {
+    /// Every kind, in the enum's order.
+    pub const ALL: [Self; 17] = [
+        Self::MealFailed,
+        Self::MealUncertain,
+        Self::MealMissed,
+        Self::MealNoRecord,
+        Self::PowerWasOut,
+        Self::UpdateFailed,
+        Self::RolledBack,
+        Self::ClientJoined,
+        Self::ClientRevoked,
+        Self::RepeatedRestarts,
+        Self::NoClock,
+        Self::CannotFeed,
+        Self::FoodLow,
+        Self::FoodLikelyOut,
+        Self::DesiccantDue,
+        Self::BatteryBelowFloor,
+        Self::PlansStuck,
+    ];
+
+    /// How soon it wants the owner, as the feeder ranks it when room runs
+    /// out.
+    pub const fn level(self) -> AlertLevel {
+        match self {
+            Self::MealFailed
+            | Self::MealUncertain
+            | Self::MealMissed
+            | Self::MealNoRecord
+            | Self::NoClock
+            | Self::CannotFeed
+            | Self::FoodLikelyOut
+            | Self::PlansStuck => AlertLevel::Urgent,
+            Self::FoodLow
+            | Self::DesiccantDue
+            | Self::PowerWasOut
+            | Self::BatteryBelowFloor
+            | Self::UpdateFailed
+            | Self::RolledBack
+            | Self::RepeatedRestarts => AlertLevel::Soon,
+            Self::ClientJoined | Self::ClientRevoked => AlertLevel::Security,
+        }
+    }
+
+    /// Whether it is present or absent by its state, ending with it, rather
+    /// than a report that lapses. Repeated restarts are tracked this way.
+    pub const fn is_condition(self) -> bool {
+        matches!(
+            self,
+            Self::RepeatedRestarts
+                | Self::NoClock
+                | Self::CannotFeed
+                | Self::FoodLow
+                | Self::FoodLikelyOut
+                | Self::DesiccantDue
+                | Self::BatteryBelowFloor
+                | Self::PlansStuck
+        )
+    }
+}
+
+/// How soon an alert wants the owner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertLevel {
+    Urgent,
+    Soon,
+    Security,
 }

@@ -134,7 +134,7 @@ pub(crate) fn open<T: Versioned>(
     };
     let value = fresh(&set_aside);
     write(path, &value)?;
-    Ok(Opened::SetAside { value, set_aside })
+    Ok(Opened::SetAside { value })
 }
 
 /// What [`open`] found.
@@ -143,10 +143,10 @@ pub(crate) enum Opened<T> {
     /// Nothing was ever written.
     Absent,
     Read(T),
-    /// The file did not read: it was kept aside, and `value` replaced it.
+    /// The file did not read: it was kept aside, and `value`, which `fresh`
+    /// made from where it went, replaced it.
     SetAside {
         value: T,
-        set_aside: SetAside,
     },
 }
 
@@ -233,11 +233,15 @@ mod tests {
         let path = dir.path().join("a.json");
         std::fs::write(&path, b"{ not json").unwrap();
 
-        let Opened::SetAside { value, set_aside } =
-            open(&path, StoreKind::App, |_| Now { count: 9 }).unwrap()
-        else {
+        let mut told = None;
+        let fresh = |set_aside: &SetAside| {
+            told = Some(set_aside.clone());
+            Now { count: 9 }
+        };
+        let Opened::SetAside { value } = open(&path, StoreKind::App, fresh).unwrap() else {
             panic!("a damaged file is set aside");
         };
+        let set_aside = told.unwrap();
 
         assert_eq!(value, Now { count: 9 });
         assert_eq!(set_aside.kind, StoreKind::App);

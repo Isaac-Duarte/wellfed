@@ -52,7 +52,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 - **The installer** is the app. Every install from stock runs from the app; the server only installs releases on a feeder already running Wellfed. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
 - **Distribution:** APKs and server builds as GitHub releases. App stores and F-Droid come later. Apple's review of an app that replaces a feeder's firmware is an open question, to settle before any public iPhone release.
 - **App and server together.** With a server configured, the app goes through it first, and straight to the feeder on the LAN only when the server is down ([two paths, one feed](../server/README.md#two-paths-one-feed)). App-direct only was rejected: no remote access, and each person's actions would reach the audit log only through the feeder.
-- **Alerts** are decided by the feeder, which keeps a small table of what is wrong for every client to read ([alerts](alerts.md)). The app doesn't show them yet ([deferred](#deferred)).
+- **Alerts** are decided by the feeder, which keeps a small table of what is wrong for every client to read ([alerts](alerts.md)). The Android app notifies them at home ([the app](../../src/app/README.md#alerts-at-home)); away from home is [deferred](#deferred).
 - **Remote access** goes through a reverse proxy in front of the server, or the owner's VPN ([deferred](#deferred)).
 - **Home Assistant reaches the feeder directly**, as its own client, **or through the owner's server**, chosen at setup ([below](#home-assistant)).
 
@@ -88,7 +88,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 
 ## Frontends
 
-- **The Android app** (`src/app/`) does platform IO in Dart through maintained, permissively licensed plugins: BLE (`flutter_reactive_ble`, carrying the setup bytes), NSD, and a foreground service for the install. Its Rust half, `wellfed-app-bridge`, runs every protocol step through `wellfed-client` and LAN sessions through `wellfed-connect`, over `flutter_rust_bridge`, which also generates the Dart types. An install runs `wellfed-install` on its own thread, asking Dart for what only the phone has. It runs the stock installer through stock's setup access point and the `DL` frame ([consumer installation](consumer-installation.md)). Setup, pairing and the installer always go to the feeder; everything else goes to the server first when there is one.
+- **The Android app** (`src/app/`) does platform IO in Dart through maintained, permissively licensed plugins: BLE (`flutter_reactive_ble`, carrying the setup bytes), NSD and notifications, with its background work (WorkManager and one foreground service) in a little Kotlin of its own, since the plugins for those start engines that take over the Bluetooth plugin. Its Rust half, `wellfed-app-bridge`, runs every protocol step through `wellfed-client` and LAN sessions through `wellfed-connect`, over `flutter_rust_bridge`, which also generates the Dart types. An install runs `wellfed-install` on its own thread, asking Dart for what only the phone has. It runs the stock installer through stock's setup access point and the `DL` frame ([consumer installation](consumer-installation.md)). Setup, pairing and the installer always go to the feeder; everything else goes to the server first when there is one.
 - **Other platforms** are the same app and Rust, each with its own Bluetooth, discovery, network joining and keep-alive. In order: macOS and Linux, which run the install and can hand a feeder to a phone with an owner's invite; iPhone, for setup and daily use; Windows, once there is a machine to test it on. WASM can run the client core later.
 - **The CLI** (`wellfed`) speaks the device API and, under `wellfed server`, the server's HTTP API. It keeps and restores stock's backup but doesn't install from stock, and stays the bench's tool, on Linux.
 - **One UI** means one codebase for one maintainer. The server's HTTP API stays public through `openapi.json` for anyone building another client.
@@ -167,7 +167,7 @@ A custom integration reaches each feeder one of two ways, chosen at setup. Direc
 
 ## Deferred
 
-- **Showing alerts.** The feeder's rules exist ([alerts](alerts.md)). What the app displays, how a phone hears of an alert away from home and what a server does with one are open ([roadmap](../roadmap.md)). Push on iOS and Android goes through Apple and Google services, which need credentials tied to the app's publisher, so a self-hosted server can't send them alone.
+- **Alerts away from home.** The feeder's rules exist ([alerts](alerts.md)), and the app notifies them at home. How a phone hears of an alert away from home and what a server does with one are open ([roadmap](../roadmap.md)). Push on iOS and Android goes through Apple and Google services, which need credentials tied to the app's publisher, so a self-hosted server can't send them alone.
 - **Remote access.** Only through the owner's server; the owner's VPN is one route.
 
 ## What this asks of the SDK

@@ -8,6 +8,7 @@ import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
@@ -220,10 +221,10 @@ class AppFeederPorts implements FeederPorts {
   UpdatePush pushUpdate(String identity, String? address) => _AppPush(_key, _install, identity, address);
 
   @override
-  Future<bool> holdProcess(String text) => _install.holdProcess(text);
+  Future<bool> holdProcess(String text) => _install.holdFor(AlertHold.update, text);
 
   @override
-  Future<void> releaseProcess() => _install.releaseProcess();
+  Future<void> releaseProcess() => _install.releaseFor(AlertHold.update);
 
   @override
   late final RestorePorts restore = AppRestorePorts(_key);

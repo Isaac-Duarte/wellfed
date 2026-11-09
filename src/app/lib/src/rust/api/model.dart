@@ -9,6 +9,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'model.freezed.dart';
 
+/// How soon an alert wants the owner.
+enum AlertLevel { urgent, soon, security }
+
 enum Bank0Blocked { marker, unrecorded, key, extent, changed, read, unknown }
 
 @freezed
@@ -386,6 +389,29 @@ sealed class MissedReason with _$MissedReason {
       MissedReason_Blocked;
   const factory MissedReason.interrupted() = MissedReason_Interrupted;
   const factory MissedReason.unknown() = MissedReason_Unknown;
+}
+
+/// What a notice on the phone is about: one of the feeder's alert kinds, or
+/// the phone's own judgement that the feeder is unreachable.
+enum NoticeKind {
+  mealFailed,
+  mealUncertain,
+  mealMissed,
+  mealNoRecord,
+  powerWasOut,
+  updateFailed,
+  rolledBack,
+  clientJoined,
+  clientRevoked,
+  repeatedRestarts,
+  noClock,
+  cannotFeed,
+  foodLow,
+  foodLikelyOut,
+  desiccantDue,
+  batteryBelowFloor,
+  plansStuck,
+  unreachable,
 }
 
 enum NtpResult { used, bounded, lost, refused, unknown }

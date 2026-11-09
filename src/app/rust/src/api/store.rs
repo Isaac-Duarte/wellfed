@@ -118,6 +118,9 @@ pub fn feeder_address(text: &str) -> Result<String, BridgeError> {
     Ok(wellfed_connect::parse_address(text.trim())?.to_string())
 }
 
+/// The store's file name in the app's directory.
+pub(crate) const FILE_NAME: &str = "wellfed.json";
+
 /// The store at `path` as the app's start reads it: an empty one when the
 /// app has never saved, and an empty one too, with the old file set aside,
 /// when it does not read. The client key in secure storage and the stock

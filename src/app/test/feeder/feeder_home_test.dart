@@ -27,12 +27,13 @@ void main() {
     Future<(FeederFleet, FakeSession)> home(
       WidgetTester tester, {
       PendingInstall earlier = PendingInstall.nothing,
+      Future<bool> Function()? askToNotify,
     }) async {
       feederPhone(tester);
       final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
       final GoRouter router = wellfedRouter(
         book: FakeBook(),
-        root: (context) => HomeScreen(fleet: fleet, earlierInstall: () async => earlier),
+        root: (context) => HomeScreen(fleet: fleet, earlierInstall: () async => earlier, askToNotify: askToNotify),
         pages: {
           '/settings': (context) {
             final book = FakeBook();
@@ -46,6 +47,32 @@ void main() {
       await settle(tester);
       return (fleet, session);
     }
+
+    testWidgets('Home offers notifications until the offer is settled, and not after', (tester) async {
+      var asked = 0;
+      var settled = false;
+      final (FeederFleet fleet, _) = await home(
+        tester,
+        askToNotify: () async {
+          asked++;
+          return settled;
+        },
+      );
+      expect(asked, 1);
+
+      // No feeder of the phone's own yet: a change to the feeders offers
+      // it again, as when the first is added with Home open.
+      settled = true;
+      fleet.notifyListeners();
+      await settle(tester);
+      expect(asked, 2);
+
+      fleet.notifyListeners();
+      await settle(tester);
+      await feederTap(tester, find.byTooltip('Settings'));
+      await feederTap(tester, find.byTooltip('Back'));
+      expect(asked, 2, reason: 'settled');
+    });
 
     testWidgets('the gear opens the app settings, and back comes home', (tester) async {
       await home(tester);
