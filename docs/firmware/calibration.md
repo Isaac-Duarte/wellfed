@@ -40,7 +40,7 @@ A double bowl alternates its crediting direction every second mark, so one mark 
 
 The PLAF103 has one drop hole and feeds clockwise (`Drive0`, PA13 HIGH). Stock also has a double-bowl branch that alternates direction each portion, pauses between, and needs two marks per portion. Nothing on this unit has run it, and with one hole it has nowhere to send a second bowl's food.
 
-So the bowl mode belongs to the build, not a setting. `feeding::BOWL` is `Single`, and the feed journal pins it: a journal written in another mode reads as corrupt. The device API reports it (`Calibration::bowl`) and refuses a `PutCalibration` naming another mode with `Refusal::Unverified`, so the mode exists on the wire with no way to turn it on. A double-bowl build would need its own journal binding and a bench run of the pauses and crediting. The settings record's bowl byte holds `Single`.
+So the bowl mode belongs to the build, not a setting. `feeding::BOWL` is `Single`, and the feed journal pins it: a journal written in another mode reads as corrupt. The device API reports it (`Calibration::bowl`) and refuses a `PutCalibration` naming another mode with `Refusal::Unverified`, so the mode exists on the wire with no way to turn it on. A double-bowl build would need its own journal binding and a bench run of the pauses and crediting. The feeder's settings record (`PLFFDS01`, sectors 48 and 49, `wellfed_feeder::store::settings`) holds the bowl byte, `Single`.
 
 ## Calibration
 
