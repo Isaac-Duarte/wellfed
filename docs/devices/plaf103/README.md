@@ -12,8 +12,16 @@ PETLIBRO Granary automatic feeder, 5 L, model **PLAF103**, FCC ID **2A3DEPLAF103
 - **Board:** the [FCC internal photos](https://fccid.io/2A3DEPLAF103S/Internal-Photos/Internal-Photos-6465982.pdf) show a board marked `PLAF103 MB V1.0`. Our unit's PCB revision is not established, so compare your own board's markings.
 - **Flash ID:** `C8 40 17` over UART.
 
+PETLIBRO has filed three PLAF103 builds with the FCC, and only the last two match the chip this page describes:
+
+| FCC ID | Filed | Board | Wi-Fi |
+| --- | --- | --- | --- |
+| 2A3DE-PLAF103 | November 2021 | `F103-WBR3-MAIN-V1_1` | A Tuya WBR3-family module, on the Tuya cloud |
+| 2A3DEPLAF103S | April 2023 | `PLAF103 MB V1.0` | A Realtek AmebaD chip on the main board |
+| 2A3DE-PLAF103S1 | December 2024 | `PLAF103 MB V1.1` | An RTL8721DM and 8 MiB flash on a shielded module |
+
 > [!WARNING]
-> Don't assume a PLAF108 is compatible. It reportedly uses a different SoC family (ESP8266/ESP32), and nothing here was checked on one. [Supported devices](../README.md) lists the other PETLIBRO models we know of.
+> Don't assume the 2021 Tuya build is compatible. It runs other firmware on another module, and nothing here was checked on one. Nor is a PLAF108, which uses an ESP32-C3. [Supported devices](../README.md) lists the other PETLIBRO models we know of.
 
 ## SoC and flash
 
