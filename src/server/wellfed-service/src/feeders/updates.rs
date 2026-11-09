@@ -108,6 +108,7 @@ impl Forward {
             MirrorEvent::Event(event) => StreamEvent::Event { feeder, event },
             MirrorEvent::Gap(gap) => StreamEvent::Gap { feeder, gap },
             MirrorEvent::Sample(sample) => StreamEvent::Sample { feeder, sample },
+            MirrorEvent::Alerts => StreamEvent::Alerts { feeder },
             MirrorEvent::Link(connection) => {
                 let previous = lock(&self.links).insert(feeder, connection);
                 if previous == Some(connection) {

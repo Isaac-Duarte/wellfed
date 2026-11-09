@@ -141,6 +141,7 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(stock::restore_stock))
         .routes(routes!(events::events))
         .routes(routes!(samples::samples))
+        .routes(routes!(diagnostics::alerts))
         .routes(routes!(diagnostics::trace))
         .routes(routes!(diagnostics::stats))
         .routes(routes!(diagnostics::log))

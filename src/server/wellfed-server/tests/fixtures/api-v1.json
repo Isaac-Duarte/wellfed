@@ -1,5 +1,5 @@
 {
-  "revision": 1,
+  "revision": 2,
   "document": {
     "components": {
       "schemas": {
@@ -27,6 +27,423 @@
           "required": [
             "invite",
             "name"
+          ],
+          "type": "object"
+        },
+        "Alert": {
+          "oneOf": [
+            {
+              "properties": {
+                "completed": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "feed": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "kind": {
+                  "enum": [
+                    "meal_failed"
+                  ],
+                  "type": "string"
+                },
+                "outcome": {
+                  "$ref": "#/components/schemas/FeedOutcome"
+                },
+                "plan": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "$ref": "#/components/schemas/FeedReason"
+                },
+                "requested": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "feed",
+                "requested",
+                "completed",
+                "outcome",
+                "reason",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "completed": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "feed": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "kind": {
+                  "enum": [
+                    "meal_uncertain"
+                  ],
+                  "type": "string"
+                },
+                "plan": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "$ref": "#/components/schemas/FeedReason"
+                },
+                "requested": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "feed",
+                "requested",
+                "completed",
+                "reason",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "due": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "meal_missed"
+                  ],
+                  "type": "string"
+                },
+                "plan": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "reason": {
+                  "$ref": "#/components/schemas/MissedReason"
+                }
+              },
+              "required": [
+                "plan",
+                "due",
+                "reason",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "due": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "meal_no_record"
+                  ],
+                  "type": "string"
+                },
+                "plan": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "plan",
+                "due",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "power_was_out"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "update_failed"
+                  ],
+                  "type": "string"
+                },
+                "stop": {
+                  "$ref": "#/components/schemas/UpdateStop"
+                }
+              },
+              "required": [
+                "stop",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "rolled_back"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "client": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "client_joined"
+                  ],
+                  "type": "string"
+                },
+                "path": {
+                  "$ref": "#/components/schemas/EnrollPath"
+                },
+                "role": {
+                  "$ref": "#/components/schemas/ClientRole"
+                }
+              },
+              "required": [
+                "client",
+                "role",
+                "path",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "by": {
+                  "$ref": "#/components/schemas/Source"
+                },
+                "client": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "client_revoked"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "client",
+                "by",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "repeated_restarts"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "no_clock"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "cannot_feed"
+                  ],
+                  "type": "string"
+                },
+                "reason": {
+                  "$ref": "#/components/schemas/Blocked"
+                }
+              },
+              "required": [
+                "reason",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "food_low"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "confirmed": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "kind": {
+                  "enum": [
+                    "food_likely_out"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "confirmed",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "days": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "kind": {
+                  "enum": [
+                    "desiccant_due"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "days",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "battery_below_floor"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "plans_stuck"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "AlertsRead": {
+          "properties": {
+            "at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "boot": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "clock_valid": {
+              "type": "boolean"
+            },
+            "epoch": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "generation": {
+              "$ref": "#/components/schemas/Generation"
+            },
+            "more": {
+              "type": "boolean"
+            },
+            "settling": {
+              "type": "boolean"
+            },
+            "unread": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "epoch",
+            "boot",
+            "generation",
+            "more",
+            "settling",
+            "unread",
+            "clock_valid",
+            "at"
           ],
           "type": "object"
         },
@@ -2191,6 +2608,37 @@
           ],
           "type": "object"
         },
+        "FeederAlerts": {
+          "properties": {
+            "alerts": {
+              "items": {
+                "$ref": "#/components/schemas/OpenAlert"
+              },
+              "type": "array"
+            },
+            "read": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/AlertsRead"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unreachable": {
+              "format": "date-time",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "alerts"
+          ],
+          "type": "object"
+        },
         "FeederClient": {
           "properties": {
             "key": {
@@ -4283,6 +4731,24 @@
             "at",
             "slot",
             "portions"
+          ],
+          "type": "object"
+        },
+        "OpenAlert": {
+          "properties": {
+            "alert": {
+              "$ref": "#/components/schemas/Alert"
+            },
+            "at": {
+              "format": "date-time",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "alert"
           ],
           "type": "object"
         },
@@ -6535,6 +7001,24 @@
                 "type"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "feeder": {
+                  "$ref": "#/components/schemas/FeederId"
+                },
+                "type": {
+                  "enum": [
+                    "alerts"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "feeder",
+                "type"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -7831,6 +8315,41 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/FeederDetail"
+                  }
+                }
+              }
+            },
+            "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/feeders/{id}/alerts": {
+        "get": {
+          "operationId": "alerts",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "$ref": "#/components/schemas/FeederId"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/FeederAlerts"
                   }
                 }
               }

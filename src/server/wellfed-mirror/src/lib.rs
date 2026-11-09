@@ -32,6 +32,12 @@
 //!   a feed or a status read: each feed's trace after its `Fed` event, and
 //!   every statistics section at each connect and then periodically
 //!   ([`Diagnostics`]). Both are stored beside the history.
+//! - **Alerts.** Each feeder's alert table is read over its session
+//!   whenever its status shows the table moved, a moment after each event
+//!   and every [`AlertReads::Read`]'s `poll`, and kept with what the server makes
+//!   of it, by a phone's rules ([`Kept`]). Its reach is judged by a phone's
+//!   rule too. [`Mirror::alerts_moved`] ticks when there is something to
+//!   deliver.
 //! - **The debug log** is tailed over a session of its own, opened for the
 //!   first owner who follows it ([`Mirror::follow_log`]) and closed once
 //!   the last has left. None of it is stored.
@@ -44,6 +50,7 @@
 //! [API design]: ../../../../docs/server/design.md#runtime
 #![forbid(unsafe_code)]
 
+mod alerts;
 mod call;
 mod collect;
 mod command;
@@ -51,6 +58,7 @@ mod connect;
 mod error;
 mod ingest;
 mod install;
+mod kept;
 mod lanes;
 mod log;
 mod plans;
@@ -71,12 +79,17 @@ use wellfed_model::Skew;
 use wellfed_session::noise::Keypair;
 use wellfed_store::Store;
 
+pub use alerts::AlertReads;
 pub use call::{CallError, CallStart, Clip, StreamError, UploadError, UploadFailed};
 pub use command::Operation;
 pub use connect::Enrolled;
 pub use error::{AskError, ConnectError, LogError, Unreachable};
 pub use ingest::{stored_event, stored_sample};
 pub use install::{BankReadError, PushError, Pushed, ReadError, Restore, Update, UpdateError};
+pub use kept::{
+    FORMAT as KEPT_FORMAT, Kept, KeptError, ReadTable, change as change_kept, load as load_kept,
+    load_all as load_all_kept,
+};
 pub use time::{Clock, Random, RandomFailed, SystemClock, SystemRandom};
 pub use wellfed_client::api::{Invite, InviteText};
 pub use wellfed_connect::update::Pace;
@@ -104,6 +117,7 @@ pub struct Config {
     pub discovery: Discovery,
     pub timing: Timing,
     pub diagnostics: Diagnostics,
+    pub alerts: AlertReads,
 }
 
 /// Whether each feeder's feed traces and statistics are read.
@@ -205,6 +219,8 @@ pub enum MirrorEvent {
     Sample(FeederSample),
     /// The session's state changed.
     Link(Link),
+    /// The kept alerts changed: a new table, or the feeder's reach.
+    Alerts,
 }
 
 /// What every feeder task shares.
@@ -216,6 +232,8 @@ pub(crate) struct Shared {
     /// The household's zone; `None` before there is a household, when the
     /// clock syncs are in UTC.
     zone: watch::Sender<Option<Arc<Zone>>>,
+    /// Ticks whenever a feeder's kept alerts have changes to deliver.
+    alerts_moved: watch::Sender<u64>,
 }
 
 impl Shared {
@@ -258,6 +276,7 @@ impl Mirror {
                 clock,
                 random,
                 zone: watch::Sender::new(None),
+                alerts_moved: watch::Sender::new(0),
             }),
             feeders: Arc::new(Mutex::new(HashMap::new())),
             cancel,
@@ -347,6 +366,17 @@ impl Mirror {
     /// Whether the feeder has an open session, welcomed.
     pub fn session_open(&self, id: FeederId) -> bool {
         self.handles().get(&id).is_some_and(task::Handle::is_open)
+    }
+
+    /// Ticks whenever a feeder's kept alerts have changes to deliver, for
+    /// whatever delivers them.
+    pub fn alerts_moved(&self) -> watch::Receiver<u64> {
+        self.shared.alerts_moved.subscribe()
+    }
+
+    /// The store the mirror keeps every feeder in.
+    pub fn store(&self) -> &Store {
+        &self.shared.store
     }
 
     /// Follow a feeder's updates from now on.

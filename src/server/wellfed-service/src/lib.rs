@@ -95,7 +95,8 @@ use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 use wellfed_mirror::Mirror;
 pub use wellfed_mirror::{
-    Clock, Diagnostics, Discovery, Random, RandomFailed, SystemClock, SystemRandom, ZoneError,
+    AlertReads, Clock, Diagnostics, Discovery, Random, RandomFailed, SystemClock, SystemRandom,
+    ZoneError,
 };
 use wellfed_releases::Releases;
 pub use wellfed_releases::{
@@ -103,6 +104,9 @@ pub use wellfed_releases::{
     MAX_FILE as RELEASE_MAX, Source as ReleaseFeed, StockConfig, StockPins,
 };
 use wellfed_store::Store;
+pub use wellfed_webhook::{
+    PlainHttp as WebhookPlainHttp, Target as WebhookTarget, TargetError as WebhookTargetError, Url,
+};
 
 /// A device request id.
 pub(crate) type RequestId = wellfed_mirror::RequestId;
@@ -220,6 +224,7 @@ impl Service {
                 service.spawn(&row).await?;
             }
         }
+        service.start_webhook()?;
         Ok(service)
     }
 
@@ -230,6 +235,20 @@ impl Service {
         self.tasks.close();
         self.tasks.wait().await;
         self.shared.store.close().await;
+    }
+
+    /// Deliver each alert's opening and clearing to the owner's webhook,
+    /// or, with none set, confirm them unsent so they never pile up.
+    fn start_webhook(&self) -> Result<()> {
+        let webhook = wellfed_webhook::Webhook::new(
+            self.shared.store.clone(),
+            self.shared.config.webhook.clone(),
+            Arc::clone(&self.shared.clock),
+            self.mirror.alerts_moved(),
+        )
+        .map_err(InternalError::from)?;
+        self.tasks.spawn(webhook.run(self.cancel.child_token()));
+        Ok(())
     }
 
     pub fn hub(&self) -> &Hub {

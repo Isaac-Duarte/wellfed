@@ -55,3 +55,12 @@ owner_keys = []
 # and those an owner asks for together. They leave out keys/server.key:
 # back that up on its own.
 keep = 7
+
+[webhook]
+# Where each alert's opening and clearing is POSTed as JSON, such as a
+# Home Assistant webhook. Leave it out to send none. An https:// URL goes
+# anywhere; plain http:// only to this computer or the home network.
+# url = "http://homeassistant.local:8123/api/webhook/wellfed-alerts"
+# Take a plain http:// URL off the home network: anyone on the way sees
+# the URL and every alert.
+allow_plain_http = false

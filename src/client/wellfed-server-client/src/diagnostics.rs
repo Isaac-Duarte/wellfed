@@ -1,5 +1,6 @@
-//! A feed's trace, the latest statistics, and following a feeder's debug
-//! log (`GET /feeders/{id}/log`, Server-Sent Events).
+//! A feeder's open alerts, a feed's trace, the latest statistics, and
+//! following a feeder's debug log (`GET /feeders/{id}/log`, Server-Sent
+//! Events).
 
 use std::collections::VecDeque;
 
@@ -7,12 +8,30 @@ use futures_util::StreamExt;
 use futures_util::stream::BoxStream;
 use reqwest::header::{self, HeaderValue};
 use reqwest::{Method, StatusCode};
-use wellfed_api::{FeedTrace, FeederId, FeederStats, LogEvent, TraceQuery};
+use wellfed_api::{FeedTrace, FeederAlerts, FeederId, FeederStats, LogEvent, TraceQuery};
 
 use crate::stream::{Block, Parser};
-use crate::{Client, Error, decode, decode_page, expect_status};
+use crate::{Client, Error, decode, decode_page, decode_page_counted, expect_status};
 
 impl Client {
+    /// The feeder's open alerts, as the server last read its table. An
+    /// alert this client cannot read (a kind a newer feeder added) is left
+    /// out and counted in the read's `unread`, as a device API session
+    /// counts one.
+    pub async fn feeder_alerts(&self, id: FeederId) -> Result<FeederAlerts, Error> {
+        let response = self
+            .api(Method::GET, &format!("/feeders/{id}/alerts"))
+            .send()
+            .await?;
+        let (mut alerts, skipped): (FeederAlerts, usize) =
+            decode_page_counted(response, StatusCode::OK, "alerts").await?;
+        if let Some(read) = &mut alerts.read {
+            let skipped = u8::try_from(skipped).unwrap_or(u8::MAX);
+            read.unread = read.unread.saturating_add(skipped);
+        }
+        Ok(alerts)
+    }
+
     /// Feed `feed`'s trace, as the server fetched it after the feed.
     pub async fn feed_trace(
         &self,

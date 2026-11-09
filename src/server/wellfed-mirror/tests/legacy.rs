@@ -12,7 +12,9 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use wellfed_api::{Connection as Link, Model};
 use wellfed_feeder_sim::harness::pre_revision::{PreRevision, Seen};
-use wellfed_mirror::{AskError, Config, Diagnostics, Discovery, Feeder, Mirror, MirrorEvent};
+use wellfed_mirror::{
+    AlertReads, AskError, Config, Diagnostics, Discovery, Feeder, Mirror, MirrorEvent,
+};
 use wellfed_model::{Answer, Op, Skew};
 use wellfed_server_testkit::fixed::{FixedClock, SeededRandom};
 use wellfed_server_testkit::{TempStore, WAIT, local};
@@ -53,6 +55,7 @@ fn a_pre_revision_feeder_is_sent_only_the_update_path() {
             diagnostics: Diagnostics::Read {
                 stats_every: std::time::Duration::from_millis(50),
             },
+            alerts: AlertReads::Off,
         };
         let mirror = Mirror::new(
             store.clone(),

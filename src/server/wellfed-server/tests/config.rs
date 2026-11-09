@@ -72,6 +72,37 @@ fn the_example_file_parses() {
     assert_eq!(config.retention.raw_sample_days, Some(days(90)));
     assert!(!config.releases.fetch);
     assert_eq!(config.backups.keep, days(7));
+    assert_eq!(config.webhook.target().unwrap(), None);
+}
+
+#[test]
+fn a_webhook_takes_plain_http_only_at_home_unless_allowed() {
+    let at = |text: &str| ServerConfig::parse(Path::new(FILE), text);
+
+    let home = at("[webhook]\nurl = \"http://192.168.1.4:8123/api/webhook/x\"\n").unwrap();
+    assert_eq!(
+        home.webhook.target().unwrap().unwrap().host(),
+        "192.168.1.4"
+    );
+    assert!(at("[webhook]\nurl = \"https://hooks.example.com/x\"\n").is_ok());
+
+    let away = "[webhook]\nurl = \"http://hooks.example.com/x\"\n";
+    match at(away).unwrap_err() {
+        ConfigError::Webhook { .. } => {}
+        other => panic!("expected the webhook refused, got {other:?}"),
+    }
+    let allowed = format!("{away}allow_plain_http = true\n");
+    assert!(at(&allowed).is_ok());
+
+    assert_eq!(
+        invalid_field("[webhook]\nurl = \"not a url\"\n"),
+        "webhook.url"
+    );
+    let flagged = ServerConfig::load(
+        tempfile::tempdir().unwrap().path(),
+        flags(&["--webhook-url", "http://hooks.example.com/x"]),
+    );
+    assert!(matches!(flagged, Err(ConfigError::Webhook { .. })));
 }
 
 #[test]

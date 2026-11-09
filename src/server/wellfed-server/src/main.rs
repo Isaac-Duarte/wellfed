@@ -24,8 +24,8 @@ use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 use wellfed_server::config::{BACKUPS, DATABASE, Overrides, RELEASES, STOCK, ServerConfig};
 use wellfed_service::{
-    Backups, Clock, Config, Diagnostics, ReleaseFeed, ReleaseKeys, ReleasesConfig, Service,
-    StockConfig, StockPins, SystemClock, SystemRandom, Timing,
+    AlertReads, Backups, Clock, Config, Diagnostics, ReleaseFeed, ReleaseKeys, ReleasesConfig,
+    Service, StockConfig, StockPins, SystemClock, SystemRandom, Timing,
 };
 use wellfed_store::Store;
 
@@ -80,6 +80,7 @@ async fn main() -> Result<()> {
         discovery: settings.discovery.into(),
         timing: Timing::default(),
         diagnostics: Diagnostics::default(),
+        alerts: AlertReads::default(),
         releases: ReleasesConfig {
             dir: cli.data.join(RELEASES),
             keys: ReleaseKeys {
@@ -108,6 +109,8 @@ async fn main() -> Result<()> {
             dir: cli.data.join(BACKUPS),
             keep: settings.backups.keep,
         },
+        // Checked as the settings were read.
+        webhook: settings.webhook.target()?,
     };
     let service = Service::start(store, config, Arc::new(SystemClock), Arc::new(SystemRandom))
         .await

@@ -4,7 +4,7 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
-use crate::{Backups, Diagnostics, Discovery, ReleasesConfig};
+use crate::{AlertReads, Backups, Diagnostics, Discovery, ReleasesConfig, WebhookTarget};
 
 pub struct Config {
     /// Seals the server's feeder keys at rest.
@@ -17,6 +17,8 @@ pub struct Config {
     pub timing: Timing,
     /// Whether each feeder's feed traces and statistics are read.
     pub diagnostics: Diagnostics,
+    /// Whether each feeder's alert table is read and kept.
+    pub alerts: AlertReads,
     /// The release cache, the keys a release may be signed with, and
     /// whether releases are fetched.
     pub releases: ReleasesConfig,
@@ -24,6 +26,9 @@ pub struct Config {
     /// rollups are always kept.
     pub raw_sample_days: Option<NonZeroU32>,
     pub backups: Backups,
+    /// Where each alert's opening and clearing is POSTed; none when
+    /// `None`.
+    pub webhook: Option<WebhookTarget>,
 }
 
 impl std::fmt::Debug for Config {
@@ -34,9 +39,11 @@ impl std::fmt::Debug for Config {
             .field("discovery", &self.discovery)
             .field("timing", &self.timing)
             .field("diagnostics", &self.diagnostics)
+            .field("alerts", &self.alerts)
             .field("releases", &self.releases)
             .field("raw_sample_days", &self.raw_sample_days)
             .field("backups", &self.backups)
+            .field("webhook", &self.webhook)
             .finish_non_exhaustive()
     }
 }
@@ -58,6 +65,7 @@ impl Config {
                 ..wellfed_mirror::Timing::default()
             },
             diagnostics: self.diagnostics,
+            alerts: self.alerts,
         }
     }
 }

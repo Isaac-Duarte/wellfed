@@ -274,7 +274,7 @@ pub(crate) fn event_page(page: &EventPage) -> ServerEventPage {
 }
 
 /// A stream event as Dart hears it; `None` for a sample, which a follow
-/// never asks for.
+/// never asks for, and for an alert table's change.
 pub(crate) fn stream_event(event: StreamEvent) -> Option<ServerEvent> {
     let event = match event {
         StreamEvent::Event { feeder, event } => ServerEvent::History {
@@ -285,7 +285,9 @@ pub(crate) fn stream_event(event: StreamEvent) -> Option<ServerEvent> {
             feeder: feeder.to_string(),
             entry: gap(&held),
         },
-        StreamEvent::Sample { .. } => return None,
+        // The app reads the alerts in its background catch-up, not from a
+        // follow.
+        StreamEvent::Sample { .. } | StreamEvent::Alerts { .. } => return None,
         StreamEvent::Connection { feeder, connection } => ServerEvent::Connection {
             feeder: feeder.to_string(),
             connection: connection.into(),

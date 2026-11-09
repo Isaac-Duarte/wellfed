@@ -524,6 +524,45 @@
         }
       }
     },
+    "/api/v1/feeders/{id}/alerts": {
+      "get": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "The feeder's open alerts, as the server last read its alert table,\nwith the cursor they were read under and whether the server reaches the\nfeeder. The feeder decides every alert; the server reads the table\nwhenever the feeder's status shows it moved, a moment after each event,\nand every minute while the feeder is online. An entry a client can't\nread (a kind a newer feeder added) is one to skip and count as unread.",
+        "operationId": "alerts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeederAlerts"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/feeders/{id}/calibration": {
       "get": {
         "tags": [
@@ -5932,6 +5971,440 @@
           }
         }
       },
+      "Alert": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A feed failed, or never started. `plan` is its slot, if a plan asked.",
+            "required": [
+              "feed",
+              "requested",
+              "completed",
+              "outcome",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "completed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "feed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_failed"
+                ]
+              },
+              "outcome": {
+                "$ref": "#/components/schemas/FeedOutcome"
+              },
+              "plan": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "reason": {
+                "$ref": "#/components/schemas/FeedReason"
+              },
+              "requested": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A feed may have dispensed anything up to `requested`.",
+            "required": [
+              "feed",
+              "requested",
+              "completed",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "completed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "feed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_uncertain"
+                ]
+              },
+              "plan": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "reason": {
+                "$ref": "#/components/schemas/FeedReason"
+              },
+              "requested": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The occurrence did not run, and never will.",
+            "required": [
+              "plan",
+              "due",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "due": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_missed"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "reason": {
+                "$ref": "#/components/schemas/MissedReason"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The occurrence is past due and the feeder's schedule has no record of\nit.",
+            "required": [
+              "plan",
+              "due",
+              "kind"
+            ],
+            "properties": {
+              "due": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_no_record"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "power_was_out"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "stop",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "update_failed"
+                ]
+              },
+              "stop": {
+                "$ref": "#/components/schemas/UpdateStop"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rolled_back"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client",
+              "role",
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "client": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "client_joined"
+                ]
+              },
+              "path": {
+                "$ref": "#/components/schemas/EnrollPath"
+              },
+              "role": {
+                "$ref": "#/components/schemas/ClientRole"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "client": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "client_revoked"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "repeated_restarts"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "no_clock"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cannot_feed"
+                ]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/Blocked"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "food_low"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "There is no empty reading: `confirmed` portions have gone since the\nfood beam read low, about what lay below it. Word it as likely.",
+            "required": [
+              "confirmed",
+              "kind"
+            ],
+            "properties": {
+              "confirmed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "food_likely_out"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Days left of the desiccant's period: 0 or below.",
+            "required": [
+              "days",
+              "kind"
+            ],
+            "properties": {
+              "days": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "desiccant_due"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "battery_below_floor"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "With a valid clock, the plans have stayed out of reach, or a change to\nthem has never finished, so nothing can say whether meals ran.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plans_stuck"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What is wrong. A reader of the server's API skips an entry whose kind\nit doesn't know, as a client of the device API does, so this enum has no\ncatch-all."
+      },
+      "AlertsRead": {
+        "type": "object",
+        "description": "One read of the feeder's alert table.",
+        "required": [
+          "epoch",
+          "boot",
+          "generation",
+          "more",
+          "settling",
+          "unread",
+          "clock_valid",
+          "at"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the server read it. The table may have moved since while the\nfeeder was out of reach."
+          },
+          "boot": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The feeder's boot count: the generation counts from 0 at each boot.",
+            "minimum": 0
+          },
+          "clock_valid": {
+            "type": "boolean",
+            "description": "Whether the feeder's status showed a valid clock at the read."
+          },
+          "epoch": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The ring's epoch: a feed's alert counts its number in it.",
+            "minimum": 0
+          },
+          "generation": {
+            "$ref": "#/components/schemas/Generation",
+            "description": "Changes whenever anything in the table does."
+          },
+          "more": {
+            "type": "boolean",
+            "description": "A report left for want of room, or the boot read missed part of the\nring: an absent report may not have ended."
+          },
+          "settling": {
+            "type": "boolean",
+            "description": "An absent condition may not have ended yet."
+          },
+          "unread": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Alerts the server's build could not read: a newer feeder build's.",
+            "minimum": 0
+          }
+        }
+      },
       "Archive": {
         "type": "string",
         "format": "binary",
@@ -8234,6 +8707,41 @@
           }
         }
       },
+      "FeederAlerts": {
+        "type": "object",
+        "description": "`GET /feeders/{id}/alerts`.",
+        "required": [
+          "alerts"
+        ],
+        "properties": {
+          "alerts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpenAlert"
+            },
+            "description": "The open alerts, oldest first, as that read found them. An entry a\nclient can't read (a kind a newer feeder added) is left out by\n`wellfed-server-client`, which counts it in `unread`."
+          },
+          "read": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AlertsRead",
+                "description": "The read the alerts come from; `None` before the server has read\nthe feeder's table."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unreachable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Since when the server has not reached the feeder, by the rule a\nphone at home uses (three failed tries in a row over at least ten\nminutes); `None` while it reaches it."
+          }
+        }
+      },
       "FeederClient": {
         "type": "object",
         "description": "One client the feeder has enrolled, and whose it is to the server.",
@@ -10496,6 +11004,25 @@
             "format": "int32",
             "description": "The plan's slot.",
             "minimum": 0
+          }
+        }
+      },
+      "OpenAlert": {
+        "type": "object",
+        "required": [
+          "alert"
+        ],
+        "properties": {
+          "alert": {
+            "$ref": "#/components/schemas/Alert"
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "A report's own time, or when a condition opened; `None` if the\nfeeder's clock was not valid then."
           }
         }
       },
@@ -12903,6 +13430,25 @@
                 "type": "string",
                 "enum": [
                   "resync"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The server read a new alert table from the feeder, or its judgement\nof the feeder's reach changed: read `GET /feeders/{id}/alerts`.",
+            "required": [
+              "feeder",
+              "type"
+            ],
+            "properties": {
+              "feeder": {
+                "$ref": "#/components/schemas/FeederId"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "alerts"
                 ]
               }
             }

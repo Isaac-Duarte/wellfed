@@ -5676,6 +5676,8 @@ dependencies = [
  "getrandom 0.3.4",
  "jiff",
  "jiff-tzdb",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -5911,6 +5913,7 @@ dependencies = [
  "wellfed-server-testkit",
  "wellfed-session",
  "wellfed-store",
+ "wellfed-webhook",
 ]
 
 [[package]]
@@ -6042,6 +6045,27 @@ name = "wellfed-testkit"
 version = "0.1.0"
 dependencies = [
  "wellfed-core",
+]
+
+[[package]]
+name = "wellfed-webhook"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "wellfed-api",
+ "wellfed-client",
+ "wellfed-formats",
+ "wellfed-mirror",
+ "wellfed-model",
+ "wellfed-store",
 ]
 
 [[package]]

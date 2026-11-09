@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT feeder_id AS \"feeder_id: uuid::Uuid\", format, state, version, updated_ms\n               FROM feeder_alerts ORDER BY feeder_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "feeder_id: uuid::Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "feeder_id"
+          }
+        }
+      },
+      {
+        "name": "format",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "name": "state",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "name": "version",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "name": "updated_ms",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "updated_ms"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fb7e2537a265246c71fb786e4efcf33308ea70e27a255be9f1303b07787e0607"
+}

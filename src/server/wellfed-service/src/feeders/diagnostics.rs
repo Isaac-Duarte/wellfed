@@ -1,11 +1,13 @@
-//! What the mirror reads from a feeder beside its history: each feed's
-//! trace and the latest statistics, as stored, and the debug log an owner
+//! What the mirror reads from a feeder beside its history: its open
+//! alerts, each feed's trace and the latest statistics, as stored, and the debug log an owner
 //! follows live, never stored.
 
 use jiff::Timestamp;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
-use wellfed_api::{FeedTrace, FeederId, FeederStats, LogEvent, StatsRead, TraceQuery, TraceRecord};
+use wellfed_api::{
+    FeedTrace, FeederAlerts, FeederId, FeederStats, LogEvent, StatsRead, TraceQuery, TraceRecord,
+};
 use wellfed_mirror::LogError;
 use wellfed_model::{LogLines, Trace};
 use wellfed_store::{FoodReading, TraceFound};
@@ -37,6 +39,17 @@ impl LogFollow {
 }
 
 impl Service {
+    /// The feeder's open alerts, as the mirror last read its table, and
+    /// whether the server reaches it.
+    pub async fn feeder_alerts(&self, id: FeederId) -> Result<FeederAlerts> {
+        self.row(id).await?;
+
+        let kept = wellfed_mirror::load_kept(&self.shared.store, id)
+            .await
+            .map_err(InternalError::from)?;
+        Ok(kept.body())
+    }
+
     /// Feed `feed`'s trace as the server fetched it after the feed.
     pub async fn feed_trace(
         &self,

@@ -21,7 +21,8 @@ use crate::command::Command;
 use crate::ingest::Batch;
 use crate::session::End;
 use crate::{
-    ConnectError, Diagnostics, Feeder, MirrorEvent, Shared, Unreachable, Zone, connect, log,
+    AlertReads, ConnectError, Diagnostics, Feeder, MirrorEvent, Shared, Unreachable, Zone, alerts,
+    connect, log,
 };
 
 /// Commands waiting for the task; more wait in `send`.
@@ -51,6 +52,7 @@ pub(crate) struct Handle {
     pub(crate) cancel: CancellationToken,
     task: JoinHandle<()>,
     collector: Option<JoinHandle<()>>,
+    alerts: Option<JoinHandle<()>>,
 }
 
 /// The long lane and its turn: whoever holds the turn's one permit sends
@@ -110,6 +112,9 @@ impl Handle {
         if let Some(collector) = self.collector {
             let _ = collector.await;
         }
+        if let Some(alerts) = self.alerts {
+            let _ = alerts.await;
+        }
     }
 }
 
@@ -146,6 +151,22 @@ pub(crate) fn spawn(
         }),
         Diagnostics::Off => None,
     };
+    let public = *keys.public();
+    let alerts = match shared.config.alerts {
+        AlertReads::Read { poll } => Some(alerts::Reader {
+            shared: Arc::clone(&shared),
+            id: feeder.id,
+            own: [public[0], public[1], public[2], public[3]],
+            commands: commands.clone(),
+            link: watching.clone(),
+            opened: opens.clone(),
+            updates: updates.subscribe(),
+            publish: updates.clone(),
+            cancel: cancel.clone(),
+            poll,
+        }),
+        AlertReads::Off => None,
+    };
     let task = Task {
         zone: shared.zone.subscribe(),
         shared,
@@ -174,6 +195,7 @@ pub(crate) fn spawn(
     let span = info_span!(parent: None, "feeder", id = %task.id);
     let collector =
         collector.map(|collector| tasks.spawn(collector.run().instrument(span.clone())));
+    let alerts = alerts.map(|alerts| tasks.spawn(alerts.run().instrument(span.clone())));
     let task = tasks.spawn(task.run().instrument(span));
     Handle {
         commands,
@@ -189,6 +211,7 @@ pub(crate) fn spawn(
         cancel,
         task,
         collector,
+        alerts,
     }
 }
 
