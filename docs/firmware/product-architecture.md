@@ -52,7 +52,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 - **The installer** is the app. Every install from stock runs from the app; the server only installs releases on a feeder already running Wellfed. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
 - **Distribution:** APKs and server builds as GitHub releases. App stores and F-Droid come later. Apple's review of an app that replaces a feeder's firmware is an open question, to settle before any public iPhone release.
 - **App and server together.** With a server configured, the app goes through it first, and straight to the feeder on the LAN only when the server is down ([two paths, one feed](../server/README.md#two-paths-one-feed)). App-direct only was rejected: no remote access, and each person's actions would reach the audit log only through the feeder.
-- **Alerts** are decided by the feeder, which keeps a small table of what is wrong for every client to read ([alerts](alerts.md)). The Android app notifies them at home ([the app](../../src/app/README.md#alerts-at-home)); away from home is [deferred](#deferred).
+- **Alerts** are decided by the feeder, which keeps a small table of what is wrong for every client to read ([alerts](alerts.md)). The Android app notifies them at home, and away from home through the owner's server, which also posts them to a webhook of the owner's ([the app](../../src/app/README.md#alerts), [server alerts](../server/README.md#alerts)); push is [deferred](#deferred).
 - **Remote access** goes through a reverse proxy in front of the server, or the owner's VPN ([deferred](#deferred)).
 - **Home Assistant reaches the feeder directly**, as its own client, **or through the owner's server**, chosen at setup ([below](#home-assistant)).
 
@@ -167,7 +167,7 @@ A custom integration reaches each feeder one of two ways, chosen at setup. Direc
 
 ## Deferred
 
-- **Alerts away from home.** The feeder's rules exist ([alerts](alerts.md)), and the app notifies them at home. How a phone hears of an alert away from home and what a server does with one are open ([roadmap](../roadmap.md)). Push on iOS and Android goes through Apple and Google services, which need credentials tied to the app's publisher, so a self-hosted server can't send them alone.
+- **Push alerts.** Away from home the app hears alerts through the owner's server, but only when its periodic job runs, and a phone with no server hears nothing ([roadmap](../roadmap.md)). Push on iOS and Android goes through Apple and Google services, which need credentials tied to the app's publisher, so a self-hosted server can't send them alone.
 - **Remote access.** Only through the owner's server; the owner's VPN is one route.
 
 ## What this asks of the SDK

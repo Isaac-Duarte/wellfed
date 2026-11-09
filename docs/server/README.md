@@ -12,6 +12,7 @@ It adds what a small device can't hold:
 - **Accounts and audit.** Each person logs in with a role (owner, member or viewer), and the audit log names who fed, changed a setting or adopted a feeder.
 - **Long history.** Every event and sample, kept as long as you like, with hourly rollups for charts.
 - **Owner data.** Pets, foods, weights and refills. From these and the mirrored feeds it counts portions since each refill and per pet, and lists missed, uncertain and short feeds. Once portions are calibrated (weighed in the app) it estimates the grams left and when the hopper runs out, and each pet's grams and calories against its daily target.
+- **Alerts away from home.** It reads each feeder's alert table over its own session and serves it, so the app hears a feeder's alerts away from home, and it can POST each alert's opening and clearing to a webhook of yours ([alerts](#alerts)). No push service is involved.
 - **Releases and installs.** It fetches or takes signed releases, verifies them, and installs one on a feeder already running Wellfed when an owner asks. Installing from stock is the app's job. It also keeps each feeder's stock backup, for going back.
 
 One server serves one home and all its devices. Each device is stored with the kind and model its first session names; today every device is a feeder.
@@ -53,6 +54,7 @@ The API lives under `/api/v1`, as JSON. The complete reference is [`openapi.json
 | Feeders | `/feeders`, `/feeders/{id}`, `/feeders/{id}/settings`, `/plans`, `/meals/skip`, `/meals/unskip`, `/calibration`, `/call`, `/call/play`, `/lock`, `/desiccant/reset`, `/wifi`, `/reboot`, `/play`, `/clients`, `/invites`, `/phones` | Adopt and remove devices (each listed with its home, kind and model), live status and the next meal, settings, feeding plans and a skip of one of today's meals, the portion calibration, the meal call and administration |
 | Feeding | `/feeders/{id}/feed`, `/feeds/{feed}/cancel`, `/commands`, `/commands/{key}` | Feed, cancel, and the journal of every write |
 | History | `/feeders/{id}/events`, `/samples`, `/feeds/{feed}/trace`, `/stats`, `/log`, `/audit` | Events, samples, feed traces, statistics, the live debug log and the audit log |
+| Alerts | `/feeders/{id}/alerts` | The feeder's open alerts as the server last read them, the cursor they were read under, and whether the server reaches the feeder |
 | Owner data | `/pets`, `/foods`, `/pets/{id}/weights`, `/pets/{id}/feeders/{feeder}`, `/feeders/{id}/food`, `/refills`, `/pets/{id}/intake` | Pets, foods, weights, which feeder serves which pet, refills; the food left since the last refill and a pet's intake against its target |
 | Firmware | `/releases`, `/releases/check`, `/feeders/{id}/install`, `/feeders/{id}/stock…` | Releases, installs, the stock backup and restore |
 | Server data | `/backups`, `/export`, `/import`, `/status` | Backups, a full export, import onto a fresh server, readiness |
@@ -69,6 +71,81 @@ Some conventions hold across the API:
   - A retry under the same key after `outcome_unknown` sends only what the feeder lacks.
   - A retry never undoes a later change. It is `409 superseded`, and sends nothing, if the feeder holds another clip than its first send found. The same goes for an upload the feeder had begun, once the feeder no longer holds its clip.
 - **The stream** resumes from `Last-Event-ID`. When that id is too old, the server sends `resync` and the client fetches again.
+
+## Alerts
+
+The feeder decides every alert ([alerts](../firmware/alerts.md)). The server reads each feeder's table over its own session whenever the status shows the table moved: a moment after each event, and every minute while the feeder is online. It keeps the latest table and what it made of it, and judges one thing itself: a feeder it has failed to reach three times in a row, over at least ten minutes, is unreachable. That is the rule the phone uses at home.
+
+**`GET /api/v1/feeders/{id}/alerts`** answers, for any role:
+
+```json
+{
+  "read": {
+    "epoch": 7, "boot": 42, "generation": 3,
+    "more": false, "settling": false, "unread": 0,
+    "clock_valid": true,
+    "at": "2026-11-09T08:00:03Z"
+  },
+  "alerts": [
+    { "at": "2026-11-09T08:00:00Z",
+      "alert": { "kind": "meal_failed", "feed": 12, "plan": 0, "requested": 2,
+                 "completed": 0, "outcome": "failed", "reason": "jammed" } }
+  ],
+  "unreachable": null
+}
+```
+
+`read` is `null` before the server's first read. `epoch`, `boot` and `generation` are the cursor a phone's own read carries, so the app applies the server's copy and the feeder's to one tracker and never shows an alert twice. An entry a client can't read, a kind a newer feeder added, is left out and counted in `unread`. `unreachable` is since when the server hasn't reached the feeder. The stream's `alerts` update says the table or the reach changed.
+
+### Alert webhook
+
+Set `webhook.url` ([settings](running.md#settings)) and the server POSTs a small JSON body to it each time an alert opens or clears:
+
+```json
+{
+  "version": 1,
+  "id": "3f0c9a1e7b2d4c5f8a6e1d2c3b4a5f60",
+  "event": "opened",
+  "time": "2026-11-09T08:00:05Z",
+  "feeder": { "id": "01920000-0000-7000-8000-000000000001", "name": "Kitchen" },
+  "alert": {
+    "key": "7:feed:12",
+    "kind": "meal_failed",
+    "level": "urgent",
+    "words": "A meal failed: 0 of 2 portions dispensed.",
+    "at": "2026-11-09T08:00:00Z"
+  }
+}
+```
+
+- **`event`** is `opened` or `cleared`. **`key`** is the same in both, so a receiver pairs a clear with its open.
+- **`kind`** is one of the feeder's alert kinds, or `unreachable`, the server's own. **`level`** is `urgent`, `soon` or `security`.
+- **`words`** is one plain English sentence. **`at`** is the feeder's time for the alert, `null` without a valid clock; **`time`** is when the server saw the change.
+- **The body only grows.** A newer server adds fields and never changes these; `version` moves only if a field's meaning must.
+
+Each change goes once. A delivery that fails (no answer, `408`, `429` or a `5xx`) is tried again after 10 s, 30 s, 90 s, 4.5 min and 13.5 min, then given up; any other answer is final. Every try of one change carries the same `id`, so a receiver that keeps the ids it has seen never acts twice on a try whose answer was lost. A feeder's next change waits behind one that is being retried, so a clear never comes before its open. Delivery runs on its own, never in a feeder's session, and a stopped server resumes the deliveries it hadn't finished at its next start. An alert already open when the webhook is first set isn't sent until it opens again, and a clear goes only for an open that was sent.
+
+The URL may be `https://` anywhere, checked by the server's own TLS stack. Plain `http://` goes only to this computer or the home network (a loopback, private or link-local address, `localhost`, or a `.local` name), unless you set `webhook.allow_plain_http`. The server never logs the URL, since a webhook's path is often its secret.
+
+**Home Assistant** needs nothing of its own. Make an automation with a webhook trigger, and put its URL in `webhook.url`:
+
+```yaml
+alias: Wellfed alert
+triggers:
+  - trigger: webhook
+    webhook_id: wellfed-alerts
+    allowed_methods: [POST]
+    local_only: true
+actions:
+  - condition: template
+    value_template: "{{ trigger.json.event == 'opened' }}"
+  - action: notify.notify
+    data:
+      title: "{{ trigger.json.feeder.name }}"
+      message: "{{ trigger.json.alert.words }}"
+```
+
+With the server and Home Assistant on one network, the URL is `http://homeassistant.local:8123/api/webhook/wellfed-alerts`. The Wellfed integration also shows each feeder's open alerts as a sensor, with an event as each opens or clears ([Home Assistant](../../src/integrations/homeassistant/README.md)).
 
 ### API evolution
 
@@ -91,6 +168,7 @@ What an older client does with what it doesn't know:
 | A journal state it doesn't know | `unknown`: uncertain, never sent again |
 | Any other value it doesn't know, in an enum with a catch-all | `unknown` (`newer` for the rotor's phase), shown as unknown to that client |
 | An event, journal entry, audit entry or statistics section it can't read | Left out of the page; the page's `next` still moves past it |
+| An alert it can't read | Left out of the feeder's alerts and counted in `unread` |
 | A stream update it can't read | Skipped; its id still moves the position to resume from |
 
 A server reads a request the same way, and refuses a value it can't name (`400 invalid`) rather than acting on `unknown`.
@@ -111,6 +189,7 @@ A few enums are closed, since nothing can be added to them without changing what
 | `TuneName`, `NewRefill` | Only in requests: a server refuses what it doesn't know |
 | `CoreEvent`, `FeederEvent`, `EventBody` | Events go only in pages and stream updates, which skip what they can't read. A catch-all on either half of the untagged body would swallow the other half's events |
 | `StreamEvent`, `Stats`, `StatsSection`, `SampleValue` | Read only in entries a client skips, or by a metric it names |
+| `Alert` | Read only in a feeder's alerts, which leave out one a client can't read and count it as unread |
 
 The `api_growth` test in `wellfed-server` checks each build's document against the published one in `tests/fixtures/api-v1.json`. A change in place fails it, and no blessing stores one. A growth fails it until the revision is raised and the fixture blessed (`WELLFED_BLESS=1`).
 
@@ -129,4 +208,5 @@ The `api_growth` test in `wellfed-server` checks each build's document against t
 - **Simulation**, October 24–27, 2026: the server's crates and their tests run against `wellfed-feeder-sim` over real TCP and Noise. Feeds, uncertain writes, installs, the stock backup and restore, export and import were exercised this way.
 - **Observed**, October 28, 2026: the server adopted the research unit by invite, mirrored its history, and changed its settings and lock. The history stayed whole across a server restart, a power cut and a Wi-Fi drop.
 - **Static analysis**, October 27, 2026: the route groups above match the committed `openapi.json`, and the role rules match `Permission::can` in `wellfed-service`.
+- **Simulation**, November 9, 2026: against `wellfed-feeder-sim`, the server served a feeder's alert table, POSTed a new client's joining to a webhook once, and judged a stopped feeder unreachable after ten minutes on a moved clock and reachable again once it answered, each sent once. The app read the same alert through the server away and directly at home, and posted it once. None of this has run on a feeder or a phone.
 - **Simulation**, November 8, 2026: the growth check refused a new required field even when blessed, and asked for revision 2 for a new optional one. An older client's reads of a newer value, outcome, error code, page entry and stream update ran as unit tests.

@@ -76,6 +76,8 @@ Every state comes from the feeder itself, never from the last button you pressed
 | **Meal *HH:MM*** switches | One for each meal plan, to turn it on or off. New and deleted plans come and go on their own. |
 | **Desiccant replaced**, **Play chime** buttons | Record a fresh desiccant pack today; play the chime. |
 | **Portion weight** | What one portion weighs, 1 to 50 g, for portions counted in grams. |
+| **Alerts** sensor | How many of the feeder's alerts are open, each listed in its attributes with its kind and level. |
+| **Alert** event | Fires as each alert opens or clears, with the same key both times. |
 
 The **wellfed.feed** action feeds a feeder from an automation and answers the feeder's number for the feed. **wellfed.cancel_feed** stops a feed. Every event the feeder records also fires `wellfed_event`, which an automation can trigger on.
 
@@ -100,6 +102,28 @@ automation:
 ```
 
 For meals at fixed times, use the feeder's own meal plans instead. They run on the feeder, so they keep working while Home Assistant is down.
+
+### Example: tell me when the feeder needs help
+
+The feeder decides what counts as an alert: a feeder that can't feed, food running low, a meal that failed, a battery below its floor. This automation sends each one to your phone through Home Assistant's own app.
+
+```yaml
+automation:
+  - alias: Feeder alert
+    trigger:
+      - platform: state
+        entity_id: event.kitchen_feeder_alert
+    condition:
+      - condition: template
+        value_template: "{{ trigger.to_state.attributes.event_type == 'opened' }}"
+    action:
+      - action: notify.mobile_app_your_phone
+        data:
+          title: Feeder
+          message: "{{ trigger.to_state.attributes.kind | replace('_', ' ') }}"
+```
+
+Alerts that were already open when Home Assistant started show in the Alerts sensor but don't fire the event. If you run the Wellfed server, it can also send alerts straight to a Home Assistant webhook ([alert webhook](../server/README.md#alert-webhook)).
 
 ## How it stays current
 
@@ -157,4 +181,5 @@ Home Assistant doesn't install firmware: that takes an owner, and Home Assistant
 - **Observed, November 3, 2026.** On one research feeder, Home Assistant paired again after its key was revoked, and fed once from its Feed button.
 - **Modeled, November 2026.** Pairing, discovery, every entity and action, repairs, re-pairing and refusing an owner invite ran against the simulated feeder, which runs the feeder's own pairing, stores and feeding code. The [roadmap](../roadmap.md) tracks what has run on a real feeder.
 - **Modeled, November 2026.** The server route ran against the Wellfed server in front of the simulated feeder: setup by sign-in, a feed, switching routes both ways with the same entity ids, signing in again after a revoked token, and refusing a viewer. A feed whose answer was lost was reported uncertain, sent once, and settled from the server's journal. Simulation only; it has not run on a real feeder or a Home Assistant host.
+- **Modeled, November 2026.** On both routes, the Alerts sensor listed an alert from the simulated feeder and the Alert event fired once as it opened, and not for alerts open at start. Simulation only.
 - **Modeled, November 2026.** A lost feed kept across a Home Assistant restart was settled afterwards on both routes, and a token or key left behind was named in a repair that clears itself. Simulation only.

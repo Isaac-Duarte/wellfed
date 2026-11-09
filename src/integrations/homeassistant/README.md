@@ -30,6 +30,8 @@ Home Assistant is a member and nothing more. An invite doesn't say its role unti
 | Volume (number) | The speaker's volume. |
 | Desiccant replaced, Play chime (buttons) | Records a fresh pack today; plays the chime. |
 | Portion weight (number) | The weight of one portion, 1 to 50 g. |
+| Alerts (sensor) | How many of the feeder's [alerts](../../../docs/firmware/alerts.md) are open, each listed in its `alerts` attribute with its key, kind, level and the feeder's time for it. |
+| Alert (event) | Each alert as it opens (`opened`) or clears (`cleared`), with the same key both times. |
 
 The actions:
 
@@ -37,6 +39,8 @@ The actions:
 - `wellfed.cancel_feed` stops a feed: the one Home Assistant started, or the one whose number you give.
 
 Every event the feeder records as it happens also fires `wellfed_event` on the bus: its `kind` (`fed`, `lock`, `meal_soon` and so on), `seq` and `at`, with the feed, the lock, who made the change and the plan where the event names them. Events from the history read at connect are not fired again: catching up brings the entities up to date, not automations, which should never fire on an event hours old.
+
+The feeder decides every alert, and the bridge keeps the same tracker the Android app keeps (`wellfed_client::alerts`), so Home Assistant, the app and the server agree on what is open. Directly, the bridge reads the table when the feeder's status shows it moved; through the server, it reads the server's copy (`GET /feeders/{id}/alerts`) when the stream says it changed and at each connect. The alerts open when Home Assistant starts show in the sensor and fire nothing, as the history does. Through the server, "can't reach the feeder" is the server's judgement and opens like any alert; the direct route has none, since the Connected sensor already says so.
 
 Through the server, a role that writes nothing (an account made a viewer, or a role a newer server added) has every entity that changes the feeder hidden by the integration and unavailable; they are shown again once the role writes, with their unique ids and history, and a hide the user chose stays.
 
@@ -86,6 +90,8 @@ Contributors and agents build and check releases. Only the owner publishes, crea
 - A history that started over while Home Assistant was away is a gap: what happened in between is not known, and the new history is read from its start.
 - The client key's secret, or the server token, is stored in Home Assistant's config entries, in plain text, as Home Assistant stores other integrations' credentials.
 - Meal plans are switched on and off, not added or edited.
+- Mutes and dismissals are the app's alone: Home Assistant shows every alert, and an automation filters by kind or level.
+- An alert that opened and cleared while Home Assistant was away fires nothing.
 - Through the server, the token carries its account's whole role: the server has no tokens limited to fewer rights yet. Home Assistant refuses a viewer account at setup.
 - A server address on plain `http://` carries the password and the token unencrypted; setup asks the owner to confirm one unless its host is `localhost` or a loopback address.
 - A token is revoked whenever a flow ends without an entry keeping it, and when its entry is deleted. One the server could not revoke at deletion is named, by its id, in a persistent repair; it works until the owner revokes it.
@@ -100,4 +106,5 @@ Contributors and agents build and check releases. Only the owner publishes, crea
 - **Modeled**, November 3, 2026: `make homeassistant-wheels` cross-built every release wheel on macOS, and the musllinux aarch64 wheel installed and imported on Python 3.14 in an Alpine container.
 - **Modeled**, November 9, 2026: the bridge's tests against `wellfed-server` in process, in front of the simulated feeder: sign-in for a token with no session kept, a viewer and a wrong password refused, the feeder announced and a feed answered with its number, a feed whose answer was held back reported uncertain, sent once and settled from the server's journal, and a revoked token stopping the session. Home Assistant's tests run the server route against the `wellfed-server` binary: setup by sign-in, a feed, switching routes both ways with the same unique ids and the old key or token removed, and reauth after a revoked token. `make homeassistant-wheels` cross-built every release wheel on Linux, the musllinux ones with `aws-lc-sys` through zig; they were not installed on a Home Assistant host.
 - **Modeled**, November 9, 2026 (later): a feed whose answer was lost, kept across a restart, settled by the next session on both routes (from the backlog directly, from the journal through the server); a write that arrived while a session connected, or waited past 5 seconds, refused unsent (unit tests); write entities hidden after a demotion to viewer and shown again; a token revoked when a flow closed at the feeder picker or was refused there; a token the server could not revoke at deletion named in a repair; a leftover key's repair cleared once the server stopped listing the key and with its entry; no reauth after a move from the direct route; a plain `http://` address confirmed first; and a version 1 entry failing to migrate and deleting cleanly. Simulation and a scripted bridge only.
+- **Modeled**, November 9, 2026 (alerts): on both routes, against the simulated feeder (and `wellfed-server` in process for the server route), the Alerts sensor lists an open alert and the Alert event fires once as it opens, and nothing fires for what was open at start. Simulation and a scripted bridge only.
 - **Observed**, November 3, 2026, on the research feeder running consumer build `5322a455` (version 391): Home Assistant 2026.10.4 found its old key revoked, raised the reauth repair, paired again with a member invite, and ran one feed from its Feed button, which completed. The rest of the bench run (the shared event across the app and the server, the lock and a plan, a lost answer on the feeder) has not run.

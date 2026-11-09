@@ -307,7 +307,7 @@ fn the_archive_carries_no_secret() {
             .into_iter()
             .map(|(name, _)| name)
             .collect();
-        for kept_out in ["sessions", "tokens", "job_runs"] {
+        for kept_out in ["sessions", "tokens", "job_runs", "feeder_alerts"] {
             assert!(
                 !names.iter().any(|name| name.starts_with(kept_out)),
                 "{names:?}"
