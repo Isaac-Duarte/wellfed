@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
@@ -107,11 +108,14 @@ class Notices {
     await remove(again);
   }
 
-  /// Take off every alert notification, once `alerts.json` was set aside:
-  /// none of their ids is known any more, so nothing else ever would.
+  /// Once `alerts.json` was set aside, take off the alert notifications no
+  /// watch in the new file knows: nothing else ever would. Rust chooses them
+  /// under the file's lock, so one another engine posted meanwhile stays.
   static Future<void> sweep(String dir) async {
-    if (!await alertsSweepDue(dir: dir)) return;
-    await remove(alertNotificationIds(await _plugin.getActiveNotifications()));
+    final List<int> showing = alertNotificationIds(await _plugin.getActiveNotifications());
+    // Empty once the sweep is done, and then nothing changes.
+    final List<int> stale = await alertsToSweep(dir: dir, showing: Int32List.fromList(showing));
+    await remove(stale);
     await alertsSwept(dir: dir);
   }
 

@@ -300,10 +300,6 @@ class _WellfedAppState extends State<WellfedApp> {
     if (_alerts) {
       _watched = {for (final KnownFeeder feeder in widget.app.feeders) feeder.identity};
       widget.app.addListener(_feedersChanged);
-      // Home with a feeder: the moment a phone first asks to post alerts.
-      if (_watched.isNotEmpty) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(offerNotifications(widget.app.feeders)));
-      }
       // A tap on an alert opens its feeder's alerts.
       _taps = Notices.tapped.listen(_openAlerts);
       unawaited(Notices.launchedFor().then((identity) => identity == null ? null : _openAlerts(identity)));
@@ -314,14 +310,12 @@ class _WellfedAppState extends State<WellfedApp> {
   Set<String> _watched = {};
 
   /// A feeder this phone forgot takes its alerts with it, and their
-  /// notifications come off. The first feeder added is when a phone first
-  /// asks to post alerts.
+  /// notifications come off.
   void _feedersChanged() {
     final Set<String> now = {for (final KnownFeeder feeder in widget.app.feeders) feeder.identity};
     for (final String gone in _watched.difference(now)) {
       unawaited(forgetFeederAlerts(gone));
     }
-    if (_watched.isEmpty && now.isNotEmpty) unawaited(offerNotifications(widget.app.feeders));
     _watched = now;
   }
 
@@ -338,6 +332,7 @@ class _WellfedAppState extends State<WellfedApp> {
         fleet: _fleet,
         adopt: _adopt,
         pinsProblem: widget.app.pinsProblem,
+        askToNotify: _alerts ? () => unawaited(offerNotifications(widget.app.feeders)) : null,
         earlierInstall: () async {
           final ports = AppInstallPorts(widget.app.key);
           return ports.pending(await ports.paths());

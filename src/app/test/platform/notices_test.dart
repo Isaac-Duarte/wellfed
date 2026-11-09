@@ -1,5 +1,6 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/platform/alert_ports.dart';
 import 'package:wellfed/platform/notices.dart';
 import 'package:wellfed/state/alerts/alert_words.dart';
 
@@ -13,6 +14,13 @@ void main() {
     const uncertain = [ActiveNotification(id: 7, title: 'Kitchen: a meal may have run', bigText: 'Unsure.')];
     expect(showsWords(uncertain, 7, words), isFalse, reason: 'an uncertain meal found failed alerts again');
     expect(showsWords(const [], 7, words), isFalse, reason: 'swiped away, or never shown');
+  });
+
+  test("a refused ask opens Android's settings only when no dialog showed", () {
+    expect(opensNotificationSettings(before: false, after: true), isFalse, reason: 'the first denial');
+    expect(opensNotificationSettings(before: true, after: false), isFalse, reason: 'the last denial, in a dialog');
+    expect(opensNotificationSettings(before: true, after: true), isFalse);
+    expect(opensNotificationSettings(before: false, after: false), isTrue, reason: 'denied for good, or Android 12');
   });
 
   test('a sweep takes only alert notifications', () {

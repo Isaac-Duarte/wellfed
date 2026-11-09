@@ -108,8 +108,9 @@ class _Choices extends StatelessWidget {
             glyph: Glyph.warning,
             lead: "Instant isn't running.",
             text:
-                'Android stopped it and would not start it again just now. Until it runs, alerts come '
-                'about every 15 minutes. It starts again when you open Wellfed.',
+                "Android stopped it and won't start it again, so alerts come about every 15 minutes. If "
+                "Wellfed's battery use is Restricted in Android's app settings, set it to Optimized or "
+                'Unrestricted, then turn instant off and on here.',
           ),
           const SizedBox(height: Space.s4),
         ],

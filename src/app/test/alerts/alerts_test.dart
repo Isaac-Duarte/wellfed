@@ -8,6 +8,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/alerts/alert_settings.dart';
 import 'package:wellfed/state/alerts/alert_words.dart';
 import 'package:wellfed/state/alerts/alerts.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 import '../support/accessibility.dart';
 import '../support/fakes.dart';
@@ -181,7 +182,16 @@ void main() {
         ..resumes = false;
       await _showSettings(tester, ports);
       expect(find.textContaining("Instant isn't running.", findRichText: true), findsOneWidget);
-      expect(find.textContaining('It starts again when you open Wellfed.', findRichText: true), findsOneWidget);
+      expect(find.textContaining('turn instant off and on here', findRichText: true), findsOneWidget);
+      final Finder notice = find.ancestor(
+        of: find.textContaining("Instant isn't running.", findRichText: true),
+        matching: find.byType(Notice),
+      );
+      expect(
+        find.descendant(of: notice, matching: find.textContaining('open Wellfed', findRichText: true)),
+        findsNothing,
+        reason: 'the app is open',
+      );
     });
 
     testWidgets('the page says alerts work only at home, and asks for notifications', (tester) async {

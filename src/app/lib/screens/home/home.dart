@@ -22,7 +22,14 @@ import 'package:wellfed/widgets/layout.dart';
 /// Feeder-first Home: one card per feeder this phone knows, large for one
 /// feeder and compact for several.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.fleet, required this.earlierInstall, this.adopt, this.pinsProblem});
+  const HomeScreen({
+    super.key,
+    required this.fleet,
+    required this.earlierInstall,
+    this.adopt,
+    this.pinsProblem,
+    this.askToNotify,
+  });
 
   final FeederFleet fleet;
 
@@ -38,6 +45,10 @@ class HomeScreen extends StatefulWidget {
   /// feeder on bank 0 answers Ready with its stock not yet saved.
   final Future<PendingInstall> Function() earlierInstall;
 
+  /// Asks Android once to let alerts through, as Home first shows a feeder:
+  /// the moment the owner sees what they would hear from. Where alerts run.
+  final VoidCallback? askToNotify;
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -49,6 +60,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     unawaited(_readEarlier());
+    if (widget.askToNotify case final VoidCallback ask) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => ask());
+    }
   }
 
   Future<void> _readEarlier() async {

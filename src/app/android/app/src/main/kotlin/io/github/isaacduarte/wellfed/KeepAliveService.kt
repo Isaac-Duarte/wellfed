@@ -58,9 +58,10 @@ class KeepAliveService : Service() {
         return START_NOT_STICKY
     }
 
-    // A run lives in the app's engine, which goes with the task, and never
-    // says it ended: its hold on catch-ups goes too, or they stay off for the
-    // two hours a hold takes to lapse.
+    // A run's Dart steps live in the app's engine, which goes with the task
+    // and never says they ended: the engine's holds on catch-ups go too, or
+    // they would stay off for the two hours a hold takes to lapse. A run's
+    // thread still alive in Rust keeps its own.
     override fun onTaskRemoved(rootIntent: Intent?) {
         run = null
         RustHolds.clear()
@@ -69,18 +70,20 @@ class KeepAliveService : Service() {
 
     override fun onDestroy() {
         if (live === this) live = null
-        main.removeCallbacks(tick)
-        engine?.destroy()
-        engine = null
-        wake?.takeIf { it.isHeld }?.release()
-        wifi?.takeIf { it.isHeld }?.release()
+        main.removeCallbacks(settle)
+        letGo()
         super.onDestroy()
     }
 
+    // Re-run on every start and every change, so the locks and the engine
+    // never outlast a reason to hold them.
     private fun apply() {
+        main.removeCallbacks(settle)
         if (run == null && !instant) {
-            // A start still on its way runs onStartCommand, which stops it.
-            if (pending == 0) stopSelf()
+            letGo()
+            // A start still on its way runs onStartCommand, which stops it,
+            // and one that never arrives is given up on after a while.
+            if (pending == 0) stopSelf() else main.postDelayed(settle, PENDING_LIMIT_MS)
             return
         }
 
@@ -108,6 +111,26 @@ class KeepAliveService : Service() {
             engine = null
         }
     }
+
+    // The locks and the instant engine go as soon as nothing holds, even
+    // while the service waits for a start still on its way.
+    private fun letGo() {
+        main.removeCallbacks(tick)
+        engine?.destroy()
+        engine = null
+        wake?.takeIf { it.isHeld }?.release()
+        wake = null
+        wifi?.takeIf { it.isHeld }?.release()
+        wifi = null
+    }
+
+    // A start counted in `pending` that never reached onStartCommand: given
+    // up on, so the service still stops.
+    private val settle =
+        Runnable {
+            pending = 0
+            apply()
+        }
 
     // One round at a time: a slow one (a feeder gone, NSD looking) makes the
     // next minute's skip rather than pile up.
@@ -155,6 +178,10 @@ class KeepAliveService : Service() {
         // here keeps an urgent one within about a minute of the feeder.
         private const val INSTANT_EVERY_MS = 60_000L
 
+        // Android must deliver a start within seconds or it ends the app, so
+        // a start not delivered by then never will be.
+        private const val PENDING_LIMIT_MS = 15_000L
+
         // What the service is for, and its state. Changed on the main thread
         // only.
         private var run: String? = null
@@ -193,9 +220,9 @@ class KeepAliveService : Service() {
             if (run == null && !instant) {
                 // Never stopService: a start still on its way would end
                 // before its startForeground, and Android ends the app for
-                // that. The service stops itself, from onStartCommand if a
-                // start is on its way, or here once it runs.
-                if (pending == 0) live?.apply()
+                // that. The service lets go of its locks at once and stops
+                // itself, from onStartCommand if a start is on its way.
+                live?.apply()
                 return true
             }
             return try {

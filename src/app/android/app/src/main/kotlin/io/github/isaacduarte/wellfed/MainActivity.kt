@@ -1,6 +1,7 @@
 package io.github.isaacduarte.wellfed
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.ConnectivityManager
@@ -9,10 +10,12 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PatternMatcher
+import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -110,6 +113,11 @@ class MainActivity : FlutterActivity() {
                 "instant" -> result.success(KeepAliveService.setInstant(applicationContext, call.arguments == true))
                 "hold" -> result.success(KeepAliveService.hold(applicationContext, call.arguments as? String))
                 "instantRunning" -> result.success(KeepAliveService.instantRunning())
+                "notificationRationale" -> result.success(notificationRationale())
+                "notificationSettings" -> {
+                    openNotificationSettings()
+                    result.success(null)
+                }
                 "network" -> result.success(WifiNetworks.current(connectivity))
                 else -> result.notImplemented()
             }
@@ -124,6 +132,21 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // Whether Android would show its dialog for notifications again after a
+    // denial. Before the first ask and after a lasting denial it says no, so
+    // the app reads it before and after asking to tell those apart.
+    private fun notificationRationale(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+
+    // The app's own page in Android's notification settings: where the owner
+    // turns them on once Android no longer asks.
+    private fun openNotificationSettings() {
+        val intent =
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        startActivity(intent)
     }
 
     // For the length of a run: the flag holds only while this activity is on

@@ -155,16 +155,26 @@ class AppAlertPorts implements AlertPorts {
   Future<bool> notificationsAllowed() => Notices.allowed();
 
   @override
-  Future<bool> askForNotifications(List<KnownFeeder> feeders) => _ask(feeders);
+  Future<bool> askForNotifications(List<KnownFeeder> feeders) async {
+    final bool before = await _rationale();
+    final bool allowed = await Notices.ask() ?? await Notices.allowed();
+    if (allowed) {
+      await postPending(feeders);
+    } else if (opensNotificationSettings(before: before, after: await _rationale())) {
+      await alertsChannel.invokeMethod<void>('notificationSettings');
+    }
+    return allowed;
+  }
+
+  static Future<bool> _rationale() async => await alertsChannel.invokeMethod<bool>('notificationRationale') ?? false;
 }
 
-/// Ask Android to let the app post, then post what is still open for
-/// `feeders`: alerts held back while it could not. Whether it may now.
-Future<bool> _ask(List<KnownFeeder> feeders) async {
-  final bool allowed = await Notices.ask() ?? await Notices.allowed();
-  if (allowed) await postPending(feeders);
-  return allowed;
-}
+/// Whether a refused ask showed no dialog, so only Android's settings can let
+/// alerts through, from whether Android would explain the ask `before` and
+/// `after` it. Before the first ask it says no and after one denial yes; once
+/// it says no on both sides, the ask was refused with nothing shown, as it is
+/// after a lasting denial or below Android 13.
+bool opensNotificationSettings({required bool before, required bool after}) => !before && !after;
 
 /// Post every change still to make for `feeders`, with no catch-up. A
 /// feeder not in `feeders` keeps its own for its next catch-up.
@@ -184,8 +194,13 @@ Future<void> offerNotifications(List<KnownFeeder> feeders) async {
   if (feeders.isEmpty) return;
   try {
     if (await Notices.allowed()) return;
-    if (!await askForNotificationsOnce(dir: await AppAlertPorts._dir())) return;
-    await _ask(feeders);
+    final String dir = await AppAlertPorts._dir();
+    if (!await notificationsOfferDue(dir: dir)) return;
+    // `null`: Android could not ask now, so the offer stays due.
+    final bool? allowed = await Notices.ask();
+    if (allowed == null) return;
+    await notificationsOffered(dir: dir);
+    if (allowed) await postPending(feeders);
   } on PlatformException catch (error) {
     debugPrint('notifications were not asked for: ${error.message ?? error.code}');
   } on BridgeError catch (error) {

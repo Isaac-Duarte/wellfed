@@ -27,12 +27,13 @@ void main() {
     Future<(FeederFleet, FakeSession)> home(
       WidgetTester tester, {
       PendingInstall earlier = PendingInstall.nothing,
+      VoidCallback? askToNotify,
     }) async {
       feederPhone(tester);
       final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
       final GoRouter router = wellfedRouter(
         book: FakeBook(),
-        root: (context) => HomeScreen(fleet: fleet, earlierInstall: () async => earlier),
+        root: (context) => HomeScreen(fleet: fleet, earlierInstall: () async => earlier, askToNotify: askToNotify),
         pages: {
           '/settings': (context) {
             final book = FakeBook();
@@ -46,6 +47,15 @@ void main() {
       await settle(tester);
       return (fleet, session);
     }
+
+    testWidgets('Home with a feeder offers notifications once it shows', (tester) async {
+      var asked = 0;
+      await home(tester, askToNotify: () => asked++);
+      expect(asked, 1);
+      await feederTap(tester, find.byTooltip('Settings'));
+      await feederTap(tester, find.byTooltip('Back'));
+      expect(asked, 1, reason: 'not again on coming back');
+    });
 
     testWidgets('the gear opens the app settings, and back comes home', (tester) async {
       await home(tester);

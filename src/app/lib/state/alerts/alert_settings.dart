@@ -70,6 +70,12 @@ final class AlertSettingsFailed extends AlertSettingsState {
   final String message;
 }
 
+/// What the owner can do when Android won't start instant mode with the app
+/// open: what usually stops it is the app's battery use set to Restricted.
+const _refused =
+    "Android didn't let it start. If Wellfed's battery use is Restricted in Android's app settings, set it to "
+    'Optimized or Unrestricted, then turn this on again.';
+
 /// This phone's choices for alerts: notifications, "instant while home" and
 /// the mutes. None of it reaches a feeder.
 class AlertSettingsController extends ChangeNotifier {
@@ -130,7 +136,7 @@ class AlertSettingsController extends ChangeNotifier {
     String? problem;
     try {
       final bool went = await _ports.setInstant(on: on);
-      if (on && !went) problem = "Android didn't let it start. Open Wellfed and try again.";
+      if (on && !went) problem = _refused;
     } on PlatformException catch (error) {
       problem = "Couldn't change it: ${error.message ?? error.code}.";
     } on BridgeError catch (error) {
