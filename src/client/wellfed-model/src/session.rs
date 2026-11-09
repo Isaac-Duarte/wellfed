@@ -64,6 +64,10 @@ pub enum Skew {
 /// the revision counts from 1, one per growth, so it never comes near.
 pub const LEGACY_SCHEMA_FROM: u32 = 0x1_0000;
 
+// A revision that reached the hashes' range would read as a pre-revision
+// build and be sent the frozen part alone.
+const _: () = assert!(wellfed_proto::api::REVISION < LEGACY_SCHEMA_FROM);
+
 impl Skew {
     /// How a feeder's `revision` stands against `ours`.
     pub fn of(revision: u32, ours: u32) -> Self {
@@ -122,6 +126,8 @@ pub mod schema {
 
 #[cfg(test)]
 mod tests {
+    use wellfed_proto::api::REVISION;
+
     use super::Skew;
 
     /// The revision is an ordered count: the lower one is the older build,
@@ -133,11 +139,16 @@ mod tests {
         assert_eq!(Skew::of(3, 2), Skew::FeederAhead);
     }
 
-    /// Master's schema hash, the last a pre-revision build sent, is no
-    /// revision: it reads as a build to update, never as a newer one.
+    /// A pre-revision build's schema hash is no revision: it reads as a
+    /// build to update, never as a newer one.
     #[test]
     fn a_pre_revision_hash_is_a_legacy_build() {
-        assert_eq!(Skew::of(0x2af2_8cd8, 1), Skew::Legacy);
+        // The schema hashes pre-revision builds sent, each a build that
+        // still runs somewhere.
+        for hash in [0x2af2_8cd8, 0xb5d9_31f4, 0xf6ab_21a3] {
+            assert_eq!(Skew::of(hash, 1), Skew::Legacy, "{hash:#x}");
+            assert_eq!(Skew::of(hash, REVISION), Skew::Legacy, "{hash:#x}");
+        }
         assert_eq!(
             Skew::of(super::LEGACY_SCHEMA_FROM - 1, 1),
             Skew::FeederAhead

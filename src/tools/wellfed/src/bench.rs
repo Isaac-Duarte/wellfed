@@ -391,6 +391,10 @@ impl Lent {
         self.opened.kind
     }
 
+    pub(crate) fn skew(&self) -> wellfed_model::Skew {
+        self.opened.skew
+    }
+
     /// Events after `after`, from what the server's subscription kept. A
     /// history the server does not reach back to is refused here, before
     /// the command sends anything else: a feed must never go out ahead of
@@ -676,6 +680,7 @@ mod tests {
                 model: connection.model(),
                 build: connection.build().to_string(),
                 role: connection.role(),
+                skew: connection.skew(),
             }),
         };
         let stand = Arc::new(Stand {

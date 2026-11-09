@@ -133,3 +133,50 @@ async fn a_risen_revision_reads_the_unread_rows_again() {
         Refresh::Current
     );
 }
+
+/// A downgraded server records its lower revision, so the rows it stores
+/// unread are read again when the newer server starts once more.
+#[tokio::test]
+async fn a_downgrade_then_an_upgrade_reads_the_rows_stored_between() {
+    let (_dir, store) = fresh().await;
+    let feeders = [adopt(&store, 1).await];
+    store
+        .refresh_projections(decode, REVISION + 1)
+        .await
+        .unwrap();
+
+    // The older server starts and stores a body it cannot read.
+    assert_eq!(
+        store.refresh_projections(|_| None, REVISION).await.unwrap(),
+        Refresh::Current
+    );
+    let lock = EventBody::Feeder(FeederEvent::Lock {
+        locked: true,
+        by: Source::Feeder,
+    });
+    let raw = serde_json::to_vec(&lock).unwrap();
+    store
+        .record_event(
+            feeders[0],
+            NewEvent {
+                epoch: 1,
+                seq: 1,
+                at: None,
+                received: at(1_000),
+                body: None,
+                raw: &raw,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        store
+            .refresh_projections(decode, REVISION + 1)
+            .await
+            .unwrap(),
+        Refresh::Reread { read: 1, unread: 0 }
+    );
+    let rows = store.events(feeders[0], 1, None, 10, None).await.unwrap();
+    assert_eq!(rows[0].kind, Some(EventKind::Lock));
+}

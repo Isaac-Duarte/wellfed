@@ -328,8 +328,16 @@ impl Session {
         if let Some(event) = self.events.pop_front() {
             return Ok(Some(Incoming::Pushed(event)));
         }
-        let Some(plain) = self.inbox.pop_front() else {
-            return Ok(None);
+        // A message kind a newer build added comes in a frame of its own,
+        // so it is skipped whole and the next one read. Its tag is past
+        // every variant this build decodes, so no message it knows is lost.
+        let plain = loop {
+            let Some(plain) = self.inbox.pop_front() else {
+                return Ok(None);
+            };
+            if self.epoch.is_none() || !newer_message(&plain) {
+                break plain;
+            }
         };
         let Some(epoch) = self.epoch else {
             let welcome: Welcome<'_> =
@@ -363,11 +371,6 @@ impl Session {
         };
 
         let Ok(message) = wellfed_proto::decode::<DeviceMessage<'_>>(&plain) else {
-            // A message kind a newer build added comes in a frame of its
-            // own, so it is skipped whole and the next one read.
-            if newer_message(&plain) {
-                return self.next_incoming();
-            }
             return unreadable(&plain)
                 .map(Some)
                 .ok_or_else(|| Error::Malformed(Garbled::of(&plain)));

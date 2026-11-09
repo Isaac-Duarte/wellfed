@@ -288,6 +288,8 @@ Every client serves a feeder of any revision the same way, and `Skew` (`wellfed-
 - **The server** mirrors it whole and sends it every command. Its feeder view carries `skew` against the server's own revision, so a feeder ahead asks for the server to be updated. A pre-revision build's session carries only an install: no subscription, status read or clock, and any other command is refused `409 feeder_legacy` unsent (`wellfed-mirror/tests/legacy.rs`).
 - **Home Assistant** serves it and raises a warning repair, `update_feeder` or `update_integration`, that clears once the revisions match. A pre-revision build is sent nothing: the `legacy_feeder` repair asks for it to be updated, and Home Assistant retries until it is.
 - **The update key's enrollment and the installer** read the client list and status as from any feeder; a status they can't read leaves readiness unknown. From a pre-revision build they read neither: the enrollment goes straight to the press, and readiness stays unknown.
+- **The bench server** opens a pre-revision build's session with no subscription, status read or clock sync, says `skew` `legacy` in its session info, and lends the session to the CLI for the frozen ops alone. Any other request is refused unsent (`a_pre_revision_feeder_s_session_serves_the_update_path_alone`, in `wellfed-bench`). So `wellfed update-key enroll` runs through it.
+- **A return to stock** needs the stock backup, and a pre-revision build can't be asked for its bank 1 (`ReadBank1` is outside the frozen part). So such a feeder returns to stock only from a backup kept earlier, by the app, the server or the CLI, until it is updated.
 
 These rules hold for both parts:
 

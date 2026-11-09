@@ -1760,9 +1760,11 @@ impl Op {
         }
     }
 
-    /// Whether the op belongs to the frozen update path, which a device of
-    /// any build serves: the only ops a client sends to a build of another
-    /// schema revision.
+    /// Whether the op belongs to major 1's frozen part (the update ops,
+    /// the keepalive and the invite), which a device of any build serves at
+    /// the same indices: the only ops a client sends a pre-revision build
+    /// ([`Skew::Legacy`](crate::Skew::Legacy)). A build of another revision
+    /// is sent every op, since the API only grows.
     pub fn is_frozen(&self) -> bool {
         self.to_proto().is_frozen()
     }

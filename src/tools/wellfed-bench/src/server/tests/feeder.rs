@@ -3,12 +3,13 @@
 
 use wellfed_feeder_sim::harness::Relay;
 use wellfed_feeder_sim::harness::Threaded;
+use wellfed_feeder_sim::harness::pre_revision::{PreRevision, Seen};
 use wellfed_feeder_sim::serve::Control;
 use wellfed_formats::bench::banks::{Bank, Check, Content, Source, Witness};
 use wellfed_formats::bench::feeder::{Asked, Stream};
 use wellfed_formats::bench::live::{DEVICE_CURSOR, DeviceCursor, Pause, Session, Unavailable};
 use wellfed_formats::bench::{notes, rendezvous};
-use wellfed_model::{Answer, Op, Pushed};
+use wellfed_model::{Answer, Op, Pushed, Skew};
 use wellfed_rig::device::{Ask as RigAsk, DeviceLink};
 
 use super::*;
@@ -54,11 +55,15 @@ exit 0
 impl Checkout {
     /// Enroll the owner key with `feeder`'s identity.
     fn enroll(&self, feeder: &Threaded) {
+        self.enroll_identity(&feeder.identity);
+    }
+
+    fn enroll_identity(&self, identity: &[u8; 32]) {
         let file = serde_json::json!({
             "version": 1,
             "secret": wellfed_formats::hex::encode(&OWNER),
             "label": "bench",
-            "feeders": [{ "identity": wellfed_formats::hex::encode(&feeder.identity) }],
+            "feeders": [{ "identity": wellfed_formats::hex::encode(identity) }],
         });
         fs::write(
             self.root().join("private/wellfed-owner.json"),
@@ -509,6 +514,43 @@ async fn a_read_lost_with_its_session_goes_once_more_and_a_write_comes_back_unce
             answer: Answer::Status(_)
         }
     );
+    server.quit().await;
+}
+
+/// A pre-revision build (bank 0 on the research unit) reads every op past
+/// the frozen part as something else. The session opens with no
+/// subscription and no status or clock sync, says so, and lends itself for
+/// the update path alone, so `wellfed update` still runs through it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pre_revision_feeder_s_session_serves_the_update_path_alone() {
+    let Some(_turn) = turn().await else { return };
+    let feeder = PreRevision::start();
+    let checkout = checkout();
+    checkout.enroll_identity(&feeder.identity);
+    let server = Running::start(
+        checkout
+            .open_device(DeviceOptions {
+                address: Some(feeder.address),
+                ..DeviceOptions::default()
+            })
+            .unwrap(),
+    );
+    state_until(&server, "the session", open).await;
+
+    let info = server.client.session().await.unwrap();
+    assert_eq!(info.opened.unwrap().skew, Skew::Legacy);
+    let state = server.client.ask([1; 16], Op::UpdateState).await.unwrap();
+    assert_matches!(
+        &state,
+        Asked::Answered {
+            answer: Answer::Update(view)
+        } if view.bank == 0
+    );
+    let refused = server.client.ask([2; 16], Op::Status).await.unwrap_err();
+    assert_matches!(&refused, ClientError::Unavailable(refused)
+            if refused.reason == Unavailable::Legacy);
+
+    assert_eq!(feeder.seen(), [Seen::Update]);
     server.quit().await;
 }
 

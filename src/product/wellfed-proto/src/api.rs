@@ -211,8 +211,8 @@ pub enum Samples {
 ///
 /// The first three variants are frozen ([`Self::is_frozen`]): the update
 /// ops, the keepalive and the invite, which every build of major 1 serves
-/// at these indices for good. The rest is the shared core, then one variant per device
-/// kind's module, and changes freely.
+/// at these indices for good. The rest is the shared core, then one variant
+/// per device kind's module, and only grows: a new op goes at the end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Op<'a> {
     /// Frozen at index 0: an update, and the keys that sign one.
@@ -2939,8 +2939,6 @@ mod tests {
         }
     }
 
-    /// An entry a newer build added is skipped and counted, and the
-    /// entries around it still read.
     /// The last variant's tag is one short of [`DEVICE_MESSAGES`], so a
     /// variant added at the end is the first tag a client skips.
     #[test]
@@ -2959,6 +2957,8 @@ mod tests {
         assert_eq!(u32::from(out[0]) + 1, DEVICE_MESSAGES);
     }
 
+    /// An entry a newer build added is skipped and counted, and the
+    /// entries around it still read.
     #[test]
     fn a_newer_alert_is_skipped_and_counted() {
         #[derive(Serialize)]

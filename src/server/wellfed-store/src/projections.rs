@@ -111,7 +111,7 @@ impl Store {
     /// by another [`PROJECTION_VERSION`] (or never), with `decode` turning
     /// a stored body back into the event; or, when only `revision` (the
     /// device API revision `decode` reads) rose, read the rows stored
-    /// unread again. One transaction on the writer, so readers see the old
+    /// unread again. Every start records its revision, a lower one too. One transaction on the writer, so readers see the old
     /// projections until the new ones are whole, and ingest waits for it.
     /// Run it at start, before ingest begins.
     pub async fn refresh_projections(
@@ -128,10 +128,17 @@ impl Store {
         if let Some(stored) = stored
             && stored.version == i64::from(PROJECTION_VERSION)
         {
-            if stored.api_revision >= revision_now {
+            if stored.api_revision == revision_now {
                 return Ok(Refresh::Current);
             }
-            let refresh = reread(&mut tx, &decode).await?;
+            // An older server (a downgrade) records its own revision too:
+            // the rows it stores unread are read again once a newer one
+            // starts, even one that ran here before.
+            let refresh = if stored.api_revision > revision_now {
+                Refresh::Current
+            } else {
+                reread(&mut tx, &decode).await?
+            };
             sqlx::query!(
                 "UPDATE projection_version SET api_revision = ? WHERE id = 0",
                 revision_now,
