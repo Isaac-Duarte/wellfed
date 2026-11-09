@@ -1,7 +1,8 @@
 """One feeder's session, as Home Assistant sees it.
 
 The Rust bridge owns the connection, the keepalive and the event cursor on
-a thread of its own. This class pumps the bridge's updates into the event
+a thread of its own, directly to the feeder or through the owner's server,
+with the same updates either way. This class pumps the bridge's updates into the event
 loop and hands writes to the executor. It holds no feeding logic: a write
 goes out once through the bridge, and a write whose answer never came is
 reported as uncertain and never sent again.
@@ -11,10 +12,11 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import contextlib
 import logging
 import threading
+from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -23,7 +25,19 @@ from homeassistant.util import dt as dt_util
 
 import wellfed_homeassistant as bridge
 
-from .const import DOMAIN, EVENT_FEEDER
+from .const import (
+    CONF_ADDRESS,
+    CONF_FEEDER_ID,
+    CONF_IDENTITY,
+    CONF_ROUTE,
+    CONF_SECRET,
+    CONF_TOKEN,
+    CONF_TOKEN_ID,
+    CONF_URL,
+    DOMAIN,
+    EVENT_FEEDER,
+    ROUTE_SERVER,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +57,10 @@ UPDATE_FEEDER_ISSUE = "update_feeder"
 UPDATE_INTEGRATION_ISSUE = "update_integration"
 # A feeder from before API revisions: it takes nothing but an update, from the app.
 LEGACY_FEEDER_ISSUE = "legacy_feeder"
+# Through the owner's server: the server is older than the feeder or this integration.
+UPDATE_SERVER_ISSUE = "update_server"
+# The owner's server no longer holds the feeder: removed, or its key dropped.
+SERVER_LOST_FEEDER_ISSUE = "server_lost_feeder"
 
 
 class WriteNotDone(HomeAssistantError):
@@ -88,26 +106,42 @@ def event_data(identity: bytes, event: bridge.Event) -> dict[str, object]:
     return data
 
 
+def open_feeder(data: Mapping[str, Any]) -> bridge.Feeder:
+    """The bridge's session for an entry's data, on the route it names."""
+    identity = bytes.fromhex(data[CONF_IDENTITY])
+    if data[CONF_ROUTE] == ROUTE_SERVER:
+        return bridge.Feeder.server(
+            data[CONF_URL], data[CONF_TOKEN], data[CONF_FEEDER_ID], identity
+        )
+    return bridge.Feeder(bytes.fromhex(data[CONF_SECRET]), identity, data.get(CONF_ADDRESS))
+
+
+def forget_token(data: Mapping[str, Any]) -> None:
+    """Revoke a server entry's token with itself; one already refused is gone anyway."""
+    try:
+        bridge.server_revoke_token(data[CONF_URL], data[CONF_TOKEN], data[CONF_TOKEN_ID])
+    except bridge.WellfedError:
+        _LOGGER.warning("Could not revoke Home Assistant's token on %s", data[CONF_URL])
+
+
 class FeederSession:
     """The bridge's session, what it knows of the feeder, and its listeners."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        secret: bytes,
-        identity: bytes,
-        address: str | None,
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, feeder: bridge.Feeder, identity: bytes) -> None:
         self.hass = hass
         self.identity = identity
-        self._feeder: bridge.Feeder | None = bridge.Feeder(secret, identity, address)
+        self._feeder: bridge.Feeder | None = feeder
         self._stop = threading.Event()
         self._pump: threading.Thread | None = None
         self._listeners: list[Callable[[], None]] = []
 
         self.connected = False
+        # The feeder no longer knows this Home Assistant's key, or the
+        # server its token: a new invite or login is needed.
         self.revoked = False
-        # Called once the feeder no longer knows this Home Assistant.
+        # Which of the two, for the message setup shows.
+        self.token_refused = False
+        # Called once either happens.
         self.on_revoked: Callable[[], None] | None = None
         self.build: str | None = None
         self.role: bridge.Role | None = None
@@ -250,6 +284,7 @@ class FeederSession:
         kind = update.kind
         if kind == bridge.UpdateKind.Connected:
             self.connected = True
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(SERVER_LOST_FEEDER_ISSUE))
             self._skewed(update.skew, update.build)
             self.build = update.build
             self.role = update.role
@@ -280,6 +315,9 @@ class FeederSession:
                 update.feed.requested,
             )
             self._settled()
+        elif kind == bridge.UpdateKind.Settled:
+            _LOGGER.info("The feed whose answer was lost was refused after all: nothing ran")
+            self._settled()
         elif kind == bridge.UpdateKind.StillUnknown:
             _LOGGER.warning(
                 "A feed of %s portions whose answer was lost left no record: whether it "
@@ -288,13 +326,22 @@ class FeederSession:
             )
             self._settled()
             self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
-        elif kind == bridge.UpdateKind.Revoked:
-            _LOGGER.error("The feeder no longer knows this Home Assistant: pair it again")
+        elif kind in (bridge.UpdateKind.Revoked, bridge.UpdateKind.TokenRefused):
+            if kind == bridge.UpdateKind.Revoked:
+                _LOGGER.error("The feeder no longer knows this Home Assistant: pair it again")
+            else:
+                _LOGGER.error("The Wellfed server no longer takes this Home Assistant's token")
+                self.token_refused = True
             self.revoked = True
             self._ready.set()
             self.connected = False
             if self.on_revoked is not None:
                 self.on_revoked()
+        elif kind == bridge.UpdateKind.ServerLostFeeder:
+            _LOGGER.error("The Wellfed server no longer holds this feeder: %s", update.reason)
+            self.connected = False
+            self._ready.set()
+            self._issue(SERVER_LOST_FEEDER_ISSUE, ir.IssueSeverity.ERROR, {})
         elif kind == bridge.UpdateKind.Disconnected:
             if self.connected:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)
@@ -320,18 +367,22 @@ class FeederSession:
             bridge.Skew.Legacy: LEGACY_FEEDER_ISSUE,
             # A value this integration cannot name came from a newer build.
             bridge.Skew.NewerBuild: UPDATE_INTEGRATION_ISSUE,
+            bridge.Skew.ServerBehind: UPDATE_SERVER_ISSUE,
+            bridge.Skew.ServerAhead: UPDATE_INTEGRATION_ISSUE,
         }
         wanted = issues.get(skew) if skew is not None else None
         for issue in set(issues.values()):
             if issue != wanted:
                 ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(issue))
         if wanted is not None:
+            advice = {
+                UPDATE_INTEGRATION_ISSUE: "update this integration",
+                UPDATE_SERVER_ISSUE: "update the Wellfed server",
+            }
             _LOGGER.warning(
-                "The feeder runs another revision of the device API (build %s): %s",
+                "The feeder or its server runs another API revision (build %s): %s",
                 build,
-                "update this integration"
-                if wanted == UPDATE_INTEGRATION_ISSUE
-                else "update the feeder from the Wellfed app",
+                advice.get(wanted, "update the feeder from the Wellfed app"),
             )
             self._issue(wanted, ir.IssueSeverity.WARNING, {"build": build or "unknown"})
 

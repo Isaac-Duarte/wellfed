@@ -52,6 +52,6 @@ pub enum Error {
     Server(#[from] wellfed_server_client::Error),
     #[error("not a server address: {0}")]
     Address(String),
-    #[error("not a server feeder id: {0}")]
-    FeederId(String),
+    #[error("a client key is 32 bytes, not {0}")]
+    KeyLength(usize),
 }

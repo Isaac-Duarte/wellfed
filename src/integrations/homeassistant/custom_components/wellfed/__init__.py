@@ -1,4 +1,5 @@
-"""The Wellfed integration: a feeder paired directly, with no server."""
+"""The Wellfed integration: a feeder reached directly, with no server, or
+through the owner's Wellfed server; the entities are the same either way."""
 
 from __future__ import annotations
 
@@ -7,6 +8,7 @@ from homeassistant.const import ATTR_DEVICE_ID, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
+    ConfigEntryError,
     ConfigEntryNotReady,
     ServiceValidationError,
 )
@@ -14,19 +16,21 @@ from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 import probatio
 
+import wellfed_homeassistant as bridge
+
 from .const import (
     ATTR_FEED,
     ATTR_PORTIONS,
-    CONF_ADDRESS,
     CONF_IDENTITY,
-    CONF_SECRET,
+    CONF_ROUTE,
     DOMAIN,
     PORTIONS_MAX,
     PORTIONS_MIN,
+    ROUTE_SERVER,
     SERVICE_CANCEL_FEED,
     SERVICE_FEED,
 )
-from .session import FeederSession
+from .session import FeederSession, forget_token, open_feeder
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
@@ -95,13 +99,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> bool:
+    """Version 1 is the first; an entry a newer integration wrote is refused."""
+    return entry.version == 1
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> bool:
-    session = FeederSession(
-        hass,
-        bytes.fromhex(entry.data[CONF_SECRET]),
-        bytes.fromhex(entry.data[CONF_IDENTITY]),
-        entry.data.get(CONF_ADDRESS),
-    )
+    try:
+        feeder = await hass.async_add_executor_job(open_feeder, entry.data)
+    except bridge.WellfedError as error:
+        raise ConfigEntryError(translation_domain=DOMAIN, translation_key="bad_entry") from error
+    session = FeederSession(hass, feeder, bytes.fromhex(entry.data[CONF_IDENTITY]))
     session.on_revoked = lambda: entry.async_start_reauth(hass)
     session.start()
 
@@ -111,7 +119,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> b
     if session.revoked or session.state is None:
         await hass.async_add_executor_job(session.stop)
         if session.revoked:
-            raise ConfigEntryAuthFailed(translation_domain=DOMAIN, translation_key="revoked")
+            key = "token_refused" if session.token_refused else "revoked"
+            raise ConfigEntryAuthFailed(translation_domain=DOMAIN, translation_key=key)
         raise ConfigEntryNotReady(translation_domain=DOMAIN, translation_key="not_ready")
 
     entry.runtime_data = session
@@ -124,6 +133,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> 
     if unloaded:
         await hass.async_add_executor_job(entry.runtime_data.stop)
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> None:
+    """A server entry's token goes with it; a direct key stays until the owner removes it,
+    since a member may not remove its own."""
+    if entry.data[CONF_ROUTE] == ROUTE_SERVER:
+        await hass.async_add_executor_job(forget_token, dict(entry.data))
 
 
 async def async_remove_config_entry_device(

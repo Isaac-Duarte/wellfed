@@ -1,5 +1,5 @@
 """Diagnostics: what the session knows of the feeder, with the client
-key's secret redacted."""
+key's secret and the server token redacted."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from homeassistant.core import HomeAssistant
 import wellfed_homeassistant as bridge
 
 from . import WellfedConfigEntry
-from .const import CONF_SECRET
+from .const import CONF_SECRET, CONF_TOKEN
 
-REDACT = {CONF_SECRET}
+REDACT = {CONF_SECRET, CONF_TOKEN}
 
 
 def _status(status: bridge.Status | None) -> dict[str, Any] | None:

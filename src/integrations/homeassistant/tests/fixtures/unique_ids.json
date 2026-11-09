@@ -1,0 +1,32 @@
+{
+  "entities": [
+    "{identity}-battery",
+    "{identity}-cancel_feed",
+    "{identity}-child_lock",
+    "{identity}-connected",
+    "{identity}-desiccant",
+    "{identity}-feed",
+    "{identity}-feed_event",
+    "{identity}-feed_problem",
+    "{identity}-food",
+    "{identity}-food_low",
+    "{identity}-last_fed",
+    "{identity}-lights",
+    "{identity}-next_meal",
+    "{identity}-on_battery",
+    "{identity}-plan_0",
+    "{identity}-plan_9",
+    "{identity}-play_chime",
+    "{identity}-portion_weight",
+    "{identity}-portions",
+    "{identity}-portions_today",
+    "{identity}-readiness",
+    "{identity}-reset_desiccant",
+    "{identity}-rssi",
+    "{identity}-sound",
+    "{identity}-volume"
+  ],
+  "devices": [
+    "wellfed:{identity}"
+  ]
+}

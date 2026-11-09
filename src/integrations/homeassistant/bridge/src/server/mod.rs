@@ -43,7 +43,9 @@ use wellfed_server_client::api::{
 };
 use wellfed_server_client::{Auth, Client, Failure, Lock, Timeouts, Updates, Url};
 
-pub use account::{Login, Refused, ServerFeeder, address, feeders, login, revoke_token};
+pub use account::{
+    Login, Refused, ServerFeeder, address, feeder, feeders, login, revoke_client, revoke_token,
+};
 
 use crate::Error;
 use crate::api::{self, Capabilities, NotSent, RefusalKind, Role, Skew, State, Update, Written};

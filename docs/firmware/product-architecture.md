@@ -54,7 +54,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 - **App and server together.** With a server configured, the app goes through it first, and straight to the feeder on the LAN only when the server is down ([two paths, one feed](../server/README.md#two-paths-one-feed)). App-direct only was rejected: no remote access, and each person's actions would reach the audit log only through the feeder.
 - **Alerts** are decided by the feeder, which keeps a small table of what is wrong for every client to read ([alerts](alerts.md)). The app doesn't show them yet ([deferred](#deferred)).
 - **Remote access** goes through a reverse proxy in front of the server, or the owner's VPN ([deferred](#deferred)).
-- **Home Assistant pairs with the feeder directly**, as its own client ([below](#home-assistant)).
+- **Home Assistant reaches the feeder directly**, as its own client, **or through the owner's server**, chosen at setup ([below](#home-assistant)).
 
 ## Components
 
@@ -69,8 +69,8 @@ Most of this is design. What has been built and observed is on the [roadmap](../
       history store, release fetching, release installs
       ▲                                            │
       │ HTTP                                       │
-  the CLI                                          │
-  Home Assistant ─────────── Noise stream ─────────┘
+  the CLI, Home Assistant (server route)           │
+  Home Assistant (direct) ── Noise stream ─────────┘
 ```
 
 | Part | Where | What it holds |
@@ -154,13 +154,13 @@ Anyone should be able to do anything with their feeder's data, so the server kee
 
 ## Home Assistant
 
-A custom integration pairs with the feeder as an ordinary device API client, by an invite, and holds one session to it. It needs no server and no code on the feeder. Its Python is Home Assistant's UI and glue only: the session runs in Rust, in `wellfed-connect` and `wellfed-client` through a PyO3 bridge, so Home Assistant, the app and the CLI share one implementation. It lives in [`src/integrations/homeassistant`](../../src/integrations/homeassistant/README.md), the one Python under `src/`.
+A custom integration reaches each feeder one of two ways, chosen at setup. Directly, it pairs as an ordinary device API client, by an invite, and holds one session to it, with no server. Through the owner's server, it signs in once for a token of its own and follows the feeder over `/api/v1`. Both routes present the same entities under the same unique ids, so an entry can switch routes and keep its history. It needs no code on the feeder. Its Python is Home Assistant's UI and glue only: the sessions run in Rust, in `wellfed-connect`, `wellfed-client` and `wellfed-server-client` through a PyO3 bridge, so Home Assistant, the app and the CLI share one implementation. It lives in [`src/integrations/homeassistant`](../../src/integrations/homeassistant/README.md), the one Python under `src/`.
 
-- **One press, one feed.** Each press goes out once, under a fresh request id, and a feed with no session open isn't sent. A feed whose answer was lost is reported uncertain and never retried. A later `Fed` event naming Home Assistant as its source settles it; with none in the history it is reported unknown, never as a count.
-- **A member, nothing more.** It joins only by a member invite. An invite doesn't say its role until redeemed, so a key an owner invite enrolled revokes itself at once with the right it was just given, and setup asks for a member invite. Firmware installs, Wi-Fi, restarts and removing clients stay with the owner's phone and computer.
+- **One press, one feed.** Each press goes out once, under a fresh request id or idempotency key, and a feed with no session open isn't sent. A feed whose answer was lost is reported uncertain and never retried. Directly, a later `Fed` event naming Home Assistant as its source settles it; through the server, the server's journal does. With no record of it, it is reported unknown, never as a count.
+- **A member, nothing more.** Directly, it joins only by a member invite. An invite doesn't say its role until redeemed, so a key an owner invite enrolled revokes itself at once with the right it was just given, and setup asks for a member invite. Firmware installs, Wi-Fi, restarts and removing clients stay with the owner's phone and computer.
 - **The same day as the app.** Last fed, today's meals, the next meal and the portions fed today come from `wellfed_client::today`, the facts the app's Home card reads.
-- **Its cost:** one of the feeder's four session slots, held while Home Assistant runs, and one of its 8 client keys.
-- **Rejected: through the server's HTTP API**, the route chosen on October 30. It would make Home Assistant need a server, which most owners won't run, and Home Assistant already lives on the LAN with the feeder.
+- **Its cost:** directly, one of the feeder's four session slots, held while Home Assistant runs, and one of its 8 client keys. Through the server, nothing on the feeder: the server holds the session.
+- **Both routes, not one.** Direct alone was the route chosen on October 30, since most owners won't run a server. The server route was added for the beta, so an owner who does run one keeps the history, the audit log and remote access in one place. Neither route is required.
 - **Rejected: the ESPHome native API on the feeder.** It reimplements an unofficial protocol that changes with Home Assistant releases, and spends firmware RAM.
 - **Rejected: MQTT discovery through `wellfed-server`.** It adds a broker and a second protocol, and MQTT can deliver a command twice, so a feed would need its own protection against duplicates.
 - **Rejected: Matter on the feeder.** Its C++ stack wouldn't fit the firmware's flash and RAM headroom or its task slots, it needs a second BLE commissioning path, and Matter has no feeder device type, so a feed would look like an on/off switch.

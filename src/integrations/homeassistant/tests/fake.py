@@ -59,6 +59,11 @@ def state(**changes: Any) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
+def plan(slot: int) -> SimpleNamespace:
+    """A daily plan in `slot`, on."""
+    return SimpleNamespace(slot=slot, minute=480, portions=1, days=0x7F, enabled=True)
+
+
 def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
     values: dict[str, Any] = {
         "kind": kind,

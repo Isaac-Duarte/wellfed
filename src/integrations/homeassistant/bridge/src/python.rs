@@ -12,9 +12,6 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::FeederSettingsPatch;
 
-use uuid::Uuid;
-use wellfed_server_client::api::FeederId;
-
 use crate::api::{ServerProblem, Tune, Update, Written};
 use crate::feeder::{self, Clocks, Target};
 use crate::key::{self, ClientKey, Joined, bytes32};
@@ -130,6 +127,21 @@ fn server_feeders(py: Python<'_>, url: &str, token: &str) -> PyResult<Vec<Server
     py.detach(|| block_on(server::feeders(url, token)))
 }
 
+/// Remove the client key `key` from the feeder `feeder_id` through the
+/// server; whether it was done. Sent once: `False` when it was refused, or
+/// may not have run.
+#[pyfunction]
+fn server_revoke_client(
+    py: Python<'_>,
+    url: &str,
+    token: &str,
+    feeder_id: &str,
+    key: &[u8],
+) -> PyResult<bool> {
+    let key = bytes32(key, Error::KeyLength)?;
+    Ok(py.detach(|| block_on(server::revoke_client(url, token, feeder_id, key)).is_ok()))
+}
+
 /// Revoke the token `token_id` with itself.
 #[pyfunction]
 fn server_revoke_token(py: Python<'_>, url: &str, token: &str, token_id: &str) -> PyResult<()> {
@@ -162,9 +174,7 @@ impl Feeder {
         let target = server::Target {
             url: server::address(url)?,
             token,
-            feeder: FeederId(
-                Uuid::parse_str(feeder_id).map_err(|_| Error::FeederId(feeder_id.to_owned()))?,
-            ),
+            feeder: server::feeder(feeder_id)?,
             identity: bytes32(identity, Error::IdentityLength)?,
         };
         Ok(Self(feeder::Feeder::start_server(
@@ -247,7 +257,7 @@ mod wellfed_homeassistant {
     #[pymodule_export]
     use super::{
         Feeder, ServerRefused, WellfedError, generate_secret, invite_feeder, join, public_key,
-        server_feeders, server_login, server_revoke_token,
+        server_feeders, server_login, server_revoke_client, server_revoke_token,
     };
     #[pymodule_export]
     use crate::api::{

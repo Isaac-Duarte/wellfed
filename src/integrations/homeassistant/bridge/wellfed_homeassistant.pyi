@@ -1,7 +1,7 @@
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["AccountRole", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "server_feeders", "server_login", "server_revoke_token"]
+__all__ = ["AccountRole", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
 
 @final
 class AccountRole:
@@ -1158,6 +1158,13 @@ def server_login(url: str, name: str, password: str, label: str) -> Login:
     Sign in to the owner's server at `url` as `name`, and create a token
     labelled `label` for Home Assistant. The password is used for this alone
     and not kept; an account that may change nothing is refused.
+    """
+
+def server_revoke_client(url: str, token: str, feeder_id: str, key: bytes) -> bool:
+    """
+    Remove the client key `key` from the feeder `feeder_id` through the
+    server; whether it was done. Sent once: `False` when it was refused, or
+    may not have run.
     """
 
 def server_revoke_token(url: str, token: str, token_id: str) -> None:

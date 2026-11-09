@@ -79,7 +79,7 @@ This covers what this repository builds. Interop with things it does not build, 
 | Firmware crates | Also a fresh image build, so its link, RAM-park and stack audits run |
 | `src/web/` | Also `make check-web` (needs Node and pnpm, runs no Rust): ESLint, Prettier, licenses, types, unit tests, the build, and Playwright of the site and the docs site |
 | `Cargo.lock` or `deny.toml` | `make check` includes `check-deps` (cargo-deny); its first run downloads the RustSec database |
-| `src/integrations/homeassistant/` | Also `make check-homeassistant` (needs uv): the bridge's Clippy with its PyO3 module, the committed stub unchanged, Ruff, mypy strict, the wheel build and Home Assistant's tests against the simulator with 95% coverage |
+| `src/integrations/homeassistant/` | Also `make check-homeassistant` (needs uv): the bridge's Clippy with its PyO3 module, the committed stub unchanged, Ruff, mypy strict, the wheel build and Home Assistant's tests against the simulator and the server with 95% coverage |
 | `src/app/`, or a `wellfed-client` type the app uses | Also `make check-app` (needs the Flutter SDK): bindings regenerated with no diff, `dart format`, the lint plugin's tests, `dart analyze --fatal-infos`, `flutter test` with the goldens and the smoke tests, and a debug APK build |
 
 A skipped or missing fixture is not a passing check.

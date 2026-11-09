@@ -1,20 +1,25 @@
-"""A simulated feeder for the integration's tests.
+"""A simulated feeder, and the owner's server in front of it, for the
+integration's tests.
 
 The simulator is the workspace's `wellfed-feeder-sim`, which runs the real
 feeder's pairing and feeding owner; invites come from the `wellfed` CLI, as
-an owner makes them. Both are built by `make check-homeassistant`, or found
-under `WELLFED_BIN_DIR`.
+an owner makes them. The server is the workspace's `wellfed-server`, on
+localhost with its own data directory and no mDNS. All three are built by
+`make check-homeassistant`, or found under `WELLFED_BIN_DIR`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import socket
 import subprocess
 import time
+from typing import Any
+import urllib.request
 
 import pytest
 
@@ -98,6 +103,91 @@ def simulator(tmp_path: Path, socket_enabled: None) -> Iterator[Simulator]:
         pytest.fail("the simulator did not start listening")
 
     yield Simulator(address=f"127.0.0.1:{port}", keys=keys, cli=cli, process=process)
+
+    process.kill()
+    process.wait(timeout=10)
+
+
+# The server's first owner, as the tests sign in.
+OWNER = "ada"
+OWNER_PASSWORD = "a long test password"
+
+
+@dataclass
+class Server:
+    url: str
+    process: subprocess.Popen[bytes]
+    # The owner's session cookie, from setup.
+    cookie: str = ""
+
+    def call(self, method: str, path: str, body: Any = None) -> Any:
+        """One API call as the owner; its JSON answer, or `None` when empty."""
+        request = urllib.request.Request(
+            f"{self.url}/api/v1{path}",
+            method=method,
+            data=None if body is None else json.dumps(body).encode(),
+            headers={
+                "Origin": self.url,
+                "Content-Type": "application/json",
+                "Cookie": f"wellfed_session={self.cookie}",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if not self.cookie:
+                for header in response.headers.get_all("Set-Cookie") or []:
+                    name, _, rest = header.partition("=")
+                    if name == "wellfed_session":
+                        self.cookie = rest.split(";", 1)[0]
+            raw = response.read()
+        return json.loads(raw) if raw else None
+
+    def adopt(self, simulator: Simulator) -> dict[str, Any]:
+        """Adopt `simulator` with an owner invite, and wait until the server reaches it."""
+        feeder: dict[str, Any] = self.call(
+            "POST",
+            "/feeders",
+            {"invite": simulator.invite("owner"), "name": "kitchen", "address": simulator.address},
+        )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if self.call("GET", "/feeders")[0]["connection"] == "online":
+                return feeder
+            time.sleep(0.1)
+        pytest.fail("the server did not reach the feeder")
+
+
+@pytest.fixture
+def server(tmp_path: Path, socket_enabled: None) -> Iterator[Server]:
+    binary = _binary("wellfed-server")
+    port = _free_port()
+    process = subprocess.Popen(
+        [
+            binary,
+            "--data",
+            tmp_path / "server",
+            "--listen",
+            f"127.0.0.1:{port}",
+            "--no-discovery",
+            "--no-advertise",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            urllib.request.urlopen(f"{url}/health", timeout=0.5).close()
+            break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        process.kill()
+        pytest.fail("the server did not start listening")
+
+    running = Server(url=url, process=process)
+    running.call("POST", "/setup", {"name": OWNER, "password": OWNER_PASSWORD, "zone": "UTC"})
+    yield running
 
     process.kill()
     process.wait(timeout=10)

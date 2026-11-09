@@ -10,7 +10,9 @@
 use std::time::Duration;
 
 use uuid::Uuid;
-use wellfed_server_client::api::{self as server, Credentials, ErrorCode, NewToken, TokenId};
+use wellfed_server_client::api::{
+    self as server, Credentials, ErrorCode, FeederId, Hex, NewToken, TokenId,
+};
 use wellfed_server_client::{Auth, Client, Error as CallError, Timeouts, Url};
 
 use crate::api::{AccountRole, ServerProblem};
@@ -66,6 +68,8 @@ pub enum Refused {
     Address(String),
     #[error("not a token id: {0}")]
     TokenId(String),
+    #[error("not a feeder id: {0}")]
+    FeederId(String),
     #[error("the account's role ({}) may change nothing", .0.key())]
     Role(AccountRole),
     #[error(transparent)]
@@ -77,7 +81,7 @@ impl Refused {
     pub fn problem(&self) -> ServerProblem {
         match self {
             Self::Address(_) => ServerProblem::NotAServer,
-            Self::TokenId(_) => ServerProblem::Refused,
+            Self::TokenId(_) | Self::FeederId(_) => ServerProblem::Refused,
             Self::Role(_) => ServerProblem::Forbidden,
             Self::Call(error) => problem(error),
         }
@@ -142,6 +146,32 @@ pub async fn revoke_token(url: &str, token: &str, token_id: &str) -> Result<(), 
     let client = setup_client(url, Some(token))?;
     client.revoke_token(TokenId(id)).await?;
     Ok(())
+}
+
+/// Remove the client key `client` from the feeder `feeder_id` through the
+/// server, as an entry that moved to the server route drops the key it
+/// held directly: a member may not remove its own key, but an owner's
+/// account may, on a server the feeder made an owner. Sent once, under one
+/// idempotency key; an error says it was not done or may not have been.
+pub async fn revoke_client(
+    url: &str,
+    token: &str,
+    feeder_id: &str,
+    client: [u8; 32],
+) -> Result<(), Refused> {
+    let id = feeder(feeder_id)?;
+    let client_api = setup_client(url, Some(token))?;
+    client_api
+        .revoke_client(id, Hex(client), Uuid::new_v4())
+        .await?;
+    Ok(())
+}
+
+/// A feeder id as the server names it.
+pub fn feeder(id: &str) -> Result<FeederId, Refused> {
+    Uuid::parse_str(id)
+        .map(FeederId)
+        .map_err(|_| Refused::FeederId(id.to_owned()))
 }
 
 /// The server's address as the session's [`super::Target`] takes it.
