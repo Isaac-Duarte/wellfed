@@ -64,7 +64,9 @@ pub use foods::{
     FeederFood, Food, FoodChoice, FoodHistoryPage, FoodPatch, FoodPeriod, NewFood, NewRefill,
     Refill, RefillPage,
 };
-pub use health::{FeederLink, Health, Job, JobOutcome, JobRun, ServerStatus, StoreState};
+pub use health::{
+    FeederLink, Health, Job, JobOutcome, JobRun, ServerSkew, ServerStatus, StoreState,
+};
 pub use home::{Home, HomePatch, TimeFormat, Units};
 pub use installs::{Install, InstallFailure, InstallRequest, InstallState, InstallTarget};
 // The feeder's own values are the model's, served as they are; the HTTP
@@ -101,6 +103,17 @@ pub use wellfed_model::{
 
 /// The prefix every resource lives under.
 pub const PREFIX: &str = "/api/v1";
+
+/// The ordered revision of the API under [`PREFIX`], which `GET /health`
+/// answers. From the beta the API only grows: no field is removed, retyped
+/// or made required, a body gains only optional fields, and an enum gains
+/// variants only at its end, and only one with a catch-all (an `unknown`
+/// value its older readers decode a newer one as). Each growth raises this
+/// by one. `wellfed-server`'s `api_growth` test holds the published
+/// document to that ([API evolution]).
+///
+/// [API evolution]: ../../../../docs/server/README.md#api-evolution
+pub const REVISION: u32 = 1;
 
 /// The cookie a login sets: an opaque session token, `HttpOnly` and
 /// `SameSite=Strict`. A non-browser client sends it back as it came.

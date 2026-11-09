@@ -205,6 +205,7 @@ pub enum Blocked {
     /// A restart is coming within seconds.
     Restarting,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 
@@ -257,6 +258,7 @@ pub enum WifiSource {
     Stored,
     Fallback,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 

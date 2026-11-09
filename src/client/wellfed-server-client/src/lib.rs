@@ -263,6 +263,51 @@ pub async fn decode<T: DeserializeOwned>(
     Ok(serde_json::from_slice(&response.bytes().await?)?)
 }
 
+/// The JSON page `response` carries, if its status is `expected`, with
+/// each entry of its `list` field decoded on its own: an entry this client
+/// cannot read, one a newer server added (a new kind of event, say), is
+/// left out rather than failing the page. A page's `next` is the server's,
+/// so paging still moves past it.
+pub(crate) async fn decode_page<T: DeserializeOwned>(
+    response: Response,
+    expected: StatusCode,
+    list: &str,
+) -> Result<T, Error> {
+    let response = expect_status(response, expected).await?;
+    let page: serde_json::Value = serde_json::from_slice(&response.bytes().await?)?;
+    lenient_page(page, list)
+}
+
+/// `page` decoded with only the entries of its `list` field that decode.
+fn lenient_page<T: DeserializeOwned>(mut page: serde_json::Value, list: &str) -> Result<T, Error> {
+    let Some(slot) = page.get_mut(list) else {
+        // No list to pick from: the page fails or decodes as it is.
+        return Ok(serde_json::from_value(page)?);
+    };
+    let entries = match slot.take() {
+        serde_json::Value::Array(entries) => entries,
+        // Not a list: the page decodes, or fails, as it is.
+        other => {
+            *slot = other;
+            return Ok(serde_json::from_value(page)?);
+        }
+    };
+
+    // An entry is readable when the page holding it alone decodes. The
+    // page is otherwise small (the list emptied), so each try is cheap.
+    let readable: Vec<serde_json::Value> = entries
+        .into_iter()
+        .filter(|entry| {
+            let mut alone = page.clone();
+            alone[list] = serde_json::Value::Array(vec![entry.clone()]);
+            serde_json::from_value::<T>(alone).is_ok()
+        })
+        .collect();
+
+    page[list] = serde_json::Value::Array(readable);
+    Ok(serde_json::from_value(page)?)
+}
+
 /// Whether `response` carries an RFC 9457 problem, whatever parameters
 /// (`; charset=utf-8`) its media type has.
 fn is_problem(response: &Response) -> bool {
@@ -324,6 +369,39 @@ mod tests {
         for kind in ["application/json", "application/problem+jsonx", ""] {
             assert!(!is_problem_type(kind), "{kind}");
         }
+    }
+
+    #[test]
+    fn a_page_leaves_out_the_entries_this_client_cannot_read() {
+        let event = |seq: u64, kind: &str| {
+            serde_json::json!({
+                "epoch": 1,
+                "seq": seq,
+                "at": null,
+                "received": "2026-11-08T00:00:00Z",
+                "body": { "kind": kind },
+            })
+        };
+        let page = serde_json::json!({
+            "epoch": 1,
+            "events": [event(1, "restarting"), event(2, "newer_kind"), event(3, "update_confirmed")],
+            "gaps": [],
+            "next": 3,
+        });
+
+        let read: wellfed_api::EventPage = lenient_page(page, "events").expect("the page reads");
+        assert_eq!(
+            read.events
+                .iter()
+                .map(|event| event.seq)
+                .collect::<Vec<_>>(),
+            [1, 3]
+        );
+        assert_eq!(read.next, Some(3), "paging moves past the entry left out");
+
+        let broken =
+            serde_json::json!({ "epoch": 1, "events": "no list", "gaps": [], "next": null });
+        assert!(lenient_page::<wellfed_api::EventPage>(broken, "events").is_err());
     }
 
     #[test]

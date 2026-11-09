@@ -147,6 +147,9 @@ pub(super) fn outcome(outcome: &CommandOutcome) -> String {
         CommandOutcome::Unrecorded => {
             "unrecorded: the feeder restarted with no record of the feed".to_owned()
         }
+        CommandOutcome::Unknown => {
+            "unknown to this CLI: the server is newer; it may have run".to_owned()
+        }
     }
 }
 

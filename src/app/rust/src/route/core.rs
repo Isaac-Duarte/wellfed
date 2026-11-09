@@ -268,12 +268,14 @@ pub(crate) fn settled_by_command(
 ) -> Option<Settlement> {
     match state {
         CommandState::Sent | CommandState::Unknown => None,
-        CommandState::Answered | CommandState::Resolved => outcome.map(settlement_of),
+        CommandState::Answered | CommandState::Resolved => outcome.and_then(settlement_of),
     }
 }
 
-fn settlement_of(outcome: &CommandOutcome) -> Settlement {
-    match outcome {
+/// What `outcome` settles; `None` for one a newer server added, which
+/// leaves the write unsettled, so it is never sent again.
+fn settlement_of(outcome: &CommandOutcome) -> Option<Settlement> {
+    let settlement = match outcome {
         CommandOutcome::Done
         | CommandOutcome::Settings { .. }
         | CommandOutcome::Plans { .. }
@@ -299,7 +301,9 @@ fn settlement_of(outcome: &CommandOutcome) -> Settlement {
             reason: *reason,
         },
         CommandOutcome::Unrecorded => Settlement::Unrecorded,
-    }
+        CommandOutcome::Unknown => return None,
+    };
+    Some(settlement)
 }
 
 /// A server write the journal does not hold settles as never sent, once its

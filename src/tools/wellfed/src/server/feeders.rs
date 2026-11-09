@@ -430,9 +430,11 @@ fn settled(entry: &Command) -> Result<Settled> {
     let pending = matches!(entry.state, CommandState::Sent | CommandState::Unknown);
     match &entry.outcome {
         _ if pending => Ok(Settled::Unknown),
-        None | Some(CommandOutcome::Feeding { .. } | CommandOutcome::Unrecorded) => {
-            Ok(Settled::Unknown)
-        }
+        // An outcome a newer server added says no more than an unknown one.
+        None
+        | Some(
+            CommandOutcome::Feeding { .. } | CommandOutcome::Unrecorded | CommandOutcome::Unknown,
+        ) => Ok(Settled::Unknown),
         Some(
             CommandOutcome::Done
             | CommandOutcome::Settings { .. }

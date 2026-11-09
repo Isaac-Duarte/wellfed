@@ -192,6 +192,9 @@ impl Service {
             | CommandOutcome::Call { .. }
             | CommandOutcome::Superseded
             | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
+            // A newer server's outcome, read back after a downgrade, reads
+            // as unknown.
+            CommandOutcome::Unknown => Err(CommandError::Unknown.into()),
         }
     }
 
@@ -292,6 +295,9 @@ pub(crate) fn done(outcome: &CommandOutcome) -> Result<()> {
         | CommandOutcome::Calibration { .. }
         | CommandOutcome::Call { .. }
         | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
+        // A newer server's outcome, read back after a downgrade, reads
+        // as unknown.
+        CommandOutcome::Unknown => Err(CommandError::Unknown.into()),
     }
 }
 

@@ -10,8 +10,8 @@ use crate::auth::{Allowed, need};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Liveness and version, without authentication: the process is up and
-/// serving. It reads nothing, so a probe never waits on the database.
+/// Liveness, version and API revision, without authentication: the
+/// process is up and serving. It reads nothing, so a probe never waits on the database.
 #[utoipa::path(
     get,
     path = "/health",
@@ -21,6 +21,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) async fn health() -> Json<Health> {
     Json(Health {
         version: VERSION.into(),
+        revision: wellfed_api::REVISION,
     })
 }
 

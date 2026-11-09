@@ -54,6 +54,10 @@ pub enum Connection {
     Online,
     /// The feeder no longer knows the server's key (revoked, or reset).
     Refused,
+    /// A state a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A device the server mirrors. The API names every one a feeder for now;

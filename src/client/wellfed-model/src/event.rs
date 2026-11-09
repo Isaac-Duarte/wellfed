@@ -241,6 +241,7 @@ pub enum FoodLevel {
     /// portions remain (at any time during a feed, for a `Fed` event).
     Low,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 
@@ -258,6 +259,7 @@ pub enum FeedOutcome {
     /// feeder's cap on one feed, not what was asked.
     Uncertain,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 
@@ -298,6 +300,7 @@ pub enum FeedReason {
     /// next boot resolved it: always `Uncertain`.
     Interrupted,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 

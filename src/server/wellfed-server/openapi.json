@@ -5882,7 +5882,7 @@
         "tags": [
           "health"
         ],
-        "summary": "Liveness and version, without authentication: the process is up and\nserving. It reads nothing, so a probe never waits on the database.",
+        "summary": "Liveness, version and API revision, without authentication: the\nprocess is up and serving. It reads nothing, so a probe never waits on the database.",
         "operationId": "health",
         "responses": {
           "200": {
@@ -7070,6 +7070,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An outcome a newer server added, which this client cannot name. The\nserver never sends it. A client treats it as uncertain: the write\nmay have run, so it is never sent again.",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "What the feeder answered a write, or what its history says of it."
@@ -7113,7 +7128,8 @@
           "offline",
           "connecting",
           "online",
-          "refused"
+          "refused",
+          "unknown"
         ]
       },
       "CoreEvent": {
@@ -7578,7 +7594,8 @@
           "import_closed",
           "archive_invalid",
           "export_running",
-          "internal"
+          "internal",
+          "unknown"
         ]
       },
       "EventBody": {
@@ -9175,9 +9192,16 @@
         "type": "object",
         "description": "Liveness, without authentication.",
         "required": [
-          "version"
+          "version",
+          "revision"
         ],
         "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The server's API revision ([`crate::REVISION`]): a client compares\nit with its own to say which side to update ([`ServerSkew`]).",
+            "minimum": 0
+          },
           "version": {
             "type": "string"
           }

@@ -17,6 +17,7 @@ pub enum CurrentUnit {
     Scaled,
     MilliAmps,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 

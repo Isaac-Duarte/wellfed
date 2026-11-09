@@ -202,6 +202,11 @@ pub enum CommandOutcome {
     /// no record of it: it never ran, or its record was lost. Whether food
     /// was dispensed is not known, and it is never sent again.
     Unrecorded,
+    /// An outcome a newer server added, which this client cannot name. The
+    /// server never sends it. A client treats it as uncertain: the write
+    /// may have run, so it is never sent again.
+    #[serde(other)]
+    Unknown,
 }
 
 impl CommandOutcome {
@@ -217,7 +222,8 @@ impl CommandOutcome {
             | Self::Superseded
             | Self::Refused { .. }
             | Self::Invited { .. }
-            | Self::Unrecorded => None,
+            | Self::Unrecorded
+            | Self::Unknown => None,
         }
     }
 }

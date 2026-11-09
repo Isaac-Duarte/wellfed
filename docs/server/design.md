@@ -59,7 +59,7 @@ The server's crates follow one rule: **a crate per runtime or dependency boundar
 | `wellfed-releases` | Fetching, uploading and verifying releases, the release cache, and each feeder's stock backup. |
 | `wellfed-service` | The use cases, a module per domain, each with its own error enum wrapped in the crate's `Error`, plus the auth rules, the hub and each job's body. It never sees a socket or an HTTP type. |
 | `wellfed-server` | The binary and the jobs supervisor. A handler parses, authorizes through an axum extractor, calls one service method and maps the result. It never sees SQL. |
-| `wellfed-server-client` | The typed client the app, the CLI's `wellfed server` commands and the server's own tests go through, so neither can disagree with the routes. Nothing in it retries. |
+| `wellfed-server-client` | The typed client the app, the CLI's `wellfed server` commands and the server's own tests go through, so neither can disagree with the routes. Nothing in it retries. It leaves out a page entry or stream update it can't read, so a newer server's additions cost an older client only those. |
 | `wellfed-server-testkit` | The service on a temporary store with a fixed `Clock` and a seeded `Random`, the simulated feeder, and the HTTP server in process. |
 
 A few crates outside `src/server/` matter here:
@@ -297,7 +297,7 @@ Tests follow the layers:
 | End to end | The server against the host simulator, speaking real Noise over TCP |
 | Release | The shipped binary or image as a separate process ([release check](running.md#the-release-check)) |
 
-Every path that can request a feed has a test that retries it and proves one feed. `openapi.json` and the `.sqlx/` metadata are generated, committed and checked for staleness in `make check`, so a reviewer sees every contract change as a diff.
+Every path that can request a feed has a test that retries it and proves one feed. `openapi.json` and the `.sqlx/` metadata are generated, committed and checked for staleness in `make check`, so a reviewer sees every contract change as a diff. From the beta the document only grows, and the `api_growth` test holds it to the published one ([API evolution](README.md#api-evolution)).
 
 The service tests fix the wall clock but run timers in real time with short intervals: tokio's paused clock would jump while sqlx's SQLite worker threads are busy, and fire timeouts that never happen.
 

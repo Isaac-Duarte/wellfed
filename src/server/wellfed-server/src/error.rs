@@ -195,7 +195,8 @@ fn status(code: ErrorCode) -> StatusCode {
         ErrorCode::StockRefused | ErrorCode::RestoreMismatch => StatusCode::UNPROCESSABLE_ENTITY,
         ErrorCode::ImportClosed | ErrorCode::ExportRunning => StatusCode::CONFLICT,
         ErrorCode::ArchiveInvalid => StatusCode::UNPROCESSABLE_ENTITY,
-        ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+        // A newer server's code a client reads; this server never sends it.
+        ErrorCode::Internal | ErrorCode::Unknown => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 

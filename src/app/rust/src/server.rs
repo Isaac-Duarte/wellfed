@@ -161,6 +161,9 @@ impl From<wellfed_api::Connection> for ServerConnection {
             Connection::Connecting => Self::Connecting,
             Connection::Online => Self::Online,
             Connection::Refused => Self::Refused,
+            // A state a newer server added: shown as not online, so
+            // nothing takes the feeder for reachable.
+            Connection::Unknown => Self::Offline,
         }
     }
 }
@@ -298,7 +301,10 @@ impl From<Command> for ServerCommand {
             feeder: command.feeder.to_string(),
             kind: command.kind,
             state: command.state,
-            outcome: command.outcome.map(ServerCommandOutcome::from),
+            outcome: command
+                .outcome
+                .as_ref()
+                .and_then(ServerCommandOutcome::known),
             feed: command.feed,
             sent_ms: ms(command.sent),
             updated_ms: ms(command.updated),
@@ -306,9 +312,11 @@ impl From<Command> for ServerCommand {
     }
 }
 
-impl From<CommandOutcome> for ServerCommandOutcome {
-    fn from(outcome: CommandOutcome) -> Self {
-        match outcome {
+impl ServerCommandOutcome {
+    /// The outcome as the app shows it; `None` for one a newer server
+    /// added, which reads as not known.
+    fn known(outcome: &CommandOutcome) -> Option<Self> {
+        Some(match *outcome {
             CommandOutcome::Done => Self::Done,
             CommandOutcome::Settings { .. } => Self::Settings,
             CommandOutcome::Plans { .. } => Self::Plans,
@@ -334,7 +342,8 @@ impl From<CommandOutcome> for ServerCommandOutcome {
                 reason,
             },
             CommandOutcome::Unrecorded => Self::Unrecorded,
-        }
+            CommandOutcome::Unknown => return None,
+        })
     }
 }
 
