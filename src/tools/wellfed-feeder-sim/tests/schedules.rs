@@ -23,6 +23,7 @@ use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::sim::{Record, Sim};
+use wellfed_hal::interlock::WRITE_WAIT_MS;
 use wellfed_proto::api::{Blocked, EventBody, FeedOutcome, MissedReason, Refusal, Source};
 
 const MINUTE_MS: u64 = 60_000;
@@ -591,7 +592,7 @@ fn a_meal_behind_a_write_runs_once_when_its_claim_is_taken() {
 fn a_meal_past_its_claim_s_deadline_gives_its_occurrence_back_and_retries() {
     let mut feeder = breakfast();
     feeder.sim.hold_write(true);
-    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 2_000);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + u64::from(WRITE_WAIT_MS) - 1_000);
     assert!(feeder.plans().claim.is_some(), "still within its wait");
     feeder.run(2_000);
     assert_eq!(feeder.plans().claim, None, "given back");

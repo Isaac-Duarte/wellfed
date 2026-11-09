@@ -95,14 +95,20 @@ pub const LONG_JOIN_MS: u32 = 60_000;
 /// each asserts its poll against this.
 pub const WRITER_POLL_MS: u32 = 500;
 
-/// The longest a claim waits for storage writes: one store record (an
-/// erase and two programs, the stores' commit protocol), each lease at its
-/// whole budget, after a waiting writer's poll. Leases take tens of
-/// milliseconds in practice; a write still running past this refuses the
-/// feed, which moved nothing.
-pub const WRITE_WAIT_MS: u32 = 3_000;
+/// The most store records one write turn writes: a settings change writes
+/// the device's record and the kind's in one turn.
+pub const RECORDS_PER_TURN: u32 = 2;
 
-const _: () = assert!(WRITE_WAIT_MS >= 3 * FLASH_LIMITS.total_ms + WRITER_POLL_MS);
+/// The longest a claim waits for storage writes: one write turn's records
+/// (each an erase and two programs, the stores' commit protocol), each
+/// lease at its whole budget, after a waiting writer's poll. Leases take
+/// tens of milliseconds in practice; a write still running past this
+/// refuses the feed, which moved nothing. A claim that waits it all still
+/// answers well inside a client's 10 s answer timeout.
+pub const WRITE_WAIT_MS: u32 = 5_000;
+
+const _: () =
+    assert!(WRITE_WAIT_MS >= RECORDS_PER_TURN * 3 * FLASH_LIMITS.total_ms + WRITER_POLL_MS);
 
 /// The turn byte's flags above the [`Turn`] code.
 const TURN_BITS: u8 = 0x07;
