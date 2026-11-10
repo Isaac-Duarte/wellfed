@@ -283,6 +283,12 @@ impl Reader {
     /// the API shows changed, and the webhook when there is anything to
     /// deliver.
     async fn keep(&self, clock: FeederClock, apply: impl Fn(&mut Kept, &Context<'_>)) {
+        // A read that was waiting on the feeder when a removal began keeps
+        // nothing: its answer may already show the removal's own revoke.
+        if self.shared.desk.held(self.id) {
+            return;
+        }
+
         let now = self.shared.clock.now();
         let mutes = Mutes::default();
         let context = Context {

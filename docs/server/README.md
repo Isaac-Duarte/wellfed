@@ -101,7 +101,9 @@ The feeder decides every alert ([alerts](../firmware/alerts.md)). The server rea
 The app takes a copy of a higher generation in the same epoch and boot as its own last read whatever the clocks say, and never one of a lower generation. Across boots or epochs, where cursors can't say which table is newer (the boot count starts again after a power loss), it takes a copy only when `read.checked` is at least 5 minutes after its own last contact with the feeder. It takes none while `unreachable` is set. The margin assumes both clocks are kept by NTP, and covers them disagreeing by up to 5 minutes:
 
 - **A server clock more than 5 minutes ahead** of the phone's can let a stale copy count.
-- **A server clock behind, or a phone clock ahead,** delays a fresh copy by as much, until the server's later polls pass the margin. More than 5 minutes the same way can also hide a "can't reach" the server judged after the phone last reached the feeder, since the phone then seems to have reached it after. An entry a client can't read, a kind a newer feeder added, is left out and counted in `unread`. `unreachable` is since when the server hasn't reached the feeder. The stream's `alerts` update says the table or the reach changed.
+- **A server clock behind, or a phone clock ahead,** delays a fresh copy by as much, until the server's later polls pass the margin. More than 5 minutes the same way can also hide a "can't reach" the server judged after the phone last reached the feeder, since the phone then seems to have reached it after.
+
+An entry a client can't read, a kind a newer feeder added, is left out and counted in `unread`. `unreachable` is since when the server hasn't reached the feeder. The stream's `alerts` update says the table or the reach changed.
 
 ### Alert webhook
 
