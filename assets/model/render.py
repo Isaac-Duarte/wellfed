@@ -1,9 +1,10 @@
-"""Render the PLAF103 model into the app's and docs' device images.
+"""Render the PLAF103 and Dockstream 2 into the app's and docs' device images.
 
 Run with Blender 5.2 (not a host tool; Blender's bundled Python):
 
     blender -b assets/model/plaf103.blend -P assets/model/render.py -- --all
     blender -b assets/model/plaf103.blend -P assets/model/render.py -- --view front --state food-half
+    blender -b assets/model/dockstream2.blend -P assets/model/render.py -- --view card --state dry
 
 Every render is unbranded: the hopper lettering and the PCB label are hidden,
 so an image never suggests that this project makes the hardware. The stage
@@ -297,7 +298,8 @@ def truthful():
 
     # The model leaves the hopper's bulk food without a material, and it shows
     # through the window above partial fills and with the lid off.
-    bpy.data.objects["HopperFill"].data.materials.append(bpy.data.materials["PL_Kibble"])
+    if "HopperFill" in bpy.data.objects:
+        bpy.data.objects["HopperFill"].data.materials.append(bpy.data.materials["PL_Kibble"])
 
     for material, finish in FINISHES.items():
         inputs = next(n for n in bpy.data.materials[material].node_tree.nodes if n.type == "BSDF_PRINCIPLED").inputs
@@ -342,6 +344,20 @@ def stage(camera, look):
         ("Rim", 260.0, (0.2, 1.6), (0.5, 1.4, 1.0)),
         ("Top", 90.0, (1.2, 1.2), (0.0, 0.0, 2.0)),
     ]
+    fountain = scene.get("wellfed_product") == "dockstream2"
+    if fountain:
+        # Light coordinates below are authored for the card camera. Rotate
+        # them in the camera's direction so opposite-side views keep the rig.
+        turn = -turn
+        # A low, broad fountain needs shorter reflection strips than the tall
+        # feeder. Dark space between the strips keeps gloss plastic black.
+        centre = Vector((0.0, 0.0, 0.10))
+        rig = [
+            ("Key", 24.0, (0.18, 0.35), (-0.55, -0.65, 0.35)),
+            ("Fill", 5.0, (0.18, 0.4), (0.6, -0.4, 0.35)),
+            ("Rim", 9.0, (0.10, 0.3), (0.35, 0.65, 0.32)),
+            ("Top", 4.0, (0.5, 0.4), (0.0, 0.05, 0.8)),
+        ]
     rig += [(f"Rim{i}", energy, (size, size), location) for i, (energy, size, location) in enumerate(look.extra, start=2)]
     for name, energy, (width, height), (x, y, z) in rig:
         light_data = bpy.data.lights.new(name, "AREA")
@@ -388,7 +404,7 @@ def stage(camera, look):
     remap.inputs["From Min"].default_value = -1.0
     links.new(remap.outputs["Result"], ramp.inputs["Fac"])
     links.new(ramp.outputs["Color"], background.inputs["Color"])
-    background.inputs["Strength"].default_value = 0.4
+    background.inputs["Strength"].default_value = 0.12 if fountain else 0.4
     scene.world = world
 
 
@@ -606,11 +622,51 @@ def render_all(args):
 
 
 def main():
+    if bpy.context.scene.get("wellfed_product") == "dockstream2":
+        dockstream_views()
     args = parse_args()
     if args.all:
         render_all(args)
     else:
         render_one(args)
+
+
+def dockstream_views():
+    """Use the same studio and output pipeline for the fountain's own views."""
+    global CAMERAS, VIEWS, BRAND_OBJECTS, INDICATOR_ICONS, FINISHES, RENDERS, PARTS
+    target = Vector((0.0, 0.0, 0.096))
+    CAMERAS = {
+        "card": Camera(-32.0, 21.0, 85.0, target, 0.35),
+        "app": Camera(28.0, 18.0, 110.0, target, 0.35),
+        "front": Camera(0.0, 6.0, 85.0, target, 0.31),
+        "back": Camera(148.0, 20.0, 85.0, target, 0.35),
+        "top": Camera(-22.0, 64.0, 85.0, Vector((0, 0, 0.13)), 0.33),
+        "spout": Camera(-25.0, 48.0, 100.0, Vector((0, -0.005, 0.172)), 0.145),
+        "materials": Camera(-12.0, 18.0, 100.0, Vector((0, -0.089, 0.030)), 0.12),
+        "clip": Camera(-90.0, 12.0, 100.0, Vector((-0.118, 0, 0.149)), 0.045),
+        "spout-side": Camera(90.0, 0.0, 110.0, Vector((0, 0, 0.174)), 0.13),
+    }
+    def dry(look):
+        collection = bpy.data.collections.get("Water")
+        if collection is not None:
+            for obj in collection.objects:
+                hide(obj)
+
+    def app_studio(look):
+        # A broad white studio source behind the tray gives the pale steel
+        # reflection in the vendor app reference without changing its shader.
+        look.extra = ((6.0, 0.85, (0.30, 0.50, 0.30)),)
+        look.energy = {"Key": 0.55, "Fill": 0.35, "Rim": 0.55, "Top": 0.5}
+
+    VIEWS = {name: View(name, {"dry": dry}) for name in CAMERAS}
+    VIEWS["app"] = View("app", {"dry": dry}, setup=app_studio)
+    BRAND_OBJECTS = ()
+    INDICATOR_ICONS = ()
+    FINISHES = {}
+    PARTS = {}
+    RENDERS = ASSETS / "renders" / "dockstream2"
+    if bpy.context.scene.get("water_state") == "dry":
+        RENDERS = RENDERS / "dry"
 
 
 # Blender runs a -P script as __main__; lineart.py imports this one for its
