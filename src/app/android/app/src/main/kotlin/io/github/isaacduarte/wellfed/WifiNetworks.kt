@@ -87,10 +87,16 @@ object WifiNetworks {
         return describe(connectivity.getLinkProperties(network))
     }
 
+    // A VPN running over the Wi-Fi (Tailscale, WireGuard) lists the Wi-Fi
+    // transport too, but has no gateway of its own: taken for the Wi-Fi, it
+    // would call a phone at home away and no catch-up would ever dial.
     @Suppress("DEPRECATION") // The one way to list a network Android does not default to.
     private fun wifi(connectivity: ConnectivityManager): Network? =
         connectivity.allNetworks.firstOrNull { network ->
-            connectivity.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            val capabilities = connectivity.getNetworkCapabilities(network)
+            capabilities != null &&
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
         }
 
     @Suppress("DEPRECATION") // Nothing newer says this for one app on demand.
