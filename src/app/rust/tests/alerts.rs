@@ -89,6 +89,7 @@ async fn catch_up(
         known,
         attempt,
         network,
+        None,
     )
     .await
     .unwrap()
@@ -240,6 +241,7 @@ fn only_the_home_networks_last_try_counts_towards_unreachable() {
                     Some(address.to_string()),
                     attempt,
                     network,
+                    None,
                 )
                 .await
                 .unwrap()

@@ -671,3 +671,35 @@ async def test_write_entities_are_hidden_while_the_role_writes_nothing(
     await _until(hass, lambda: hidden("button", "feed") is None)
     assert hidden("number", "volume") is er.RegistryEntryHider.USER
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_an_alert_that_opens_and_clears_fires_each_once(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    sensor = "sensor.feeder_00010203_alerts"
+    event = "event.feeder_00010203_alert"
+    food = fake.alert("4:food_low", bridge.AlertKind.FoodLow, bridge.AlertLevel.Soon)
+
+    feeder.push(fake.alerts([]))
+    await _until(hass, lambda: _state_of(hass, sensor) == "0")
+    feeder.push(fake.alerts([food], opened=[food]))
+    await _until(hass, lambda: _state_of(hass, sensor) == "1")
+    opened = hass.states.get(event)
+    assert opened is not None and opened.attributes["event_type"] == "opened"
+    assert opened.attributes["kind"] == "food_low"
+    assert opened.attributes["at"] is not None
+    attributes = hass.states.get(sensor)
+    assert attributes is not None and attributes.attributes["alerts"][0]["key"] == "4:food_low"
+
+    feeder.push(fake.alerts([], cleared=[food]))
+    await _until(hass, lambda: _state_of(hass, sensor) == "0")
+    cleared = hass.states.get(event)
+    assert cleared is not None and cleared.attributes["event_type"] == "cleared"
+    assert cleared.attributes["key"] == "4:food_low"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+def _state_of(hass: HomeAssistant, entity_id: str) -> str | None:
+    state = hass.states.get(entity_id)
+    return state.state if state is not None else None

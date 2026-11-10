@@ -2,7 +2,7 @@ from _typeshed import SupportsGetItem
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["AccountRole", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
+__all__ = ["AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
 
 @final
 class AccountRole:
@@ -28,6 +28,107 @@ class AccountRole:
     def key(self, /) -> str:
         """
         The snake_case name: an entity's state and its translation key.
+        """
+
+@final
+class Alert:
+    """
+    One alert.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def at_ms(self, /) -> int | None:
+        """
+        The feeder's time for it, Unix milliseconds; `None` without a valid
+        clock then.
+        """
+    @property
+    def key(self, /) -> str:
+        """
+        The alert's identity on its feeder, the same in the event that opens
+        it and the one that clears it, and in the server's webhook.
+        """
+    @property
+    def kind(self, /) -> AlertKind: ...
+    @property
+    def level(self, /) -> AlertLevel: ...
+
+@final
+class AlertKind:
+    """
+    What an alert is about: a feeder's alert kind, or the owner's
+    server's judgement that it can't reach the feeder.
+    """
+    BatteryBelowFloor: Final[AlertKind]
+    CannotFeed: Final[AlertKind]
+    ClientJoined: Final[AlertKind]
+    ClientRevoked: Final[AlertKind]
+    DesiccantDue: Final[AlertKind]
+    FoodLikelyOut: Final[AlertKind]
+    FoodLow: Final[AlertKind]
+    MealFailed: Final[AlertKind]
+    MealMissed: Final[AlertKind]
+    MealNoRecord: Final[AlertKind]
+    MealUncertain: Final[AlertKind]
+    NoClock: Final[AlertKind]
+    PlansStuck: Final[AlertKind]
+    PowerWasOut: Final[AlertKind]
+    RepeatedRestarts: Final[AlertKind]
+    RolledBack: Final[AlertKind]
+    Unreachable: Final[AlertKind]
+    UpdateFailed: Final[AlertKind]
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
+        """
+
+@final
+class AlertLevel:
+    """
+    How soon an alert wants the owner.
+    """
+    Security: Final[AlertLevel]
+    Soon: Final[AlertLevel]
+    Urgent: Final[AlertLevel]
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
+        """
+
+@final
+class Alerts:
+    """
+    The feeder's alerts after a read: what is open, and what opened and
+    cleared since the read before.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def cleared(self, /) -> list[Alert]: ...
+    @property
+    def open(self, /) -> list[Alert]:
+        """
+        Open now, oldest first.
+        """
+    @property
+    def opened(self, /) -> list[Alert]: ...
+    @property
+    def unread(self, /) -> int:
+        """
+        Alerts the feeder holds that this integration is too old to read.
         """
 
 @final
@@ -983,6 +1084,11 @@ class Update:
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     @property
+    def alerts(self, /) -> Alerts | None:
+        """
+        For [`UpdateKind::Alerts`].
+        """
+    @property
     def build(self, /) -> str | None:
         """
         For [`UpdateKind::Connected`]: the build that answered, this
@@ -1049,6 +1155,11 @@ class Update:
 class UpdateKind:
     """
     What a session update carries.
+    """
+    Alerts: Final[UpdateKind]
+    """
+    The feeder's alerts moved: what is open, and what opened and
+    cleared since.
     """
     Connected: Final[UpdateKind]
     """

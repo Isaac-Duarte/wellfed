@@ -37,7 +37,7 @@ const API: &str = "wellfed-api";
 /// Each server crate and the workspace crates it may depend on (normal and
 /// build dependencies). A crate is named here before it exists, so its first
 /// manifest is checked.
-const ARROWS: [(&str, &[&str]); 8] = [
+const ARROWS: [(&str, &[&str]); 9] = [
     (API, &["wellfed-model"]),
     (STORE, &[API, "wellfed-formats"]),
     (
@@ -57,10 +57,22 @@ const ARROWS: [(&str, &[&str]); 8] = [
         &[STORE, API, "wellfed-client", "wellfed-model"],
     ),
     (
+        "wellfed-webhook",
+        &[
+            "wellfed-mirror",
+            STORE,
+            API,
+            "wellfed-client",
+            "wellfed-model",
+            "wellfed-formats",
+        ],
+    ),
+    (
         "wellfed-service",
         &[
             "wellfed-mirror",
             "wellfed-releases",
+            "wellfed-webhook",
             STORE,
             API,
             "wellfed-model",
@@ -102,11 +114,12 @@ const INTO_SERVER: [(&str, &str); 4] = [
 ];
 
 /// The crates below the binary, which must not link axum by any path.
-const BELOW_SERVER: [&str; 6] = [
+const BELOW_SERVER: [&str; 7] = [
     API,
     STORE,
     "wellfed-mirror",
     "wellfed-releases",
+    "wellfed-webhook",
     "wellfed-service",
     "wellfed-server-client",
 ];

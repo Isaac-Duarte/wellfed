@@ -23,8 +23,9 @@ use wellfed_model::{
 use crate::alerts;
 use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::keys::ClientKey;
+use crate::api::server_views::KnownServer;
 use crate::api::store::SetAside;
-use crate::catch_up::{self, Target};
+use crate::catch_up::{self, ServerRoute, Target};
 
 /// How the phone is connected, as Android says.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,6 +95,21 @@ pub enum CatchUpEnd {
     /// Nothing answered the last try. On the feeder's home network that
     /// counts towards unreachable; anywhere else it counts for nothing.
     Failed,
+    /// Away from home: it read what the owner's server last read of the
+    /// feeder, and applied it.
+    Server,
+    /// Away from home, and the owner's server did not answer: nothing is
+    /// judged.
+    ServerUnanswered,
+}
+
+/// The owner's server this phone is logged in to, for a catch-up away from
+/// home: the server's link and the feeders it last listed, and the phone
+/// token's secret.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AlertServer {
+    pub server: KnownServer,
+    pub secret: String,
 }
 
 /// What a notice says, for Dart's words.
@@ -231,6 +247,11 @@ pub fn hold_alerts(run: AlertHold, held: bool) {
 /// One catch-up with the feeder `identity` (hex), as this phone's `key`, with
 /// its files in `dir`. `manual` is where the owner said to dial it and `known`
 /// where the app last reached it; `attempt` says which try of a round this is.
+/// Away from home, a feeder `server` holds is read through it instead.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Dart passes each as it holds it, and the bridge takes no struct of borrowed keys"
+)]
 pub async fn catch_up_with(
     dir: String,
     key: &ClientKey,
@@ -239,6 +260,7 @@ pub async fn catch_up_with(
     known: Option<String>,
     attempt: Attempt,
     network: PhoneNetwork,
+    server: Option<AlertServer>,
 ) -> Result<CatchUp, BridgeError> {
     let feeder = identity_of(&identity)?;
     let target = Target {
@@ -248,6 +270,7 @@ pub async fn catch_up_with(
         known: known.as_deref(),
         attempt: &attempt,
         network: network.fingerprint()?,
+        server: server.and_then(|server| server_route(&server, &identity)),
     };
     let (end, changes) = catch_up::catch_up(Path::new(&dir), &target, Timestamp::now).await?;
     Ok(CatchUp {
@@ -506,6 +529,19 @@ pub async fn alerts_swept(dir: String, taken_off: Vec<i32>) -> Result<(), Bridge
 /// The owner read the notice of a set-aside `alerts.json`.
 pub async fn alerts_notice_read(dir: String) -> Result<(), BridgeError> {
     alerts::change(Path::new(&dir), |state| state.set_aside = None).await
+}
+
+/// The server's route to the feeder `identity`, if its last list held it.
+/// A link that no longer opens is no route: the catch-up stays at home.
+fn server_route(server: &AlertServer, identity: &str) -> Option<ServerRoute> {
+    let listed = server
+        .server
+        .feeders
+        .iter()
+        .find(|feeder| feeder.identity.eq_ignore_ascii_case(identity))?;
+    let feeder = crate::server::ids::feeder(&listed.id).ok()?;
+    let client = crate::api::server::alert_client(&server.server.link, &server.secret).ok()?;
+    Some(ServerRoute { client, feeder })
 }
 
 fn identity_of(identity: &str) -> Result<[u8; 32], BridgeError> {

@@ -34,8 +34,9 @@ Future<void> background() async {
   dir = await _channel.invokeMethod<String>('ready') ?? '';
 }
 
-/// One round with every feeder this phone knows. With no client key or no
-/// feeders there is nobody to catch up with.
+/// One round with every feeder this phone knows, through the owner's server
+/// for those away from home. With no client key or no feeders there is
+/// nobody to catch up with.
 Future<void> _round(String dir) async {
   final String? secret = await secureStorage.read(key: clientSecretName);
   if (secret == null || dir.isEmpty) return;
@@ -46,5 +47,6 @@ Future<void> _round(String dir) async {
     dir: dir,
     feeders: store.feeders,
     network: () async => phoneNetwork(await _channel.invokeMapMethod<Object?, Object?>('network')),
+    server: await alertServer(dir),
   );
 }

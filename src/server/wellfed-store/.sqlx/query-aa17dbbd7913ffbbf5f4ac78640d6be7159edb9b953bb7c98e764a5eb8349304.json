@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT format, state, version, updated_ms FROM feeder_alerts WHERE feeder_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "format",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "name": "state",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "name": "version",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "name": "updated_ms",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "feeder_alerts",
+            "name": "updated_ms"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "aa17dbbd7913ffbbf5f4ac78640d6be7159edb9b953bb7c98e764a5eb8349304"
+}

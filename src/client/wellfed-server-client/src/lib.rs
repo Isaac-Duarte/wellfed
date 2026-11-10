@@ -279,22 +279,42 @@ pub(crate) async fn decode_page<T: DeserializeOwned>(
 }
 
 /// `page` decoded with only the entries of its `list` field that decode.
-fn lenient_page<T: DeserializeOwned>(mut page: serde_json::Value, list: &str) -> Result<T, Error> {
+fn lenient_page<T: DeserializeOwned>(page: serde_json::Value, list: &str) -> Result<T, Error> {
+    Ok(lenient_counted(page, list)?.0)
+}
+
+/// [`decode_page`], with how many entries were left out.
+pub(crate) async fn decode_page_counted<T: DeserializeOwned>(
+    response: Response,
+    expected: StatusCode,
+    list: &str,
+) -> Result<(T, usize), Error> {
+    let response = expect_status(response, expected).await?;
+    let page: serde_json::Value = serde_json::from_slice(&response.bytes().await?)?;
+    lenient_counted(page, list)
+}
+
+/// [`lenient_page`], with how many entries were left out.
+fn lenient_counted<T: DeserializeOwned>(
+    mut page: serde_json::Value,
+    list: &str,
+) -> Result<(T, usize), Error> {
     let Some(slot) = page.get_mut(list) else {
         // No list to pick from: the page fails or decodes as it is.
-        return Ok(serde_json::from_value(page)?);
+        return Ok((serde_json::from_value(page)?, 0));
     };
     let entries = match slot.take() {
         serde_json::Value::Array(entries) => entries,
         // Not a list: the page decodes, or fails, as it is.
         other => {
             *slot = other;
-            return Ok(serde_json::from_value(page)?);
+            return Ok((serde_json::from_value(page)?, 0));
         }
     };
 
     // An entry is readable when the page holding it alone decodes. The
     // page is otherwise small (the list emptied), so each try is cheap.
+    let all = entries.len();
     let readable: Vec<serde_json::Value> = entries
         .into_iter()
         .filter(|entry| {
@@ -304,8 +324,9 @@ fn lenient_page<T: DeserializeOwned>(mut page: serde_json::Value, list: &str) ->
         })
         .collect();
 
+    let skipped = all - readable.len();
     page[list] = serde_json::Value::Array(readable);
-    Ok(serde_json::from_value(page)?)
+    Ok((serde_json::from_value(page)?, skipped))
 }
 
 /// Whether `response` carries an RFC 9457 problem, whatever parameters
@@ -402,6 +423,24 @@ mod tests {
         let broken =
             serde_json::json!({ "epoch": 1, "events": "no list", "gaps": [], "next": null });
         assert!(lenient_page::<wellfed_api::EventPage>(broken, "events").is_err());
+    }
+
+    #[test]
+    fn an_alert_this_client_cannot_read_is_left_out_and_counted() {
+        let alerts = serde_json::json!({
+            "read": null,
+            "alerts": [
+                { "at": null, "alert": { "kind": "food_low" } },
+                { "at": null, "alert": { "kind": "a_newer_kind" } },
+                { "at": null, "alert": { "kind": "no_clock" } },
+            ],
+            "unreachable": null,
+        });
+
+        let (read, skipped): (wellfed_api::FeederAlerts, usize) =
+            lenient_counted(alerts, "alerts").expect("the alerts read");
+        assert_eq!(skipped, 1);
+        assert_eq!(read.alerts.len(), 2);
     }
 
     #[test]

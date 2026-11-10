@@ -5313,6 +5313,8 @@ fn wire__crate__api__alerts__catch_up_with_impl(
             let api_known = <Option<String>>::sse_decode(&mut deserializer);
             let api_attempt = <crate::api::alerts::Attempt>::sse_decode(&mut deserializer);
             let api_network = <crate::api::alerts::PhoneNetwork>::sse_decode(&mut deserializer);
+            let api_server =
+                <Option<crate::api::alerts::AlertServer>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::error::BridgeError>(
@@ -5341,6 +5343,7 @@ fn wire__crate__api__alerts__catch_up_with_impl(
                             api_known,
                             api_attempt,
                             api_network,
+                            api_server,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -7478,6 +7481,18 @@ impl SseDecode for crate::api::model::AlertLevel {
     }
 }
 
+impl SseDecode for crate::api::alerts::AlertServer {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_server = <crate::api::server_views::KnownServer>::sse_decode(deserializer);
+        let mut var_secret = <String>::sse_decode(deserializer);
+        return crate::api::alerts::AlertServer {
+            server: var_server,
+            secret: var_secret,
+        };
+    }
+}
+
 impl SseDecode for crate::api::alerts::AlertSettingsView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7835,6 +7850,8 @@ impl SseDecode for crate::api::alerts::CatchUpEnd {
             4 => crate::api::alerts::CatchUpEnd::Away,
             5 => crate::api::alerts::CatchUpEnd::Unanswered,
             6 => crate::api::alerts::CatchUpEnd::Failed,
+            7 => crate::api::alerts::CatchUpEnd::Server,
+            8 => crate::api::alerts::CatchUpEnd::ServerUnanswered,
             _ => unreachable!("Invalid variant for CatchUpEnd: {}", inner),
         };
     }
@@ -10177,6 +10194,17 @@ impl SseDecode for Option<String> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::alerts::AlertServer> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::alerts::AlertServer>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -13801,6 +13829,27 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::model::AlertLevel>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::alerts::AlertServer {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.server.into_into_dart().into_dart(),
+            self.secret.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::alerts::AlertServer
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::alerts::AlertServer>
+    for crate::api::alerts::AlertServer
+{
+    fn into_into_dart(self) -> crate::api::alerts::AlertServer {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::alerts::AlertSettingsView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -14230,6 +14279,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::alerts::CatchUpEnd {
             Self::Away => 4.into_dart(),
             Self::Unanswered => 5.into_dart(),
             Self::Failed => 6.into_dart(),
+            Self::Server => 7.into_dart(),
+            Self::ServerUnanswered => 8.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -19479,6 +19530,14 @@ impl SseEncode for crate::api::model::AlertLevel {
     }
 }
 
+impl SseEncode for crate::api::alerts::AlertServer {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::server_views::KnownServer>::sse_encode(self.server, serializer);
+        <String>::sse_encode(self.secret, serializer);
+    }
+}
+
 impl SseEncode for crate::api::alerts::AlertSettingsView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -19788,6 +19847,8 @@ impl SseEncode for crate::api::alerts::CatchUpEnd {
                 crate::api::alerts::CatchUpEnd::Away => 4,
                 crate::api::alerts::CatchUpEnd::Unanswered => 5,
                 crate::api::alerts::CatchUpEnd::Failed => 6,
+                crate::api::alerts::CatchUpEnd::Server => 7,
+                crate::api::alerts::CatchUpEnd::ServerUnanswered => 8,
                 _ => {
                     unimplemented!("");
                 }
@@ -21789,6 +21850,16 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::alerts::AlertServer> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::alerts::AlertServer>::sse_encode(value, serializer);
         }
     }
 }

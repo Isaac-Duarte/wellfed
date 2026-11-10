@@ -24,7 +24,9 @@
     "{identity}-reset_desiccant",
     "{identity}-rssi",
     "{identity}-sound",
-    "{identity}-volume"
+    "{identity}-volume",
+    "{identity}-alert_event",
+    "{identity}-alerts"
   ],
   "devices": [
     "wellfed:{identity}"

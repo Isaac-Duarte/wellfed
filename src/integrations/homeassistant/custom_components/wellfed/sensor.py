@@ -1,5 +1,5 @@
 """The feeder's day and its readings: the last feed, portions today, the
-next meal, food, readiness, battery, signal and desiccant."""
+next meal, food, readiness, battery, signal, desiccant and open alerts."""
 
 from __future__ import annotations
 
@@ -120,6 +120,34 @@ def _next_meal_attributes(session: FeederSession) -> dict[str, Any]:
     return {"plan": meal.slot, "portions": meal.portions}
 
 
+def alert_attributes(alert: bridge.Alert) -> dict[str, Any]:
+    """One alert as an attribute or an event's data: its key, the same when
+    it opens and when it clears, its kind, its level and the feeder's time
+    for it."""
+    when = at(alert.at_ms)
+    return {
+        "key": alert.key,
+        "kind": alert.kind.key,
+        "level": alert.level.key,
+        "at": when.isoformat() if when is not None else None,
+    }
+
+
+def _alerts(session: FeederSession) -> int | None:
+    alerts = session.alerts
+    return len(alerts.open) if alerts is not None else None
+
+
+def _alerts_attributes(session: FeederSession) -> dict[str, Any]:
+    alerts = session.alerts
+    if alerts is None:
+        return {}
+    return {
+        "alerts": [alert_attributes(alert) for alert in alerts.open],
+        "unread": alerts.unread,
+    }
+
+
 def _readiness(session: FeederSession) -> str | None:
     status = session.status
     if status is None:
@@ -201,6 +229,13 @@ SENSORS = (
             session.status.desiccant_days if session.status is not None else None
         ),
         offered=lambda session: serves(session, lambda caps: caps.desiccant),
+    ),
+    WellfedSensorDescription(
+        key="alerts",
+        translation_key="alerts",
+        state_class=SensorStateClass.MEASUREMENT,
+        value=_alerts,
+        attributes=_alerts_attributes,
     ),
 )
 

@@ -12,6 +12,7 @@
 //! [API design]: ../../../../docs/server/README.md#the-http-api
 #![forbid(unsafe_code)]
 
+mod alerts;
 mod audit;
 mod auth;
 mod backups;
@@ -41,6 +42,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+pub use alerts::{AlertsRead, FeederAlerts};
 pub use audit::{AuditAction, AuditEntry, AuditPage, LoginFailure};
 pub use auth::{Credentials, PasswordChange, Role, Setup, SetupState, User};
 pub use backups::{Backup, BackupPage};
@@ -93,13 +95,14 @@ pub use views::{
     IntakeDay, IntakeFeeder, IntakeQuery, PetIntake, PortionWeight, SinceRefill, WeighedIntake,
 };
 pub use wellfed_model::{
-    Battery, Blocked, Bowl, CALL_BYTES_MAX, Calibration, CalibrationView, CallClip, CallView,
-    ClientRole, CoreEvent, CurrentUnit, Desiccant, DeviceKind, DeviceStatus, EnrollPath, EventBody,
-    EventKind, FeedOutcome, FeedReason, FeederEvent, FeederSettings, FeederSettingsPatch,
-    FeederStatus, Food as FoodStats, FoodLevel, Generation, Hex, MaybeKnown, MealReminder,
-    MetricKind, MissedReason, Model, NextMeal, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan,
-    Plans, Power, Readiness, SampleValue, Settings, Source, Stats, StatsSection, Status, Supply,
-    Trace, TraceEntry, TraceSummary, Weekday, Weekdays, WifiSource, Window,
+    Alert, AlertKey, AlertKind, AlertLevel, AlertsView, Battery, Blocked, Bowl, CALL_BYTES_MAX,
+    Calibration, CalibrationView, CallClip, CallView, ClientRole, CoreEvent, CurrentUnit,
+    Desiccant, DeviceKind, DeviceStatus, EnrollPath, EventBody, EventKind, FeedOutcome, FeedReason,
+    FeederEvent, FeederSettings, FeederSettingsPatch, FeederStatus, Food as FoodStats, FoodLevel,
+    Generation, Hex, MaybeKnown, MealReminder, MetricKind, MissedReason, Model, NextMeal,
+    OpenAlert, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan, Plans, Power, Readiness,
+    SampleValue, Settings, Source, Stats, StatsSection, Status, Supply, Trace, TraceEntry,
+    TraceSummary, Weekday, Weekdays, WifiSource, Window,
 };
 
 /// The prefix every resource lives under.
@@ -114,7 +117,7 @@ pub const PREFIX: &str = "/api/v1";
 /// document to that ([API evolution]).
 ///
 /// [API evolution]: ../../../../docs/server/README.md#api-evolution
-pub const REVISION: u32 = 1;
+pub const REVISION: u32 = 2;
 
 /// The cookie a login sets: an opaque session token, `HttpOnly` and
 /// `SameSite=Strict`. A non-browser client sends it back as it came.

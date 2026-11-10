@@ -38,6 +38,11 @@ impl TestServer {
         Self::serve(TestService::start_with_clock(clock).await).await
     }
 
+    /// The server with `config` on a fresh store, reading `clock`.
+    pub async fn start_with_config_and_clock(config: Config, clock: Arc<dyn Clock>) -> Self {
+        Self::serve(TestService::start_with_config_and_clock(config, clock).await).await
+    }
+
     /// The server with [`config`] on a fresh store, reading `clock` and
     /// believing the forwarded headers of `proxies`.
     pub async fn start_behind(clock: Arc<dyn Clock>, proxies: &[&str]) -> Self {

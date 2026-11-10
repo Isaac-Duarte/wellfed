@@ -32,13 +32,16 @@ abstract interface class ServerPorts {
   Stream<FoundServer> browse();
 }
 
+/// Where secure storage keeps the phone token's secret.
+const serverSecretName = 'server-token';
+
 /// [ServerPorts] on every platform: the token's secret beside the client
 /// secret, in [secureStorage].
 class AppServerPorts implements ServerPorts {
   /// Ports for this phone.
   const AppServerPorts();
 
-  static const _secretName = 'server-token';
+  static const String _secretName = serverSecretName;
 
   @override
   Future<ServerSession> login({

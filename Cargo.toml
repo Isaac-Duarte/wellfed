@@ -55,6 +55,7 @@ wellfed-api = { path = "src/server/wellfed-api" }
 wellfed-store = { path = "src/server/wellfed-store" }
 wellfed-mirror = { path = "src/server/wellfed-mirror" }
 wellfed-releases = { path = "src/server/wellfed-releases" }
+wellfed-webhook = { path = "src/server/wellfed-webhook" }
 wellfed-service = { path = "src/server/wellfed-service" }
 wellfed-server = { path = "src/server/wellfed-server" }
 wellfed-server-client = { path = "src/client/wellfed-server-client" }

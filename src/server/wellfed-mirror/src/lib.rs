@@ -32,6 +32,12 @@
 //!   a feed or a status read: each feed's trace after its `Fed` event, and
 //!   every statistics section at each connect and then periodically
 //!   ([`Diagnostics`]). Both are stored beside the history.
+//! - **Alerts.** Each feeder's alert table is read over its session
+//!   whenever its status shows the table moved, a moment after each event
+//!   and every [`AlertReads::Read`]'s `poll`, and kept with what the server makes
+//!   of it, by a phone's rules ([`Kept`]). Its reach is judged by a phone's
+//!   rule too. [`Mirror::alerts_moved`] ticks when there is something to
+//!   deliver.
 //! - **The debug log** is tailed over a session of its own, opened for the
 //!   first owner who follows it ([`Mirror::follow_log`]) and closed once
 //!   the last has left. None of it is stored.
@@ -44,13 +50,17 @@
 //! [API design]: ../../../../docs/server/design.md#runtime
 #![forbid(unsafe_code)]
 
+mod alerts;
 mod call;
 mod collect;
 mod command;
+mod config;
 mod connect;
+mod desk;
 mod error;
 mod ingest;
 mod install;
+mod kept;
 mod lanes;
 mod log;
 mod plans;
@@ -71,12 +81,19 @@ use wellfed_model::Skew;
 use wellfed_session::noise::Keypair;
 use wellfed_store::Store;
 
+pub use alerts::AlertReads;
 pub use call::{CallError, CallStart, Clip, StreamError, UploadError, UploadFailed};
 pub use command::Operation;
+pub use config::{Config, Diagnostics, Discovery, Timing};
 pub use connect::Enrolled;
+pub use desk::AlertHold;
 pub use error::{AskError, ConnectError, LogError, Unreachable};
 pub use ingest::{stored_event, stored_sample};
 pub use install::{BankReadError, PushError, Pushed, ReadError, Restore, Update, UpdateError};
+pub use kept::{
+    FORMAT as KEPT_FORMAT, Kept, KeptError, ReadTable, change as change_kept, load as load_kept,
+    load_all as load_all_kept,
+};
 pub use time::{Clock, Random, RandomFailed, SystemClock, SystemRandom};
 pub use wellfed_client::api::{Invite, InviteText};
 pub use wellfed_connect::update::Pace;
@@ -91,74 +108,6 @@ pub type RequestId = wellfed_proto::api::RequestId;
 /// How many of a feeder's updates a slow subscriber may fall behind
 /// before it is told it lagged.
 const UPDATES: usize = 1024;
-
-/// Whether a feeder whose address fails is looked up over mDNS.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Discovery {
-    Mdns,
-    Off,
-}
-
-#[derive(Debug)]
-pub struct Config {
-    pub discovery: Discovery,
-    pub timing: Timing,
-    pub diagnostics: Diagnostics,
-}
-
-/// Whether each feeder's feed traces and statistics are read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Diagnostics {
-    /// Each feed's trace after its `Fed` event, and the statistics at each
-    /// connect and then every `stats_every`.
-    Read {
-        stats_every: Duration,
-    },
-    Off,
-}
-
-impl Default for Diagnostics {
-    fn default() -> Self {
-        Self::Read {
-            stats_every: Duration::from_secs(3600),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Timing {
-    /// The first reconnect delay, doubled after each failure.
-    pub retry_min: Duration,
-    pub retry_max: Duration,
-    /// How often a connected feeder's clock is set again.
-    pub time_sync: Duration,
-    /// How long a caller waits for a command's answer: the connection's
-    /// own answer timeout, and some room to queue behind another command.
-    pub answer: Duration,
-    /// The longest a sample waits in its batch before the batch is
-    /// written.
-    pub sample_wait: Duration,
-    /// Each session's own clocks: how long the feeder has to answer a
-    /// request, and the keepalive and silence limits.
-    pub session: wellfed_connect::Timing,
-    /// How an install waits between its steps: while bank 0 writes a
-    /// sector, and after bank 1 gives way.
-    pub pace: Pace,
-}
-
-impl Default for Timing {
-    fn default() -> Self {
-        Self {
-            retry_min: Duration::from_secs(1),
-            retry_max: Duration::from_secs(60),
-            time_sync: Duration::from_secs(6 * 3600),
-            answer: wellfed_connect::ANSWER + Duration::from_secs(5),
-            sample_wait: Duration::from_secs(10),
-            session: wellfed_connect::Timing::DEFAULT,
-            pace: Pace::DEFAULT,
-        }
-    }
-}
 
 /// A feeder to mirror: who it is, the server's key on it and where it was
 /// last reached.
@@ -205,6 +154,8 @@ pub enum MirrorEvent {
     Sample(FeederSample),
     /// The session's state changed.
     Link(Link),
+    /// The kept alerts changed: a new table, or the feeder's reach.
+    Alerts,
 }
 
 /// What every feeder task shares.
@@ -216,6 +167,10 @@ pub(crate) struct Shared {
     /// The household's zone; `None` before there is a household, when the
     /// clock syncs are in UTC.
     zone: watch::Sender<Option<Arc<Zone>>>,
+    /// Ticks whenever a feeder's kept alerts have changes to deliver.
+    alerts_moved: watch::Sender<u64>,
+    /// What each alert reader knows beyond its row.
+    desk: desk::Desk,
 }
 
 impl Shared {
@@ -258,6 +213,8 @@ impl Mirror {
                 clock,
                 random,
                 zone: watch::Sender::new(None),
+                alerts_moved: watch::Sender::new(0),
+                desk: desk::Desk::default(),
             }),
             feeders: Arc::new(Mutex::new(HashMap::new())),
             cancel,
@@ -347,6 +304,31 @@ impl Mirror {
     /// Whether the feeder has an open session, welcomed.
     pub fn session_open(&self, id: FeederId) -> bool {
         self.handles().get(&id).is_some_and(task::Handle::is_open)
+    }
+
+    /// Ticks whenever a feeder's kept alerts have changes to deliver, for
+    /// whatever delivers them.
+    pub fn alerts_moved(&self) -> watch::Receiver<u64> {
+        self.shared.alerts_moved.subscribe()
+    }
+
+    /// When the feeder's alert table was last found unchanged, or read:
+    /// kept in memory, since a poll that finds it unchanged writes nothing.
+    pub fn alerts_checked(&self, id: FeederId) -> Option<jiff::Timestamp> {
+        self.shared.desk.checked(id)
+    }
+
+    /// Stop judging the feeder's alerts while it is removed, or start
+    /// again if its removal failed: its removal revokes the server's key,
+    /// and a reader that judged that would send news of a feeder the owner
+    /// is removing that its archive then drops, its clear included.
+    pub fn hold_alerts(&self, id: FeederId, hold: AlertHold) {
+        self.shared.desk.hold(id, hold);
+    }
+
+    /// The store the mirror keeps every feeder in.
+    pub fn store(&self) -> &Store {
+        &self.shared.store
     }
 
     /// Follow a feeder's updates from now on.

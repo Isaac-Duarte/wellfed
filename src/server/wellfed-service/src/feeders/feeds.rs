@@ -123,7 +123,7 @@ impl Service {
                 };
                 let settle = match update {
                     Ok(MirrorEvent::Event(_) | MirrorEvent::Gap(_) | MirrorEvent::Link(_)) => true,
-                    Ok(MirrorEvent::Sample(_)) => false,
+                    Ok(MirrorEvent::Sample(_) | MirrorEvent::Alerts) => false,
                     Err(RecvError::Lagged(_)) => {
                         updates = updates.resubscribe();
                         true

@@ -37,15 +37,17 @@ use std::time::{Duration, Instant};
 
 use jiff::tz::TimeZone;
 use tokio::sync::{mpsc, oneshot};
+use wellfed_client::alerts::{Cursor as AlertCursor, FeederClock};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::today::Facts;
 use wellfed_connect::{Connection, Cursor, Received, Timing};
 use wellfed_model::{
-    Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
+    AlertsView, Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
     FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Skew, Source, Status,
 };
 
 use crate::Error;
+use crate::alerts::Tracker;
 use crate::api::{self, Capabilities, NotSent, Pending, State, Tune, Update, Written};
 use crate::key::{ClientKey, locate, random};
 use crate::writes::{self, Kind, Landed, Store, Write};
@@ -317,6 +319,8 @@ struct Memory {
     /// `Fed` for one of them settles nothing.
     answered: VecDeque<u32>,
     uncertain: Vec<Uncertain>,
+    /// The alert tables read so far; `None` until the first session.
+    alerts: Option<Tracker>,
 }
 
 impl Memory {
@@ -376,6 +380,7 @@ async fn run(
     let mut fingerprint = [0; 4];
     fingerprint.copy_from_slice(&key.public()[..4]);
     let mut memory = Memory::carried(carried);
+    memory.alerts = Some(Tracker::new(fingerprint));
 
     loop {
         let Some(opened) = refusing(open(&key, &target, clocks.session), &mut commands).await
@@ -470,6 +475,7 @@ enum Read {
     Plans,
     Time,
     Calibration,
+    Alerts,
 }
 
 impl Read {
@@ -480,6 +486,7 @@ impl Read {
             Self::Plans => Op::GetPlans,
             Self::Time => Op::GetTime,
             Self::Calibration => Op::GetCalibration,
+            Self::Alerts => Op::GetAlerts,
         }
     }
 }
@@ -581,6 +588,7 @@ impl<'a> Session<'a> {
                 self.read(read)?;
             }
         }
+        self.alerts_due()?;
 
         // A cursor from another history is a gap: what happened meanwhile
         // is unknown, and the new history's backlog is read from its start.
@@ -823,7 +831,11 @@ impl<'a> Session<'a> {
     fn fact(&mut self, read: Read, answer: Option<Answer>) -> Step {
         let facts = &mut self.memory.facts;
         match (read, answer) {
-            (Read::Status, Some(Answer::Status(status))) => facts.status = Some(status),
+            (Read::Status, Some(Answer::Status(status))) => {
+                facts.status = Some(status);
+                self.alerts_due()?;
+            }
+            (Read::Alerts, Some(Answer::Alerts(view))) => return self.alerts_read(&view),
             (Read::Settings, Some(Answer::Settings(Settings::Feeder(settings)))) => {
                 facts.settings = Some(settings);
             }
@@ -870,6 +882,59 @@ impl<'a> Session<'a> {
             Some(_) => Ok(()),
             None => self.state(),
         }
+    }
+
+    /// Read the alert table when the status shows it moved since the last
+    /// one applied; otherwise let an alert held absent past its hold end.
+    fn alerts_due(&mut self) -> Step {
+        let Some((cursor, clock)) = self.alerts_cursor() else {
+            return Ok(());
+        };
+        let Some(tracker) = self.memory.alerts.as_mut() else {
+            return Ok(());
+        };
+        if tracker.needs_read(cursor) {
+            return self.read(Read::Alerts);
+        }
+        match tracker.unchanged(clock) {
+            Some(update) => self.send(update),
+            None => Ok(()),
+        }
+    }
+
+    /// The table as read, under the cursor the status gave with the
+    /// table's own generation.
+    fn alerts_read(&mut self, view: &AlertsView) -> Step {
+        let Some((cursor, clock)) = self.alerts_cursor() else {
+            return Ok(());
+        };
+        let cursor = AlertCursor {
+            epoch: view.epoch,
+            generation: view.generation,
+            ..cursor
+        };
+        let Some(tracker) = self.memory.alerts.as_mut() else {
+            return Ok(());
+        };
+        match tracker.table(cursor, view, clock) {
+            Some(update) => self.send(update),
+            None => Ok(()),
+        }
+    }
+
+    /// The table's cursor and the feeder's clock, from the status.
+    fn alerts_cursor(&self) -> Option<(AlertCursor, FeederClock)> {
+        let status = self.memory.facts.status.as_ref()?;
+        let cursor = AlertCursor {
+            epoch: self.connection.epoch(),
+            boot: status.boot_count,
+            generation: status.alerts_generation,
+        };
+        let clock = match status.clock {
+            Some(_) => FeederClock::Known,
+            None => FeederClock::Unknown,
+        };
+        Some((cursor, clock))
     }
 
     /// An event as it happened: any may move the status, and some the

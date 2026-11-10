@@ -8,13 +8,15 @@
 //!   the server's journal; one kept across a restart is settled by the
 //!   next session;
 //! - a revoked token stops the session, and every write after it is
-//!   refused unsent.
+//!   refused unsent;
+//! - the alerts the server read before the session are shown and fire
+//!   nothing, and one that opens after fires once.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use wellfed_homeassistant::api::{
-    NotSent, Pending, ServerProblem, Skew, Update, UpdateKind, WriteResult, Written,
+    AlertKind, NotSent, Pending, ServerProblem, Skew, Update, UpdateKind, WriteResult, Written,
 };
 use wellfed_homeassistant::feeder::Feeder;
 use wellfed_homeassistant::server::{self, Clocks, Refused, Target};
@@ -23,7 +25,9 @@ use wellfed_server_client::api::{
     AdoptFeeder, ClientRole, Connection, FeederId, NewUser, Role, TokenId,
 };
 use wellfed_server_testkit::feeder::{self, Flash, Relay, Running};
-use wellfed_server_testkit::{TestServer, WAIT, ada_login, ada_setup, config, local, until};
+use wellfed_server_testkit::{
+    AlertReads, TestServer, WAIT, ada_login, ada_setup, config, local, until,
+};
 
 /// Short enough that a test that loses a session waits a second.
 const SHORT: Clocks = Clocks {
@@ -327,6 +331,55 @@ fn a_revoked_token_stops_the_session_and_refuses_writes_unsent() {
             (WriteResult::NotSent, Some(NotSent::Stopped))
         );
         assert_eq!(feeder::feeds(&flash), 0);
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+#[test]
+fn alerts_open_before_the_session_are_shown_and_one_after_fires_once() {
+    local(async {
+        let sim = feeder::start().await;
+        let mut config = config();
+        config.alerts = AlertReads::Read {
+            poll: Duration::from_millis(100),
+        };
+        let (server, owner) = started(TestServer::start_with(config).await).await;
+        let kitchen = adopt(&owner, &sim, sim.address.to_string()).await;
+
+        // A member joined before Home Assistant came: open, not news.
+        let earlier = feeder::invite(&sim, ClientRole::Member).await;
+        feeder::join_phone(&sim, &earlier, [0x51; 32]).await;
+        until("the server reads the first joining", || async {
+            owner.feeder_alerts(kitchen.0).await.unwrap().alerts.len() >= 2
+        })
+        .await;
+        let login = ada(&server).await;
+        let session = session(&server, &login, kitchen);
+        let shown = next(&session, UpdateKind::Alerts).await.alerts.unwrap();
+        // The server's own joining and the member's.
+        assert_eq!(shown.open.len(), 2);
+        assert!(
+            shown
+                .open
+                .iter()
+                .all(|alert| alert.kind == AlertKind::ClientJoined)
+        );
+        assert!(shown.opened.is_empty() && shown.cleared.is_empty());
+
+        // Another joins while it watches: that one fires.
+        let later = feeder::invite(&sim, ClientRole::Member).await;
+        feeder::join_phone(&sim, &later, [0x52; 32]).await;
+        let news = next(&session, UpdateKind::Alerts).await.alerts.unwrap();
+        assert_eq!(news.open.len(), 3);
+        assert_eq!(news.opened.len(), 1);
+        assert_eq!(news.opened[0].kind, AlertKind::ClientJoined);
+        assert!(
+            shown
+                .open
+                .iter()
+                .all(|alert| alert.key != news.opened[0].key)
+        );
         server.stop().await;
         sim.stop().await;
     });

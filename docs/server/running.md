@@ -117,15 +117,27 @@ An export from the old build doesn't carry over either, since the archive's rows
 | `releases.project_keys` | `[]` | The project's update keys, 64 hex digits each. |
 | `releases.owner_keys` | `[]` | Your own enrolled update keys, 64 hex digits each. |
 | `backups.keep` | `7` | Backups kept. |
+| `webhook.url` | none | Where each alert's opening and clearing is POSTed as JSON ([alert webhook](README.md#alert-webhook)): `https://` anywhere, plain `http://` only to this computer or the home network. |
+| `webhook.allow_plain_http` | `false` | Take a plain `http://` webhook off the home network. Anyone between the server and that host then sees the URL and every alert. |
 
-Every key has a flag, and every flag an environment variable: `--listen` (`WELLFED_SERVER_LISTEN`), `--host` (`WELLFED_SERVER_HOSTS`, comma-separated), `--label`, `--discovery` (or `--no-discovery`), `--advertise` (or `--no-advertise`), `--trusted-proxy` (`WELLFED_SERVER_TRUSTED_PROXIES`), `--raw-sample-days`, `--releases-fetch true|false`, `--release-project-key` and `--release-owner-key` (`WELLFED_SERVER_RELEASE_PROJECT_KEYS` and `..._OWNER_KEYS`, comma-separated) and `--backups-keep`. Each variable is `WELLFED_SERVER_` and the flag's name.
+Every key has a flag, and every flag an environment variable: `--listen` (`WELLFED_SERVER_LISTEN`), `--host` (`WELLFED_SERVER_HOSTS`, comma-separated), `--label`, `--discovery` (or `--no-discovery`), `--advertise` (or `--no-advertise`), `--trusted-proxy` (`WELLFED_SERVER_TRUSTED_PROXIES`), `--raw-sample-days`, `--releases-fetch true|false`, `--release-project-key` and `--release-owner-key` (`WELLFED_SERVER_RELEASE_PROJECT_KEYS` and `..._OWNER_KEYS`, comma-separated), `--backups-keep`, `--webhook-url` and `--webhook-allow-plain-http true|false`. Each variable is `WELLFED_SERVER_` and the flag's name.
 
 - **A flag beats its variable,** and either replaces the file's value whole. `--host` given once replaces the file's `hosts`.
 - **An override can't clear a list.** No flag or an empty variable means "not given". To drop every host or proxy, edit the file.
 - **`--no-discovery` beats** `--discovery` and its variable, and `--no-advertise` beats `--advertise`.
-- **A bad file stops the start.** An unknown key, a wrong type or an out-of-range value (a 17-byte label, `raw_sample_days = 0`, a host name with a port) is refused with the key's path (`retention.raw_sample_days`, `hosts[1]`) and its line. A missing file means the defaults.
+- **A bad file stops the start.** An unknown key, a wrong type or an out-of-range value (a 17-byte label, `raw_sample_days = 0`, a host name with a port) is refused with the key's path (`retention.raw_sample_days`, `hosts[1]`) and its line. So is a webhook URL that is no URL, or plain `http://` off the home network without `webhook.allow_plain_http`; that error names `webhook.url` and never quotes it. A missing file means the defaults.
 
-Under systemd, install `server.toml` as root with `sudo install -m 0644 server.toml /var/lib/wellfed-server/`; the server only reads it, and it holds no secret, so a root-owned file is fine. The next start reads it. Or set `WELLFED_SERVER_*` variables with `systemctl edit wellfed-server`.
+Under systemd, install `server.toml` as root with `sudo install -m 0644 server.toml /var/lib/wellfed-server/`; the server only reads it, and it holds no secret, so a root-owned file is fine. A webhook URL may be a secret of its own (Home Assistant's is), so keep it out of the world-readable file and out of the unit, whose drop-ins anyone on the machine can read. Put it in an environment file only root reads:
+
+```sh
+sudo install -m 0600 /dev/null /etc/wellfed-server.env
+sudoedit /etc/wellfed-server.env     # one line: WELLFED_SERVER_WEBHOOK_URL=https://…
+sudo systemctl edit wellfed-server   # add under [Service]: EnvironmentFile=/etc/wellfed-server.env
+```
+
+The URL goes in through the editor, so it never lands in a shell's history.
+
+The next start reads it, and `--help` never shows its value. Other `WELLFED_SERVER_*` variables, which hold no secret, can go in the same drop-in with `Environment=`.
 
 ## Find it from the app
 

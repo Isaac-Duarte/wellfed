@@ -130,6 +130,10 @@ pub enum InternalError {
     Body(wellfed_formats::Error),
     #[error("the kept backup is larger than any bank")]
     StockSize,
+    #[error(transparent)]
+    Kept(#[from] wellfed_mirror::KeptError),
+    #[error(transparent)]
+    Webhook(#[from] wellfed_webhook::Error),
 }
 
 impl From<wellfed_store::Error> for Error {

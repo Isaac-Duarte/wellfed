@@ -41,6 +41,8 @@ use wellfed_server_client::StatusCode;
 
 pub use server::TestServer;
 pub use service::{TempStore, TestService, config};
+/// What a test sets to have the server read alerts, as [`config`] doesn't.
+pub use wellfed_service::AlertReads;
 
 /// How long a test waits for something the server does on its own.
 pub const WAIT: Duration = Duration::from_secs(10);

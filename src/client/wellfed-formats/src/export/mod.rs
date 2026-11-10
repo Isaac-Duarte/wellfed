@@ -26,6 +26,8 @@
 //!   credential, or the hash of one.
 //! - **job runs** are not exported: they are this server's schedule, and an
 //!   imported server runs each job when it is next due.
+//! - **feeder alerts** are not exported: each is a copy of a feeder's RAM
+//!   and what this server made of it, read again from the feeder.
 //!
 //! Everything else is: the home, each device's cached state, the
 //! phone keys the server invited and the clients an owner kept, raw

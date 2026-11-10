@@ -37,6 +37,9 @@
     "event": {
       "feed_event": {
         "default": "mdi:bowl-mix"
+      },
+      "alert_event": {
+        "default": "mdi:alert-circle-outline"
       }
     },
     "number": {
@@ -68,6 +71,9 @@
       },
       "desiccant": {
         "default": "mdi:water-percent"
+      },
+      "alerts": {
+        "default": "mdi:alert-outline"
       }
     },
     "switch": {

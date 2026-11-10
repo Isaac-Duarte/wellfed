@@ -112,7 +112,7 @@ impl LongLane {
 }
 
 /// Queue a command and wait for its answer until `answer` has passed.
-async fn send(
+pub(crate) async fn send(
     commands: &mpsc::Sender<Command>,
     link: Link,
     answer: Duration,

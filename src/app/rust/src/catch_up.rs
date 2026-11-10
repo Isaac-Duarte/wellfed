@@ -17,6 +17,16 @@
 //! with NSD and tries again, since a lease may have moved it, and only that
 //! try's failure counts towards "unreachable", and only on the network where
 //! the feeder last answered.
+//!
+//! Away from home (off the network the feeder last answered on), a feeder
+//! the owner's server holds is read through the server instead
+//! ([`ServerRoute`]), and so is one that never answered this phone and
+//! doesn't now: `GET /feeders/{id}/alerts`, the table the server last
+//! read under the same cursor a session reads, applied to the same watch,
+//! so an alert seen at home and again through the server posts once. The
+//! server's judgement that it can't reach the feeder stands in for the
+//! phone's, which counts only at home. That read is a `GET` and nothing
+//! else: the route is the only one a catch-up has.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -24,9 +34,11 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use tokio::time::timeout;
-use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Watch};
+use wellfed_api::{FeederAlerts, FeederId};
+use wellfed_client::alerts::{Change, Context, Cursor, FeederClock, Relayed, RelayedTable, Watch};
 use wellfed_connect::{Connection, Error};
-use wellfed_model::{Answer, Hex, Op};
+use wellfed_model::{AlertsView, Answer, Hex, Op};
+use wellfed_server_client::Client;
 use wellfed_session::noise::Keypair;
 
 use crate::alerts::{self, Sitting};
@@ -66,6 +78,14 @@ pub(crate) struct Target<'a> {
     /// A fingerprint of the Wi-Fi network the phone is on, or `None` off
     /// Wi-Fi.
     pub(crate) network: Option<String>,
+    /// The owner's server, when it holds this feeder.
+    pub(crate) server: Option<ServerRoute>,
+}
+
+/// A feeder as the owner's server holds it.
+pub(crate) struct ServerRoute {
+    pub(crate) client: Client,
+    pub(crate) feeder: FeederId,
 }
 
 /// What the session found.
@@ -98,6 +118,15 @@ pub(crate) async fn catch_up(
     let watch = watched
         .map(|watched| watched.watch.clone())
         .unwrap_or_default();
+    // Off the feeder's home network the server answers for it. On Wi-Fi
+    // before this phone has ever reached it, home is unknown: the feeder is
+    // tried first, and the server only if nothing answers.
+    let home = watch.reach.home.as_deref();
+    let unknown_home = home.is_none() && target.network.is_some();
+    let away = !unknown_home && (target.network.is_none() || target.network.as_deref() != home);
+    if away && let Some(server) = &target.server {
+        return through_server(dir, target, server, &identity, now).await;
+    }
     let tried = match target.attempt {
         Attempt::First => target
             .manual
@@ -114,6 +143,12 @@ pub(crate) async fn catch_up(
         Some(address) => visit(address, target, &watch).await,
         None => Visit::NoAnswer,
     };
+    if unknown_home
+        && matches!(visit, Visit::NoAnswer)
+        && let Some(server) = &target.server
+    {
+        return through_server(dir, target, server, &identity, now).await;
+    }
     let end = match (&visit, &address) {
         (Visit::Table(..), _) => CatchUpEnd::Read,
         (Visit::Unchanged(_), _) => CatchUpEnd::Unchanged,
@@ -160,6 +195,72 @@ pub(crate) async fn catch_up(
     })
     .await??;
     Ok((end, changes))
+}
+
+/// A catch-up away from home, through the owner's server.
+async fn through_server(
+    dir: &Path,
+    target: &Target<'_>,
+    server: &ServerRoute,
+    identity: &str,
+    now: impl Fn() -> Timestamp,
+) -> Result<(CatchUpEnd, Vec<Change>), BridgeError> {
+    let read = timeout(SITTING, server.client.feeder_alerts(server.feeder)).await;
+    let Ok(Ok(alerts)) = read else {
+        // The server's silence says nothing of the feeder.
+        return Ok((CatchUpEnd::ServerUnanswered, pending(dir, identity).await?));
+    };
+
+    let [a, b, c, d, ..] = *target.keys.public();
+    let own = Hex([a, b, c, d]);
+    let changes = alerts::change(dir, |state| {
+        state.catch_up(dir, identity, |watched, mutes| {
+            let clock = match alerts.read {
+                Some(read) if read.clock_valid => FeederClock::Known,
+                _ => FeederClock::Unknown,
+            };
+            let context = Context {
+                now: now(),
+                mutes,
+                own,
+                clock,
+            };
+            relayed(&mut watched.watch, &alerts, &context);
+        })
+    })
+    .await??;
+    Ok((CatchUpEnd::Server, changes))
+}
+
+/// Apply what the server last read of the feeder, as a session's read
+/// would be applied, unless this phone knows better from its own
+/// ([`Watch::apply_relayed`]).
+fn relayed(watch: &mut Watch, alerts: &FeederAlerts, context: &Context<'_>) {
+    let view = alerts.read.map(|read| AlertsView {
+        epoch: read.epoch,
+        generation: read.generation,
+        more: read.more,
+        settling: read.settling,
+        alerts: alerts.alerts.clone(),
+        unread: read.unread,
+    });
+    let table = alerts
+        .read
+        .zip(view.as_ref())
+        .map(|(read, view)| RelayedTable {
+            cursor: Cursor {
+                epoch: read.epoch,
+                boot: read.boot,
+                generation: read.generation,
+            },
+            view,
+            checked_at: read.checked,
+        });
+    let relayed = Relayed {
+        table,
+        unreachable: alerts.unreachable,
+    };
+    watch.apply_relayed(relayed, context);
 }
 
 /// The changes still to make for the feeder `identity`, with no catch-up.
@@ -230,4 +331,133 @@ async fn read(
 async fn ask(connection: &mut Connection, read: Read) -> Result<Answer, Error> {
     let id = random().map_err(|_| Error::Timeout)?;
     connection.ask(id, &read.op()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_api::AlertsRead;
+    use wellfed_client::alerts::Mutes;
+    use wellfed_model::{Alert, Generation, OpenAlert};
+
+    use super::*;
+
+    fn at(second: i64) -> Timestamp {
+        Timestamp::from_second(1_800_000_000 + second).expect("a time")
+    }
+
+    fn food_low() -> OpenAlert {
+        OpenAlert {
+            at: Some(at(0)),
+            alert: Alert::FoodLow,
+        }
+    }
+
+    fn view(generation: u32, alerts: &[OpenAlert]) -> AlertsView {
+        AlertsView {
+            epoch: 1,
+            generation: Generation(generation),
+            more: false,
+            settling: false,
+            alerts: alerts.to_vec(),
+            unread: 0,
+        }
+    }
+
+    fn cursor(generation: u32) -> Cursor {
+        Cursor {
+            epoch: 1,
+            boot: 4,
+            generation: Generation(generation),
+        }
+    }
+
+    /// The server's copy of the table at `generation`, read at `read_at`.
+    fn served(generation: u32, alerts: &[OpenAlert], read_at: Timestamp) -> FeederAlerts {
+        FeederAlerts {
+            read: Some(AlertsRead {
+                epoch: 1,
+                boot: 4,
+                generation: Generation(generation),
+                more: false,
+                settling: false,
+                unread: 0,
+                clock_valid: true,
+                at: read_at,
+                checked: read_at,
+            }),
+            alerts: alerts.to_vec(),
+            unreachable: None,
+        }
+    }
+
+    /// A home read of `table` at `generation`, its changes confirmed as
+    /// Dart would.
+    fn read_at_home(
+        watch: &mut Watch,
+        generation: u32,
+        table: &[OpenAlert],
+        context: &Context<'_>,
+    ) {
+        watch.apply(cursor(generation), &view(generation, table), context);
+        watch.reached(Some("home".into()), context.now);
+        for change in watch.changes() {
+            watch.confirm(&change);
+        }
+    }
+
+    fn context(mutes: &Mutes, now: Timestamp) -> Context<'_> {
+        Context {
+            now,
+            mutes,
+            own: Hex([0; 4]),
+            clock: FeederClock::Known,
+        }
+    }
+
+    #[test]
+    fn a_server_one_generation_behind_a_home_read_ends_and_reposts_nothing() {
+        let mutes = Mutes::default();
+        let mut watch = Watch::default();
+        read_at_home(&mut watch, 5, &[food_low()], &context(&mutes, at(0)));
+
+        // Read by the server just before the phone's own read.
+        relayed(
+            &mut watch,
+            &served(4, &[], at(-30)),
+            &context(&mutes, at(600)),
+        );
+
+        assert!(watch.changes().is_empty());
+        assert_eq!(watch.listed().count(), 1);
+        assert_eq!(watch.cursor, Some(cursor(5)));
+    }
+
+    #[test]
+    fn a_server_copy_read_well_after_the_phone_s_last_read_counts() {
+        let mutes = Mutes::default();
+        let mut watch = Watch::default();
+        read_at_home(&mut watch, 5, &[], &context(&mutes, at(0)));
+
+        let later = served(6, &[food_low()], at(900));
+        relayed(&mut watch, &later, &context(&mutes, at(960)));
+
+        assert_eq!(watch.changes().len(), 1);
+    }
+
+    #[test]
+    fn an_alert_that_ended_at_home_is_not_revived_by_a_lagging_server() {
+        let mutes = Mutes::default();
+        let mut watch = Watch::default();
+        read_at_home(&mut watch, 4, &[food_low()], &context(&mutes, at(0)));
+        read_at_home(&mut watch, 5, &[], &context(&mutes, at(60)));
+
+        relayed(
+            &mut watch,
+            &served(4, &[food_low()], at(30)),
+            &context(&mutes, at(600)),
+        );
+
+        assert!(watch.changes().is_empty());
+        assert_eq!(watch.listed().count(), 0);
+    }
 }

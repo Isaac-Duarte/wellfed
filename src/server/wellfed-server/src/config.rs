@@ -22,12 +22,17 @@ use serde::Deserialize;
 pub use crate::proxy::ProxyRange;
 
 mod advertise;
+mod discovery;
 mod releases;
+mod webhook;
 
 pub use advertise::{Advertise, AdvertiseOverrides};
+pub use discovery::Discovery;
 pub use releases::{RELEASES, ReleaseOverrides, Releases, UpdateKey};
+pub use webhook::{Webhook, WebhookError, WebhookOverrides, WebhookUrl};
 
 use releases::ReleasesFile;
+use webhook::WebhookFile;
 
 /// The settings file, in the data directory.
 pub const FILE: &str = "server.toml";
@@ -73,6 +78,13 @@ pub enum ConfigError {
         #[source]
         source: Box<toml::de::Error>,
     },
+    /// The webhook's URL is no URL, or breaks its rule ([`Webhook::target`]).
+    #[error("{}: `webhook.url`", path.display())]
+    Webhook {
+        path: PathBuf,
+        #[source]
+        source: WebhookError,
+    },
 }
 
 /// A value refused by its own type, whether it came from the file or a flag.
@@ -108,6 +120,7 @@ pub struct ServerConfig {
     pub retention: Retention,
     pub releases: Releases,
     pub backups: Backups,
+    pub webhook: Webhook,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -127,26 +140,6 @@ pub struct Backups {
 impl Default for Backups {
     fn default() -> Self {
         Self { keep: BACKUPS_KEPT }
-    }
-}
-
-/// Whether a feeder whose stored address fails is looked up over mDNS.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, clap::ValueEnum)]
-#[serde(rename_all = "lowercase")]
-pub enum Discovery {
-    #[default]
-    Mdns,
-    /// Adopt and reconnect by address only, as on a bridged container
-    /// network where multicast does not reach the feeders.
-    Off,
-}
-
-impl From<Discovery> for wellfed_service::Discovery {
-    fn from(discovery: Discovery) -> Self {
-        match discovery {
-            Discovery::Mdns => Self::Mdns,
-            Discovery::Off => Self::Off,
-        }
     }
 }
 
@@ -284,6 +277,8 @@ pub struct Overrides {
     /// Backups kept (`backups.keep`; default 7).
     #[arg(long, env = "WELLFED_SERVER_BACKUPS_KEEP")]
     pub backups_keep: Option<NonZeroU32>,
+    #[command(flatten)]
+    pub webhook: WebhookOverrides,
 }
 
 /// `server.toml` as written: every key optional, none unknown.
@@ -302,6 +297,8 @@ struct File {
     releases: ReleasesFile,
     #[serde(default)]
     backups: BackupsFile,
+    #[serde(default)]
+    webhook: WebhookFile,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -326,13 +323,21 @@ impl ServerConfig {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => File::default(),
             Err(source) => return Err(ConfigError::Read { path, source }),
         };
-        Ok(Self::merge(file, overrides))
+        Self::merge(file, overrides).checked(&path)
     }
 
     /// The settings `text` gives, under no overrides; `path` names it in an
     /// error.
     pub fn parse(path: &Path, text: &str) -> Result<Self, ConfigError> {
-        Ok(Self::merge(parse(path, text)?, Overrides::default()))
+        Self::merge(parse(path, text)?, Overrides::default()).checked(path)
+    }
+
+    /// These settings, once the rules across their keys hold.
+    fn checked(self, path: &Path) -> Result<Self, ConfigError> {
+        let path = path.to_owned();
+        let webhook = self.webhook.target();
+        webhook.map_err(|source| ConfigError::Webhook { path, source })?;
+        Ok(self)
     }
 
     fn merge(file: File, overrides: Overrides) -> Self {
@@ -367,6 +372,7 @@ impl ServerConfig {
                     .or(file.backups.keep)
                     .unwrap_or(BACKUPS_KEPT),
             },
+            webhook: Webhook::merge(file.webhook, overrides.webhook),
         }
     }
 }

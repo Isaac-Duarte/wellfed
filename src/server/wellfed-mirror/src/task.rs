@@ -16,12 +16,14 @@ use wellfed_connect::Connection;
 use wellfed_model::{DeviceKind, Model, Plans, Skew};
 use wellfed_session::noise::Keypair;
 
+use crate::alerts::Attempt;
 use crate::collect::Collector;
 use crate::command::Command;
 use crate::ingest::Batch;
 use crate::session::End;
 use crate::{
-    ConnectError, Diagnostics, Feeder, MirrorEvent, Shared, Unreachable, Zone, connect, log,
+    AlertReads, ConnectError, Diagnostics, Feeder, MirrorEvent, Shared, Unreachable, Zone, alerts,
+    connect, log,
 };
 
 /// Commands waiting for the task; more wait in `send`.
@@ -51,6 +53,7 @@ pub(crate) struct Handle {
     pub(crate) cancel: CancellationToken,
     task: JoinHandle<()>,
     collector: Option<JoinHandle<()>>,
+    alerts: Option<JoinHandle<()>>,
 }
 
 /// The long lane and its turn: whoever holds the turn's one permit sends
@@ -110,6 +113,9 @@ impl Handle {
         if let Some(collector) = self.collector {
             let _ = collector.await;
         }
+        if let Some(alerts) = self.alerts {
+            let _ = alerts.await;
+        }
     }
 }
 
@@ -146,6 +152,24 @@ pub(crate) fn spawn(
         }),
         Diagnostics::Off => None,
     };
+    let public = *keys.public();
+    let (attempted, attempts) = mpsc::unbounded_channel();
+    let alerts = match shared.config.alerts {
+        AlertReads::Read { poll } => Some(alerts::Reader {
+            shared: Arc::clone(&shared),
+            id: feeder.id,
+            own: [public[0], public[1], public[2], public[3]],
+            commands: commands.clone(),
+            link: watching.clone(),
+            opened: opens.clone(),
+            attempts,
+            updates: updates.subscribe(),
+            publish: updates.clone(),
+            cancel: cancel.clone(),
+            poll,
+        }),
+        AlertReads::Off => None,
+    };
     let task = Task {
         zone: shared.zone.subscribe(),
         shared,
@@ -154,6 +178,7 @@ pub(crate) fn spawn(
         keys: keys.clone(),
         address: feeder.address,
         reached: address,
+        attempted,
         log_stop: Arc::clone(&log_stop),
         commands: receiver,
         steps: step_receiver,
@@ -174,6 +199,7 @@ pub(crate) fn spawn(
     let span = info_span!(parent: None, "feeder", id = %task.id);
     let collector =
         collector.map(|collector| tasks.spawn(collector.run().instrument(span.clone())));
+    let alerts = alerts.map(|alerts| tasks.spawn(alerts.run().instrument(span.clone())));
     let task = tasks.spawn(task.run().instrument(span));
     Handle {
         commands,
@@ -189,6 +215,7 @@ pub(crate) fn spawn(
         cancel,
         task,
         collector,
+        alerts,
     }
 }
 
@@ -200,6 +227,8 @@ pub(crate) struct Task {
     address: Option<String>,
     /// Where the feeder was last reached, for the debug log's session.
     reached: watch::Sender<Option<String>>,
+    /// What each connect came to, for the alert reader (if any).
+    attempted: mpsc::UnboundedSender<Attempt>,
     /// Ends the debug log's tail when the feeder has no session left for
     /// this task's.
     log_stop: log::Stop,
@@ -237,6 +266,9 @@ impl Task {
             let Some(opened) = self.open().await else {
                 return;
             };
+            if let Some(attempt) = Attempt::of(&opened) {
+                let _ = self.attempted.send(attempt); // None with reads off.
+            }
 
             let link = match opened {
                 Ok((connection, address)) => {

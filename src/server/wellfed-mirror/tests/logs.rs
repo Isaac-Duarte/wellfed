@@ -10,7 +10,7 @@ use tracing::Instrument;
 use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 use wellfed_api::FeederId;
-use wellfed_mirror::{Config, Diagnostics, Discovery, Feeder, Mirror, Timing};
+use wellfed_mirror::{AlertReads, Config, Diagnostics, Discovery, Feeder, Mirror, Timing};
 use wellfed_server_testkit::fixed::{FixedClock, SeededRandom};
 use wellfed_server_testkit::{TempStore, until};
 
@@ -70,6 +70,7 @@ async fn every_line_from_a_feeder_task_names_the_feeder() {
                 ..Timing::default()
             },
             diagnostics: Diagnostics::Off,
+            alerts: AlertReads::Off,
         },
         Arc::new(FixedClock),
         Arc::new(SeededRandom::fresh()),

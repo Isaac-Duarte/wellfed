@@ -531,6 +531,7 @@ abstract class RustLibApi extends BaseApi {
     String? known,
     required Attempt attempt,
     required PhoneNetwork network,
+    AlertServer? server,
   });
 
   BackupCheck crateApiRestoreCheckBackup({required String path});
@@ -4181,6 +4182,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     String? known,
     required Attempt attempt,
     required PhoneNetwork network,
+    AlertServer? server,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4196,6 +4198,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_opt_String(known, serializer);
           sse_encode_box_autoadd_attempt(attempt, serializer);
           sse_encode_box_autoadd_phone_network(network, serializer);
+          sse_encode_opt_box_autoadd_alert_server(server, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4208,7 +4211,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiAlertsCatchUpWithConstMeta,
-        argValues: [dir, key, identity, manual, known, attempt, network],
+        argValues: [
+          dir,
+          key,
+          identity,
+          manual,
+          known,
+          attempt,
+          network,
+          server,
+        ],
         apiImpl: this,
       ),
     );
@@ -4224,6 +4236,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "known",
       "attempt",
       "network",
+      "server",
     ],
   );
 
@@ -5996,6 +6009,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AlertServer dco_decode_alert_server(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return AlertServer(
+      server: dco_decode_known_server(arr[0]),
+      secret: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
   AlertSettingsView dco_decode_alert_settings_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -6102,6 +6127,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Bowl dco_decode_bowl(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return Bowl.values[raw as int];
+  }
+
+  @protected
+  AlertServer dco_decode_box_autoadd_alert_server(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_alert_server(raw);
   }
 
   @protected
@@ -8244,6 +8275,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  AlertServer? dco_decode_opt_box_autoadd_alert_server(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_alert_server(raw);
   }
 
   @protected
@@ -10718,6 +10755,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AlertServer sse_decode_alert_server(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_server = sse_decode_known_server(deserializer);
+    var var_secret = sse_decode_String(deserializer);
+    return AlertServer(server: var_server, secret: var_secret);
+  }
+
+  @protected
   AlertSettingsView sse_decode_alert_settings_view(
     SseDeserializer deserializer,
   ) {
@@ -10843,6 +10888,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return Bowl.values[inner];
+  }
+
+  @protected
+  AlertServer sse_decode_box_autoadd_alert_server(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_alert_server(deserializer));
   }
 
   @protected
@@ -13436,6 +13489,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  AlertServer? sse_decode_opt_box_autoadd_alert_server(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_alert_server(deserializer));
     } else {
       return null;
     }
@@ -16587,6 +16653,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_alert_server(AlertServer self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_known_server(self.server, serializer);
+    sse_encode_String(self.secret, serializer);
+  }
+
+  @protected
   void sse_encode_alert_settings_view(
     AlertSettingsView self,
     SseSerializer serializer,
@@ -16684,6 +16757,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_bowl(Bowl self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_alert_server(
+    AlertServer self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_alert_server(self, serializer);
   }
 
   @protected
@@ -19109,6 +19191,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_alert_server(
+    AlertServer? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_alert_server(self, serializer);
     }
   }
 

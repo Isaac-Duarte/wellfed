@@ -29,7 +29,7 @@ pub struct AlertsView {
     pub unread: u8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct OpenAlert {
     /// A report's own time, or when a condition opened; `None` if the
     /// feeder's clock was not valid then.
@@ -37,8 +37,10 @@ pub struct OpenAlert {
     pub alert: Alert,
 }
 
-/// What is wrong.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// What is wrong. A reader of the server's API skips an entry whose kind
+/// it doesn't know, as a client of the device API does, so this enum has no
+/// catch-all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Alert {
     /// A feed failed, or never started. `plan` is its slot, if a plan asked.
@@ -76,11 +78,13 @@ pub enum Alert {
     },
     RolledBack,
     ClientJoined {
+        #[schema(value_type = String)]
         client: Hex<4>,
         role: ClientRole,
         path: EnrollPath,
     },
     ClientRevoked {
+        #[schema(value_type = String)]
         client: Hex<4>,
         by: Source,
     },
