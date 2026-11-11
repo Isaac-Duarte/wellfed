@@ -207,7 +207,7 @@ A bench build refuses an owner's key or the release key in `private/ota-key.json
 
 ### The release key
 
-The release key signs everything a consumer image takes: its update manifests, and `revoke` and `add-key` statements. Every consumer image builds in its public half, and bank 0 keeps the build it was written with.
+The release key signs everything a consumer image takes: its update manifests, and `revoke` and `add-key` statements. Every consumer image builds in its public half, and bank 0 keeps the build it was written with. Since every consumer feeder trusts it, `sign` refuses it for any build but a consumer build with no variant that builds the same key in, and a consumer build takes no `--variant`. A bench build would hand the feeder over to the bench key and carry the bench hotspot's credentials.
 
 > [!WARNING]
 > If you lose the release key, no beta feeder can take another update over the air. Each could then only be updated over UART, with the case open. If it leaks, anyone can sign updates those feeders install. Keep two copies, offline, in different places.

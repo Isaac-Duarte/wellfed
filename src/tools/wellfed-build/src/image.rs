@@ -27,6 +27,10 @@ pub enum ImageError {
     /// key to provision.
     #[error("A consumer build needs a profile that links the Rust application")]
     ProvisioningProfile,
+    /// Variants are test builds for the bench unit; none ships to a
+    /// consumer, and the release key signs none.
+    #[error("Variant {variant} is a bench build; a consumer build takes no variant")]
+    ConsumerVariant { variant: String },
     /// The vendor recipes take minutes, and an editor may touch the tree
     /// meanwhile.
     #[error("Sources changed during the build; rerun before trusting these outputs")]
@@ -74,6 +78,12 @@ impl<'a> Request<'a> {
             provisioning == Provisioning::Bench || profile.has(Stage::Rust),
             || ImageError::ProvisioningProfile,
         )?;
+        if let (Some(variant), Provisioning::Consumer) = (variant, provisioning) {
+            return Err(ImageError::ConsumerVariant {
+                variant: variant.name().to_owned(),
+            }
+            .into());
+        }
         if profile.has(Stage::Rust) {
             firmware.check_device(device.name())?;
         }
@@ -249,4 +259,51 @@ pub fn audit_build(repo: &Repo, build: &Path) -> Result<Linked> {
     device
         .platform(repo)
         .audit(repo, &device, build, &archives, &firmware)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Error;
+
+    /// A variant is a bench test build: asking for one for consumers is
+    /// refused before any build work, and the same variant builds for the
+    /// bench.
+    #[test]
+    fn a_consumer_build_takes_no_variant() {
+        let repo = Repo::here().unwrap();
+        let device = Device::new(&repo, "plaf103").unwrap();
+        let firmware = Firmware::new(&repo, "feeder").unwrap();
+        let variant = firmware.variant("virtual-panel").unwrap();
+
+        let refused = Request::new(
+            &device,
+            Profile::Firstboot,
+            &firmware,
+            Some(&variant),
+            Provisioning::Consumer,
+        )
+        .err();
+        assert!(
+            matches!(
+                &refused,
+                Some(Error::Image(ImageError::ConsumerVariant { variant })) if variant == "virtual-panel"
+            ),
+            "{refused:?}"
+        );
+
+        for (variant, provisioning) in [
+            (Some(&variant), Provisioning::Bench),
+            (None, Provisioning::Consumer),
+        ] {
+            Request::new(
+                &device,
+                Profile::Firstboot,
+                &firmware,
+                variant,
+                provisioning,
+            )
+            .unwrap();
+        }
+    }
 }

@@ -4,6 +4,7 @@
 //! A refusal is final: nothing here signs a fallback or retries.
 
 use std::path::PathBuf;
+use wellfed_formats::manifest::Provisioning;
 use wellfed_proto::device::Model;
 
 use wellfed_signed::offer::OfferError;
@@ -101,6 +102,20 @@ pub enum FrozenError {
     /// A motion policy the caller did not name as the one it attends.
     #[error("Image drives the motor ({policy}); sign it only attending that policy")]
     Unattended { policy: String },
+    /// A build for the bench offered to the release key, which every
+    /// consumer feeder trusts.
+    #[error("The release key signs consumer builds only, not a {} build", provisioning.name())]
+    ReleaseProvisioning { provisioning: Provisioning },
+    /// A test variant, which never ships, offered to the release key.
+    #[error("The release key signs no variant build ({variant})")]
+    ReleaseVariant { variant: String },
+    /// A build that does not keep the release key built in: once installed,
+    /// the feeder would trust another key instead.
+    #[error("The release key {signer} is not the build's built-in key ({built_in:?})")]
+    ReleaseNotBuiltIn {
+        signer: String,
+        built_in: Option<String>,
+    },
     /// The build names a device no model has.
     #[error("The review's build is for device {device}, which no model is")]
     UnknownDevice { device: String },

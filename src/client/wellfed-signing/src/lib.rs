@@ -23,8 +23,10 @@
 //! ([`KeyScope::Owner`]), which a feeder trusts only once the owner has
 //! enrolled it there with a Dispense press, or the project release key
 //! ([`KeyScope::Release`]), whose public half consumer builds embed from
-//! `private/release-key.pub.json`. All three are the same file and sign the
-//! same manifests. The release key is written once onto offline media by
+//! `private/release-key.pub.json`. All three are the same file, but the
+//! release key signs only a consumer build with no variant that builds it
+//! back in, since every consumer feeder trusts it. The release key is
+//! written once onto offline media by
 //! [`release_keygen`], never into a checkout, and is loaded from there only
 //! to sign.
 //!
@@ -49,7 +51,7 @@ use wellfed_signed::offer::{self, ImageKind as OfferKind, KeyId, Signed};
 use wellfed_formats::bench::VERIFICATION;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::credentials::{KeyScope, OtaKeyFile};
-use wellfed_formats::manifest::BuildManifest;
+use wellfed_formats::manifest::{BuildManifest, Provisioning};
 use wellfed_formats::private::{SYSTEM_RANDOM, random, write_new_whole};
 use wellfed_formats::require;
 use wellfed_formats::review::ImageKind;
@@ -415,6 +417,7 @@ impl Frozen {
         motion: Motion,
     ) -> Result<[u8; offer::MANIFEST_LEN]> {
         self.attended(motion)?;
+        self.require_signer(key)?;
         let kind = match self.kind {
             ImageKind::Build => OfferKind::Replacement,
             ImageKind::Stock => OfferKind::Stock,
@@ -437,6 +440,46 @@ impl Frozen {
     /// container's header.
     pub fn payload(&self) -> &[u8] {
         self.image.get(CONTAINER_HEADER..).unwrap_or_default()
+    }
+
+    /// Refuse the release key for a build every consumer feeder should
+    /// not take. Each consumer feeder trusts the release key, and the image
+    /// it installs then trusts only its own built-in key; so the release
+    /// key signs only a consumer build with no variant (a test build) that
+    /// builds the release key back in. A bench image would hand the feeder
+    /// to the bench key, whose seed lives in checkouts, and carries the
+    /// bench hotspot's credentials. The bench key and an owner's key sign
+    /// any build: a feeder takes those only where it built the bench key
+    /// in or enrolled the key with a Dispense press. Stock has no
+    /// provisioning, and a feeder takes it only with a downgrade statement
+    /// made for that feeder.
+    fn require_signer(&self, key: &Key) -> Result<()> {
+        let (KeyScope::Release, Some(manifest)) = (key.scope(), &self.manifest) else {
+            return Ok(());
+        };
+
+        require(manifest.provisioning == Provisioning::Consumer, || {
+            FrozenError::ReleaseProvisioning {
+                provisioning: manifest.provisioning,
+            }
+        })?;
+        if let Some(variant) = &manifest.variant {
+            return Err(FrozenError::ReleaseVariant {
+                variant: variant.clone(),
+            }
+            .into());
+        }
+        let built_in = manifest
+            .ota_public_key
+            .as_deref()
+            .and_then(|text| hex::decode_array_either_case::<32>(text.as_bytes()));
+        require(built_in == Some(key.public()), || {
+            FrozenError::ReleaseNotBuiltIn {
+                signer: hex::Lower(&key.id()).to_string(),
+                built_in: manifest.ota_public_key.clone(),
+            }
+            .into()
+        })
     }
 
     fn attended(&self, motion: Motion) -> Result<()> {
@@ -545,11 +588,21 @@ mod tests {
     /// A checkout with `private/`, and a frozen build review of `image`
     /// in it.
     fn freeze(image: &[u8], motion: Option<&str>) -> (tempfile::TempDir, std::path::PathBuf) {
+        freeze_with(
+            image,
+            &json!({"startup_identity": BUILD, "startup_motion_policy": motion,
+                    "firmware": "feeder"}),
+        )
+    }
+
+    /// [`freeze`] with the build manifest's `fields`.
+    fn freeze_with(
+        image: &[u8],
+        fields: &serde_json::Value,
+    ) -> (tempfile::TempDir, std::path::PathBuf) {
         let checkout = tempfile::tempdir().unwrap();
         let review = checkout.path().join("private/review");
-        let fields = json!({"startup_identity": BUILD, "startup_motion_policy": motion,
-                            "firmware": "feeder"});
-        wellfed_image::fixtures::freeze_build(checkout.path(), &review, image, &fields).unwrap();
+        wellfed_image::fixtures::freeze_build(checkout.path(), &review, image, fields).unwrap();
         (checkout, review)
     }
 
@@ -964,6 +1017,76 @@ mod tests {
                 .offer(&key, 1, Motion::Attended("fw16-pulse-v1"))
                 .is_ok()
         );
+    }
+
+    /// The release key signs only a consumer build with no variant that
+    /// keeps the release key built in; the bench key and an owner's key,
+    /// which a consumer feeder takes only once it enrolled them, sign any.
+    #[test]
+    fn a_key_signs_only_the_builds_its_scope_provisions() {
+        let scoped = |seed: u8, scope| Key {
+            key: SigningKey::from_bytes(&[seed; 32]),
+            scope,
+        };
+        let release = scoped(1, KeyScope::Release);
+        let bench = scoped(2, KeyScope::Bench);
+        let owner = scoped(3, KeyScope::Owner);
+        let release_public = hex::Lower(&release.public()).to_string();
+        let bench_public = hex::Lower(&bench.public()).to_string();
+
+        let review = |provisioning: &str, variant: Option<&str>, built_in: &str| {
+            let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
+                                "provisioning": provisioning, "variant": variant,
+                                "ota_public_key": built_in});
+            let (checkout, review) = freeze_with(&build_image(), &fields);
+            let frozen = Frozen::open(checkout.path(), &review).unwrap();
+            (checkout, frozen)
+        };
+        let (_consumer_dir, consumer) = review("consumer", None, &release_public);
+        let (_upper_dir, upper) = review("consumer", None, &release_public.to_uppercase());
+        let (_bench_dir, bench_build) = review("bench", None, &bench_public);
+        let (_variant_dir, variant) = review("consumer", Some("virtual-panel"), &release_public);
+        let (_other_dir, other_key) = review("consumer", None, &bench_public);
+
+        for (frozen, key) in [
+            (&consumer, &release),
+            (&upper, &release),
+            (&bench_build, &bench),
+            (&consumer, &bench),
+            (&variant, &bench),
+            (&consumer, &owner),
+            (&bench_build, &owner),
+        ] {
+            frozen.offer(key, 9, Motion::Refused).unwrap();
+        }
+
+        let refused =
+            |frozen: &Frozen, key: &Key| frozen.offer(key, 9, Motion::Refused).unwrap_err();
+        assert!(matches!(
+            refused(&bench_build, &release),
+            Error::Frozen(FrozenError::ReleaseProvisioning {
+                provisioning: Provisioning::Bench
+            })
+        ));
+        assert!(matches!(
+            refused(&variant, &release),
+            Error::Frozen(FrozenError::ReleaseVariant { variant }) if variant == "virtual-panel"
+        ));
+        assert!(matches!(
+            refused(&other_key, &release),
+            Error::Frozen(FrozenError::ReleaseNotBuiltIn { built_in: Some(key), .. })
+                if key == bench_public
+        ));
+
+        // A consumer build that names no key at all is refused too.
+        let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
+                            "provisioning": "consumer"});
+        let (checkout, keyless) = freeze_with(&build_image(), &fields);
+        let keyless = Frozen::open(checkout.path(), &keyless).unwrap();
+        assert!(matches!(
+            refused(&keyless, &release),
+            Error::Frozen(FrozenError::ReleaseNotBuiltIn { built_in: None, .. })
+        ));
     }
 
     /// An owner's backup signs as stock only when it is the pinned stock
