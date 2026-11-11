@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO phone_keys (feeder_id, key, user_id, token_id, role, invited_ms,\n                                             invite_until_ms, invited_by, revoke, revoke_ms,\n                                             last_invitation)\n                     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10\n                     WHERE NOT EXISTS (SELECT 1 FROM phone_keys WHERE feeder_id = ?1 AND key = ?2)\n                       AND NOT EXISTS (SELECT 1 FROM kept_clients WHERE feeder_id = ?1 AND key = ?2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "1050b6bac90bb561f0b5567ab1076c3cd81bf3cda119519300b0e1f9d32b0a57"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO dropped_phones\n                         (feeder_id, prefix, user_id, token_id, last_invitation, dropped_ms)\n                     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "8f281633deffa24b7b597340d26750d3dc64439f3675d9ca6c7d085632d06bbb"
+}

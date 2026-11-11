@@ -274,6 +274,20 @@ async fn an_invitee_dropped_before_it_was_attributed_takes_its_own() {
     );
 }
 
+/// The server's clock stepped back between recording a key and reading
+/// its join: the join still counts, since the order the server recorded
+/// them in decides, not its clock.
+#[tokio::test]
+async fn a_join_read_after_the_clock_stepped_back_is_still_attributed() {
+    let (_dir, store, feeder) = fresh().await;
+    store.record_phone(&phone(feeder, 1, 7, 10)).await.unwrap();
+    joined_at(&store, feeder, (1, 5), 2, 1).await;
+
+    assert!(!attribute(&store, feeder, &[1, 2], 40).await);
+    let invitee = store.phone(feeder, &[2; 32]).await.unwrap().unwrap();
+    assert_eq!(invitee.token, Some(TokenId(Uuid::from_u128(7))));
+}
+
 /// A key an owner kept stays theirs, whoever invited it.
 #[tokio::test]
 async fn a_kept_invitee_is_not_attributed() {

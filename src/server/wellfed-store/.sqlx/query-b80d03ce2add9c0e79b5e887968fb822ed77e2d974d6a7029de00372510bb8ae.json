@@ -1,11 +1,33 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT epoch, seq, invitee, inviter, received_ms FROM invitations AS i\n             WHERE feeder_id = ?1 AND settled_ms IS NULL\n               AND (EXISTS (SELECT 1 FROM phone_keys AS p\n                            WHERE p.feeder_id = ?1 AND substr(p.key, 1, 7) = i.inviter\n                              AND p.invited_ms <= i.received_ms)\n                    OR EXISTS (SELECT 1 FROM dropped_phones AS d\n                               WHERE d.feeder_id = ?1 AND d.prefix = i.inviter\n                                 AND d.invited_ms <= i.received_ms))\n             ORDER BY epoch, seq",
+  "query": "SELECT id AS \"id!\", feeder_id AS \"feeder_id: Uuid\", epoch, seq, invitee,\n                              inviter, received_ms, settled_ms\n                       FROM invitations ORDER BY id",
   "describe": {
     "columns": [
       {
-        "name": "epoch",
+        "name": "id!",
         "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "feeder_id: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "feeder_id"
+          }
+        }
+      },
+      {
+        "name": "epoch",
+        "ordinal": 2,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -16,7 +38,7 @@
       },
       {
         "name": "seq",
-        "ordinal": 1,
+        "ordinal": 3,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -27,7 +49,7 @@
       },
       {
         "name": "invitee",
-        "ordinal": 2,
+        "ordinal": 4,
         "type_info": "Blob",
         "origin": {
           "Table": {
@@ -38,7 +60,7 @@
       },
       {
         "name": "inviter",
-        "ordinal": 3,
+        "ordinal": 5,
         "type_info": "Blob",
         "origin": {
           "Table": {
@@ -49,7 +71,7 @@
       },
       {
         "name": "received_ms",
-        "ordinal": 4,
+        "ordinal": 6,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -57,18 +79,32 @@
             "name": "received_ms"
           }
         }
+      },
+      {
+        "name": "settled_ms",
+        "ordinal": 7,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "settled_ms"
+          }
+        }
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       false,
       false,
       false,
       false,
-      false
+      false,
+      false,
+      false,
+      true
     ]
   },
-  "hash": "566d3486995de826167ef53c092f4160ddad97ee0593330e5d5c7c67e7e47bd5"
+  "hash": "b80d03ce2add9c0e79b5e887968fb822ed77e2d974d6a7029de00372510bb8ae"
 }

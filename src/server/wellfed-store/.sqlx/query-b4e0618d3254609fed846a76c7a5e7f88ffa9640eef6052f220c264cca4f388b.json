@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\",\n                      revoke IS NOT NULL AS \"revoking!: bool\"\n               FROM phone_keys\n               WHERE feeder_id = ? AND substr(key, 1, 7) = ? AND invited_ms <= ?\n               ORDER BY invited_ms, key LIMIT 1",
+  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\",\n                      revoke IS NOT NULL AS \"revoking!: bool\"\n               FROM phone_keys\n               WHERE feeder_id = ? AND substr(key, 1, 7) = ? AND last_invitation < ?\n               ORDER BY last_invitation, key LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -41,5 +41,5 @@
       false
     ]
   },
-  "hash": "8000ac4c61b05307f6ca3e86a82cc8da442991a97cca8755a6526a002c834eba"
+  "hash": "b4e0618d3254609fed846a76c7a5e7f88ffa9640eef6052f220c264cca4f388b"
 }

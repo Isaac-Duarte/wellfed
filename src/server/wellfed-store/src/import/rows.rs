@@ -14,8 +14,9 @@ use crate::Result;
 pub(super) async fn phone_key(tx: &mut SqliteConnection, phone: &PhoneKey) -> Result<()> {
     sqlx::query!(
         "INSERT INTO phone_keys (feeder_id, key, user_id, token_id, role, invited_ms,
-                                 invite_until_ms, revoke, revoke_ms, attempt, invited_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                 invite_until_ms, revoke, revoke_ms, attempt, invited_by,
+                                 last_invitation)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         phone.feeder_id,
         phone.key,
         phone.user_id,
@@ -27,6 +28,7 @@ pub(super) async fn phone_key(tx: &mut SqliteConnection, phone: &PhoneKey) -> Re
         phone.revoke_ms,
         phone.attempt,
         phone.invited_by,
+        phone.last_invitation,
     )
     .execute(tx)
     .await?;
@@ -47,8 +49,10 @@ pub(super) async fn kept_client(tx: &mut SqliteConnection, kept: &KeptClient) ->
 
 pub(super) async fn invitation(tx: &mut SqliteConnection, row: &Invitation) -> Result<()> {
     sqlx::query!(
-        "INSERT INTO invitations (feeder_id, epoch, seq, invitee, inviter, received_ms, settled_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO invitations
+             (id, feeder_id, epoch, seq, invitee, inviter, received_ms, settled_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        row.id,
         row.feeder_id,
         row.epoch,
         row.seq,
@@ -64,13 +68,14 @@ pub(super) async fn invitation(tx: &mut SqliteConnection, row: &Invitation) -> R
 
 pub(super) async fn dropped_phone(tx: &mut SqliteConnection, row: &DroppedPhone) -> Result<()> {
     sqlx::query!(
-        "INSERT INTO dropped_phones (feeder_id, prefix, user_id, token_id, invited_ms, dropped_ms)
+        "INSERT INTO dropped_phones
+             (feeder_id, prefix, user_id, token_id, last_invitation, dropped_ms)
          VALUES (?, ?, ?, ?, ?, ?)",
         row.feeder_id,
         row.prefix,
         row.user_id,
         row.token_id,
-        row.invited_ms,
+        row.last_invitation,
         row.dropped_ms,
     )
     .execute(tx)

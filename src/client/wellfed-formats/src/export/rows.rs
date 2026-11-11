@@ -189,6 +189,8 @@ pub struct PhoneKey {
     /// key the server did not invite itself.
     #[serde(with = "hex_option")]
     pub invited_by: Option<Vec<u8>>,
+    /// The newest invitation's `id` when the key was recorded.
+    pub last_invitation: i64,
 }
 
 /// A client the server did not invite that an owner chose to keep.
@@ -207,6 +209,8 @@ pub struct KeptClient {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Invitation {
+    /// The order the server recorded joins in.
+    pub id: i64,
     pub feeder_id: Uuid,
     pub epoch: i64,
     pub seq: i64,
@@ -219,7 +223,8 @@ pub struct Invitation {
 }
 
 /// A phone key the feeder dropped, by its first bytes, kept so a key it
-/// invited still goes, and when the server first recorded it.
+/// invited still goes, and the newest invitation's `id` when the server
+/// recorded it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DroppedPhone {
@@ -228,7 +233,7 @@ pub struct DroppedPhone {
     pub prefix: Vec<u8>,
     pub user_id: Uuid,
     pub token_id: Option<Uuid>,
-    pub invited_ms: i64,
+    pub last_invitation: i64,
     pub dropped_ms: i64,
 }
 

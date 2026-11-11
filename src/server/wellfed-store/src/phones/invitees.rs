@@ -46,6 +46,8 @@ pub struct Invitation {
     pub inviter: [u8; PREFIX],
     /// When the server read the join.
     pub received: Timestamp,
+    /// Its place in the order the server recorded joins in.
+    pub(crate) id: i64,
 }
 
 /// The account and token a joined key is recorded under, and whether the
@@ -115,7 +117,7 @@ pub(crate) async fn dropped(
 ) -> Result<()> {
     let slice = key.as_slice();
     let Some(phone) = sqlx::query!(
-        r#"SELECT user_id AS "user_id: Uuid", token_id AS "token_id: Uuid", invited_ms
+        r#"SELECT user_id AS "user_id: Uuid", token_id AS "token_id: Uuid", last_invitation
            FROM phone_keys WHERE feeder_id = ? AND key = ?"#,
         feeder.0,
         slice,
@@ -129,16 +131,17 @@ pub(crate) async fn dropped(
     let prefix = prefix(key);
     let prefix = prefix.as_slice();
     sqlx::query!(
-        "INSERT INTO dropped_phones (feeder_id, prefix, user_id, token_id, invited_ms, dropped_ms)
+        "INSERT INTO dropped_phones
+             (feeder_id, prefix, user_id, token_id, last_invitation, dropped_ms)
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (feeder_id, prefix) DO UPDATE SET
              user_id = excluded.user_id, token_id = excluded.token_id,
-             invited_ms = excluded.invited_ms, dropped_ms = excluded.dropped_ms",
+             last_invitation = excluded.last_invitation, dropped_ms = excluded.dropped_ms",
         feeder.0,
         prefix,
         phone.user_id,
         phone.token_id,
-        phone.invited_ms,
+        phone.last_invitation,
         at,
     )
     .execute(&mut *conn)
@@ -164,22 +167,23 @@ fn prefix(key: &[u8; 32]) -> [u8; PREFIX] {
 impl Store {
     /// The joins through an invite a feeder reported that the server has
     /// not attributed yet and can: those whose inviter is a phone key it
-    /// recorded, or saw dropped, before it read the join. Oldest first, so
+    /// recorded, or saw dropped, before it recorded the join (by the order
+    /// it recorded them in, not by its clock). Oldest first, so
     /// a key's own invitees come after it. Any other join (the server's own
     /// adoption, a key the owner's CLI invited, or one a phone made before
     /// the server knew it) asks the feeder nothing and is never attributed:
     /// claiming a phone does not sweep in the invites it made before.
     pub async fn invitations(&self, feeder: FeederId) -> Result<Vec<Invitation>> {
         let rows = sqlx::query!(
-            "SELECT epoch, seq, invitee, inviter, received_ms FROM invitations AS i
-             WHERE feeder_id = ?1 AND settled_ms IS NULL
-               AND (EXISTS (SELECT 1 FROM phone_keys AS p
-                            WHERE p.feeder_id = ?1 AND substr(p.key, 1, 7) = i.inviter
-                              AND p.invited_ms <= i.received_ms)
-                    OR EXISTS (SELECT 1 FROM dropped_phones AS d
-                               WHERE d.feeder_id = ?1 AND d.prefix = i.inviter
-                                 AND d.invited_ms <= i.received_ms))
-             ORDER BY epoch, seq",
+            r#"SELECT id AS "id!", epoch, seq, invitee, inviter, received_ms FROM invitations AS i
+               WHERE feeder_id = ?1 AND settled_ms IS NULL
+                 AND (EXISTS (SELECT 1 FROM phone_keys AS p
+                              WHERE p.feeder_id = ?1 AND substr(p.key, 1, 7) = i.inviter
+                                AND p.last_invitation < i.id)
+                      OR EXISTS (SELECT 1 FROM dropped_phones AS d
+                                 WHERE d.feeder_id = ?1 AND d.prefix = i.inviter
+                                   AND d.last_invitation < i.id))
+               ORDER BY id"#,
             feeder.0,
         )
         .fetch_all(&self.reader)
@@ -200,6 +204,7 @@ impl Store {
                         .try_into()
                         .map_err(|_| Error::Corrupt("inviter prefix"))?,
                     received: timestamp(row.received_ms)?,
+                    id: row.id,
                 })
             })
             .collect()
@@ -209,9 +214,9 @@ impl Store {
     /// key starts with the invitee's prefix, with the role it lists) is
     /// recorded as a phone key of the account and token behind the
     /// inviter, a phone key recorded or one the feeder dropped before the
-    /// join was read, and marked for revocation at once unless that key
-    /// still stands. It counts as recorded from when the join was read, so
-    /// the joins it made in turn are its. A key recorded or kept already
+    /// join was, and marked for revocation at once unless that key still
+    /// stands. It counts as recorded from the join on, so the joins it made
+    /// in turn are its. A key recorded or kept already
     /// stays as it is, and a join no such phone key invited records nothing.
     /// With no key joined (the feeder dropped it first), the invitee's
     /// prefix is recorded as a dropped phone key's, so the keys it invited
@@ -225,6 +230,7 @@ impl Store {
         let feeder = invitation.feeder;
         let inviter_prefix = invitation.inviter.as_slice();
         let received = millis(invitation.received);
+        let order = invitation.id;
         let at = millis(at);
         let mut tx = self.writer.begin().await?;
 
@@ -232,11 +238,11 @@ impl Store {
             r#"SELECT user_id AS "user_id: Uuid", token_id AS "token_id: Uuid",
                       revoke IS NOT NULL AS "revoking!: bool"
                FROM phone_keys
-               WHERE feeder_id = ? AND substr(key, 1, 7) = ? AND invited_ms <= ?
-               ORDER BY invited_ms, key LIMIT 1"#,
+               WHERE feeder_id = ? AND substr(key, 1, 7) = ? AND last_invitation < ?
+               ORDER BY last_invitation, key LIMIT 1"#,
             feeder.0,
             inviter_prefix,
-            received,
+            order,
         )
         .fetch_optional(&mut *tx)
         .await?
@@ -250,10 +256,10 @@ impl Store {
             None => sqlx::query!(
                 r#"SELECT user_id AS "user_id: Uuid", token_id AS "token_id: Uuid"
                    FROM dropped_phones
-                   WHERE feeder_id = ? AND prefix = ? AND invited_ms <= ?"#,
+                   WHERE feeder_id = ? AND prefix = ? AND last_invitation < ?"#,
                 feeder.0,
                 inviter_prefix,
-                received,
+                order,
             )
             .fetch_optional(&mut *tx)
             .await?
@@ -273,8 +279,9 @@ impl Store {
                 let role = role.code();
                 let added = sqlx::query!(
                     "INSERT INTO phone_keys (feeder_id, key, user_id, token_id, role, invited_ms,
-                                             invite_until_ms, invited_by, revoke, revoke_ms)
-                     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9
+                                             invite_until_ms, invited_by, revoke, revoke_ms,
+                                             last_invitation)
+                     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10
                      WHERE NOT EXISTS (SELECT 1 FROM phone_keys WHERE feeder_id = ?1 AND key = ?2)
                        AND NOT EXISTS (SELECT 1 FROM kept_clients WHERE feeder_id = ?1 AND key = ?2)",
                     feeder.0,
@@ -286,6 +293,7 @@ impl Store {
                     inviter_prefix,
                     revoke,
                     revoke_ms,
+                    order,
                 )
                 .execute(&mut *tx)
                 .await?;
@@ -299,13 +307,13 @@ impl Store {
                 let invitee = invitation.invitee.as_slice();
                 sqlx::query!(
                     "INSERT INTO dropped_phones
-                         (feeder_id, prefix, user_id, token_id, invited_ms, dropped_ms)
+                         (feeder_id, prefix, user_id, token_id, last_invitation, dropped_ms)
                      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
                     feeder.0,
                     invitee,
                     inviter.user,
                     inviter.token,
-                    received,
+                    order,
                     at,
                 )
                 .execute(&mut *tx)

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\"\n                   FROM dropped_phones\n                   WHERE feeder_id = ? AND prefix = ? AND invited_ms <= ?",
+  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\"\n                   FROM dropped_phones\n                   WHERE feeder_id = ? AND prefix = ? AND last_invitation < ?",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       true
     ]
   },
-  "hash": "267b250d8ec94863ffc0375e18399b35f7d3544d046516c362ac37bb9acddd04"
+  "hash": "1e962a1b8093cdabe7fd48a97a14238e5399c9df0372c218a65823fd86b48e6f"
 }

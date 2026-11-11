@@ -90,7 +90,7 @@ impl Snapshot {
                     PhoneKey,
                     r#"SELECT feeder_id AS "feeder_id: Uuid", key, user_id AS "user_id: Uuid",
                               token_id AS "token_id: Uuid", role, invited_ms, invite_until_ms,
-                              revoke, revoke_ms, attempt, invited_by
+                              revoke, revoke_ms, attempt, invited_by, last_invitation
                        FROM phone_keys ORDER BY feeder_id, key"#
                 )
                 .fetch(tx),
@@ -106,9 +106,9 @@ impl Snapshot {
             Table::Invitations => rows(
                 sqlx::query_as!(
                     Invitation,
-                    r#"SELECT feeder_id AS "feeder_id: Uuid", epoch, seq, invitee, inviter,
-                              received_ms, settled_ms
-                       FROM invitations ORDER BY feeder_id, epoch, seq"#
+                    r#"SELECT id AS "id!", feeder_id AS "feeder_id: Uuid", epoch, seq, invitee,
+                              inviter, received_ms, settled_ms
+                       FROM invitations ORDER BY id"#
                 )
                 .fetch(tx),
             ),
@@ -116,7 +116,7 @@ impl Snapshot {
                 sqlx::query_as!(
                     DroppedPhone,
                     r#"SELECT feeder_id AS "feeder_id: Uuid", prefix, user_id AS "user_id: Uuid",
-                              token_id AS "token_id: Uuid", invited_ms, dropped_ms
+                              token_id AS "token_id: Uuid", last_invitation, dropped_ms
                        FROM dropped_phones ORDER BY feeder_id, prefix"#
                 )
                 .fetch(tx),

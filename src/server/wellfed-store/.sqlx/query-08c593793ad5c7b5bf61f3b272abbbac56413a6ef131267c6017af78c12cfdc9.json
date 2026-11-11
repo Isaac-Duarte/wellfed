@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO phone_keys\n                         (feeder_id, key, user_id, token_id, role, invited_ms, invite_until_ms,\n                          last_invitation)\n                     VALUES (?, ?, ?, ?, ?, ?, ?,\n                             (SELECT COALESCE(MAX(id), 0) FROM invitations))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "08c593793ad5c7b5bf61f3b272abbbac56413a6ef131267c6017af78c12cfdc9"
+}

@@ -122,10 +122,13 @@ impl Store {
 
         let recorded = match existing {
             None => {
+                // Only a join recorded from here on can be this key's.
                 sqlx::query!(
                     "INSERT INTO phone_keys
-                         (feeder_id, key, user_id, token_id, role, invited_ms, invite_until_ms)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (feeder_id, key, user_id, token_id, role, invited_ms, invite_until_ms,
+                          last_invitation)
+                     VALUES (?, ?, ?, ?, ?, ?, ?,
+                             (SELECT COALESCE(MAX(id), 0) FROM invitations))",
                     phone.feeder.0,
                     key,
                     phone.user.0,
