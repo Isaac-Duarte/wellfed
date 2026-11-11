@@ -280,22 +280,12 @@ const STAGED_PREFIX: &str = "server.key.";
 /// removed theirs. A start still writing loses its copy and is refused,
 /// never handed a key the file does not hold.
 fn remove_staged(dir: &Path) -> Result<(), KeyError> {
-    let entries = std::fs::read_dir(dir).map_err(|source| KeyError::Read {
+    let leftovers = staged::leftovers(dir, STAGED_PREFIX).map_err(|source| KeyError::Read {
         path: dir.to_owned(),
         source,
     })?;
-    for entry in entries {
-        let entry = entry.map_err(|source| KeyError::Read {
-            path: dir.to_owned(),
-            source,
-        })?;
-        let name = entry.file_name();
-        if name
-            .to_str()
-            .is_some_and(|name| staged::is_staged(name, STAGED_PREFIX))
-        {
-            remove(&entry.path(), Missing::Allowed)?;
-        }
+    for path in leftovers {
+        remove(&path, Missing::Allowed)?;
     }
     Ok(())
 }

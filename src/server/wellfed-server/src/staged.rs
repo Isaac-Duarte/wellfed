@@ -67,6 +67,24 @@ pub(crate) fn create(
 }
 
 /// Whether `name` is one [`create`] makes with `prefix`.
-pub(crate) fn is_staged(name: &str, prefix: &str) -> bool {
+fn is_staged(name: &str, prefix: &str) -> bool {
     name.starts_with(prefix) && name.ends_with(SUFFIX)
+}
+
+/// The files [`create`] made with `prefix` in `dir` that are still there:
+/// left by writers stopped before they removed theirs, or still being
+/// written.
+pub(crate) fn leftovers(dir: &Path, prefix: &str) -> std::io::Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| is_staged(name, prefix))
+        {
+            found.push(entry.path());
+        }
+    }
+    Ok(found)
 }

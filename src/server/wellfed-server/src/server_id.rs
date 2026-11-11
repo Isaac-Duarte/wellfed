@@ -10,7 +10,8 @@
 //! a warning, since nothing but a listener remembering the old one depends
 //! on it. Two first starts at once (two containers on one volume) each
 //! stage their id under a name of their own ([`crate::staged`]), and the
-//! id linked into place first is the one both return.
+//! id linked into place first is the one both return. A staged copy a
+//! stopped start left goes at the next start that reads the id.
 
 use std::fmt;
 use std::io::Write as _;
@@ -72,7 +73,10 @@ pub fn server_id(data: &Path, random: &dyn Random) -> Result<ServerId, IdError> 
     let path = data.join(ID_FILE);
     let absent = match std::fs::read_to_string(&path) {
         Ok(text) => match ServerId::parse(text.trim_end()) {
-            Some(id) => return Ok(id),
+            Some(id) => {
+                remove_staged(data);
+                return Ok(id);
+            }
             None => {
                 tracing::warn!("{} holds no server id; making a new one", path.display());
                 false
@@ -109,8 +113,14 @@ pub fn server_id(data: &Path, random: &dyn Random) -> Result<ServerId, IdError> 
     let _ = std::fs::remove_file(&staged);
     match placed {
         Ok(()) => {}
-        Err(error) if absent && error.kind() == std::io::ErrorKind::AlreadyExists => {
-            // Another start linked its id first: that is the one kept.
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::NotFound
+            ) =>
+        {
+            // Another start placed its id first, and perhaps cleared this
+            // one's staged copy since: the id it placed is the one kept.
             let kept = std::fs::read_to_string(&path)
                 .ok()
                 .and_then(|text| ServerId::parse(text.trim_end()));
@@ -123,6 +133,23 @@ pub fn server_id(data: &Path, random: &dyn Random) -> Result<ServerId, IdError> 
     }
     tracing::info!("this server's id is {id}");
     Ok(id)
+}
+
+/// Remove the id's staged copies left by starts stopped before they removed
+/// theirs. A start still writing loses its copy and returns the id placed
+/// first. The id is no secret, so a copy that stays is only clutter.
+fn remove_staged(data: &Path) {
+    let leftovers = staged::leftovers(data, STAGED_PREFIX).unwrap_or_else(|error| {
+        tracing::warn!("list {}: {error}", data.display());
+        Vec::new()
+    });
+    for path in leftovers {
+        if let Err(error) = std::fs::remove_file(&path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("remove {}: {error}", path.display());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -163,6 +190,23 @@ mod tests {
             assert_eq!(id.to_string(), "0202020202020202", "{held:?}");
             assert_eq!(server_id(data.path(), &Fixed(0x03)).unwrap(), id);
         }
+    }
+
+    /// A start stopped before it removed its staged copy leaves it; the next
+    /// start that reads the id removes it, and nothing else.
+    #[test]
+    fn a_staged_copy_left_behind_is_removed() {
+        let data = tempfile::tempdir().unwrap();
+        let id = server_id(data.path(), &Fixed(0x05)).unwrap();
+        let left = data.path().join("server.id.0101010101010101.new");
+        std::fs::write(&left, "0505050505050505\n").unwrap();
+        let other = data.path().join("server.key.0101010101010101.new");
+        std::fs::write(&other, "not the id's").unwrap();
+
+        assert_eq!(server_id(data.path(), &Fixed(0x06)).unwrap(), id);
+
+        assert!(!left.exists());
+        assert!(other.exists(), "another file's staged copy is not the id's");
     }
 
     /// A path that cannot be read as a file (here a directory) is warned
