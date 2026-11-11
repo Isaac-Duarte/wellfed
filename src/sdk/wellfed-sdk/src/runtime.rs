@@ -566,7 +566,17 @@ fn force_reset(now_ms: u32, open: impl FnOnce() -> bool) -> Option<u32> {
             // the ring again before it.
             sdk::log_flush();
         }
-        Forcing::Waiting | Forcing::Enabled { .. } => {}
+        Forcing::Enabled { enabled } => {
+            // A whole expiry passed with no reset. At most one retry per
+            // expiry, so each can be sent at once like the first.
+            sdk::log(if enabled {
+                c"PLSUP1 retry watchdog=forced reset=1\r\n"
+            } else {
+                c"PLSUP1 error watchdog=forced retry=1\r\n"
+            });
+            sdk::log_flush();
+        }
+        Forcing::Waiting => {}
     }
     Some(FORCE_POLL_MS)
 }
