@@ -332,6 +332,8 @@ String? skewWords(FeederState state) {
     (null, Skew.feederBehind) when owner => 'Update the feeder: it runs older firmware than this app',
     (Skew.feederBehind, _) || (null, Skew.feederBehind) => 'The feeder runs older firmware: its owner can update it',
     (_, Skew.feederAhead) => 'Update the Wellfed server: the feeder runs newer firmware',
+    // A revision this app cannot name came from a newer build.
+    (Skew.unknown, _) || (_, Skew.unknown) => 'Update this app: something it talks to is newer',
     _ => null,
   };
 }

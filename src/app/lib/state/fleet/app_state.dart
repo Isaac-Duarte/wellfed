@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:wellfed/platform/secure_storage.dart';
 import 'package:wellfed/platform/server_ports.dart';
+import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
@@ -109,15 +110,23 @@ final class AppFailed extends AppStart {
 /// in [secureStorage]; everything else in the app's own file, which Rust
 /// reads and writes.
 class AppState extends ChangeNotifier implements FeederBook {
-  AppState._(this.key, this._store, this._path, (PathRouter?, PinsProblem?) opened, SetAside? storeSetAside)
-    : router = opened.$1,
-      pinsProblem = opened.$2 {
+  AppState._(
+    this.key,
+    this._store,
+    this._path,
+    (PathRouter?, PinsProblem?) opened,
+    SetAside? storeSetAside, {
+    SetAside? alertsSetAside,
+  }) : router = opened.$1,
+       pinsProblem = opened.$2 {
     // Clearing the notice rewrites the app's file, so it waits its turn
     // behind any change still being written, as each change does.
     notice = StoreNoticeFlow(
       app: storeSetAside,
+      alerts: alertsSetAside,
       router: opened.$1,
       appRead: () => _writing.run(() async => storeNoticeRead(path: _path)),
+      alertsRead: () => alertsNoticeRead(dir: File(_path).parent.path),
     );
   }
 
@@ -132,8 +141,6 @@ class AppState extends ChangeNotifier implements FeederBook {
     PathRouter? router,
     SetAside? storeSetAside,
   }) : this._(key, store, path, (router, router == null ? PinsProblem.unavailable : null), storeSetAside);
-
-  static const _secretName = 'client-secret';
 
   /// This phone's key.
   final ClientKey key;
@@ -174,13 +181,13 @@ class AppState extends ChangeNotifier implements FeederBook {
   /// that does not read is set aside ([notice]); only the storage itself
   /// failing throws.
   static Future<AppState> load() async {
-    final String? saved = await secureStorage.read(key: _secretName);
+    final String? saved = await secureStorage.read(key: clientSecretName);
     final ClientKey key;
     if (saved == null) {
       key = ClientKey.generate();
       // The store's hex spelling, as for feeder identities: 32 bytes.
       await secureStorage.write(
-        key: _secretName,
+        key: clientSecretName,
         value: identityHex(identity: key.secret()),
       );
     } else {
@@ -197,7 +204,16 @@ class AppState extends ChangeNotifier implements FeederBook {
     // the notice, so one that dies first still does, but never once a new
     // login has kept a server, whose secret it would be.
     if (opened.setAside?.kind == StoreKind.app && store.server == null) await _forgetServerSecret();
-    return AppState._(key, store, path, _openRouter('${dir.path}/pending.json', store.server), opened.setAside);
+    return AppState._(
+      key,
+      store,
+      path,
+      _openRouter('${dir.path}/pending.json', store.server),
+      opened.setAside,
+      // Kept in the alert file until read: a catch-up in the background may
+      // have been the one to set it aside.
+      alertsSetAside: await alertsSetAside(dir: dir.path),
+    );
   }
 
   /// Best effort: a secret left behind is unused, and the start goes on.

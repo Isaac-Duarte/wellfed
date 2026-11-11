@@ -195,7 +195,7 @@ mod tests {
             alerts_generation: Generation(0),
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: Some(false),
-                settings_generation: Generation(1),
+                settings_generation: Some(Generation(1)),
                 food: FoodLevel::Present,
                 feed_fault: None,
                 readiness: Readiness::Ready,

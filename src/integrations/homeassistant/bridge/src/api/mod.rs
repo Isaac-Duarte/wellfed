@@ -11,15 +11,18 @@
 //! A view keeps only what an entity or an event shows. Anything the
 //! feeder checks stays in Rust: these carry facts out, never a request in.
 
+#[macro_use]
 mod enums;
+mod alerts;
 mod session;
 mod state;
 mod views;
 
+pub use alerts::{Alert, AlertKind, AlertLevel, Alerts};
 pub use enums::{
-    By, EventKind, FeedOutcome, FeedReason, FoodLevel, NotSent, Readiness, RefusalKind, Role, Skew,
-    Tune, UpdateKind, WriteResult,
+    AccountRole, By, EventKind, FeedOutcome, FeedReason, FoodLevel, NotSent, Readiness,
+    RefusalKind, Role, ServerProblem, Skew, Tune, UpdateKind, WriteResult,
 };
-pub use session::{Update, Written};
+pub use session::{Pending, Update, Written};
 pub use state::{Capabilities, NextMeal, Plan, PortionsToday, Settings, State};
 pub use views::{Event, Feed, FeedFault, Status};

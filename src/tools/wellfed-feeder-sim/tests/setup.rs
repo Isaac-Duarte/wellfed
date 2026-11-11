@@ -20,6 +20,7 @@ use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::sim::{Record, Sim};
+use wellfed_hal::interlock::WRITE_WAIT_MS;
 use wellfed_model::setup::{Enrolled, Reply, WifiSaved};
 use wellfed_proto::api::{EventBody, Refusal};
 use wellfed_session::noise::Keypair;
@@ -322,7 +323,7 @@ fn a_press_past_its_claim_s_deadline_is_refused_as_any_press_is() {
     feeder.hold(&[Button::Lock]);
     feeder.sim.hold_write(true);
     feeder.press(Button::Dispense);
-    feeder.run(3_100);
+    feeder.run(WRITE_WAIT_MS + 100);
 
     assert!(matches!(
         feeder.dispensed()[..],
@@ -392,7 +393,7 @@ fn a_refused_claim_leaves_the_first_food_reading_a_baseline() {
     );
     assert!(!feeder.sim.feed_outputs_claimed());
 
-    feeder.run(3_100);
+    feeder.run(WRITE_WAIT_MS + 100);
     assert!(matches!(
         feeder.dispensed()[..],
         [Ok(1), Err(Refusal::Busy)]

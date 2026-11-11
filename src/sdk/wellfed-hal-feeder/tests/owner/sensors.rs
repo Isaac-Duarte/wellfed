@@ -8,8 +8,8 @@
 
 use crate::common::owner::*;
 use crate::common::*;
-use wellfed_core::feed::controller::FeedReason;
-use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery};
+use wellfed_core_feeder::feed::controller::FeedReason;
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery};
 use wellfed_hal::board::pins::{FOOD, OUTLET, bit};
 use wellfed_hal::sdk::fake;
 use wellfed_hal_feeder::board::MOTOR_MASK;
@@ -453,7 +453,7 @@ mod at_rest {
 
 mod food_reads {
     use super::*;
-    use wellfed_core::feed::food_read::{FOOD_READ_MS, FoodReads};
+    use wellfed_core_feeder::feed::food_read::{FOOD_READ_MS, FoodReads};
     use wellfed_hal::board::pins::ADAPTER;
     use wellfed_hal::interlock::Interlock;
     use wellfed_hal::ota::mailbox::{self, Request};

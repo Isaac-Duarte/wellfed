@@ -5,10 +5,10 @@ use std::cell::Cell;
 
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
 use wellfed_device_runtime::writer::{self as writer, WriteEvent};
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::writer::{FeederRecord, Record, Writer};
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::sdk::{self, fake};
-use wellfed_hal::settings;
 
 use crate::support::{ATTEMPT_SEEN, open_all, start, step};
 
@@ -221,7 +221,7 @@ fn a_meal_call_change_waits_for_a_call_without_holding_up_other_work() {
         ..SettingsFields::default()
     };
     assert!(matches!(
-        settings::request(quieter),
+        SETTINGS.request(quieter),
         SettingsResult::Current { pending: true, .. }
     ));
     assert!(matches!(

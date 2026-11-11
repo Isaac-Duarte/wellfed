@@ -49,6 +49,11 @@ pub enum StreamEvent {
     /// The stream cannot resume from the client's `Last-Event-ID`:
     /// refetch what it shows.
     Resync,
+    /// The server read a new alert table from the feeder, or its judgement
+    /// of the feeder's reach changed: read `GET /feeders/{id}/alerts`.
+    Alerts {
+        feeder: FeederId,
+    },
 }
 
 /// A live measurement. The feeder sends these only while the server is

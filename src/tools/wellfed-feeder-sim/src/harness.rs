@@ -32,6 +32,14 @@ use wellfed_device_sim::harness::Alone;
 // The device sim's test helpers, as this simulator's tests name them.
 pub use wellfed_device_sim::harness::{Relay, counter, local};
 
+/// Make every program into the feeder's own settings record on `flash`
+/// fail from now on (`true`), or none: a save of the settings then lands
+/// the device's part alone and leaves the two records apart, so the
+/// feeder's settings are read-only with no generation.
+pub fn fail_feeder_settings(flash: &Flash, failing: bool) {
+    flash.fail_programs(failing.then_some(storage::FEEDER_SETTINGS));
+}
+
 use crate::banks::Banks;
 use crate::console::{self, ConsoleError};
 use crate::flash::{Flash, Region};

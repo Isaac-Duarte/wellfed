@@ -192,6 +192,36 @@ async fn owners_manage_accounts_with_typed_refusals() {
         StatusCode::BAD_REQUEST,
         ErrorCode::Invalid,
     );
+    // A role a newer client names reads here as `unknown`, and is refused
+    // rather than stored: it would grant nothing and say nothing.
+    let newer = NewUser {
+        name: "cy".into(),
+        role: Role::Unknown,
+        ..taken.clone()
+    };
+    refused(
+        owner.create_user(&newer).await,
+        StatusCode::BAD_REQUEST,
+        ErrorCode::Invalid,
+    );
+    let newer_role = UserPatch {
+        role: Some(Role::Unknown),
+        ..UserPatch::default()
+    };
+    refused(
+        owner.update_user(bob.id, &newer_role).await,
+        StatusCode::BAD_REQUEST,
+        ErrorCode::Invalid,
+    );
+    let newer_units = HomePatch {
+        units: Some(Units::Unknown),
+        ..HomePatch::default()
+    };
+    refused(
+        owner.update_home(&newer_units).await,
+        StatusCode::BAD_REQUEST,
+        ErrorCode::Invalid,
+    );
 
     let demote = UserPatch {
         role: Some(Role::Member),

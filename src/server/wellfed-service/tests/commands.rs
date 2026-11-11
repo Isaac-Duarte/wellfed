@@ -38,7 +38,7 @@ fn settings_change_against_the_current_generation_only() {
             .put_settings(
                 &ada().into(),
                 id,
-                settings.generation(),
+                settings.generation().unwrap(),
                 patch,
                 Some([1; 16]),
             )
@@ -46,8 +46,8 @@ fn settings_change_against_the_current_generation_only() {
             .unwrap();
         assert_eq!(changed.feeder().unwrap().volume, 30);
         assert_eq!(
-            changed.generation(),
-            Generation(settings.generation().0 + 1)
+            changed.generation().unwrap(),
+            Generation(settings.generation().unwrap().0 + 1)
         );
 
         // A retry under the same id is answered once, not applied again.
@@ -55,7 +55,7 @@ fn settings_change_against_the_current_generation_only() {
             .put_settings(
                 &ada().into(),
                 id,
-                settings.generation(),
+                settings.generation().unwrap(),
                 patch,
                 Some([1; 16]),
             )
@@ -67,7 +67,7 @@ fn settings_change_against_the_current_generation_only() {
             .put_settings(
                 &ada().into(),
                 id,
-                settings.generation(),
+                settings.generation().unwrap(),
                 patch,
                 Some([2; 16]),
             )
@@ -83,7 +83,13 @@ fn settings_change_against_the_current_generation_only() {
         };
         assert!(matches!(
             service
-                .put_settings(&ada().into(), id, changed.generation(), loud, Some([3; 16]))
+                .put_settings(
+                    &ada().into(),
+                    id,
+                    changed.generation().unwrap(),
+                    loud,
+                    Some([3; 16])
+                )
                 .await,
             Err(Error::Invalid(Invalid::Volume))
         ));
@@ -100,7 +106,7 @@ fn settings_change_against_the_current_generation_only() {
                 .put_settings(
                     &ada().into(),
                     id,
-                    changed.generation(),
+                    changed.generation().unwrap(),
                     past_midnight,
                     Some([4; 16])
                 )
@@ -117,7 +123,7 @@ fn settings_change_against_the_current_generation_only() {
                 .put_settings(
                     &ada().into(),
                     id,
-                    changed.generation(),
+                    changed.generation().unwrap(),
                     too_early,
                     Some([5; 16])
                 )
@@ -143,7 +149,7 @@ fn settings_change_against_the_current_generation_only() {
                 .put_settings(
                     &bob.clone().into(),
                     id,
-                    changed.generation(),
+                    changed.generation().unwrap(),
                     louder,
                     Some([1; 16])
                 )
@@ -154,13 +160,16 @@ fn settings_change_against_the_current_generation_only() {
             .put_settings(
                 &bob.clone().into(),
                 id,
-                changed.generation(),
+                changed.generation().unwrap(),
                 louder,
                 Some([4; 16]),
             )
             .await
             .unwrap();
-        assert_eq!(theirs.generation(), Generation(changed.generation().0 + 1));
+        assert_eq!(
+            theirs.generation().unwrap(),
+            Generation(changed.generation().unwrap().0 + 1)
+        );
         server.shutdown().await;
         sim.stop().await;
     });

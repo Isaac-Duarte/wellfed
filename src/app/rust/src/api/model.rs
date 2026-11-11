@@ -4,9 +4,10 @@
 //! added to the model fails the bridge's build until it is mirrored here.
 
 use flutter_rust_bridge::frb;
+pub use wellfed_client::alerts::NoticeKind;
 pub use wellfed_model::setup::{Enrolled, Refusal as SetupRefusal, WifiSaved};
 pub use wellfed_model::{
-    Bank0Blocked, Bank0Check, Blocked, ClientRole, FeedOutcome, FeedReason, FoodLevel,
+    AlertLevel, Bank0Blocked, Bank0Check, Blocked, ClientRole, FeedOutcome, FeedReason, FoodLevel,
     MissedReason, Skew, UpdatePhase, UpdateStop,
 };
 
@@ -19,6 +20,39 @@ pub enum _Skew {
     FeederBehind,
     FeederAhead,
     Legacy,
+    Unknown,
+}
+
+/// What a notice on the phone is about: one of the feeder's alert kinds, or
+/// the phone's own judgement that the feeder is unreachable.
+#[frb(mirror(NoticeKind))]
+pub enum _NoticeKind {
+    MealFailed,
+    MealUncertain,
+    MealMissed,
+    MealNoRecord,
+    PowerWasOut,
+    UpdateFailed,
+    RolledBack,
+    ClientJoined,
+    ClientRevoked,
+    RepeatedRestarts,
+    NoClock,
+    CannotFeed,
+    FoodLow,
+    FoodLikelyOut,
+    DesiccantDue,
+    BatteryBelowFloor,
+    PlansStuck,
+    Unreachable,
+}
+
+/// How soon an alert wants the owner.
+#[frb(mirror(AlertLevel))]
+pub enum _AlertLevel {
+    Urgent,
+    Soon,
+    Security,
 }
 
 #[frb(mirror(Enrolled))]
@@ -49,6 +83,7 @@ pub enum _ClientRole {
     Member,
     Server,
     UpdateSigner,
+    Unknown,
 }
 
 #[frb(mirror(FoodLevel))]
@@ -151,19 +186,21 @@ pub enum _Weekday {
 pub enum _Window {
     Always,
     Between { start: u16, end: u16 },
+    Unknown,
 }
 
 #[frb(mirror(MealReminder))]
 pub enum _MealReminder {
     Off,
     Before { minutes: u8 },
+    Unknown,
 }
 
 #[frb(mirror(Desiccant))]
 pub enum _Desiccant {
     Unset,
-    Unknown,
     Remaining { days: i32, due: bool },
+    Unknown,
 }
 
 #[frb(mirror(TimeSource))]
@@ -210,6 +247,7 @@ pub enum _UpdateRefusal {
     Unconfirmed,
     Battery,
     HeldAsSessionKey,
+    Unknown,
 }
 
 #[frb(mirror(Bank0Blocked))]
@@ -220,6 +258,7 @@ pub enum _Bank0Blocked {
     Extent,
     Changed,
     Read,
+    Unknown,
 }
 
 #[frb(mirror(Bank0Check))]
@@ -227,6 +266,7 @@ pub enum _Bank0Check {
     Unchecked,
     Match,
     Blocked(Bank0Blocked),
+    Unknown,
 }
 
 #[frb(mirror(UpdatePhase))]
@@ -248,6 +288,7 @@ pub enum _UpdateStop {
     Hash,
     Activate,
     Store,
+    Unknown,
 }
 
 #[frb(mirror(MissedReason))]
@@ -255,6 +296,7 @@ pub enum _MissedReason {
     Late,
     Blocked { reason: Blocked },
     Interrupted,
+    Unknown,
 }
 
 #[frb(mirror(StatsSection))]
@@ -458,4 +500,5 @@ pub enum _TraceEntry {
         at_ms: u32,
         motor: TraceMotor,
     },
+    Unknown,
 }

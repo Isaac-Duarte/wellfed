@@ -84,7 +84,9 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | Crate | In short |
 | --- | --- |
 | `wellfed-session` | Noise, HMAC, the setup code and framing, shared with clients |
-| `wellfed-core` | Controller, portions, sensors, motor gate, clock and the stores |
+| `wellfed-signed` | The frozen signed update formats bank 0 checks (manifest, key statements, key ids, image bounds), shared with clients and the server |
+| `wellfed-core` | Device-neutral logic: the clock, the shared slot store with the seed and update stores, the updater's checks, the indicators, the UART records |
+| `wellfed-core-feeder` | The feeder's logic on the SDK: the feed controller, portions, sensors, motor gate, the feed journal, the meal schedule and the pack's floor for feeding |
 | `wellfed-hal-common` | Code both cores link: RAM parking, flash hooks, the boot trial, panics |
 | `wellfed-hal` | The chip HAL: KM4 GPIO, ADC, timers, watchdog, flash leases, the update stage, and the buttons, lights, buzzer and audio drivers |
 | `wellfed-hal-feeder` | The feeder's drivers above the chip HAL: the motor, beams and feedback board, its timer events and the feeding owner |
@@ -94,7 +96,7 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | `wellfed-board` | The board contract: the one board crate `WELLFED_BOARD` names, checked for every item |
 | `wellfed-board-plaf103` | The PLAF103's pins, ADC channels, storage map and safe output state |
 | `wellfed-board-plwf106` | The PLWF106's pins, safe output state and stock flash; no store yet |
-| `wellfed-testkit`, `wellfed-sim` | Fake NOR storage and the virtual feeder |
+| `wellfed-testkit` | Fake NOR storage for host tests |
 | `wellfed-proto` | The device protocol's messages |
 | `wellfed-device-api` | The feeder's side of the device API and pairing |
 | `wellfed-device` | Policy every device shares: the settings, Wi-Fi, client, time, event and trace stores, the reset marker and the update view |

@@ -82,9 +82,16 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
     }
 
     /// A client's table is saved at the wall time now, so a plan it adds
-    /// or moves never runs an occurrence already past. A claimed meal
-    /// keeps its table until its feed has been queued: the writer may
-    /// finish the claim between the schedule's step and this request.
+    /// or moves never runs an occurrence already past.
+    ///
+    /// It waits while a meal's claim is being written, given back or
+    /// settled. The claim, its feed and its release all act on the slot
+    /// they took: a table saved between them would have the release enable
+    /// a plan the owner saved disabled, or the claimed feed give the new
+    /// plan's portions. A stored claim still waiting for the journal is no
+    /// such claim: nothing is queued for it yet, its settle reads the claim
+    /// as the store then holds it, and with a faulted journal the wait
+    /// would last the whole boot.
     fn plans(&mut self, change: Option<Asked<Table>>) -> PlansResult {
         match change {
             None => self.platform.plans(),

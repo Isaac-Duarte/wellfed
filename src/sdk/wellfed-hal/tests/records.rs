@@ -12,10 +12,10 @@ use wellfed_core::ota::SectorStep;
 use wellfed_core::ota::install::{
     Bank0Check, Bank0Error, Blocked, Refused, RefusedReason, Stop, StopStage,
 };
-use wellfed_core::ota::offer::OfferError;
 use wellfed_core::record::{Confirm, Event, Record, Tag, Update, Watch};
 use wellfed_hal::ota::{confirm, update};
 use wellfed_hal::{audio, ble};
+use wellfed_signed::offer::OfferError;
 
 struct Body<F>(F);
 

@@ -12,13 +12,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wellfed_board::storage;
-use wellfed_core::ota::offer::ImageKind;
 use wellfed_core::ota::{self, CONFIRM_LEN};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::store::update::{State, UpdateStore};
 use wellfed_hal::ota::mailbox;
 use wellfed_hal::ota::update::{self as update, Floor, Update};
 use wellfed_hal::trial::{self, Storm};
+use wellfed_signed::offer::ImageKind;
 
 use crate::banks::{Banks, Boot, Bus, Trial};
 use crate::flash::{Flash, Region};

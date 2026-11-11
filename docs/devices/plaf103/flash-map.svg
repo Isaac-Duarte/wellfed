@@ -19,7 +19,7 @@
   <rect class="d-warn" x="40" y="64" width="3" height="72"/>
   <rect class="d-accent" x="43" y="64" width="119" height="72"/>
   <rect class="d-accent" x="162" y="64" width="105" height="72"/>
-  <rect class="d-ok" x="300" y="64" width="15" height="72"/>
+  <rect class="d-ok" x="300" y="64" width="15.6" height="72"/>
   <rect class="d-box" x="352.5" y="64" width="8" height="72"/>
   <rect class="d-box" x="663.4" y="64" width="5" height="72"/>
 
@@ -40,7 +40,7 @@
   <text x="36" y="186" class="d-title">Boot material</text>
   <text x="36" y="204" class="d-mono">0x000000, 24 KiB</text>
   <text x="312" y="232" text-anchor="end" class="d-title">Wellfed storage</text>
-  <text x="312" y="250" text-anchor="end" class="d-mono">0x340000, 48 sectors</text>
+  <text x="312" y="250" text-anchor="end" class="d-mono">0x340000, 50 sectors</text>
   <text x="350" y="280" class="d-title">Stock settings and clock</text>
   <text x="350" y="298" class="d-mono">0x3e8000</text>
   <text x="684" y="186" text-anchor="end" class="d-title">Stock logs, plans, feed records</text>

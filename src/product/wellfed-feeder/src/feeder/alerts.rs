@@ -29,7 +29,8 @@
 //! **`settling`.** A phone takes an alert absent from a complete table to
 //! mean it ended. So until the boot read is done and the thresholds that
 //! began at boot have run out, and while a reading a condition needs is
-//! unknown, `settling` says the table can't vouch for an absence.
+//! unknown (local time among them, which `PlansStuck` needs),
+//! `settling` says the table can't vouch for an absence.
 //!
 //! **After a restart** the boot read passes the newest events of past boots
 //! to [`Alerts::replay`], oldest first, then calls [`Alerts::restored`].
@@ -1011,12 +1012,18 @@ const fn meal_problem(body: &EventBody) -> Option<Alert> {
 }
 
 /// Whether a reading some condition needs is unknown. A battery with no pack
-/// fitted has no verdict to wait for.
+/// fitted has no verdict to wait for. Local time is one: with none, whether
+/// the plans are stuck can't be told, and `PlansStuck` closes only because
+/// its threshold can't run, so an absent one says nothing of the plans.
 const fn unknown_reading(readings: &Readings) -> bool {
     let no_verdict = readings.supply.below_floor.is_none()
         && !matches!(readings.supply.battery, Battery::Absent);
+    let no_local_time = readings.wall_s.is_none() || !readings.zoned;
 
-    readings.food.is_none() || matches!(readings.desiccant, Desiccant::Unknown) || no_verdict
+    readings.food.is_none()
+        || matches!(readings.desiccant, Desiccant::Unknown)
+        || no_verdict
+        || no_local_time
 }
 
 /// Whether the stamp `from` is at least `span_s` before `to`. A clock can

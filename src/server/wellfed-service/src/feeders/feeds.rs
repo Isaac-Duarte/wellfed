@@ -17,7 +17,7 @@ use wellfed_api::{Command, CommandKind, CommandOutcome, FeedRequest, FeederId};
 use wellfed_mirror::MirrorEvent;
 use wellfed_model::Op;
 
-use crate::feeders::commands::done;
+use crate::feeders::commands::{CommandError, done};
 use crate::feeders::journal::{Write, view};
 use crate::{Caller, Error, IdempotencyKey, InternalError, Resource, Result, Service};
 
@@ -70,6 +70,9 @@ impl Service {
             | CommandOutcome::Call { .. }
             | CommandOutcome::Superseded
             | CommandOutcome::Invited { .. } => Err(InternalError::Unexpected.into()),
+            // A newer server's outcome, read back after a downgrade, reads
+            // as unknown.
+            CommandOutcome::Unknown => Err(CommandError::Unknown.into()),
         }
     }
 
@@ -120,7 +123,7 @@ impl Service {
                 };
                 let settle = match update {
                     Ok(MirrorEvent::Event(_) | MirrorEvent::Gap(_) | MirrorEvent::Link(_)) => true,
-                    Ok(MirrorEvent::Sample(_)) => false,
+                    Ok(MirrorEvent::Sample(_) | MirrorEvent::Alerts) => false,
                     Err(RecvError::Lagged(_)) => {
                         updates = updates.resubscribe();
                         true

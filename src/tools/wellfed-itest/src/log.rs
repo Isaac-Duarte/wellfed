@@ -7,7 +7,10 @@
 
 use std::time::Duration;
 
-use wellfed_core::record::{Event, Record};
+use wellfed_core::record::Record;
+use wellfed_core_feeder::record::Owner;
+
+use crate::Event;
 
 /// A longer run without a line break is noise, not a record.
 const MAX_LINE: usize = 4096;
@@ -122,5 +125,5 @@ impl Log {
 
 /// The events of the records on one line, in order.
 pub(super) fn events(line: &str) -> impl Iterator<Item = Event<'_>> {
-    Record::all(line).filter_map(|record| record.event())
+    Record::all(line).filter_map(|record| record.event_with::<Owner>())
 }

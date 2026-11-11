@@ -10,7 +10,7 @@
 //! smaller region is extended with erased sectors, as the device's region
 //! grows upward into blank flash.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -40,6 +40,9 @@ pub struct Flash {
     /// Erases by sector since this process opened the image, for the
     /// statistics.
     erases: RefCell<[u32; STORAGE_SECTORS as usize]>,
+    /// Programs into these sectors fail, leaving them as they were: a
+    /// test's stand-in for a failing part of the NOR.
+    failing: Cell<Option<Sectors>>,
 }
 
 impl Flash {
@@ -49,6 +52,7 @@ impl Flash {
             bytes: RefCell::new(vec![0xff; IMAGE_BYTES]),
             file: None,
             erases: RefCell::new([0; STORAGE_SECTORS as usize]),
+            failing: Cell::new(None),
         })
     }
 
@@ -76,7 +80,13 @@ impl Flash {
             bytes: RefCell::new(bytes),
             file: Some(path.to_owned()),
             erases: RefCell::new([0; STORAGE_SECTORS as usize]),
+            failing: Cell::new(None),
         }))
+    }
+
+    /// Make every program into `sectors` fail from now on, or none.
+    pub fn fail_programs(&self, sectors: Option<Sectors>) {
+        self.failing.set(sectors);
     }
 
     /// Erases by sector since the image was opened.
@@ -143,6 +153,9 @@ impl SlotIo for Region {
         let Some(range) = self.range(slot, offset, bytes.len()) else {
             return false;
         };
+        if self.flash.failing.get() == Some(self.sectors) {
+            return false;
+        }
         {
             let mut image = self.flash.bytes.borrow_mut();
             let target = &mut image[range];

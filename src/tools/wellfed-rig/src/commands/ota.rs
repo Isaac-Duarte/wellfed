@@ -28,7 +28,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::Args;
-use wellfed_core::ota;
 use wellfed_core::ota::install::{Blocked, RefusedReason, StopStage};
 use wellfed_core::record::{self, Confirm, Record, Trial, Update, Watch as Watching};
 use wellfed_formats::capture::arrival;
@@ -1295,7 +1294,7 @@ impl Bench {
         let signers = self.tools.update_signers(&args.keys, &args.config)?;
         require(signers.contains(&bench), || OtaError::ConsumerUnenrolled {
             review: self.rel(review),
-            key_id: wellfed_formats::hex::encode(&ota::offer::key_id(&bench)),
+            key_id: wellfed_session::hex::Lower(&wellfed_signed::offer::key_id(&bench)).to_string(),
         })?;
         say!("Consumer image; the feeder lists the bench key as an update signer");
         Ok(())

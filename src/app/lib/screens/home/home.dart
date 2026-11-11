@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/home/adopt_prompt.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/screens/home/todays_meals.dart';
+import 'package:wellfed/screens/server/server_words.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/install.dart' show PendingInstall;
 import 'package:wellfed/src/rust/api/store.dart';
@@ -12,6 +13,7 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
+import 'package:wellfed/state/server/server.dart' show OtherDevice;
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -20,7 +22,14 @@ import 'package:wellfed/widgets/layout.dart';
 /// Feeder-first Home: one card per feeder this phone knows, large for one
 /// feeder and compact for several.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.fleet, required this.earlierInstall, this.adopt, this.pinsProblem});
+  const HomeScreen({
+    super.key,
+    required this.fleet,
+    required this.earlierInstall,
+    this.adopt,
+    this.pinsProblem,
+    this.askToNotify,
+  });
 
   final FeederFleet fleet;
 
@@ -36,6 +45,12 @@ class HomeScreen extends StatefulWidget {
   /// feeder on bank 0 answers Ready with its stock not yet saved.
   final Future<PendingInstall> Function() earlierInstall;
 
+  /// Asks Android once to let alerts through, as Home shows a feeder of the
+  /// phone's own: the moment the owner sees what they would hear from. Home
+  /// offers it as it opens and as its feeders change, until it says the
+  /// offer is settled. Where alerts run.
+  final Future<bool> Function()? askToNotify;
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -47,6 +62,33 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     unawaited(_readEarlier());
+    if (widget.askToNotify != null) {
+      widget.fleet.addListener(_offer);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _offer());
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.fleet.removeListener(_offer);
+    super.dispose();
+  }
+
+  /// Settled once the callback says so, and never two at once.
+  bool _offered = false;
+  bool _offering = false;
+
+  void _offer() {
+    final Future<bool> Function()? ask = widget.askToNotify;
+    if (ask == null || _offered || _offering) return;
+    _offering = true;
+    unawaited(
+      ask().then((settled) {
+        _offering = false;
+        _offered = settled;
+        if (settled) widget.fleet.removeListener(_offer);
+      }),
+    );
   }
 
   Future<void> _readEarlier() async {
@@ -98,6 +140,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
         if (widget.adopt case final AdoptFlow adopt?)
           for (final KnownFeeder feeder in widget.fleet.adoptable) AdoptPrompt(feeder: feeder, flow: adopt),
+        for (final OtherDevice other in widget.fleet.others) ...[
+          Notice(tone: Tone.neutral, text: otherDeviceWords(other)),
+          const SizedBox(height: Space.s3),
+        ],
       ];
       if (isDesktop) return _DesktopOverview(feeders: feeders, notices: notices);
 

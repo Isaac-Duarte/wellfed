@@ -84,6 +84,10 @@ pub fn blocked_words(reason: Bank0Blocked) -> &'static str {
         Bank0Blocked::Marker | Bank0Blocked::Extent | Bank0Blocked::Read => {
             "bank 0, the recovery copy, is not a readable image: it needs a bench repair"
         }
+        Bank0Blocked::Unknown => {
+            "bank 0, the recovery copy, will not take over for a reason this build cannot name: \
+             update this app or CLI to read it"
+        }
     }
 }
 
@@ -178,7 +182,7 @@ impl<'a> Installer<'a> {
             reading: false,
             settling: false,
             bank: None,
-            digest: wellfed_core::ota::offer::manifest_digest(image.manifest),
+            digest: wellfed_signed::offer::manifest_digest(image.manifest),
             adopting: false,
         }
     }

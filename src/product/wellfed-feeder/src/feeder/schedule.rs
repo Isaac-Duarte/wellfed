@@ -2,7 +2,7 @@
 //! most once ([schedules]).
 //!
 //! **Deciding.** With a valid clock, each enabled plan's latest occurrence
-//! (`wellfed_core::schedule::latest_due`, worked out once a wall-clock
+//! (`wellfed_core_feeder::schedule::latest_due`, worked out once a wall-clock
 //! minute) meets the missed-meal rule (`wellfed_core::clock::wall::occurrence`)
 //! against the plan's mark: at or before it, nothing; at most 15 minutes
 //! late, it runs; later, it is passed and reported missed. Without a valid
@@ -24,6 +24,19 @@
 //! [`RETRY_MS`], within the grace, so a refusing owner costs a few writes
 //! rather than two a pass.
 //!
+//! **A change of zone.** Marks hold occurrences by instant, so a zone
+//! further west puts a plan's minute at a later instant, past the mark of
+//! the meal already fed that local day. A meal fed or skipped that day
+//! never runs again: the schedule keeps each mark with the offset it fell
+//! at, and the same instant at another offset means the offsets changed (a
+//! new zone, or a client's sync replacing the offsets of a feeder with no
+//! zone). If the mark is a meal fed or a client's skip, it then passes,
+//! unreported, the plan's occurrence on the date the mark took
+//! (`same_day_again`) before anything else runs. A meal missed, or a mark
+//! a save left, takes nothing from the day: the meal runs at the new
+//! zone's minute if that is still to come. A restart between the zone's
+//! save and that pass forgets the old offset, and with it the pass.
+//!
 //! **Waiting.** An occurrence that comes due while the feeder cannot feed
 //! (another feed, a join, an install, a held battery) waits, and runs as
 //! soon as it can within the grace; past it, it is missed, with the reason
@@ -34,7 +47,7 @@
 use core::fmt;
 
 use wellfed_core::clock::wall::{Occurrence, occurrence};
-use wellfed_core::schedule::latest_due;
+use wellfed_core_feeder::schedule::{Plan, latest_due, same_day_again};
 use wellfed_device_api::mailbox::{Claim, PLANS, PlansChange, PlansResult, PlansView, PlayResult};
 use wellfed_proto::api::{Blocked, EventBody, MissedReason, Readiness, Refusal, Source};
 
@@ -154,6 +167,13 @@ pub struct Schedule {
     /// No claim before this uptime: the owner refused the last claimed
     /// feed.
     retry_at: Option<u32>,
+    /// Each slot's mark (Unix seconds) and the offset it fell at, as last
+    /// worked out.
+    marked: [Option<(u32, i32)>; PLANS],
+    /// Each slot's occurrence (Unix seconds) a change of zone would run on
+    /// a local day that already had its meal, with the plan it is for:
+    /// passed before anything else runs.
+    again: [Option<(Plan, u32)>; PLANS],
 }
 
 impl Default for Schedule {
@@ -170,6 +190,8 @@ impl Schedule {
             computed: None,
             waiting: None,
             retry_at: None,
+            marked: [None; PLANS],
+            again: [None; PLANS],
         }
     }
 
@@ -407,6 +429,9 @@ impl Schedule {
             return;
         };
         self.compute(view, platform, wall_ms);
+        if self.pass_again(view, platform) {
+            return;
+        }
 
         let judged: [Option<(usize, u64, Occurrence)>; PLANS] = core::array::from_fn(|slot| {
             let due = self.dues[slot]?;
@@ -509,18 +534,76 @@ impl Schedule {
 
     /// Each enabled plan's latest occurrence, worked out again only when
     /// the wall-clock minute or the table changes: the zone's rule is
-    /// costly to evaluate every pass.
+    /// costly to evaluate every pass. So is whether the zone changed under
+    /// a mark, which then names the occurrence to pass.
     fn compute<P: Platform>(&mut self, view: &PlansView, platform: &P, wall_ms: u64) {
         let key = (wall_ms / MINUTE_MS, view.revision);
         if self.computed == Some(key) {
             return;
         }
+        let offset_at = |ms| platform.offset_at(ms);
         for (due, plan) in self.dues.iter_mut().zip(&view.table) {
             *due = plan
                 .filter(|plan| plan.enabled)
-                .and_then(|plan| latest_due(&plan, wall_ms, |ms| platform.offset_at(ms)));
+                .and_then(|plan| latest_due(&plan, wall_ms, offset_at));
+        }
+
+        for slot in 0..PLANS {
+            let mark = view.mark(slot);
+            // The instant last seen keeps its offset unless the zone
+            // changed; the mark may have moved since, within the day.
+            let changed = self.marked[slot].and_then(|(seen, offset)| {
+                let now = offset_at(u64::from(seen) * 1000)?;
+                (now != offset).then_some(offset)
+            });
+            // Only a meal fed or skipped took the day's meal.
+            let taken = view.fed(slot) || view.skipped(slot).is_some();
+            let plan = view.table[slot].filter(|plan| plan.enabled && taken);
+            if let (Some(old_offset), Some(plan), Some(mark)) = (changed, plan, mark) {
+                let again = same_day_again(&plan, u64::from(mark) * 1000, old_offset, offset_at);
+                if let Some(due_s) = again.and_then(|due| u32::try_from(due / 1000).ok()) {
+                    self.again[slot] = Some((plan, due_s));
+                }
+            }
+            self.marked[slot] = mark.and_then(|mark| {
+                let offset = offset_at(u64::from(mark) * 1000)?;
+                Some((mark, offset))
+            });
         }
         self.computed = Some(key);
+    }
+
+    /// Pass the first occurrence a change of zone would run again, if one
+    /// is still ahead of its plan's mark: whether a pass was queued. One
+    /// for a plan since changed, disabled or already past it is dropped.
+    fn pass_again<P: Platform>(&mut self, view: &PlansView, platform: &mut P) -> bool {
+        for slot in 0..PLANS {
+            let Some((plan, due_s)) = self.again[slot] else {
+                continue;
+            };
+            let behind = view.mark(slot).is_some_and(|mark| mark >= due_s);
+            if view.table[slot] != Some(plan) || behind {
+                self.again[slot] = None;
+                continue;
+            }
+
+            let plan = u8::try_from(slot).unwrap_or(u8::MAX);
+            let change = PlansChange::Pass {
+                plan,
+                due_s,
+                revision: view.revision,
+            };
+            if let PlansResult::Current { pending: true, .. } = platform.plans_change(change, None)
+            {
+                self.step = Step::Wait(Expect::Passed {
+                    plan,
+                    due_s,
+                    report: None,
+                });
+            }
+            return true;
+        }
+        false
     }
 
     /// The stored claim behind a restart's uncertain feed, which the

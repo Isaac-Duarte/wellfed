@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/home/feeder_card.dart' show skewWords;
+import 'package:wellfed/screens/server/server_words.dart' show otherDeviceWords;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
@@ -14,8 +15,13 @@ import '../support/fakes.dart';
 const _kitchen = KnownFeeder(identity: 'aa', name: 'Kitchen', address: 'lan:4747');
 const _porch = KnownFeeder(identity: 'bb', name: 'Porch', address: 'lan:4748');
 
-ServerFeeder _listed(String id, String identity, String name, {ServerConnection link = ServerConnection.online}) =>
-    ServerFeeder(id: id, name: name, identity: identity, role: ClientRole.owner, connection: link);
+ServerFeeder _listed(
+  String id,
+  String identity,
+  String name, {
+  ServerConnection link = ServerConnection.online,
+  ServerDevice device = ServerDevice.feeder,
+}) => ServerFeeder(id: id, name: name, device: device, identity: identity, role: ClientRole.owner, connection: link);
 
 /// The phone's book, its ports, a server that lists `listed`, and the fleet.
 Future<(FeederFleet, FakeFeederPorts, FakeServerPorts, FakeBook)> _fleet(
@@ -112,6 +118,7 @@ void main() {
     const ServerFeeder hall = ServerFeeder(
       id: 'id-h',
       name: 'Hall',
+      device: ServerDevice.feeder,
       identity: 'cc',
       role: ClientRole.owner,
       connection: ServerConnection.online,
@@ -130,5 +137,26 @@ void main() {
     expect(state?.connection, Connection.online);
     expect(state?.serverSkew, Skew.feederAhead);
     expect(skewWords(state!), 'Update the Wellfed server: the feeder runs newer firmware');
+  });
+
+  test('a device the app does not serve is listed apart, saying what it needs', () async {
+    final (FeederFleet fleet, _, _, _) = await _fleet([
+      _listed('id-k', 'aa', 'Kitchen'),
+      _listed('id-f', 'dd', 'Fountain', device: ServerDevice.otherKind),
+      _listed('id-n', 'ee', 'Garden', device: ServerDevice.newer),
+    ]);
+    await pumpEventQueue();
+
+    // Neither becomes a feeder, and the list still reads.
+    expect(fleet['dd'], isNull);
+    expect(fleet['ee'], isNull);
+    expect(fleet['aa'], isNotNull);
+    expect(
+      [for (final OtherDevice other in fleet.others) otherDeviceWords(other)],
+      [
+        "Fountain is on the home server, but this app doesn't control that kind of device yet.",
+        'Garden is a kind of device this app does not know yet. Update the app to use it.',
+      ],
+    );
   });
 }

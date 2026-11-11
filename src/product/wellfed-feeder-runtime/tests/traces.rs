@@ -2,8 +2,8 @@
 //! holds it at each step, what a read answers, and what counts as a trace
 //! that never reached storage.
 
-use wellfed_core::feed::controller::MotorCommand;
-use wellfed_core::feed::observe::Observation;
+use wellfed_core_feeder::feed::controller::MotorCommand;
+use wellfed_core_feeder::feed::observe::Observation;
 use wellfed_feeder::trace::DriveFigures;
 use wellfed_feeder_runtime::traces;
 use wellfed_proto::api::{EventBody, FeedOutcome, FeedReason, FoodLevel, Refusal, Source};

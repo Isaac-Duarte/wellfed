@@ -156,7 +156,7 @@ pub fn to_skip(
     }
 
     let now_ms = u64::try_from(now.as_millisecond()).map_err(|_| SkipError::NoneToday { slot })?;
-    let due = wellfed_core::schedule::next_due(&core_plan(&plan), now_ms, offsets(zone))
+    let due = wellfed_core_feeder::schedule::next_due(&core_plan(&plan), now_ms, offsets(zone))
         .and_then(|ms| i64::try_from(ms).ok())
         .and_then(|ms| Timestamp::from_millisecond(ms).ok())
         .filter(|at| same_day(*at, zone, now.to_zoned(zone.clone()).date()))

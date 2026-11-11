@@ -6,8 +6,8 @@
 use std::time::Duration;
 
 use wellfed_api::{
-    ClientRole, Connection as Link, InstallFailure, InstallRequest, InstallState, Model,
-    ReleaseQuery,
+    ClientRole, Connection as Link, InstallFailure, InstallRequest, InstallState, MaybeKnown,
+    Model, ReleaseQuery,
 };
 use wellfed_server_testkit::feeder::{self, Banks, Relay};
 use wellfed_server_testkit::release::{self, SECTOR, project, signed};
@@ -108,7 +108,7 @@ fn a_release_for_another_model_is_refused_and_listed_by_its_model() {
         server.link(id, Link::Online).await;
         let file = release::signed_for(Model::Plwf106, &project(), 7, BUILD, LEN);
         let (fountain, _) = server.service().upload_release(file).await.unwrap();
-        assert_eq!(fountain.model, Model::Plwf106);
+        assert_eq!(fountain.model, Model::Plwf106.into());
 
         let refused = server
             .service()
@@ -125,7 +125,7 @@ fn a_release_for_another_model_is_refused_and_listed_by_its_model() {
             matches!(
                 refused,
                 Error::Install(InstallError::OtherModel {
-                    release: Model::Plwf106,
+                    release: MaybeKnown::Known(Model::Plwf106),
                     device: Model::Plaf103,
                 })
             ),

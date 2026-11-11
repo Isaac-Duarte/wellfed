@@ -14,6 +14,13 @@ ignore = [
     # that drops it. Firmware touches it only through the token
     # `cortex_m::interrupt::free` passes (the flash peer), which carries no data.
     { id = "RUSTSEC-2026-0110", reason = "archived, pulled in by cortex-m 0.7 with no upgrade" },
+    # SQLite before 3.54 can return stale memory when it opens a database
+    # with a crafted `-wal` file beside it. sqlx 0.9 (the latest) caps
+    # libsqlite3-sys below the patched 0.39. Only the owner's server opens a
+    # database, its own, in a data directory nobody else writes: a party who
+    # could plant the `-wal` file could already read and write the database.
+    # Drop this once sqlx allows libsqlite3-sys 0.39.
+    { id = "RUSTSEC-2026-0459", reason = "sqlx 0.9 caps libsqlite3-sys below the fix; the server opens only its own database" },
 ]
 
 [licenses]
@@ -71,7 +78,7 @@ deny = [
     { crate = "wellfed-feeder-runtime", wrappers = ["wellfed-fw-blink", "wellfed-fw-bringup", "wellfed-fw-feeder", "wellfed-fw-qa"], reason = "the feeder's stores on the SDK runtime are linked by firmwares, never by the SDK" },
     { crate = "wellfed-board-plaf103", wrappers = ["wellfed-board"], reason = "every board value reaches the SDK and the product through the board contract, which chooses the board" },
     { crate = "wellfed-board-plwf106", wrappers = ["wellfed-board"], reason = "every board value reaches the SDK and the product through the board contract, which chooses the board" },
-    { crate = "wellfed-hal-feeder", wrappers = ["wellfed-fw-feeder", "wellfed-probes", "wellfed-sim"], reason = "the feeder's drivers sit above the chip HAL: only the feeder firmware, the bring-up probes and the virtual feeder link them" },
+    { crate = "wellfed-hal-feeder", wrappers = ["wellfed-fw-feeder", "wellfed-probes", "wellfed-sim", "wellfed-feeder-sim"], reason = "the feeder's drivers sit above the chip HAL: only the feeder firmware, the bring-up probes, the virtual feeder and the feeder simulator (for the pack's floor) link them" },
     { crate = "wellfed-proto", wrappers = ["wellfed", "wellfed-audit", "wellfed-bench", "wellfed-build", "wellfed-client", "wellfed-connect", "wellfed-device", "wellfed-device-api", "wellfed-device-runtime", "wellfed-device-sim", "wellfed-feeder", "wellfed-feeder-runtime", "wellfed-feeder-sim", "wellfed-flash", "wellfed-formats", "wellfed-fw-feeder", "wellfed-homeassistant", "wellfed-image", "wellfed-install", "wellfed-mirror", "wellfed-model", "wellfed-rig", "wellfed-server-testkit", "wellfed-signing"], reason = "the device API's wire types are product schema; the SDK takes none" },
 ]
 

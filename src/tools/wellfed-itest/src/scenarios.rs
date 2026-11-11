@@ -19,7 +19,9 @@ use std::ops::Deref;
 use std::time::Duration;
 
 use wellfed_core::ota::install::StopStage;
-use wellfed_core::record::{self, Api, Confirm, Event, Trial, Update, Watch};
+use wellfed_core::record::{self, Api, Confirm, Trial, Update, Watch};
+
+use crate::Event;
 use wellfed_formats::bench::catalog;
 use wellfed_formats::require;
 use wellfed_model::Generation;
@@ -285,6 +287,18 @@ pub(super) fn read_settings(ctx: &mut Ctx) -> Result<FeederSettings> {
     Ok(settings)
 }
 
+/// The generation a write against `settings` names: none while the feeder
+/// has none to offer, which only a read-only view lacks.
+pub(super) fn base(settings: &FeederSettings) -> Result<u32> {
+    match settings.generation {
+        Some(generation) => Ok(generation.0),
+        None => Err(ScenariosError::NotWritable {
+            settings: *settings,
+        }
+        .into()),
+    }
+}
+
 /// The change that sets every setting back to `settings`.
 pub(super) fn changes_to(settings: &FeederSettings) -> FeederSettingsPatch {
     FeederSettingsPatch {
@@ -317,7 +331,7 @@ fn shows(settings: &FeederSettings, change: FeederSettingsPatch) -> bool {
 /// Change settings against the generation just read, see the writer save a
 /// newer one, and read the change back; the generation it was made from.
 pub(super) fn set_settings(ctx: &mut Ctx, change: FeederSettingsPatch) -> Result<u32> {
-    let base = read_settings(ctx)?.generation.0;
+    let base = base(&read_settings(ctx)?)?;
     let since = ctx.mark()?;
 
     let answer = ctx.ask(&Ask::PutSettings {
@@ -453,6 +467,7 @@ fn settings_persist(ctx: &mut Ctx) -> Result<()> {
 /// refused as stale and changes nothing.
 fn stale_write(ctx: &mut Ctx, base: u32, change: FeederSettingsPatch) -> Result<()> {
     let current = read_settings(ctx)?;
+    let current_generation = Generation(self::base(&current)?);
     let answer = ctx.ask(&Ask::PutSettings {
         base,
         changes: change,
@@ -462,12 +477,12 @@ fn stale_write(ctx: &mut Ctx, base: u32, change: FeederSettingsPatch) -> Result<
         compact(&answer)
     ));
     let stale = Answer::Refused(Refusal::Stale {
-        current: current.generation,
+        current: current_generation,
     });
     if answer != stale {
         return Err(ScenariosError::NotStale {
             base,
-            current: current.generation,
+            current: current_generation,
             answer,
         }
         .into());

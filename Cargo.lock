@@ -1468,7 +1468,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3194,7 +3194,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3444,9 +3444,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "3.8.0"
+version = "3.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8be15815186873ea063bf005011d16c356804973489e40c39116ae3a2878d1f"
+checksum = "d24a7e92f4bcaa36b97fa93c4fa7ca8f3e669eced949345b3462dba333c7f909"
 dependencies = [
  "chrono",
  "futures",
@@ -3457,6 +3457,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -3542,7 +3543,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3600,7 +3601,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4372,10 +4373,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5152,18 +5153,20 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "utoipa",
  "uuid",
  "wellfed-api",
  "wellfed-client",
  "wellfed-connect",
- "wellfed-core",
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-install",
  "wellfed-model",
  "wellfed-server-client",
  "wellfed-server-testkit",
+ "wellfed-service",
  "wellfed-session",
+ "wellfed-signed",
  "wellfed-signing",
 ]
 
@@ -5182,6 +5185,7 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5266,6 +5270,8 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
+ "wellfed-session",
+ "wellfed-signed",
  "wellfed-signing",
 ]
 
@@ -5281,12 +5287,14 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.21",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-feeder",
  "wellfed-model",
  "wellfed-proto",
  "wellfed-session",
+ "wellfed-signed",
  "wellfed-testkit",
 ]
 
@@ -5307,11 +5315,20 @@ dependencies = [
 name = "wellfed-core"
 version = "0.1.0"
 dependencies = [
- "ed25519-dalek",
  "proptest",
  "sha2 0.10.9",
  "simple-dns",
  "wellfed-session",
+ "wellfed-signed",
+ "wellfed-testkit",
+]
+
+[[package]]
+name = "wellfed-core-feeder"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "wellfed-core",
  "wellfed-testkit",
 ]
 
@@ -5323,6 +5340,7 @@ dependencies = [
  "wellfed-core",
  "wellfed-device-api",
  "wellfed-proto",
+ "wellfed-signed",
  "wellfed-testkit",
 ]
 
@@ -5333,8 +5351,10 @@ dependencies = [
  "proptest",
  "serde",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-proto",
  "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5363,6 +5383,7 @@ dependencies = [
  "wellfed-device-api",
  "wellfed-hal",
  "wellfed-proto",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5378,12 +5399,15 @@ dependencies = [
 name = "wellfed-feeder"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "thiserror 2.0.21",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-proto",
  "wellfed-session",
+ "wellfed-signed",
  "wellfed-testkit",
 ]
 
@@ -5392,6 +5416,7 @@ name = "wellfed-feeder-runtime"
 version = "0.1.0"
 dependencies = [
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-device-runtime",
@@ -5399,6 +5424,7 @@ dependencies = [
  "wellfed-hal",
  "wellfed-proto",
  "wellfed-sdk",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5419,6 +5445,7 @@ dependencies = [
  "wellfed-client",
  "wellfed-connect",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-device-sim",
@@ -5426,9 +5453,11 @@ dependencies = [
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-hal",
+ "wellfed-hal-feeder",
  "wellfed-model",
  "wellfed-proto",
  "wellfed-session",
+ "wellfed-signed",
  "wellfed-sim",
 ]
 
@@ -5450,6 +5479,8 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
+ "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5493,6 +5524,7 @@ version = "0.1.0"
 dependencies = [
  "wellfed-client",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-device-runtime",
@@ -5535,6 +5567,7 @@ dependencies = [
  "wellfed-core",
  "wellfed-hal-common",
  "wellfed-session",
+ "wellfed-signed",
  "wellfed-testkit",
 ]
 
@@ -5547,6 +5580,7 @@ dependencies = [
  "wellfed-board",
  "wellfed-core",
  "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5555,6 +5589,7 @@ version = "0.1.0"
 dependencies = [
  "wellfed-board",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-hal",
  "wellfed-testkit",
 ]
@@ -5568,12 +5603,15 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "uuid",
  "wellfed-client",
  "wellfed-connect",
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-model",
  "wellfed-proto",
+ "wellfed-server-client",
+ "wellfed-server-testkit",
  "wellfed-session",
 ]
 
@@ -5585,9 +5623,10 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
- "wellfed-core",
  "wellfed-formats",
  "wellfed-proto",
+ "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5605,12 +5644,12 @@ dependencies = [
  "uuid",
  "wellfed-client",
  "wellfed-connect",
- "wellfed-core",
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-model",
  "wellfed-proto",
  "wellfed-session",
+ "wellfed-signed",
  "wellfed-signing",
  "wellfed-stock",
 ]
@@ -5625,6 +5664,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-formats",
  "wellfed-model",
  "wellfed-relay",
@@ -5638,6 +5678,8 @@ dependencies = [
  "getrandom 0.3.4",
  "jiff",
  "jiff-tzdb",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -5673,6 +5715,7 @@ name = "wellfed-probes"
 version = "0.1.0"
 dependencies = [
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-hal",
  "wellfed-hal-feeder",
  "wellfed-sdk",
@@ -5715,8 +5758,8 @@ dependencies = [
  "tracing",
  "wellfed-api",
  "wellfed-client",
- "wellfed-core",
  "wellfed-model",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5746,6 +5789,7 @@ dependencies = [
  "wellfed-proto",
  "wellfed-relay",
  "wellfed-session",
+ "wellfed-signed",
  "wellfed-signing",
 ]
 
@@ -5802,6 +5846,7 @@ dependencies = [
  "wellfed-server-client",
  "wellfed-server-testkit",
  "wellfed-service",
+ "wellfed-session",
  "wellfed-store",
 ]
 
@@ -5833,7 +5878,6 @@ dependencies = [
  "wellfed-api",
  "wellfed-client",
  "wellfed-connect",
- "wellfed-core",
  "wellfed-feeder-sim",
  "wellfed-model",
  "wellfed-proto",
@@ -5841,6 +5885,7 @@ dependencies = [
  "wellfed-server-client",
  "wellfed-service",
  "wellfed-session",
+ "wellfed-signed",
  "wellfed-store",
 ]
 
@@ -5868,7 +5913,9 @@ dependencies = [
  "wellfed-model",
  "wellfed-releases",
  "wellfed-server-testkit",
+ "wellfed-session",
  "wellfed-store",
+ "wellfed-webhook",
 ]
 
 [[package]]
@@ -5880,6 +5927,16 @@ dependencies = [
  "sha2 0.10.9",
  "snow",
  "x25519-dalek",
+]
+
+[[package]]
+name = "wellfed-signed"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "proptest",
+ "sha2 0.10.9",
+ "wellfed-session",
 ]
 
 [[package]]
@@ -5895,6 +5952,8 @@ dependencies = [
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
+ "wellfed-session",
+ "wellfed-signed",
 ]
 
 [[package]]
@@ -5908,6 +5967,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-formats",
  "wellfed-hal",
  "wellfed-hal-feeder",
@@ -5922,7 +5982,6 @@ dependencies = [
  "axum",
  "chrono",
  "chrono-tz",
- "clap",
  "hyper",
  "hyper-util",
  "mqtt5",
@@ -5935,12 +5994,34 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "uuid",
+ "wellfed-client",
+ "wellfed-formats",
+ "wellfed-model",
+ "wellfed-signed",
+]
+
+[[package]]
+name = "wellfed-stock-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "reqwest",
+ "rumqttc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
  "tracing-subscriber",
  "uuid",
  "wellfed-client",
- "wellfed-core",
  "wellfed-formats",
- "wellfed-model",
+ "wellfed-session",
+ "wellfed-stock",
 ]
 
 [[package]]
@@ -5966,6 +6047,28 @@ name = "wellfed-testkit"
 version = "0.1.0"
 dependencies = [
  "wellfed-core",
+]
+
+[[package]]
+name = "wellfed-webhook"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "wellfed-api",
+ "wellfed-client",
+ "wellfed-formats",
+ "wellfed-mirror",
+ "wellfed-model",
+ "wellfed-store",
 ]
 
 [[package]]
@@ -5996,7 +6099,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

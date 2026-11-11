@@ -20,6 +20,7 @@
 use std::path::Path;
 
 use serde::Serialize;
+use wellfed_signed::MARKER;
 
 use crate::device;
 use crate::error::Result;
@@ -119,11 +120,6 @@ pub enum DevelopmentError {
 pub const FRAME: usize = 1024;
 pub const FACTORY: (usize, usize) = (0, 0x6000);
 
-/// The first eight bytes of a valid bank (with valid KM0/KM4 signatures).
-/// Bank 1 has priority, so clearing its marker is how bank 0 gets to boot;
-/// see docs/firmware/bank-policy.md.
-pub const MARKER: &[u8; 8] = b"81958711";
-
 /// Whether a layout's bank may be overwritten from its pinned original bytes
 /// instead of a reviewed source image: the PLAF103's bank 0, from a full
 /// read, and the fountain's bank 1, from its pinned backup. Neither holds an
@@ -182,11 +178,11 @@ pub fn guards(
         })?;
     } else if layout.bank == 1 {
         require(
-            other == &baseline.bytes()[at..at + length] || &other[..8] == MARKER,
+            other == &baseline.bytes()[at..at + length] || other[..8] == MARKER,
             || DevelopmentError::Bank0Unknown,
         )?;
     } else {
-        require(&other[..8] == MARKER, || DevelopmentError::Bank1Invalid)?;
+        require(other[..8] == MARKER, || DevelopmentError::Bank1Invalid)?;
     }
 
     require(
@@ -226,7 +222,7 @@ pub fn images(update: &Update, current: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
             let Some(original) = update.original.filter(|o| o.len() == new.len()) else {
                 return Err(DevelopmentError::OriginalMissing.into());
             };
-            require(&original[..8] != MARKER, || DevelopmentError::OriginalValid)?;
+            require(original[..8] != MARKER, || DevelopmentError::OriginalValid)?;
             original
         }
         Some(source) => payload(source, layout)?,
@@ -714,9 +710,9 @@ fn given_way_plan(
     bank0: &[u8],
     bank1_sector: &[u8],
 ) -> Result<GiveWayPlan> {
-    require(&bank0[..8] == MARKER, || DevelopmentError::FallbackUnmarked)?;
+    require(bank0[..8] == MARKER, || DevelopmentError::FallbackUnmarked)?;
     require(
-        bank1_sector.len() == SECTOR && &bank1_sector[..8] == MARKER,
+        bank1_sector.len() == SECTOR && bank1_sector[..8] == MARKER,
         || DevelopmentError::NothingToGiveWay,
     )?;
 

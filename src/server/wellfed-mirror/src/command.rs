@@ -112,7 +112,7 @@ impl LongLane {
 }
 
 /// Queue a command and wait for its answer until `answer` has passed.
-async fn send(
+pub(crate) async fn send(
     commands: &mpsc::Sender<Command>,
     link: Link,
     answer: Duration,
@@ -121,7 +121,10 @@ async fn send(
 ) -> Result<Answer, AskError> {
     match link {
         Link::Online => {}
-        Link::Offline | Link::Connecting | Link::Refused => return Err(AskError::Offline),
+        // `Unknown` is a newer server's state, which this one never holds.
+        Link::Offline | Link::Connecting | Link::Refused | Link::Unknown => {
+            return Err(AskError::Offline);
+        }
     }
 
     let deadline = Instant::now() + answer;

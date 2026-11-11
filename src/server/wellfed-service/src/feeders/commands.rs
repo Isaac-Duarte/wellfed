@@ -180,9 +180,16 @@ impl Service {
             // `Offline`, which is true of the write too (it was refused and
             // nothing ran), and a later retry replays it again. A cached
             // copy would offer a base that may be stale itself.
+            //
+            // Settings with no generation are read-only while the feeder
+            // repairs them: nothing could name a current base, so the
+            // answer is the read-only refusal, not a precondition.
             CommandOutcome::Refused {
                 refusal: FeederRefusal::Stale,
-            } => Err(Error::Stale(self.read_settings(id).await?)),
+            } => match self.read_settings(id).await? {
+                settings if settings.generation().is_some() => Err(Error::Stale(settings)),
+                _ => Err(Error::Refused(FeederRefusal::NotWritable)),
+            },
             CommandOutcome::Refused { refusal } => Err(Error::Refused(refusal)),
             CommandOutcome::Plans { .. }
             | CommandOutcome::Feeding { .. }
@@ -192,6 +199,9 @@ impl Service {
             | CommandOutcome::Call { .. }
             | CommandOutcome::Superseded
             | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
+            // A newer server's outcome, read back after a downgrade, reads
+            // as unknown.
+            CommandOutcome::Unknown => Err(CommandError::Unknown.into()),
         }
     }
 
@@ -292,6 +302,9 @@ pub(crate) fn done(outcome: &CommandOutcome) -> Result<()> {
         | CommandOutcome::Calibration { .. }
         | CommandOutcome::Call { .. }
         | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
+        // A newer server's outcome, read back after a downgrade, reads
+        // as unknown.
+        CommandOutcome::Unknown => Err(CommandError::Unknown.into()),
     }
 }
 

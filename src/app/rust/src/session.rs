@@ -497,7 +497,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             }
             Command::Ask { op, reply } => match Write::of(&op) {
                 Some(write @ (Write::Settings { .. } | Write::Reset { .. })) => {
-                    let known = self.facts.settings.map(|settings| settings.generation);
+                    let known = self.facts.settings.and_then(|settings| settings.generation);
                     let queued = self.out.settings.ask(write, known, reply);
                     return self.queued(queued);
                 }

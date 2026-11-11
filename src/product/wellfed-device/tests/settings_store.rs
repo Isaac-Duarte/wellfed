@@ -1,15 +1,15 @@
-//! Tests for the two-slot settings store: alternating saves, value
-//! validation, a power cut at every byte, newer-schema and foreign-binding
-//! records, torn-slot fallback, the wear limit and the desiccant reminder's
-//! fields.
+//! Tests for the two-slot settings store over the device's record:
+//! alternating saves, value validation, a power cut at every byte,
+//! newer-major, newer-minor and foreign-binding records, torn-slot fallback,
+//! the wear limit and the fields' bytes. The feeder's record, over the same
+//! store, is tested in `wellfed-feeder`.
 //!
 //! Unlike the feed journal, losing the newest change is acceptable: a cut
 //! save must reopen with the old or the new settings and stay writable. A
-//! newer-schema record reads as defaults and is never overwritten until an
-//! explicit reset.
+//! newer-major record reads as defaults and is never overwritten until an
+//! explicit reset; a newer minor reads, and its fields survive a save.
 
-use wellfed_core::feed::progress::BowlMode;
-use wellfed_core::settings::{MealReminder, Window};
+use wellfed_core::settings::Window;
 use wellfed_core::store::slot::{RECORD_BYTES, crc32};
 use wellfed_device::store::settings::{
     Settings, SettingsStatus, SettingsStore, SlotState, VERSION, WEAR_LIMIT,
@@ -20,7 +20,7 @@ const BINDING: u64 = 0x5046_5731_3502_0001;
 const UNITS: [usize; 3] = [UNIT, 4096, 148];
 
 fn open(f: &mut FakeJournalFlash) -> SettingsStore<FlashIo> {
-    let mut s = SettingsStore::default();
+    let mut s: SettingsStore<_> = SettingsStore::default();
     // SAFETY: the fake flash outlives the store in every test.
     unsafe { s.open(f.io(), BINDING) };
     s
@@ -28,19 +28,14 @@ fn open(f: &mut FakeJournalFlash) -> SettingsStore<FlashIo> {
 
 fn custom(volume: u8) -> Settings {
     Settings {
-        bowl_mode: BowlMode::Double,
         lights: false,
         sound: true,
         volume,
-        utc_offset_minutes: -420,
         lights_window: Window::Between {
             start: 1320,
             end: 420,
         },
         sound_window: Window::Always,
-        desiccant_days: 30,
-        desiccant_reset: Some(20_389),
-        meal_reminder: MealReminder::Before { minutes: 5 },
     }
 }
 
@@ -78,15 +73,10 @@ fn invalid_values_are_refused_without_writing() {
             ..Settings::default()
         },
         Settings {
-            utc_offset_minutes: 15 * 60,
-            ..Settings::default()
-        },
-        Settings {
-            meal_reminder: MealReminder::Before { minutes: 0 },
-            ..Settings::default()
-        },
-        Settings {
-            meal_reminder: MealReminder::Before { minutes: 61 },
+            lights_window: Window::Between {
+                start: 1440,
+                end: 0,
+            },
             ..Settings::default()
         },
     ] {
@@ -163,7 +153,8 @@ fn power_cut_at_every_byte_keeps_old_or_new() {
     }
 }
 
-/// A record from a newer version with a valid CRC: read as defaults, never overwritten until reset.
+/// A record from a newer major with a valid CRC: read as defaults, never
+/// overwritten until reset.
 #[test]
 fn newer_schema_is_read_only_until_reset() {
     let mut f = FakeJournalFlash::default();
@@ -194,7 +185,7 @@ fn newer_schema_is_read_only_until_reset() {
 #[test]
 fn foreign_binding_or_garbage_is_corrupt_and_read_only() {
     let mut f = FakeJournalFlash::default();
-    let mut s = SettingsStore::default();
+    let mut s: SettingsStore<_> = SettingsStore::default();
     // SAFETY: the fixture's callbacks are sound for its context, which outlives the call.
     unsafe { s.open(f.io(), BINDING ^ 1) };
     assert!(s.save(&custom(1)));
@@ -278,21 +269,19 @@ fn windows_survive_a_reopen() {
     assert_eq!(s.settings, settings);
 }
 
-/// No migration: a version 1, 2 or 3 record earlier builds wrote is
-/// superseded, so the store opens writable on defaults and the next save
-/// replaces it.
+/// No migration: a record of an earlier major is superseded (major 4 held
+/// the feeder's fields too, which moved to the feeder's record), so the
+/// store opens writable on defaults and the next save replaces it.
 #[test]
 fn an_older_record_opens_empty_and_writable() {
-    for version in [1u16, 2, 3] {
+    for major in [1u8, 2, 3, 4] {
         let mut f = FakeJournalFlash::default();
         let mut s = open(&mut f);
         assert!(s.save(&custom(5)));
-        rewrite(&mut f, |record| {
-            record[8..10].copy_from_slice(&version.to_le_bytes())
-        });
+        rewrite(&mut f, |record| record[8..10].copy_from_slice(&[major, 0]));
 
         let mut s = open(&mut f);
-        assert_eq!(s.status, SettingsStatus::Empty, "version {version}");
+        assert_eq!(s.status, SettingsStatus::Empty, "major {major}");
         assert_eq!(s.slots[0], SlotState::Older);
         assert_eq!(s.settings, Settings::default());
 
@@ -303,115 +292,43 @@ fn an_older_record_opens_empty_and_writable() {
     }
 }
 
+/// A newer minor only adds fields in the spare room: this build reads the
+/// record, and its own save keeps the minor and the field it doesn't know,
+/// so the later build finds them again.
 #[test]
-fn the_meal_reminder_survives_a_reopen_and_turns_off() {
+fn a_newer_minor_reads_and_keeps_its_fields() {
     let mut f = FakeJournalFlash::default();
     let mut s = open(&mut f);
-    assert_eq!(
-        s.settings.meal_reminder,
-        MealReminder::Off,
-        "off by default"
-    );
-    for reminder in [
-        MealReminder::Before { minutes: 1 },
-        MealReminder::Before { minutes: 60 },
-        MealReminder::Off,
-    ] {
-        let settings = Settings {
-            meal_reminder: reminder,
-            ..custom(5)
-        };
-        assert!(s.save(&settings));
-        s = open(&mut f);
-        assert_eq!(s.status, SettingsStatus::Loaded);
-        assert_eq!(s.settings, settings);
-    }
-}
+    assert!(s.save(&custom(5)));
+    rewrite(&mut f, |record| {
+        record[9] = VERSION.minor + 1;
+        record[60] = 0xab;
+    });
 
-/// The desiccant reminder's period and replacement day read back as saved,
-/// whatever the day's sign, and a fresh store holds the default period
-/// with nothing recorded.
-#[test]
-fn the_desiccant_reminder_survives_a_reopen() {
-    let mut f = FakeJournalFlash::default();
     let mut s = open(&mut f);
-    assert_eq!(
-        (s.settings.desiccant_days, s.settings.desiccant_reset),
-        (14, None)
-    );
+    assert_eq!((s.status, s.settings), (SettingsStatus::Loaded, custom(5)));
 
-    for (days, reset) in [
-        (1, Some(0)),
-        (90, Some(-1)),
-        (7, Some(i32::MAX)),
-        (14, None),
-    ] {
-        let settings = Settings {
-            desiccant_days: days,
-            desiccant_reset: reset,
-            ..custom(5)
-        };
-        assert!(s.save(&settings));
-        let r = open(&mut f);
-        assert_eq!(r.status, SettingsStatus::Loaded);
-        assert_eq!(r.settings, settings);
-    }
+    assert!(s.save(&custom(6)));
+    assert_eq!(f.bytes[1][9], VERSION.minor + 1, "the minor is kept");
+    assert_eq!(f.bytes[1][60], 0xab, "its field is kept");
+    let s = open(&mut f);
+    assert_eq!((s.status, s.settings), (SettingsStatus::Loaded, custom(6)));
 }
 
 #[test]
-fn a_period_outside_its_limits_is_refused_without_writing() {
-    let mut f = FakeJournalFlash::default();
-    let mut s = open(&mut f);
-    let before = f.mutations;
-    for days in [0, 91] {
-        let settings = Settings {
-            desiccant_days: days,
-            ..custom(5)
-        };
-        assert!(!s.save(&settings), "{days}");
-    }
-    assert_eq!(f.mutations, before);
-}
-
-#[test]
-fn a_bad_desiccant_field_makes_the_record_invalid() {
+fn a_bad_field_makes_the_record_invalid() {
     for (at, byte) in [
-        // A period of 0 days, and one past the limit.
-        (44, 0),
-        (44, 91),
-        // A flag that is neither 0 nor 1.
-        (45, 2),
-        // A day with the flag clear.
-        (48, 1),
-        // Padding.
-        (46, 1),
-        (52, 1),
-    ] {
-        let mut f = FakeJournalFlash::default();
-        let mut s = open(&mut f);
-        let settings = Settings {
-            desiccant_reset: None,
-            ..custom(5)
-        };
-        assert!(s.save(&settings));
-        rewrite(&mut f, |record| record[at] = byte);
-
-        let s = open(&mut f);
-        assert_eq!(s.status, SettingsStatus::Corrupt, "byte {at} = {byte}");
-    }
-}
-
-#[test]
-fn a_bad_window_or_reminder_makes_the_record_invalid() {
-    for (at, byte) in [
+        // A flag bit past lights and sound.
+        (28, 4),
         // An unknown window kind.
-        (34, 2),
+        (30, 2),
         // An always window with a bound.
-        (36, 1),
+        (32, 1),
         // A start past the last minute of the day (1440 = 0x05a0).
-        (41, 0x05),
-        // A meal reminder past its hour.
-        (31, 61),
+        (37, 0x05),
+        // The spare room, which this build's own minor keeps zero.
+        (40, 1),
+        (119, 1),
     ] {
         let mut f = FakeJournalFlash::default();
         let mut s = open(&mut f);
@@ -422,8 +339,8 @@ fn a_bad_window_or_reminder_makes_the_record_invalid() {
         };
         assert!(s.save(&settings));
         rewrite(&mut f, |record| {
-            if at == 41 {
-                record[40] = 0xa0;
+            if at == 37 {
+                record[36] = 0xa0;
             }
             record[at] = byte;
         });

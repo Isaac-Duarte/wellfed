@@ -13,7 +13,7 @@ dependencies:
   file_selector: 1.0.3
   flutter:
     sdk: flutter
-  flutter_foreground_task: 11.0.3
+  flutter_local_notifications: 22.3.3
   flutter_reactive_ble: 5.6.0
   flutter_rust_bridge: 2.13.0
   flutter_secure_storage: 11.2.0

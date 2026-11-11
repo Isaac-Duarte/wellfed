@@ -52,9 +52,9 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 - **The installer** is the app. Every install from stock runs from the app; the server only installs releases on a feeder already running Wellfed. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
 - **Distribution:** APKs and server builds as GitHub releases. App stores and F-Droid come later. Apple's review of an app that replaces a feeder's firmware is an open question, to settle before any public iPhone release.
 - **App and server together.** With a server configured, the app goes through it first, and straight to the feeder on the LAN only when the server is down ([two paths, one feed](../server/README.md#two-paths-one-feed)). App-direct only was rejected: no remote access, and each person's actions would reach the audit log only through the feeder.
-- **Alerts** are decided by the feeder, which keeps a small table of what is wrong for every client to read ([alerts](alerts.md)). The app doesn't show them yet ([deferred](#deferred)).
+- **Alerts** are decided by the feeder, which keeps a small table of what is wrong for every client to read ([alerts](alerts.md)). The Android app notifies them at home, and away from home through the owner's server, which also posts them to a webhook of the owner's ([the app](../../src/app/README.md#alerts), [server alerts](../server/README.md#alerts)); push is [deferred](#deferred).
 - **Remote access** goes through a reverse proxy in front of the server, or the owner's VPN ([deferred](#deferred)).
-- **Home Assistant pairs with the feeder directly**, as its own client ([below](#home-assistant)).
+- **Home Assistant reaches the feeder directly**, as its own client, **or through the owner's server**, chosen at setup ([below](#home-assistant)).
 
 ## Components
 
@@ -69,13 +69,13 @@ Most of this is design. What has been built and observed is on the [roadmap](../
       history store, release fetching, release installs
       ▲                                            │
       │ HTTP                                       │
-  the CLI                                          │
-  Home Assistant ─────────── Noise stream ─────────┘
+  the CLI, Home Assistant (server route)           │
+  Home Assistant (direct) ── Noise stream ─────────┘
 ```
 
 | Part | Where | What it holds |
 | --- | --- | --- |
-| SDK | `src/sdk/` | Mechanisms only: runtime, clock and time sources, journal, feeding owner, buttons, Noise transport, the BLE link and the updater. It depends on no product crate; where the runtime needs the product's stores (the settings writer, stored Wi-Fi), it calls a hook the product's runtime defines |
+| SDK | `src/sdk/` | Mechanisms only: runtime, clock and time sources, buttons, Noise transport, the BLE link and the updater, device-neutral in `wellfed-core`; a kind's own mechanisms beside it (`wellfed-core-feeder`: the feed controller and its journal; `wellfed-hal-feeder`: the feeding owner and its drivers). It depends on no product crate, and `wellfed-core` names no kind; where the runtime needs the product's stores (the settings writer, stored Wi-Fi) or the kind's logic (the startup's synthetic check), it calls a hook the product's runtime defines |
 | Device policy | `src/product/wellfed-device` | `no_std`: what every device kind keeps (settings, Wi-Fi, client, time, event and trace stores, the reset marker, the update view) |
 | Device runtime | `src/product/wellfed-device-runtime` | Those stores on the SDK: the settings writer and its mailboxes. The writer is generic over a kind's own stores (`writer::Product`), statically, so a fountain links it with no feeder crate |
 | Product policy | `src/product/wellfed-feeder` | `no_std`: schedules, child lock, reminders, history policy, the request and entity model, and the feeder's own stores (plans, calibration, meal call, lifetime statistics). Its loop, `Feeder<P: Platform>::pass`, owns the panel, BLE setup mode, the device API's driver and the event recorder. The host tests and the simulator run the same pass |
@@ -88,7 +88,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 
 ## Frontends
 
-- **The Android app** (`src/app/`) does platform IO in Dart through maintained, permissively licensed plugins: BLE (`flutter_reactive_ble`, carrying the setup bytes), NSD, and a foreground service for the install. Its Rust half, `wellfed-app-bridge`, runs every protocol step through `wellfed-client` and LAN sessions through `wellfed-connect`, over `flutter_rust_bridge`, which also generates the Dart types. An install runs `wellfed-install` on its own thread, asking Dart for what only the phone has. It runs the stock installer through stock's setup access point and the `DL` frame ([consumer installation](consumer-installation.md)). Setup, pairing and the installer always go to the feeder; everything else goes to the server first when there is one.
+- **The Android app** (`src/app/`) does platform IO in Dart through maintained, permissively licensed plugins: BLE (`flutter_reactive_ble`, carrying the setup bytes), NSD and notifications, with its background work (WorkManager and one foreground service) in a little Kotlin of its own, since the plugins for those start engines that take over the Bluetooth plugin. Its Rust half, `wellfed-app-bridge`, runs every protocol step through `wellfed-client` and LAN sessions through `wellfed-connect`, over `flutter_rust_bridge`, which also generates the Dart types. An install runs `wellfed-install` on its own thread, asking Dart for what only the phone has. It runs the stock installer through stock's setup access point and the `DL` frame ([consumer installation](consumer-installation.md)). Setup, pairing and the installer always go to the feeder; everything else goes to the server first when there is one.
 - **Other platforms** are the same app and Rust, each with its own Bluetooth, discovery, network joining and keep-alive. In order: macOS and Linux, which run the install and can hand a feeder to a phone with an owner's invite; iPhone, for setup and daily use; Windows, once there is a machine to test it on. WASM can run the client core later.
 - **The CLI** (`wellfed`) speaks the device API and, under `wellfed server`, the server's HTTP API. It keeps and restores stock's backup but doesn't install from stock, and stays the bench's tool, on Linux.
 - **One UI** means one codebase for one maintainer. The server's HTTP API stays public through `openapi.json` for anyone building another client.
@@ -154,20 +154,20 @@ Anyone should be able to do anything with their feeder's data, so the server kee
 
 ## Home Assistant
 
-A custom integration pairs with the feeder as an ordinary device API client, by an invite, and holds one session to it. It needs no server and no code on the feeder. Its Python is Home Assistant's UI and glue only: the session runs in Rust, in `wellfed-connect` and `wellfed-client` through a PyO3 bridge, so Home Assistant, the app and the CLI share one implementation. It lives in [`src/integrations/homeassistant`](../../src/integrations/homeassistant/README.md), the one Python under `src/`.
+A custom integration reaches each feeder one of two ways, chosen at setup. Directly, it pairs as an ordinary device API client, by an invite, and holds one session to it, with no server. Through the owner's server, it signs in once for a token of its own and follows the feeder over `/api/v1`. Both routes present the same entities under the same unique ids, so an entry can switch routes and keep its history. It needs no code on the feeder. Its Python is Home Assistant's UI and glue only: the sessions run in Rust, in `wellfed-connect`, `wellfed-client` and `wellfed-server-client` through a PyO3 bridge, so Home Assistant, the app and the CLI share one implementation. It lives in [`src/integrations/homeassistant`](../../src/integrations/homeassistant/README.md), the one Python under `src/`.
 
-- **One press, one feed.** Each press goes out once, under a fresh request id, and a feed with no session open isn't sent. A feed whose answer was lost is reported uncertain and never retried. A later `Fed` event naming Home Assistant as its source settles it; with none in the history it is reported unknown, never as a count.
-- **A member, nothing more.** It joins only by a member invite. An invite doesn't say its role until redeemed, so a key an owner invite enrolled revokes itself at once with the right it was just given, and setup asks for a member invite. Firmware installs, Wi-Fi, restarts and removing clients stay with the owner's phone and computer.
+- **One press, one feed.** Each press goes out once, under a fresh request id or idempotency key, and a feed with no session open isn't sent. A feed whose answer was lost is reported uncertain and never retried. Directly, a later `Fed` event naming Home Assistant as its source settles it; through the server, the server's journal does. With no record of it, it is reported unknown, never as a count.
+- **A member, nothing more.** Directly, it joins only by a member invite. An invite doesn't say its role until redeemed, so a key an owner invite enrolled revokes itself at once with the right it was just given, and setup asks for a member invite. Firmware installs, Wi-Fi, restarts and removing clients stay with the owner's phone and computer.
 - **The same day as the app.** Last fed, today's meals, the next meal and the portions fed today come from `wellfed_client::today`, the facts the app's Home card reads.
-- **Its cost:** one of the feeder's four session slots, held while Home Assistant runs, and one of its 8 client keys.
-- **Rejected: through the server's HTTP API**, the route chosen on October 30. It would make Home Assistant need a server, which most owners won't run, and Home Assistant already lives on the LAN with the feeder.
+- **Its cost:** directly, one of the feeder's four session slots, held while Home Assistant runs, and one of its 8 client keys. Through the server, nothing on the feeder: the server holds the session.
+- **Both routes, not one.** Direct alone was the route chosen on October 30, since most owners won't run a server. The server route was added for the beta, so an owner who does run one keeps the history, the audit log and remote access in one place. Neither route is required.
 - **Rejected: the ESPHome native API on the feeder.** It reimplements an unofficial protocol that changes with Home Assistant releases, and spends firmware RAM.
 - **Rejected: MQTT discovery through `wellfed-server`.** It adds a broker and a second protocol, and MQTT can deliver a command twice, so a feed would need its own protection against duplicates.
 - **Rejected: Matter on the feeder.** Its C++ stack wouldn't fit the firmware's flash and RAM headroom or its task slots, it needs a second BLE commissioning path, and Matter has no feeder device type, so a feed would look like an on/off switch.
 
 ## Deferred
 
-- **Showing alerts.** The feeder's rules exist ([alerts](alerts.md)). What the app displays, how a phone hears of an alert away from home and what a server does with one are open ([roadmap](../roadmap.md)). Push on iOS and Android goes through Apple and Google services, which need credentials tied to the app's publisher, so a self-hosted server can't send them alone.
+- **Push alerts.** Away from home the app hears alerts through the owner's server, but only when its periodic job runs, and a phone with no server hears nothing ([roadmap](../roadmap.md)). Push on iOS and Android goes through Apple and Google services, which need credentials tied to the app's publisher, so a self-hosted server can't send them alone.
 - **Remote access.** Only through the owner's server; the owner's VPN is one route.
 
 ## What this asks of the SDK

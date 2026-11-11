@@ -13,9 +13,10 @@
 //! readback; on [`Install::ready`] it records the activation in the update
 //! store, then programs the marker and reads it back.
 
-use super::offer::{Admitted, KeyStatement, OfferError, StatementError};
-use super::{MAX_CHUNK, Program, SECTOR_BYTES, WriteError, Writer};
+use super::{MAX_CHUNK, Program, WriteError, Writer};
 use crate::store::update::UpdateError;
+use wellfed_signed::SECTOR_BYTES;
+use wellfed_signed::offer::{Admitted, KeyStatement, OfferError, StatementError};
 
 /// A minute without a chunk ends the install with bank 1 invalid.
 pub const IDLE_MS: u32 = 60_000;

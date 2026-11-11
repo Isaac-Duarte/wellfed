@@ -39,7 +39,7 @@ Each feed logs, in order:
 7. `PLOWN1 marks id=N homed_ms=… outlet_breaks=… phase=at_mark|unknown` ([calibration](calibration.md)).
 8. `PLOWN1 pins … changed= toggles=`, from a pin watch that samples both GPIO ports on the supervision tick while capture is on.
 
-Outcomes are 1 done, 2 cancelled, 3 expired, 4 failed and 5 uncertain (an interrupted feed, resolved at the next boot). Reasons are the `FeedReason` codes in `wellfed_core::feed::controller`, such as 5 timeout, 6 no feedback, 8 sensor, 9 outlet, 10 overcurrent, 12 output, 13 jammed and 14 mark stuck.
+Outcomes are 1 done, 2 cancelled, 3 expired, 4 failed and 5 uncertain (an interrupted feed, resolved at the next boot). Reasons are the `FeedReason` codes in `wellfed_core_feeder::feed::controller`, such as 5 timeout, 6 no feedback, 8 sensor, 9 outlet, 10 overcurrent, 12 output, 13 jammed and 14 mark stuck.
 
 ### A power cut mid-feed
 

@@ -23,7 +23,6 @@ use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::ServerFeeder;
 use crate::route::core::ServerFailure;
 use crate::route::io::{Router, now_ms};
-use crate::route::server as calls;
 
 fn no_server() -> ServerError {
     ServerError::new(ServerErrorKind::Closed, "no server is configured")
@@ -99,7 +98,7 @@ impl Router {
             Err(error) => error,
         };
         let lost = matches!(
-            calls::failure(&failed),
+            failed.failure(),
             ServerFailure::Interrupted | ServerFailure::OutcomeUnknown
         );
         let error = ServerError::from(failed);

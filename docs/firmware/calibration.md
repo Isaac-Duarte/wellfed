@@ -14,7 +14,7 @@ The feeder has no scale. It knows how many marks passed, never what fell or what
 
 ## Phase
 
-The phase is where the rotor rests between feeds (`RotorPhase`, `wellfed_core::feed::storage`):
+The phase is where the rotor rests between feeds (`RotorPhase`, `wellfed_core_feeder::feed::storage`):
 
 - **At a mark:** the last feed ended `Done`, on its last portion's rise.
 - **Unknown:** the last feed that may have moved the motor ended any other way (cancelled, failed, or uncertain after a reset). The rotor may be anywhere between two marks, or inside one (PA18 LOW).
@@ -40,7 +40,7 @@ A double bowl alternates its crediting direction every second mark, so one mark 
 
 The PLAF103 has one drop hole and feeds clockwise (`Drive0`, PA13 HIGH). Stock also has a double-bowl branch that alternates direction each portion, pauses between, and needs two marks per portion. Nothing on this unit has run it, and with one hole it has nowhere to send a second bowl's food.
 
-So the bowl mode belongs to the build, not a setting. `feeding::BOWL` is `Single`, and the feed journal pins it: a journal written in another mode reads as corrupt. The device API reports it (`Calibration::bowl`) and refuses a `PutCalibration` naming another mode with `Refusal::Unverified`, so the mode exists on the wire with no way to turn it on. A double-bowl build would need its own journal binding and a bench run of the pauses and crediting. The settings record's bowl byte holds `Single`.
+So the bowl mode belongs to the build, not a setting. `feeding::BOWL` is `Single`, and the feed journal pins it: a journal written in another mode reads as corrupt. The device API reports it (`Calibration::bowl`) and refuses a `PutCalibration` naming another mode with `Refusal::Unverified`, so the mode exists on the wire with no way to turn it on. A double-bowl build would need its own journal binding and a bench run of the pauses and crediting. The feeder's settings record (`PLFFDS01`, sectors 48 and 49, `wellfed_feeder::store::settings`) holds the bowl byte, `Single`.
 
 ## Calibration
 
@@ -54,7 +54,7 @@ Only one weight is kept. The food beam (PA17) says only whether food is present,
 
 ### Storage
 
-A dual-slot store, `PLFCAL01` (`wellfed_feeder::store::calibration`), holds the generation, `portion_mg` at bytes 20–23 (0 for none), zero padding, a CRC and a commit marker, pinned in `store_layout.rs`. Its sectors, 34 and 35 of the 48-sector storage region (`storage::CALIBRATION`), were never allocated before, so a build that predates the store never touches them. The settings writer saves it on its write turn, never during a feed, inside a marked attempt like the time settings. The [factory reset](pairing.md#factory-reset) keeps it, since the weight belongs to the hardware.
+A dual-slot store, `PLFCAL01` (`wellfed_feeder::store::calibration`), holds the generation, `portion_mg` at bytes 20–23 (0 for none), zero padding, a CRC and a commit marker, pinned in `store_layout.rs`. Its sectors, 34 and 35 of the storage region (`storage::CALIBRATION`), were never allocated before, so a build that predates the store never touches them. The settings writer saves it on its write turn, never during a feed, inside a marked attempt like the time settings. The [factory reset](pairing.md#factory-reset) keeps it, since the weight belongs to the hardware.
 
 ### Wire
 

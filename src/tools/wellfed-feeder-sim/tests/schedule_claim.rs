@@ -2,7 +2,7 @@
 //! and a device request. That request must not replace the claimed meal.
 
 use wellfed_core::clock::wall::{Origin, Sync};
-use wellfed_core::schedule::{PLANS, Plan, Weekdays};
+use wellfed_core_feeder::schedule::{PLANS, Plan, Weekdays};
 use wellfed_device_api::FeederDevice;
 use wellfed_device_api::mailbox::{
     Asked, MealSkip, NtpServer, PlansChange, PlansResult, TimeSettings,

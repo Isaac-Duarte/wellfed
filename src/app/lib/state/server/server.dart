@@ -38,7 +38,14 @@ final class ServerAbsent extends ServerState {
 /// Logged in to a server.
 final class ServerLinked extends ServerState {
   /// A server at `link`.
-  const ServerLinked({required this.link, required this.feeders, this.account, this.listed = false, this.problem});
+  const ServerLinked({
+    required this.link,
+    required this.feeders,
+    this.others = const [],
+    this.account,
+    this.listed = false,
+    this.problem,
+  });
 
   /// Where it is, and as whom.
   final ServerLink link;
@@ -49,6 +56,10 @@ final class ServerLinked extends ServerState {
   /// The feeders it lists: the last list it gave, kept on the phone, until it
   /// gives a new one.
   final List<ListedFeeder> feeders;
+
+  /// The devices it lists that this app does not serve as feeders, from
+  /// its last list this run: each is shown with what it needs.
+  final List<OtherDevice> others;
 
   /// [feeders] is what the server said since the app started, not only the
   /// kept copy.
@@ -61,15 +72,29 @@ final class ServerLinked extends ServerState {
   ServerLinked copyWith({
     ServerAccount? account,
     List<ListedFeeder>? feeders,
+    List<OtherDevice>? others,
     bool? listed,
     ServerProblem? Function()? problem,
   }) => ServerLinked(
     link: link,
     account: account ?? this.account,
     feeders: feeders == null ? this.feeders : List.unmodifiable(feeders),
+    others: others == null ? this.others : List.unmodifiable(others),
     listed: listed ?? this.listed,
     problem: problem == null ? this.problem : problem(),
   );
+}
+
+/// A device the server lists that this app does not serve as a feeder.
+final class OtherDevice {
+  /// The device named `name`, and what it is to this app.
+  const OtherDevice({required this.name, required this.device});
+
+  /// What the household calls it.
+  final String name;
+
+  /// Why the app does not serve it: never [ServerDevice.feeder].
+  final ServerDevice device;
 }
 
 /// How a login ended.
@@ -147,9 +172,10 @@ class HomeServer extends ChangeNotifier {
   Stream<FoundServer> browse() => _ports.browse();
 
   /// The account may only look: no feeder takes a feed or a change from
-  /// this phone, through the server or its own key.
+  /// this phone, through the server or its own key. A role a newer server
+  /// added grants nothing here, so it only looks too.
   bool get viewer => switch (_state) {
-    ServerLinked(account: ServerAccount(role: ServerRole.viewer)) => true,
+    ServerLinked(account: ServerAccount(role: ServerRole.viewer || ServerRole.unknown)) => true,
     _ => false,
   };
 
@@ -224,12 +250,24 @@ class HomeServer extends ChangeNotifier {
     }
     if (_disposed) return;
 
-    final List<ListedFeeder> listed = [
+    final List<ServerFeeder> current = [
       for (final ServerFeeder feeder in feeders)
-        if (feeder.archivedMs == null) ListedFeeder(id: feeder.id, identity: feeder.identity, name: feeder.name),
+        if (feeder.archivedMs == null) feeder,
     ];
+    final List<ListedFeeder> listed = [
+      for (final ServerFeeder feeder in current)
+        if (feeder.device == ServerDevice.feeder)
+          ListedFeeder(id: feeder.id, identity: feeder.identity, name: feeder.name),
+    ];
+    final List<OtherDevice> others = [
+      for (final ServerFeeder feeder in current)
+        switch (feeder.device) {
+          ServerDevice.feeder => null,
+          ServerDevice.otherKind || ServerDevice.newer => OtherDevice(name: feeder.name, device: feeder.device),
+        },
+    ].nonNulls.toList();
     if (_state case final ServerLinked linked) {
-      _set(linked.copyWith(feeders: listed, listed: true, problem: () => null));
+      _set(linked.copyWith(feeders: listed, others: others, listed: true, problem: () => null));
       await _keep();
     }
   }

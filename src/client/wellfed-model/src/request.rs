@@ -193,6 +193,7 @@ pub enum Bowl {
     /// A mode a newer feeder build added, which this build cannot name.
     /// Written back, the feeder refuses it `Unverified`, as any mode but
     /// its own.
+    #[serde(other)]
     Unknown,
 }
 
@@ -207,6 +208,7 @@ pub enum Phase {
     Unknown,
     /// A resting place a newer feeder build added, which this build cannot
     /// name. Not [`Self::Unknown`], which is a phase of its own.
+    #[serde(other)]
     Newer,
 }
 
@@ -290,6 +292,7 @@ pub enum TimeSource {
     Client,
     Ntp,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 
@@ -303,6 +306,7 @@ pub enum NtpResult {
     Lost,
     Refused,
     /// A value a newer feeder build added, which this build cannot name.
+    #[serde(other)]
     Unknown,
 }
 

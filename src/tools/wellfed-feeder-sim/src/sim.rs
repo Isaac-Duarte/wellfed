@@ -21,10 +21,10 @@ use std::rc::Rc;
 
 use tokio::net::{TcpStream, UdpSocket};
 use wellfed_core::buttons::Gesture;
-use wellfed_core::feed::controller::FeedReason;
 use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_core_feeder::feed::controller::FeedReason;
 use wellfed_device_api::FeederDevice;
-use wellfed_device_api::mailbox::{Asked, KeyResult, MealSkip};
+use wellfed_device_api::mailbox::{Asked, KeyResult, MealSkip, PlansResult, Table};
 pub use wellfed_device_sim::updates::TRIAL_MS;
 use wellfed_device_sim::updates::{Booted, Updates};
 use wellfed_feeder::feeder::{self, Feeder};
@@ -185,6 +185,14 @@ impl Sim {
         self.feeder
             .device(now_ms, &mut self.feeds)
             .skip_meal(slot, due_s, skip, now_ms)
+    }
+
+    /// The client `by`'s whole table, as the device API asks it at `now_ms`
+    /// once its base matched: queued for the writer, or refused.
+    pub fn put_plans(&mut self, now_ms: u32, table: Asked<Table>) -> PlansResult {
+        self.feeder
+            .device(now_ms, &mut self.feeds)
+            .plans(Some(table))
     }
 
     /// The epoch a session connecting at `now_ms` is welcomed under, as the

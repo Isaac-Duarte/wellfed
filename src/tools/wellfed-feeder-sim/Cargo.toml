@@ -14,12 +14,14 @@ wellfed-amebad-sys.workspace = true
 wellfed-board.workspace = true
 wellfed-client.workspace = true
 wellfed-core.workspace = true
+wellfed-core-feeder.workspace = true
 wellfed-device.workspace = true
 wellfed-device-sim.workspace = true
 wellfed-device-api.workspace = true
 wellfed-feeder.workspace = true
 wellfed-formats.workspace = true
 wellfed-hal.workspace = true
+wellfed-hal-feeder.workspace = true
 sha2 = { version = "0.10", default-features = false }
 wellfed-proto.workspace = true
 wellfed-session.workspace = true
@@ -40,6 +42,7 @@ sha2 = "0.10"
 wellfed-connect.workspace = true
 jiff.workspace = true
 wellfed-model.workspace = true
+wellfed-signed.workspace = true
 # The measured mechanism, for a trace shaped like a real feed's.
 wellfed-sim.workspace = true
 tempfile.workspace = true

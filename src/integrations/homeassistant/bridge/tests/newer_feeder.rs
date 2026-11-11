@@ -98,7 +98,13 @@ fn connect(schema: u32) -> (Update, usize) {
         identity: *Keypair::from_secret(FEEDER).public(),
         address: Some(address.to_string()),
     };
-    let feeder = Feeder::start(ClientKey::generate().unwrap(), target, clocks).unwrap();
+    let feeder = Feeder::start(
+        ClientKey::generate().unwrap(),
+        target,
+        clocks,
+        Default::default(),
+    )
+    .unwrap();
 
     let deadline = Instant::now() + WAIT;
     let connected = loop {

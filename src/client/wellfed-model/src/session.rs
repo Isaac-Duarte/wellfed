@@ -57,6 +57,10 @@ pub enum Skew {
     /// update path, the keepalive, invites), so the feeder is the side to
     /// update.
     Legacy,
+    /// A value a newer build added, which this one cannot name. Never
+    /// written to the wire.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The lowest value a pre-revision build's welcome can carry where the
@@ -95,6 +99,90 @@ pub enum Joined {
     Refused(Refusal),
 }
 
+/// A device's kind or model, as names the device API froze: each gains
+/// values only at its end, which [`MaybeKnown`] lets a JSON reader of an
+/// older build meet.
+pub trait DeviceName: Copy + Eq + 'static {
+    const ALL: &'static [Self];
+
+    fn name(self) -> &'static str;
+}
+
+impl DeviceName for DeviceKind {
+    const ALL: &'static [Self] = &DeviceKind::ALL;
+
+    fn name(self) -> &'static str {
+        DeviceKind::name(self)
+    }
+}
+
+impl DeviceName for Model {
+    const ALL: &'static [Self] = &Model::ALL;
+
+    fn name(self) -> &'static str {
+        Model::name(self)
+    }
+}
+
+/// A kind or model of device in the owner's server's JSON. A kind or
+/// model a newer build added reads as `Unknown` (spelled `unknown`), so an
+/// older client lists such a device, shown as needing an update, rather
+/// than failing the whole list. The server never writes `Unknown`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum MaybeKnown<T> {
+    Known(T),
+    Unknown,
+}
+
+impl<T: DeviceName> MaybeKnown<T> {
+    /// The name its JSON spells it by.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Known(value) => value.name(),
+            Self::Unknown => UNKNOWN,
+        }
+    }
+}
+
+impl<T> MaybeKnown<T> {
+    /// The value, when this build knows it.
+    pub fn known(self) -> Option<T> {
+        match self {
+            Self::Known(value) => Some(value),
+            Self::Unknown => None,
+        }
+    }
+}
+
+impl<T> From<T> for MaybeKnown<T> {
+    fn from(value: T) -> Self {
+        Self::Known(value)
+    }
+}
+
+/// How [`MaybeKnown::Unknown`] is spelled.
+const UNKNOWN: &str = "unknown";
+
+impl<T: DeviceName> Serialize for MaybeKnown<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(match self {
+            Self::Known(value) => value.name(),
+            Self::Unknown => UNKNOWN,
+        })
+    }
+}
+
+impl<'de, T: DeviceName> Deserialize<'de> for MaybeKnown<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Ok(T::ALL
+            .iter()
+            .copied()
+            .find(|value| value.name() == name)
+            .map_or(Self::Unknown, Self::Known))
+    }
+}
+
 /// OpenAPI schemas for the wire's device names, which `wellfed-proto`
 /// (`no_std`, with no schema derive) cannot carry itself: a field of
 /// either type names its function in `#[schema(schema_with = ..)]`.
@@ -120,6 +208,36 @@ pub mod schema {
             .schema_type(Type::String)
             .enum_values(Some(Model::ALL.map(Model::name)))
             .description(Some("A device model, which names its kind."))
+            .build()
+    }
+
+    /// [`super::MaybeKnown`] of a [`DeviceKind`]: a kind a newer build added
+    /// reads as `unknown`.
+    pub fn maybe_device_kind() -> Object {
+        let mut names = DeviceKind::ALL.map(DeviceKind::name).to_vec();
+        names.push(super::UNKNOWN);
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .enum_values(Some(names))
+            .description(Some(
+                "A kind of device, which one module of the device API serves; \
+                 `unknown` when a newer build added it.",
+            ))
+            .build()
+    }
+
+    /// [`super::MaybeKnown`] of a [`Model`]: a model a newer build added
+    /// reads as `unknown`.
+    pub fn maybe_model() -> Object {
+        let mut names = Model::ALL.map(Model::name).to_vec();
+        names.push(super::UNKNOWN);
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .enum_values(Some(names))
+            .description(Some(
+                "A device model, which names its kind; `unknown` when a newer \
+                 build added it.",
+            ))
             .build()
     }
 }

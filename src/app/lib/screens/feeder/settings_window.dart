@@ -14,6 +14,7 @@ import 'package:wellfed/widgets/when.dart';
 String windowText(BuildContext context, Window window) => switch (window) {
   Window_Always() => 'Any time',
   Window_Between(:final start, :final end) => '${minuteText(context, start)} to ${minuteText(context, end)}',
+  Window_Unknown() => 'Unknown to this app',
 };
 
 class SettingsWindowRow extends StatelessWidget {
@@ -21,7 +22,7 @@ class SettingsWindowRow extends StatelessWidget {
     super.key,
     required this.feeder,
     required this.settings,
-    required this.online,
+    required this.canChange,
     required this.name,
     required this.on,
     required this.window,
@@ -33,7 +34,9 @@ class SettingsWindowRow extends StatelessWidget {
 
   final FeederController feeder;
   final SettingsView settings;
-  final bool online;
+
+  /// Online, and the settings writable: a change can go.
+  final bool canChange;
   final String name;
   final bool on;
   final Window window;
@@ -48,7 +51,7 @@ class SettingsWindowRow extends StatelessWidget {
     generation: settings.generation,
     builder: (context, shown, windowWrite) => SettingsTile(
       first: first,
-      onTap: online
+      onTap: canChange
           ? () async {
               final Window? chosen = await showDialog<Window>(
                 context: context,
@@ -70,7 +73,7 @@ class SettingsWindowRow extends StatelessWidget {
               label: name,
               child: Switch(
                 value: shownOn,
-                onChanged: online
+                onChanged: canChange
                     ? (next) => unawaited(onWrite.ask(next, () => put(feeder, settings, toggle(next))))
                     : null,
               ),

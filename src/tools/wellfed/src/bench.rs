@@ -271,10 +271,8 @@ impl Bench {
 /// is no such file or it holds no key.
 fn public_key(keys: &Path) -> Option<String> {
     let file = owner::load(keys).ok()?;
-    let secret = wellfed_formats::hex::decode::<32>(&file.secret)?;
-    Some(wellfed_formats::hex::encode(
-        Keypair::from_secret(secret).public(),
-    ))
+    let secret = wellfed_session::hex::decode_array_either_case::<32>(file.secret.as_bytes())?;
+    Some(wellfed_session::hex::Lower(Keypair::from_secret(secret).public()).to_string())
 }
 
 /// The server's session, lent for one command.
@@ -639,9 +637,9 @@ mod tests {
     fn key_file(path: &Path, secret: [u8; 32], feeder: &Threaded) {
         let file = serde_json::json!({
             "version": 1,
-            "secret": wellfed_formats::hex::encode(&secret),
+            "secret": wellfed_session::hex::Lower(&secret).to_string(),
             "label": "bench",
-            "feeders": [{ "identity": wellfed_formats::hex::encode(&feeder.identity) }],
+            "feeders": [{ "identity": wellfed_session::hex::Lower(&feeder.identity).to_string() }],
         });
         fs::write(path, file.to_string()).unwrap();
     }
@@ -673,8 +671,8 @@ mod tests {
         let info = SessionInfo {
             root: root.clone(),
             keys: keys.clone(),
-            owner: wellfed_formats::hex::encode(keypair.public()),
-            identity: wellfed_formats::hex::encode(&feeder.identity),
+            owner: wellfed_session::hex::Lower(keypair.public()).to_string(),
+            identity: wellfed_session::hex::Lower(&feeder.identity).to_string(),
             opened: Some(Opened {
                 kind: connection.kind(),
                 model: connection.model(),

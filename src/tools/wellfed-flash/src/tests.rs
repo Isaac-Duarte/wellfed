@@ -19,10 +19,11 @@ use crate::evidence::journal::Receipt;
 use crate::evidence::session::{Context, Pin};
 use crate::link::protocol::{self, ACK, CAPACITY, EOT, NAK, Port, SECTOR, STX};
 use crate::link::sector::{self, Baseline, START};
-use crate::writers::development::{self, Acquired, BANK0, Layout, MARKER, Update};
+use crate::writers::development::{self, Acquired, BANK0, Layout, Update};
 use wellfed_formats::canonical::sha256;
 use wellfed_image::bank::BANK1;
 use wellfed_image::fixtures::{synthetic_payload, wrap};
+use wellfed_signed::MARKER;
 
 mod banks;
 mod fountain;
@@ -389,7 +390,7 @@ struct Unit {
 fn unit(bank1: &[u8]) -> Unit {
     let mut baseline = noise(CAPACITY, 7);
     baseline[0x6000..0x6008].copy_from_slice(b"\x001958711");
-    baseline[START..START + 8].copy_from_slice(MARKER);
+    baseline[START..START + 8].copy_from_slice(&MARKER);
 
     let mut flash = baseline.clone();
     flash[START..START + bank1.len()].copy_from_slice(bank1);

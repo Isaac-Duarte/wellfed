@@ -77,6 +77,15 @@ pub(crate) struct AppState {
         (name = routes::TAG_BACKUPS, description = "Copies of the server's database, kept in its data directory"),
         (name = routes::TAG_EXPORT, description = "Everything the server holds as one archive, and its import onto a fresh server"),
     ),
+    // Schemas only query parameters name: the routes' own collection
+    // leaves them out, which would hide their values from the document.
+    components(schemas(
+        wellfed_api::CommandStateFilter,
+        wellfed_api::EventKind,
+        wellfed_api::ExportFormat,
+        wellfed_api::MetricKind,
+        wellfed_api::Resolution,
+    )),
 )]
 struct ApiDoc;
 
@@ -132,6 +141,7 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(stock::restore_stock))
         .routes(routes!(events::events))
         .routes(routes!(samples::samples))
+        .routes(routes!(diagnostics::alerts))
         .routes(routes!(diagnostics::trace))
         .routes(routes!(diagnostics::stats))
         .routes(routes!(diagnostics::log))

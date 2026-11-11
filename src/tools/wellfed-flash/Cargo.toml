@@ -15,6 +15,8 @@ wellfed-core.workspace = true
 wellfed-formats = { workspace = true, features = ["clap"] }
 wellfed-image.workspace = true
 wellfed-proto.workspace = true
+wellfed-signed.workspace = true
+wellfed-session.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serialport.workspace = true

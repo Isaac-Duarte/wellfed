@@ -58,6 +58,9 @@ const fn resend(kind: CommandKind) -> Resend {
         // An invite's secret is not kept, so a resend could only make a
         // second invite nobody holds: the caller asks for a new one.
         CommandKind::Invite => Resend::Never,
+        // A newer server's kind, which this one never journals: nothing
+        // here knows how to send it again.
+        CommandKind::Unknown => Resend::Never,
         // A restart forgets the ids, so a reboot resent after one would
         // restart the feeder again; the boot count says whether it ran.
         CommandKind::Reboot => Resend::Never,

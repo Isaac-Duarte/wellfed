@@ -2,15 +2,15 @@
 //! reservation, preparation, feeding, result recording and shutdown.
 
 use wellfed_core::HALF_RANGE;
-use wellfed_core::feed::controller::{
+use wellfed_core::flash_coord::{FlashCoord, FlashFault, FlashPhase};
+use wellfed_core_feeder::feed::controller::{
     FeedController, FeedReason, FeedRequest, FeedStartResult, FeedState, MotorCommand,
 };
-use wellfed_core::feed::food_read::FOOD_READ_MS;
-use wellfed_core::feed::observe::{Beams, Observation};
-use wellfed_core::feed::progress::{BowlMode, Direction};
-use wellfed_core::feed::sensor_inputs::{SensorInputs, SensorReading};
-use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult, OwnerStorage, RotorPhase};
-use wellfed_core::flash_coord::{FlashCoord, FlashFault, FlashPhase};
+use wellfed_core_feeder::feed::food_read::FOOD_READ_MS;
+use wellfed_core_feeder::feed::observe::{Beams, Observation};
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::sensor_inputs::{SensorInputs, SensorReading};
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerResult, OwnerStorage, RotorPhase};
 
 use crate::board::{self, Board, CaptureFault, Channels};
 use crate::events::{Events, EventsSnapshot};

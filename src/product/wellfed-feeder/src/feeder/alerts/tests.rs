@@ -1946,16 +1946,46 @@ fn settling_holds_until_the_boot_read_and_the_boots_thresholds_are_done() {
 fn a_threshold_past_at_boot_ends_settling_too() {
     let mut alerts = Alerts::new();
     alerts.restored(0, History::Whole);
-    let no_clock = Readings {
-        wall_s: None,
+    let blocked = Readings {
+        blocked: Some(Blocked::Journal),
         ..calm()
     };
 
-    alerts.step(0, &no_clock);
+    alerts.step(0, &blocked);
     assert!(alerts.settling());
 
-    alerts.step(NO_CLOCK_MS, &no_clock);
-    assert_eq!(kinds(&alerts), [AlertKind::NoClock]);
+    alerts.step(CANNOT_FEED_MS, &blocked);
+    assert_eq!(kinds(&alerts), [AlertKind::CannotFeed]);
+    assert!(!alerts.settling());
+}
+
+/// No desiccant count and no pack, so no other reading is unknown: with no
+/// local time the table still can't vouch that the plans aren't stuck, as
+/// with none `PlansStuck` closes only because its threshold can't run.
+#[test]
+fn no_local_time_keeps_settling_for_the_plans() {
+    let mut alerts = Alerts::new();
+    alerts.restored(0, History::Whole);
+    for local in [
+        Readings {
+            wall_s: None,
+            desiccant: Desiccant::Unset,
+            ..calm()
+        },
+        Readings {
+            zoned: false,
+            desiccant: Desiccant::Unset,
+            ..calm()
+        },
+    ] {
+        alerts.step(0, &local);
+        alerts.step(NO_CLOCK_MS, &local);
+        alerts.step(NO_CLOCK_MS + PLANS_STUCK_MS, &local);
+        assert_eq!(kinds(&alerts), [AlertKind::NoClock]);
+        assert!(alerts.settling(), "{local:?}");
+    }
+
+    alerts.step(NO_CLOCK_MS + PLANS_STUCK_MS + 1, &calm());
     assert!(!alerts.settling());
 }
 

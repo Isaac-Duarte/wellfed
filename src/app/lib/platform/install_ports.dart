@@ -5,15 +5,16 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart' show getSaveLocation;
 import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter/services.dart' show ByteData, MethodChannel, rootBundle;
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:wellfed/platform/alert_ports.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/setup_link.dart';
+import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 import 'package:wellfed/src/rust/api/install.dart' as rust;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
@@ -142,7 +143,6 @@ class AppInstallPorts implements InstallPorts {
   /// Ports signed by `_key`.
   const AppInstallPorts(this._key);
   static const _wifi = MethodChannel('io.github.isaacduarte.wellfed/wifi');
-  static const _screen = MethodChannel('io.github.isaacduarte.wellfed/screen');
 
   final ClientKey _key;
 
@@ -264,50 +264,17 @@ class AppInstallPorts implements InstallPorts {
   Future<String?> locate(String identity) => Discovery.locate(identity, _locateWait);
 
   @override
-  Future<bool> holdProcess(String text) async {
-    // A locked phone dozes whatever the service asks: the run's own sockets
-    // and discovery stall until someone wakes it.
-    await _screen.invokeMethod<void>('keepOn', true);
-    if (await FlutterForegroundTask.isRunningService) {
-      final ServiceRequestResult updated = await FlutterForegroundTask.updateService(
-        notificationTitle: _notificationTitle,
-        notificationText: text,
-      );
-      return updated is ServiceRequestSuccess;
-    }
-    FlutterForegroundTask.init(
-      androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'install',
-        channelName: 'Installing Wellfed',
-        channelDescription: 'Shown while this phone serves a feeder its firmware.',
-        onlyAlertOnce: true,
-      ),
-      iosNotificationOptions: const IOSNotificationOptions(),
-      foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.nothing(),
-        allowWifiLock: true,
-        allowAutoRestart: false,
-        // A run lives in this process, so swiping the app away ends it, which
-        // the manifest's `android:stopWithTask` says. This option must stay
-        // unset: the plugin takes it to mean stopping the service as soon as
-        // the activity pauses, so a locked screen would drop the service and
-        // its wake and Wi-Fi locks in the middle of a run.
-      ),
-    );
-    final ServiceRequestResult started = await FlutterForegroundTask.startService(
-      notificationTitle: _notificationTitle,
-      notificationText: text,
-    );
-    return started is ServiceRequestSuccess;
-  }
+  Future<bool> holdProcess(String text) => holdFor(AlertHold.install, text);
 
-  static const _notificationTitle = 'Wellfed is installing on a feeder';
+  /// Keep this process up for `run`, saying `text` in the service's notice,
+  /// and catch-ups off the feeders while it goes. Whether Android went along.
+  Future<bool> holdFor(AlertHold run, String text) => runHolds.hold(run, text);
 
   @override
-  Future<void> releaseProcess() async {
-    await _screen.invokeMethod<void>('keepOn', false);
-    await FlutterForegroundTask.stopService();
-  }
+  Future<void> releaseProcess() => releaseFor(AlertHold.install);
+
+  /// `run` is done with this process; another run's hold stays.
+  Future<void> releaseFor(AlertHold run) => runHolds.release(run);
 
   @override
   Future<void> shareBackup(String path) async {

@@ -43,6 +43,12 @@ class FeederFleet extends ChangeNotifier {
   /// The controller of `identity`, if this phone knows it.
   FeederController? operator [](String identity) => _feeders[identity];
 
+  /// The devices the server lists that this app does not serve as feeders.
+  List<OtherDevice> get others => switch (_server?.state) {
+    ServerLinked(:final List<OtherDevice> others) => others,
+    _ => const [],
+  };
+
   /// The feeders this phone paired that the server it is logged in to does
   /// not list, once the server has given its list: each can be adopted.
   List<KnownFeeder> get adoptable {

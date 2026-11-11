@@ -38,6 +38,8 @@ class SettingsTab extends StatelessWidget {
       final SettingsView? settings = feeder.state.card?.settings;
       final owner = feeder.state.role == ClientRole.owner;
       final online = feeder.state.connection == Connection.online;
+      // Read-only settings show what the feeder holds, with nothing to change.
+      final bool canChange = online && (settings?.writable ?? false);
 
       return ListView(
         // Clear of the gesture bar, so the last row is never under it.
@@ -53,6 +55,15 @@ class SettingsTab extends StatelessWidget {
               ),
             )
           else ...[
+            if (!settings.writable) ...[
+              Text(
+                settings.repairing
+                    ? 'The feeder is repairing its settings. Restart it if this lasts.'
+                    : "The feeder can't save settings changes right now.",
+                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
+              ),
+              const SizedBox(height: Space.s4),
+            ],
             if (!owner) ...[
               Text.rich(
                 TextSpan(
@@ -80,7 +91,7 @@ class SettingsTab extends StatelessWidget {
                   SettingsWindowRow(
                     feeder: feeder,
                     settings: settings,
-                    online: online,
+                    canChange: canChange,
                     name: 'Lights',
                     on: settings.lights,
                     window: settings.lightsWindow,
@@ -92,7 +103,7 @@ class SettingsTab extends StatelessWidget {
                   SettingsWindowRow(
                     feeder: feeder,
                     settings: settings,
-                    online: online,
+                    canChange: canChange,
                     name: 'Sounds',
                     on: settings.sound,
                     window: settings.soundWindow,
@@ -100,7 +111,7 @@ class SettingsTab extends StatelessWidget {
                     toggle: (on) => SettingsChanges(sound: on),
                     windowed: (window) => SettingsChanges(soundWindow: window),
                   ),
-                  SettingsVolumeRow(feeder: feeder, settings: settings, online: online),
+                  SettingsVolumeRow(feeder: feeder, settings: settings, online: online, canChange: canChange),
                 ],
               ),
             ),
@@ -108,8 +119,8 @@ class SettingsTab extends StatelessWidget {
               'Reminders',
               Column(
                 children: [
-                  SettingsReminderRow(feeder: feeder, settings: settings, online: online),
-                  SettingsDesiccantRow(feeder: feeder, settings: settings, online: online),
+                  SettingsReminderRow(feeder: feeder, settings: settings, canChange: canChange),
+                  SettingsDesiccantRow(feeder: feeder, settings: settings, canChange: canChange),
                 ],
               ),
             ),

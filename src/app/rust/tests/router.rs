@@ -310,7 +310,7 @@ fn age_pins(dir: &tempfile::TempDir) {
 }
 
 fn identity(sim: &Running) -> String {
-    wellfed_formats::hex::encode(&sim.identity)
+    wellfed_session::hex::Lower(&sim.identity).to_string()
 }
 
 fn uncertain(routed: RoutedFeed) -> PendingWrite {

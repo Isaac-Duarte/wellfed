@@ -190,7 +190,7 @@ impl Baseline {
     pub fn bootable(&self, marker: &[u8]) -> bool {
         match self.model {
             Model::Plaf103 => *marker == self.data[START..START + 8],
-            Model::Plwf106 => *marker == *crate::writers::development::MARKER,
+            Model::Plwf106 => *marker == wellfed_signed::MARKER,
         }
     }
 }
@@ -378,9 +378,10 @@ pub fn restore_sector(
         (start..=end - SECTOR).contains(&offset) && offset.is_multiple_of(SECTOR),
         || SectorError::SectorOutside { offset },
     )?;
-    require(wellfed_formats::hex::is_sha256(expected_before), || {
-        SectorError::BeforeHash
-    })?;
+    require(
+        wellfed_formats::canonical::is_sha256(expected_before),
+        || SectorError::BeforeHash,
+    )?;
 
     let payload = sector_payload(baseline, offset);
     let after = sha256(&payload);

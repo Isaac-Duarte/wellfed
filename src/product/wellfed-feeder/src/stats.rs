@@ -63,7 +63,7 @@ pub const RESTART_SETTLED_MS: u32 = 10 * 60_000;
 /// board's `STORAGE_SECTORS` (which the runtime asserts). The v1 wire's
 /// [`proto::Erases`] lists only the first [`FLASH_SECTORS`]; it never
 /// gains a field, so the rest are kept here for a later variant.
-pub const TOTAL_SECTORS: usize = 48;
+pub const TOTAL_SECTORS: usize = 50;
 
 const _: () = assert!(TOTAL_SECTORS >= FLASH_SECTORS);
 

@@ -150,33 +150,9 @@ pub(crate) const fn choose(access: Access, reach: Reach, now_ms: i64) -> RoutePa
     }
 }
 
-/// How one call to the server failed, as the router tells them apart.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ServerFailure {
-    /// No connection to the server: nothing left the phone.
-    Connect,
-    /// Sent, and the answer was cut off, timed out or could not be read,
-    /// or the server failed inside: it may have run.
-    Interrupted,
-    /// `504 outcome_unknown`: the journal keeps it unknown.
-    OutcomeUnknown,
-    /// `503 feeder_offline`: the server's feeder task never took it, and a
-    /// first attempt's entry is dropped. Nothing ran.
-    FeederOffline,
-    /// The feeder refused it (`409 feeder_refused`): final for the key.
-    FeederRefused,
-    /// A settings or plans write whose base the store moved past: the
-    /// feeder refused it, and nothing ran.
-    Stale,
-    /// The key already names another request: nothing was sent.
-    KeyReused,
-    /// The phone's token no longer holds (`401`), or its account is
-    /// disabled: nothing was sent, and the server is closed to this phone.
-    Unauthorized,
-    /// The server refused before sending anything: forbidden, invalid, a
-    /// redirect.
-    Rejected,
-}
+/// How one call to the server failed, as the router tells them apart:
+/// `wellfed-server-client`'s reading, shared with every server client.
+pub(crate) use wellfed_server_client::Failure as ServerFailure;
 
 /// How one attempt on a path ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -266,12 +242,14 @@ pub(crate) fn settled_by_command(
 ) -> Option<Settlement> {
     match state {
         CommandState::Sent | CommandState::Unknown => None,
-        CommandState::Answered | CommandState::Resolved => outcome.map(settlement_of),
+        CommandState::Answered | CommandState::Resolved => outcome.and_then(settlement_of),
     }
 }
 
-fn settlement_of(outcome: &CommandOutcome) -> Settlement {
-    match outcome {
+/// What `outcome` settles; `None` for one a newer server added, which
+/// leaves the write unsettled, so it is never sent again.
+fn settlement_of(outcome: &CommandOutcome) -> Option<Settlement> {
+    let settlement = match outcome {
         CommandOutcome::Done
         | CommandOutcome::Settings { .. }
         | CommandOutcome::Plans { .. }
@@ -297,7 +275,9 @@ fn settlement_of(outcome: &CommandOutcome) -> Settlement {
             reason: *reason,
         },
         CommandOutcome::Unrecorded => Settlement::Unrecorded,
-    }
+        CommandOutcome::Unknown => return None,
+    };
+    Some(settlement)
 }
 
 /// A feed's end this phone's own session read from the feeder's history.

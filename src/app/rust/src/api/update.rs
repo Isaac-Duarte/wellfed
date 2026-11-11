@@ -12,11 +12,11 @@ use flutter_rust_bridge::frb;
 use wellfed_client::update::{Image, InstallError};
 use wellfed_connect::Connection;
 use wellfed_connect::update::Pushed;
-use wellfed_formats::hex;
 use wellfed_install::event::Event;
 use wellfed_install::push::push;
 use wellfed_install::{Discovery, Review};
 use wellfed_model::{Answer, Op, Readiness, Skew, UpdateView};
+use wellfed_session::hex;
 use wellfed_session::noise::Keypair;
 
 use crate::api::error::{BridgeError, ErrorKind};
@@ -130,11 +130,15 @@ impl FirmwareUpdate {
         let image_dir = self.image_dir.clone();
         let asks = self.asks.clone();
 
+        // Held by the thread itself, through the give-way and bank 0's
+        // restart, which outlive an engine swiped away.
+        let held = crate::alerts::RunThread::hold();
         // The driver's futures are not Send, so it keeps a thread.
         let thread = std::thread::Builder::new()
             .name("wellfed-update".into())
             .stack_size(STACK)
             .spawn(move || {
+                let _held = held;
                 let updates = Arc::new(updates);
                 let heard = updates.clone();
                 *asks.deliver() = Some(Box::new(move |update| match update {
@@ -220,10 +224,9 @@ async fn try_update(
                 return Ok(session);
             }
         }
-        let found = discovery
-            .locate(feeder)
-            .await
-            .ok_or_else(|| wellfed_connect::Error::NotFound(hex::encode(&feeder[..8])))?;
+        let found = discovery.locate(feeder).await.ok_or_else(|| {
+            wellfed_connect::Error::NotFound(hex::Lower(&feeder[..8]).to_string())
+        })?;
         let ephemeral = wellfed_install::session::random()?;
         let session = Connection::open(keys, feeder, found, ephemeral).await?;
         last.set(Some(found));

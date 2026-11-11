@@ -7,14 +7,14 @@
 mod common;
 
 use common::*;
-use wellfed_core::feed::controller::{
+use wellfed_core::flash_coord::FlashCoord;
+use wellfed_core_feeder::feed::controller::{
     FeedController, FeedLimits, FeedReason, FeedRequest, FeedSample, FeedStartResult, FeedState,
     MotorCommand,
 };
-use wellfed_core::feed::feedback::FeedbackFault;
-use wellfed_core::feed::motor_gate::MotorGateFault;
-use wellfed_core::feed::progress::{BowlMode, Direction};
-use wellfed_core::flash_coord::FlashCoord;
+use wellfed_core_feeder::feed::feedback::FeedbackFault;
+use wellfed_core_feeder::feed::motor_gate::MotorGateFault;
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
 use wellfed_hal::sdk::fake::{self, GPIOA_IRQ, TIMER2_IRQ};
 use wellfed_hal::sdk::{self, Irq, TIM_CR_CNT_STS};
 use wellfed_hal_feeder::board::{Board, MOTOR_MASK};

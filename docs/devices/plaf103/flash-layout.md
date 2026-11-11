@@ -12,7 +12,7 @@ The drawing is to scale. Most of the front half is two banks, each big enough fo
 %% svg: flash-map.svg
 flowchart LR
   boot["0x000000<br/>Boot material, 24 KiB"] --> bank0["0x006000<br/>Bank 0, 1.5 MiB"] --> bank1["0x186000<br/>Bank 1, 1.3 MiB"]
-  bank1 --> gap1["not mapped"] --> storage["0x340000<br/>Wellfed storage, 48 sectors"] --> gap2["not mapped"]
+  bank1 --> gap1["not mapped"] --> storage["0x340000<br/>Wellfed storage, 50 sectors"] --> gap2["not mapped"]
   gap2 --> settings["0x3e8000<br/>Stock settings and clock"] --> gap3["not mapped"] --> records["0x7cb000<br/>Stock logs, plans, feed records"]
 ```
 
@@ -22,7 +22,7 @@ flowchart LR
 | `0x006000` | Bank 0 start |
 | `0x186000` | Bank 1 start, the stock recovery target |
 | `0x186000–0x2d6000` | Stock's footprint in bank 1, as reviewed |
-| `0x340000–0x370000` | Wellfed's storage region, 48 sectors ([below](#wellfeds-storage-region)) |
+| `0x340000–0x372000` | Wellfed's storage region, 50 sectors ([below](#wellfeds-storage-region)) |
 | `0x3e8000–0x3f0000` | Stock settings sectors |
 | `0x3f0000–0x400000` | Stock clock-checkpoint block. Stock block-erases it when it saves the clock. Preserved (`clock_checkpoint_block`). |
 | `0x400000–0x401000` | Stock audio-start sector |
@@ -43,7 +43,7 @@ The region is `STORAGE_OFFSET`/`STORAGE_SECTORS` in firmware, and `wellfed_board
 | Sectors | Owner |
 | --- | --- |
 | 0–1 | Feeding journal |
-| 2–3 | Settings |
+| 2–3 | Device settings |
 | 4 | Confirmation record |
 | 5–6 | Wi-Fi credentials |
 | 7–8 | Seed |
@@ -58,6 +58,7 @@ The region is `STORAGE_OFFSET`/`STORAGE_SECTORS` in firmware, and `wellfed_board
 | 36 | Factory reset marker |
 | 37–39 | Uplink store (reserved) |
 | 40–47 | Meal call clip |
+| 48–49 | Feeder settings |
 
 The region only grows upward. A sector keeps its address, and a build compiled for a smaller region never reaches the sectors added after it.
 
@@ -80,5 +81,5 @@ The SDK's `device` and `firstboot` profiles overlay the stock-derived bank addre
 - **Recovered:** the SDK's placement of boot material in `0x000000–0x006000`, and stock's block erase of the clock-checkpoint block on its clock save.
 - **Observed:** the stock settings, audio-start, log, plan-record and error-record sectors.
 - **Modeled:** running the factory loader's instructions against modeled ROM and MMIO accepts the reviewed diagnostic in both bank fixtures. It is not a full reset-path or power-cut simulation.
-- **Storage region growth:** the owner extended the region from 16 sectors on October 23, 2026, and from 32 to 48 on October 26. Both rest on a static pass that found no stock access in `0x306000–0x3e8000`, and on all 15 full dumps reading blank there ([resource budget](../../firmware/resource-budget.md)).
+- **Storage region growth:** the owner extended the region from 16 sectors on October 23, 2026, from 32 to 48 on October 26, and from 48 to 50 (`0x370000–0x372000`, the feeder's settings) on November 9. Each rests on a static pass that found no stock access in `0x306000–0x3e8000`, and on all 15 full dumps reading blank there; the factory loader only checks the two banks' markers ([resource budget](../../firmware/resource-budget.md#the-storage-region)).
 - **Observed, October 27, 2026 (flash clock):** at 80 MHz, bank 0's downloads faulted at random sectors and one readback returned a single flipped bit. At 50 MHz the calibration window read 29–31 over 15 boots, against 11–17 at 80 MHz, and 8 of 8 alternating over-the-air installs through bank 0 passed with no fault. That is one evening's runs: the 72-hour run of November 1 to 4 had no installs ([testing](../../guide/how-it-works/testing.md)).

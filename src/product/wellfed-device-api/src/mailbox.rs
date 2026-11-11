@@ -5,7 +5,9 @@
 //!
 //! Sans-IO and allocation-free, like the rest of the crate. The settings'
 //! and a tune's types are the SDK's: its settings mailbox and speaker carry
-//! them for every firmware.
+//! them for every firmware. The settings a `settings` request reads and
+//! writes are the device's with the feeder's own beside them
+//! ([`FeederSettings`]), since the request is the feeder module's.
 
 use wellfed_core::clock::wall::{Jump, Sync, SyncError};
 pub use wellfed_core::clock::wall::{Origin, State as ClockState};
@@ -15,9 +17,15 @@ use wellfed_core::named_enum;
 use crate::KeyChange;
 use wellfed_proto::api::{EventBody, Source};
 
-pub use wellfed_core::settings::{
-    MAX_VOLUME, MealReminder, SettingsFields, SettingsResult, SettingsView, Window,
-};
+pub use wellfed_core::settings::{KindSettings, MAX_VOLUME, SaveOutcome, Saved, Window};
+pub use wellfed_core_feeder::settings::{FeederFields, FeederSettings, MealReminder};
+
+/// A `settings` request's fields: the device's and the feeder's.
+pub type SettingsFields = wellfed_core::settings::SettingsFields<FeederSettings>;
+/// The settings a `settings` reply reports: the device's and the feeder's.
+pub type SettingsView = wellfed_core::settings::SettingsView<FeederSettings>;
+/// How a `settings` request ended.
+pub type SettingsResult = wellfed_core::settings::SettingsResult<FeederSettings>;
 pub use wellfed_core::tone::PlayResult;
 
 /// The fields of a `lock` request; none present reads the lock.
@@ -412,7 +420,7 @@ impl Lock {
     }
 }
 
-pub use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
+pub use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
 
 /// The occurrence the loop took before feeding it: the plan in slot
 /// `plan`, due at `due_s` (Unix seconds), fed as the next feed after
@@ -441,6 +449,9 @@ pub struct PlansView {
     /// Bit `slot` set: that slot's mark is a client's skip of the
     /// occurrence at it ([`Self::skipped`]).
     pub skips: u16,
+    /// Bit `slot` set: that slot's mark is an occurrence the schedule fed
+    /// ([`Self::fed`]).
+    pub fed: u16,
     pub claim: Option<Claim>,
     /// Bumped by every change to the table (a client's, or a plan that
     /// ran once disabling itself), never by a mark: a client's `base`.
@@ -462,6 +473,17 @@ impl PlansView {
             .filter(|claim| usize::from(claim.plan) == plan)
             .map_or(0, |claim| claim.due_s);
         Some(mark.max(claimed)).filter(|&mark| mark != 0)
+    }
+
+    /// Whether slot `plan`'s mark is a meal the schedule took: its claim's
+    /// occurrence, or one a later claim folded into the mark. A meal missed
+    /// or interrupted, a skip and a save are not.
+    pub fn fed(&self, plan: usize) -> bool {
+        let mark = self.marks.get(plan).copied().unwrap_or(0);
+        let claimed = self
+            .claim
+            .is_some_and(|claim| usize::from(claim.plan) == plan && claim.due_s > mark);
+        claimed || (plan < PLANS && self.fed & (1 << plan) != 0)
     }
 
     /// The occurrence (Unix seconds) slot `plan`'s skip names, while the

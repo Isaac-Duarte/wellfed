@@ -12,11 +12,22 @@ import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/settings_list.dart';
 
 class SettingsVolumeRow extends StatelessWidget {
-  const SettingsVolumeRow({super.key, required this.feeder, required this.settings, required this.online});
+  const SettingsVolumeRow({
+    super.key,
+    required this.feeder,
+    required this.settings,
+    required this.online,
+    required this.canChange,
+  });
 
   final FeederController feeder;
   final SettingsView settings;
+
+  /// The test sound plays while online: it changes no setting.
   final bool online;
+
+  /// Online, and the settings writable: a change can go.
+  final bool canChange;
 
   Future<void> _play(BuildContext context) async {
     final FeederReply reply = await feeder.ask(const FeederRequest.play(tune: Tune.test));
@@ -40,7 +51,7 @@ class SettingsVolumeRow extends StatelessWidget {
               child: Slider(
                 value: volume,
                 max: 100,
-                onChanged: online ? write.hold : null,
+                onChanged: canChange ? write.hold : null,
                 onChangeEnd: (end) {
                   final int asked = end.round();
                   unawaited(write.ask(asked.toDouble(), () => put(feeder, settings, SettingsChanges(volume: asked))));
@@ -68,11 +79,13 @@ class SettingsVolumeRow extends StatelessWidget {
 }
 
 class SettingsReminderRow extends StatelessWidget {
-  const SettingsReminderRow({super.key, required this.feeder, required this.settings, required this.online});
+  const SettingsReminderRow({super.key, required this.feeder, required this.settings, required this.canChange});
 
   final FeederController feeder;
   final SettingsView settings;
-  final bool online;
+
+  /// Online, and the settings writable: a change can go.
+  final bool canChange;
 
   @override
   Widget build(BuildContext context) => Pending<MealReminder>(
@@ -80,7 +93,7 @@ class SettingsReminderRow extends StatelessWidget {
     generation: settings.generation,
     builder: (context, reminder, write) => SettingsTile(
       first: true,
-      onTap: online
+      onTap: canChange
           ? () async {
               final MealReminder? chosen = await showDialog<MealReminder>(
                 context: context,
@@ -109,6 +122,7 @@ class SettingsReminderRow extends StatelessWidget {
             child: SettingsWords('Before each meal', switch (reminder) {
               MealReminder_Off() => 'Off',
               MealReminder_Before(:final minutes) => '$minutes minutes ahead',
+              MealReminder_Unknown() => 'Unknown to this app',
             }),
           ),
           StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
@@ -119,11 +133,13 @@ class SettingsReminderRow extends StatelessWidget {
 }
 
 class SettingsDesiccantRow extends StatefulWidget {
-  const SettingsDesiccantRow({super.key, required this.feeder, required this.settings, required this.online});
+  const SettingsDesiccantRow({super.key, required this.feeder, required this.settings, required this.canChange});
 
   final FeederController feeder;
   final SettingsView settings;
-  final bool online;
+
+  /// Online, and the settings writable: a change can go.
+  final bool canChange;
 
   @override
   State<SettingsDesiccantRow> createState() => _DesiccantRowState();
@@ -173,7 +189,7 @@ class _DesiccantRowState extends State<SettingsDesiccantRow> {
       generation: widget.settings.generation,
       builder: (context, period, write) => SettingsTile(
         first: false,
-        onTap: widget.online ? () => unawaited(_period(write)) : null,
+        onTap: widget.canChange ? () => unawaited(_period(write)) : null,
         // The button drops under the words when large text leaves no room beside them.
         child: SizedBox(
           width: double.infinity,
@@ -189,7 +205,7 @@ class _DesiccantRowState extends State<SettingsDesiccantRow> {
                   minimumSize: const Size(0, 48),
                   padding: const EdgeInsets.symmetric(horizontal: Space.s3),
                 ),
-                onPressed: widget.online && !_asking ? _changed : null,
+                onPressed: widget.canChange && !_asking ? _changed : null,
                 child: const Text('Mark changed'),
               ),
             ],

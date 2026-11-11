@@ -11,11 +11,12 @@ use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, Stamp};
 use wellfed_device_runtime::keys::{self, Change, Requested};
 use wellfed_device_runtime::writer::{self as writer, KeyChange, KeyResult, WriteEvent};
 use wellfed_device_runtime::{asked, events, network};
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::writer::{Record, Writer};
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
+use wellfed_hal::rng;
 use wellfed_hal::sdk::fake;
-use wellfed_hal::{rng, settings};
 use wellfed_proto::api::{EventBody, Path, Source};
 
 use crate::support::{
@@ -253,7 +254,7 @@ fn queue_client_writes() {
         ..SettingsFields::default()
     };
     assert!(matches!(
-        asked::settings_request(louder, Some(ASKED)),
+        asked::settings_request(&SETTINGS, louder, Some(ASKED)),
         SettingsResult::Current { pending: true, .. }
     ));
 }
@@ -289,7 +290,7 @@ fn client_writes_record_their_events_in_the_writers_turn() {
     for _ in 0..3 {
         step(&mut writer, &mut provider);
     }
-    assert_eq!(settings::pending(), None);
+    assert_eq!(SETTINGS.pending(), None);
     assert_eq!(events::last_seq(), Some(last + 3), "past the full queue");
 
     assert_eq!(events::take_written(), None, "no alert rule acts on these");
@@ -327,13 +328,13 @@ fn writes_nobody_asked_for_record_nothing() {
         volume: Some(current().2),
         ..SettingsFields::default()
     };
-    asked::settings_request(unchanged, Some(ASKED));
+    asked::settings_request(&SETTINGS, unchanged, Some(ASKED));
     step(&mut writer, &mut provider);
     let louder = SettingsFields {
         volume: Some(7),
         ..SettingsFields::default()
     };
-    settings::request(louder);
+    SETTINGS.request(louder);
     step(&mut writer, &mut provider);
     assert_eq!(current().2, 7, "saved");
 
@@ -352,11 +353,11 @@ fn a_settings_change_that_waits_out_a_feed_keeps_its_event() {
         volume: Some(7),
         ..SettingsFields::default()
     };
-    asked::settings_request(louder, Some(ASKED));
+    asked::settings_request(&SETTINGS, louder, Some(ASKED));
     for _ in 0..5 {
         assert_eq!(step(&mut writer, &mut provider), None, "waits its turn");
     }
-    assert!(settings::pending().is_some());
+    assert!(SETTINGS.pending().is_some());
 
     INTERLOCK.release_feed();
     let Some(Record::Saved { event, .. }) = step(&mut writer, &mut provider) else {
@@ -374,7 +375,7 @@ fn a_settings_change_that_waits_out_a_feed_keeps_its_event() {
         volume: Some(3),
         ..SettingsFields::default()
     };
-    settings::request(quieter);
+    SETTINGS.request(quieter);
     let Some(Record::Saved { event, .. }) = step(&mut writer, &mut provider) else {
         panic!("saved");
     };
@@ -447,7 +448,7 @@ fn a_cut_after_a_client_write_loses_only_its_event() {
         volume: Some(7),
         ..SettingsFields::default()
     };
-    asked::settings_request(louder, Some(ASKED));
+    asked::settings_request(&SETTINGS, louder, Some(ASKED));
     assert!(matches!(
         step(&mut writer, &mut provider),
         Some(Record::Saved { .. })

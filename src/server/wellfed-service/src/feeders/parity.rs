@@ -36,9 +36,6 @@ pub enum NoRoute {
     /// It needs a press at the feeder, so the owner runs it at the feeder
     /// with the CLI.
     AtTheFeeder,
-    /// No app screen shows it, so the app never asks: the feeder's alert
-    /// table, which the CLI reads from the feeder.
-    NotInApp,
 }
 
 /// The server route for a device operation, or why it has none.
@@ -86,6 +83,8 @@ pub const fn parity(op: &Op) -> Parity {
         Op::PlayCall => Route(Post, "/feeders/{id}/call/play"),
         Op::SkipMeal { .. } => Route(Post, "/feeders/{id}/meals/skip"),
         Op::UnskipMeal { .. } => Route(Post, "/feeders/{id}/meals/unskip"),
-        Op::GetAlerts => Without(NoRoute::NotInApp),
+        // The mirror reads the table whenever the status shows it moved,
+        // and the route serves what it kept.
+        Op::GetAlerts => Route(Get, "/feeders/{id}/alerts"),
     }
 }

@@ -33,8 +33,10 @@ wellfed-board = { path = "src/sdk/wellfed-board" }
 wellfed-board-plaf103 = { path = "src/sdk/wellfed-board-plaf103" }
 wellfed-board-plwf106 = { path = "src/sdk/wellfed-board-plwf106" }
 wellfed-core = { path = "src/sdk/wellfed-core" }
+wellfed-core-feeder = { path = "src/sdk/wellfed-core-feeder" }
 wellfed-proto = { path = "src/product/wellfed-proto" }
 wellfed-session = { path = "src/sdk/wellfed-session" }
+wellfed-signed = { path = "src/sdk/wellfed-signed" }
 wellfed-probes = { path = "src/sdk/wellfed-probes" }
 wellfed-sdk = { path = "src/sdk/wellfed-sdk" }
 wellfed-sdk-macros = { path = "src/sdk/wellfed-sdk-macros" }
@@ -53,17 +55,18 @@ wellfed-api = { path = "src/server/wellfed-api" }
 wellfed-store = { path = "src/server/wellfed-store" }
 wellfed-mirror = { path = "src/server/wellfed-mirror" }
 wellfed-releases = { path = "src/server/wellfed-releases" }
+wellfed-webhook = { path = "src/server/wellfed-webhook" }
 wellfed-service = { path = "src/server/wellfed-service" }
 wellfed-server = { path = "src/server/wellfed-server" }
 wellfed-server-client = { path = "src/client/wellfed-server-client" }
 wellfed-server-testkit = { path = "src/server/wellfed-server-testkit" }
-wellfed-formats = { path = "src/tools/wellfed-formats" }
-wellfed-stock = { path = "src/tools/wellfed-stock" }
+wellfed-formats = { path = "src/client/wellfed-formats" }
+wellfed-stock = { path = "src/client/wellfed-stock" }
 wellfed-emu = { path = "src/tools/wellfed-emu" }
-wellfed-image = { path = "src/tools/wellfed-image" }
-wellfed-signing = { path = "src/tools/wellfed-signing" }
+wellfed-image = { path = "src/client/wellfed-image" }
+wellfed-signing = { path = "src/client/wellfed-signing" }
 wellfed-testkit = { path = "src/sdk/wellfed-testkit" }
-wellfed-sim = { path = "src/sdk/wellfed-sim" }
+wellfed-sim = { path = "src/tools/wellfed-sim" }
 # Host tools.
 anyhow = "1.0.104"
 axum = "0.8.9"

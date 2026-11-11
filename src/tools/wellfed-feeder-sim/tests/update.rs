@@ -21,8 +21,6 @@ use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
 use wellfed_client::update_key::{self, Enroll, EnrollError, Enrolled};
 use wellfed_connect::Connection;
 use wellfed_core::ota::install::IDLE_MS;
-use wellfed_core::ota::offer::{self, ImageKind, Signed, key_id};
-use wellfed_core::ota::{MARKER, Manifest, SECTOR};
 use wellfed_feeder::feeder::supply::RADIO_OFF_MS;
 use wellfed_feeder_sim::banks::{Banks, Trial};
 use wellfed_feeder_sim::flash::Flash;
@@ -34,6 +32,8 @@ use wellfed_model::{
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
+use wellfed_signed::offer::{self, ImageKind, Signed, key_id};
+use wellfed_signed::{MARKER, Manifest, SECTOR};
 
 const OWNER: [u8; 32] = [0x22; 32];
 const BENCH: [u8; 32] = [0x0b; 32];

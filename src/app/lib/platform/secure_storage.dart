@@ -10,3 +10,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 const FlutterSecureStorage secureStorage = FlutterSecureStorage(
   mOptions: MacOsOptions(usesDataProtectionKeychain: false),
 );
+
+/// What secure storage calls this phone's client secret.
+const clientSecretName = 'client-secret';

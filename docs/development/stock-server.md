@@ -6,12 +6,12 @@ The server exists only for stock: an embedded authenticated broker, the stock pr
 
 ## How the crate is laid out
 
-The [`wellfed-stock`](../../src/tools/wellfed-stock) crate is both the library and the binary.
+The [`wellfed-stock`](../../src/client/wellfed-stock) library and the bench's binary over it, [`wellfed-stock-server`](../../src/tools/wellfed-stock-server), are two crates.
 
 - **The library** holds everything stock speaks: its MQTT protocol, the broker with stock's two identities (the stock device and the server) and the CONNECT normalization in front of it, the server's MQTT session with stock, the loopback API, the setup frame, the image server and the install-trial ledger. `server::Server` runs the broker, the session and (optionally) the API as tasks in the caller's process, and `ota::image::start` the image server; the caller owns and stops them.
-- **The binary**, behind the default `bench` feature with the neighbour lookup, adds the command line: `init-installer`, `serve`, `status`, `setup-send`, `ota-trial-resolve` and `ota-trial-answered`. Its `serve` is the same entry point with the trial disabled, so it can never ask stock to install.
+- **The binary**, `wellfed-stock`, is a host tool that adds the command line: `init-installer`, `serve`, `status`, `setup-send`, `ota-trial-resolve` and `ota-trial-answered`. Its `serve` is the same entry point with the trial disabled, so it can never ask stock to install. Build it with `cargo build -p wellfed-stock-server`.
 
-The one crate that links the library is the install driver, [`wellfed-install`](../../src/client/wellfed-install), without the `bench` feature: the Android app runs stock's side in its own process. `cargo xtask check-repository` refuses any other crate that depends on `wellfed-stock`. The configuration refuses any field it doesn't know.
+The only other crate that links the library is the install driver, [`wellfed-install`](../../src/client/wellfed-install): the Android app runs stock's side in its own process. `cargo xtask check-repository` refuses any other crate that depends on `wellfed-stock`. The configuration refuses any field it doesn't know.
 
 ## The bench host's firewall
 

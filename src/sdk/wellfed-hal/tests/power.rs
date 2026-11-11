@@ -180,5 +180,4 @@ fn an_implausible_pack_reading_is_named() {
         power::supply(10_000).pack,
         Pack::Implausible { .. }
     ));
-    assert!(power::FLOOR.valid());
 }

@@ -60,7 +60,7 @@ impl DirectLink {
         fingerprint.copy_from_slice(&phone[..4]);
         Self {
             identity: feeder,
-            feeder: wellfed_formats::hex::encode(&feeder),
+            feeder: wellfed_session::hex::Lower(&feeder).to_string(),
             commands,
             phone: fingerprint,
             state: Mutex::new(LinkState::default()),

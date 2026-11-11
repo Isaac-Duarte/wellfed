@@ -276,6 +276,12 @@ fn the_journal_settles_a_write_once_it_is_answered_or_resolved() {
         settled_by_command(CommandState::Resolved, Some(&CommandOutcome::Unrecorded)),
         Some(Settlement::Unrecorded)
     );
+    // An outcome a newer server added settles nothing: the write stays
+    // uncertain, and is never sent again.
+    assert_eq!(
+        settled_by_command(CommandState::Resolved, Some(&CommandOutcome::Unknown)),
+        None
+    );
     // A meal call write another change overtook: final for its key.
     assert_eq!(
         settled_by_command(CommandState::Answered, Some(&CommandOutcome::Superseded)),

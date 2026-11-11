@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-release-apk app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -7,11 +7,12 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, a debug APK, and on Linux or macOS that desktop's app (needs the pinned Flutter)"
-	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
+	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator and the server with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
 	@echo "homeassistant-wheels: the Home Assistant bridge's release wheels, cross-built for musllinux and manylinux (aarch64, x86_64, armv7 musl), and its sdist (needs uv; adds Rust targets)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "guide-screenshots: redraw the owner guide's app screenshots in docs/guide/ from the app's test fixtures"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
+	@echo "app-release-apk: the release APK, signed with the owner's keystore named by WELLFED_ANDROID_KEY_PROPERTIES (never in the repository)"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
 	@echo "server-dist / server-image: the server's static release binaries in dist/server/ and its container image (docker or podman)"
 	@echo "check-server-release: the release check against dist/server/ and the image"
@@ -148,15 +149,35 @@ check-app:
 		done; \
 	done
 	@# The https verifier needs both halves on the phone: the JNI hook in the
-	@# bridge and its Kotlin package, or the first https login panics.
+	@# bridge and its Kotlin package, or the first https login panics. A
+	@# missing hold-clearing hook would crash the service when a task is swiped.
 	@for abi in arm64-v8a x86_64; do \
 		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_TlsVerifier_start || \
 			{ echo "the APK's $$abi bridge lacks the TLS verifier's JNI hook"; exit 1; }; \
+		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_RustHolds_clear || \
+			{ echo "the APK's $$abi bridge lacks the hold-clearing JNI hook"; exit 1; }; \
 	done
 	@unzip -p $(APP_APK) 'classes*.dex' | grep -aq 'Lorg/rustls/platformverifier/CertificateVerifier' || \
 		{ echo "the APK lacks rustls-platform-verifier's Kotlin half"; exit 1; }
 	@if [ "$$(uname)" = Linux ]; then cd $(APP) && flutter build linux --debug; fi
 	@if [ "$$(uname)" = Darwin ]; then cd $(APP) && LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 flutter build macos --debug; fi
+
+# The release APK for phones, signed with the owner's own keystore, which
+# never sits in the repository (src/app/README.md#release-signing). Gradle
+# refuses a release build without WELLFED_ANDROID_KEY_PROPERTIES; checking it
+# here first saves the Rust build. apksigner then verifies the APK and prints
+# the certificate it was signed with: with minSdk 31 it carries only the v2
+# and v3 signatures, which keytool cannot read.
+APP_RELEASE_APK = $(APP)/build/app/outputs/flutter-apk/app-release.apk
+ANDROID_SDK = $(or $(shell flutter config --list 2>/dev/null | sed -n 's/^ *android-sdk: //p'),$(ANDROID_HOME))
+APKSIGNER = $(ANDROID_SDK)/build-tools/36.0.0/apksigner
+app-release-apk:
+	@test -n "$$WELLFED_ANDROID_KEY_PROPERTIES" || \
+		{ echo "set WELLFED_ANDROID_KEY_PROPERTIES to the absolute path of the release key.properties"; exit 1; }
+	@test -x "$(APKSIGNER)" || \
+		{ echo "no apksigner at '$(APKSIGNER)': install build-tools 36.0.0, and set ANDROID_HOME or flutter config --android-sdk"; exit 1; }
+	cd $(APP) && flutter build apk --release --target-platform android-arm64
+	$(APKSIGNER) verify --print-certs $(APP_RELEASE_APK)
 
 # The image the APK installs is a build-time input, from a frozen review and
 # its signed update manifest under private/. This copies them in (they are
@@ -269,7 +290,7 @@ check-homeassistant:
 	$(HA_VENV)/bin/maturin generate-stubs --locked -q -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml --out $(HA_STUBS)
 	@diff -u $(HA_STUB) $(HA_STUBS)/wellfed_homeassistant/__init__.pyi || \
 		{ echo "the bridge's stub is stale: copy the generated one over $(HA_STUB)"; exit 1; }
-	cargo build --locked -p wellfed -p wellfed-feeder-sim
+	cargo build --locked -p wellfed -p wellfed-feeder-sim -p wellfed-server
 	rm -rf $(HA_WHEEL)
 	$(HA_VENV)/bin/maturin build --locked --release -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml -o $(HA_WHEEL)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall $(HA_WHEEL)/*.whl

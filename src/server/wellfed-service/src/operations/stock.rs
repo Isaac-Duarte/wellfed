@@ -157,7 +157,7 @@ impl Service {
         // would refuse it, but only once it arrives.
         if offer.model != row.model {
             return Err(InstallError::OtherModel {
-                release: offer.model,
+                release: offer.model.into(),
                 device: row.model,
             }
             .into());

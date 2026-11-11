@@ -42,6 +42,7 @@ fn source(by: Option<Source>) -> String {
         Some(Source::Client { client }) => format!("client {client}"),
         Some(Source::Feeder) => "feeder".to_owned(),
         Some(Source::Schedule { plan }) => format!("plan {plan}"),
+        Some(Source::Unknown) => "a source unknown to this CLI".to_owned(),
         None => "unknown".to_owned(),
     }
 }
@@ -76,6 +77,9 @@ pub(crate) fn recovery(view: &UpdateView) -> Option<String> {
             reason.code(),
             wellfed_client::update::blocked_words(reason)
         ),
+        Bank0Check::Unknown => {
+            "Recovery copy (bank 0): in a state unknown to this CLI: update the CLI".to_owned()
+        }
     })
 }
 
@@ -98,6 +102,7 @@ pub(crate) fn status(status: &Status, zone: &TimeZone) -> String {
     );
     match &status.device {
         DeviceStatus::Feeder(feeder) => feeder_status(&mut text, feeder),
+        DeviceStatus::Unknown => text.push_str(UPDATE_FOR_DEVICE),
     }
     // Writing to a String cannot fail.
     let _ = write!(
@@ -139,17 +144,25 @@ fn feeder_status(text: &mut String, feeder: &FeederStatus) {
     if let Some(fault) = feeder.feed_fault {
         let _ = writeln!(text, "Last fault: {}", feed_fault(fault));
     }
+    let settings = feeder.settings_generation.map_or_else(
+        || format!("Settings: {REPAIRING}"),
+        |generation| format!("Settings generation {generation}"),
+    );
     let _ = writeln!(
         text,
         "Power: {}\n\
          Desiccant: {}\n\
          Panel: {panel}\n\
-         Settings generation {}",
+         {settings}",
         supply(feeder.supply),
         feeder.desiccant,
-        feeder.settings_generation,
     );
 }
+
+/// What a feeder's settings with no generation say: its two settings
+/// records disagree, and it takes no change until it has repaired them.
+pub(crate) const REPAIRING: &str =
+    "read-only while the feeder repairs them; restart it if this lasts";
 
 /// Whether a feed can start now, and if not why.
 fn readiness(readiness: Readiness) -> String {
@@ -224,6 +237,7 @@ fn battery(battery: Battery) -> String {
         Battery::Implausible { mv } => format!("battery reading implausible ({mv} mV)"),
         Battery::Unread => "batteries not read".to_owned(),
         Battery::Stale { age_ms } => format!("battery reading stale ({} s old)", age_ms / 1000),
+        Battery::Unknown => "batteries in a state unknown to this CLI".to_owned(),
     }
 }
 
@@ -259,14 +273,28 @@ fn uptime(ms: u32) -> String {
 pub(crate) fn settings(settings: &Settings) -> String {
     match settings {
         Settings::Feeder(settings) => feeder_settings(settings),
+        Settings::Unknown => UPDATE_FOR_DEVICE.trim_end().to_owned(),
     }
 }
 
+/// What a device of a kind or model this CLI does not know shows, for its
+/// status and its settings.
+pub(crate) const UPDATE_FOR_DEVICE: &str =
+    "a kind of device this CLI does not know: update the CLI to use it\n";
+
 pub(crate) fn feeder_settings(settings: &FeederSettings) -> String {
+    let generation = settings.generation.map_or_else(
+        || "No generation".to_owned(),
+        |generation| format!("Generation {generation}"),
+    );
+    let note = match (settings.generation, settings.writable) {
+        (None, _) => format!(" ({REPAIRING})"),
+        (Some(_), true) => String::new(),
+        (Some(_), false) => " (not writable now)".to_owned(),
+    };
     format!(
-        "Generation {}: lights {} ({}), sound {} ({}), volume {}, meal reminder {}, desiccant \
-         every {} days (replaced {}){}",
-        settings.generation,
+        "{generation}: lights {} ({}), sound {} ({}), volume {}, meal reminder {}, desiccant \
+         every {} days (replaced {}){note}",
         on_off(settings.lights),
         settings.lights_window,
         on_off(settings.sound),
@@ -277,11 +305,6 @@ pub(crate) fn feeder_settings(settings: &FeederSettings) -> String {
         settings
             .desiccant_replaced
             .map_or_else(|| "-".to_owned(), |date| date.to_string()),
-        if settings.writable {
-            ""
-        } else {
-            " (not writable now)"
-        },
     )
 }
 
@@ -289,6 +312,7 @@ fn reminder(reminder: MealReminder) -> String {
     match reminder {
         MealReminder::Off => "off".to_owned(),
         MealReminder::Before { minutes } => format!("{minutes} min ahead"),
+        MealReminder::Unknown => "unknown to this CLI".to_owned(),
     }
 }
 
@@ -383,6 +407,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                 EnrollPath::Invite => "an invite",
                 EnrollPath::Recovery => "recovery",
                 EnrollPath::Press => "a press on the panel",
+                EnrollPath::Unknown => "a way unknown to this CLI",
             };
             format!("client {client} enrolled as {} through {path}", role.code())
         }
@@ -423,6 +448,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                     format!("blocked for 15 minutes, {}", reason.code())
                 }
                 MissedReason::Interrupted => "interrupted before its feed was reserved".to_owned(),
+                MissedReason::Unknown => "for a reason unknown to this CLI".to_owned(),
             };
             format!(
                 "plan {plan}'s meal due {} missed: {why}",
@@ -563,7 +589,7 @@ mod tests {
             alerts_generation: Generation(0),
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: Some(false),
-                settings_generation: Generation(7),
+                settings_generation: Some(Generation(7)),
                 food: FoodLevel::Low,
                 feed_fault: Some(FeedFault {
                     feed: 128,
@@ -750,7 +776,7 @@ mod tests {
     #[test]
     fn settings_and_plans_read_as_lines() {
         let settings = Settings::Feeder(FeederSettings {
-            generation: Generation(7),
+            generation: Some(Generation(7)),
             lights: true,
             sound: false,
             volume: 40,
@@ -768,6 +794,17 @@ mod tests {
             super::settings(&settings),
             "Generation 7: lights on (always), sound off (08:00-21:00), volume 40, meal reminder \
              5 min ahead, desiccant every 14 days (replaced -)"
+        );
+        let Settings::Feeder(mut repairing) = settings else {
+            unreachable!("a feeder's settings")
+        };
+        repairing.generation = None;
+        repairing.writable = false;
+        assert_eq!(
+            super::feeder_settings(&repairing),
+            "No generation: lights on (always), sound off (08:00-21:00), volume 40, meal reminder \
+             5 min ahead, desiccant every 14 days (replaced -) (read-only while the feeder \
+             repairs them; restart it if this lasts)"
         );
 
         let mut table = [None; PLANS];

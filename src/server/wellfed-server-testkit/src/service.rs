@@ -9,8 +9,8 @@ use tempfile::TempDir;
 use wellfed_api::{AdoptFeeder, ClientRole, Connection, EventBody, EventQuery, FeederId};
 use wellfed_connect::update::Pace;
 use wellfed_service::{
-    Backups, Clock, Config, Diagnostics, Discovery, ReleaseKeys, ReleasesConfig, Service,
-    StockConfig, StockPins, Timing,
+    AlertReads, Backups, Clock, Config, Diagnostics, Discovery, ReleaseKeys, ReleasesConfig,
+    Service, StockConfig, StockPins, Timing,
 };
 use wellfed_store::Store;
 
@@ -48,6 +48,8 @@ pub fn config() -> Config {
         // The diagnostics' own tests turn them on: elsewhere their reads
         // would share the lanes and the seeded ids with what is tested.
         diagnostics: Diagnostics::Off,
+        // As the diagnostics: the alerts' own tests turn the reads on.
+        alerts: AlertReads::Off,
         releases: ReleasesConfig {
             dir: PathBuf::from("releases"),
             keys: ReleaseKeys::default(),
@@ -62,6 +64,7 @@ pub fn config() -> Config {
             dir: PathBuf::from("backups"),
             keep: NonZeroU32::new(7).expect("seven is not zero"),
         },
+        webhook: None,
     }
 }
 
@@ -132,6 +135,11 @@ impl TestService {
     /// The service with [`config`] on a fresh store, reading `clock`.
     pub async fn start_with_clock(clock: Arc<dyn Clock>) -> Self {
         Self::open_with_clock(TempStore::new(), config(), clock).await
+    }
+
+    /// The service with `config` on a fresh store, reading `clock`.
+    pub async fn start_with_config_and_clock(config: Config, clock: Arc<dyn Clock>) -> Self {
+        Self::open_with_clock(TempStore::new(), config, clock).await
     }
 
     /// The service with `config` on `store`, which may hold a previous
@@ -224,8 +232,8 @@ impl TestService {
             .expect("the service adopts the simulator");
         assert_eq!(feeder.role, role);
         // The session at adoption names the simulator's model.
-        assert_eq!(feeder.model, wellfed_api::Model::Plaf103);
-        assert_eq!(feeder.kind, wellfed_api::DeviceKind::Feeder);
+        assert_eq!(feeder.model, wellfed_api::Model::Plaf103.into());
+        assert_eq!(feeder.kind, wellfed_api::DeviceKind::Feeder.into());
         feeder.id
     }
 

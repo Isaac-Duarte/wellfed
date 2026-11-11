@@ -5,8 +5,8 @@ use core::ptr;
 
 use crate::common::owner::*;
 use crate::common::*;
-use wellfed_core::feed::progress::BowlMode;
-use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery};
+use wellfed_core_feeder::feed::progress::BowlMode;
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery};
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal_feeder::owner::{Owner, OwnerConfig, OwnerFault, OwnerState, SubmitResult};
 
@@ -440,7 +440,7 @@ fn no_feed_starts_while_an_install_holds_the_lease() {
 /// command and edges. None at rest.
 #[test]
 fn a_feed_leaves_one_observation_a_poll_for_its_trace() {
-    use wellfed_core::feed::controller::MotorCommand;
+    use wellfed_core_feeder::feed::controller::MotorCommand;
 
     let mut f = boot();
     f.advance(2);

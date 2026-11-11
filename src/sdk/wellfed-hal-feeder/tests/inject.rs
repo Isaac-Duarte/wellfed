@@ -9,7 +9,7 @@ mod common;
 
 use common::owner::*;
 use common::*;
-use wellfed_core::feed::storage::OwnerOutcome;
+use wellfed_core_feeder::feed::storage::OwnerOutcome;
 use wellfed_hal::sdk::fake;
 use wellfed_hal::supervision::config::SYSTIMER_HZ;
 use wellfed_hal_feeder::board::MOTOR_MASK;

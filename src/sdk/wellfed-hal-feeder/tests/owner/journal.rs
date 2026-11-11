@@ -3,10 +3,10 @@
 
 use crate::common::motor_pins;
 use crate::common::owner::*;
-use wellfed_core::feed::progress::{BowlMode, Direction};
-use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery, RotorPhase};
-use wellfed_core::store::feed_journal::{JournalConfig, JournalError};
 use wellfed_core::store::slot::RECORD_BYTES;
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery, RotorPhase};
+use wellfed_core_feeder::feed_journal::{JournalConfig, JournalError};
 use wellfed_hal::sdk::fake;
 use wellfed_hal_feeder::board::MOTOR_MASK;
 use wellfed_hal_feeder::owner::{OwnerFault, OwnerState, SubmitResult};

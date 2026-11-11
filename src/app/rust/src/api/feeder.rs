@@ -189,6 +189,10 @@ pub struct SettingsView {
     pub desiccant_replaced: Option<String>,
     pub meal_reminder: MealReminder,
     pub writable: bool,
+    /// Read-only while the feeder repairs its settings: its two settings
+    /// records share no generation, and it takes no change until they do,
+    /// at its next restart if not before.
+    pub repairing: bool,
 }
 
 /// Where the feeder asks for the time.

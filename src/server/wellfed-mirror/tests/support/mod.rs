@@ -12,7 +12,7 @@ use wellfed_api::{
     ClientRole, Connection as Link, FeederId, Home, HomeId, Model, TimeFormat, Units,
 };
 use wellfed_mirror::{
-    Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Pace, Timing,
+    AlertReads, Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Pace, Timing,
 };
 use wellfed_server_testkit::WAIT;
 use wellfed_server_testkit::feeder::{self, Running};
@@ -78,6 +78,7 @@ pub async fn mirrored_with(
         discovery: Discovery::Off,
         timing: timing(answer),
         diagnostics,
+        alerts: AlertReads::Off,
     };
     start(store, sim, address, config, role).await
 }
@@ -93,6 +94,7 @@ pub async fn mirrored_timed(
         discovery: Discovery::Off,
         timing,
         diagnostics: Diagnostics::Off,
+        alerts: AlertReads::Off,
     };
     start(store, sim, address, config, ClientRole::Server).await
 }

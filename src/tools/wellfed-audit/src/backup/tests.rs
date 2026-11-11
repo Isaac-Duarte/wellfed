@@ -22,9 +22,8 @@ fn synthetic() -> Vec<u8> {
     let prefix = b"synthetic-not-a-backup!!!";
     data[..prefix.len()].copy_from_slice(prefix);
 
-    let magic: Vec<u8> = IMAGE_MAGIC.iter().flat_map(|w| w.to_le_bytes()).collect();
     for offset in [0x6000, 0x186000] {
-        data[offset..offset + 8].copy_from_slice(&magic);
+        data[offset..offset + 8].copy_from_slice(&MARKER);
     }
 
     data[0x3EA000..0x3EA010].copy_from_slice(&(0..16).collect::<Vec<u8>>());

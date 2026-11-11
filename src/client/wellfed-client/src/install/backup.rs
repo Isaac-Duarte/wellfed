@@ -30,9 +30,9 @@
 //! [rollback]: ../../../../../docs/firmware/consumer-installation.md#rollback
 
 use sha2::{Digest, Sha256};
-use wellfed_core::ota::MARKER;
-use wellfed_core::ota::offer::{self, ImageKind};
 use wellfed_model::{Answer, Bank1Page, Model, Op, Refusal};
+use wellfed_signed::MARKER;
+use wellfed_signed::offer::{self, ImageKind};
 
 /// The stock release an install starts from and a backup restores.
 pub const STOCK_VERSION: &str = "1.1.15";
@@ -563,7 +563,7 @@ mod tests {
         let sha256: [u8; 32] = Sha256::digest(payload).into();
         let signed = offer::Signed {
             model: 1,
-            manifest: wellfed_core::ota::Manifest {
+            manifest: wellfed_signed::Manifest {
                 version: 3,
                 image_len: u32::try_from(len).unwrap(),
                 target_bank: 1,

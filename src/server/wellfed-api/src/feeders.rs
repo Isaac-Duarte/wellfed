@@ -5,7 +5,9 @@ use std::fmt;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use wellfed_model::{ClientRole, DeviceKind, Hex, Model, NextMeal, PLANS, Plan, Skew, Status};
+use wellfed_model::{
+    ClientRole, DeviceKind, Hex, MaybeKnown, Model, NextMeal, PLANS, Plan, Skew, Status,
+};
 
 use crate::{FeederId, HomeId};
 
@@ -54,6 +56,10 @@ pub enum Connection {
     Online,
     /// The feeder no longer knows the server's key (revoked, or reset).
     Refused,
+    /// A state a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A device the server mirrors. The API names every one a feeder for now;
@@ -65,11 +71,14 @@ pub struct Feeder {
     /// The home it belongs to.
     pub home: HomeId,
     /// Which module of the device API it serves: its model's kind.
-    #[schema(schema_with = wellfed_model::schema::device_kind)]
-    pub kind: DeviceKind,
-    /// Its model, as the welcome of the session at adoption named it.
-    #[schema(schema_with = wellfed_model::schema::model)]
-    pub model: Model,
+    /// `unknown` is a kind a newer server added: the client shows the
+    /// device as needing it updated.
+    #[schema(schema_with = wellfed_model::schema::maybe_device_kind)]
+    pub kind: MaybeKnown<DeviceKind>,
+    /// Its model, as the welcome of the session at adoption named it;
+    /// `unknown` as for `kind`.
+    #[schema(schema_with = wellfed_model::schema::maybe_model)]
+    pub model: MaybeKnown<Model>,
     pub name: String,
     /// The feeder's identity key.
     #[schema(value_type = String)]

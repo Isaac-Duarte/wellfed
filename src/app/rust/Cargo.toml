@@ -35,13 +35,15 @@ chrono = { version = "0.4.45", default-features = false, features = ["std", "clo
 proptest.workspace = true
 rumqttc = { version = "0.25.1", default-features = false }
 tempfile.workspace = true
+utoipa.workspace = true
 uuid.workspace = true
-wellfed-core.workspace = true
+wellfed-signed.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 wellfed-install = { workspace = true, features = ["fixtures"] }
 wellfed-signing.workspace = true
 wellfed-server-testkit.workspace = true
+wellfed-service.workspace = true
 
 [lints]
 workspace = true

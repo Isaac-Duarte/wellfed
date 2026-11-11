@@ -1,7 +1,7 @@
 //! The server's liveness and readiness.
 
 use reqwest::{Method, StatusCode};
-use wellfed_api::{Health, ServerStatus};
+use wellfed_api::{Health, ServerSkew, ServerStatus};
 
 use crate::{Client, Error, decode};
 
@@ -10,6 +10,12 @@ impl Client {
     pub async fn health(&self) -> Result<Health, Error> {
         let response = self.request(Method::GET, "/health").send().await?;
         decode(response, StatusCode::OK).await
+    }
+
+    /// How the server's API revision stands against this client's, from
+    /// its liveness answer: which side to update. Needs no login.
+    pub async fn skew(&self) -> Result<ServerSkew, Error> {
+        Ok(ServerSkew::of(self.health().await?.revision))
     }
 
     /// Readiness: the database, each feeder's link and the background

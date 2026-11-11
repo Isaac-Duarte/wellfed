@@ -40,6 +40,9 @@ pub(crate) fn source_columns(source: Source) -> (&'static str, Option<Vec<u8>>) 
         Source::Client { client } => ("client", Some(client.0.to_vec())),
         Source::Feeder => ("feeder", None),
         Source::Schedule { plan } => ("schedule", Some(vec![plan])),
+        // A newer server's source, which this one never records: its events
+        // come from the feeder's wire, where every source has a name.
+        Source::Unknown => ("unknown", None),
     }
 }
 

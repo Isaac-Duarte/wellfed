@@ -1,54 +1,19 @@
-//! Update logic (design: docs/firmware/ota-design.md): the manifest's
-//! fields, the bank-1 sector writer and the boot-trial decision. Offers over
-//! the device API carry [`offer`]'s signed version 2 manifest.
+//! Update logic (design: docs/firmware/ota-design.md): the bank-1 sector
+//! writer and the boot-trial decision. Offers over the device API carry
+//! `wellfed_signed::offer`'s signed version 2 manifest; the manifest, its
+//! limits and the loader marker are frozen there, not here.
 //!
 //! Sans-IO. The board port fetches chunks, runs each erase/program/readback
 //! inside a flash lease and writes the marker last; this module only decides
 //! what to write and whether the result may be activated.
 
-pub mod image;
 pub mod install;
-pub mod offer;
 
 use sha2::{Digest, Sha256};
-
-/// The retired version 1 manifest (148 bytes), which builds fetching
-/// updates over MQTT took. An offer refuses its magic, and a signer still
-/// reads the versions of the ones on disk.
-pub(crate) const RETIRED_MAGIC: [u8; 8] = *b"PLOTA1\0\0";
-const RETIRED_LEN: usize = 148;
-
-/// One NOR erase sector, as flash offsets measure it and as buffers do.
-pub const SECTOR_BYTES: u32 = 0x1000;
-pub const SECTOR: usize = SECTOR_BYTES as usize;
-
-/// The factory loader's validity marker at the start of a bank.
-pub const MARKER: [u8; 8] = *b"81958711";
-/// Bank 1 starts at 0x186000; the reviewed footprint ends at 0x2d6000.
-pub const BANK1_OFFSET: u32 = 0x18_6000;
-pub const BANK1_BYTES: u32 = 0x15_0000;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Manifest {
-    pub version: u32,
-    pub image_len: u32,
-    pub target_bank: u32,
-    pub image_sha256: [u8; 32],
-    pub build_id: [u8; 32],
-}
+use wellfed_signed::{BANK1_OFFSET, MARKER, Manifest, SECTOR, SECTOR_BYTES};
 
 fn u32_at(bytes: &[u8], at: usize) -> u32 {
     u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
-}
-
-/// The version a manifest's header claims, unverified: `None` unless it has
-/// a version 2 or retired version 1 manifest's length and magic (both keep
-/// the version at byte 8). For a signer picking the next version above the
-/// ones it already signed; a feeder only trusts `offer::admit_offer`.
-pub fn claimed_version(bytes: &[u8]) -> Option<u32> {
-    let v1 = bytes.len() == RETIRED_LEN && bytes[..8] == RETIRED_MAGIC;
-    let v2 = bytes.len() == offer::MANIFEST_LEN && bytes[..8] == offer::MAGIC;
-    (v1 || v2).then(|| u32_at(bytes, 8))
 }
 
 crate::named_enum! {

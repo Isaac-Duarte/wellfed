@@ -18,6 +18,7 @@ The one idea: **the server is a mirror of each feeder, never a second source of 
 
 ```text
 src/sdk/wellfed-session      no_std, no alloc. Noise, HMAC, the setup code, length-prefixed frames, hex and base64
+src/sdk/wellfed-signed       no_std, no alloc. The frozen signed update formats bank 0 checks: manifest, key statements, key ids
 src/product/wellfed-proto    no_std, no alloc. Device-protocol messages, framing, versions, and device kinds and models
 src/product/wellfed-device-api no_std, no alloc. The feeder's side: the sans-IO session server, pairing, the setup exchange
 src/client/wellfed-model     owned device API values (status, settings, events, requests, answers) and their conversion from the wire
@@ -37,6 +38,7 @@ src/server/wellfed-mirror    the per-feeder runtime: connect, sync, ingest and p
                               install, a stock restore or a read of bank 1 on the long one), and a typed broadcast of
                               each feeder's mirror events
 src/server/wellfed-releases  fetch, upload and verify releases, the release cache, and each feeder's verified stock backup
+src/server/wellfed-webhook   the alert webhook: each alert's opening and clearing POSTed to the owner's URL, at least once under one id
 src/server/wellfed-service   the use cases: accounts and auth, the home, commands and their journal, pets and food,
                               derived views, audit, export, and the hub. No axum, no SQL
 src/server/wellfed-server    the binary: config, axum routers per resource, the auth extractors, SSE, the jobs
@@ -48,7 +50,7 @@ src/app/                      Flutter app, plus a thin flutter_rust_bridge crate
 
 Every crate on the map exists, and the app talks both to feeders and, through `wellfed-server-client`, to the server. There is no web UI, and none is planned.
 
-The server's crates follow one rule: **a crate per runtime or dependency boundary, a module per domain inside it.** A new domain, such as pets or alerts, is a module and some tables, and gets a crate only if it brings its own runtime (tasks), a heavy dependency (`reqwest`) or a consumer outside the server. So the mirror (the feeder tasks), the releases (`reqwest` and the verifier) and the HTTP client (the CLI) are crates, and accounts and pets are not.
+The server's crates follow one rule: **a crate per runtime or dependency boundary, a module per domain inside it.** A new domain, such as pets or alerts, is a module and some tables, and gets a crate only if it brings its own runtime (tasks), a heavy dependency (`reqwest`) or a consumer outside the server. So the mirror (the feeder tasks), the releases (`reqwest` and the verifier), the webhook (`reqwest` and its delivery task) and the HTTP client (the CLI) are crates, and accounts and pets are not.
 
 | Crate | What it owns |
 | --- | --- |
@@ -56,9 +58,10 @@ The server's crates follow one rule: **a crate per runtime or dependency boundar
 | `wellfed-store` | All SQL, a module per table group (`users`, `homes`, `feeders`, `history`, `projections`, `samples`, `owner`, `commands`, `releases`, `jobs`). One crate, so the sqlx offline metadata and the migrations stay in one place. |
 | `wellfed-mirror` | Every task that holds a feeder session (connect, sync, clock sync, ingest, reconnect and the command lanes), and the injected `Clock` and `Random` every server crate uses. It never sees a user or a stream id. |
 | `wellfed-releases` | Fetching, uploading and verifying releases, the release cache, and each feeder's stock backup. |
+| `wellfed-webhook` | The alert webhook's body, its URL rule and the one task that delivers each change. |
 | `wellfed-service` | The use cases, a module per domain, each with its own error enum wrapped in the crate's `Error`, plus the auth rules, the hub and each job's body. It never sees a socket or an HTTP type. |
 | `wellfed-server` | The binary and the jobs supervisor. A handler parses, authorizes through an axum extractor, calls one service method and maps the result. It never sees SQL. |
-| `wellfed-server-client` | The typed client the app, the CLI's `wellfed server` commands and the server's own tests go through, so neither can disagree with the routes. Nothing in it retries. |
+| `wellfed-server-client` | The typed client the app, the CLI's `wellfed server` commands and the server's own tests go through, so neither can disagree with the routes. Nothing in it retries. It leaves out a page entry or stream update it can't read, so a newer server's additions cost an older client only those. |
 | `wellfed-server-testkit` | The service on a temporary store with a fixed `Clock` and a seeded `Random`, the simulated feeder, and the HTTP server in process. |
 
 A few crates outside `src/server/` matter here:
@@ -78,6 +81,7 @@ wellfed-server ─► wellfed-service ─┬─► wellfed-mirror ─┬─► w
        │                             │                    │          └─► wellfed-formats (the export archive's rows)
        │                             │                    └─► wellfed-connect ─► wellfed-client
        │                             ├─► wellfed-releases ─► wellfed-store, wellfed-client (the release verifier)
+       │                             ├─► wellfed-webhook ─► wellfed-mirror (the kept alerts), wellfed-store, wellfed-client
        │                             └─► wellfed-store (projections), wellfed-api (the bodies it returns)
        └─► wellfed-api, wellfed-store (to open it)
 
@@ -85,6 +89,9 @@ wellfed (the CLI) ─► wellfed-server-client ─► wellfed-api
           └─► wellfed-connect (the device API, as today)
 
 wellfed-app-bridge (the app) ─► wellfed-server-client, wellfed-api
+          └─► wellfed-connect (the device API)
+
+wellfed-homeassistant (Home Assistant's bridge) ─► wellfed-server-client
           └─► wellfed-connect (the device API)
 ```
 
@@ -94,16 +101,17 @@ wellfed-app-bridge (the app) ─► wellfed-server-client, wellfed-api
 | `wellfed-store` | `wellfed-api` (its ids and enums), `wellfed-formats` (the export archive's rows, which it reads and inserts) |
 | `wellfed-mirror` | `wellfed-store`, `wellfed-api`, `wellfed-connect`, `wellfed-client`, `wellfed-model`, `wellfed-proto`, `wellfed-session` |
 | `wellfed-releases` | `wellfed-store`, `wellfed-api`, `wellfed-client`, `wellfed-model`; the verifier is `wellfed_client::release`, over the firmware's own offer check |
-| `wellfed-service` | `wellfed-mirror`, `wellfed-releases`, `wellfed-store`, `wellfed-api`, `wellfed-model`, `wellfed-formats` |
+| `wellfed-webhook` | `wellfed-mirror`, `wellfed-store`, `wellfed-api`, `wellfed-client`, `wellfed-model`, `wellfed-formats` (hashing) |
+| `wellfed-service` | `wellfed-mirror`, `wellfed-releases`, `wellfed-webhook`, `wellfed-store`, `wellfed-api`, `wellfed-model`, `wellfed-formats`, `wellfed-session` (hex) |
 | `wellfed-server` | `wellfed-service`, `wellfed-api`, `wellfed-store` |
-| `wellfed-server-testkit` | `wellfed-server`, `wellfed-service`, `wellfed-store`, `wellfed-api`, `wellfed-server-client`, `wellfed-feeder-sim`, `wellfed-client`, `wellfed-connect`, `wellfed-model`, `wellfed-session`, `wellfed-core` (to sign test releases) |
+| `wellfed-server-testkit` | `wellfed-server`, `wellfed-service`, `wellfed-store`, `wellfed-api`, `wellfed-server-client`, `wellfed-feeder-sim`, `wellfed-client`, `wellfed-connect`, `wellfed-model`, `wellfed-session`, `wellfed-signed` (to sign test releases) |
 | `wellfed-server-client` | `wellfed-api` |
 
 `cargo xtask check-repository` enforces these from `cargo metadata` (all features, every platform), each error naming the edge or path that breaks them.
 
 - **SQL stays in the store.** No crate but `wellfed-store` depends on sqlx, in its tests included.
 - **HTTP stays in the binary.** Nothing below `wellfed-server` links axum, or any of axum's own crates (`axum-core`, `axum-extra`), by any path.
-- **The arrows as drawn.** Each server crate's normal and build dependencies on workspace crates come from its row above. A crate outside the server takes a server crate only where drawn: the CLI takes `wellfed-server-client`, and the app's `wellfed-app-bridge` takes `wellfed-server-client` and `wellfed-api`. Dev-dependencies are exempt, since a test may build a simulated feeder or a whole server. A row's crate is checked from its first manifest. Changing a row changes this table and the check together.
+- **The arrows as drawn.** Each server crate's normal and build dependencies on workspace crates come from its row above. A crate outside the server takes a server crate only where drawn: the CLI and Home Assistant's `wellfed-homeassistant` take `wellfed-server-client`, and the app's `wellfed-app-bridge` takes `wellfed-server-client` and `wellfed-api`. Dev-dependencies are exempt, since a test may build a simulated feeder or a whole server. A row's crate is checked from its first manifest. Changing a row changes this table and the check together.
 - **`wellfed-api` on Android.** Its own dependencies come from an allow-list (`jiff`, `wellfed-model`, `serde`, `utoipa`, `uuid`). `make check` builds no Android target; `make check-app`'s APK build does, `wellfed-server-client`'s reqwest and rustls included.
 - **Files stay small.** A Rust source under `src/server/` has at most 400 lines, or 600 under a `tests/` directory; a `tests.rs` beside the code it tests keeps 400. Generated files (`openapi.json`, the sqlx metadata) aren't counted.
 
@@ -128,6 +136,7 @@ The tables:
 | Projections | `feeds` (one row per feed, its latest event), `lock_changes`, `boots`, `clock_syncs`, `blocked_changes`: written in the raw insert's transaction, and rebuilt from `events` when `projection_version` changes |
 | Samples | `samples` (feeder, metric, time, the raw value and its number), `sample_rollups` (count, min, max and sum per feeder, metric and UTC hour), `sample_marks` (the newest sample rolled up, and the number code's version) |
 | Diagnostics | `feed_traces`, `feeder_stats`, `food_readings`: beside the history, never rebuilt from it |
+| Alerts | `feeder_alerts`: each feeder's last alert table and what the server made of it, one JSON document with its own `format`, written over the version it read |
 | Commands | `commands` (the journal), `installs`, `job_runs` |
 | Owner data | `pets`, `foods`, `pet_weights`, `pet_feeders`, `feeder_foods`, `refills` |
 | Audit | `audit`: account changes as typed JSON, and a row per journal entry that the journal's own insert trigger adds |
@@ -161,6 +170,16 @@ Releases and stock backups are files in the data directory, not tables.
 | `release_check` | 04:00 | Checks GitHub releases, while `releases.fetch` is on |
 
 **Health and logs.** `GET /health` is liveness: it reads nothing and answers the version. `GET /api/v1/status` is readiness for an owner: whether the store answers on its writer and a reader, each feeder's link, and each job's last run. Every log line from a feeder's task sits under a `feeder{id=…}` span, and every HTTP request under a `request{id=… method=… path=…}` span whose id comes back in `x-request-id`; the query string isn't logged. There is no metrics endpoint, since a home has no scraper to feed.
+
+## Alerts
+
+The feeder decides every alert ([alerts](../firmware/alerts.md)); the server reads, keeps and passes them on.
+
+- **The reader.** A task beside each feeder's session reads the status on the short lane, and the table (`GetAlerts`) only when the status shows its cursor moved: the ring's epoch, the boot count and the table's generation. It looks at each connect, 2 s after each new event (an event opens most reports), and every minute while the feeder is online (`AlertReads`), since a condition such as food running low opens with no event. Neither read changes the feeder.
+- **The judgement is the phone's.** The table goes into a `wellfed_client::alerts::Watch`, the tracker the app keeps, with no mutes and the server's own fingerprint, so its own joining stays quiet. It decides what opened, what ended and how long an absent alert is held, by the phone's rules. Each failed connect counts towards unreachable and each session opened resets it, by the phone's rule: three failures in a row over at least ten minutes.
+- **Kept in the store, not in memory.** `feeder_alerts` holds the last table, the watch and the alerts the webhook was told opened. A restart serves the last table at once and doesn't announce what was already told, and a delivery the server never finished goes at the next start. The first table after a fresh row (an adoption, an import, a row of another layout) is taken quietly. The row's JSON is format 1, pinned against a committed sample, and a poll that changes nothing writes nothing. The reader and the webhook both write the row, each over the version it read, so neither loses the other's change. The table is the feeder's RAM, so the row is derived and isn't exported; an import reads every table again.
+- **The webhook** (`wellfed-webhook`) is one task. It takes each feeder's changes from the watch in order, POSTs them, and confirms each in the row once delivered or given up, at least once under one id; only an opening the receiver took (a `2xx`) is noted for its clear. A removed feeder's row is dropped unsent. With no URL set it confirms them unsent ([alert webhook](README.md#alert-webhook)).
+- **The route** serves the row (`GET /feeders/{id}/alerts`), and the stream says when it changed (`alerts`).
 
 ## Accounts and roles
 
@@ -296,7 +315,7 @@ Tests follow the layers:
 | End to end | The server against the host simulator, speaking real Noise over TCP |
 | Release | The shipped binary or image as a separate process ([release check](running.md#the-release-check)) |
 
-Every path that can request a feed has a test that retries it and proves one feed. `openapi.json` and the `.sqlx/` metadata are generated, committed and checked for staleness in `make check`, so a reviewer sees every contract change as a diff.
+Every path that can request a feed has a test that retries it and proves one feed. `openapi.json` and the `.sqlx/` metadata are generated, committed and checked for staleness in `make check`, so a reviewer sees every contract change as a diff. From the beta the document only grows, and the `api_growth` test holds it to the published one ([API evolution](README.md#api-evolution)).
 
 The service tests fix the wall clock but run timers in real time with short intervals: tokio's paused clock would jump while sqlx's SQLite worker threads are busy, and fire timeouts that never happen.
 

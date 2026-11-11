@@ -12,6 +12,7 @@
 //! [API design]: ../../../../docs/server/README.md#the-http-api
 #![forbid(unsafe_code)]
 
+mod alerts;
 mod audit;
 mod auth;
 mod backups;
@@ -41,6 +42,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+pub use alerts::{AlertsRead, FeederAlerts};
 pub use audit::{AuditAction, AuditEntry, AuditPage, LoginFailure};
 pub use auth::{Credentials, PasswordChange, Role, Setup, SetupState, User};
 pub use backups::{Backup, BackupPage};
@@ -50,7 +52,8 @@ pub use clients::{
     WifiCredentials,
 };
 pub use commands::{
-    Command, CommandKind, CommandOutcome, CommandPage, CommandQuery, CommandState, FeedRequest,
+    Command, CommandKind, CommandOutcome, CommandPage, CommandQuery, CommandState,
+    CommandStateFilter, FeedRequest,
 };
 pub use diagnostics::{FeedTrace, FeederStats, LogEvent, StatsRead, TraceQuery, TraceRecord};
 pub use error::{ErrorCode, FeederRefusal, Problem};
@@ -64,7 +67,9 @@ pub use foods::{
     FeederFood, Food, FoodChoice, FoodHistoryPage, FoodPatch, FoodPeriod, NewFood, NewRefill,
     Refill, RefillPage,
 };
-pub use health::{FeederLink, Health, Job, JobOutcome, JobRun, ServerStatus, StoreState};
+pub use health::{
+    FeederLink, Health, Job, JobOutcome, JobRun, ServerSkew, ServerStatus, StoreState,
+};
 pub use home::{Home, HomePatch, TimeFormat, Units};
 pub use installs::{Install, InstallFailure, InstallRequest, InstallState, InstallTarget};
 // The feeder's own values are the model's, served as they are; the HTTP
@@ -90,17 +95,29 @@ pub use views::{
     IntakeDay, IntakeFeeder, IntakeQuery, PetIntake, PortionWeight, SinceRefill, WeighedIntake,
 };
 pub use wellfed_model::{
-    Battery, Blocked, Bowl, CALL_BYTES_MAX, Calibration, CalibrationView, CallClip, CallView,
-    ClientRole, CoreEvent, CurrentUnit, Desiccant, DeviceKind, DeviceStatus, EnrollPath, EventBody,
-    EventKind, FeedOutcome, FeedReason, FeederEvent, FeederSettings, FeederSettingsPatch,
-    FeederStatus, Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind,
-    MissedReason, Model, NextMeal, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan, Plans,
-    Power, Readiness, SampleValue, Settings, Source, Stats, StatsSection, Status, Supply, Trace,
-    TraceEntry, TraceSummary, Weekday, Weekdays, WifiSource, Window,
+    Alert, AlertKey, AlertKind, AlertLevel, AlertsView, Battery, Blocked, Bowl, CALL_BYTES_MAX,
+    Calibration, CalibrationView, CallClip, CallView, ClientRole, CoreEvent, CurrentUnit,
+    Desiccant, DeviceKind, DeviceStatus, EnrollPath, EventBody, EventKind, FeedOutcome, FeedReason,
+    FeederEvent, FeederSettings, FeederSettingsPatch, FeederStatus, Food as FoodStats, FoodLevel,
+    Generation, Hex, MaybeKnown, MealReminder, MetricKind, MissedReason, Model, NextMeal,
+    OpenAlert, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan, Plans, Power, Readiness,
+    SampleValue, Settings, Source, Stats, StatsSection, Status, Supply, Trace, TraceEntry,
+    TraceSummary, Weekday, Weekdays, WifiSource, Window,
 };
 
 /// The prefix every resource lives under.
 pub const PREFIX: &str = "/api/v1";
+
+/// The ordered revision of the API under [`PREFIX`], which `GET /health`
+/// answers. From the beta the API only grows: no field is removed, retyped
+/// or made required, a body gains only optional fields, and an enum gains
+/// variants only at its end, and only one with a catch-all (an `unknown`
+/// value its older readers decode a newer one as). Each growth raises this
+/// by one. `wellfed-server`'s `api_growth` test holds the published
+/// document to that ([API evolution]).
+///
+/// [API evolution]: ../../../../docs/server/README.md#api-evolution
+pub const REVISION: u32 = 2;
 
 /// The cookie a login sets: an opaque session token, `HttpOnly` and
 /// `SameSite=Strict`. A non-browser client sends it back as it came.

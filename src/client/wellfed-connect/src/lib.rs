@@ -86,7 +86,10 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Session(wellfed_client::api::Error),
-    #[error("a message does not fit one frame")]
+    /// Refused before a byte went: the request holds a value with no wire
+    /// form (a newer build's `unknown`), or does not fit one frame. The
+    /// session is as it was.
+    #[error("a message has no wire form or does not fit one frame")]
     Encode,
     #[error("that request id is the keepalive's")]
     ReservedId,
@@ -116,7 +119,7 @@ impl From<wellfed_client::api::Error> for Error {
             Session::Silent => Self::Silent,
             Session::ReservedId => Self::ReservedId,
             Session::Legacy => Self::Legacy,
-            Session::TooLarge => Self::Encode,
+            Session::TooLarge | Session::NoWireForm(_) => Self::Encode,
             other => Self::Session(other),
         }
     }
@@ -649,6 +652,20 @@ fn serves(kind: DeviceKind, op: &Op) -> bool {
 mod tests {
     use super::*;
     use wellfed_model::StatsSection;
+
+    /// A request with no wire form is refused before a byte went, as one
+    /// too large is: the caller answers it unsendable and keeps the
+    /// session, so the writes in flight on it stay known.
+    #[test]
+    fn a_request_with_no_wire_form_leaves_the_session_up() {
+        let no_wire_form =
+            wellfed_client::api::Error::NoWireForm(wellfed_model::convert::NoWireForm);
+        assert!(matches!(Error::from(no_wire_form), Error::Encode));
+        assert!(matches!(
+            Error::from(wellfed_client::api::Error::TooLarge),
+            Error::Encode
+        ));
+    }
 
     /// Another kind's op, a feeder-only statistics section among them, is
     /// answered here and never sent; the shared core goes to any kind.

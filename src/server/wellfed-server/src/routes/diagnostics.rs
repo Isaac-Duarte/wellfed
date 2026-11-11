@@ -1,5 +1,6 @@
-//! What the server reads from a feeder beside its history: a feed's trace,
-//! the latest statistics, and the debug log followed live.
+//! What the server reads from a feeder beside its history: its open
+//! alerts, a feed's trace, the latest statistics, and the debug log
+//! followed live.
 
 use std::convert::Infallible;
 
@@ -9,13 +10,34 @@ use axum::http::HeaderMap;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum_extra::extract::WithRejection;
 use futures_util::{Stream, StreamExt, stream};
-use wellfed_api::{FeedTrace, FeederId, FeederStats, LogEvent, Problem, TraceQuery};
+use wellfed_api::{FeedTrace, FeederAlerts, FeederId, FeederStats, LogEvent, Problem, TraceQuery};
 
 use super::stream::session_ended;
 use super::{ApiResult, IdPath, TAG_FEEDERS};
 use crate::AppState;
 use crate::auth::{self, Allowed, need};
 use crate::error::ApiError;
+
+/// The feeder's open alerts, as the server last read its alert table,
+/// with the cursor they were read under and whether the server reaches the
+/// feeder. The feeder decides every alert; the server reads the table
+/// whenever the feeder's status shows it moved, a moment after each event,
+/// and every minute while the feeder is online. An entry a client can't
+/// read (a kind a newer feeder added) is one to skip and count as unread.
+#[utoipa::path(
+    get,
+    path = "/feeders/{id}/alerts",
+    tag = TAG_FEEDERS,
+    params(("id" = FeederId, Path)),
+    responses((status = 200, body = FeederAlerts), (status = 404, body = Problem)),
+)]
+pub(crate) async fn alerts(
+    State(state): State<AppState>,
+    _: Allowed<need::Read>,
+    WithRejection(Path(id), _): IdPath,
+) -> ApiResult<Json<FeederAlerts>> {
+    Ok(Json(state.service.feeder_alerts(id).await?))
+}
 
 /// A feed's trace: what its drive measured, poll by poll, as the server
 /// fetched it after the feed's `Fed` event. `404` until it has been

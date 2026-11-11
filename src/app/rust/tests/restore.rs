@@ -19,13 +19,13 @@ use wellfed_app_bridge::api::restore::{
 };
 use wellfed_app_bridge::restore::{RestoreThread, check_backup};
 use wellfed_client::install::{StockBackup, StockPins};
-use wellfed_core::ota::{MARKER, SECTOR};
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::Running;
 use wellfed_formats::credentials::KeyScope;
 use wellfed_install::restore::{Plan, Signing, Target};
 use wellfed_session::noise::Keypair;
+use wellfed_signed::{MARKER, SECTOR};
 use wellfed_signing::Key;
 
 const WAIT: Duration = Duration::from_secs(30);
@@ -153,7 +153,10 @@ fn a_feeder_nobody_can_find_is_asked_for_and_not_answering() {
         let InstallAsk::Locate { identity } = ask else {
             panic!("{ask:?}");
         };
-        assert_eq!(identity, wellfed_formats::hex::encode(&rig.sim.identity));
+        assert_eq!(
+            identity,
+            wellfed_session::hex::Lower(&rig.sim.identity).to_string()
+        );
         run.answer(id, InstallAnswer::Located { address: None });
 
         let RestoreUpdate::Ended {

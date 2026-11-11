@@ -7,7 +7,7 @@
 //! offers, so a verified file is offered as it is.
 //!
 //! [`verify`] checks the manifest with the feeder's own offer check
-//! (`wellfed_core::ota::offer::admit_offer`), not a copy of it, so a file
+//! (`wellfed_signed::offer::admit_offer`), not a copy of it, so a file
 //! this accepts is one a feeder holding the same keys accepts too: signed by
 //! a trusted key, aimed at bank 1, within the bank's size. A client is not a
 //! feeder, so the parts of the check that depend on one are fixed: no key is
@@ -19,11 +19,11 @@
 //! marker, which the feeder's sector writer refuses to write without.
 
 use sha2::{Digest, Sha256};
-use wellfed_core::ota::offer::{self, Context, ImageKind, KeyError, KeyRing, Trust};
-use wellfed_core::ota::{BANK1_BYTES, MARKER};
 use wellfed_model::Model;
+use wellfed_signed::offer::{self, Context, ImageKind, KeyError, KeyRing, Trust};
+use wellfed_signed::{BANK1_BYTES, MARKER};
 
-pub use wellfed_core::ota::offer::{KeyId, OfferError};
+pub use wellfed_signed::offer::{KeyId, OfferError};
 
 /// The manifest's length, signature included.
 pub const MANIFEST_LEN: usize = offer::MANIFEST_LEN;

@@ -58,6 +58,7 @@ use wellfed_feeder::stats::{SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
 use wellfed_feeder::store::calibration::CalibrationStore;
 use wellfed_feeder::store::call::CallStore;
 use wellfed_feeder::store::plans::PlansStore;
+use wellfed_feeder::store::settings::FeederSettingsStore;
 use wellfed_feeder::store::stats::{SaveKind, StatsStatus, StatsStore};
 use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::ota::mailbox::{self, Request};
@@ -128,7 +129,7 @@ const NO_RADIO_MS: u32 = 1_000;
 
 pub struct SimPlatform {
     /// The stores every device keeps, and their mailboxes.
-    device: DeviceStores,
+    device: DeviceStores<FeederSettingsStore<Region>>,
     /// The device API's sockets on the host.
     sockets: Sockets,
     /// Setup mode's BLE link.
@@ -220,7 +221,12 @@ impl SimPlatform {
     ) -> Result<Self, DeviceError> {
         stores::finish_reset(flash, keep_wear);
         stores::finish_handover(flash, bank);
-        let device = DeviceStores::open(flash, random)?;
+        let mut feeder_settings = FeederSettingsStore::default();
+        feeder_settings.open(
+            Region::new(flash, storage::FEEDER_SETTINGS),
+            stores::BINDING,
+        );
+        let device = DeviceStores::open(flash, random, feeder_settings)?;
         let ring_opened_at = device.last_event();
         let mut stats = StatsStore::default();
         stats.open(Region::new(flash, storage::STATS));

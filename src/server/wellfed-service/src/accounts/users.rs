@@ -8,7 +8,7 @@
 
 use jiff::Timestamp;
 use wellfed_api::{AuditAction, NewUser, RevokeReason, Role, User, UserId, UserPatch};
-use wellfed_formats::hex;
+use wellfed_session::hex;
 use wellfed_store::{Change, NewAudit, Store, Whose};
 
 use crate::accounts::sessions::{self, disabled, hash_password, password, user_name};
@@ -30,6 +30,7 @@ impl Service {
         session_only(caller)?;
         let name = user_name(&request.name)?;
         password(&request.password)?;
+        known_role(request.role)?;
         owner_never_expires(request.role, request.expires)?;
 
         let hash = self.hash_password(request.password).await?;
@@ -88,6 +89,7 @@ impl Service {
             expires: patch.expires.unwrap_or(current.expires),
             ..current.clone()
         };
+        known_role(updated.role)?;
         owner_never_expires(updated.role, updated.expires)?;
         let hash = match patch.password {
             Some(new) => {
@@ -191,7 +193,7 @@ pub async fn reset_owner(
     random.fill(&mut secret)?;
     let mut salt = [0; 16];
     random.fill(&mut salt)?;
-    let password = hex::encode(&secret);
+    let password = hex::Lower(&secret).to_string();
     let typed = password.clone();
     let hash = sessions::blocking(move || hash_password(&typed, &salt)).await?;
 
@@ -217,6 +219,15 @@ pub async fn reset_owner(
         tracing::error!(%failure, "the reset was made but not recorded in the audit log");
     }
     Ok((owner, password))
+}
+
+/// A role a newer client sent, which this server cannot name, is refused
+/// rather than stored: it would grant nothing, and say nothing.
+fn known_role(role: Role) -> Result<()> {
+    if role == Role::Unknown {
+        return Err(Invalid::Role.into());
+    }
+    Ok(())
 }
 
 fn owner_never_expires(role: Role, expires: Option<Timestamp>) -> Result<()> {

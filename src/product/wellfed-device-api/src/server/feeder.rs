@@ -11,12 +11,16 @@ use super::memory::Remembered;
 use super::request::{Action, Reply};
 use super::{Server, Waiting};
 use crate::mailbox::{
-    Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult,
-    MealReminder, MealSkip, PLANS, Plan, PlansResult, PlayResult, SettingsFields, SettingsResult,
-    Table, Weekdays, Window,
+    Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, FeederFields,
+    LockResult, MealReminder, MealSkip, PLANS, Plan, PlansResult, PlayResult, SaveOutcome,
+    SettingsFields, SettingsResult, Table, Weekdays, Window,
 };
 use crate::{FeederDevice, Reason};
 use wellfed_core::tone::Tune as CoreTune;
+
+// The settings' view carries the firmware's generation as the wire's.
+const _: () =
+    assert!(wellfed_core::settings::NO_GENERATION == wellfed_proto::api::NO_SETTINGS_GENERATION);
 use wellfed_proto::api::{
     self as proto, Bowl, CALL_BYTES_MAX, CALL_CHUNK_MAX, CallClip, ClientMessage, DeviceMessage,
     EventBody, FeederOp, FeederOutcome, Op, Outcome, Readiness, Refusal, RequestId, Source, Tune,
@@ -55,7 +59,12 @@ impl FeederReply {
 /// A feeder write the device is still completing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FeederWait {
-    Settings,
+    /// A settings change, which finishes as change `change` of this boot
+    /// (`Saved::next` when it was queued): done once the writer saved it
+    /// whole, refused if it saved none or only part.
+    Settings {
+        change: u32,
+    },
     /// The digest of the calibration asked for: the write succeeded if the
     /// store holds it once nothing is pending.
     Calibration {
@@ -171,9 +180,11 @@ pub(super) fn action(op: FeederOp<'_>) -> Action {
                 volume: changes.volume,
                 lights_window: changes.lights_window.map(window),
                 sound_window: changes.sound_window.map(window),
-                desiccant_days: changes.desiccant_days,
-                desiccant_reset: None,
-                meal_reminder: changes.meal_reminder.map(reminder),
+                kind: FeederFields {
+                    meal_reminder: changes.meal_reminder.map(reminder),
+                    desiccant_days: changes.desiccant_days,
+                    desiccant_reset: None,
+                },
             };
             if !fields.valid() {
                 return Action::Invalid;
@@ -253,16 +264,6 @@ impl FeederAction {
         )
     }
 
-    /// Whether only an owner may run it: the meal call is the owner's
-    /// voice, or the clip they chose. A member also sets the portion
-    /// weight; the server's key does not (`request::allowed`).
-    pub(super) const fn owners_only(self) -> bool {
-        matches!(
-            self,
-            Self::StartCall { .. } | Self::CallChunk { .. } | Self::DeleteCall
-        )
-    }
-
     pub(super) const fn name(self) -> &'static str {
         match self {
             Self::GetSettings => "get-settings",
@@ -319,9 +320,9 @@ impl Server {
                         volume: view.volume,
                         lights_window: wire_window(view.lights_window),
                         sound_window: wire_window(view.sound_window),
-                        desiccant_days: view.desiccant_days,
-                        desiccant_reset: view.desiccant_reset,
-                        meal_reminder: wire_reminder(view.meal_reminder),
+                        desiccant_days: view.kind.desiccant_days,
+                        desiccant_reset: view.kind.desiccant_reset,
+                        meal_reminder: wire_reminder(view.kind.meal_reminder),
                         writable: view.writable,
                         ext: proto::Tail::EMPTY,
                     }))
@@ -331,15 +332,17 @@ impl Server {
             },
             FeederAction::PutSettings { base, fields } => {
                 match put_settings(base, Asked { change: fields, by }, device) {
-                    Ok(()) => {
-                        return self.wait(index, id, whole, Waiting::Feeder(FeederWait::Settings));
+                    Ok(change) => {
+                        let wait = FeederWait::Settings { change };
+                        return self.wait(index, id, whole, Waiting::Feeder(wait));
                     }
                     Err(refusal) => Reply::Refused(refusal),
                 }
             }
             FeederAction::ResetDesiccant => match reset_desiccant(now_ms, by, device) {
-                Ok(()) => {
-                    return self.wait(index, id, whole, Waiting::Feeder(FeederWait::Settings));
+                Ok(change) => {
+                    let wait = FeederWait::Settings { change };
+                    return self.wait(index, id, whole, Waiting::Feeder(wait));
                 }
                 Err(refusal) => Reply::Refused(refusal),
             },
@@ -547,19 +550,22 @@ impl Server {
     }
 }
 
+/// Queue a settings change if the settings are still at `base`; the number
+/// the change will finish as. Only the loop queues, and only into an empty
+/// mailbox, so nothing finishes between the read and the queue.
 fn put_settings<F: FeederDevice>(
     base: u32,
     change: Asked<SettingsFields>,
     device: &mut F,
-) -> Result<(), Refusal> {
+) -> Result<u32, Refusal> {
     match device.settings(None) {
         SettingsResult::Current { pending: true, .. } | SettingsResult::Busy => Err(Refusal::Busy),
         SettingsResult::ReadOnly => Err(Refusal::NotWritable),
         SettingsResult::Current { view, .. } if view.generation != base => Err(Refusal::Stale {
             current: view.generation,
         }),
-        SettingsResult::Current { .. } => match device.settings(Some(change)) {
-            SettingsResult::Current { pending: true, .. } => Ok(()),
+        SettingsResult::Current { view, .. } => match device.settings(Some(change)) {
+            SettingsResult::Current { pending: true, .. } => Ok(view.saved.next()),
             SettingsResult::Current { .. } | SettingsResult::Busy => Err(Refusal::Busy),
             SettingsResult::ReadOnly => Err(Refusal::NotWritable),
         },
@@ -592,22 +598,25 @@ fn reset_desiccant<F: FeederDevice>(
     now_ms: u32,
     by: Source,
     device: &mut F,
-) -> Result<(), Refusal> {
+) -> Result<u32, Refusal> {
     let today = device.today(now_ms).ok_or(Refusal::NoClock)?;
 
-    match device.settings(None) {
+    let change = match device.settings(None) {
         SettingsResult::Current { pending: true, .. } | SettingsResult::Busy => {
             return Err(Refusal::Busy);
         }
         SettingsResult::ReadOnly => return Err(Refusal::NotWritable),
-        SettingsResult::Current { .. } => {}
-    }
+        SettingsResult::Current { view, .. } => view.saved.next(),
+    };
     let fields = SettingsFields {
-        desiccant_reset: Some(today),
+        kind: FeederFields {
+            desiccant_reset: Some(today),
+            ..FeederFields::default()
+        },
         ..SettingsFields::default()
     };
     match device.settings(Some(Asked { change: fields, by })) {
-        SettingsResult::Current { pending: true, .. } => Ok(()),
+        SettingsResult::Current { pending: true, .. } => Ok(change),
         SettingsResult::Current { .. } | SettingsResult::Busy => Err(Refusal::Busy),
         SettingsResult::ReadOnly => Err(Refusal::NotWritable),
     }
@@ -685,15 +694,15 @@ fn wire_reminder(reminder: MealReminder) -> proto::MealReminder {
 }
 
 const _: () = assert!(PLANS == proto::PLANS_MAX);
-const _: () = assert!(wellfed_core::schedule::PORTIONS_MAX == proto::PORTIONS_MAX);
+const _: () = assert!(wellfed_core_feeder::schedule::PORTIONS_MAX == proto::PORTIONS_MAX);
 const _: () = assert!(
-    wellfed_core::desiccant::PERIOD_MIN == proto::DESICCANT_DAYS_MIN
-        && wellfed_core::desiccant::PERIOD_MAX == proto::DESICCANT_DAYS_MAX
-        && wellfed_core::desiccant::PERIOD_DEFAULT == proto::DESICCANT_DAYS_DEFAULT
+    wellfed_core_feeder::desiccant::PERIOD_MIN == proto::DESICCANT_DAYS_MIN
+        && wellfed_core_feeder::desiccant::PERIOD_MAX == proto::DESICCANT_DAYS_MAX
+        && wellfed_core_feeder::desiccant::PERIOD_DEFAULT == proto::DESICCANT_DAYS_DEFAULT
 );
 const _: () = assert!(
-    wellfed_core::settings::REMINDER_MINUTES_MIN == proto::MEAL_REMINDER_MINUTES_MIN
-        && wellfed_core::settings::REMINDER_MINUTES_MAX == proto::MEAL_REMINDER_MINUTES_MAX
+    wellfed_core_feeder::settings::REMINDER_MINUTES_MIN == proto::MEAL_REMINDER_MINUTES_MIN
+        && wellfed_core_feeder::settings::REMINDER_MINUTES_MAX == proto::MEAL_REMINDER_MINUTES_MAX
 );
 
 /// The wire's plans as the store keeps them. A plan's portions outside
@@ -812,12 +821,15 @@ impl Server {
 /// stayed to read this.
 pub(super) fn poll<F: FeederDevice>(wait: FeederWait, device: &mut F) -> Option<Reply> {
     Some(match wait {
-        FeederWait::Settings => match device.settings(None) {
-            SettingsResult::Current {
-                view,
-                pending: false,
-            } => Reply::Done(Some(view.generation)),
-            _ => return None,
+        // The writer's outcome for this change decides, never the
+        // generation alone: a change it saved only part of still moves it.
+        FeederWait::Settings { change } => match device.settings(None) {
+            SettingsResult::Current { view, .. } => match view.saved.outcome(change) {
+                SaveOutcome::Pending => return None,
+                SaveOutcome::Done => Reply::Done(Some(view.generation)),
+                SaveOutcome::Failed => Reply::Refused(Refusal::NotWritable),
+            },
+            SettingsResult::Busy | SettingsResult::ReadOnly => return None,
         },
         // No event: a calibration has its own generation.
         FeederWait::Calibration { digest } => match device.calibration(None) {

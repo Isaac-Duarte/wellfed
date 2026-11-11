@@ -14,8 +14,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use wellfed_client::update_key::{self, EnrollError, Enrolled};
 use wellfed_formats::credentials::KeyScope;
-use wellfed_formats::hex;
 use wellfed_model::{Client, ClientRole, Op};
+use wellfed_session::hex;
 use wellfed_signing::Key;
 
 use crate::ask::Asker;
@@ -101,7 +101,15 @@ pub(crate) async fn command(args: UpdateKeyArgs) -> Result<()> {
 /// feeder answers sent at most once.
 async fn enroll(connection: &mut Connection, file: &Path, label: &str) -> Result<()> {
     let key = Key::load(file).with_context(|| format!("load {}", file.display()))?;
-    let id = hex::encode(&key.id());
+    // The release key already signs for every consumer feeder and stays on
+    // offline media; enrolling it would bring it onto an online machine.
+    if key.scope() == KeyScope::Release {
+        bail!(
+            "{} is the release key; enroll an owner key instead",
+            file.display()
+        );
+    }
+    let id = hex::Lower(&key.id()).to_string();
     let outcome = wellfed_install::update_key::enroll(
         connection,
         key.public(),
@@ -150,7 +158,7 @@ async fn show(connection: &mut Connection) -> Result<()> {
         println!(
             "{}  key id {}  {}",
             signer.key,
-            hex::encode(&id),
+            hex::Lower(&id),
             signer.label
         );
     }

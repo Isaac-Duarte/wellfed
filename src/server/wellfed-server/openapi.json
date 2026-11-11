@@ -152,7 +152,7 @@
             "description": "Writes in this state only: `unknown` is the uncertain list.",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/CommandState"
+              "$ref": "#/components/schemas/CommandStateFilter"
             }
           },
           {
@@ -513,6 +513,45 @@
           },
           "409": {
             "description": "feeder_archived: already removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feeders/{id}/alerts": {
+      "get": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "The feeder's open alerts, as the server last read its alert table,\nwith the cursor they were read under and whether the server reaches the\nfeeder. The feeder decides every alert; the server reads the table\nwhenever the feeder's status shows it moved, a moment after each event,\nand every minute while the feeder is online. An entry a client can't\nread (a kind a newer feeder added) is one to skip and count as unread.",
+        "operationId": "alerts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeederAlerts"
+                }
+              }
+            }
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {
@@ -5882,7 +5921,7 @@
         "tags": [
           "health"
         ],
-        "summary": "Liveness and version, without authentication: the process is up and\nserving. It reads nothing, so a probe never waits on the database.",
+        "summary": "Liveness, version and API revision, without authentication: the\nprocess is up and serving. It reads nothing, so a probe never waits on the database.",
         "operationId": "health",
         "responses": {
           "200": {
@@ -5929,6 +5968,446 @@
               "null"
             ],
             "description": "The public key the caller's phone already holds on the feeder, when\nthe phone adopts it: once the feeder lists that key, the server\nrecords it as this account's phone key, as if it had invited it, so\ndeleting, demoting or putting an expiry on the account revokes it.\nOnly a phone's token names one, for an account and token with no\nexpiry. Absent when nothing but the server joins (the CLI)."
+          }
+        }
+      },
+      "Alert": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A feed failed, or never started. `plan` is its slot, if a plan asked.",
+            "required": [
+              "feed",
+              "requested",
+              "completed",
+              "outcome",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "completed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "feed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_failed"
+                ]
+              },
+              "outcome": {
+                "$ref": "#/components/schemas/FeedOutcome"
+              },
+              "plan": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "reason": {
+                "$ref": "#/components/schemas/FeedReason"
+              },
+              "requested": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A feed may have dispensed anything up to `requested`.",
+            "required": [
+              "feed",
+              "requested",
+              "completed",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "completed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "feed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_uncertain"
+                ]
+              },
+              "plan": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "reason": {
+                "$ref": "#/components/schemas/FeedReason"
+              },
+              "requested": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The occurrence did not run, and never will.",
+            "required": [
+              "plan",
+              "due",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "due": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_missed"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "reason": {
+                "$ref": "#/components/schemas/MissedReason"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The occurrence is past due and the feeder's schedule has no record of\nit.",
+            "required": [
+              "plan",
+              "due",
+              "kind"
+            ],
+            "properties": {
+              "due": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_no_record"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "power_was_out"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "stop",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "update_failed"
+                ]
+              },
+              "stop": {
+                "$ref": "#/components/schemas/UpdateStop"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rolled_back"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client",
+              "role",
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "client": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "client_joined"
+                ]
+              },
+              "path": {
+                "$ref": "#/components/schemas/EnrollPath"
+              },
+              "role": {
+                "$ref": "#/components/schemas/ClientRole"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "client": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "client_revoked"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "repeated_restarts"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "no_clock"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cannot_feed"
+                ]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/Blocked"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "food_low"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "There is no empty reading: `confirmed` portions have gone since the\nfood beam read low, about what lay below it. Word it as likely.",
+            "required": [
+              "confirmed",
+              "kind"
+            ],
+            "properties": {
+              "confirmed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "food_likely_out"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Days left of the desiccant's period: 0 or below.",
+            "required": [
+              "days",
+              "kind"
+            ],
+            "properties": {
+              "days": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "desiccant_due"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "battery_below_floor"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "With a valid clock, the plans have stayed out of reach, or a change to\nthem has never finished, so nothing can say whether meals ran.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plans_stuck"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What is wrong. A reader of the server's API skips an entry whose kind\nit doesn't know, as a client of the device API does, so this enum has no\ncatch-all."
+      },
+      "AlertsRead": {
+        "type": "object",
+        "description": "One read of the feeder's alert table.",
+        "required": [
+          "epoch",
+          "boot",
+          "generation",
+          "more",
+          "settling",
+          "unread",
+          "clock_valid",
+          "at",
+          "checked"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the server read it. The table may have moved since while the\nfeeder was out of reach."
+          },
+          "boot": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The feeder's boot count: the generation counts from 0 at each boot.",
+            "minimum": 0
+          },
+          "checked": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the server last found the table unchanged, or read it: the\ntable was the feeder's own at least until then. A client weighs a\ncopy against its own last read by this, not `at`, since a table\nthat stays the same keeps its `at` for good."
+          },
+          "clock_valid": {
+            "type": "boolean",
+            "description": "Whether the feeder's status showed a valid clock at the read."
+          },
+          "epoch": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The ring's epoch: a feed's alert counts its number in it.",
+            "minimum": 0
+          },
+          "generation": {
+            "$ref": "#/components/schemas/Generation",
+            "description": "Changes whenever anything in the table does."
+          },
+          "more": {
+            "type": "boolean",
+            "description": "A report left for want of room, or the boot read missed part of the\nring: an absent report may not have ended."
+          },
+          "settling": {
+            "type": "boolean",
+            "description": "An absent condition may not have ended yet."
+          },
+          "unread": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Alerts the server's build could not read: a newer feeder build's.",
+            "minimum": 0
           }
         }
       },
@@ -6214,6 +6693,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "What happened. A change names the account it changed (`account`, with\nits `name`) and its new values."
@@ -6344,7 +6838,8 @@
           "key",
           "extent",
           "changed",
-          "read"
+          "read",
+          "unknown"
         ]
       },
       "Battery": {
@@ -6445,6 +6940,21 @@
                 "type": "string",
                 "enum": [
                   "stale"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -6718,6 +7228,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "Whose a feeder's client is, as the server knows it."
@@ -6729,7 +7254,8 @@
           "owner",
           "member",
           "server",
-          "update_signer"
+          "update_signer",
+          "unknown"
         ]
       },
       "Command": {
@@ -6836,7 +7362,8 @@
           "call_delete",
           "call_play",
           "skip",
-          "unskip"
+          "unskip",
+          "unknown"
         ]
       },
       "CommandOutcome": {
@@ -7070,6 +7597,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An outcome a newer server added, which this client cannot name. The\nserver never sends it. A client treats it as uncertain: the write\nmay have run, so it is never sent again.",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "What the feeder answered a write, or what its history says of it."
@@ -7102,8 +7644,18 @@
         "enum": [
           "sent",
           "answered",
-          "unknown",
-          "resolved"
+          "resolved",
+          "unknown"
+        ]
+      },
+      "CommandStateFilter": {
+        "type": "string",
+        "description": "A state to list writes in. Only in a query, so it has no catch-all: a\nserver refuses a state it can't name (`400`) rather than listing none.",
+        "enum": [
+          "sent",
+          "answered",
+          "resolved",
+          "unknown"
         ]
       },
       "Connection": {
@@ -7113,7 +7665,8 @@
           "offline",
           "connecting",
           "online",
-          "refused"
+          "refused",
+          "unknown"
         ]
       },
       "CoreEvent": {
@@ -7448,21 +8001,6 @@
           },
           {
             "type": "object",
-            "description": "The feeder's clock is invalid, so the days cannot be counted.",
-            "required": [
-              "state"
-            ],
-            "properties": {
-              "state": {
-                "type": "string",
-                "enum": [
-                  "unknown"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "Days left of the period; `due` from 0 on, and the count goes on\nbelow zero.",
             "required": [
               "days",
@@ -7481,6 +8019,21 @@
                 "type": "string",
                 "enum": [
                   "remaining"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The feeder's clock is invalid, so the days cannot be counted. A\nstate a newer build added reads as this too: the days are not known\nhere either.",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -7510,6 +8063,21 @@
                 }
               }
             ]
+          },
+          {
+            "type": "object",
+            "description": "A kind a newer build added, which this one cannot read: a client\nshows the device as needing an update. Never written to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "The part of [`Status`] only one kind of device reports, tagged by the\nkind in JSON (`\"kind\": \"feeder\"`)."
@@ -7521,7 +8089,8 @@
           "setup",
           "invite",
           "recovery",
-          "press"
+          "press",
+          "unknown"
         ]
       },
       "ErrorCode": {
@@ -7578,7 +8147,8 @@
           "import_closed",
           "archive_invalid",
           "export_running",
-          "internal"
+          "internal",
+          "unknown"
         ]
       },
       "EventBody": {
@@ -7591,6 +8161,34 @@
           }
         ],
         "description": "What an event says: one of the shared core's, which every kind of\ndevice records, or one of its own kind's. The JSON is flat, tagged by\nthe event's `kind` alone, as the history stores it; [`Self::device`]\nnames the kind whose module records it."
+      },
+      "EventKind": {
+        "type": "string",
+        "description": "An event's kind, for filtering.",
+        "enum": [
+          "boot",
+          "lock",
+          "settings",
+          "wifi",
+          "enrolled",
+          "revoked",
+          "clock_sync",
+          "lost",
+          "fed",
+          "feeding_blocked",
+          "supply",
+          "plans",
+          "missed",
+          "dispense_refused",
+          "meal_soon",
+          "food",
+          "skipped",
+          "unskipped",
+          "update_stop",
+          "update_at_boot",
+          "restarting",
+          "update_confirmed"
+        ]
       },
       "EventPage": {
         "type": "object",
@@ -7632,6 +8230,14 @@
             "minimum": 0
           }
         }
+      },
+      "ExportFormat": {
+        "type": "string",
+        "description": "How the tables are written.",
+        "enum": [
+          "json",
+          "csv"
+        ]
       },
       "FeedAnomaly": {
         "oneOf": [
@@ -7758,6 +8364,21 @@
                 "type": "integer",
                 "format": "int32",
                 "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
               }
             }
           }
@@ -8046,19 +8667,21 @@
           },
           "kind": {
             "type": "string",
-            "description": "A kind of device, which one module of the device API serves.",
+            "description": "A kind of device, which one module of the device API serves; `unknown` when a newer build added it.",
             "enum": [
               "feeder",
               "fountain",
-              "litter_box"
+              "litter_box",
+              "unknown"
             ]
           },
           "model": {
             "type": "string",
-            "description": "A device model, which names its kind.",
+            "description": "A device model, which names its kind; `unknown` when a newer build added it.",
             "enum": [
               "plaf103",
-              "plwf106"
+              "plwf106",
+              "unknown"
             ]
           },
           "name": {
@@ -8087,6 +8710,41 @@
             "format": "int64",
             "description": "The newest event the server holds, `None` before the first.",
             "minimum": 0
+          }
+        }
+      },
+      "FeederAlerts": {
+        "type": "object",
+        "description": "`GET /feeders/{id}/alerts`.",
+        "required": [
+          "alerts"
+        ],
+        "properties": {
+          "alerts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpenAlert"
+            },
+            "description": "The open alerts, oldest first, as that read found them. An entry a\nclient can't read (a kind a newer feeder added) is left out by\n`wellfed-server-client`, which counts it in `unread`."
+          },
+          "read": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AlertsRead",
+                "description": "The read the alerts come from; `None` before the server has read\nthe feeder's table."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unreachable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Since when the server has not reached the feeder, by the rule a\nphone at home uses (three failed tries in a row over at least ten\nminutes); `None` while it reaches it."
           }
         }
       },
@@ -9175,9 +9833,16 @@
         "type": "object",
         "description": "Liveness, without authentication.",
         "required": [
-          "version"
+          "version",
+          "revision"
         ],
         "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The server's API revision ([`crate::REVISION`]): a client compares\nit with its own to say which side to update ([`ServerSkew`]).",
+            "minimum": 0
+          },
           "version": {
             "type": "string"
           }
@@ -9577,6 +10242,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "Why an install failed. Nothing is offered again on the owner's behalf:\nanother install is another request."
@@ -9604,7 +10284,8 @@
           "running",
           "activated",
           "already_running",
-          "failed"
+          "failed",
+          "unknown"
         ]
       },
       "InstallTarget": {
@@ -9646,6 +10327,21 @@
               "sha256": {
                 "type": "string",
                 "description": "SHA-256 of the kept backup file."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
               }
             }
           }
@@ -9727,14 +10423,16 @@
           "rollups",
           "expiry",
           "backup",
-          "release_check"
+          "release_check",
+          "unknown"
         ]
       },
       "JobOutcome": {
         "type": "string",
         "enum": [
           "succeeded",
-          "failed"
+          "failed",
+          "unknown"
         ]
       },
       "JobRun": {
@@ -9795,6 +10493,21 @@
                 "type": "string",
                 "enum": [
                   "failed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -9871,6 +10584,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "One message of a followed debug log."
@@ -9880,7 +10608,8 @@
         "description": "Why a login failed after its password was checked.",
         "enum": [
           "bad_password",
-          "disabled"
+          "disabled",
+          "unknown"
         ]
       },
       "MealReminder": {
@@ -9916,6 +10645,21 @@
                 "type": "string",
                 "enum": [
                   "before"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -9977,6 +10721,18 @@
           }
         }
       },
+      "MetricKind": {
+        "type": "string",
+        "enum": [
+          "power",
+          "rssi",
+          "heap",
+          "loop",
+          "gateway",
+          "wifi",
+          "supply"
+        ]
+      },
       "MissedReason": {
         "oneOf": [
           {
@@ -10024,6 +10780,21 @@
                 "type": "string",
                 "enum": [
                   "interrupted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -10239,6 +11010,25 @@
             "format": "int32",
             "description": "The plan's slot.",
             "minimum": 0
+          }
+        }
+      },
+      "OpenAlert": {
+        "type": "object",
+        "required": [
+          "alert"
+        ],
+        "properties": {
+          "alert": {
+            "$ref": "#/components/schemas/Alert"
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "A report's own time, or when a condition opened; `None` if the\nfeeder's clock was not valid then."
           }
         }
       },
@@ -11062,10 +11852,11 @@
           },
           "model": {
             "type": "string",
-            "description": "A device model, which names its kind.",
+            "description": "A device model, which names its kind; `unknown` when a newer build added it.",
             "enum": [
               "plaf103",
-              "plwf106"
+              "plwf106",
+              "unknown"
             ]
           },
           "signer": {
@@ -11150,7 +11941,8 @@
           "unknown_key",
           "signature",
           "refused",
-          "image"
+          "image",
+          "unknown"
         ]
       },
       "ReleaseSigner": {
@@ -11158,7 +11950,8 @@
         "description": "Whose key signed a release.",
         "enum": [
           "project",
-          "owner"
+          "owner",
+          "unknown"
         ]
       },
       "ReleaseSource": {
@@ -11197,6 +11990,21 @@
                 "type": "string",
                 "enum": [
                   "upload"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
                 ]
               }
             }
@@ -11278,6 +12086,14 @@
           }
         }
       },
+      "Resolution": {
+        "type": "string",
+        "description": "How finely samples are read.",
+        "enum": [
+          "raw",
+          "hour"
+        ]
+      },
       "RevokeAttempt": {
         "oneOf": [
           {
@@ -11291,21 +12107,6 @@
                 "type": "string",
                 "enum": [
                   "offline"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "No answer came in time: the feeder may have dropped the key.",
-            "required": [
-              "result"
-            ],
-            "properties": {
-              "result": {
-                "type": "string",
-                "enum": [
-                  "unknown"
                 ]
               }
             }
@@ -11348,6 +12149,21 @@
                 "format": "date-time"
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "No answer came in time: the feeder may have dropped the key. A\nresult a newer server added reads as this too.",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "Why an attempt to revoke a key, or the server's own, did not land."
@@ -11360,7 +12176,8 @@
           "demoted",
           "expiring",
           "token_revoked",
-          "replaced"
+          "replaced",
+          "unknown"
         ]
       },
       "Revoking": {
@@ -11397,7 +12214,8 @@
         "enum": [
           "owner",
           "member",
-          "viewer"
+          "viewer",
+          "unknown"
         ]
       },
       "SamplePage": {
@@ -11713,6 +12531,21 @@
                 }
               }
             ]
+          },
+          {
+            "type": "object",
+            "description": "A kind a newer build added, which this one can neither read nor\nchange. Never written to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "A device's settings, by its kind, tagged by the kind in JSON (`\"kind\":\n\"feeder\"`). Each kind reads and writes its own through its own ops; this\nis what a host holds and serves without caring which kind it is."
@@ -11799,7 +12632,8 @@
           "same",
           "feeder_behind",
           "feeder_ahead",
-          "legacy"
+          "legacy",
+          "unknown"
         ]
       },
       "Source": {
@@ -11870,6 +12704,21 @@
                 "format": "int32",
                 "description": "The plan's slot.",
                 "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
               }
             }
           }
@@ -12327,7 +13176,8 @@
         "type": "string",
         "enum": [
           "verified",
-          "damaged"
+          "damaged",
+          "unknown"
         ]
       },
       "StockFeeder": {
@@ -12385,7 +13235,8 @@
         "description": "Where the kept copy came from.",
         "enum": [
           "feeder",
-          "upload"
+          "upload",
+          "unknown"
         ]
       },
       "StockState": {
@@ -12438,7 +13289,8 @@
         "description": "Whether the database answered a trivial query on both its writer and\nits readers. The failure itself is in the server's log, under the\nrequest's id.",
         "enum": [
           "ok",
-          "failing"
+          "failing",
+          "unknown"
         ]
       },
       "StreamEvent": {
@@ -12584,6 +13436,25 @@
                 "type": "string",
                 "enum": [
                   "resync"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The server read a new alert table from the feeder, or its judgement\nof the feeder's reach changed: read `GET /feeders/{id}/alerts`.",
+            "required": [
+              "feeder",
+              "type"
+            ],
+            "properties": {
+              "feeder": {
+                "$ref": "#/components/schemas/FeederId"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "alerts"
                 ]
               }
             }
@@ -12851,6 +13722,21 @@
                 "$ref": "#/components/schemas/TraceMotor"
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
           }
         ],
         "description": "One entry of a trace's body."
@@ -13047,7 +13933,8 @@
         "description": "How weights are shown.",
         "enum": [
           "grams",
-          "ounces"
+          "ounces",
+          "unknown"
         ]
       },
       "UpdateCandidate": {
@@ -13056,7 +13943,8 @@
         "enum": [
           "none",
           "pending",
-          "activated"
+          "activated",
+          "unknown"
         ]
       },
       "UpdateRefusal": {
@@ -13199,6 +14087,13 @@
             "enum": [
               "held_as_session_key"
             ]
+          },
+          {
+            "type": "string",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "enum": [
+              "unknown"
+            ]
           }
         ],
         "description": "Why an update op was refused."
@@ -13214,7 +14109,8 @@
           "write",
           "hash",
           "activate",
-          "store"
+          "store",
+          "unknown"
         ]
       },
       "User": {
@@ -13464,6 +14360,21 @@
                 "format": "int32",
                 "maximum": 1439,
                 "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A value a newer build added, which this one cannot name. Never\nwritten to the wire.",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
               }
             }
           }

@@ -15,16 +15,19 @@
 
 use std::time::Duration;
 
-use wellfed_core::feed::controller::FeedReason;
-use wellfed_core::feed::owner::OwnerState;
-use wellfed_core::feed::storage::OwnerOutcome;
-use wellfed_core::record::{Confirm, Event, Owner};
+use wellfed_core::record::Confirm;
+use wellfed_core_feeder::feed::controller::FeedReason;
+use wellfed_core_feeder::feed::owner::OwnerState;
+use wellfed_core_feeder::feed::storage::OwnerOutcome;
+use wellfed_core_feeder::record::Owner;
+
+use crate::Event;
 use wellfed_formats::require;
 use wellfed_model::{FeederSettings, FeederSettingsPatch, Refusal};
 use wellfed_rig::device::{Answer, Ask};
 
 use super::log::events;
-use super::scenarios::{RECORD_WAIT, changes_to, read_settings, set_settings};
+use super::scenarios::{RECORD_WAIT, base, changes_to, read_settings, set_settings};
 use super::{Ctx, Error, Result, compact};
 
 /// Why `feed-writes` failed. A feed that may still be running is its own
@@ -216,7 +219,7 @@ fn writes_during_feed(
     })?;
 
     let settings = ctx.ask_held(&Ask::PutSettings {
-        base: before.generation.0,
+        base: base(before)?,
         changes: change,
     })?;
     ctx.note(&format!(
@@ -299,12 +302,12 @@ fn deferred_writes(ctx: &mut Ctx, start: usize) -> Result<()> {
     let deferred = |lines: Vec<String>| -> Option<u32> {
         lines.iter().rev().find_map(|line| {
             events(line).find_map(|e| match e {
-                Event::Owner(Owner::Interlock { writes_deferred }) => writes_deferred,
+                Event::Kind(Owner::Interlock { writes_deferred }) => writes_deferred,
                 _ => None,
             })
         })
     };
-    let interlock = |e: &Event<'_>| matches!(e, Event::Owner(Owner::Interlock { .. }));
+    let interlock = |e: &Event<'_>| matches!(e, Event::Kind(Owner::Interlock { .. }));
     let before = deferred(ctx.log.between(0, start, interlock));
     let Some(after) = deferred(ctx.log.between(start, usize::MAX, interlock)) else {
         ctx.note("  No interlock record since the feed began");
@@ -354,7 +357,7 @@ fn cancel_during_feed(ctx: &mut Ctx, issued: &mut Option<Issued>) -> Result<()> 
     )?;
     // The owner logs its outputs stopped before it reports the result.
     let stopped = ctx.log.between(since, fed, |e| {
-        matches!(e, Event::Owner(Owner::State { state, stopped: true }) if *state != OwnerState::Feeding)
+        matches!(e, Event::Kind(Owner::State { state, stopped: true }) if *state != OwnerState::Feeding)
     });
     require(!stopped.is_empty(), || FeedsError::NoStoppedOutputs {
         feed,
@@ -428,13 +431,13 @@ fn taken(ctx: &mut Ctx, since: usize) -> Result<Option<u32>> {
 /// submission names the id the next feed will take, so it is no feed.
 pub(super) fn submitted(event: &Event<'_>) -> Option<u64> {
     match *event {
-        Event::Owner(Owner::Submitted { id, accepted: true }) => Some(id),
+        Event::Kind(Owner::Submitted { id, accepted: true }) => Some(id),
         _ => None,
     }
 }
 
 pub(super) fn owner_state(event: &Event<'_>, state: OwnerState) -> bool {
-    matches!(event, Event::Owner(Owner::State { state: s, .. }) if *s == state)
+    matches!(event, Event::Kind(Owner::State { state: s, .. }) if *s == state)
 }
 
 /// A record the settings writer logs once a store write lands, or the
@@ -463,7 +466,7 @@ pub struct Fed {
 /// `event` as feed `feed`'s result, if it is one.
 pub(super) fn fed_of(event: &Event<'_>, feed: u32) -> Option<Fed> {
     match *event {
-        Event::Owner(Owner::Fed {
+        Event::Kind(Owner::Fed {
             id,
             requested,
             completed,

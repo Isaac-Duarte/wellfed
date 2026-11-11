@@ -19,7 +19,7 @@ The Android app ([consumer installation](../../../firmware/consumer-installation
 
 ## The MQTT request
 
-Precheck function `0x0e018e30` reads these fields from the command it receives (U02). Our [stock OTA trial controller](../../../../src/tools/wellfed-stock/src/ota/trial.rs) builds the enclosing service command.
+Precheck function `0x0e018e30` reads these fields from the command it receives (U02). Our [stock OTA trial controller](../../../../src/client/wellfed-stock/src/ota/trial.rs) builds the enclosing service command.
 
 | Field | Check in stock 1.1.15 |
 | --- | --- |
@@ -88,7 +88,7 @@ The payload starts at byte 32. The checksum covers the image headers and padding
 
 Stock's descriptor parser `0x0e02a2b0` checks only the first **three** identifier bytes against `OTA`. It copies each 24-byte descriptor and replaces the destination with the selected bank's address. It gives none of our parser's exact-format guarantees, and its descriptor loop doesn't establish a safe maximum count. Keep to the reviewed single-entry profile; don't assume multi-image packages, other sizes or other flash destinations work.
 
-[Our OTA parser](../../../../src/tools/wellfed-image/src/ota.rs) admits a deliberately narrower format (U06): the whole eight-word profile above, an exact payload length through EOF and the correct byte-sum. Its inner images are:
+[Our OTA parser](../../../../src/client/wellfed-image/src/ota.rs) admits a deliberately narrower format (U06): the whole eight-word profile above, an exact payload length through EOF and the correct byte-sum. Its inner images are:
 
 | Order | Region | Runtime body address |
 | --- | --- | --- |
@@ -129,6 +129,6 @@ The [layout auditor](../../../../src/tools/wellfed-build/src/platform/amebad/aud
 | U03 | Static analysis | URL parser `0x0e01b274`, directly disassembled splitter `0x0e01afa4`, TCP connect `0x0e02ad84`, HTTP response parser `0x0e02aa8c` |
 | U04 | Static analysis | HTTP orchestrator `0x0e02b1f4`, header receiver `0x0e02ae34`, descriptor parser `0x0e02a2b0`, writer `0x0e02af04`, byte-sum checker `0x0e02a580`; OTA task `0x0e0277d0` |
 | U05 | Static analysis; earlier simulation and physical observations, separately scoped | Activation `0x0e02a648`, active-bank selection `0x0e02a1d4`, [factory tests](../../../../src/tools/wellfed-emu/tests/factory.rs), [bank policy](../../../firmware/bank-policy.md). This review did not rerun the emulator or the bench. |
-| U06 | Static analysis of our tooling | [Container and inner-image parser](../../../../src/tools/wellfed-image/src/ota.rs), [layout audit](../../../../src/tools/wellfed-build/src/platform/amebad/audit/layout.rs), [layout profile](../../../../src/firmware/devices/plaf103/layout.json) |
+| U06 | Static analysis of our tooling | [Container and inner-image parser](../../../../src/client/wellfed-image/src/ota.rs), [layout audit](../../../../src/tools/wellfed-build/src/platform/amebad/audit/layout.rs), [layout profile](../../../../src/firmware/devices/plaf103/layout.json) |
 | U07 | Earlier physical observations, not repeated | Private stock OTA trial and probe records. Local HTTP and MQTT installed a minimally modified stock version marker and returned to the original 1.1.15, then a small added-code stock probe and return. That shows narrow modified-stock OTA execution only. The later [stock recovery](../recovery.md) used UART and is not evidence of stock-to-replacement installation over MQTT. |
 | U08 | Static analysis | Request handler `0x0e016ba0`, rejection `0x0e0193a0`, cleanup `0x0e018b48`, sector erase `0x0e0113d0` |

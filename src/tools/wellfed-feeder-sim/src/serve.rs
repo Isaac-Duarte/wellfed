@@ -23,8 +23,8 @@ use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep};
 use wellfed_core::buttons::Gesture;
-use wellfed_core::feed::controller::FeedReason;
 use wellfed_core::mdns;
+use wellfed_core_feeder::feed::controller::FeedReason;
 
 use crate::banks::Banks;
 use crate::flash::Flash;

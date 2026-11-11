@@ -33,6 +33,8 @@ impl Service {
                     check.failed.len()
                 );
             }),
+            // A newer server's job, which is never scheduled here.
+            Job::Unknown => Ok(()),
         };
 
         let outcome = match result {
@@ -60,6 +62,8 @@ impl Service {
         match job {
             Job::Retention | Job::Rollups | Job::Expiry | Job::Backup => true,
             Job::ReleaseCheck => self.fetching_releases(),
+            // A newer server's job: this one has nothing to run for it.
+            Job::Unknown => false,
         }
     }
 

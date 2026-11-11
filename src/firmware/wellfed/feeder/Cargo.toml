@@ -67,6 +67,7 @@ twin = []
 wellfed-device-runtime.workspace = true
 wellfed-feeder-runtime.workspace = true
 wellfed-core.workspace = true
+wellfed-core-feeder.workspace = true
 wellfed-device.workspace = true
 wellfed-device-api.workspace = true
 wellfed-feeder.workspace = true

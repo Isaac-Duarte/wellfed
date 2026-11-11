@@ -16,13 +16,13 @@
 //! zone stays on the syncs' offsets.
 //!
 //! A plan's next meal ([`next_meal`]) is the feeder's own reckoning
-//! (`wellfed_core::schedule`) run on the host's zone, so a skipped or
+//! (`wellfed_core_feeder::schedule`) run on the host's zone, so a skipped or
 //! repeated minute lands where the feeder will feed.
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_core::clock::zone::{Rule, Zone};
-use wellfed_core::schedule;
+use wellfed_core_feeder::schedule;
 use wellfed_model::{NextMeal, Plan, Plans, TimeSync, TimeView};
 
 /// How far ahead a rule must agree with its zone.
@@ -154,6 +154,17 @@ pub enum RuleError {
         rule: String,
         at: Timestamp,
     },
+    /// The bundled rule agrees with the bundled zone but not with the
+    /// host's: one of the two tzdb releases is out of date.
+    #[error(
+        "{name}'s rule {rule:?} disagrees with this host's time zone data at {at}: \
+         one of the two is out of date"
+    )]
+    HostDisagrees {
+        name: String,
+        rule: String,
+        at: Timestamp,
+    },
 }
 
 /// The POSIX TZ rule the feeder keeps for the IANA zone `name` from
@@ -177,43 +188,58 @@ pub fn rule(name: &str, now: Timestamp, host: Option<&TimeZone>) -> Result<Strin
     // feeder must not keep a rule either one contradicts.
     let bundled =
         TimeZone::tzif(canonical, tzif).map_err(|_| RuleError::NoRule(canonical.to_owned()))?;
-    for full in core::iter::once(&bundled).chain(host) {
-        if let Some(at) = disagreement(zone.rule(), full, now) {
-            return Err(RuleError::Irregular {
-                name: canonical.to_owned(),
-                rule,
-                at,
-            });
-        }
+    if let Some(at) = disagreement(zone.rule(), &bundled, now) {
+        return Err(RuleError::Irregular {
+            name: canonical.to_owned(),
+            rule,
+            at,
+        });
+    }
+    if let Some(at) = host.and_then(|host| disagreement(zone.rule(), host, now)) {
+        return Err(RuleError::HostDisagrees {
+            name: canonical.to_owned(),
+            rule,
+            at,
+        });
     }
     Ok(rule)
 }
 
 /// The first instant in the next ten years where `rule` and `zone` differ,
-/// checked at `now` and on both sides of both sets of transitions. A rule
-/// can add a change the full zone does not have, including when the host's
-/// newer tzdb has abolished DST and has no transitions left to inspect.
+/// checked at `now` and on both sides of each transition of either one.
+/// Two offset functions that agree at both sides of every change of both
+/// agree in between, where neither changes. The rule's own changes count:
+/// a host tzdb newer than the bundled one may have dropped a zone's
+/// daylight time, and a rule still keeping it then agrees with that zone
+/// all winter and at none of the zone's (absent) transitions.
 fn disagreement(rule: Rule, zone: &TimeZone, now: Timestamp) -> Option<Timestamp> {
     let end = now.as_second().saturating_add(AGREE_S);
-    let differs = |t: Timestamp| rule.offset_at(t.as_second()) != zone.to_offset(t).seconds();
-    if differs(now) {
-        return Some(now);
+    let differs = |t: i64| {
+        let at = Timestamp::from_second(t).ok()?;
+        (rule.offset_at(t) != zone.to_offset(at).seconds()).then_some(at)
+    };
+    // The earlier side of each change first, so the first found is the
+    // earliest there.
+    let around = |changes: &mut dyn Iterator<Item = i64>| {
+        changes
+            .take_while(|&t| t <= end)
+            .find_map(|t| differs(t - 1).or_else(|| differs(t)))
+    };
+    if let Some(at) = differs(now.as_second()) {
+        return Some(at);
     }
-    let full = zone
-        .following(now)
-        .map(|transition| transition.timestamp())
-        .take_while(|t| t.as_second() <= end);
-    let kept = core::iter::successors(rule.next_change(now.as_second()), |&(at, _)| {
-        rule.next_change(at)
-    })
-    .take_while(|&(at, _)| at <= end)
-    .filter_map(|(at, _)| Timestamp::from_second(at).ok());
 
-    full.chain(kept)
-        .flat_map(|t| [Timestamp::from_second(t.as_second() - 1).ok(), Some(t)])
-        .flatten()
-        .filter(|&t| differs(t))
-        .min()
+    let mut zone_changes = zone
+        .following(now)
+        .map(|transition| transition.timestamp().as_second());
+    let mut rule_changes = core::iter::successors(rule.next_change(now.as_second()), |&(t, _)| {
+        rule.next_change(t)
+    })
+    .map(|(t, _)| t);
+    match (around(&mut zone_changes), around(&mut rule_changes)) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 /// A version 2+ TZif file ends with its POSIX rule between two newlines.
@@ -433,7 +459,7 @@ mod tests {
         assert!(winter_only.following(now).next().is_none());
         assert_eq!(
             rule("America/Denver", now, Some(&winter_only)),
-            Err(RuleError::Irregular {
+            Err(RuleError::HostDisagrees {
                 name: "America/Denver".into(),
                 rule: "MST7MDT,M3.2.0,M11.1.0".into(),
                 at: at(SPRING),
@@ -451,6 +477,52 @@ mod tests {
         assert_eq!(disagreement(early, &late, now), Some(at(SPRING)));
     }
 
+    /// A host whose newer tzdb dropped a zone's daylight time has no
+    /// transitions ahead, so only the rule's own changes show the rule
+    /// moving the clock an hour the host never will, from winter or summer.
+    #[test]
+    fn a_rule_keeping_daylight_time_the_host_dropped_disagrees_at_its_change() {
+        let cst = TimeZone::fixed(jiff::tz::Offset::from_seconds(-6 * 3600).unwrap());
+        let mexico = Zone::parse(b"CST6CDT,M4.1.0,M10.5.0").unwrap().rule();
+        // 2027-01-04, in winter: CDT would begin 2027-04-04 at 08:00Z.
+        let winter = at(NOW + 70 * 86_400);
+        assert_eq!(disagreement(mexico, &cst, winter), Some(at(1_806_825_600)));
+
+        // Through the public call, Berlin against a host with no summer
+        // time, checked in December.
+        let cet = TimeZone::fixed(jiff::tz::Offset::from_seconds(3600).unwrap());
+        let december = at(1_796_083_200);
+        assert!(matches!(
+            rule("Europe/Berlin", december, Some(&cet)),
+            Err(RuleError::HostDisagrees { .. })
+        ));
+        // In summer the rule already differs.
+        let july = at(1_814_400_000);
+        assert_eq!(
+            disagreement(
+                Zone::parse(b"CET-1CEST,M3.5.0,M10.5.0/3").unwrap().rule(),
+                &cet,
+                july
+            ),
+            Some(july)
+        );
+    }
+
+    /// A fixed rule against a fixed zone of the same offset, and a rule
+    /// against its own zone in the southern hemisphere, agree.
+    #[test]
+    fn rules_that_match_their_zone_agree() {
+        let now = Timestamp::from_second(NOW).unwrap();
+        let ist = TimeZone::fixed(jiff::tz::Offset::from_seconds(19_800).unwrap());
+        assert_eq!(
+            disagreement(Zone::parse(b"IST-5:30").unwrap().rule(), &ist, now),
+            None
+        );
+        let sydney = TimeZone::get("Australia/Sydney").unwrap();
+        let rule = Zone::parse(b"AEST-10AEDT,M10.1.0,M4.1.0/3").unwrap().rule();
+        assert_eq!(disagreement(rule, &sydney, now), None);
+    }
+
     /// Every zone's rule fits the feeder and agrees with jiff at every
     /// transition of the next ten years, but for the few zones that list
     /// irregular changes ahead.
@@ -465,7 +537,9 @@ mod tests {
                     assert!(rule.len() <= TEXT_MAX, "{name}: {rule}");
                     regular += 1;
                 }
-                Err(RuleError::Irregular { name, .. }) => irregular.push(name),
+                Err(RuleError::Irregular { name, .. } | RuleError::HostDisagrees { name, .. }) => {
+                    irregular.push(name);
+                }
                 Err(error) => panic!("{error}"),
             }
         }

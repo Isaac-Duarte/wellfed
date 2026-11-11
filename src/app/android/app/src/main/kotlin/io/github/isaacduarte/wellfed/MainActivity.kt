@@ -1,6 +1,7 @@
 package io.github.isaacduarte.wellfed
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.ConnectivityManager
@@ -9,10 +10,12 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PatternMatcher
+import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -47,7 +50,7 @@ class MainActivity : FlutterActivity() {
                 home = network
                 // Refused under a VPN that apps cannot bypass: the user
                 // must exclude the app from it.
-                connectivity.bindProcessToNetwork(network)
+                WifiNetworks.bindForActivity(connectivity, network)
             }
 
             override fun onLost(network: Network) {
@@ -55,7 +58,7 @@ class MainActivity : FlutterActivity() {
                 // This request matches the feeder's network too: while it is
                 // held, an unbound process would send the frame out by default.
                 if (feeder == null && connectivity.boundNetworkForProcess == network) {
-                    connectivity.bindProcessToNetwork(null)
+                    WifiNetworks.bindForActivity(connectivity, null)
                 }
             }
         }
@@ -99,6 +102,26 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ALERTS_CHANNEL).setMethodCallHandler {
+            call,
+            result ->
+            when (call.method) {
+                "schedule" -> {
+                    CatchUpWorker.schedule(applicationContext)
+                    result.success(null)
+                }
+                "instant" -> result.success(KeepAliveService.setInstant(applicationContext, call.arguments == true))
+                "hold" -> result.success(KeepAliveService.hold(applicationContext, call.arguments as? String))
+                "instantRunning" -> result.success(KeepAliveService.instantRunning())
+                "sdk" -> result.success(Build.VERSION.SDK_INT)
+                "notificationSettings" -> {
+                    openNotificationSettings()
+                    result.success(null)
+                }
+                "network" -> result.success(WifiNetworks.current(connectivity))
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -109,6 +132,14 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // The app's own page in Android's notification settings: where the owner
+    // turns them on once Android no longer asks.
+    private fun openNotificationSettings() {
+        val intent =
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        startActivity(intent)
     }
 
     // For the length of a run: the flag holds only while this activity is on
@@ -140,7 +171,7 @@ class MainActivity : FlutterActivity() {
         // may be gone: only a join this call made says the frame can go.
         feeder?.let { connectivity.unregisterNetworkCallback(it) }
         feeder = null
-        home?.let { connectivity.bindProcessToNetwork(it) }
+        home?.let { WifiNetworks.bindForActivity(connectivity, it) }
         val wifiManager = getSystemService(WifiManager::class.java)
         Log.i(
             TAG,
@@ -160,7 +191,7 @@ class MainActivity : FlutterActivity() {
         val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    connectivity.bindProcessToNetwork(network)
+                    WifiNetworks.bindForActivity(connectivity, network)
                     if (answered) return
                     answered = true
                     main.post { result.success(null) }
@@ -187,7 +218,7 @@ class MainActivity : FlutterActivity() {
     private fun leaveFeeder(result: MethodChannel.Result) {
         feeder?.let { connectivity.unregisterNetworkCallback(it) }
         feeder = null
-        home?.let { connectivity.bindProcessToNetwork(it) }
+        home?.let { WifiNetworks.bindForActivity(connectivity, it) }
 
         var left = HOME_WAIT_MS
         val poll =
@@ -195,7 +226,7 @@ class MainActivity : FlutterActivity() {
                 override fun run() {
                     val address = homeAddress()
                     if (address != null || left <= 0) {
-                        home?.let { connectivity.bindProcessToNetwork(it) }
+                        home?.let { WifiNetworks.bindForActivity(connectivity, it) }
                         result.success(address)
                         return
                     }
@@ -255,7 +286,7 @@ class MainActivity : FlutterActivity() {
         // new activity's sockets out over mobile data.
         if (current === this) {
             current = null
-            connectivity.bindProcessToNetwork(null)
+            WifiNetworks.bindForActivity(connectivity, null)
         }
         super.onDestroy()
     }
@@ -266,6 +297,7 @@ class MainActivity : FlutterActivity() {
         const val TAG = "wellfed"
         const val CHANNEL = "io.github.isaacduarte.wellfed/wifi"
         const val SCREEN_CHANNEL = "io.github.isaacduarte.wellfed/screen"
+        const val ALERTS_CHANNEL = "io.github.isaacduarte.wellfed/alerts"
         const val SETUP_PREFIX = "PL-AF103-"
         const val JOIN_TIMEOUT_MS = 60_000
         const val HOME_WAIT_MS = 30_000L

@@ -3,11 +3,9 @@
 //! clock, the boot's facts, the statistics, events, alerts and updates. The
 //! feeder's own half is in [`super::feeder_view`].
 
-use wellfed_core::desiccant::{self, Count};
 use wellfed_core::log_tail::Batch as LogBatch;
-use wellfed_core::ota::BANK1_BYTES;
 use wellfed_core::ota::install::{Answer, Phase};
-use wellfed_core::ota::offer::{KeyStatement, key_id};
+use wellfed_core_feeder::desiccant::{self, Count};
 use wellfed_device::store::events::Read;
 use wellfed_device::update as wire;
 use wellfed_device_api::mailbox::{
@@ -25,6 +23,8 @@ use wellfed_proto::api::{
     UpdateRefusal, UpdateView,
 };
 use wellfed_proto::device::Model;
+use wellfed_signed::BANK1_BYTES;
+use wellfed_signed::offer::{KeyStatement, key_id};
 
 use super::super::Feeds;
 use super::super::events;
@@ -390,7 +390,7 @@ pub(super) fn today<P: Platform>(platform: &mut P, now_ms: u32) -> Option<i32> {
 /// alert rules read it.
 pub(in crate::feeder) fn desiccant_now<P: Platform>(platform: &mut P, now_ms: u32) -> Desiccant {
     let today = today(platform, now_ms);
-    match platform.settings().map(|view| view.desiccant(today)) {
+    match platform.settings().map(|view| view.kind.desiccant(today)) {
         Some(Count::Remaining(days)) => Desiccant::Remaining { days },
         Some(Count::Unset) => Desiccant::Unset,
         Some(Count::Unknown) | None => Desiccant::Unknown,

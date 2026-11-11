@@ -48,6 +48,10 @@ pub enum ClientOwner {
     Kept,
     /// A client the server did not invite: an owner keeps or revokes it.
     Unowned,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// An invite for the caller's own phone, which joins the feeder with it on
@@ -138,6 +142,10 @@ pub enum RevokeReason {
     TokenRevoked,
     /// Its token was given an invite for another key: one key per token.
     Replaced,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl RevokeReason {
@@ -149,6 +157,7 @@ impl RevokeReason {
             Self::Expiring => "expiring",
             Self::TokenRevoked => "token_revoked",
             Self::Replaced => "replaced",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -171,8 +180,6 @@ impl RevokeReason {
 pub enum RevokeAttempt {
     /// The server had no session with the feeder; nothing was sent.
     Offline,
-    /// No answer came in time: the feeder may have dropped the key.
-    Unknown,
     /// The feeder refused: `forbidden` when the server's key is not an
     /// owner's.
     Refused { refusal: FeederRefusal },
@@ -180,6 +187,10 @@ pub enum RevokeAttempt {
     /// be redeemed until `until`: tried again when a client joins, at
     /// `until`, and on each reconnect.
     InviteLive { until: Timestamp },
+    /// No answer came in time: the feeder may have dropped the key. A
+    /// result a newer server added reads as this too.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The feeder's Wi-Fi credentials for its next join, or `null` to clear
@@ -225,6 +236,20 @@ pub enum TuneName {
     Twinkle,
 }
 
+impl From<wellfed_model::Tune> for TuneName {
+    fn from(tune: wellfed_model::Tune) -> Self {
+        use wellfed_model::Tune;
+        match tune {
+            Tune::Chime => Self::Chime,
+            Tune::Meal => Self::Meal,
+            Tune::Coin => Self::Coin,
+            Tune::Alert => Self::Alert,
+            Tune::Test => Self::Test,
+            Tune::Twinkle => Self::Twinkle,
+        }
+    }
+}
+
 /// A feeder the server no longer mirrors. Its history, samples and journal
 /// stay readable; adopting it again continues them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -247,4 +272,8 @@ pub enum KeyRemoval {
     /// It could not be revoked: the feeder still holds the key, and its
     /// owner revokes it on the feeder (`wellfed revoke`).
     Failed { attempt: RevokeAttempt },
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }

@@ -10,15 +10,16 @@ use wellfed_device_api::{KeyChange as ApiChange, Reader};
 use wellfed_device_runtime::keys::{self, Change, Requested};
 use wellfed_device_runtime::writer::{KeyChange, KeyResult, WriteEvent};
 use wellfed_device_runtime::{events, network};
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::stats;
 use wellfed_feeder_runtime::writer::{FeederRecord, Record, Writer};
+use wellfed_hal::board::storage::Sectors;
 use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::Hooks;
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::sdk::{self, fake};
-use wellfed_hal::settings;
 use wellfed_hal::supervision;
 use wellfed_proto::api::{Path, Source};
 use wellfed_sdk::storage::FlashOps;
@@ -35,6 +36,9 @@ thread_local! {
     /// Programs of the event ring's sectors fail, as a power cut after
     /// another store's write would leave them unwritten.
     pub(crate) static EVENTS_PROGRAMS_FAIL: Cell<bool> = const { Cell::new(false) };
+    /// Programs of these sectors fail, as a store whose writes stopped
+    /// working (or one a power cut stopped before) would.
+    pub(crate) static PROGRAMS_FAIL_IN: Cell<Option<Sectors>> = const { Cell::new(None) };
 }
 
 pub(crate) struct NoMmio;
@@ -96,7 +100,10 @@ impl FlashOps for Armed {
         let events = wellfed_hal::board::storage::EVENTS;
         let cut = EVENTS_PROGRAMS_FAIL.with(Cell::get)
             && (events.first..events.first + events.count).contains(&sector);
-        if PROGRAM_FAILS.with(Cell::get) || worn || cut {
+        let failing = PROGRAMS_FAIL_IN
+            .with(Cell::get)
+            .is_some_and(|s| (s.first..s.first + s.count).contains(&sector));
+        if PROGRAM_FAILS.with(Cell::get) || worn || cut || failing {
             return false;
         }
         // SAFETY: as in `erase`.
@@ -118,7 +125,7 @@ pub(crate) const B: Reader = Reader::slot(1);
 pub(crate) fn start() -> (MutexGuard<'static, ()>, Writer<Armed>, Provider) {
     let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     fake::reset_hardware();
-    settings::reset();
+    SETTINGS.reset();
     // SAFETY: the test holds `SERIAL` and runs no Wi-Fi task.
     unsafe { network::reset() };
     keys::reset();
@@ -132,6 +139,7 @@ pub(crate) fn start() -> (MutexGuard<'static, ()>, Writer<Armed>, Provider) {
     ERASE_FAILS.with(|f| f.set(None));
     STATS_PROGRAMS_FAIL.with(|f| f.set(false));
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
+    PROGRAMS_FAIL_IN.with(|f| f.set(None));
     (guard, Writer::default(), Provider::default())
 }
 
@@ -141,7 +149,7 @@ pub(crate) fn step(writer: &mut Writer<Armed>, provider: &mut Provider) -> Optio
 }
 
 pub(crate) fn current() -> (bool, bool, u8, u32, bool) {
-    match settings::request(SettingsFields::default()) {
+    match SETTINGS.request(SettingsFields::default()) {
         SettingsResult::Current { view, .. } => (
             view.lights,
             view.sound,
@@ -257,7 +265,7 @@ pub(crate) fn restart_mailboxes() {
     use wellfed_device_runtime::time;
     use wellfed_feeder_runtime::{calibration, plans, traces};
 
-    settings::reset();
+    SETTINGS.reset();
     // SAFETY: the test holds `SERIAL` and runs no Wi-Fi task.
     unsafe { network::reset() };
     keys::reset();

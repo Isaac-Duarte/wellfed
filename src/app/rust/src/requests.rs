@@ -427,7 +427,14 @@ pub(crate) fn plans_view(plans: &Plans) -> PlansView {
 
 pub(crate) fn settings_view(settings: &FeederSettings) -> SettingsView {
     SettingsView {
-        generation: settings.generation.0,
+        // None while the feeder repairs its settings, when the view is not
+        // writable and the screens offer no change: the feeder's own value,
+        // which no write it takes ever names.
+        generation: settings
+            .generation
+            .map_or(wellfed_model::NO_SETTINGS_GENERATION, |generation| {
+                generation.0
+            }),
         lights: settings.lights,
         sound: settings.sound,
         volume: settings.volume,
@@ -437,6 +444,7 @@ pub(crate) fn settings_view(settings: &FeederSettings) -> SettingsView {
         desiccant_replaced: settings.desiccant_replaced.map(|date| date.to_string()),
         meal_reminder: settings.meal_reminder,
         writable: settings.writable,
+        repairing: settings.generation.is_none(),
     }
 }
 
@@ -638,6 +646,7 @@ pub(crate) fn reply_of(answer: Answer) -> FeederReply {
         Answer::Settings(Settings::Feeder(settings)) => FeederReply::Settings {
             settings: settings_view(&settings),
         },
+        Answer::Settings(Settings::Unknown) => FeederReply::Unreadable,
         Answer::Time(time) => FeederReply::Time {
             time: TimeRead::just_read(time).info(Instant::now()),
         },
@@ -831,5 +840,34 @@ mod tests {
 
         assert_eq!(portion_times(&entries, 2), [9_000, 9_100]);
         assert!(portion_times(&entries, 3).is_empty());
+    }
+
+    /// Settings with no generation, read-only while the feeder repairs
+    /// them, reach the screens as repairing; with one, as they are.
+    #[test]
+    fn settings_with_no_generation_read_as_repairing() {
+        let mut settings = FeederSettings {
+            generation: Some(Generation(7)),
+            lights: true,
+            sound: true,
+            volume: 50,
+            lights_window: wellfed_model::Window::Always,
+            sound_window: wellfed_model::Window::Always,
+            desiccant_days: 14,
+            desiccant_replaced: None,
+            meal_reminder: wellfed_model::MealReminder::Off,
+            writable: true,
+        };
+        let view = settings_view(&settings);
+        assert_eq!(
+            (view.generation, view.writable, view.repairing),
+            (7, true, false)
+        );
+
+        settings.generation = None;
+        settings.writable = false;
+        let view = settings_view(&settings);
+        assert_eq!((view.writable, view.repairing), (false, true));
+        assert_eq!(view.generation, wellfed_model::NO_SETTINGS_GENERATION);
     }
 }

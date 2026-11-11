@@ -30,14 +30,18 @@ final class StoreNotice {
 /// checked, since the router holds every feed back until then.
 class StoreNoticeFlow extends ChangeNotifier {
   /// The notice for the app's file as the start opened it (`app`), which
-  /// `appRead` clears from that file, and the router's record of writes,
-  /// read from `router`.
-  StoreNoticeFlow({SetAside? app, PathRouter? router, this._appRead})
+  /// `appRead` clears from that file, the alert file's (`alerts`), which
+  /// `alertsRead` clears, and the router's record of writes, read from
+  /// `router`.
+  StoreNoticeFlow({SetAside? app, SetAside? alerts, PathRouter? router, this._appRead, this._alertsRead})
     : _router = router,
-      _state = StoreNotice.of([app, router?.setAside()]);
+      _state = StoreNotice.of([app, alerts, router?.setAside()]);
 
   final PathRouter? _router;
   final Future<void> Function()? _appRead;
+
+  /// Clears the notice kept in the alert file (`alerts.json`).
+  final Future<void> Function()? _alertsRead;
   StoreNotice? _state;
 
   /// What is still to be said; `null` once read, or with nothing set aside.
@@ -54,6 +58,7 @@ class StoreNoticeFlow extends ChangeNotifier {
     try {
       if (notice.holdsFeeds) _router?.bowlsChecked();
       if (notice.files.any((file) => file.kind == StoreKind.app)) await _appRead?.call();
+      if (notice.files.any((file) => file.kind == StoreKind.alerts)) await _alertsRead?.call();
     } on BridgeError catch (error) {
       debugPrint('the read notice could not be written down, so it stays: ${error.message}');
       return;

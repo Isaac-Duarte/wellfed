@@ -13,12 +13,13 @@ use wellfed_device_api::mailbox::SettingsView;
 use wellfed_device_runtime::events;
 use wellfed_feeder::feeder::lights::{Lights, REFUSED_MS, Record, State, States, describe};
 use wellfed_feeder::feeder::{Feeder, Feeds, Record as PassRecord};
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_fw_feeder::platform::{Driver, Plaf103};
 use wellfed_proto::api::{Blocked, EventBody, FoodLevel, Refusal, Source};
 use wellfed_sdk::hal::board::pins::{IR_PA_BIT, MOTOR_A_BIT};
 use wellfed_sdk::hal::leds::{self, Led};
 use wellfed_sdk::hal::sdk::fake;
-use wellfed_sdk::hal::{buttons, clock, settings, stopped};
+use wellfed_sdk::hal::{buttons, clock, stopped};
 
 /// The settings and the button queue are process-wide.
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -35,7 +36,7 @@ impl Rig {
     fn new() -> Self {
         let serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         fake::reset_hardware();
-        settings::reset();
+        SETTINGS.reset();
         clock::reset();
         buttons::reset();
         assert!(stopped::initialize().verified());
@@ -341,7 +342,7 @@ impl Feeds for Faulted {
 #[test]
 fn the_loop_shows_the_lock_and_a_held_fault() {
     let rig = Rig::new();
-    settings::publish(SettingsView {
+    SETTINGS.publish(SettingsView {
         lights: true,
         sound: false,
         volume: 50,
@@ -406,7 +407,7 @@ impl Feeds for AtRest {
 #[test]
 fn a_reading_at_rest_lights_low_food_and_a_refill_clears_it() {
     let rig = Rig::new();
-    settings::publish(SettingsView {
+    SETTINGS.publish(SettingsView {
         lights: true,
         ..Default::default()
     });
@@ -479,7 +480,7 @@ fn the_lights_window_darkens_the_panel_outside_it() {
         writable: true,
         ..Default::default()
     };
-    settings::publish(view);
+    SETTINGS.publish(view);
     let mut feeder = Box::new(Feeder::new(Plaf103::new()));
 
     // No clock yet: the window is open, so the fault and the lock show.
@@ -500,7 +501,7 @@ fn the_lights_window_darkens_the_panel_outside_it() {
     passes(&mut feeder, 200, 200);
     assert_eq!(lit(), [false; 4]);
 
-    settings::publish(SettingsView {
+    SETTINGS.publish(SettingsView {
         lights_window: Window::Always,
         ..view
     });

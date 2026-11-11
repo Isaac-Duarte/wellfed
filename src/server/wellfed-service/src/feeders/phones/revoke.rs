@@ -23,9 +23,9 @@ use wellfed_api::{
     CommandOutcome, Connection as Link, CoreEvent, EventBody, FeederId, RevokeAttempt,
     RevokeReason, Role, User,
 };
-use wellfed_formats::hex;
 use wellfed_mirror::{AskError, MirrorEvent};
 use wellfed_model::{Answer, Op, Refusal};
+use wellfed_session::hex;
 use wellfed_store::Whose;
 
 use crate::{CommandError, Error, InternalError, Resource, Result, Service, lock};
@@ -88,7 +88,7 @@ impl Service {
 
         for phone in store.revoking(id).await? {
             let key = phone.key.0;
-            let client = hex::encode(&key[..4]);
+            let client = hex::Lower(&key[..4]).to_string();
             let op = Op::RevokeClient { key };
             let attempt = match self.mirror.ask(id, self.request_id()?, op).await {
                 Ok(Answer::Done { .. }) => {
@@ -208,7 +208,7 @@ pub(crate) fn revocation(before: &User, after: &User) -> Option<RevokeReason> {
         match role {
             Role::Owner => 2,
             Role::Member => 1,
-            Role::Viewer => 0,
+            Role::Viewer | Role::Unknown => 0,
         }
     }
 

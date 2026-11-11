@@ -3,8 +3,8 @@
 
 use tracing::warn;
 use wellfed_api::{AdoptFeeder, Connection as Link, EventPage, EventQuery, Feeder, FeederId, Hex};
-use wellfed_formats::hex;
 use wellfed_mirror::Invite;
+use wellfed_session::hex;
 use wellfed_store::{FeederRow, NewFeeder};
 
 use crate::feeders::keys;
@@ -87,8 +87,8 @@ impl Service {
             warn!(
                 "feeder {} enrolled this server's key ({}) but it was not stored: {error}; \
                  revoke that client on the feeder",
-                hex::encode(&identity[..4]),
-                hex::encode(&enrolled.public[..4]),
+                hex::Lower(&identity[..4]).to_string(),
+                hex::Lower(&enrolled.public[..4]).to_string(),
             );
             return Err(match error {
                 wellfed_store::Error::Duplicate(_) => FeederError::AlreadyAdopted.into(),
@@ -188,8 +188,8 @@ impl Service {
         Feeder {
             id: row.id,
             home: row.home,
-            kind: row.kind,
-            model: row.model,
+            kind: row.kind.into(),
+            model: row.model.into(),
             name: row.name,
             identity: Hex(row.identity),
             role: row.role,

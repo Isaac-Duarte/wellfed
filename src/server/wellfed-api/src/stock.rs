@@ -60,6 +60,10 @@ pub enum StockBackupState {
     /// The file no longer matches it (changed or damaged on disk): it is
     /// neither exported nor restored.
     Damaged,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Where the kept copy came from.
@@ -71,6 +75,10 @@ pub enum StockSource {
     Feeder,
     /// A copy an owner uploaded: the one the installer kept, or an export.
     Upload,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// What the feeder says of its banks, as a restore or a read needs it.

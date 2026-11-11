@@ -59,7 +59,7 @@ fn the_named_board_is_the_one_re_exported() {
 #[test]
 fn the_feeder_confirms_in_its_reviewed_sector() {
     assert_eq!(wellfed_board::CONFIRM_SECTOR, Some(4));
-    assert_eq!(wellfed_board::STORAGE_SECTORS, 48);
+    assert_eq!(wellfed_board::STORAGE_SECTORS, 50);
 }
 
 /// The fountain has no store, so nothing can name a confirmation sector and

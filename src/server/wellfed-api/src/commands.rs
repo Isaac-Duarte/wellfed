@@ -64,6 +64,10 @@ pub enum CommandKind {
     Skip,
     /// Undoing a meal's skip before its time.
     Unskip,
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl CommandKind {
@@ -88,6 +92,7 @@ impl CommandKind {
             Self::CallPlay => "call_play",
             Self::Skip => "skip",
             Self::Unskip => "unskip",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -127,13 +132,16 @@ pub enum CommandState {
     Sent,
     /// The feeder answered; `outcome` is its answer.
     Answered,
-    /// No answer came, or the server stopped before one did. The feeder
-    /// may have run it: only a retry under the same key may send it again.
-    Unknown,
     /// Settled from the feeder's history: a feed by its `Fed` event, or as
     /// `unrecorded` once the feeder restarted with no record of it. Final,
     /// except that a `Fed` event found after `unrecorded` replaces it.
     Resolved,
+    /// No answer came, or the server stopped before one did. The feeder
+    /// may have run it: only a retry under the same key may send it again.
+    /// A state a newer server added reads as this too, so a client takes
+    /// the write as uncertain and never sends it again.
+    #[serde(other)]
+    Unknown,
 }
 
 impl CommandState {
@@ -202,6 +210,11 @@ pub enum CommandOutcome {
     /// no record of it: it never ran, or its record was lost. Whether food
     /// was dispensed is not known, and it is never sent again.
     Unrecorded,
+    /// An outcome a newer server added, which this client cannot name. The
+    /// server never sends it. A client treats it as uncertain: the write
+    /// may have run, so it is never sent again.
+    #[serde(other)]
+    Unknown,
 }
 
 impl CommandOutcome {
@@ -217,7 +230,8 @@ impl CommandOutcome {
             | Self::Superseded
             | Self::Refused { .. }
             | Self::Invited { .. }
-            | Self::Unrecorded => None,
+            | Self::Unrecorded
+            | Self::Unknown => None,
         }
     }
 }
@@ -257,6 +271,29 @@ pub struct CommandPage {
     pub next: Option<String>,
 }
 
+/// A state to list writes in. Only in a query, so it has no catch-all: a
+/// server refuses a state it can't name (`400`) rather than listing none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandStateFilter {
+    Sent,
+    Answered,
+    Resolved,
+    /// The uncertain list: writes the feeder may have run.
+    Unknown,
+}
+
+impl From<CommandStateFilter> for CommandState {
+    fn from(filter: CommandStateFilter) -> Self {
+        match filter {
+            CommandStateFilter::Sent => Self::Sent,
+            CommandStateFilter::Answered => Self::Answered,
+            CommandStateFilter::Resolved => Self::Resolved,
+            CommandStateFilter::Unknown => Self::Unknown,
+        }
+    }
+}
+
 /// Which entries to list. A member sees their own; an owner, everyone's.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -265,7 +302,7 @@ pub struct CommandQuery {
     #[param(value_type = Option<String>, format = Uuid)]
     pub feeder: Option<FeederId>,
     /// Writes in this state only: `unknown` is the uncertain list.
-    pub state: Option<CommandState>,
+    pub state: Option<CommandStateFilter>,
     /// The previous page's `next`, as it came.
     pub after: Option<String>,
     /// At most this many (1-1000, default 100).

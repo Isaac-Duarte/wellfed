@@ -15,7 +15,7 @@ import 'server_views.dart';
 import 'session.dart';
 part 'server.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `follow`, `handle`, `open`, `stream`, `with_token`
+// These functions are ignored because they are not marked as `pub`: `alert_client`, `follow`, `handle`, `open`, `stream`, `with_token`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ServerHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`, `fmt`, `fmt`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `restore_with`

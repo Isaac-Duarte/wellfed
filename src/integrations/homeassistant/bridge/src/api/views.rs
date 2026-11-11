@@ -12,7 +12,7 @@ pub(super) fn source_detail(source: &model::Source) -> (Option<String>, Option<u
     match source {
         model::Source::Client { client } => (Some(client.to_string()), None),
         model::Source::Schedule { plan } => (None, Some(*plan)),
-        model::Source::Panel | model::Source::Feeder => (None, None),
+        model::Source::Panel | model::Source::Feeder | model::Source::Unknown => (None, None),
     }
 }
 
@@ -56,10 +56,11 @@ pub struct Status {
     pub sessions: u8,
 }
 
-impl From<&model::Status> for Status {
-    fn from(status: &model::Status) -> Self {
-        // The integration serves feeders alone.
-        let model::DeviceStatus::Feeder(feeder) = &status.device;
+impl Status {
+    /// The view of a feeder's `status`; `None` for a kind of device this
+    /// integration does not serve, or one a newer build added.
+    pub(crate) fn of(status: &model::Status) -> Option<Self> {
+        let feeder = status.feeder()?;
         let supply = feeder.supply;
         let battery_percent = match supply.battery {
             model::Battery::Reading { percent, .. } => Some(percent),
@@ -70,7 +71,7 @@ impl From<&model::Status> for Status {
             model::Desiccant::Unset | model::Desiccant::Unknown => (None, false),
         };
 
-        Self {
+        Some(Self {
             build: status.build.clone(),
             bank: status.bank,
             uptime_ms: status.uptime_ms,
@@ -88,7 +89,7 @@ impl From<&model::Status> for Status {
             desiccant_due,
             last_event: status.last_event,
             sessions: status.sessions,
-        }
+        })
     }
 }
 
@@ -163,6 +164,35 @@ impl From<&history::Feed> for Feed {
             by: fed.by.as_ref().map(By::from),
             client,
             plan,
+        }
+    }
+}
+
+impl Feed {
+    /// A feed as the server's journal records its end, for a feed whose
+    /// answer never came: its number and result, at the time the journal
+    /// learned it. Who asked is this integration, through the server.
+    pub fn journalled(
+        feed: u32,
+        requested: u8,
+        completed: u8,
+        outcome: model::FeedOutcome,
+        reason: model::FeedReason,
+        at: jiff::Timestamp,
+    ) -> Self {
+        let (completed, at_most) = history::Delivered::of(outcome, completed, requested).bounds();
+        Self {
+            feed,
+            at_ms: Some(at.as_millisecond()),
+            requested,
+            completed,
+            at_most,
+            outcome: outcome.into(),
+            reason: reason.into(),
+            hopper: FoodLevel::Unread,
+            by: None,
+            client: None,
+            plan: None,
         }
     }
 }

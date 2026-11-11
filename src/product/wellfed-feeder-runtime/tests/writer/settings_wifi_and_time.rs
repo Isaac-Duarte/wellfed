@@ -10,10 +10,10 @@ use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
 use wellfed_device_runtime::writer::{self as writer, WriteEvent};
 use wellfed_device_runtime::{events, network};
 use wellfed_feeder::store::stats::StatsStatus;
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::writer::{FeederRecord, Record, Writer};
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::sdk::{self, fake};
-use wellfed_hal::settings;
 use wellfed_sdk::storage::SETTINGS_BASE;
 
 use crate::support::{ATTEMPT_SEEN, current, start, step};
@@ -22,7 +22,7 @@ use crate::support::{ATTEMPT_SEEN, current, start, step};
 fn changes_are_saved_once_each_inside_a_marked_attempt() {
     let (_guard, mut writer, mut provider) = start();
     assert_eq!(
-        settings::request(SettingsFields::default()),
+        SETTINGS.request(SettingsFields::default()),
         SettingsResult::Busy,
         "nothing published before the store opens"
     );
@@ -89,11 +89,11 @@ fn changes_are_saved_once_each_inside_a_marked_attempt() {
         ..Default::default()
     };
     assert!(matches!(
-        settings::request(change),
+        SETTINGS.request(change),
         SettingsResult::Current { pending: true, .. }
     ));
     assert_eq!(
-        settings::request(change),
+        SETTINGS.request(change),
         SettingsResult::Busy,
         "one change at a time"
     );
@@ -117,7 +117,7 @@ fn changes_are_saved_once_each_inside_a_marked_attempt() {
         "the attempt is cleared after"
     );
     assert_eq!(current(), (false, true, 20, 1, true));
-    assert_eq!(settings::pending(), None);
+    assert_eq!(SETTINGS.pending(), None);
 
     let base = SETTINGS_BASE as usize * 4096;
     assert_eq!(
@@ -126,7 +126,7 @@ fn changes_are_saved_once_each_inside_a_marked_attempt() {
     );
 
     // The next change goes to the other slot; a reopen sees it.
-    settings::request(SettingsFields {
+    SETTINGS.request(SettingsFields {
         sound: Some(false),
         ..Default::default()
     });
@@ -135,7 +135,7 @@ fn changes_are_saved_once_each_inside_a_marked_attempt() {
         Some(Record::Saved { generation: 2, .. })
     ));
     let mut reopened = Writer::default();
-    settings::reset();
+    SETTINGS.reset();
     assert!(matches!(
         step(&mut reopened, &mut provider),
         Some(Record::Open { generation: 2, .. })
@@ -155,7 +155,7 @@ fn an_unwritable_store_reads_but_refuses_changes() {
     assert_eq!(status, SettingsStatus::Corrupt);
     assert!(!current().4);
     assert_eq!(
-        settings::request(SettingsFields {
+        SETTINGS.request(SettingsFields {
             lights: Some(false),
             ..Default::default()
         }),

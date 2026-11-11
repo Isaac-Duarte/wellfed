@@ -19,8 +19,8 @@
 //! motor may move.
 
 use wellfed_core::HALF_RANGE;
-use wellfed_core::feed::controller::MotorCommand;
-use wellfed_core::feed::observe::{Beams, Observation};
+use wellfed_core_feeder::feed::controller::MotorCommand;
+use wellfed_core_feeder::feed::observe::{Beams, Observation};
 use wellfed_proto::api::{CurrentUnit, EventBody, Refusal, TraceSummary};
 use wellfed_proto::trace::{BODY_MAX, Entry, Motor, Pushed, Writer};
 

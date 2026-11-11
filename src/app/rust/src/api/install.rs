@@ -650,7 +650,7 @@ pub fn kept_backups(data_dir: String) -> Result<Vec<KeptBackup>, BridgeError> {
     Ok(kept
         .into_iter()
         .map(|backup| KeptBackup {
-            identity: wellfed_formats::hex::encode(&backup.identity),
+            identity: wellfed_session::hex::Lower(&backup.identity).to_string(),
             path: backup.path.display().to_string(),
         })
         .collect())

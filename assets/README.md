@@ -6,6 +6,8 @@ This folder holds the brand and product imagery for the app, the websites and th
 | --- | --- |
 | `model/plaf103.blend` | The owner's Blender 5.2 model of the PETLIBRO Granary PLAF103 (meters, Z up, the bowl toward −Y). It holds the product only, with no cameras, lights or stage. Its PCB texture is synthetic and shows no device identifiers |
 | `model/render.py` | Builds the stage and renders every image under `renders/` |
+| `model/dockstream2.blend` | Photo-referenced PETLIBRO Dockstream 2 exterior, with separate tank, dock, steel tray, clips, spout and water; meters, Z up, front toward −Y. See the [model notes](model/DOCKSTREAM2.md) for scale and limits |
+| `model/dockstream2.py` | Rebuilds the Dockstream 2 model in Blender with procedural materials |
 | `model/lineart.py` | Traces the `card` view into line art for the website (`renders/card-lines.json`) |
 | `model/RENDERS.md` | The spec for every render the app, web and docs need |
 | `model/checks/` | Hotspot overlays for checking the hotspot JSON by eye; not for use in the app |

@@ -142,7 +142,7 @@ impl Service {
         let role = match caller.user.role {
             Role::Owner => ClientRole::Owner,
             Role::Member => ClientRole::Member,
-            Role::Viewer => return Err(ClientError::DirectKeyRefused.into()),
+            Role::Viewer | Role::Unknown => return Err(ClientError::DirectKeyRefused.into()),
         };
         let token_expires = self
             .shared

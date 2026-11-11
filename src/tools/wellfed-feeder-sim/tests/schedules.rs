@@ -9,13 +9,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wellfed_core::clock::zone::Zone;
-use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_core::store::slot::crc32;
 use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{
-    Asked, CallChange, CallClip, CallResult, MealReminder, MealSkip, PlansChange, PlansResult,
-    PlansView, SettingsFields, SettingsResult,
+    Asked, CallChange, CallClip, CallResult, FeederFields, MealReminder, MealSkip, PlansChange,
+    PlansResult, PlansView, SettingsFields, SettingsResult,
 };
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::{self, schedule};
@@ -23,6 +23,7 @@ use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::sim::{Record, Sim};
+use wellfed_hal::interlock::WRITE_WAIT_MS;
 use wellfed_proto::api::{Blocked, EventBody, FeedOutcome, MissedReason, Refusal, Source};
 
 const MINUTE_MS: u64 = 60_000;
@@ -201,7 +202,10 @@ impl Feeder {
     /// Set the meal reminder, as a client's settings write does.
     fn remind(&mut self, reminder: MealReminder) {
         let fields = SettingsFields {
-            meal_reminder: Some(reminder),
+            kind: FeederFields {
+                meal_reminder: Some(reminder),
+                ..FeederFields::default()
+            },
             ..SettingsFields::default()
         };
         let queued = self.sim.platform().settings_request(fields, None);
@@ -210,7 +214,7 @@ impl Feeder {
             SettingsResult::Current { pending: true, .. }
         ));
         self.run(1);
-        let saved = self.sim.platform().settings().map(|s| s.meal_reminder);
+        let saved = self.sim.platform().settings().map(|s| s.kind.meal_reminder);
         assert_eq!(saved, Some(reminder));
     }
 
@@ -306,6 +310,37 @@ fn a_plan_feeds_once_at_its_minute() {
     feeder.run_until(WEDNESDAY + 31 * HOUR_MS + 31 * MINUTE_MS);
     assert_eq!(feeder.fed().len(), 2);
     assert!(feeder.missed().is_empty());
+}
+
+/// NTP answers a day ahead, as a host on the path could send, never step
+/// an owner-synced clock onto tomorrow's breakfast: after enough of them
+/// the clock needs the time, plans hold, and the owner's next sync finds
+/// breakfast fed once.
+#[test]
+fn ntp_answers_a_day_ahead_never_run_tomorrow_s_meal() {
+    use wellfed_core::clock::wall::{DISJOINT_LIMIT, Fix, Origin};
+
+    let mut feeder = breakfast();
+    feeder.run_until(BREAKFAST + MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
+
+    for _ in 0..2 * DISJOINT_LIMIT {
+        let now = feeder.now;
+        let wall = feeder.wall().unwrap_or(BREAKFAST + MINUTE_MS);
+        let ahead = Fix {
+            unix_ms: wall + 24 * HOUR_MS,
+            error_ms: 25,
+            origin: Origin::Ntp,
+        };
+        assert!(feeder.sim.platform().time_fix(now, ahead).is_err());
+        feeder.run(MINUTE_MS);
+    }
+    assert_eq!(feeder.wall(), None, "the feeder needs the time");
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
+
+    feeder.sync(BREAKFAST + 10 * MINUTE_MS);
+    feeder.run(30 * MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0], "fed once");
 }
 
 #[test]
@@ -482,6 +517,190 @@ fn a_plan_saved_after_its_minute_waits_for_the_next_day() {
     assert!(feeder.missed().is_empty());
 }
 
+const BERLIN: &str = "CET-1CEST,M3.5.0,M10.5.0/3";
+const DENVER: &str = "MST7MDT,M3.2.0,M11.1.0";
+
+/// Wednesday at `hours`:`minutes` UTC.
+fn at(hours: u64, minutes: u64) -> u64 {
+    WEDNESDAY + hours * HOUR_MS + minutes * MINUTE_MS
+}
+
+/// Plan 0's `n`th meal, of 2 portions.
+const fn meal(feed: u32) -> (u32, u8, FeedOutcome, Source) {
+    (feed, 2, FeedOutcome::Done, Source::Schedule(0))
+}
+
+/// Run until `to`, with an owner's sync every few hours that keeps the
+/// unlearned clock valid.
+fn advance(feeder: &mut Feeder, to: u64) {
+    while let Some(wall) = feeder.wall().filter(|&wall| wall + 4 * HOUR_MS < to) {
+        feeder.run_until(wall + 4 * HOUR_MS);
+        feeder.sync(wall + 4 * HOUR_MS);
+    }
+    feeder.run_until(to);
+}
+
+/// A feeder in Berlin, synced at 06:00 CET on Wednesday (05:00Z), with
+/// breakfast at 07:30 (06:30Z).
+fn berlin_breakfast() -> Feeder {
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.zone(BERLIN);
+    feeder.sync(at(5, 0));
+    feeder.put(table(&[(0, plan(7 * 60 + 30, 2))]));
+    feeder
+}
+
+/// A meal already fed that local day never runs again across a change of
+/// zone. Breakfast at 07:30 in Berlin (06:30Z), then the zone moves to
+/// Denver, where 07:30 the same date is 13:30Z: passed unreported, and
+/// Denver's 07:30 the next day feeds. A move east runs nothing again
+/// either, and the next day's meal comes at the new zone's minute.
+#[test]
+fn a_meal_fed_today_never_runs_again_across_a_change_of_zone() {
+    let mut feeder = berlin_breakfast();
+    feeder.run_until(at(6, 31));
+    assert_eq!(feeder.fed(), [meal(1)], "07:30 in Berlin");
+
+    feeder.run_until(at(7, 0));
+    feeder.zone(DENVER);
+    advance(&mut feeder, at(13, 45));
+    assert_eq!(feeder.fed(), [meal(1)], "not again at 07:30 in Denver");
+    assert!(feeder.missed().is_empty());
+    assert_eq!(feeder.plans().mark(0), Some(seconds(at(13, 30))));
+
+    advance(&mut feeder, at(24 + 13, 31));
+    assert_eq!(feeder.fed(), [meal(1), meal(2)], "Thursday in Denver");
+
+    // Denver to Berlin after Thursday's meal: Friday 07:30 in Berlin, 06:30Z.
+    feeder.zone(BERLIN);
+    advance(&mut feeder, at(48 + 6, 31));
+    assert_eq!(
+        feeder.fed(),
+        [meal(1), meal(2), meal(3)],
+        "Friday in Berlin"
+    );
+    assert!(feeder.missed().is_empty());
+}
+
+/// A meal the owner skipped in Berlin is the day's meal too: not fed at
+/// Denver's 07:30 the same date, and Thursday's feeds.
+#[test]
+fn a_meal_skipped_today_is_not_fed_across_a_change_of_zone() {
+    let mut feeder = berlin_breakfast();
+    feeder.run_until(at(6, 0));
+    assert_eq!(feeder.skip(at(6, 30), MealSkip::Skip), Ok(()));
+    feeder.run_until(at(7, 0));
+    feeder.zone(DENVER);
+    advance(&mut feeder, at(13, 45));
+    assert!(feeder.fed().is_empty(), "not at 07:30 in Denver");
+    assert!(feeder.missed().is_empty());
+
+    advance(&mut feeder, at(24 + 13, 31));
+    assert_eq!(feeder.fed(), [meal(1)], "Thursday in Denver");
+}
+
+/// A meal missed in Berlin took nothing from the day: it feeds at Denver's
+/// 07:30 the same date, once.
+#[test]
+fn a_meal_missed_today_feeds_at_the_new_zone_s_minute() {
+    let mut feeder = berlin_breakfast();
+    feeder.run_until(at(6, 25));
+    feeder.sim.refuse_feeds(true);
+    feeder.run_until(at(6, 50));
+    feeder.sim.refuse_feeds(false);
+    assert_eq!(
+        feeder.missed(),
+        [(
+            0,
+            seconds(at(6, 30)),
+            MissedReason::Blocked(Blocked::Feeding)
+        )]
+    );
+
+    feeder.run_until(at(7, 0));
+    feeder.zone(DENVER);
+    advance(&mut feeder, at(13, 45));
+    assert_eq!(feeder.fed(), [meal(1)], "07:30 in Denver");
+    advance(&mut feeder, at(24 + 13, 31));
+    assert_eq!(feeder.fed(), [meal(1), meal(2)], "Thursday in Denver");
+}
+
+/// A plan saved in Berlin after its minute waits for tomorrow there, but
+/// had no meal today: moved to Denver, it feeds at Denver's 07:30, still
+/// ahead the same date.
+#[test]
+fn a_plan_saved_after_its_minute_feeds_at_the_new_zone_s_minute() {
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.zone(BERLIN);
+    feeder.sync(at(6, 0));
+    feeder.run_until(at(6, 35));
+    feeder.put(table(&[(0, plan(7 * 60 + 30, 2))]));
+    feeder.run_until(at(7, 0));
+    assert!(feeder.fed().is_empty());
+
+    feeder.zone(DENVER);
+    advance(&mut feeder, at(13, 45));
+    assert_eq!(feeder.fed(), [meal(1)], "07:30 in Denver");
+    assert!(feeder.missed().is_empty());
+}
+
+/// A feeder with no zone keeps local time from a client's sync: Denver's
+/// offset and the fall-back change it names. 01:30 on November 1 comes
+/// twice; the plan feeds on the first pass (07:30Z). A sync after the
+/// change gives standard time with no change named, which puts 01:30 at
+/// 08:30Z, after the mark: the same meal, not fed again. November 2's
+/// 01:30 feeds as usual.
+#[test]
+fn a_no_zone_feeder_synced_across_the_fall_change_feeds_the_repeated_minute_once() {
+    use wellfed_core::clock::wall::{Origin, Sync};
+
+    let sync = |feeder: &mut Feeder, unix_ms: u64, offset_s: i32, next: Option<(u64, i32)>| {
+        let sync = Sync {
+            unix_ms,
+            offset_s,
+            next_change_s: next.map_or(0, |(at, _)| at),
+            next_offset_s: next.map_or(offset_s, |(_, offset)| offset),
+        };
+        let now = feeder.now;
+        feeder
+            .sim
+            .platform()
+            .time_sync(now, sync, Origin::Owner)
+            .unwrap();
+    };
+    let (mdt, mst) = (-6 * 3600, -7 * 3600);
+
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    sync(
+        &mut feeder,
+        FALL - 2 * HOUR_MS,
+        mdt,
+        Some((FALL / 1000, mst)),
+    );
+    feeder.put(table(&[(0, plan(90, 2))]));
+    feeder.run_until(FALL - 29 * MINUTE_MS);
+    assert_eq!(feeder.fed(), [meal(1)], "01:30 MDT");
+
+    feeder.run_until(FALL + 10 * MINUTE_MS);
+    sync(&mut feeder, FALL + 10 * MINUTE_MS, mst, None);
+    feeder.run_until(FALL + HOUR_MS);
+    assert_eq!(feeder.fed(), [meal(1)], "not again at 01:30 MST");
+    assert!(feeder.missed().is_empty());
+
+    let mut wall = FALL + HOUR_MS;
+    while wall + 4 * HOUR_MS < FALL + 24 * HOUR_MS + 31 * MINUTE_MS {
+        wall += 4 * HOUR_MS;
+        feeder.run_until(wall);
+        sync(&mut feeder, wall, mst, None);
+    }
+    feeder.run_until(FALL + 24 * HOUR_MS + 31 * MINUTE_MS);
+    assert_eq!(feeder.fed(), [meal(1), meal(2)], "November 2");
+    assert!(feeder.missed().is_empty());
+}
+
 #[test]
 fn a_skipped_minute_runs_past_the_spring_change_and_a_repeated_one_once() {
     let mut feeder = Feeder::new();
@@ -562,6 +781,75 @@ fn a_refused_feed_gives_its_occurrence_back_and_retries_without_spinning() {
     assert!(feeder.fed().is_empty());
 }
 
+/// A client's table is refused `Busy` while the schedule takes a meal. Here
+/// it comes between a once plan's refused feed and the release that gives
+/// the occurrence back, with a snack saved disabled in that slot: taken
+/// then, the release would enable the snack. Once the meal has fed, the
+/// same table is taken, and the snack never feeds.
+#[test]
+fn a_client_s_table_waits_while_a_meal_is_taken_and_no_release_enables_it() {
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.sync(WEDNESDAY + 7 * HOUR_MS);
+    let once = Plan {
+        days: Weekdays::ONCE,
+        ..plan(7 * 60 + 30, 2)
+    };
+    feeder.put(table(&[(0, once)]));
+    let snack = Plan {
+        enabled: false,
+        ..plan(8 * 60, 4)
+    };
+    let put = |feeder: &mut Feeder| {
+        let by = Source::Client([1, 2, 3, 4]);
+        let change = table(&[(0, snack)]);
+        feeder.sim.put_plans(feeder.now, Asked { change, by })
+    };
+
+    // The feed is refused once the claim is stored, which the schedule
+    // gives back on its next pass.
+    feeder.run_until(BREAKFAST - 1_000);
+    feeder.sim.refuse_feeds(true);
+    let mut refused = false;
+    for _ in 0..100 {
+        let now = feeder.now;
+        let delay = feeder.sim.pass(now, |record| {
+            if let Record::Feeder(feeder::Record::Schedule(schedule::Record::Refused { .. })) =
+                record
+            {
+                refused = true;
+            }
+        });
+        feeder.now += delay.clamp(1, 1_000);
+        if refused {
+            break;
+        }
+    }
+    assert!(refused, "the claimed feed was refused");
+    let PlansResult::Current { view, pending } = feeder.sim.platform().plans() else {
+        panic!("the simulator keeps plans");
+    };
+    assert!(!pending, "the mailbox is free for a client");
+    assert_eq!(view.claim.map(|claim| claim.disabled), Some(true));
+    assert_eq!(put(&mut feeder), PlansResult::Busy);
+
+    feeder.sim.refuse_feeds(false);
+    feeder.run(10_000);
+    assert_eq!(feeder.fed(), [FED_PLAN_0], "the retry fed the meal");
+    assert_eq!(
+        feeder.plans().table[0].map(|plan| plan.enabled),
+        Some(false)
+    );
+
+    assert!(matches!(
+        put(&mut feeder),
+        PlansResult::Current { pending: true, .. }
+    ));
+    feeder.run_until(WEDNESDAY + 8 * HOUR_MS + 30 * MINUTE_MS);
+    assert_eq!(feeder.plans().table[0], Some(snack));
+    assert_eq!(feeder.fed(), [FED_PLAN_0], "the snack never fed");
+}
+
 /// A meal behind a storage write: claimed, waiting, then fed once under the
 /// plan, nothing given back and nothing missed.
 #[test]
@@ -588,7 +876,7 @@ fn a_meal_behind_a_write_runs_once_when_its_claim_is_taken() {
 fn a_meal_past_its_claim_s_deadline_gives_its_occurrence_back_and_retries() {
     let mut feeder = breakfast();
     feeder.sim.hold_write(true);
-    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 2_000);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + u64::from(WRITE_WAIT_MS) - 1_000);
     assert!(feeder.plans().claim.is_some(), "still within its wait");
     feeder.run(2_000);
     assert_eq!(feeder.plans().claim, None, "given back");
@@ -727,7 +1015,7 @@ fn reminded_breakfast(lead: u8) -> Feeder {
 fn the_reminder_is_off_by_default() {
     let mut feeder = breakfast();
     let settings = feeder.sim.platform().settings().unwrap();
-    assert_eq!(settings.meal_reminder, MealReminder::Off);
+    assert_eq!(settings.kind.meal_reminder, MealReminder::Off);
 
     feeder.run_until(BREAKFAST + MINUTE_MS);
     assert_eq!(feeder.fed().len(), 1);
@@ -1062,6 +1350,73 @@ fn a_stored_claim_with_a_faulted_journal_holds_no_restart() {
         restarts(&mut feeder, u64::from(feeder::setup::IDLE_MS) + 60_000),
         "setup mode's restart came"
     );
+}
+
+/// A stored claim waits for the journal before it is settled, which with a
+/// faulted journal is the whole boot. A client's table is taken meanwhile:
+/// nothing is queued for the claim. Once the journal opens again, the
+/// claim, whose feed was never reserved, still settles as interrupted,
+/// and the table stays.
+#[test]
+fn a_table_is_taken_while_a_stored_claim_waits_for_a_faulted_journal() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("flash.bin");
+    let flash = Flash::file(&path).unwrap();
+    let banks = Banks::new();
+    let sim = open(&flash, &banks, 1);
+    let mut feeder = Feeder {
+        flash,
+        banks,
+        sim,
+        now: 0,
+        boots: 1,
+        claims: 0,
+        calls: Vec::new(),
+    };
+    feeder.run(100);
+    feeder.sync(WEDNESDAY + 7 * HOUR_MS);
+    feeder.put(table(&[(0, plan(7 * 60 + 30, 2))]));
+    feeder.run_until(BREAKFAST - 500);
+    // The claim on flash, then a cut before its feed is queued.
+    while feeder.plans().claim.is_none() {
+        feeder.run(1);
+    }
+    let claim = feeder.plans().claim.unwrap();
+
+    // The journal's sectors spoiled: the claim can't be compared with it.
+    let kept = std::fs::read(&path).unwrap();
+    let mut spoiled = kept.clone();
+    spoiled[..0x2000].fill(0);
+    std::fs::write(&path, spoiled).unwrap();
+    feeder.flash = Flash::file(&path).unwrap();
+    feeder.restart();
+    feeder.run(1_000);
+    assert_eq!(feeder.plans().claim, Some(claim), "waiting for the journal");
+
+    let more = table(&[(0, plan(7 * 60 + 30, 3))]);
+    let by = Source::Client([1, 2, 3, 4]);
+    let now = feeder.now;
+    let taken = feeder.sim.put_plans(now, Asked { change: more, by });
+    assert!(matches!(taken, PlansResult::Current { pending: true, .. }));
+    feeder.run(1_000);
+    assert_eq!(feeder.plans().table, more);
+
+    // The journal back: the claim's feed was never reserved.
+    let mut restored = std::fs::read(&path).unwrap();
+    restored[..0x2000].copy_from_slice(&kept[..0x2000]);
+    std::fs::write(&path, restored).unwrap();
+    feeder.flash = Flash::file(&path).unwrap();
+    feeder.restart();
+    feeder.run(100);
+    feeder.sync(BREAKFAST + MINUTE_MS);
+    feeder.run(2 * MINUTE_MS);
+    assert_eq!(feeder.plans().claim, None, "settled");
+    assert_eq!(
+        feeder.missed(),
+        [(0, claim.due_s, MissedReason::Interrupted)]
+    );
+    assert!(feeder.fed().is_empty());
+    assert_eq!(feeder.plans().table, more);
 }
 
 /// Breakfast calling twice, with a 2,000-byte clip (500 ms a play): the

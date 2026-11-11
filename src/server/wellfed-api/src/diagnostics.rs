@@ -79,4 +79,8 @@ pub enum LogEvent {
     },
     /// This follower fell behind and missed `batches` batches of lines.
     Lagged { batches: u64 },
+    /// A value a newer server added, which this client cannot name. The
+    /// server never sends it.
+    #[serde(other)]
+    Unknown,
 }

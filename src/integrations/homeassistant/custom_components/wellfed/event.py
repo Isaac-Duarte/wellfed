@@ -1,4 +1,5 @@
-"""Each feed as it ends: fed, cancelled, failed, uncertain or expired."""
+"""Each feed as it ends (fed, cancelled, failed, uncertain or expired), and
+each alert as it opens or clears."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import wellfed_homeassistant as bridge
 
 from . import WellfedConfigEntry
 from .entity import WellfedEntity, serves
-from .sensor import feed_attributes
+from .sensor import alert_attributes, feed_attributes
 from .session import FeederSession
 
 PARALLEL_UPDATES = 0
@@ -34,8 +35,10 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     session = entry.runtime_data
+    entities: list[EventEntity] = [AlertEvent(session, "alert_event")]
     if serves(session, lambda caps: caps.feed):
-        async_add_entities([FeedEvent(session, "feed_event")])
+        entities.append(FeedEvent(session, "feed_event"))
+    async_add_entities(entities)
 
 
 class FeedEvent(WellfedEntity, EventEntity):
@@ -56,3 +59,24 @@ class FeedEvent(WellfedEntity, EventEntity):
             return
         self._trigger_event(TYPES[event.fed.outcome.key], feed_attributes(event.fed))
         self.async_write_ha_state()
+
+
+class AlertEvent(WellfedEntity, EventEntity):
+    """Each of the feeder's alerts as it opens or clears, with its key, kind
+    and level. The feeder decides every alert; what is open when Home
+    Assistant starts shows in the alerts sensor and fires nothing."""
+
+    def __init__(self, session: FeederSession, key: str) -> None:
+        super().__init__(session, key)
+        self._attr_event_types = ["opened", "cleared"]
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.session.add_alert_listener(self._alerts))
+
+    @callback
+    def _alerts(self, alerts: bridge.Alerts) -> None:
+        for event_type, changed in (("opened", alerts.opened), ("cleared", alerts.cleared)):
+            for alert in changed:
+                self._trigger_event(event_type, alert_attributes(alert))
+                self.async_write_ha_state()

@@ -4,13 +4,13 @@
 use core::ptr;
 
 use super::*;
-use wellfed_core::feed::controller::{FeedLimits, FeedRequest};
-use wellfed_core::feed::progress::{BowlMode, Direction};
-use wellfed_core::feed::sensor_inputs::SensorLimits;
-use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage};
 use wellfed_core::flash_coord::{FlashCoord, FlashParty, FlashReply};
-use wellfed_core::store::feed_journal::{FeedJournal, JournalConfig, JournalError};
-use wellfed_core::supply::FloorLimits;
+use wellfed_core_feeder::feed::controller::{FeedLimits, FeedRequest};
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::sensor_inputs::SensorLimits;
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage};
+use wellfed_core_feeder::feed_journal::{FeedJournal, JournalConfig, JournalError};
+use wellfed_core_feeder::floor::FloorLimits;
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal_feeder::board::MOTOR_MASK;
 use wellfed_hal_feeder::events::EventsConfig;

@@ -153,6 +153,11 @@ pub enum ErrorCode {
     /// Another export is being written: one runs at a time.
     ExportRunning,
     Internal,
+    /// A code a newer server added, which this client cannot name. The
+    /// server never sends it; a client reads the request as refused by a
+    /// reason it does not know, never as a success.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why the feeder refused, as it said.
@@ -184,7 +189,9 @@ pub enum FeederRefusal {
     NoClock,
     /// A calibration named a bowl mode the feeder has not verified.
     Unverified,
-    /// A refusal a newer feeder build added, which this server cannot name.
+    /// A refusal a newer feeder build added, which this server cannot name,
+    /// or one a newer server names that this client cannot.
+    #[serde(other)]
     Unknown,
 }
 

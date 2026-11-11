@@ -58,6 +58,9 @@ pub const fn can(role: Role, permission: Permission) -> bool {
             Feed | Control | InviteOwnPhone | AllHistory | Users | Home | OwnerData
             | FeederAdmin | Adopt | ServerData => false,
         },
+        // Never stored (a request naming it is refused), and it grants
+        // nothing if it ever were.
+        Role::Unknown => false,
     }
 }
 

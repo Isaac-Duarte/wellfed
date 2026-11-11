@@ -68,6 +68,9 @@ The host checks do not prove the app works on a phone. Run these by hand on a re
 7. Update the firmware with the app in the background and the screen off.
 8. Turn on TalkBack and go through Home, a feed and the schedule.
 9. Log in to the owner's server over `https`, once with a public CA's certificate and once with one from the owner's own CA installed on the phone (Settings, Security, Encryption and credentials). Each should reach the account screen; an `http` URL that redirects to `https` should be refused, naming the address to use.
+10. Alerts at home, on a locked phone on the feeder's Wi-Fi: force each alert you can (a jam, an empty hopper, no clock, a client joined), and check each notifies once and comes off when the feeder clears it. Note the delay and the battery overnight with "instant while home" off and on.
+11. Start a Bluetooth setup, then make the periodic catch-up run and turn "instant while home" on and off. The setup should go on to the Home card. To run the catch-up, find its job id with `adb shell dumpsys jobscheduler | grep -A3 io.github.isaacduarte.wellfed` (the `JOB #u0a…/<id>` line naming `androidx.work.impl.background.systemjob.SystemJobService`), then run `adb shell cmd jobscheduler run -f io.github.isaacduarte.wellfed <id>`.
+12. Unplug a feeder with the phone at home: "Can't reach" should come after about 10 minutes with instant mode on, and never while the phone is away from home.
 
 The integration suite no longer makes the trip through stock, so make it on the bench with the same build. It needs the owner at the panel, and no host test stands in for it:
 

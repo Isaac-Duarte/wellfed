@@ -1,0 +1,269 @@
+//! Writing the private files under `private/`: secrets, ledgers and keys.
+//!
+//! Every file is created mode 0600 on Unix. [`write_json`] replaces a file
+//! atomically (temporary file, fsync, rename, directory fsync), so a crash
+//! leaves the old or the new contents, never a torn file. [`write_new`]
+//! writes evidence that must never replace anything: it refuses a path that
+//! exists. New secrets come from [`random`].
+
+use std::fs;
+use std::io::{Read, Write};
+use std::path::Path;
+
+use serde::Serialize;
+
+use crate::Result;
+
+/// The operating system's CSPRNG, which the kernel seeds before userspace
+/// can run a tool.
+pub const SYSTEM_RANDOM: &str = "/dev/urandom";
+
+/// `N` bytes from `source` (normally [`SYSTEM_RANDOM`]), for new secrets.
+pub fn random<const N: usize>(source: &Path) -> Result<[u8; N]> {
+    let mut bytes = [0u8; N];
+    fs::File::open(source)?.read_exact(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// Create `path` exclusively, write it in full and fsync it.
+pub fn write_new(path: &Path, data: &[u8]) -> Result<()> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let mut file = options.open(path)?;
+    file.write_all(data)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+/// Create `path` whole or not at all; refuses to replace an existing file.
+/// The bytes go to a temporary file beside it first, which is then moved into
+/// place by a step that never replaces ([`move_new`]), so a reader never sees it
+/// half written, and a writer killed partway leaves no partial file that would
+/// refuse the next attempt.
+pub fn write_new_whole(path: &Path, data: &[u8]) -> Result<()> {
+    let name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("the path names no file"))?;
+    let mut temporary = name.to_owned();
+    temporary.push(format!(".{}.tmp", std::process::id()));
+    let temporary = path.with_file_name(temporary);
+
+    write_new(&temporary, data)?;
+    let result = (|| {
+        move_new(&temporary, path)?;
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            fs::File::open(parent)?.sync_all()?;
+        }
+        Ok(())
+    })();
+
+    let _ = fs::remove_file(&temporary);
+    result
+}
+
+/// Move `from` to `to`, failing if anything is there. Android's policy denies an
+/// app hard links, so Linux and Android use `renameat2(RENAME_NOREPLACE)`. A
+/// filesystem that refuses it fails the write: no other step gives both whole
+/// and never-replaces, so there is nothing safe to fall back to.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+
+    renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE).map_err(Into::into)
+}
+
+/// Move `from` to `to`, failing if anything is there: elsewhere a link, which
+/// never replaces. The caller removes `from`.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::hard_link(from, to)
+}
+
+/// The names a file set aside beside `path` takes, numbered, in order.
+fn aside_names(path: &Path) -> std::io::Result<impl Iterator<Item = std::path::PathBuf>> {
+    const MOST: u32 = 1000;
+
+    let name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("the path names no file"))?
+        .to_owned();
+    let path = path.to_owned();
+    Ok((1..=MOST).map(move |number| {
+        let mut aside = name.clone();
+        aside.push(format!(".damaged-{number}"));
+        path.with_file_name(aside)
+    }))
+}
+
+fn too_many() -> std::io::Error {
+    std::io::Error::other("too many files already set aside")
+}
+
+fn sync_parent(path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+/// Rename a file an owner agreed to give up, to a numbered name beside it. It is
+/// never deleted, and never replaces an earlier one set aside. The new path.
+pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    for aside in aside_names(path)? {
+        match move_new(path, &aside) {
+            Ok(()) => {
+                // A hard link leaves the old name behind; a rename does not.
+                match fs::remove_file(path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error),
+                }
+                sync_parent(path)?;
+                return Ok(aside);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(too_many())
+}
+
+/// Keep `data`, what `path` held, under the numbered name [`set_aside`]
+/// would give it, durably, and leave `path` as it is. A caller that then
+/// replaces `path` with [`write_json`] is crash-safe at every step: `path`
+/// holds the old contents or the new, and the old are kept either way. The
+/// new path.
+pub fn copy_aside(path: &Path, data: &[u8]) -> std::io::Result<std::path::PathBuf> {
+    for aside in aside_names(path)? {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&aside) {
+            Ok(mut file) => {
+                file.write_all(data)?;
+                file.sync_all()?;
+                sync_parent(path)?;
+                return Ok(aside);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(too_many())
+}
+
+/// Fsync a directory, so the entries just created in it are durable.
+pub fn sync_directory(path: &Path) -> Result<()> {
+    fs::File::open(path)?.sync_all()?;
+    Ok(())
+}
+
+/// Atomically replace a private file, syncing data before committing it.
+pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    fs::create_dir_all(parent)?;
+    let tag = wellfed_session::hex::Lower(&random::<8>(Path::new(SYSTEM_RANDOM))?).to_string();
+    let temp = parent.join(format!(".{tag}.tmp"));
+
+    let result = (|| {
+        let mut options = fs::OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let mut file = options.open(&temp)?;
+        serde_json::to_writer_pretty(&mut file, value)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        fs::rename(&temp, path)?;
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(temp);
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn setting_aside_numbers_the_file_and_replaces_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.json");
+
+        std::fs::write(&path, "one").unwrap();
+        let first = super::set_aside(&path).unwrap();
+        std::fs::write(&path, "two").unwrap();
+        let second = super::set_aside(&path).unwrap();
+
+        assert!(!path.exists());
+        assert_eq!(first, dir.path().join("a.json.damaged-1"));
+        assert_eq!(second, dir.path().join("a.json.damaged-2"));
+        assert_eq!(std::fs::read(first).unwrap(), b"one");
+        assert_eq!(std::fs::read(second).unwrap(), b"two");
+    }
+
+    #[test]
+    fn a_copy_aside_takes_the_next_number_and_leaves_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.json");
+        std::fs::write(dir.path().join("a.json.damaged-1"), "earlier").unwrap();
+        std::fs::write(&path, "bad").unwrap();
+
+        let aside = super::copy_aside(&path, b"bad").unwrap();
+
+        assert_eq!(aside, dir.path().join("a.json.damaged-2"));
+        assert_eq!(std::fs::read(&aside).unwrap(), b"bad");
+        assert_eq!(std::fs::read(&path).unwrap(), b"bad", "left in place");
+        assert_eq!(
+            std::fs::read(dir.path().join("a.json.damaged-1")).unwrap(),
+            b"earlier"
+        );
+    }
+
+    use super::*;
+
+    #[test]
+    fn a_replaced_file_is_private_and_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        write_json(&path, &[1, 2]).unwrap();
+        write_json(&path, &[3]).unwrap();
+        assert_eq!(crate::load::<Vec<u8>>(&path).unwrap(), [3]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1, "no temp left");
+    }
+
+    #[test]
+    fn a_new_file_appears_whole_and_is_never_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("copy.bin");
+        write_new_whole(&path, b"first").unwrap();
+        assert!(write_new_whole(&path, b"second").is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"first");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1, "no temp left");
+    }
+}

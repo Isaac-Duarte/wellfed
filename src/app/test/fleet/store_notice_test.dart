@@ -106,6 +106,25 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
   });
 
+  testWidgets('a set-aside alert file says so, and reading it clears it from that file', (tester) async {
+    var cleared = 0;
+    final flow = StoreNoticeFlow(
+      alerts: _file(StoreKind.alerts, 'alerts.json'),
+      router: FakeRouter(),
+      alertsRead: () async => cleared++,
+    );
+    addTearDown(flow.dispose);
+    await _show(tester, flow);
+
+    await tester.scrollUntilVisible(find.textContaining('Kept as alerts.json.damaged-1'), 100);
+    expect(find.textContaining('Kept as alerts.json.damaged-1'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Continue'), 100);
+    await tester.tap(find.text('Continue'));
+    await settle(tester);
+    expect(cleared, 1);
+    expect(find.text('Home'), findsOneWidget);
+  });
+
   for (final Brightness brightness in Brightness.values) {
     testWidgets('the notice is accessible in the ${brightness.name} theme', (tester) async {
       final router = FakeRouter()..setAsideFile = _file(StoreKind.pending, 'pending.json');
