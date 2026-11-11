@@ -76,7 +76,7 @@ impl Service {
         Ok(())
     }
 
-    pub(in crate::feeders) fn spawn_revoke(&self, feeder: FeederId) {
+    pub(crate) fn spawn_revoke(&self, feeder: FeederId) {
         let service = self.clone();
         let span = info_span!(parent: None, "feeder", id = %feeder);
         self.tasks
@@ -178,6 +178,11 @@ impl Service {
         // Read before the list: a key recorded after it was read (a claim,
         // a new invite) is not judged by a list older than it.
         let phones = store.feeder_phones(id).await?;
+        // Nothing recorded, nothing to follow up: the feeder is not asked,
+        // as on every connect of a feeder with no phone keys.
+        if phones.is_empty() {
+            return Ok(false);
+        }
         let listed = self.list_clients(id).await?;
         let now = self.shared.clock.now();
         let mut owed = false;
