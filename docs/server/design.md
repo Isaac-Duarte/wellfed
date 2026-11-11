@@ -119,7 +119,7 @@ Beyond the [Rust standard](../development/rust.md): a change that wants SQL in a
 
 ## Storage
 
-- **SQLite in WAL mode.** One writer connection, through which every write goes so writes never contend, beside a small read pool. A household's one to five feeders need no writer task in front of it.
+- **SQLite in WAL mode.** One writer connection, through which every write goes so writes never contend, beside a small read pool. A household's one to five feeders need no writer task in front of it. Every commit is synced before it returns (`synchronous=FULL`), so a command journal row outlasts a power cut before its write goes out.
 - **Migrations** are sqlx's, embedded in the binary and applied at startup. Before pending migrations run on an existing database, `VACUUM INTO` copies it beside itself as `server.db.before-<version>-<unix ms>`. Until the first server release they are squashed freely, since no owner's database has run them; from then on they are append-only, and a released migration is never edited.
 - **Queries** use `sqlx::query!` and `query_as!`, with the offline metadata (`src/server/wellfed-store/.sqlx/`) committed, so builds need no database. `make sqlx-prepare` regenerates it from a scratch database that the `sqlite3` command line builds from the migrations.
 - **Time** is stored as integer Unix milliseconds (UTC), with zones as IANA names, converted by `jiff` at the store boundary. The store never reads the wall clock: `Store::open` is given the time.

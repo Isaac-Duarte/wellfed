@@ -2,7 +2,10 @@
 //! ([API design](../../../../docs/server/design.md#storage)).
 //!
 //! SQLite in WAL mode, with one writer connection and a small read pool,
-//! so writes never contend. Migrations are embedded and run at open, after
+//! so writes never contend. Every commit is synced before it returns
+//! (`synchronous=FULL`): the command journal's row must outlast a power cut
+//! before its write goes to the feeder, and an adopted feeder's key before
+//! the feeder is told it is adopted. Migrations are embedded and run at open, after
 //! a copy of the database is taken if any are pending. Queries are
 //! `query!`/`query_as!`, checked at build time against the offline
 //! metadata in `.sqlx/` (`make sqlx-prepare` regenerates it).
@@ -118,7 +121,12 @@ impl Store {
             .filename(path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Normal)
+            // In WAL, `NORMAL` syncs only at checkpoints, so a power cut
+            // can roll back a commit that already returned: a journal row
+            // the server then sends nothing for, and a client is told a
+            // write never went that may have. One fsync per commit is cheap
+            // at a household's write rate.
+            .synchronous(SqliteSynchronous::Full)
             .foreign_keys(true)
             .busy_timeout(BUSY);
         let writer = SqlitePoolOptions::new()
@@ -164,5 +172,28 @@ impl Store {
     pub async fn close(&self) {
         self.reader.close().await;
         self.writer.close().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A commit is synced before it returns, so a journal row that went out
+    /// to a feeder outlasts a power cut: `FULL` is 2.
+    #[tokio::test]
+    async fn the_writer_syncs_every_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("server.db"), Timestamp::UNIX_EPOCH)
+            .await
+            .unwrap();
+
+        let synchronous: i64 = sqlx::query_scalar("PRAGMA synchronous")
+            .fetch_one(&store.writer)
+            .await
+            .unwrap();
+
+        assert_eq!(synchronous, 2);
+        store.close().await;
     }
 }
