@@ -12,9 +12,9 @@ use std::time::Duration;
 
 use wellfed_api::{
     ClientOwner, ClientRole, Connection as Link, FeederId, Hex, LOGOUT_KEYS_MAX, LogOut,
-    NewPhoneInvite, NewToken, NewUser, PhoneClaim, Role, User, UserPatch,
+    NewPhoneInvite, NewToken, NewUser, PhoneClaim, RevokeReason, Role, User, UserPatch,
 };
-use wellfed_server_testkit::feeder::{self, Running};
+use wellfed_server_testkit::feeder::{self, Relay, Running};
 use wellfed_server_testkit::fixed::FixedClock;
 use wellfed_server_testkit::{TestService, ada_setup, local, until};
 use wellfed_service::{AccountError, Caller, Error, Invalid, Service};
@@ -102,6 +102,15 @@ async fn tokenless(service: &Service, id: FeederId, user: &User, n: u8) {
     );
 }
 
+/// Why the server is revoking phone `n`'s key on the feeder, if it is.
+async fn reason(service: &Service, owner: &User, id: FeederId, n: u8) -> Option<RevokeReason> {
+    let phones = service.phones(owner).await.unwrap();
+    let phone = phones
+        .iter()
+        .find(|phone| phone.feeder == id && phone.key.0 == key(n))?;
+    phone.revoking.as_ref().map(|revoking| revoking.reason)
+}
+
 /// Until the feeder no longer holds any of `phones`' keys.
 async fn revoked(sim: &Running, phones: &[u8]) {
     until("the keys are revoked", || async {
@@ -143,10 +152,9 @@ async fn logged_out_member(
 }
 
 /// The logout keeps the phone's key and its invitee under the account
-/// with no token; revoking another of the account's tokens leaves them, and
-/// demoting the account revokes them. The token alone cannot ask, nor can
-/// another account's session, and a logout naming too many keys changes
-/// nothing.
+/// with no token; revoking another of the account's tokens leaves them.
+/// The token alone cannot ask, nor can another account's session, and a
+/// logout naming too many keys changes nothing.
 #[test]
 fn a_phone_that_logs_out_keeps_its_keys_under_the_account() {
     local(async {
@@ -196,16 +204,6 @@ fn a_phone_that_logs_out_keeps_its_keys_under_the_account() {
         for n in [70, 71] {
             tokenless(service, id, &bob.user, n).await;
         }
-
-        let viewer = UserPatch {
-            role: Some(Role::Viewer),
-            ..UserPatch::default()
-        };
-        service
-            .update_user(&ada, None, bob.user.id, viewer)
-            .await
-            .unwrap();
-        revoked(&sim, &[70, 71]).await;
         server.shutdown().await;
         sim.stop().await;
     });
@@ -224,6 +222,31 @@ fn deleting_the_account_revokes_the_keys_a_logout_left_it() {
         tokenless(service, id, &bob.user, 74).await;
         service.delete_user(&ada, bob.user.id).await.unwrap();
         revoked(&sim, &[74, 75]).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// Demoting the account to a viewer revokes the keys a logout left it.
+#[test]
+fn demoting_the_account_revokes_the_keys_a_logout_left_it() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = TestService::start().await;
+        let id = adopted(&server, &sim).await;
+        let service = server.service();
+        let (ada, bob) = logged_out_member(service, &sim, id, 72).await;
+
+        tokenless(service, id, &bob.user, 72).await;
+        let viewer = UserPatch {
+            role: Some(Role::Viewer),
+            ..UserPatch::default()
+        };
+        service
+            .update_user(&ada, None, bob.user.id, viewer)
+            .await
+            .unwrap();
+        revoked(&sim, &[72, 73]).await;
         server.shutdown().await;
         sim.stop().await;
     });
@@ -254,9 +277,9 @@ fn an_expiry_on_the_account_revokes_the_keys_a_logout_left_it() {
 }
 
 /// Someone holding the phone's token gets a key of their own on another
-/// feeder. The phone's logout names only its own key, so the other key
-/// goes with the token while the phone's key and its invitee stay the
-/// account's.
+/// feeder, and invites another with it. The phone's logout names only its
+/// own key, so the thief's key and the key it invited go with the token
+/// while the phone's key and its invitee stay the account's.
 #[test]
 fn a_key_someone_else_got_through_the_token_goes_at_logout() {
     local(async {
@@ -270,16 +293,77 @@ fn a_key_someone_else_got_through_the_token_goes_at_logout() {
         join(service, &sim, kitchen, &bob, 80).await;
         invite_directly(&sim, 80, 81).await;
         attributed(service, kitchen, &bob, 81).await;
-        // The thief's key, through the same token, on the hall feeder.
+        // The thief's key, through the same token, on the hall feeder, and
+        // a key the thief's key invited.
         join(service, &hall, id, &bob, 82).await;
+        invite_directly(&hall, 82, 83).await;
+        attributed(service, id, &bob, 83).await;
 
         log_out(service, &bob, &[80]).await;
-        revoked(&hall, &[82]).await;
+        revoked(&hall, &[82, 83]).await;
         for n in [80, 81] {
             tokenless(service, kitchen, &bob.user, n).await;
         }
         server.shutdown().await;
         hall.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// Someone holding the phone's token gets a key of their own on the same
+/// feeder: one key per token, so the phone's key is replaced and its
+/// invitee moves under the thief's key. The logout names the phone's key,
+/// which stays replaced, and the thief's key goes with the token, taking
+/// the invitee with it. The relay holds the revocations back, so each
+/// key's reason is read before the feeder drops it.
+#[test]
+fn a_thief_on_the_phones_feeder_replaces_its_key_and_goes_at_logout_with_its_invitees() {
+    local(async {
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let server = TestService::start().await;
+        let id = server
+            .adopt_as(&sim, &relay.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let (ada, bob) = ada_and(service, "bob", Role::Member).await;
+        join(service, &sim, id, &bob, 86).await;
+        invite_directly(&sim, 86, 87).await;
+        attributed(service, id, &bob, 87).await;
+
+        // The thief's invite replaces the phone's key; the relay holds the
+        // revocation it starts.
+        let request = NewPhoneInvite { key: Hex(key(88)) };
+        let invite = service.invite_phone(&bob, id, request).await.unwrap();
+        relay.pause();
+        feeder::join_phone(&sim, &invite.invite, secret(88)).await;
+        assert_eq!(
+            reason(service, &ada.user, id, 86).await,
+            Some(RevokeReason::Replaced)
+        );
+        assert_eq!(
+            reason(service, &ada.user, id, 87).await,
+            None,
+            "moved, not revoked"
+        );
+
+        log_out(service, &bob, &[86]).await;
+        assert_eq!(
+            reason(service, &ada.user, id, 86).await,
+            Some(RevokeReason::Replaced)
+        );
+        assert_eq!(
+            reason(service, &ada.user, id, 88).await,
+            Some(RevokeReason::TokenRevoked)
+        );
+        assert!(
+            reason(service, &ada.user, id, 87).await.is_some(),
+            "the invitee goes too"
+        );
+        relay.resume();
+        revoked(&sim, &[86, 87, 88]).await;
+        server.shutdown().await;
         sim.stop().await;
     });
 }
