@@ -20,6 +20,14 @@
 //! reported them. What revoking it cannot undo is what it already did on a
 //! feeder: a key a phone key invited that its feeder's history lost before
 //! the server read it, or a write it made.
+//!
+//! Nor does a revocation reach a feeder the server can no longer reach. A
+//! stolen owner's token can get an owner-role phone key, and while that key
+//! is live on the LAN its holder can revoke the server's own key or move
+//! the feeder to another Wi-Fi network. The server then never reaches the
+//! feeder again, so no revocation of that key ever lands; only an owner at
+//! the feeder (a revoke from a phone on the LAN, or a reset) removes it.
+//! This is a known gap, without a design yet.
 
 use sha2::{Digest, Sha256};
 use wellfed_api::{AuditAction, CreatedToken, NewToken, RevokeReason, Token, TokenId, User};
