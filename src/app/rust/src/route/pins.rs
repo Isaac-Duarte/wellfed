@@ -154,7 +154,7 @@ pub(crate) struct LostAdoption {
 
 /// The file's shape.
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct PinFile {
+pub(crate) struct PinFile {
     pins: Vec<PinRecord>,
     running: Vec<RunningFeed>,
     adoptions: Vec<LostAdoption>,
