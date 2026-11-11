@@ -189,10 +189,17 @@ impl Bench {
         let now = self.now();
         let mut last = None;
         for &button in code.presses() {
-            let press = Gesture::Down {
-                chord: Buttons::of(button),
+            // A short press goes down and comes up alone, and counts as it
+            // comes up.
+            let chord = Buttons::of(button);
+            self.pairing
+                .gesture(now, Gesture::Down { chord }, Lock::Locked);
+            let up = Gesture::Up {
+                chord,
+                level: 0,
+                held_ms: 100,
             };
-            last = self.pairing.gesture(now, press, Lock::Locked);
+            last = self.pairing.gesture(now, up, Lock::Locked);
             self.setup.pressed();
         }
         last

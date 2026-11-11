@@ -512,13 +512,20 @@ fn recover_until(
             let Reply::EnterCode { .. } = reply else {
                 return Some(reply);
             };
+            // Each press goes down and comes up alone, as the button
+            // service reports a short press; it counts as it comes up.
             for &button in keyed.presses() {
-                let down = Gesture::Down {
-                    chord: Buttons::of(button),
+                let chord = Buttons::of(button);
+                let up = Gesture::Up {
+                    chord,
+                    level: 0,
+                    held_ms: 100,
                 };
-                let event = rig.pairing.gesture(rig.now, down, Lock::Unlocked);
-                if matches!(event, Some(PairingEvent::Entered { .. })) {
-                    rig.recovery = event;
+                for gesture in [Gesture::Down { chord }, up] {
+                    let event = rig.pairing.gesture(rig.now, gesture, Lock::Unlocked);
+                    if matches!(event, Some(PairingEvent::Entered { .. })) {
+                        rig.recovery = event;
+                    }
                 }
             }
         }

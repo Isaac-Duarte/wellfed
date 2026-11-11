@@ -101,6 +101,7 @@ pub fn pair(event: pairing::Event, f: &mut impl fmt::Write) -> fmt::Result {
     match event {
         E::Confirming { path } => write!(f, "pair confirming path={path}"),
         // How many presses, never which: the record must not carry the code.
+        E::Pressed { path } => write!(f, "pair {path} pressed"),
         E::Keyed { path, entered } => write!(f, "pair {path} keyed={entered}"),
         E::Swallowed { path } => write!(f, "pair {path} swallowed"),
         E::Entered { path, .. } => write!(f, "pair {path} state=entered"),

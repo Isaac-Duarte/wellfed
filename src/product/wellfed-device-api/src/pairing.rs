@@ -34,6 +34,18 @@
 //! every gesture it consumes, and the firmware gives the panel only the
 //! rest.
 //!
+//! The client chooses its own code, so a press counts only when it is
+//! plainly one: a button that went down during the code and came up on its
+//! own, short. The button service reports a chord's first button going
+//! down before the chord forms, so counting a press as it goes down would
+//! let an owner's recovery or setup hold key in a code an attacker on the
+//! LAN or in radio range chose. A chord or a hold instead refuses the
+//! pending offer: it is the person at the feeder doing something else, and
+//! a hold that opens recovery or setup then acts as it would with nothing
+//! pending. A code of one button pressed every time is refused too, since
+//! an owner pressing Dispense for a feed that does not come would key it in
+//! ([`Code::one_button`]); clients never draw one.
+//!
 //! The policy holds no client keys: the firmware applies an [`Event::Admit`]
 //! to the client store. Invite secrets do live here, since a handshake
 //! needs its PSK before the client is known.
@@ -117,13 +129,19 @@ pub enum Event {
     Confirming {
         path: Path,
     },
+    /// A button went down towards the code of the offer behind `path`; it
+    /// counts once it comes up on its own, short.
+    Pressed {
+        path: Path,
+    },
     /// A press counted towards the code of the offer behind `path` (setup
     /// or recovery), which now has `entered`.
     Keyed {
         path: Path,
         entered: u8,
     },
-    /// A chord or a hold went to that code and counted for nothing.
+    /// A release went to that code and counted for nothing: a press that
+    /// began before the code, or one that grew into a chord or a hold.
     Swallowed {
         path: Path,
     },
@@ -168,6 +186,8 @@ enum Confirm {
     Code {
         presses: [Button; PRESSES],
         entered: usize,
+        /// The lone button that went down during the code, until it is up.
+        down: Option<Button>,
     },
 }
 
@@ -218,6 +238,7 @@ impl Pairing {
         let confirm = Confirm::Code {
             presses: [Button::Reset; PRESSES],
             entered: 0,
+            down: None,
         };
         self.offer(now_ms, Path::Setup, Role::Owner, confirm)
     }
@@ -292,10 +313,11 @@ impl Pairing {
         }
     }
 
-    /// One gesture while a code (setup's or recovery's) is being keyed in. A press of one
-    /// button is one press of the code. A chord or a hold is swallowed and
-    /// counts for nothing, so no lock toggle or key reset fires mid-code; a
-    /// release goes on to the panel, which only notes it.
+    /// One gesture while a code (setup's or recovery's) is being keyed in.
+    /// A button that goes down alone and comes up alone, short, is one press
+    /// of the code, counted as it comes up. A chord or a hold refuses the
+    /// offer, so the panel never acts mid-code and the owner's next hold
+    /// starts afresh rather than keying in someone else's code.
     fn code(&mut self, now_ms: u32, gesture: Gesture) -> Option<Event> {
         let pending = self.pending.as_mut()?;
         let path = pending.path;
@@ -303,16 +325,36 @@ impl Pairing {
             self.pending = None;
             return Some(refused(path, Refusal::Unconfirmed));
         }
-        let Confirm::Code { presses, entered } = &mut pending.confirm else {
+        let Confirm::Code {
+            presses,
+            entered,
+            down,
+        } = &mut pending.confirm
+        else {
             return None;
         };
-        let chord = match gesture {
-            Gesture::Down { chord } => chord,
-            Gesture::Hold { .. } => return Some(Event::Swallowed { path }),
-            Gesture::Up { .. } => return None,
+        let button = match gesture {
+            Gesture::Down { chord } => {
+                let Some(&button) = Button::ALL.iter().find(|&&b| chord == Buttons::of(b)) else {
+                    self.pending = None;
+                    return Some(refused(path, Refusal::Unconfirmed));
+                };
+                *down = Some(button);
+                return Some(Event::Pressed { path });
+            }
+            Gesture::Hold { .. } => {
+                self.pending = None;
+                return Some(refused(path, Refusal::Unconfirmed));
+            }
+            Gesture::Up { chord, level, .. } => {
+                let pressed = down.take();
+                match pressed {
+                    Some(button) if level == 0 && chord == Buttons::of(button) => button,
+                    _ => return Some(Event::Swallowed { path }),
+                }
+            }
         };
-        let pressed = Button::ALL.iter().find(|&&b| chord == Buttons::of(b));
-        let (Some(&button), Some(slot)) = (pressed, presses.get_mut(*entered)) else {
+        let Some(slot) = presses.get_mut(*entered) else {
             return Some(Event::Swallowed { path });
         };
 
@@ -323,6 +365,9 @@ impl Pairing {
         }
         let code = Code::new(*presses);
         self.pending = None;
+        if code.one_button() {
+            return Some(refused(path, Refusal::Unconfirmed));
+        }
         Some(Event::Entered { path, code })
     }
 
@@ -422,6 +467,7 @@ impl Pairing {
                 let confirm = Confirm::Code {
                     presses: [Button::Reset; PRESSES],
                     entered: 0,
+                    down: None,
                 };
                 self.offer(now_ms, Path::Recovery, Role::Owner, confirm)
             }

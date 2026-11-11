@@ -60,17 +60,31 @@ impl Code {
         Self(presses)
     }
 
-    /// A code from uniformly random bits, two per press.
+    /// A code from uniformly random bits, two per press, never one button
+    /// pressed every time ([`Self::one_button`]): of those, the last press
+    /// moves to the next button.
     pub fn from_bits(bits: u16) -> Self {
         let mut presses = [Button::Reset; PRESSES];
         for (i, press) in presses.iter_mut().enumerate() {
             *press = Button::ALL[usize::from(bits >> (2 * i)) & 3];
+        }
+        if Self(presses).one_button() {
+            let next = usize::from(bits >> (2 * (PRESSES - 1))).wrapping_add(1) & 3;
+            presses[PRESSES - 1] = Button::ALL[next];
         }
         Self(presses)
     }
 
     pub const fn presses(&self) -> &[Button; PRESSES] {
         &self.0
+    }
+
+    /// Whether every press is the same button. A feeder refuses such a
+    /// code: someone at it pressing one button over and over, Dispense for
+    /// a feed it will not give, would key it in without reading it, for a
+    /// client that chose it.
+    pub fn one_button(&self) -> bool {
+        self.0.iter().all(|&press| press == self.0[0])
     }
 }
 
