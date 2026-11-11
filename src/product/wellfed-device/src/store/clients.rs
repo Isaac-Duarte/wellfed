@@ -285,15 +285,17 @@ impl<I: SlotIo> ClientStore<I> {
         matches!(self.status, ClientStatus::Empty | ClientStatus::Loaded)
     }
 
-    /// The feeder's X25519 secret, once set. Like [`Self::clients`], it
-    /// comes from the table open loaded or the last save committed: an open
-    /// that is not `Loaded` holds none, and a save that fails keeps the
-    /// table it was opened or saved with. So `None` after an `Io` open means
-    /// unknown, not unset.
+    /// The feeder's X25519 secret, once set; read it as [`Self::clients`]
+    /// says.
     pub fn identity(&self) -> Option<&[u8; 32]> {
         self.table.identity.as_ref()
     }
 
+    /// The enrolled clients. Like [`Self::identity`], they come from the
+    /// table open loaded or the last save committed: an open that is not
+    /// `Loaded` holds none, and a save that fails keeps the table it was
+    /// opened or saved with. So nothing after an `Io` open means unknown,
+    /// not none enrolled.
     pub fn clients(&self) -> impl Iterator<Item = &Client> {
         self.table.clients.iter().flatten()
     }
