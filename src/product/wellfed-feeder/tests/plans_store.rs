@@ -768,3 +768,297 @@ fn a_skip_survives_a_reload_and_its_undo_then_works() {
     assert_eq!(open(&mut f).plans.marks[0], 89_999);
     assert!(!open(&mut f).plans.skipped(0));
 }
+
+/// Dinner at 18:00 for 4 portions every day, saved disabled.
+const DINNER_OFF: Plan = Plan {
+    minute: 18 * 60,
+    portions: 4,
+    days: Weekdays::EVERY_DAY,
+    enabled: false,
+    call: 0,
+};
+
+/// A client's table that changes the slot a once plan's claim disabled is
+/// the owner's word on that slot: giving the occurrence back enables
+/// nothing the owner saved disabled, whether the loop names the claim as
+/// it took it or as the store now holds it. A table that leaves the slot
+/// as the claim did still gets the plan back.
+#[test]
+fn a_release_after_a_table_changes_the_claimed_slot_leaves_it_as_saved() {
+    let once = Plans::default()
+        .changed(&PlansChange::Replace {
+            table: table(&[(0, ONCE)]),
+            at_s: Some(1_000),
+        })
+        .unwrap();
+    let claimed = once
+        .changed(&PlansChange::Claim {
+            claim: claim(0, 2_000, 4),
+            revision: once.revision,
+        })
+        .unwrap();
+    let taken = claimed.claim.unwrap();
+    assert!(taken.disabled);
+
+    let replaced = claimed
+        .changed(&PlansChange::Replace {
+            table: table(&[(0, DINNER_OFF)]),
+            at_s: Some(2_001),
+        })
+        .unwrap();
+    let held = replaced.claim.unwrap();
+    assert!(!held.disabled, "the claim no longer enables the slot");
+    for claim in [taken, held] {
+        let released = replaced.changed(&PlansChange::Release { claim }).unwrap();
+        assert_eq!(released.claim, None);
+        assert_eq!(released.table[0], Some(DINNER_OFF), "still disabled");
+    }
+
+    // The same slot as the claim left it, with another slot changed.
+    let kept = claimed
+        .changed(&PlansChange::Replace {
+            table: {
+                let mut table = claimed.table;
+                table[1] = Some(DINNER_OFF);
+                table
+            },
+            at_s: Some(2_001),
+        })
+        .unwrap();
+    assert_eq!(kept.claim, Some(taken));
+    let released = kept
+        .changed(&PlansChange::Release { claim: taken })
+        .unwrap();
+    assert_eq!(released.table[0], Some(ONCE), "the plan the claim took");
+    assert_eq!(released.table[1], Some(DINNER_OFF));
+}
+
+mod sequences {
+    //! Any order of the loop's and the clients' changes: no plan is ever
+    //! enabled but by the owner's own write, or by a claim giving back the
+    //! very plan it took.
+
+    use proptest::prelude::*;
+    use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, Table, Weekdays};
+    use wellfed_feeder::store::plans::Plans;
+
+    /// Three slots keep collisions on one slot frequent.
+    const SLOTS: u8 = 3;
+
+    #[derive(Clone, Copy, Debug)]
+    enum Step {
+        /// A client's table: the current one or an empty one, with up to
+        /// two slots set or cleared.
+        Replace {
+            keep: bool,
+            edits: [Option<(u8, Option<Plan>)>; 2],
+            at_s: u32,
+        },
+        /// The loop takes an occurrence; `stale` names an old revision.
+        Claim {
+            slot: u8,
+            due_s: u32,
+            high_water: u32,
+            stale: bool,
+        },
+        /// The loop gives its claim back, named as it took it.
+        Release,
+        Settle,
+        Skip {
+            slot: u8,
+            due_s: u32,
+        },
+        /// An undo of the skip at the slot's mark.
+        Unskip {
+            slot: u8,
+        },
+        Pass {
+            slot: u8,
+            due_s: u32,
+        },
+    }
+
+    fn plan() -> impl Strategy<Value = Plan> {
+        (
+            prop_oneof![Just(7 * 60 + 30), Just(18 * 60)],
+            prop_oneof![Just(2), Just(4)],
+            prop_oneof![Just(Weekdays::ONCE), Just(Weekdays::EVERY_DAY)],
+            any::<bool>(),
+        )
+            .prop_map(|(minute, portions, days, enabled)| Plan {
+                minute,
+                portions,
+                days,
+                enabled,
+                call: 0,
+            })
+    }
+
+    fn step() -> impl Strategy<Value = Step> {
+        let slot = 0..SLOTS;
+        let due = 1_000u32..5_000;
+        let edit = || proptest::option::of((0..SLOTS, proptest::option::of(plan())));
+        prop_oneof![
+            3 => (any::<bool>(), [edit(), edit()], due.clone()).prop_map(
+                |(keep, edits, at_s)| Step::Replace { keep, edits, at_s }
+            ),
+            3 => (slot.clone(), due.clone(), 0u32..4, proptest::bool::weighted(0.1)).prop_map(
+                |(slot, due_s, high_water, stale)| Step::Claim {
+                    slot,
+                    due_s,
+                    high_water,
+                    stale,
+                }
+            ),
+            2 => Just(Step::Release),
+            1 => Just(Step::Settle),
+            1 => (slot.clone(), due.clone()).prop_map(|(slot, due_s)| Step::Skip { slot, due_s }),
+            1 => slot.clone().prop_map(|slot| Step::Unskip { slot }),
+            1 => (slot, due).prop_map(|(slot, due_s)| Step::Pass { slot, due_s }),
+        ]
+    }
+
+    /// The change `step` asks of `plans`, with `taken` the claim as the
+    /// loop took it.
+    fn change(plans: &Plans, step: Step, taken: Option<Claim>) -> PlansChange {
+        let revision = plans.revision;
+        let none = Claim {
+            plan: 0,
+            due_s: 1,
+            high_water: 0,
+            disabled: false,
+        };
+        match step {
+            Step::Replace { keep, edits, at_s } => {
+                let mut table: Table = if keep { plans.table } else { [None; PLANS] };
+                for (slot, plan) in edits.into_iter().flatten() {
+                    table[usize::from(slot)] = plan;
+                }
+                PlansChange::Replace {
+                    table,
+                    at_s: Some(at_s),
+                }
+            }
+            Step::Claim {
+                slot,
+                due_s,
+                high_water,
+                stale,
+            } => PlansChange::Claim {
+                claim: Claim {
+                    plan: slot,
+                    due_s,
+                    high_water,
+                    disabled: false,
+                },
+                revision: if stale {
+                    revision.wrapping_sub(1)
+                } else {
+                    revision
+                },
+            },
+            Step::Release => PlansChange::Release {
+                claim: taken.unwrap_or(none),
+            },
+            Step::Settle => PlansChange::Settle {
+                claim: taken.unwrap_or(none),
+            },
+            Step::Skip { slot, due_s } => PlansChange::Skip {
+                plan: slot,
+                due_s,
+                revision,
+            },
+            Step::Unskip { slot } => PlansChange::Unskip {
+                plan: slot,
+                due_s: plans.marks[usize::from(slot)],
+                revision,
+            },
+            Step::Pass { slot, due_s } => PlansChange::Pass {
+                plan: slot,
+                due_s,
+                revision,
+            },
+        }
+    }
+
+    fn disabled(plan: Option<Plan>) -> Option<Plan> {
+        plan.map(|plan| Plan {
+            enabled: false,
+            ..plan
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+        #[test]
+        fn no_plan_is_enabled_but_by_its_owner_or_its_own_claim(
+            steps in proptest::collection::vec(step(), 1..32),
+        ) {
+            let mut plans = Plans::default();
+            // The claim as the loop took it, and the plan it disabled.
+            let mut taken: Option<Claim> = None;
+            let mut took: Option<Plan> = None;
+
+            for step in steps {
+                let change = change(&plans, step, taken);
+                let Some(next) = plans.changed(&change) else {
+                    continue;
+                };
+
+                for slot in 0..PLANS {
+                    let (before, after) = (plans.table[slot], next.table[slot]);
+                    if !matches!(change, PlansChange::Replace { .. }) {
+                        prop_assert_eq!(
+                            disabled(before),
+                            disabled(after),
+                            "only a client's table changes a plan"
+                        );
+                    }
+                    let Some(now) = after.filter(|plan| plan.enabled) else {
+                        continue;
+                    };
+                    if before == after {
+                        continue;
+                    }
+                    let enabled_by = match change {
+                        PlansChange::Replace { .. } => true,
+                        PlansChange::Unskip { plan, .. } => usize::from(plan) == slot,
+                        PlansChange::Release { claim } => {
+                            usize::from(claim.plan) == slot && took == Some(now)
+                        }
+                        _ => false,
+                    };
+                    prop_assert!(enabled_by, "slot {} enabled by {:?}", slot, change);
+                }
+
+                match change {
+                    PlansChange::Claim { claim, .. } => {
+                        let stored = next.claim.unwrap();
+                        taken = Some(stored);
+                        took = stored
+                            .disabled
+                            .then(|| plans.table[usize::from(claim.plan)])
+                            .flatten();
+                    }
+                    PlansChange::Release { .. } | PlansChange::Settle { .. } => {
+                        taken = None;
+                        took = None;
+                    }
+                    _ => {}
+                }
+
+                // A claim that would enable a plan when given back names
+                // the very plan it took, still in its slot.
+                if let Some(held) = next.claim.filter(|held| held.disabled) {
+                    prop_assert_eq!(
+                        next.table[usize::from(held.plan)],
+                        disabled(took),
+                        "the claim's slot holds the plan it took"
+                    );
+                }
+                plans = next;
+            }
+        }
+    }
+}

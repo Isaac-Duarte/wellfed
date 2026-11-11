@@ -26,7 +26,7 @@ wellfed plans disable 0
 wellfed plans delete 0
 ```
 
-Owners and members may change the plans, as they may change the settings. Each change reads the plans, edits that table and writes it back against the generation it read. If another client changed the plans meanwhile, or a one-off plan disabled itself, the write is refused `Stale` and nothing changes: read them again and retry. The command never retries by itself.
+Owners and members may change the plans, as they may change the settings. Each change reads the plans, edits that table and writes it back against the generation it read. If another client changed the plans meanwhile, or a one-off plan disabled itself, the write is refused `Stale` and nothing changes: read them again and retry. While the feeder is taking a meal, the write is refused `Busy` and nothing changes: try again a moment later. That lasts from the meal's claim until its feed is queued or the meal given back, and after a restart until the last claim is checked against the feed journal. The command never retries by itself.
 
 A plan you add or enable again, or whose time or days you change, runs only from its next occurrence after the save. Saving a plan at 07:35 for 07:30 does not feed until tomorrow. Changing only a plan's portions or meal call keeps its occurrences as they were.
 
@@ -140,6 +140,8 @@ A cut between the two leaves a claim whose feed was never reserved. The next boo
 
 If the feeding owner refuses the claimed feed (a join began in between, say), the loop gives the occurrence back and claims it again 5 seconds later, until the 15 minutes run out.
 
+Giving a one-off plan's occurrence back enables the plan again, since its claim disabled it. That is right only for the plan the claim took, so a client's plans change waits until the meal is fed or given back. The store keeps the same rule on its own: once a saved table changes the claimed slot, the table decides, and giving the occurrence back leaves the slot as the table saved it.
+
 A plans store the feeder cannot write runs nothing, since it could not keep the marks.
 
 ## How it differs from stock
@@ -166,6 +168,7 @@ The [factory reset](pairing.md#factory-reset) erases the plans, last claim inclu
 
 ## Evidence
 
+- **Simulated, November 11, 2026: plans changes during a meal.** `wellfed-feeder-sim`'s `tests/schedules.rs` on the loop: a client's table refused `Busy` between a once plan's refused feed and its release, then taken once the meal had fed, with the disabled plan it saved never feeding. `wellfed-feeder`'s `tests/plans_store.rs`: a release after a table changed the claimed slot left that slot as saved, and a property test over random orders of every plans change found no plan enabled except by a client's table, an undone skip or a claim giving back the plan it took.
 - **Simulated, November 5, 2026: skipping a meal.** `wellfed-feeder-sim`'s `tests/schedules.rs` on the loop: a skipped meal neither fed, reminded, called nor was missed, and an undo restored all three; undos refused at the meal's minute, and after the clock moved back past a meal that ran, was missed or disabled its once plan; a skip surviving a restart; a skip being written holding the schedule, reminder and call. `tests/skip_api.rs` over TCP: answered once stored, named in the plans and the history, and an undo landing a second after the meal answered `Done` with the meal fed once. `wellfed-service`'s `tests/plans.rs` through the server: the next meal moved, a retry answered from the journal, a second skip refused, another client's undo seen. `wellfed-feeder`'s `tests/skip.rs` and `tests/plans_store.rs`: the skip bit cleared by a claim, a settled claim, a pass and a fresh save, kept by a save keeping the times, and reloaded; the checks across both 2026 Central European daylight changes, a weekday plan, a plan saved without a clock and a once plan.
 - **Observed, October 29, 2026** (owner listening, hopper empty): the meal call at volumes 10, 50 and 100, each played before its meal, which then fed on time ([speaker](audio.md#evidence)). A settings write made during a feed was refused `Busy`.
 - **Observed, October 28, 2026** (evening, unattended, hopper empty): a meal reminder set 5 minutes ahead of a plan arrived on time, a reboot inside the lead repeated it once, and the meal fed on time. A plan calling a clip twice played it and then fed on time. With sound off, the next plan logged `result=muted` and fed on time.

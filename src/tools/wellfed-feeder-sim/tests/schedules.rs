@@ -566,6 +566,75 @@ fn a_refused_feed_gives_its_occurrence_back_and_retries_without_spinning() {
     assert!(feeder.fed().is_empty());
 }
 
+/// A client's table is refused `Busy` while the schedule takes a meal. Here
+/// it comes between a once plan's refused feed and the release that gives
+/// the occurrence back, with a snack saved disabled in that slot: taken
+/// then, the release would enable the snack. Once the meal has fed, the
+/// same table is taken, and the snack never feeds.
+#[test]
+fn a_client_s_table_waits_while_a_meal_is_taken_and_no_release_enables_it() {
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.sync(WEDNESDAY + 7 * HOUR_MS);
+    let once = Plan {
+        days: Weekdays::ONCE,
+        ..plan(7 * 60 + 30, 2)
+    };
+    feeder.put(table(&[(0, once)]));
+    let snack = Plan {
+        enabled: false,
+        ..plan(8 * 60, 4)
+    };
+    let put = |feeder: &mut Feeder| {
+        let by = Source::Client([1, 2, 3, 4]);
+        let change = table(&[(0, snack)]);
+        feeder.sim.put_plans(feeder.now, Asked { change, by })
+    };
+
+    // The feed is refused once the claim is stored, which the schedule
+    // gives back on its next pass.
+    feeder.run_until(BREAKFAST - 1_000);
+    feeder.sim.refuse_feeds(true);
+    let mut refused = false;
+    for _ in 0..100 {
+        let now = feeder.now;
+        let delay = feeder.sim.pass(now, |record| {
+            if let Record::Feeder(feeder::Record::Schedule(schedule::Record::Refused { .. })) =
+                record
+            {
+                refused = true;
+            }
+        });
+        feeder.now += delay.clamp(1, 1_000);
+        if refused {
+            break;
+        }
+    }
+    assert!(refused, "the claimed feed was refused");
+    let PlansResult::Current { view, pending } = feeder.sim.platform().plans() else {
+        panic!("the simulator keeps plans");
+    };
+    assert!(!pending, "the mailbox is free for a client");
+    assert_eq!(view.claim.map(|claim| claim.disabled), Some(true));
+    assert_eq!(put(&mut feeder), PlansResult::Busy);
+
+    feeder.sim.refuse_feeds(false);
+    feeder.run(10_000);
+    assert_eq!(feeder.fed(), [FED_PLAN_0], "the retry fed the meal");
+    assert_eq!(
+        feeder.plans().table[0].map(|plan| plan.enabled),
+        Some(false)
+    );
+
+    assert!(matches!(
+        put(&mut feeder),
+        PlansResult::Current { pending: true, .. }
+    ));
+    feeder.run_until(WEDNESDAY + 8 * HOUR_MS + 30 * MINUTE_MS);
+    assert_eq!(feeder.plans().table[0], Some(snack));
+    assert_eq!(feeder.fed(), [FED_PLAN_0], "the snack never fed");
+}
+
 /// A meal behind a storage write: claimed, waiting, then fed once under the
 /// plan, nothing given back and nothing missed.
 #[test]

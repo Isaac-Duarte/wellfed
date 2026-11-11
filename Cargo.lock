@@ -5399,6 +5399,7 @@ dependencies = [
 name = "wellfed-feeder"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-core-feeder",

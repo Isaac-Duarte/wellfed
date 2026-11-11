@@ -83,10 +83,16 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
 
     /// A client's table is saved at the wall time now, so a plan it adds
     /// or moves never runs an occurrence already past.
+    ///
+    /// It waits, as a skip does, while the schedule holds feeding for a
+    /// meal it is taking. The claim, its feed and its release all act on
+    /// the slot they took: a table saved between them would have the
+    /// release enable a plan the owner saved disabled, or the claimed feed
+    /// give the new plan's portions.
     fn plans(&mut self, change: Option<Asked<Table>>) -> PlansResult {
         match change {
             None => self.platform.plans(),
-            Some(_) if self.outputs_claimed() => PlansResult::Busy,
+            Some(_) if self.outputs_claimed() || self.meal => PlansResult::Busy,
             Some(Asked { change: table, by }) => {
                 let asked = self.stamp(by);
                 let change = PlansChange::Replace {

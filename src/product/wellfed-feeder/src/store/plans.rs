@@ -153,6 +153,19 @@ impl Plans {
                         next.set_skip(slot, false);
                     }
                 }
+                // A claim that disabled its plan enables it again when given
+                // back, which is right only for the plan it took. Once the
+                // client's table puts anything else in the slot, the table
+                // is the owner's word on it, and the release leaves it be.
+                if let Some(claim) = self.claim
+                    && claim.disabled
+                    && table.get(usize::from(claim.plan)) != self.table.get(usize::from(claim.plan))
+                {
+                    next.claim = Some(Claim {
+                        disabled: false,
+                        ..claim
+                    });
+                }
                 next.table = table;
                 next.revision = self.revision.wrapping_add(1);
             }
@@ -170,22 +183,18 @@ impl Plans {
                 next.claim = Some(Claim { disabled, ..claim });
             }
             PlansChange::Release { claim } => {
-                if self.claim != Some(claim) {
-                    return None;
-                }
+                let held = self.held(claim)?;
                 // No mark moves: the claim cleared the slot's skip when
                 // it was taken, and nothing gives that back.
                 next.claim = None;
-                if claim.disabled {
-                    next.set_enabled(claim.plan, true);
+                if held.disabled {
+                    next.set_enabled(held.plan, true);
                 }
             }
             PlansChange::Settle { claim } => {
-                if self.claim != Some(claim) {
-                    return None;
-                }
-                next.fold(claim);
-                next.set_skip(usize::from(claim.plan), false);
+                let held = self.held(claim)?;
+                next.fold(held);
+                next.set_skip(usize::from(held.plan), false);
                 next.claim = None;
             }
             PlansChange::Pass {
@@ -246,6 +255,16 @@ impl Plans {
             }
         }
         Some(next)
+    }
+
+    /// The stored claim, if it is `claim`'s occurrence. Whether it still
+    /// enables its plan when given back is the store's to say, not the
+    /// loop's copy: a client's table may have changed the slot since the
+    /// loop read it.
+    fn held(&self, claim: Claim) -> Option<Claim> {
+        self.claim.filter(|held| {
+            (held.plan, held.due_s, held.high_water) == (claim.plan, claim.due_s, claim.high_water)
+        })
     }
 
     /// Whether slot `slot`'s mark is a client's skip.
