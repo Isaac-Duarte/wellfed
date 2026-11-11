@@ -103,7 +103,9 @@ impl WatchdogConfig {
 /// (a trial gives way, a storm holds) rather than the boot running on with
 /// no watchdog, where reboots, the trial deadline, flash arming and updates
 /// would each wait for a reset that never comes. Whether the counter reads
-/// enabled afterwards. The caller must never refresh it.
+/// enabled afterwards. The caller must never refresh it, and calls this
+/// once: programming the counter again restarts its count, so a retry is
+/// [`force_enable`].
 pub fn force_reset(config: &WatchdogConfig) -> bool {
     if !config.valid() {
         return false;
@@ -117,6 +119,16 @@ pub fn force_reset(config: &WatchdogConfig) -> bool {
         sdk::wdg_init(u32::from(config.count_id), u32::from(config.divisor));
         sdk::wdg_cmd(true);
     }
+    sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE != 0
+}
+
+/// Enable the counter [`force_reset`] programmed again, without
+/// programming it: its count runs on, so a retry never postpones the
+/// reset. Whether it reads enabled.
+pub fn force_enable() -> bool {
+    let _guard = IrqGuard::lock();
+    // SAFETY: as for `force_reset`, whose counter this is.
+    unsafe { sdk::wdg_cmd(true) };
     sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE != 0
 }
 

@@ -9,7 +9,9 @@ mod common;
 use common::*;
 use wellfed_core::flash_coord::{FlashParty, FlashReply};
 use wellfed_hal::sdk::{self, fake};
-use wellfed_hal::supervision::watchdog::{Watchdog, WatchdogConfig, WatchdogFault, force_reset};
+use wellfed_hal::supervision::watchdog::{
+    Watchdog, WatchdogConfig, WatchdogFault, force_enable, force_reset,
+};
 use wellfed_hal_feeder::board::Board;
 
 const CONFIG: WatchdogConfig = WatchdogConfig {
@@ -345,4 +347,28 @@ fn a_watchdog_that_will_not_open_still_resets() {
         ..CONFIG
     }));
     assert!(hw(|h| h.watchdog_init_calls) == 0 && sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE == 0);
+}
+
+/// An enable that does not read back while the counter runs: the forced
+/// reset reports it did not take, and its retries only enable the counter
+/// again, never programming it, so its count runs on and the reset still
+/// comes within the configured expiry.
+#[test]
+fn a_forced_reset_whose_enable_does_not_read_back_still_resets() {
+    let mut w = fresh();
+    hw(|h| h.watchdog_vendor |= sdk::WDG_BIT_ENABLE);
+    assert!(!w.open(&CONFIG));
+    hw(|h| h.watchdog_enable_hidden = true);
+
+    assert!(!force_reset(&CONFIG));
+    assert_eq!(hw(|h| h.watchdog_init_calls), 1);
+    // Retries a quarter of the expiry apart, as the feeder task's would be.
+    for _ in 0..3 {
+        fake::watchdog_advance(1000);
+        assert!(!force_enable());
+        assert_eq!(hw(|h| h.watchdog_reset_requests), 0);
+    }
+    fake::watchdog_advance(1032);
+    assert_eq!(hw(|h| h.watchdog_reset_requests), 1);
+    assert_eq!(hw(|h| h.watchdog_init_calls), 1, "programmed once");
 }

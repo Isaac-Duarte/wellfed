@@ -549,10 +549,17 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
 /// Reset the platform through the watchdog's reset path, unfed
 /// (`watchdog::force_reset`), and say so once. The feeder task's next
 /// pass, or the halt's: retried until the counter takes, since a boot that
-/// cannot reset must not run on. Never feeds.
+/// cannot reset must not run on. The counter is programmed once; a retry
+/// only enables it again (`watchdog::force_enable`), since programming it
+/// again would restart its count. Never feeds.
 fn force_reset() -> u32 {
     static SAID: AtomicBool = AtomicBool::new(false);
-    let forced = watchdog::force_reset(&config::WATCHDOG);
+    static PROGRAMMED: AtomicBool = AtomicBool::new(false);
+    let forced = if PROGRAMMED.swap(true, Ordering::AcqRel) {
+        watchdog::force_enable()
+    } else {
+        watchdog::force_reset(&config::WATCHDOG)
+    };
     if !SAID.swap(true, Ordering::Relaxed) {
         sdk::log(if forced {
             c"PLSUP1 stop watchdog=forced reset=1\r\n"
@@ -1357,7 +1364,11 @@ pub extern "C" fn wellfed_app_start() {
                 update_trial_register(|register| trial::halt_over(register, &identity));
                 if !SdkHooks::watchdog() {
                     sdk::log(c"PLSUP1 error watchdog=open\r\n");
-                    force_reset();
+                    // No task to retry from: enable the counter again here
+                    // until it reads enabled or its reset comes.
+                    while force_reset() != 0 {
+                        sdk::spin_once();
+                    }
                 }
             }
             return;

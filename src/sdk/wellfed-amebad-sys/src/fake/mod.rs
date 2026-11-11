@@ -214,6 +214,9 @@ pub struct Hardware {
     pub watchdog_expired: bool,
     pub watchdog_scope_blocked: bool,
     pub watchdog_disable_blocked: bool,
+    /// The vendor register reads the enable bit clear while the counter
+    /// runs: an enable that does not read back.
+    pub watchdog_enable_hidden: bool,
     pub watchdog_enable_corrupt: bool,
 
     pub task: Option<TaskStep>,
@@ -432,6 +435,7 @@ impl Default for Hardware {
             watchdog_expired: false,
             watchdog_scope_blocked: false,
             watchdog_disable_blocked: false,
+            watchdog_enable_hidden: false,
             watchdog_enable_corrupt: false,
 
             task: None,
