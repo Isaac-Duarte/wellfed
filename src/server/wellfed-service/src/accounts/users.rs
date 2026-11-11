@@ -9,7 +9,7 @@
 use jiff::Timestamp;
 use wellfed_api::{AuditAction, NewUser, RevokeReason, Role, User, UserId, UserPatch};
 use wellfed_session::hex;
-use wellfed_store::{Change, NewAudit, Store, Whose};
+use wellfed_store::{Change, NewAudit, Sessions, Store, UserUpdate, Whose};
 
 use crate::accounts::sessions::{self, disabled, hash_password, password, user_name};
 use crate::accounts::tokens::session_only;
@@ -103,26 +103,32 @@ impl Service {
             None => None,
         };
 
-        let store = &self.shared.store;
-        changed(store.update_user(id, updated.role, updated.expires).await?)?;
-        if let Some(reason) = revocation(&current, &updated) {
-            self.revoke_phones(Whose::User(id), reason).await?;
-        }
         let now = self.shared.clock.now();
         let enabled = disabled(&current, now) && !disabled(&updated, now);
         let reset = hash.is_some();
-        if let Some(hash) = hash {
-            store.set_password(id, &hash).await?;
-        }
-
         // Whoever held the old password is logged out: everywhere when an
         // owner sets someone else's temporary one, and everywhere but here
-        // when they set their own.
+        // when they set their own. The sessions end in the change's own
+        // transaction, so neither lands without the other.
         let keep = session
             .filter(|_| actor.id == id)
             .and_then(SessionToken::hash);
-        if enabled || reset {
-            store.delete_sessions_of(id, keep.as_ref()).await?;
+        let sessions = if enabled || reset {
+            Sessions::Ended {
+                keep: keep.as_ref(),
+            }
+        } else {
+            Sessions::Kept
+        };
+        let update = UserUpdate {
+            role: updated.role,
+            expires: updated.expires,
+            password_hash: hash.as_deref(),
+            sessions,
+        };
+        changed(self.shared.store.update_user(id, update).await?)?;
+        if let Some(reason) = revocation(&current, &updated) {
+            self.revoke_phones(Whose::User(id), reason).await?;
         }
 
         let (account, name) = (updated.id, updated.name.clone());
@@ -212,10 +218,9 @@ pub async fn reset_owner(
     let typed = password.clone();
     let hash = sessions::blocking(move || hash_password(&typed, &salt)).await?;
 
-    if !store.set_password(owner.id, &hash).await? {
+    if !store.set_password(owner.id, &hash, None).await? {
         return Err(Error::NotFound(Resource::User));
     }
-    store.delete_sessions_of(owner.id, None).await?;
     let action = AuditAction::PasswordSet {
         account: owner.id,
         name: owner.name.clone(),

@@ -74,7 +74,7 @@ pub use phones::{NewPhone, Recorded, Whose};
 pub use projections::{Boot, ClockSync, Feed, LockChange, PROJECTION_VERSION, Projected, Refresh};
 pub use samples::{HourRow, NewSample, SampleKey, SampleRefresh, SampleRow, Span};
 pub use tokens::{NewToken, TokenUse};
-pub use users::{Change, Login, NewUser, SessionRow};
+pub use users::{Change, Login, NewUser, SessionRow, Sessions, UserUpdate};
 
 /// How long a connection waits on a lock before failing.
 const BUSY: Duration = Duration::from_secs(5);

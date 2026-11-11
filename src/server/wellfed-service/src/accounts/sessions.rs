@@ -258,12 +258,10 @@ impl Service {
         }
 
         let hash = self.hash_password(change.password).await?;
-        if !store.set_password(user.id, &hash).await? {
+        let keep = session.and_then(SessionToken::hash);
+        if !store.set_password(user.id, &hash, keep.as_ref()).await? {
             return Err(Error::NotFound(Resource::User));
         }
-        store
-            .delete_sessions_of(user.id, session.and_then(SessionToken::hash).as_ref())
-            .await?;
         let action = AuditAction::PasswordSet {
             account: user.id,
             name: user.name.clone(),

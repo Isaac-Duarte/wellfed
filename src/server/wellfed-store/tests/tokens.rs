@@ -7,7 +7,7 @@ use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{Home, HomeId, Role, TimeFormat, Token, TokenId, Units, UserId};
-use wellfed_store::{NewToken, NewUser, Store};
+use wellfed_store::{NewToken, NewUser, Sessions, Store, UserUpdate};
 
 async fn fresh() -> (TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -81,7 +81,13 @@ async fn a_token_is_found_by_its_hash_with_its_user_as_they_are_now() {
     let touched = store.token(bobs_id).await.unwrap().unwrap();
     assert_eq!(touched.last_used, Some(at(50)), "never moves back");
 
-    store.update_user(bob_id, Role::Viewer, None).await.unwrap();
+    let demote = UserUpdate {
+        role: Role::Viewer,
+        expires: None,
+        password_hash: None,
+        sessions: Sessions::Kept,
+    };
+    store.update_user(bob_id, demote).await.unwrap();
     let found = store.token_use(&[2; 32]).await.unwrap().unwrap();
     assert_eq!(found.user.role, Role::Viewer, "the role is read on use");
 
