@@ -12,16 +12,19 @@
 //! ceiling down for as long as the flood goes on: six IPv4 addresses, or
 //! six /64s, and one IPv6 /48 holds 65,536 of them.
 //!
-//! So an address the name logged in from within the last [`KNOWN_FOR_MS`]
-//! skips the ceiling: it keeps its own bucket for the name and its own
-//! for the address, and nothing from other addresses spends either. The
+//! So an address the account logged in from within the last
+//! [`KNOWN_FOR_MS`] skips the ceiling: it keeps its own bucket for the
+//! name and its own for the address, and nothing from other addresses
+//! spends either. Known addresses are the account's, by its id, not the
+//! name's: names are compared as typed, so "Ada" and "ada" may be two
+//! accounts, which the buckets' folding treats as one only to limit more. The
 //! bar to lock an owner out is then to share their address (their home
 //! network, their carrier's NAT), or to flood while they log in from
 //! somewhere new: a new network, a /64 their carrier rotated, or after a
 //! server restart, since the known addresses are kept in memory alone.
 //! Only a login with the right password makes an address known, so
-//! guessing never does, and at most [`KNOWN_PER_NAME`] addresses are kept
-//! for a name and [`KNOWN`] in all, the oldest dropped first.
+//! guessing never does, and at most [`KNOWN_PER_ACCOUNT`] addresses are
+//! kept for an account and [`KNOWN`] in all, the oldest dropped first.
 //!
 //! Each of those is a token bucket, kept as the time it is next full (a
 //! generic cell rate: one attempt spends a minute's share, and a bucket
@@ -50,6 +53,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use jiff::Timestamp;
+use wellfed_api::UserId;
 
 use crate::lock;
 
@@ -62,11 +66,11 @@ pub(crate) const ENTRIES: usize = 10_000;
 /// flood, short enough that an address they left (an IPv4 address or a
 /// /64 handed to someone else) soon stops counting.
 const KNOWN_FOR_MS: i64 = 30 * 24 * 60 * MINUTE_MS;
-/// The most addresses a name is known from: a household's networks and
-/// carriers over a month, with room to spare. One account's holder logging
-/// in from many addresses pushes out only that name's oldest.
-const KNOWN_PER_NAME: usize = 16;
-/// The most (name, address) pairs known in all.
+/// The most addresses an account is known from: a household's networks
+/// and carriers over a month, with room to spare. One account's holder
+/// logging in from many addresses pushes out only that account's oldest.
+const KNOWN_PER_ACCOUNT: usize = 16;
+/// The most (account, address) pairs known in all.
 const KNOWN: usize = 4_096;
 
 /// Failed logins a name takes a minute from one address.
@@ -95,7 +99,7 @@ enum Key {
 
 impl Key {
     /// The buckets an attempt at `name` from `from` spends from: the name's
-    /// ceiling too, unless the name is `Known` from that address.
+    /// ceiling too, unless the account is `Known` from that address.
     fn of(name: String, from: IpAddr, known: Known) -> Vec<Self> {
         let mut keys = vec![Self::NameFrom(name.clone(), from), Self::Address(from)];
         if known == Known::No {
@@ -137,15 +141,15 @@ pub(crate) struct Limited {
 }
 
 /// An attempt that spent from its buckets; [`Limits::succeeded`] gives the
-/// spend back, and makes its address known for its name.
+/// spend back, and makes its address known for its account.
 #[must_use = "a login that succeeds gives its attempt back"]
 pub(crate) struct Attempt {
-    name: String,
+    account: Option<UserId>,
     from: IpAddr,
     keys: Vec<Key>,
 }
 
-/// Whether a name logged in from an address within [`KNOWN_FOR_MS`].
+/// Whether an account logged in from an address within [`KNOWN_FOR_MS`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Known {
     Yes,
@@ -156,7 +160,7 @@ enum Known {
 pub(crate) struct Limits {
     buckets: Mutex<Buckets>,
     /// When each name last logged in from each address (Unix ms).
-    known: Mutex<HashMap<(String, IpAddr), i64>>,
+    known: Mutex<HashMap<(UserId, IpAddr), i64>>,
 }
 
 #[derive(Debug, Default)]
@@ -173,17 +177,19 @@ struct Buckets {
 impl Limits {
     /// Spend one attempt from the buckets of `name` from `from`, of `name`
     /// and of `from` at `now`, or refuse with the wait until all three take
-    /// one, spending nothing.
+    /// one, spending nothing. `account` is the account the name is, if it
+    /// is one: one known from `from` skips the name's bucket.
     pub(crate) fn attempt(
         &self,
         name: &str,
+        account: Option<UserId>,
         from: IpAddr,
         now: Timestamp,
     ) -> Result<Attempt, Limited> {
         let now = now.as_millisecond();
         let (name, from) = (Key::spelling(name), Key::block(from));
-        let known = self.known(&name, from, now);
-        let keys = Key::of(name.clone(), from, known);
+        let known = account.map_or(Known::No, |account| self.known(account, from, now));
+        let keys = Key::of(name, from, known);
         let mut buckets = lock(&self.buckets);
         for key in &keys {
             buckets.rebase(key, now);
@@ -224,12 +230,16 @@ impl Limits {
             let full = buckets.full(key, now);
             buckets.set(key.clone(), full.max(now) + key.interval());
         }
-        Ok(Attempt { name, from, keys })
+        Ok(Attempt {
+            account,
+            from,
+            keys,
+        })
     }
 
-    fn known(&self, name: &str, from: IpAddr, now: i64) -> Known {
+    fn known(&self, account: UserId, from: IpAddr, now: i64) -> Known {
         let known = lock(&self.known);
-        let since = known.get(&(name.to_owned(), from));
+        let since = known.get(&(account, from));
         if since.is_some_and(|&since| now - since < KNOWN_FOR_MS) {
             Known::Yes
         } else {
@@ -238,11 +248,13 @@ impl Limits {
     }
 
     /// Give back a login's attempt: it was no guess. A bucket full again
-    /// holds nothing worth keeping, and is dropped. The name is known from
-    /// the address from now on.
+    /// holds nothing worth keeping, and is dropped. The account is known
+    /// from the address from now on.
     pub(crate) fn succeeded(&self, attempt: Attempt, now: Timestamp) {
         let now = now.as_millisecond();
-        self.vouch(attempt.name, attempt.from, now);
+        if let Some(account) = attempt.account {
+            self.vouch(account, attempt.from, now);
+        }
         let mut buckets = lock(&self.buckets);
         for key in attempt.keys {
             let full = buckets.full(&key, now) - key.interval();
@@ -254,25 +266,26 @@ impl Limits {
         }
     }
 
-    /// Remember that `name` logged in from `from`, dropping what is past
-    /// [`KNOWN_FOR_MS`], then the name's oldest address past
-    /// [`KNOWN_PER_NAME`], then the oldest of all past [`KNOWN`]. A scan of
-    /// a few thousand entries, and only on a login with the right password.
-    fn vouch(&self, name: String, from: IpAddr, now: i64) {
+    /// Remember that `account` logged in from `from`, dropping what is past
+    /// [`KNOWN_FOR_MS`], then the account's oldest address past
+    /// [`KNOWN_PER_ACCOUNT`], then the oldest of all past [`KNOWN`]. A scan
+    /// of a few thousand entries, and only on a login with the right
+    /// password.
+    fn vouch(&self, account: UserId, from: IpAddr, now: i64) {
         let mut known = lock(&self.known);
         known.retain(|_, since| now - *since < KNOWN_FOR_MS);
-        known.remove(&(name.clone(), from));
+        known.remove(&(account, from));
 
-        let oldest = |known: &HashMap<(String, IpAddr), i64>, of: Option<&str>| {
+        let oldest = |known: &HashMap<(UserId, IpAddr), i64>, of: Option<UserId>| {
             known
                 .iter()
-                .filter(|((named, _), _)| of.is_none_or(|of| named == of))
+                .filter(|((whose, _), _)| of.is_none_or(|of| *whose == of))
                 .min_by_key(|(_, since)| **since)
-                .map(|(key, _)| key.clone())
+                .map(|(key, _)| *key)
         };
-        let count = known.keys().filter(|(named, _)| *named == name).count();
-        if count >= KNOWN_PER_NAME
-            && let Some(key) = oldest(&known, Some(&name))
+        let count = known.keys().filter(|(whose, _)| *whose == account).count();
+        if count >= KNOWN_PER_ACCOUNT
+            && let Some(key) = oldest(&known, Some(account))
         {
             known.remove(&key);
         }
@@ -281,7 +294,7 @@ impl Limits {
         {
             known.remove(&key);
         }
-        known.insert((name, from), now);
+        known.insert((account, from), now);
     }
 
     #[cfg(test)]

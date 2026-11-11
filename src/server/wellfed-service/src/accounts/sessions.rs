@@ -151,15 +151,18 @@ impl Service {
         from: IpAddr,
     ) -> Result<(User, SessionToken)> {
         let name = credentials.name.trim();
+        // Read first, so an address the account logged in from is known
+        // by the account's id, not by a name another account may fold to.
+        let login = self.shared.store.login(name).await?;
+        let account = login.as_ref().map(|login| login.user.id);
         let attempt = self
             .accounts
             .limits
-            .attempt(name, from, self.shared.clock.now())
+            .attempt(name, account, from, self.shared.clock.now())
             .map_err(|limited| AccountError::Limited {
                 retry_after: limited.retry_after,
             })?;
 
-        let login = self.shared.store.login(name).await?;
         // A name with no password (an imported account's empty hash) costs
         // the decoy's hash like an unknown one, and matches nothing.
         let (user, hash, usable) = match login {
