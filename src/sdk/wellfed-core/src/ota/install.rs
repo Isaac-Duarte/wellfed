@@ -36,8 +36,9 @@ pub enum Stop {
     Write,
     /// The whole image's SHA-256 differs from the manifest's.
     Hash,
-    /// The marker was never programmed: its write could not start. A
-    /// marker programmed but not read back activates ([`Marking`]).
+    /// The marker was never programmed: its write could not start (the
+    /// flash was not armed). A marker programmed but not read back
+    /// activates ([`Marking`]).
     Activate,
     /// The activation could not be recorded.
     Store,
@@ -318,7 +319,8 @@ pub enum Marking {
     /// decides it. Never treated as never activated, which would leave a
     /// build that boots from that marker below the floor.
     Uncertain,
-    /// Never programmed: bank 1 stays invalid.
+    /// Never programmed (the flash was not armed for it): bank 1 stays
+    /// invalid.
     Unwritten,
 }
 

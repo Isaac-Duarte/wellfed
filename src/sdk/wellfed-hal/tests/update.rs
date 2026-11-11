@@ -121,6 +121,9 @@ struct TestFlash {
     wrote: bool,
     /// The marker's readback fails.
     fail_marker_read: bool,
+    /// The hooks read unarmed once the activation is recorded, just before
+    /// the marker.
+    disarm_at_marker: bool,
     /// The attempt register as each bank-1 program found it: what a reset
     /// inside that write would leave behind.
     register_seen: Vec<u32>,
@@ -131,7 +134,8 @@ struct TestFlash {
 
 impl Flash for TestFlash {
     fn armed(&self) -> bool {
-        self.inner.armed()
+        let at_marker = matches!(store().record().state, State::Activated(_));
+        self.inner.armed() && !(self.disarm_at_marker && at_marker)
     }
     fn erase(&mut self, sector: u32) -> bool {
         self.inner.erase(sector)
@@ -535,6 +539,7 @@ fn a_marker_that_does_not_read_back_stands_activated_and_the_boot_decides() {
             },
             true,
         ),
+        // Armed, so the program may have run before it reported a fault.
         ("failed program", |f| f.fail_marker = true, false),
     ];
     for (label, fault, landed) in faults {
@@ -1755,6 +1760,37 @@ fn a_handover_that_will_not_mark_stops_the_activation() {
     assert_ne!(done.phase, Phase::Activated);
     assert!(matches!(store().record().state, State::Pending(_)));
     assert_eq!(rig.flash.state_at_marker, None, "no marker went in");
+}
+
+/// Hooks unarmed at the marker refuse its program before it touches flash:
+/// the marker is never written, so the offer goes back to pending, a stock
+/// image's handover mark is taken back, and the install stops without a
+/// restart, as before any activation.
+#[test]
+fn a_marker_the_flash_was_not_armed_for_stops_and_keeps_the_offer_pending() {
+    for stock in [false, true] {
+        let _guard = start(0);
+        let mut rig = Rig::bench(0);
+        let payload = image(SECTOR);
+        if stock {
+            let (manifest, statement) = stock_offer(&payload);
+            progress(rig.offer(&manifest, Some(&statement)));
+        } else {
+            progress(rig.offer(&manifest(3, &payload), None));
+        }
+        rig.flash.disarm_at_marker = true;
+
+        let stopped = rig.push(&payload, None);
+        assert_eq!(stopped.stopped, Some(Stop::Activate), "stock {stock}");
+        assert_eq!(rig.flash.state_at_marker, None, "no marker program");
+        assert!(fake::with(|h| h.bank1[..8] != MARKER));
+        assert!(matches!(store().record().state, State::Pending(c) if c.version == 3));
+        assert_eq!(handover_bytes(), [0xff; 16]);
+        rig.steps(1);
+        rig.now += LEAVE_MAX_MS;
+        rig.steps(1);
+        assert!(!rig.restarted);
+    }
 }
 
 /// A bank-1 marker whose program failed may have landed: stock may boot,

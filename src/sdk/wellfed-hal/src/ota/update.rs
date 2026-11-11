@@ -1283,8 +1283,10 @@ impl<I: SlotIo + Clone> Update<I> {
         // handover mark stand and the restart decides: the new build
         // boots and raises the floor when it confirms, or this bank boots
         // again with the manifest activated, as after a failed trial, and
-        // never takes it again.
+        // never takes it again. Unarmed hooks refuse the program before
+        // it touches flash, so that is never written.
         let marking = match install.commit() {
+            Ok((offset, _)) if offset == BANK1_OFFSET && !flash.armed() => Marking::Unwritten,
             Ok((offset, marker)) if offset == BANK1_OFFSET => {
                 let mut readback = [0u8; 8];
                 let programmed = under_marker(|| flash.program(0, 0, &marker));
