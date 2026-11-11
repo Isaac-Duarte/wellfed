@@ -378,8 +378,14 @@ impl<I: SlotIo> ClientStore<I> {
     /// names what flash holds. The save may have landed whole before the
     /// failure was reported, or left its unit torn, which the newest-valid
     /// rule reads past and the next save writes over; either way the store
-    /// stays writable unless the read fails too. `Ok` if the save at
-    /// `generation` landed.
+    /// stays writable. `Ok` if the save at `generation` landed.
+    ///
+    /// A re-read that fails too leaves the table empty and the store `Io`,
+    /// unlike the Wi-Fi and time stores, which keep their last value: the
+    /// clients fail closed, as a boot whose read fails does, so every
+    /// session ends and none opens until a restart reads the table again.
+    /// Keeping the old table instead could keep a revocation that landed
+    /// from taking effect.
     fn reread(&mut self, generation: u64) -> Result<(), ClientError> {
         let Some(io) = self.units.unbind() else {
             self.status = ClientStatus::Io;

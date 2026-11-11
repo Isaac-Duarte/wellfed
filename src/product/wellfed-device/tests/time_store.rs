@@ -168,3 +168,25 @@ fn records_that_fail_their_checks_are_not_read() {
         );
     }
 }
+
+/// A save that fails and whose re-read fails too keeps the settings from
+/// before it, marked `Io`, rather than the defaults.
+#[test]
+fn a_failed_save_whose_reread_fails_keeps_the_old_settings() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&settings(1)));
+
+    f.budget = 0;
+    f.reads_fail = true;
+    assert!(!s.save(&settings(2)));
+    assert_eq!(
+        (s.status, s.generation, s.settings),
+        (TimeStatus::Io, 1, settings(1))
+    );
+    assert!(!s.writable());
+
+    f.budget = -1;
+    f.reads_fail = false;
+    assert_eq!(open(&mut f).settings, settings(1));
+}

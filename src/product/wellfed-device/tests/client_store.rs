@@ -305,3 +305,27 @@ fn a_failed_read_of_either_unit_serves_no_table() {
     }
     assert!(keys(&mut f).is_empty(), "the revocation stands");
 }
+
+/// A save that fails and whose re-read fails too leaves no clients and a
+/// store closed to writes: the clients fail closed, as a boot whose read
+/// fails does, so every session ends until a restart reads the table.
+#[test]
+fn a_failed_save_whose_reread_fails_fails_closed() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    s.enroll([1; 32], label("a"), Role::Owner).unwrap();
+
+    f.budget = 0;
+    f.reads_fail = true;
+    assert_eq!(
+        s.enroll([2; 32], label("b"), Role::Member),
+        Err(ClientError::Io)
+    );
+    assert_eq!(s.status, ClientStatus::Io);
+    assert_eq!(s.clients().count(), 0);
+    assert!(!s.writable());
+
+    f.budget = -1;
+    f.reads_fail = false;
+    assert_eq!(keys(&mut f), [[1; 32]]);
+}

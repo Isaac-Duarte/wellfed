@@ -131,3 +131,26 @@ fn a_newer_schema_is_read_only_and_uses_the_build_credentials() {
     assert_eq!((r.status, r.credentials), (NetStatus::ReadOnly, None));
     assert!(!r.save(Some(&creds(2))));
 }
+
+/// A save that fails and whose re-read fails too keeps the credentials from
+/// before it, marked `Io`, rather than none: the feeder goes on joining the
+/// network it knew.
+#[test]
+fn a_failed_save_whose_reread_fails_keeps_the_old_credentials() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(Some(&creds(1))));
+
+    f.budget = 0;
+    f.reads_fail = true;
+    assert!(!s.save(Some(&creds(2))));
+    assert_eq!(
+        (s.status, s.generation, s.credentials),
+        (NetStatus::Io, 1, Some(creds(1)))
+    );
+    assert!(!s.writable());
+
+    f.budget = -1;
+    f.reads_fail = false;
+    assert_eq!(open(&mut f).credentials, Some(creds(1)));
+}

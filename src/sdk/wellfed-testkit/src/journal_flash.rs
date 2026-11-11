@@ -57,6 +57,8 @@ pub struct FakeJournalFlash {
 
     pub silent_program: bool,
     pub silent_erase: bool,
+    /// Every read fails, as a flash that stopped answering does.
+    pub reads_fail: bool,
     pub program_order: ProgramOrder,
 
     /// Runs after every durable mutation. No reference to the flash is live
@@ -90,6 +92,7 @@ impl FakeJournalFlash {
             mutations: 0,
             silent_program: false,
             silent_erase: false,
+            reads_fail: false,
             program_order: ProgramOrder::Bytes,
             after_mutation: None,
             mutation_context: core::ptr::null_mut(),
@@ -273,7 +276,7 @@ impl SlotIo for FlashIo {
         // SAFETY: the constructor's contract; no other reference is live.
         let f = unsafe { &mut *self.0 };
         let (slot, offset) = f.bounds(slot, offset, bytes.len());
-        if !f.call() {
+        if !f.call() || f.reads_fail {
             return false;
         }
 

@@ -174,13 +174,24 @@ impl<I: SlotIo> NetStore<I> {
     /// names what flash holds. The save may have landed whole before the
     /// failure was reported, or left its unit torn, which the newest-valid
     /// rule reads past and the next save writes over; either way the store
-    /// stays writable unless the read fails too. Whether the save at
-    /// `generation` landed.
+    /// stays writable. A re-read that fails too keeps the value from before
+    /// the save, marked `Io`: the device goes on with what it last knew
+    /// rather than with nothing. Whether the save at `generation` landed.
     fn reread(&mut self, generation: u64) -> bool {
+        let before = (self.slot, self.generation, self.credentials);
         let Some(io) = self.units.unbind() else {
             self.status = NetStatus::Io;
             return false;
         };
-        self.open(io) == NetStatus::Loaded && self.generation == generation
+
+        match self.open(io) {
+            NetStatus::Loaded => self.generation == generation,
+            NetStatus::Empty => false,
+            _ => {
+                (self.slot, self.generation, self.credentials) = before;
+                self.status = NetStatus::Io;
+                false
+            }
+        }
     }
 }
