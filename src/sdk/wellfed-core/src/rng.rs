@@ -145,7 +145,14 @@ const fn rct_cutoff(eighths: u32) -> u32 {
 }
 
 /// SP 800-90B 4.4.2: C = 1 + CRITBINOM(W, 2^-H, 1 - 2^-20), the smallest
-/// count whose binomial CDF reaches 1 - 2^-20, by the exact recurrence.
+/// count whose binomial CDF reaches 1 - 2^-20.
+///
+/// The terms are taken relative to the mode's, the largest, and walked
+/// outward from it by the exact ratio between neighbours, so every term
+/// shrinks as it goes and one that underflows is too small to count. From
+/// P(X = 0) upward, as a direct sum would go, (1 - p)^W underflows to zero
+/// at claims below half a bit, every later term stays zero, and the cutoff
+/// becomes W + 1: a test no window can fail.
 const fn apt_cutoff(eighths: u32) -> u32 {
     let mut p = 1.0;
     let mut i = 0;
@@ -153,23 +160,61 @@ const fn apt_cutoff(eighths: u32) -> u32 {
         p *= EIGHTH_BIT;
         i += 1;
     }
+    let q = 1.0 - p;
     let target = 1.0 - 1.0 / (1u32 << ALPHA_BITS) as f64;
+    let w = APT_WINDOW;
+    let mode = {
+        let mode = ((w + 1) as f64 * p) as u32;
+        if mode > w { w } else { mode }
+    };
 
-    // P(X = 0) = (1 - p)^W, then P(X = k + 1) = P(X = k) (W - k) p / ((k + 1) (1 - p)).
+    // The sum up to the mode, then the whole, in units of the mode's term.
+    let mut below = 1.0;
     let mut term = 1.0;
-    let mut i = 0;
-    while i < APT_WINDOW {
-        term *= 1.0 - p;
-        i += 1;
+    let mut k = mode;
+    while k > 0 {
+        term *= down(k, p, q);
+        below += term;
+        k -= 1;
     }
-    let mut cdf = term;
-    let mut k = 0;
-    while cdf < target && k < APT_WINDOW {
-        term *= (APT_WINDOW - k) as f64 * p / ((k + 1) as f64 * (1.0 - p));
-        cdf += term;
+    let mut total = below;
+    let mut term = 1.0;
+    let mut k = mode;
+    while k < w {
+        term *= up(k, p, q);
+        total += term;
         k += 1;
     }
+
+    // The CDF at the mode, then the smallest k whose CDF reaches the target,
+    // walking up or down from it.
+    let mut cdf = below / total;
+    let mut term = 1.0;
+    let mut k = mode;
+    if cdf < target {
+        while cdf < target && k < w {
+            term *= up(k, p, q);
+            cdf += term / total;
+            k += 1;
+        }
+    } else {
+        while k > 0 && cdf - term / total >= target {
+            cdf -= term / total;
+            term *= down(k, p, q);
+            k -= 1;
+        }
+    }
     1 + k
+}
+
+/// P(X = k - 1) / P(X = k) in an Adaptive Proportion window.
+const fn down(k: u32, p: f64, q: f64) -> f64 {
+    k as f64 * q / ((APT_WINDOW - k + 1) as f64 * p)
+}
+
+/// P(X = k + 1) / P(X = k) in an Adaptive Proportion window.
+const fn up(k: u32, p: f64, q: f64) -> f64 {
+    (APT_WINDOW - k) as f64 * p / ((k + 1) as f64 * q)
 }
 
 /// Health-tested samples hashed into 32-byte DRBG inputs.
