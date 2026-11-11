@@ -370,9 +370,8 @@ fn waiting_for_its_invite(phones: &[PhoneKey]) -> bool {
     })
 }
 
-/// The feeder holds no key for an invite not yet redeemed, and does not
-/// bind the invite to a key: a revoke owed before the phone joins waits
-/// for it, and lands when it joins.
+/// The feeder holds no key for an invite not yet redeemed: a revoke owed
+/// before the phone joins waits for it, and lands when it joins.
 #[test]
 fn a_key_revoked_before_its_phone_joins_is_revoked_once_it_joins() {
     local(async {
@@ -393,6 +392,45 @@ fn a_key_revoked_before_its_phone_joins_is_revoked_once_it_joins() {
         feeder::join_phone(&sim, &invite.invite, secret(40)).await;
 
         revoked(service, &sim, 40).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A phone invite admits only the key it was asked for, whatever the
+/// account's role: a holder of the invite's secret who joins with another
+/// key is refused, so the feeder never holds a key the server cannot
+/// attribute and revoke. The right key then joins, and taking the account's
+/// role away revokes it.
+#[test]
+fn a_phone_invite_admits_only_the_key_it_was_asked_for() {
+    local(async {
+        let (sim, server, id) = started(ClientRole::Owner).await;
+        let service = server.service();
+        let ada = phone_user(service, "ada", Role::Owner).await;
+        let bob = phone_user(service, "bob", Role::Member).await;
+
+        for (caller, asked, other) in [(&bob, 50, 51), (&ada, 52, 53)] {
+            let invite = service
+                .invite_phone(caller, id, invite_for(asked))
+                .await
+                .unwrap();
+            let refused = feeder::try_join_phone(&sim, &invite.invite, secret(other)).await;
+            assert!(refused.is_err(), "{refused:?}");
+            let stray = feeder::phone_key(secret(other));
+            assert!(!feeder::client_keys(&sim).await.contains(&stray));
+            feeder::join_phone(&sim, &invite.invite, secret(asked)).await;
+        }
+
+        let demote = UserPatch {
+            role: Some(Role::Viewer),
+            ..UserPatch::default()
+        };
+        service
+            .update_user(&owner(), None, bob.user.id, demote)
+            .await
+            .unwrap();
+        revoked(service, &sim, 50).await;
         server.shutdown().await;
         sim.stop().await;
     });

@@ -85,12 +85,12 @@ impl Server {
                 }
                 TimeResult::Refused(_) => Reply::Refused(Refusal::Time),
             },
-            Action::CreateInvite { role: invited } => {
+            Action::CreateInvite { role: invited, key } => {
                 let mut secret = [0; 32];
                 if !device.random(&mut secret) {
                     return Some(Reply::Refused(Refusal::Busy));
                 }
-                let event = pairing.invite(now_ms, role, invited, secret);
+                let event = pairing.invite(now_ms, role, invited, key, secret);
                 record(Record::Pairing(event));
                 match event {
                     pairing::Event::Invited { id: invite_id } => {
@@ -357,8 +357,11 @@ pub(super) enum Action {
         wifi: Option<Credentials>,
     },
     TimeSync(TimeFields),
+    /// An invite, for the client with static key `key` alone if it names
+    /// one.
     CreateInvite {
         role: Role,
+        key: Option<[u8; 32]>,
     },
     ListClients,
     RevokeClient {
@@ -421,6 +424,11 @@ impl From<Op<'_>> for Action {
             }),
             Op::CreateInvite { role } => Self::CreateInvite {
                 role: store_role(role),
+                key: None,
+            },
+            Op::CreateBoundInvite { role, key } => Self::CreateInvite {
+                role: store_role(role),
+                key: Some(key),
             },
             Op::ListClients => Self::ListClients,
             Op::RevokeClient { key } => Self::RevokeClient { key },

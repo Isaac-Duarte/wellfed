@@ -155,12 +155,12 @@ Every enrollment and revocation that changes the table is in the history as `Enr
 | --- | --- | --- | --- |
 | Setup | The app over BLE in setup mode, which a Lock and Mic hold on an unlocked panel starts | The app's one-time code keyed in on the buttons within 60 s, then proven by the app ([why](bluetooth.md#why-a-code)) | Owner |
 | Signer | An owner over the API | A Dispense press within 60 s | Update signer |
-| Invite | A paired client: an owner invites any role but a signer, a member invites members | The invite's secret as the PSK of a Noise XXpsk3 handshake, within 10 min, once | As invited |
+| Invite | A paired client: an owner invites any role but a signer, a member invites members | The invite's secret as the PSK of a Noise XXpsk3 handshake, within 10 min, once, and the static key the invite names if it names one | As invited |
 | Recovery | Lock and Dispense held together for 5 s on an unlocked panel | Within 2 min, a client offers its key over the device API and proves the code the owner keys in; the first offer closes the window | Owner |
 
 - **Presses that answer a pairing feed nothing.** A pending signer confirmation takes the next Dispense press. A pending code takes every gesture until complete, even on a locked panel, since someone at the feeder started it. Records count presses (`pair setup keyed=N`, `pair recovery keyed=N`) and never name them.
 - **A locked panel** can't open recovery.
-- **Invites:** at most two outstanding, in RAM, so a reboot cancels them. The invite's id travels in the first handshake message's payload, which isn't secret, because the responder needs it to pick the PSK before the third message.
+- **Invites:** at most two outstanding, in RAM, so a reboot cancels them. An invite may name the one static key that can redeem it (`CreateBoundInvite`); the joiner's key is known only at the third handshake message, and a joiner with another key is refused and the invite kept. The invite's id travels in the first handshake message's payload, which isn't secret, because the responder needs it to pick the PSK before the third message.
 - **Recovery over the LAN** runs BLE's setup exchange, code proof included, over the device API's stream (`Pairing::recovery`). No plain XX handshake is admitted, so a LAN neighbour can't slip in.
 - **Interop:** `noise.rs` has XXpsk3, checked byte for byte against `snow` in both roles. A wrong or missing PSK fails closed.
 

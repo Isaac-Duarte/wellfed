@@ -51,7 +51,11 @@ pub const fn parity(op: &Op) -> Parity {
         Op::SetLock { .. } => Route(Post, "/feeders/{id}/lock"),
         Op::ResetDesiccant => Route(Post, "/feeders/{id}/desiccant/reset"),
         Op::Play { .. } => Route(Post, "/feeders/{id}/play"),
-        Op::CreateInvite { .. } => Route(Post, "/feeders/{id}/invites"),
+        // The route names the phone's key, and the server binds the invite
+        // to it.
+        Op::CreateInvite { .. } | Op::CreateBoundInvite { .. } => {
+            Route(Post, "/feeders/{id}/invites")
+        }
         Op::ListClients => Route(Get, "/feeders/{id}/clients"),
         Op::RevokeClient { .. } => Route(Delete, "/feeders/{id}/clients/{key}"),
         Op::Feed { .. } => Route(Post, "/feeders/{id}/feed"),

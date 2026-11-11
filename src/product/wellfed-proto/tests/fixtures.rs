@@ -1017,6 +1017,14 @@ fn messages() -> Vec<Fixture> {
             entry(&EventBody::UpdateConfirmed),
             |b| decode::<EventBody>(b).is_ok(),
         ),
+        (
+            "op-create-bound-invite",
+            entry(&request(Op::CreateBoundInvite {
+                role: Role::Member,
+                key: [0x22; 32],
+            })),
+            client,
+        ),
     ]
 }
 

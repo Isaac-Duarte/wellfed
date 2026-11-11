@@ -4,6 +4,9 @@
 //! while the server is down. The server makes the invite it joins with,
 //! recording the key, account and token first, so a phone that joins with
 //! the key it named is attributed even when the invite's answer is lost.
+//! The invite is bound to that key, so the feeder admits no other: a
+//! token's holder cannot join with a key the server never recorded, which
+//! no revocation of the account or token would reach.
 //! A phone that already holds a key (paired before the server, or one whose
 //! adoption named it) claims it, and [`claim`] records it the same way. A
 //! viewer, and an account or token with an expiry, holds no key: the
@@ -87,7 +90,10 @@ impl Service {
                 kind: CommandKind::Invite,
                 body: &request,
                 key: None,
-                op: Op::CreateInvite { role },
+                // Bound to the key just recorded: a holder of the secret
+                // who joins with another key is refused, so the key the
+                // feeder enrolls is always one this account is revoked by.
+                op: Op::CreateBoundInvite { role, key },
             })
             .await;
         let made = match sent {

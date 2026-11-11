@@ -1,5 +1,5 @@
 {
-  "revision": 1,
+  "revision": 2,
   "registry": {
     "Alert": {
       "ENUM": {
@@ -1982,6 +1982,25 @@
             "NEWTYPE": {
               "TYPENAME": "FeederOp"
             }
+          }
+        },
+        "16": {
+          "CreateBoundInvite": {
+            "STRUCT": [
+              {
+                "role": {
+                  "TYPENAME": "Role"
+                }
+              },
+              {
+                "key": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 32
+                  }
+                }
+              }
+            ]
           }
         }
       }

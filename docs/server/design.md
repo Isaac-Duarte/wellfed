@@ -214,6 +214,7 @@ Owners' and members' phones hold their own feeder keys beside the server's, for 
 - **A repeated claim returns its record**, so retrying a lost answer is safe.
 - **Only owners claim new keys**, with a phone's token and no expiry on account or token. The feeder can't prove which phone holds a key, so a claim trusts the account, and a member could claim and then revoke someone else's: a member's claim of an unrecorded key is `403 phone_claim_owners_only`.
 - **A member's phone that paired before the server** asks for an invite (`POST /feeders/{id}/invites`) and joins with a new key; the old one shows unowned for an owner to revoke.
+- **An invite is bound to the key it names.** The server records the key, then asks the feeder for an invite only that key can redeem (`CreateBoundInvite`), so a token's holder who joins with any other key is refused, and every phone key the server invited is one it attributes and revokes. A feeder too old for the op refuses it, and the request fails until the feeder is updated.
 - **Never claimable:** the server's own key, a client an owner kept, a key the feeder lists as a server's or update signer's, or another phone's key.
 
 **Route parity.** `wellfed_service::parity` gives every device operation the app can make a server route or a stated reason for none, matching exhaustively over the device API's operations, so a new operation doesn't build until it has one.

@@ -1778,6 +1778,7 @@ impl Op {
             | proto::Op::PutWifi { .. }
             | proto::Op::TimeSync(_)
             | proto::Op::CreateInvite { .. }
+            | proto::Op::CreateBoundInvite { .. }
             | proto::Op::ListClients
             | proto::Op::RevokeClient { .. }
             | proto::Op::Reboot
@@ -1830,6 +1831,10 @@ impl Op {
             Self::TimeSync(sync) => proto::Op::TimeSync((*sync).into()),
             Self::CreateInvite { role } => proto::Op::CreateInvite {
                 role: (*role).try_into()?,
+            },
+            Self::CreateBoundInvite { role, key } => proto::Op::CreateBoundInvite {
+                role: (*role).try_into()?,
+                key: *key,
             },
             Self::ListClients => proto::Op::ListClients,
             Self::RevokeClient { key } => proto::Op::RevokeClient { key: *key },

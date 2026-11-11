@@ -13,6 +13,8 @@ use wellfed_session::setup_code::Code;
 const CONFIRM: u32 = Config::DEFAULT.confirm_ms;
 const INVITE: u32 = Config::DEFAULT.invite_ms;
 const RECOVERY: u32 = Config::DEFAULT.recovery_ms;
+/// The static key a joining client redeems an invite with.
+const JOINER: [u8; 32] = [0x22; 32];
 
 fn press(button: Button) -> Gesture {
     Gesture::Down {
@@ -165,49 +167,76 @@ fn only_an_owner_offers_a_signing_key() {
 fn invites_are_single_use_and_bounded_by_the_issuer() {
     let mut p = Pairing::new(Config::DEFAULT);
     assert_eq!(
-        p.invite(0, Role::Member, Role::Owner, [1; 32]),
+        p.invite(0, Role::Member, Role::Owner, None, [1; 32]),
         refused(Path::Invite, Refusal::NotAllowed)
     );
     assert_eq!(
-        p.invite(0, Role::Server, Role::Member, [1; 32]),
+        p.invite(0, Role::Server, Role::Member, None, [1; 32]),
         refused(Path::Invite, Refusal::NotAllowed)
     );
     assert_eq!(
-        p.invite(0, Role::Owner, Role::UpdateSigner, [1; 32]),
+        p.invite(0, Role::Owner, Role::UpdateSigner, None, [1; 32]),
         refused(Path::Invite, Refusal::NotAllowed)
     );
 
-    let Event::Invited { id } = p.invite(0, Role::Member, Role::Member, [7; 32]) else {
+    let Event::Invited { id } = p.invite(0, Role::Member, Role::Member, None, [7; 32]) else {
         panic!("a member invites a member");
     };
     assert_eq!(p.invite_secret(10, id), Some([7; 32]));
     assert_eq!(p.invite_secret(10, id + 1), None);
-    assert_eq!(p.redeem(20, id), admit(Path::Invite, Role::Member));
-    assert_eq!(p.redeem(30, id), refused(Path::Invite, Refusal::Unknown));
+    assert_eq!(p.redeem(20, id, &JOINER), admit(Path::Invite, Role::Member));
+    assert_eq!(
+        p.redeem(30, id, &JOINER),
+        refused(Path::Invite, Refusal::Unknown)
+    );
     assert_eq!(p.invite_secret(30, id), None);
+}
+
+/// An invite bound to a key admits that key alone. Another key holding
+/// the secret is refused and the invite kept for the right one.
+#[test]
+fn a_bound_invite_admits_only_its_key() {
+    let mut p = Pairing::new(Config::DEFAULT);
+    let bound = Some(JOINER);
+    let Event::Invited { id } = p.invite(0, Role::Member, Role::Member, bound, [7; 32]) else {
+        panic!("a member invites a member's key");
+    };
+
+    assert_eq!(
+        p.redeem(10, id, &[0x33; 32]),
+        refused(Path::Invite, Refusal::WrongKey)
+    );
+    assert_eq!(p.invite_secret(10, id), Some([7; 32]), "kept");
+    assert_eq!(p.redeem(20, id, &JOINER), admit(Path::Invite, Role::Member));
+    assert_eq!(
+        p.redeem(30, id, &JOINER),
+        refused(Path::Invite, Refusal::Unknown)
+    );
 }
 
 #[test]
 fn invites_expire_and_are_limited() {
     let mut p = Pairing::new(Config::DEFAULT);
     let ids: Vec<u32> = (0..INVITES)
-        .map(|_| match p.invite(0, Role::Owner, Role::Server, [2; 32]) {
-            Event::Invited { id } => id,
-            other => panic!("{other:?}"),
-        })
+        .map(
+            |_| match p.invite(0, Role::Owner, Role::Server, None, [2; 32]) {
+                Event::Invited { id } => id,
+                other => panic!("{other:?}"),
+            },
+        )
         .collect();
     assert_eq!(
-        p.invite(1, Role::Owner, Role::Member, [3; 32]),
+        p.invite(1, Role::Owner, Role::Member, None, [3; 32]),
         refused(Path::Invite, Refusal::Full)
     );
     assert_eq!(p.invite_secret(INVITE - 1, ids[0]), Some([2; 32]));
     assert_eq!(p.invite_secret(INVITE, ids[0]), None);
     assert_eq!(
-        p.redeem(INVITE, ids[1]),
+        p.redeem(INVITE, ids[1], &JOINER),
         refused(Path::Invite, Refusal::Unknown)
     );
     assert!(matches!(
-        p.invite(INVITE, Role::Owner, Role::Member, [3; 32]),
+        p.invite(INVITE, Role::Owner, Role::Member, None, [3; 32]),
         Event::Invited { .. }
     ));
 }

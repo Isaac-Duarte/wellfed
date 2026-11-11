@@ -13,9 +13,10 @@
 //!   Dispense press confirms it the same way.
 //! - **Invite:** a paired client mints a single-use invite that expires
 //!   after [`Config::invite_ms`]. Its secret is the PSK of the redeeming
-//!   client's Noise XXpsk3 handshake over the LAN. An invite never grants
-//!   more than its issuer holds, and invites live in RAM only, so a reboot
-//!   cancels them.
+//!   client's Noise XXpsk3 handshake over the LAN. An invite may name the
+//!   one static key that can redeem it, so whoever asked for it knows the
+//!   key it enrolls. An invite never grants more than its issuer holds,
+//!   and invites live in RAM only, so a reboot cancels them.
 //! - **Recovery:** with the panel unlocked, holding Lock and Dispense
 //!   together opens a LAN window. A client that connects in it runs the same
 //!   exchange as BLE setup over the device API: its offer closes the
@@ -103,6 +104,8 @@ named_enum! {
         Locked = "locked",
         /// Nobody pressed Dispense or keyed the code in in time.
         Unconfirmed = "unconfirmed",
+        /// The invite names another client's key.
+        WrongKey = "wrong-key",
     }
 }
 
@@ -170,6 +173,8 @@ enum Confirm {
 struct Invite {
     id: u32,
     role: Role,
+    /// The only static key that may redeem it, if the issuer named one.
+    key: Option<[u8; 32]>,
     secret: [u8; 32],
     deadline_ms: u32,
 }
@@ -317,9 +322,17 @@ impl Pairing {
         Some(Event::Entered { path, code })
     }
 
-    /// A client with role `by` asks for an invite granting `role`, with a
-    /// secret the firmware drew from its generator.
-    pub fn invite(&mut self, now_ms: u32, by: Role, role: Role, secret: [u8; 32]) -> Event {
+    /// A client with role `by` asks for an invite granting `role`, for the
+    /// client with static key `key` alone if it names one, with a secret
+    /// the firmware drew from its generator.
+    pub fn invite(
+        &mut self,
+        now_ms: u32,
+        by: Role,
+        role: Role,
+        key: Option<[u8; 32]>,
+        secret: [u8; 32],
+    ) -> Event {
         let allowed = match by {
             Role::Owner => role != Role::UpdateSigner,
             Role::Member => role == Role::Member,
@@ -338,6 +351,7 @@ impl Pairing {
         *slot = Some(Invite {
             id,
             role,
+            key,
             secret,
             deadline_ms: now_ms.wrapping_add(self.config.invite_ms),
         });
@@ -354,14 +368,22 @@ impl Pairing {
             .map(|invite| invite.secret)
     }
 
-    /// The handshake for invite `id` finished: use it up.
-    pub fn redeem(&mut self, now_ms: u32, id: u32) -> Event {
+    /// The handshake for invite `id` finished with the client's static
+    /// key `key`: use it up. An invite bound to another key is refused and
+    /// kept, so a holder of its secret cannot spend it for the right one.
+    pub fn redeem(&mut self, now_ms: u32, id: u32, key: &[u8; 32]) -> Event {
         self.expire_invites(now_ms);
         let found = self
             .invites
             .iter_mut()
             .find(|slot| slot.is_some_and(|invite| invite.id == id));
-        match found.and_then(Option::take) {
+        let Some(slot) = found else {
+            return refused(Path::Invite, Refusal::Unknown);
+        };
+        if slot.is_some_and(|invite| invite.key.is_some_and(|bound| bound != *key)) {
+            return refused(Path::Invite, Refusal::WrongKey);
+        }
+        match slot.take() {
             Some(invite) => Event::Admit {
                 path: Path::Invite,
                 role: invite.role,

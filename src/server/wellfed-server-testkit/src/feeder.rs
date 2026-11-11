@@ -180,15 +180,25 @@ pub fn phone_key(secret: [u8; 32]) -> [u8; 32] {
 /// Join the simulator as a phone with `secret`, redeeming `invite` (the
 /// text the server's phone invite answered): the role it enrolled with.
 pub async fn join_phone(sim: &Running, invite: &str, secret: [u8; 32]) -> ClientRole {
-    let invite = Invite::parse(invite).expect("the server's invite parses");
-    let keys = Keypair::from_secret(secret);
-    let joined = wellfed_connect::join(&keys, invite, "phone", sim.address, [0x77; 32])
+    let joined = try_join_phone(sim, invite, secret)
         .await
         .expect("the phone redeems the invite");
     match joined {
         Joined::Enrolled { role, .. } => role,
         Joined::Refused(refusal) => panic!("the feeder refused the phone: {refusal:?}"),
     }
+}
+
+/// Redeem `invite` with the phone whose secret is `secret`, whatever the
+/// feeder makes of it.
+pub async fn try_join_phone(
+    sim: &Running,
+    invite: &str,
+    secret: [u8; 32],
+) -> wellfed_connect::Result<Joined> {
+    let invite = Invite::parse(invite).expect("the server's invite parses");
+    let keys = Keypair::from_secret(secret);
+    wellfed_connect::join(&keys, invite, "phone", sim.address, [0x77; 32]).await
 }
 
 /// A session with the simulator as the phone whose secret is `secret`,

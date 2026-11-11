@@ -36,7 +36,8 @@ impl Access {
             | Op::GetTime
             | Op::GetAlerts
             // Whom a member may invite is pairing's to say.
-            | Op::CreateInvite { .. } => Self::Clients,
+            | Op::CreateInvite { .. }
+            | Op::CreateBoundInvite { .. } => Self::Clients,
             Op::PutWifi { .. }
             | Op::RevokeClient { .. }
             | Op::Reboot
@@ -117,6 +118,13 @@ mod tests {
         (Op::Alive, [true, true, true]),
         (Op::Status, [true, true, true]),
         (Op::CreateInvite { role: Role::Member }, [true, true, true]),
+        (
+            Op::CreateBoundInvite {
+                role: Role::Member,
+                key: [0; 32],
+            },
+            [true, true, true],
+        ),
         (
             Op::PutWifi {
                 base: 0,
@@ -269,7 +277,7 @@ mod tests {
     }
 
     /// Each kind of op its own number, `0..KINDS`.
-    const KINDS: usize = 45;
+    const KINDS: usize = 46;
 
     const fn kind(op: &Op<'_>) -> usize {
         match op {
@@ -324,6 +332,7 @@ mod tests {
                 FeederOp::SkipMeal { .. } => 43,
                 FeederOp::UnskipMeal { .. } => 44,
             },
+            Op::CreateBoundInvite { .. } => 45,
         }
     }
 

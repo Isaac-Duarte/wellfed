@@ -46,6 +46,13 @@ pub enum Op {
     CreateInvite {
         role: ClientRole,
     },
+    /// An invite only the client with static key `key` can redeem, so the
+    /// key the feeder enrolls is the one named here. A feeder of an older
+    /// revision refuses it `Unavailable`.
+    CreateBoundInvite {
+        role: ClientRole,
+        key: [u8; 32],
+    },
     ListClients,
     RevokeClient {
         key: [u8; 32],

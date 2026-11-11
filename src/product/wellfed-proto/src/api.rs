@@ -79,7 +79,7 @@ pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 /// it knows, and reads a refused `Unavailable` as one the feeder's build
 /// lacks; a client below it still uses every op it knows, and only what
 /// the newer build added is out of its reach.
-pub const REVISION: u32 = 1;
+pub const REVISION: u32 = 2;
 
 /// Frozen. The largest frame either way, Noise tag included.
 pub const FRAME_MAX: usize = 1024;
@@ -289,6 +289,17 @@ pub enum Op<'a> {
     /// The feeder's module; refused `Unavailable` by another kind.
     #[serde(borrow)]
     Feeder(FeederOp<'a>),
+    /// A single-use invite only the client whose static key is `key` can
+    /// redeem, answered [`Outcome::Invite`] like [`Self::CreateInvite`],
+    /// with its role rules. Whoever asks names the key the new client will
+    /// join with, so the key the feeder enrolls is the one the asker
+    /// recorded: a holder of the secret who joins with another key is
+    /// refused, and the invite stays for the right one. The redemption is
+    /// [`Open::Invite`]'s, unchanged.
+    CreateBoundInvite {
+        role: Role,
+        key: [u8; 32],
+    },
 }
 
 /// The update ops ([`Op::Update`]), frozen with everything they carry and
@@ -646,6 +657,7 @@ impl Op<'_> {
             Self::PutWifi { .. }
             | Self::TimeSync(_)
             | Self::CreateInvite { .. }
+            | Self::CreateBoundInvite { .. }
             | Self::RevokeClient { .. }
             | Self::Reboot
             | Self::PutTime { .. } => true,

@@ -171,7 +171,7 @@ impl Server {
                     let Open::Invite { id } = *open else {
                         return Err(Reason::Malformed);
                     };
-                    let event = pairing.redeem(now_ms, id);
+                    let event = pairing.redeem(now_ms, id, &key);
                     record(Record::Pairing(event));
                     let pairing::Event::Admit { role, .. } = event else {
                         return Err(Reason::Invite);
