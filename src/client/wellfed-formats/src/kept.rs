@@ -51,7 +51,14 @@ pub trait Kept: DeserializeOwned {
     /// through unread. The file's own top level by default; a type whose
     /// file nests structs carries each of them too, by its path, matching
     /// list elements by what identifies them ([`carry`], [`same`],
-    /// [`pairs`]).
+    /// [`pairs`]), and a struct only when it still describes the same
+    /// thing.
+    ///
+    /// So a field a minor adds must stay valid however an older build
+    /// changes the fields it knows beside it, since that build's save keeps
+    /// it unchanged; one that can't is a new major. And a minor that adds a
+    /// nested struct adds its path to its file's carry, so what a later
+    /// minor adds inside it outlasts this build's saves.
     fn carry(old: &Value, new: &mut Value) {
         carry(old, new);
     }

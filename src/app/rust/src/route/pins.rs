@@ -176,7 +176,12 @@ impl Versioned for PinFile {
         kept::carry(old, new);
         for (old, new) in kept::pairs(old, new, "/pins", &["/key"]) {
             kept::carry(old, new);
-            if let Some((old, new)) = kept::both(old, new, "/server") {
+            // A mark this build wrote names another journal when its token
+            // or account changed: what a newer minor added to the old one
+            // is that journal's, not this one's.
+            if let Some((old, new)) = kept::both(old, new, "/server")
+                && kept::same(old, new, &["/token", "/user"])
+            {
                 kept::carry(old, new);
             }
         }
@@ -646,6 +651,26 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         for place in places {
             assert_eq!(saved.pointer(place).unwrap()["added"], place, "{place}");
+        }
+    }
+
+    /// A pin's server mark names the journal the pin was written to: a
+    /// save under another token or account keeps nothing a newer minor
+    /// added to the old one.
+    #[test]
+    fn a_mark_for_another_journal_carries_nothing() {
+        let sample: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/pending-v1.json")).unwrap();
+        let mut old = sample["data"].clone();
+        old["pins"][0]["server"]["added"] = serde_json::json!(true);
+
+        for changed in ["/token", "/user"] {
+            let mut new = sample["data"].clone();
+            let mark = new.pointer_mut("/pins/0/server").unwrap();
+            *mark.pointer_mut(changed).unwrap() = serde_json::json!(Uuid::from_u128(77));
+
+            <PinFile as stored::Versioned>::carry(&old, &mut new);
+            assert_eq!(new["pins"][0]["server"].get("added"), None, "{changed}");
         }
     }
 }
