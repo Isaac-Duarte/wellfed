@@ -60,6 +60,14 @@ impl Memory {
             .map(|&(_, result)| result)
     }
 
+    /// Whether it holds a write still under way.
+    fn waiting(&self) -> bool {
+        self.ids
+            .iter()
+            .flatten()
+            .any(|(_, result)| matches!(result, Remembered::Waiting(_)))
+    }
+
     /// The entry at `index`, for the pass that settles writes whose
     /// session has gone.
     pub(super) fn entry(&self, index: usize) -> Option<(RequestId, Remembered)> {
@@ -154,7 +162,8 @@ pub(super) fn recall<D: Device>(
 
 impl Server {
     /// The memory for `key`, or the least recently used one not serving an
-    /// open session, cleared for it.
+    /// open session, cleared for it, preferring one with no write under
+    /// way.
     pub(super) fn memory(&mut self, key: &[u8; 32]) -> usize {
         let pass = self.pass;
         if let Some(index) = self
@@ -170,9 +179,11 @@ impl Server {
                 .iter()
                 .any(|slot| matches!(slot.phase, Phase::Open { memory, .. } if memory == index))
         };
+        // A memory holding a write under way goes last: its client may yet
+        // retry, and the pass is still to settle it.
         let index = (0..SESSIONS)
             .filter(|&index| !in_use(index))
-            .min_by_key(|&index| self.memories[index].used)
+            .min_by_key(|&index| (self.memories[index].waiting(), self.memories[index].used))
             .unwrap_or(0);
         self.memories[index] = Memory {
             key: *key,

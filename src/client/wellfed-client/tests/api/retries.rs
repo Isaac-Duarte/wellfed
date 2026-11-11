@@ -4,6 +4,7 @@
 //! whose outcome the device lost ends every session waiting on it
 //! unanswered.
 
+use wellfed_device_api::clients::Role;
 use wellfed_device_api::mailbox::KEYS_FINISHED;
 use wellfed_device_api::{KeyOutcome, Reason, UpdateAnswer};
 use wellfed_model as model;
@@ -152,4 +153,36 @@ fn an_update_whose_outcome_is_lost_ends_unanswered() {
     rig.device.update_done = Some((ticket + 1, Ok(UpdateAnswer::View(receiving()))));
     assert!(!answered_unwritten(&mut rig, &mut owner, 1));
     assert!(rig.ended(Reason::Forgotten));
+}
+
+/// A client's memory holding a write under way is the last given to a new
+/// key: four other clients connecting while it waits leave it be, and the
+/// retry still finds the write.
+#[test]
+fn a_memory_with_a_write_under_way_outlasts_other_clients() {
+    let mut rig = Rig::new();
+    rig.device.update = true;
+    let others = [MEMBER, [0x50; 32], [0x60; 32], [0x70; 32]];
+    for secret in &others[1..] {
+        rig.device.enroll(public(*secret), Role::Member);
+    }
+    rig.publish();
+    let mut owner = open(&mut rig, OWNER);
+    rig.device.hold = true;
+    send_unwritten(&mut rig, &mut owner, 1, offer());
+    drop_connection(&mut rig, &owner);
+
+    for secret in others {
+        let other = open(&mut rig, secret);
+        drop_connection(&mut rig, &other);
+    }
+
+    let mut again = open(&mut rig, OWNER);
+    send_unwritten(&mut rig, &mut again, 1, offer());
+    assert!(!answered_unwritten(&mut rig, &mut again, 1));
+    rig.device.hold = false;
+    rig.device.answer_held();
+    let answer = poll_answer(&mut rig, &mut again, 1, 5);
+    assert_eq!(answer, Some(view(receiving())));
+    assert_eq!(rig.device.updates.len(), 1, "offered once");
 }
