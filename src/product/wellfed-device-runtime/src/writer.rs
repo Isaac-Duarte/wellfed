@@ -1187,10 +1187,13 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         } else if let Some(sector) = handover_cleared(index) {
             F::erase(sector) && blank::<F>(sector)
         } else if index == clients {
-            self.core.clients.open(Slots::new());
-            match self.core.clients.identity().copied() {
-                Some(identity) => self.core.clients.reset(&identity).is_ok(),
-                None => true,
+            // A store that could not be read may still hold clients, so the
+            // mark stays and the next boot tries again.
+            let status = self.core.clients.open(Slots::new());
+            match (status, self.core.clients.identity().copied()) {
+                (ClientStatus::Io, _) => false,
+                (_, Some(identity)) => self.core.clients.reset(&identity).is_ok(),
+                (_, None) => true,
             }
         } else if index == clients + 1 {
             let mut update = UpdateStore::default();

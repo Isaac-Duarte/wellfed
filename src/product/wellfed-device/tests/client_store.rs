@@ -265,3 +265,33 @@ fn a_record_this_build_cannot_read_is_never_written_over() {
         assert_eq!(f.bytes, before, "case {case}: nothing written");
     }
 }
+
+/// A read that fails anywhere in open, of either unit, leaves no table: the
+/// unit it could still read may be the older one, holding a client revoked
+/// since, who must not get back in for the boot.
+#[test]
+fn a_failed_read_of_either_unit_serves_no_table() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    s.set_identity(&[0xaa; 32]).unwrap();
+    s.enroll([1; 32], label("old"), Role::Owner).unwrap();
+    s.revoke(&[1; 32]).unwrap();
+
+    f.calls = 0;
+    let r = open(&mut f);
+    assert_eq!((r.status, r.generation), (ClientStatus::Loaded, 3));
+    let calls = f.calls;
+
+    for fail in 1..=calls {
+        f.calls = 0;
+        f.fail_call = fail;
+        let r = open(&mut f);
+        f.fail_call = 0;
+
+        assert_eq!(r.status, ClientStatus::Io, "read {fail}");
+        assert_eq!(r.identity(), None, "read {fail}");
+        assert_eq!(r.clients().count(), 0, "read {fail}");
+        assert!(!r.writable(), "read {fail}");
+    }
+    assert!(keys(&mut f).is_empty(), "the revocation stands");
+}
