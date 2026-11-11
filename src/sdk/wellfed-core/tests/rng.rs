@@ -64,17 +64,25 @@ fn inputs_change_the_stream() {
 }
 
 #[test]
-fn the_drbg_demands_a_reseed_and_bounds_requests() {
+fn the_drbg_bounds_a_request() {
     let mut drbg = Drbg::new(&[1; 32], &[], &[]);
     assert_eq!(
         drbg.generate(&mut vec![0; MAX_REQUEST + 1], &[]),
         Err(Error::TooLarge)
     );
-    for _ in 0..RESEED_INTERVAL {
+    drbg.bytes().unwrap();
+}
+
+/// The firmware never reseeds, so the generator must outlast any boot: far
+/// more draws than the 2^16 that once stopped it (a few weeks of unanswered
+/// NTP, or a LAN peer opening and dropping connections) still succeed.
+#[test]
+fn the_drbg_runs_past_twice_the_old_interval_without_a_reseed() {
+    const { assert!(RESEED_INTERVAL >= 1 << 48) };
+    let mut drbg = Drbg::new(&[1; 32], &[], &[]);
+    for _ in 0..1 << 17 {
         drbg.generate(&mut [0; 1], &[]).unwrap();
     }
-    assert_eq!(drbg.bytes(), Err(Error::ReseedRequired));
-    drbg.reseed(&[2; 32], &[]);
     drbg.bytes().unwrap();
 }
 

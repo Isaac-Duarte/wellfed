@@ -13,7 +13,11 @@
 //! 2. **The pool** ([`Pool`]) hashes tested samples with SHA-256 and gives a
 //!    32-byte input only once twice its length in claimed entropy went in.
 //! 3. **HMAC-DRBG** ([`Drbg`], SHA-256) stretches that input. It refuses to
-//!    run past [`RESEED_INTERVAL`] requests without fresh pool input.
+//!    run past [`RESEED_INTERVAL`] requests without fresh pool input: SP
+//!    800-90A's own bound, which no boot reaches. The firmware has no fresh
+//!    input after boot to reseed from, so a shorter interval would only stop
+//!    the generator, and with it every key, nonce and session, until a
+//!    restart; any peer that can make the feeder draw could bring that on.
 //!
 //! The stored seed ([`crate::store::seed`]) joins the first instantiation
 //! as its nonce, so even a source weaker than claimed does not repeat a
@@ -28,9 +32,9 @@ use wellfed_session::mac::hmac_sha256;
 pub const STARTUP_SAMPLES: u32 = 1024;
 /// The Adaptive Proportion Test's window for non-binary samples.
 pub const APT_WINDOW: u32 = 512;
-/// Generate requests between reseeds. SP 800-90A allows 2^48; reseeding far
-/// sooner keeps a compromised state short-lived and costs one pool fill.
-pub const RESEED_INTERVAL: u32 = 1 << 16;
+/// Generate requests between reseeds: SP 800-90A's limit, 2^48. At a
+/// thousand draws a second that is thousands of years.
+pub const RESEED_INTERVAL: u64 = 1 << 48;
 /// The largest single request (SP 800-90A: 2^19 bits).
 pub const MAX_REQUEST: usize = 1 << 16;
 /// The false-alarm exponent: a healthy source fails a test with
@@ -234,7 +238,7 @@ impl Pool {
 pub struct Drbg {
     key: [u8; 32],
     value: [u8; 32],
-    requests: u32,
+    requests: u64,
 }
 
 impl core::fmt::Debug for Drbg {
@@ -309,5 +313,23 @@ impl Drbg {
             self.key = hmac_sha256(&self.key, &parts);
             self.value = hmac_sha256(&self.key, &[&self.value]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bound holds where SP 800-90A puts it, without drawing 2^48 times
+    /// to get there.
+    #[test]
+    fn the_drbg_refuses_past_the_reseed_interval_and_runs_again_once_reseeded() {
+        let mut drbg = Drbg::new(&[1; 32], &[], &[]);
+        drbg.requests = RESEED_INTERVAL;
+        drbg.bytes().unwrap();
+        assert_eq!(drbg.bytes(), Err(Error::ReseedRequired));
+
+        drbg.reseed(&[2; 32], &[]);
+        drbg.bytes().unwrap();
     }
 }

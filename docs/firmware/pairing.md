@@ -35,7 +35,7 @@ A million one-byte samples per source, streamed over the UART from a cold boot, 
 ## The generator in the firmware
 
 - **At boot,** `wellfed-hal::rng` starts in the runtime's startup task, before anything else uses the ADC. It fills the pool from 1,024 ADC samples (the start-up test, which also covers the claim), closes the ADC, and records `PLRNG1 boot result=ready samples=1024 first=<16 raw samples> check=<hash of one discarded block>`.
-- **After boot** the power monitor owns the ADC, so the generator never reseeds. The reseed interval is far beyond a boot's needs, and every boot starts fresh.
+- **After boot** the power monitor owns the ADC, so the generator never reseeds. Its reseed interval is SP 800-90A's 2^48 requests, which no boot reaches: a shorter one would stop every key, nonce and session once any client, or a stranger opening connections, had drawn past it. Every boot starts fresh. An open naming no live invite ends before the generator is drawn on.
 - **Drawing.** Every task draws from the one DRBG with the scheduler paused. BLE setup's Noise ephemeral keys come from it alone; no session starts without it.
 - **The settings writer,** once armed, mixes the stored seed in and stores the next, opens the client store, and creates the identity secret on the first boot with a generator: `PLCFG1 keys seed=… mixed=… saved=… clients=… enrolled=… identity=…`. Its task's stack bound is 2,948 of 4,096 bytes, since the client store decodes only the winning slot's table and saves a table by reference.
 

@@ -256,9 +256,12 @@ fn an_invite_enrolls_a_new_client_once() {
     rig.publish();
     let _stranger = open(&mut rig, STRANGER);
 
-    // The invite was single-use.
+    // The invite was single-use, and an open naming none still live ends
+    // before the generator is drawn on, so a stranger cannot spend it.
+    let drawn = rig.device.counter;
     assert_eq!(redeem(&mut rig, invite, [0x50; 32]), None);
     assert!(rig.ended(Reason::Invite));
+    assert_eq!(rig.device.counter, drawn);
 }
 
 /// The history's enrollments: the client, its role and how it came.
