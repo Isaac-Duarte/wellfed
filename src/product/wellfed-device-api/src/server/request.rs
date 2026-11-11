@@ -156,6 +156,16 @@ impl Server {
                     pairing::Event::Confirming { .. } => {
                         // Only this offer's press counts: a decision left
                         // over from an earlier one must not admit it.
+                        //
+                        // The one write not remembered while under way: its
+                        // press is this session's, cancelled when it ends,
+                        // so a retry on a new session asks for a press of
+                        // its own. A known exception to retries hearing the
+                        // first answer: if the first enrollment landed and
+                        // nobody presses again, the retry is refused
+                        // `Unconfirmed` though the key is enrolled. A false
+                        // refusal is possible; a false `Done` never is, since
+                        // `Done` comes only from an enrollment that landed.
                         self.signer = None;
                         let waiting = Waiting::Signer { key, label };
                         return self.wait(index, id, action, waiting);
