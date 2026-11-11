@@ -5,7 +5,7 @@
 use wellfed_core::store::slot::crc32;
 use wellfed_device::store::clients::{ClientError, ClientStatus, ClientStore, RECORD_BYTES};
 use wellfed_device_api::clients::{CLIENTS, Label, Role};
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS};
 
 const UNIT: usize = 1024;
 
@@ -92,7 +92,10 @@ fn labels_are_validated() {
 
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
-    for history in 0..3u8 {
+    for (order, history) in ORDERS
+        .into_iter()
+        .flat_map(|o| (0..3u8).map(move |h| (o, h)))
+    {
         let saved = |f: &mut FakeJournalFlash| {
             let mut s = open(f);
             for n in 0..history {
@@ -104,23 +107,30 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
         let mut new = old.clone();
         new.push([9; 32]);
 
-        let mut probe = FakeJournalFlash::with_unit(UNIT);
+        let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
         let mut s = saved(&mut probe);
         let start = probe.mutations;
         s.enroll([9; 32], label("new"), Role::Owner).unwrap();
         let span = i64::from(probe.mutations - start);
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_unit(UNIT);
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
             let mut s = saved(&mut f);
             f.budget = cut;
             let _ = s.enroll([9; 32], label("new"), Role::Owner);
             f.budget = -1;
 
             let found = keys(&mut f);
-            assert!(found == old || found == new, "history {history} cut {cut}");
+            assert!(
+                found == old || found == new,
+                "{order:?} history {history} cut {cut}"
+            );
             let mut r = open(&mut f);
-            assert!(r.writable(), "history {history} cut {cut}: {:?}", r.status);
+            assert!(
+                r.writable(),
+                "{order:?} history {history} cut {cut}: {:?}",
+                r.status
+            );
             r.revoke(&[9; 32]).ok();
             r.enroll([7; 32], label("after"), Role::Member).unwrap();
             assert!(keys(&mut f).contains(&[7; 32]));

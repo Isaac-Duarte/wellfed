@@ -14,7 +14,7 @@ use wellfed_core::store::slot::{RECORD_BYTES, crc32};
 use wellfed_device::store::settings::{
     Settings, SettingsStatus, SettingsStore, SlotState, VERSION, WEAR_LIMIT,
 };
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS, UNIT};
 
 const BINDING: u64 = 0x5046_5731_3502_0001;
 const UNITS: [usize; 3] = [UNIT, 4096, 148];
@@ -90,9 +90,9 @@ fn invalid_values_are_refused_without_writing() {
 /// the new settings, writable, never anything else.
 #[test]
 fn power_cut_at_every_byte_keeps_old_or_new() {
-    for unit in [UNIT, 148] {
+    for (order, unit) in ORDERS.into_iter().flat_map(|o| [UNIT, 148].map(|u| (o, u))) {
         for history in 0..3u8 {
-            let mut probe = FakeJournalFlash::with_unit(unit);
+            let mut probe = FakeJournalFlash::with_unit(unit).ordered(order);
             let mut s = open(&mut probe);
             for v in 0..history {
                 assert!(s.save(&custom(v)));
@@ -103,7 +103,7 @@ fn power_cut_at_every_byte_keeps_old_or_new() {
             let span = i64::from(probe.mutations - start);
 
             for cut in 0..=span {
-                let mut f = FakeJournalFlash::with_unit(unit);
+                let mut f = FakeJournalFlash::with_unit(unit).ordered(order);
                 let mut s = open(&mut f);
                 for v in 0..history {
                     assert!(s.save(&custom(v)));
@@ -122,7 +122,7 @@ fn power_cut_at_every_byte_keeps_old_or_new() {
 
                 assert!(
                     r.settings == old || r.settings == custom(99),
-                    "unit {unit} history {history} cut {cut}: {:?}",
+                    "{order:?} unit {unit} history {history} cut {cut}: {:?}",
                     r.status
                 );
                 assert!(
@@ -130,7 +130,7 @@ fn power_cut_at_every_byte_keeps_old_or_new() {
                         r.status,
                         SettingsStatus::Loaded | SettingsStatus::Recovered | SettingsStatus::Empty
                     ),
-                    "unit {unit} history {history} cut {cut}: {:?}",
+                    "{order:?} unit {unit} history {history} cut {cut}: {:?}",
                     r.status
                 );
 
@@ -140,7 +140,7 @@ fn power_cut_at_every_byte_keeps_old_or_new() {
                     assert_ne!(
                         r.slots[1 - r.slot as usize],
                         SlotState::Valid,
-                        "unit {unit} history {history} cut {cut}"
+                        "{order:?} unit {unit} history {history} cut {cut}"
                     );
                 }
 
@@ -206,8 +206,8 @@ fn torn_newer_slot_falls_back_and_reports_recovered() {
     let mut s = open(&mut f);
     assert!(s.save(&custom(1)) && s.save(&custom(2)));
 
-    // Tear the newer record (slot 1): drop its commit marker.
-    f.bytes[1][124..128].fill(0);
+    // Tear the newer record (slot 1): a save cut before its commit marker.
+    f.bytes[1][124..128].fill(u8::MAX);
     let r = open(&mut f);
     assert_eq!(
         (r.status, r.settings, r.generation),

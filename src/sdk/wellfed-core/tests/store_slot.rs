@@ -11,7 +11,7 @@ use wellfed_core::store::slot::{
     CRC_AT, DualSlot, Extent, Found, Layout, Pick, Prepare, RECORD_BYTES, Version, crc32, get_u64,
     newest, put_u64, seal, target, unwritten,
 };
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS, ProgramOrder};
 
 /// Fields at 12..21: the generation and one payload byte.
 const UNIT: Layout = Layout::new(*b"PLFTEST1", Version::new(3, 0), 24, Extent::Unit);
@@ -92,9 +92,27 @@ fn each_state_of_a_unit_reads_as_the_rule_names_it() {
             assert_eq!(scan(&mut f, layout, 0), Found::Partial, "cut at {cut}");
         }
 
-        // No marker, and not a prefix of this store's record.
+        // Cut inside a page program, which keeps no byte order: any subset
+        // of the record's cleared bits, the marker still erased.
+        for seed in [1, 2, 3] {
+            for budget in [1, 20, 60, 110] {
+                let mut f = FakeJournalFlash {
+                    budget,
+                    ..FakeJournalFlash::with_unit(256).ordered(ProgramOrder::Scattered(seed))
+                };
+                assert!(!units(&mut f, layout).write(0, &valid, Prepare::Erased));
+                assert_eq!(
+                    scan(&mut f, layout, 0),
+                    Found::Partial,
+                    "seed {seed} cut {budget}"
+                );
+            }
+        }
+
+        // No marker, and a bit the store's magic keeps set is clear: not a
+        // cut of this store's record.
         let mut other = valid;
-        other[0] = b'Q';
+        other[0] = b'@';
         other[124..].fill(u8::MAX);
         let mut f = FakeJournalFlash::with_unit(256);
         place(&mut f, 0, &other);
@@ -230,6 +248,10 @@ fn check_cut(
     }
 
     let (a, b) = (scan(f, layout, 0), scan(f, layout, 1));
+    // A first save cut anywhere, in any order, holds nothing committed.
+    if history == 0 && found != Found::Valid(new) {
+        assert!(unwritten(&a, &b), "{case}: a cut first save is unwritten");
+    }
     let old = (history > 0).then(|| (u64::from(history), history));
     match newest(a, b, |&(generation, _)| generation) {
         Pick::Newest(_, value) => assert!(Some(value) == old || value == new, "{case}: {value:?}"),
@@ -240,39 +262,47 @@ fn check_cut(
 
 #[test]
 fn a_power_cut_at_every_mutation_leaves_the_old_record_or_the_new() {
-    for layout in [&UNIT, &RECORD] {
-        for unit in SIZES {
-            for history in 0..3u8 {
-                let mut base = FakeJournalFlash::with_unit(unit);
-                let last = saved(&mut base, layout, history);
-                let written = target(u64::from(history), last);
-                let next = record(layout, u64::from(history) + 1, history + 1);
-
-                let mut probe = base.clone();
-                let start = probe.mutations;
-                assert!(units(&mut probe, layout).write(written, &next, Prepare::Erase));
-                let span = i64::from(probe.mutations - start);
-                assert_eq!(span as usize, unit + RECORD_BYTES, "one erase, one record");
-
-                for cut in 0..=span {
-                    let mut f = base.clone();
-                    f.budget = cut;
-                    let ok = units(&mut f, layout).write(written, &next, Prepare::Erase);
-                    f.budget = -1;
-
-                    // The fake reports a cut even after its last mutation.
-                    let case = format!("{layout:?} unit {unit} history {history} cut {cut}");
-                    assert!(!ok, "{case}");
-                    check_cut(&mut f, layout, &base, written, history, &case);
-
-                    // The written unit takes the next write whatever it holds.
-                    assert!(units(&mut f, layout).write(written, &next, Prepare::Erase));
-                    assert_eq!(
-                        scan(&mut f, layout, written),
-                        Found::Valid((u64::from(history) + 1, history + 1))
-                    );
-                }
+    for order in ORDERS {
+        for layout in [&UNIT, &RECORD] {
+            for unit in SIZES {
+                power_cuts(order, layout, unit);
             }
+        }
+    }
+}
+
+fn power_cuts(order: ProgramOrder, layout: &'static Layout, unit: usize) {
+    for history in 0..3u8 {
+        let mut base = FakeJournalFlash::with_unit(unit).ordered(order);
+        let last = saved(&mut base, layout, history);
+        let written = target(u64::from(history), last);
+        let next = record(layout, u64::from(history) + 1, history + 1);
+
+        let mut probe = base.clone();
+        let start = probe.mutations;
+        assert!(units(&mut probe, layout).write(written, &next, Prepare::Erase));
+        let span = i64::from(probe.mutations - start);
+        if order == ProgramOrder::Bytes {
+            assert_eq!(span as usize, unit + RECORD_BYTES, "one erase, one record");
+        }
+
+        for cut in 0..=span {
+            let mut f = base.clone();
+            f.budget = cut;
+            let ok = units(&mut f, layout).write(written, &next, Prepare::Erase);
+            f.budget = -1;
+
+            // The fake reports a cut even after its last mutation.
+            let case = format!("{order:?} {layout:?} unit {unit} history {history} cut {cut}");
+            assert!(!ok, "{case}");
+            check_cut(&mut f, layout, &base, written, history, &case);
+
+            // The written unit takes the next write whatever it holds.
+            assert!(units(&mut f, layout).write(written, &next, Prepare::Erase));
+            assert_eq!(
+                scan(&mut f, layout, written),
+                Found::Valid((u64::from(history) + 1, history + 1))
+            );
         }
     }
 }

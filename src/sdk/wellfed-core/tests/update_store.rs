@@ -7,7 +7,7 @@ use wellfed_core::store::update::{
     Bank0, Candidate, RECORD_BYTES, REVOKED, State, UpdateError, UpdateStatus, UpdateStore,
 };
 use wellfed_signed::offer::{ImageKind, key_id};
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS};
 
 const UNIT: usize = 512;
 
@@ -144,8 +144,8 @@ fn a_power_cut_at_every_mutation_keeps_old_or_new_and_never_lowers_the_floor() {
         s
     };
 
-    for (name, change) in changes {
-        let mut probe = FakeJournalFlash::with_unit(UNIT);
+    for (order, (name, change)) in ORDERS.into_iter().flat_map(|o| changes.map(|c| (o, c))) {
+        let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
         let old = {
             history(&mut probe);
             snapshot(&mut probe)
@@ -158,7 +158,7 @@ fn a_power_cut_at_every_mutation_keeps_old_or_new_and_never_lowers_the_floor() {
         assert!(span > 0, "{name} wrote nothing");
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_unit(UNIT);
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
             history(&mut f);
             let mut s = open(&mut f);
             f.budget = cut;
@@ -166,15 +166,51 @@ fn a_power_cut_at_every_mutation_keeps_old_or_new_and_never_lowers_the_floor() {
             f.budget = -1;
 
             let found = snapshot(&mut f);
-            assert!(found == old || found == new, "{name} cut {cut}: {found:?}");
-            assert!(found.0 >= 5, "{name} cut {cut}: the floor fell");
+            assert!(
+                found == old || found == new,
+                "{order:?} {name} cut {cut}: {found:?}"
+            );
+            assert!(found.0 >= 5, "{order:?} {name} cut {cut}: the floor fell");
             assert!(
                 found.3.contains(&[0x11; 8]),
-                "{name} cut {cut}: an id was forgotten"
+                "{order:?} {name} cut {cut}: an id was forgotten"
             );
             let mut r = open(&mut f);
-            assert!(r.writable(), "{name} cut {cut}: {:?}", r.status);
+            assert!(r.writable(), "{order:?} {name} cut {cut}: {:?}", r.status);
             r.set_pending(candidate(20, 9)).unwrap();
+        }
+    }
+}
+
+/// A first save cut anywhere, in any order its page program keeps, leaves
+/// the store empty and writable: the update path must never lock itself
+/// out before it has recorded anything.
+#[test]
+fn a_power_cut_in_the_first_save_starts_empty_and_writable() {
+    for order in ORDERS {
+        let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
+        let mut s = open(&mut probe);
+        s.set_pending(candidate(12, 3)).unwrap();
+        let new = snapshot(&mut probe);
+        let span = i64::from(probe.mutations);
+
+        for cut in 0..=span {
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
+            let mut s = open(&mut f);
+            f.budget = cut;
+            let _ = s.set_pending(candidate(12, 3));
+            f.budget = -1;
+
+            let mut r = open(&mut f);
+            let found = snapshot(&mut f);
+            assert!(
+                r.status == UpdateStatus::Empty || found == new,
+                "{order:?} cut {cut}: {:?}",
+                r.status
+            );
+            assert!(r.writable(), "{order:?} cut {cut}: {:?}", r.status);
+            r.set_pending(candidate(20, 9)).unwrap();
+            assert_eq!(open(&mut f).status, UpdateStatus::Loaded);
         }
     }
 }

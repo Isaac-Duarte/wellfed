@@ -64,18 +64,21 @@
 //! marker, checks it, programs the marker, and checks the whole record.
 //! A record counts only once its marker is down and its checksum holds, so
 //! a power cut at any point leaves the other unit untouched and this one in
-//! one of the states [`Found`] names: erased, cut short ([`Found::Partial`]
-//! or [`Found::Unmarked`]), unmarked or torn by a cut erase, or the new
+//! one of the states [`Found`] names: erased, cut short
+//! ([`Found::Partial`]), unmarked or torn by a cut erase, or the new
 //! record. A program clears bits only, but the part programs a whole page
 //! at once and promises no byte order, so a cut program leaves any subset
 //! of the bits the record clears, the marker still erased; and an erase
 //! raises bits in no particular order (and a part may program bits to 0
 //! inside an erase first), so a cut erase leaves anything at all, which
-//! fails the checksum or loses the marker. The slot layer never retries a
-//! failed step; the store records the fault, and the journal and the
-//! newest-wins stores write nothing more until they are opened again
-//! (settings writes its next change to the same unit, which the rule makes
-//! as safe as the first try).
+//! fails the checksum or loses the marker. A cut save can leave as little
+//! as one cleared bit anywhere in its record, so bytes another writer left
+//! that clear no bit the magic or the marker keeps set read as one too:
+//! beside an erased unit, the store starts empty and writes over them.
+//! The slot layer never retries a failed step; the store records the
+//! fault, and the journal and the newest-wins stores write nothing more
+//! until they are opened again (settings writes its next change to the
+//! same unit, which the rule makes as safe as the first try).
 //!
 //! What a state means is the store's policy, since what may be lost
 //! differs:
@@ -294,8 +297,8 @@ pub enum Found<V> {
     /// decodes: its own record, which no decoder here reads. Settings takes
     /// it as superseded; the client and update stores never write over it.
     Older,
-    /// No marker, and the bytes are this store's own record cut short:
-    /// some of the magic and then erased bytes, or the whole magic.
+    /// No marker, and the bytes could be this store's own record cut
+    /// short: its magic and marker fields keep every bit they keep set.
     Partial,
     /// No marker otherwise: an erase cut short over a record, or bytes
     /// another writer left.
@@ -354,8 +357,12 @@ pub fn newest<V>(a: Found<V>, b: Found<V>, generation: impl Fn(&V) -> u64) -> Pi
 }
 
 /// Whether units `a` and `b` hold nothing a store ever committed: both
-/// erased, or a first save cut short beside an erased unit. A store that
-/// never writes over a record it cannot read starts empty only then.
+/// erased, or a first save cut short beside an erased unit, whatever
+/// subset of its bits the cut left ([`Found::Partial`]). A store that
+/// never writes over a record it cannot read starts empty only then. A
+/// committed record of its own reads the same once its marker decays out
+/// of `CMIT` while keeping every bit `CMIT` keeps set; beside an erased
+/// unit (the next save's erase cut late) the store then starts empty too.
 pub const fn unwritten<V>(a: &Found<V>, b: &Found<V>) -> bool {
     matches!(
         (a, b),
@@ -887,15 +894,22 @@ fn erased(p: &[u8]) -> bool {
     p.iter().all(|&b| b == u8::MAX)
 }
 
-/// A save cut short in byte order leaves a prefix of the magic followed by
-/// erased bytes, or the whole magic: this store's own write. A cut page
-/// program, which keeps no byte order, can leave the magic partly
-/// programmed out of order too, which reads as another writer's
-/// ([`Found::Unmarked`]); the feed journal's rule for its first record
-/// covers that case itself.
+/// Whether the unmarked `p` could be this store's own save cut short: its
+/// magic and its marker, the two fields every record of the store shares,
+/// keep every bit they keep set. The part programs a whole page at once
+/// with no byte order and the marker only after the rest, so a cut save
+/// leaves any subset of the bits its record clears, and these two fields
+/// show it; a cut erase over one, as this model assumes, only raises bits
+/// and keeps it so. Bytes another writer left clear a bit of the magic or
+/// the marker that the store keeps set, unless they read nearly erased.
 fn ours(p: &[u8], magic: &[u8; 8]) -> bool {
-    let matched = magic.iter().zip(p).take_while(|(m, r)| m == r).count();
-    matched == magic.len() || p.get(matched..).is_some_and(erased)
+    let kept = |bytes: Option<&[u8]>, field: &[u8]| {
+        bytes.is_some_and(|bytes| bytes.iter().zip(field).all(|(&b, &f)| b & f == f))
+    };
+    let marker_at = p.len().saturating_sub(MARKER_BYTES);
+    p.len() >= FIELDS_AT + TRAILER_BYTES
+        && kept(p.get(..magic.len()), magic)
+        && kept(p.get(marker_at..), &COMMIT)
 }
 
 // Little-endian record fields at a fixed offset `AT` in a fixed-size record.

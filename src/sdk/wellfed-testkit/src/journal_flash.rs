@@ -31,6 +31,14 @@ pub enum ProgramOrder {
     Scattered(u64),
 }
 
+/// The orders a store's cut tests run in: byte by byte, and two seeded
+/// orders across each program, as a page program keeps no byte order.
+pub const ORDERS: [ProgramOrder; 3] = [
+    ProgramOrder::Bytes,
+    ProgramOrder::Scattered(0x5eed),
+    ProgramOrder::Scattered(0x9a7e_c0de),
+];
+
 #[derive(Clone)]
 pub struct FakeJournalFlash {
     /// Equal-sized units; see [`FakeJournalFlash::with_units`].
@@ -85,6 +93,14 @@ impl FakeJournalFlash {
             program_order: ProgramOrder::Bytes,
             after_mutation: None,
             mutation_context: core::ptr::null_mut(),
+        }
+    }
+
+    /// This flash, programming in `order`.
+    pub fn ordered(self, order: ProgramOrder) -> Self {
+        Self {
+            program_order: order,
+            ..self
         }
     }
 

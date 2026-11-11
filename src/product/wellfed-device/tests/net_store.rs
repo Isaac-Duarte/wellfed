@@ -4,7 +4,7 @@
 use wellfed_core::store::slot::{RECORD_BYTES, crc32};
 use wellfed_device::store::net::{NetStatus, NetStore};
 use wellfed_device_api::wifi::Credentials;
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS, UNIT};
 
 fn open(f: &mut FakeJournalFlash) -> NetStore<FlashIo> {
     let mut s = NetStore::default();
@@ -54,8 +54,11 @@ fn credentials_are_validated() {
 
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
-    for history in 0..3u8 {
-        let mut probe = FakeJournalFlash::with_unit(UNIT);
+    for (order, history) in ORDERS
+        .into_iter()
+        .flat_map(|o| (0..3u8).map(move |h| (o, h)))
+    {
+        let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
         let mut s = open(&mut probe);
         for n in 0..history {
             assert!(s.save(Some(&creds(n))));
@@ -65,7 +68,7 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
         let span = i64::from(probe.mutations - start);
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_unit(UNIT);
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
             let mut s = open(&mut f);
             for n in 0..history {
                 assert!(s.save(Some(&creds(n))));
@@ -78,9 +81,13 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
             let old = history.checked_sub(1).map(creds);
             assert!(
                 r.credentials == old || r.credentials == Some(creds(9)),
-                "history {history} cut {cut}"
+                "{order:?} history {history} cut {cut}"
             );
-            assert!(r.writable(), "history {history} cut {cut}: {:?}", r.status);
+            assert!(
+                r.writable(),
+                "{order:?} history {history} cut {cut}: {:?}",
+                r.status
+            );
             assert!(r.save(Some(&creds(7))));
             assert_eq!(open(&mut f).credentials, Some(creds(7)));
         }
