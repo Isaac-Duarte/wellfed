@@ -62,7 +62,11 @@ impl Code {
 
     /// A code from uniformly random bits, two per press, never one button
     /// pressed every time ([`Self::one_button`]): of those, the last press
-    /// moves to the next button.
+    /// moves to the next button. That leaves the draw slightly biased: the
+    /// four codes the moves land on (five presses of one button, then the
+    /// next one) come up twice as often as the rest, 2 in 4,096 instead of
+    /// 1, and the four one-button codes never do. So a guess of one of
+    /// those four is right 1 time in 2,048 rather than 4,096.
     pub fn from_bits(bits: u16) -> Self {
         let mut presses = [Button::Reset; PRESSES];
         for (i, press) in presses.iter_mut().enumerate() {
