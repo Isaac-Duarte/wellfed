@@ -105,6 +105,7 @@ pub fn confirmation(read: &[u8; ota::CONFIRM_LEN]) -> &[u8; ota::CONFIRM_LEN] {
         &BLANK
     }
 }
+
 /// Bank 0's whole region, which its image must fit.
 pub const BANK0_BYTES: u32 = BANK1_OFFSET - BANK0_OFFSET;
 
@@ -551,11 +552,12 @@ mod exported {
     /// Called once by the KM0 main before `km4_boot_on`, with bank 1's first
     /// 8 physical bytes, bank 0's mapped region (its headers are checked,
     /// [`super::fallback`]), the confirmation record, the backup register
-    /// and whether `BOOT_Reason` carries the brownout bit (nonzero). Writes the register's new value back to `register` and
-    /// the `PLTRL1` lines for the glue to print to `line` (NUL-terminated,
-    /// empty before a trial's give-way), and returns 1 when the glue must
-    /// clear bank 1's first marker byte and reset. Flash and the register
-    /// are written by the caller.
+    /// and whether `BOOT_Reason` carries the brownout bit (nonzero). Writes
+    /// the register's new value back to `register` and the `PLTRL1` lines
+    /// for the glue to print to `line` (NUL-terminated, empty before a
+    /// trial's give-way), and returns 1 when the glue must clear bank 1's
+    /// first marker byte and reset. Flash and the register are written by
+    /// the caller.
     ///
     /// # Safety
     /// Each pointer is valid for its length (8, [`super::BANK0_BYTES`],

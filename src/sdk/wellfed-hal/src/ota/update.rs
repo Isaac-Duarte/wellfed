@@ -63,6 +63,7 @@ use crate::interlock::{INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn};
 use crate::ota::mailbox::{self, Answer, Request};
 use crate::ota::signers;
 use crate::sdk;
+use crate::trial;
 
 /// Between steps with nothing to do.
 pub const IDLE_MS: u32 = 50;
@@ -79,8 +80,6 @@ pub const SCAN_SECTORS: u32 = 8;
 pub const PROGRESS_SECTORS: u32 = 16;
 /// One page program at a time, each read back.
 const PIECE: usize = 256;
-/// The bank-0 region, as `sdk::bank0_read` takes offsets.
-const BANK0_BYTES: u32 = sdk::BANK1_OFFSET - sdk::BANK0_OFFSET;
 
 /// Everything the stage writes or reads in flash outside the update store.
 pub trait Flash {
@@ -519,7 +518,7 @@ struct Scan {
 impl Scan {
     /// Bank 0's image from its headers, or `None` when they do not give one.
     fn start(flash: &mut impl Flash) -> Option<Self> {
-        let len = image::extent(|at, header| flash.bank0(at, header), BANK0_BYTES)?;
+        let len = image::extent(|at, header| flash.bank0(at, header), trial::BANK0_BYTES)?;
         Some(Self {
             len,
             at: 0,
