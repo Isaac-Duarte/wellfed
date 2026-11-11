@@ -145,7 +145,7 @@ A `PLREV1` statement retires any key id for good. Built-in keys and the release 
 2. Running it, `R2` is built in. It signs `revoke` for `R1`, then `add-key` for itself, in that order.
 3. Bank 0 still builds in the key it was written with, and now finds `R2` in the slot, so it takes `R2`'s next offer and no longer `R1`'s.
 
-The first rotation, from a built-in key with an empty slot, needs no build: the built-in key adds `R1`, then `R1` retires it. The bench key stays in `private/ota-key.json`, for the bench only. The release key is made offline with `wellfed-build release-keygen` and never enters a checkout; consumer images build in its public half ([the release key](../development/firmware-builds.md#the-release-key)).
+The first rotation, from the built-in key `R0` with an empty slot, goes the same way: `R0` signs a build that builds in `R1`, and running it `R1` retires `R0` and adds itself. The release key never adds another key: the statement names no feeder, so it would fill the empty slot of every consumer feeder it reached, and `add-key` refuses it. The bench key stays in `private/ota-key.json`, for the bench only. The release key is made offline with `wellfed-build release-keygen` and never enters a checkout; consumer images build in its public half ([the release key](../development/firmware-builds.md#the-release-key)).
 
 **The floor** (`min_version`) is the highest version a build confirmed at.
 

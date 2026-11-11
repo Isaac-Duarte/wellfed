@@ -528,9 +528,10 @@ mod tests {
         );
 
         let added = [0x08; 32];
+        let own = release_key.public();
         assert_eq!(
-            offer::admit_statement(&release_key.add_key(&added).unwrap(), &ring),
-            Ok(KeyStatement::Add(added))
+            offer::admit_statement(&release_key.add_key(&own).unwrap(), &ring),
+            Ok(KeyStatement::Add(own))
         );
         assert_eq!(
             offer::admit_statement(&release_key.revoke(&bench_key.id()).unwrap(), &ring),

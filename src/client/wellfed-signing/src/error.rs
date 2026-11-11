@@ -45,6 +45,10 @@ pub enum KeyError {
     OwnerRevoke,
     #[error("An owner's update key signs no release-slot key (PLKEY1)")]
     OwnerAddKey,
+    /// The release key adding another key: every consumer feeder would
+    /// take it into its empty slot.
+    #[error("The release key adds only itself to the release slot, not key {added}")]
+    ReleaseAddsOther { added: String },
     /// A key retiring itself: the key that should still sign statements
     /// signs this one, and where none would be left, no key may.
     #[error("A key signs no retirement of itself; another built-in or release-slot key signs it")]

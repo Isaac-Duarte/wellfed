@@ -239,8 +239,20 @@ impl Key {
 
     /// A key statement filling the release slot with `public`, signed only
     /// by a key an image builds in, as for [`Self::revoke`].
+    ///
+    /// The release key adds only itself. Every consumer feeder trusts it,
+    /// and the statement names no feeder, so adding another key would put
+    /// that key in the empty slot of every consumer feeder the bytes reach.
+    /// A new release key arrives in a build that builds it in, which then
+    /// adds itself ([`Frozen::hand_over`]).
     pub fn add_key(&self, public: &[u8; 32]) -> Result<Vec<u8>> {
         self.require_built_in(KeyError::OwnerAddKey)?;
+        require(
+            self.scope != KeyScope::Release || *public == self.public(),
+            || KeyError::ReleaseAddsOther {
+                added: hex::Lower(&offer::key_id(public)).to_string(),
+            },
+        )?;
         Ok(self.signed(&offer::key_add_body(&self.id(), public)))
     }
 
@@ -912,7 +924,26 @@ mod tests {
         assert_eq!(key.scope(), KeyScope::Release);
         assert_eq!(hex::Lower(&key.public()).to_string(), public);
         assert!(key.revoke(&[7; 8]).is_ok());
-        assert!(key.add_key(&[8; 32]).is_ok());
+        assert!(key.add_key(&key.public()).is_ok());
+    }
+
+    /// The release key fills the slot only with itself: any other key it
+    /// added would land in the empty slot of every consumer feeder. The
+    /// bench key, which only bench builds build in, still adds any key.
+    #[test]
+    fn the_release_key_adds_only_itself() {
+        let release = Key {
+            key: SigningKey::from_bytes(&[4; 32]),
+            scope: KeyScope::Release,
+        };
+        let other = bench_key(5).public();
+        assert!(matches!(
+            release.add_key(&other),
+            Err(Error::Key(KeyError::ReleaseAddsOther { added }))
+                if added == hex::Lower(&offer::key_id(&other)).to_string()
+        ));
+        assert!(release.add_key(&release.public()).is_ok());
+        assert!(bench_key(6).add_key(&other).is_ok());
     }
 
     /// No key signs its own retirement, whatever its scope: the statement
