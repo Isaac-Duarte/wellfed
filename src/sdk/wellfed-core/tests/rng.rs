@@ -3,7 +3,9 @@
 //! source, and the pool refusing output until the start-up test and its
 //! entropy claim are met.
 
-use wellfed_core::rng::{Drbg, Error, Health, MAX_REQUEST, Pool, RESEED_INTERVAL, STARTUP_SAMPLES};
+use wellfed_core::rng::{
+    APT_WINDOW, Drbg, Error, Health, MAX_REQUEST, Pool, RESEED_INTERVAL, STARTUP_SAMPLES,
+};
 
 fn hex(text: &str) -> Vec<u8> {
     let mut out = vec![0; text.len() / 2];
@@ -64,17 +66,25 @@ fn inputs_change_the_stream() {
 }
 
 #[test]
-fn the_drbg_demands_a_reseed_and_bounds_requests() {
+fn the_drbg_bounds_a_request() {
     let mut drbg = Drbg::new(&[1; 32], &[], &[]);
     assert_eq!(
         drbg.generate(&mut vec![0; MAX_REQUEST + 1], &[]),
         Err(Error::TooLarge)
     );
-    for _ in 0..RESEED_INTERVAL {
+    drbg.bytes().unwrap();
+}
+
+/// The firmware never reseeds, so the generator must outlast any boot: far
+/// more draws than the 2^16 that once stopped it (a few weeks of unanswered
+/// NTP, or a LAN peer opening and dropping connections) still succeed.
+#[test]
+fn the_drbg_runs_past_twice_the_old_interval_without_a_reseed() {
+    const { assert!(RESEED_INTERVAL >= 1 << 48) };
+    let mut drbg = Drbg::new(&[1; 32], &[], &[]);
+    for _ in 0..1 << 17 {
         drbg.generate(&mut [0; 1], &[]).unwrap();
     }
-    assert_eq!(drbg.bytes(), Err(Error::ReseedRequired));
-    drbg.reseed(&[2; 32], &[]);
     drbg.bytes().unwrap();
 }
 
@@ -91,6 +101,40 @@ fn cutoffs_match_sp800_90b() {
         let health = Health::new(eighths);
         assert_eq!(health.repetition_cutoff(), repetition, "H = {eighths}/8");
         assert_eq!(health.proportion_cutoff(), proportion, "H = {eighths}/8");
+    }
+}
+
+/// Every claim's Adaptive Proportion cutoff, 1 to 64 eighths, as an exact
+/// binomial at 250 significant digits gives it (Python's `decimal` and
+/// `math.comb`, outside the repository). The weakest claims are where a
+/// direct sum from P(X = 0) underflowed and the cutoff came out 513.
+const PROPORTION_CUTOFFS: [u32; 64] = [
+    497, 468, 439, 410, 383, 357, 333, 311, 290, 270, 251, 234, 219, 204, 190, 177, 165, 154, 144,
+    135, 126, 118, 110, 103, 97, 90, 85, 80, 75, 70, 66, 62, 58, 55, 52, 49, 46, 43, 41, 39, 37,
+    35, 33, 31, 30, 28, 27, 25, 24, 23, 22, 21, 20, 19, 18, 18, 17, 16, 15, 15, 14, 14, 13, 13,
+];
+
+#[test]
+fn every_claim_s_proportion_cutoff_matches_the_exact_binomial() {
+    for (eighths, expected) in (1..=64).zip(PROPORTION_CUTOFFS) {
+        let cutoff = Health::new(eighths).proportion_cutoff();
+        assert_eq!(cutoff, expected, "{eighths} eighths");
+        assert!(cutoff <= APT_WINDOW, "a window can fail it");
+    }
+}
+
+/// At the weakest claims a source stuck on one value most of the time, in
+/// runs too short for the Repetition Count, still fails the Adaptive
+/// Proportion test within a few windows.
+#[test]
+fn a_biased_source_fails_at_the_weakest_claims() {
+    for eighths in 1..=3 {
+        let mut health = Health::new(eighths);
+        let biased = (0..u32::MAX).map(|n| u8::from(n % 100 == 99));
+        let failed = biased
+            .take(4 * APT_WINDOW as usize)
+            .any(|value| health.sample(value).is_err());
+        assert!(failed, "{eighths} eighths");
     }
 }
 

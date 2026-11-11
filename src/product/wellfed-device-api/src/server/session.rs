@@ -158,6 +158,8 @@ impl Server {
         *ticket = None;
 
         let joined = match outcome {
+            // Unanswered, the client cannot tell whether it joined.
+            KeyOutcome::Lost => return Err(Reason::Forgotten),
             KeyOutcome::Done | KeyOutcome::Duplicate => Joined::Enrolled {
                 role: proto_role(*role),
                 model: device.model(),
@@ -191,7 +193,7 @@ impl Server {
         if !self.slots[index].wire.tx_idle() {
             return Ok(false);
         }
-        if let Some((id, op, reply)) = self.poll_pending(index, device, record)? {
+        if let Some((id, op, reply)) = self.poll_pending(index, device, pairing, now_ms, record)? {
             return self
                 .answer(index, id, op, reply, now_ms, device, record)
                 .map(|()| true);

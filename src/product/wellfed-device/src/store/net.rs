@@ -148,8 +148,9 @@ impl<I: SlotIo> NetStore<I> {
     }
 
     /// Store `credentials`, or `None` to return to the build's, to the
-    /// other slot by the torn-write rule. A failure keeps the previous
-    /// credentials in memory.
+    /// other slot by the torn-write rule; whether flash now holds them. A
+    /// save that reports failure reads both units again,
+    /// so memory names what flash holds and the store stays writable.
     pub fn save(&mut self, credentials: Option<&Credentials>) -> bool {
         if !self.writable() || !self.units.writable() {
             return false;
@@ -161,12 +162,42 @@ impl<I: SlotIo> NetStore<I> {
             .units
             .replace(slot, from, &encode(generation, credentials))
         {
-            self.status = NetStatus::Io;
-            return false;
+            return self.reread(generation);
         }
         self.slot = slot;
         self.generation = generation;
         self.credentials = credentials.copied();
         true
+    }
+
+    /// After a save that reported failure: open the units again, so memory
+    /// names what flash holds. The save may have landed whole before the
+    /// failure was reported, or left its unit torn, which the newest-valid
+    /// rule reads past and the next save writes over; either way the store
+    /// stays writable. A re-read that fails too, or that reads less than the
+    /// store held, keeps the value from before the save, marked `Io`: the
+    /// device goes on with what it last knew rather than with nothing.
+    /// Whether the save at `generation` landed.
+    fn reread(&mut self, generation: u64) -> bool {
+        let before = (self.slot, self.generation, self.credentials);
+        let Some(io) = self.units.unbind() else {
+            self.status = NetStatus::Io;
+            return false;
+        };
+
+        // The save never touches the unit it replaces, so a store that held
+        // a record reads that record or the new one again: anything older,
+        // or nothing at all, is a misread. Taken for empty, it would let the
+        // next save erase the unit still holding the current record.
+        let held = before.1;
+        match self.open(io) {
+            NetStatus::Loaded if self.generation >= held => self.generation == generation,
+            NetStatus::Empty if held == 0 => false,
+            _ => {
+                (self.slot, self.generation, self.credentials) = before;
+                self.status = NetStatus::Io;
+                false
+            }
+        }
     }
 }

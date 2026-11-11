@@ -10,7 +10,7 @@ use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
 use wellfed_core_feeder::desiccant::Count;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
-use wellfed_device_api::mailbox::{Asked, FeederSettings, KEYS_FINISHED, KindSettings as _};
+use wellfed_device_api::mailbox::{Asked, FeederSettings, KEYS_FINISHED, KindSettings as _, Saved};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
     TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult,
@@ -51,6 +51,9 @@ pub(crate) struct Fake {
     pub(crate) today: Option<i32>,
     pub(crate) wifi_generation: u32,
     pub(crate) wifi_pending: Option<Asked<Option<Credentials>>>,
+    pub(crate) wifi_saved: Saved,
+    /// The writer's next Wi-Fi save fails: nothing saved, no event.
+    pub(crate) wifi_fails: bool,
     pub(crate) locked: Option<bool>,
     pub(crate) clients: Vec<Client>,
     pub(crate) keys_pending: Option<(u32, KeyChange)>,
@@ -185,7 +188,12 @@ impl Fake {
             let generation = self.settings.generation;
             self.record(0, EventBody::Settings { generation, by });
         }
+        if let Some(Asked { .. }) = self.wifi_pending.take_if(|_| self.wifi_fails) {
+            self.wifi_fails = false;
+            self.wifi_saved.finish(true);
+        }
         if let Some(Asked { by, .. }) = self.wifi_pending.take() {
+            self.wifi_saved.finish(false);
             self.wifi_generation += 1;
             let generation = self.wifi_generation;
             self.record(0, EventBody::Wifi { generation, by });
@@ -314,6 +322,7 @@ impl Device for Fake {
                 generation: self.wifi_generation,
                 writable: true,
                 source: WifiSource::Stored,
+                saved: self.wifi_saved,
             },
             pending: self.wifi_pending.is_some(),
         }
@@ -333,11 +342,21 @@ impl Device for Fake {
         Some(self.ticket)
     }
 
+    /// `Lost` once the change finished and left the ring, as the device
+    /// tells it.
     fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome> {
-        self.keys_done
-            .iter()
-            .find(|&&(done, _)| done == ticket)
-            .map(|&(_, outcome)| outcome)
+        if self
+            .keys_pending
+            .is_some_and(|(queued, _)| queued == ticket)
+        {
+            return None;
+        }
+        Some(
+            self.keys_done
+                .iter()
+                .find(|&&(done, _)| done == ticket)
+                .map_or(KeyOutcome::Lost, |&(_, outcome)| outcome),
+        )
     }
 
     /// A small fixed answer per section, each told apart by its values.
@@ -471,10 +490,17 @@ impl Device for Fake {
         Ok(self.ticket)
     }
 
+    /// `Lost` once the request finished and a later one's answer replaced
+    /// its own, as the device tells it.
     fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
-        self.update_done
-            .filter(|&(done, _)| done == ticket)
-            .map(|(_, answer)| answer)
+        if self.held.is_some_and(|(queued, _)| queued == ticket) {
+            return None;
+        }
+        Some(
+            self.update_done
+                .filter(|&(done, _)| done == ticket)
+                .map_or(Ok(UpdateAnswer::Lost), |(_, answer)| answer),
+        )
     }
 
     fn update_chunk(&mut self, offset: u32, _data: &[u8]) -> Result<UpdateView, FrozenRefusal> {
@@ -813,6 +839,24 @@ pub(crate) fn send_unwritten(rig: &mut Rig, client: &mut Client_, id: u8, op: Op
     client.outbox.extend(bytes);
     rig.deliver(client.slot, &mut client.outbox);
     rig.pass();
+}
+
+/// Passes with the writer held off, collecting what the session is sent:
+/// whether it heard an answer to `id`.
+pub(crate) fn answered_unwritten(rig: &mut Rig, client: &mut Client_, id: u8) -> bool {
+    let mut answered = false;
+    for _ in 0..5 {
+        rig.deliver(client.slot, &mut client.outbox);
+        rig.pass();
+        let bytes = rig.collect(client.slot);
+        if !bytes.is_empty() {
+            client.session.receive(&bytes).unwrap();
+        }
+        while let Some(incoming) = client.session.next_incoming().unwrap() {
+            answered |= matches!(incoming, Incoming::Answer { id: got, .. } if got == [id; 16]);
+        }
+    }
+    answered
 }
 
 pub(crate) fn fingerprint(secret: [u8; 32]) -> proto::Fingerprint {

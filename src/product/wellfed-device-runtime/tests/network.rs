@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use wellfed_core::wifi_task::Attempt;
 use wellfed_device::store::net::NetStore;
-use wellfed_device_api::mailbox::{WifiResult, WifiSource};
+use wellfed_device_api::mailbox::{SaveOutcome, WifiResult, WifiSource};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_runtime::network::{self, *};
 use wellfed_hal::sdk::fake;
@@ -302,10 +302,14 @@ fn changes_queue_checked_credentials_or_a_clear() {
     );
 
     let set = Credentials::new(b"net", b"password").unwrap();
-    assert!(matches!(
-        change(Some(set), None),
-        WifiResult::Current { pending: true, .. }
-    ));
+    let WifiResult::Current {
+        pending: true,
+        view,
+    } = change(Some(set), None)
+    else {
+        panic!("queued");
+    };
+    let first = view.saved.next();
     assert_eq!(change(Some(set), None), WifiResult::Busy);
     assert!(matches!(
         current(),
@@ -316,14 +320,30 @@ fn changes_queue_checked_credentials_or_a_clear() {
         (queued.ssid(), queued.psk()),
         (&b"net"[..], &b"password"[..])
     );
-    finish();
+    finish(true);
 
-    assert!(matches!(
-        change(None, None),
-        WifiResult::Current { pending: true, .. }
-    ));
+    // Each change finishes as the number its queue named, and a failed save
+    // reads as failed after the writer is done, not as saved.
+    let WifiResult::Current {
+        pending: true,
+        view,
+    } = change(None, None)
+    else {
+        panic!("queued");
+    };
+    let second = view.saved.next();
+    assert_eq!(second, first.wrapping_add(1));
     assert_eq!(pending(), Some(None));
-    finish();
+    finish(false);
+    let WifiResult::Current {
+        pending: false,
+        view,
+    } = current()
+    else {
+        panic!("nothing pending");
+    };
+    assert_eq!(view.saved.outcome(first), SaveOutcome::Failed);
+    assert_eq!(view.saved.outcome(second), SaveOutcome::Done);
 }
 
 #[test]

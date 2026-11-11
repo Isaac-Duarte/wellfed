@@ -339,7 +339,7 @@ fn a_proven_ask_enrolls_saves_the_wifi_and_reboots() {
         panic!("the credentials are queued")
     };
     assert_eq!(credentials.ssid(), b"Lab-B");
-    network::finish();
+    network::finish(false);
     publish(1, Some(credentials));
     bench.step(None);
 
@@ -499,7 +499,7 @@ fn a_proven_ask_completes_even_if_the_client_leaves_and_returns() {
     let Some(Some(credentials)) = network::pending() else {
         panic!("the Wi-Fi still follows the enrollment")
     };
-    network::finish();
+    network::finish(false);
     publish(1, Some(credentials));
     bench.step(None);
     assert!(
@@ -520,7 +520,7 @@ fn the_owner_hears_each_press_then_the_outcome() {
     let Some(Some(credentials)) = network::pending() else {
         panic!("the credentials are queued")
     };
-    network::finish();
+    network::finish(false);
     publish(1, Some(credentials));
 
     let mut expected = vec![Tune::Key; PRESSES];

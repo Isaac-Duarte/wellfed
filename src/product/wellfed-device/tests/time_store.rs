@@ -78,6 +78,26 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
                 assert!(s.save(&settings(n)));
             }
             f.budget = cut;
+            let saved = s.save(&settings(9));
+            f.budget = -1;
+
+            // The store's own memory names what flash holds, says whether
+            // the save landed, and takes the next save without a restart.
+            let held = open(&mut f).settings;
+            assert_eq!(s.settings, held, "{order:?} history {history} cut {cut}");
+            assert_eq!(saved, held == settings(9));
+            assert!(
+                s.save(&settings(8)),
+                "{order:?} history {history} cut {cut}"
+            );
+            assert_eq!(open(&mut f).settings, settings(8));
+
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
+            let mut s = open(&mut f);
+            for n in 0..history {
+                assert!(s.save(&settings(n)));
+            }
+            f.budget = cut;
             let _ = s.save(&settings(9));
             f.budget = -1;
 
@@ -147,4 +167,49 @@ fn records_that_fail_their_checks_are_not_read() {
             "{name}"
         );
     }
+}
+
+/// A save that fails and whose re-read fails too keeps the settings from
+/// before it, marked `Io`, rather than the defaults.
+#[test]
+fn a_failed_save_whose_reread_fails_keeps_the_old_settings() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&settings(1)));
+
+    f.budget = 0;
+    f.reads_fail = true;
+    assert!(!s.save(&settings(2)));
+    assert_eq!(
+        (s.status, s.generation, s.settings),
+        (TimeStatus::Io, 1, settings(1))
+    );
+    assert!(!s.writable());
+
+    f.budget = -1;
+    f.reads_fail = false;
+    assert_eq!(open(&mut f).settings, settings(1));
+}
+
+/// A re-read after a failed save that misreads both units as erased is
+/// not taken for an empty store: the settings stay, marked `Io`, and the
+/// next save is refused rather than erase the unit holding them.
+#[test]
+fn a_reread_that_reads_nothing_after_a_failed_save_is_a_misread() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&settings(1)));
+
+    f.budget = 0;
+    f.reads_erased = true;
+    assert!(!s.save(&settings(2)));
+    assert_eq!(
+        (s.status, s.generation, s.settings),
+        (TimeStatus::Io, 1, settings(1))
+    );
+
+    f.budget = -1;
+    f.reads_erased = false;
+    assert!(!s.save(&settings(3)), "closed to writes");
+    assert_eq!(open(&mut f).settings, settings(1));
 }

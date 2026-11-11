@@ -24,7 +24,7 @@ use wellfed_core::tone::Tune;
 use wellfed_device::update as wire;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
-    Asked, LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView,
+    Asked, LockResult, Origin, PlayResult, Saved, SettingsFields, SettingsResult, SettingsView,
     TimeFields, TimeResult, WifiResult, WifiSource, WifiView,
 };
 use wellfed_device_api::pairing::{Config, Pairing};
@@ -421,6 +421,7 @@ impl Device for Feeder {
                 generation: 1,
                 writable: true,
                 source: WifiSource::Stored,
+                saved: Saved::default(),
             },
             pending: false,
         }

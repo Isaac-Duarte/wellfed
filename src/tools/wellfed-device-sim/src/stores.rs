@@ -87,6 +87,7 @@ pub struct DeviceStores<S: KindStore = ()> {
     settings_repair: bool,
     net: NetStore<Region>,
     wifi_pending: Option<(Option<Credentials>, Option<Stamp>)>,
+    wifi_saved: Saved,
     time: TimeStore<Region>,
     time_pending: Option<TimeSettings>,
     clients: ClientStore<Region>,
@@ -172,6 +173,7 @@ impl<S: KindStore> DeviceStores<S> {
             settings_repair: false,
             net,
             wifi_pending: None,
+            wifi_saved: Saved::default(),
             time,
             time_pending: None,
             clients,
@@ -316,6 +318,7 @@ impl<S: KindStore> DeviceStores<S> {
             generation: u32::try_from(self.net.generation).unwrap_or(u32::MAX),
             writable: self.net.writable(),
             source: self.wifi_source(),
+            saved: self.wifi_saved,
         }
     }
 
@@ -493,16 +496,17 @@ impl<S: KindStore> DeviceStores<S> {
             let failed = self.save_settings(&fields, asked);
             self.settings_saved.finish(failed);
         }
-        if let Some((credentials, asked)) = self.wifi_pending.take()
-            && self.net.save(credentials.as_ref())
-            && let Some(asked) = asked
-        {
-            let generation = u32::try_from(self.net.generation).unwrap_or(u32::MAX);
-            let body = EventBody::Wifi {
-                generation,
-                by: asked.by,
-            };
-            self.append_written(asked.at, &body);
+        if let Some((credentials, asked)) = self.wifi_pending.take() {
+            let saved = self.net.save(credentials.as_ref());
+            if saved && let Some(asked) = asked {
+                let generation = u32::try_from(self.net.generation).unwrap_or(u32::MAX);
+                let body = EventBody::Wifi {
+                    generation,
+                    by: asked.by,
+                };
+                self.append_written(asked.at, &body);
+            }
+            self.wifi_saved.finish(!saved);
         }
         if let Some(settings) = self.time_pending.take() {
             self.time.save(&settings);

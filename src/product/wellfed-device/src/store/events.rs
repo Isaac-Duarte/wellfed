@@ -303,12 +303,22 @@ impl<I: SlotIo> EventLog<I> {
                 body: *body,
             },
         );
-        let unit = &mut self.table[self.head];
-        let slot = unit.free;
-        unit.free += 1;
-        if !io.program(unit_id(self.head), slot * RECORD_U32, &record) {
+        let slot = self.table[self.head].free;
+        self.table[self.head].free += 1;
+
+        // A program that reports failure may have landed whole (`SlotIo`).
+        // If the slot holds this record, its number is taken: reusing it
+        // would serve this record under the number the next append reports
+        // as its own. Anything else fails its check and is read past, so the
+        // next append takes the number again. A read-back that fails too is
+        // taken as not landed: publishing a number with no record behind it
+        // would be no better.
+        if !io.program(unit_id(self.head), slot * RECORD_U32, &record)
+            && self.read_slot(self.head, slot) != Some(record)
+        {
             return Err(EventError::Io);
         }
+        let unit = &mut self.table[self.head];
         unit.span = Some(unit.span.map_or((seq, seq), |(first, _)| (first, seq)));
         unit.epoch = self.epoch;
         self.next_seq = seq + 1;

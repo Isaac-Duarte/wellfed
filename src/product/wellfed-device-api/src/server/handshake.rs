@@ -84,16 +84,21 @@ impl Server {
         match &mut slot.phase {
             Phase::Starting(open) => {
                 let open = *open;
+                // What the open names is checked before the generator is
+                // drawn on: a stranger naming no live invite costs nothing.
+                let (pattern, psk) = match open {
+                    Open::Session => (Pattern::Ik, None),
+                    Open::Invite { id } => (
+                        Pattern::XxPsk3,
+                        Some(pairing.invite_secret(now_ms, id).ok_or(Reason::Invite)?),
+                    ),
+                    // `handshake_turn` sends recovery slots to `rescue_op`.
+                    Open::Recovery => return Err(Reason::Recovery),
+                };
                 let mut ephemeral = [0; 32];
                 if !device.random(&mut ephemeral) {
                     return Err(Reason::NotReady);
                 }
-                let pattern = match open {
-                    Open::Session => Pattern::Ik,
-                    Open::Invite { .. } => Pattern::XxPsk3,
-                    // `handshake_turn` sends recovery slots to `rescue_op`.
-                    Open::Recovery => return Err(Reason::Recovery),
-                };
                 let mut handshake = Handshake::new(
                     pattern,
                     NoiseRole::Responder,
@@ -103,8 +108,7 @@ impl Server {
                     ephemeral,
                 )
                 .map_err(|_| Reason::Noise)?;
-                if let Open::Invite { id } = open {
-                    let psk = pairing.invite_secret(now_ms, id).ok_or(Reason::Invite)?;
+                if let Some(psk) = psk {
                     handshake.set_psk(psk);
                 }
                 slot.phase = Phase::Handshake {

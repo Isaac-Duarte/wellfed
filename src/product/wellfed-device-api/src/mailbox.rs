@@ -298,6 +298,11 @@ pub struct WifiView {
     pub generation: u32,
     pub writable: bool,
     pub source: WifiSource,
+    /// How the writer finished the changes it took this boot: a client's
+    /// write waits on its own (`Saved::next` when it was queued), since a
+    /// store that is no longer pending says only that the writer finished,
+    /// not that the save landed.
+    pub saved: Saved,
 }
 
 /// How a `wifi` request ended.

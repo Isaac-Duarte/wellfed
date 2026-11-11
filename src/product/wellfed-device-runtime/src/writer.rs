@@ -1580,8 +1580,9 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                     }
                 }
             };
+            let failed = matches!(record, Record::NetError { .. });
             self.publish();
-            network::finish();
+            network::finish(failed);
             return next(POLL_MS, Some(record));
         }
         if let Some(settings) = time::pending() {

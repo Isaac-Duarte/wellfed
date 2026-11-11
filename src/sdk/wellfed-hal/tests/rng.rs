@@ -34,6 +34,22 @@ fn a_noisy_adc_starts_the_generator() {
     assert_ne!(rng::bytes().unwrap(), a);
 }
 
+/// Nothing reseeds the generator after boot, so it serves every draw a
+/// boot makes: past twice the 2^16 requests that once stopped it, which an
+/// unanswered NTP server's nonces reached in weeks and a LAN peer opening
+/// and dropping connections in minutes, it still fills.
+#[test]
+fn the_generator_outlasts_a_boot_s_draws() {
+    noisy();
+    assert_eq!(rng::start().result, Ok(()));
+
+    let mut nonce = [0; 8];
+    for _ in 0..1 << 17 {
+        assert!(rng::fill(&mut nonce));
+    }
+    assert!(rng::bytes().is_some());
+}
+
 #[test]
 fn a_steady_adc_fails_health_and_leaves_no_generator() {
     noisy();

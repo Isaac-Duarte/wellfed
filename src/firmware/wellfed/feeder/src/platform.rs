@@ -466,6 +466,10 @@ impl Platform for Plaf103 {
         mailbox::outcome(ticket)
     }
 
+    fn update_lost(&mut self, ticket: u32) -> bool {
+        mailbox::lost(ticket)
+    }
+
     fn update_chunk(&mut self, offset: u32, data: &[u8]) -> Result<(), Refused> {
         mailbox::chunk(offset, data)
     }

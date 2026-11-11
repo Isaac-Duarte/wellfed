@@ -348,6 +348,9 @@ pub enum UpdateAnswer {
         change: UpdateKeyChange,
         id: KeyId,
     },
+    /// The request finished, and a later one's answer replaced its own:
+    /// what it did can no longer be told.
+    Lost,
 }
 
 /// A client store change the device API asks for. Each names what its
@@ -399,6 +402,9 @@ pub enum KeyOutcome {
     Duplicate,
     NotFound,
     NotWritable,
+    /// The change finished, and its result left the few the mailbox keeps
+    /// before anyone read it: what it did can no longer be told.
+    Lost,
 }
 
 /// The session slot a subscriber reads events from, below

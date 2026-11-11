@@ -33,10 +33,21 @@ named_enum! {
         NotReady = "not-ready",
         /// An invite redemption finished.
         Joined = "joined",
+        /// Nobody can say what a write did: its outcome was gone before it
+        /// was read, or a retried id left its client's memory first. The
+        /// session ends, so its client holds the write as unanswered rather
+        /// than hear an answer that may be wrong.
+        Forgotten = "forgotten",
     }
 }
 
 /// What the firmware logs (`PLAPI1`). No record carries a key or a secret.
+///
+/// A `slot` of `u8::MAX` (`slot=255` in the log) names no session: a
+/// connection refused for want of a slot, or a write settled after its
+/// session ended. No reader of the log bounds it by [`SESSIONS`].
+///
+/// [`SESSIONS`]: crate::SESSIONS
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record {
     Accepted {

@@ -16,9 +16,9 @@ use wellfed_core::tone::Tune;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     Asked, Calibration, CalibrationResult, CalibrationView, LockResult, MealSkip, Origin,
-    PlansResult, PlansView, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
-    TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult,
-    WifiSource, WifiView,
+    PlansResult, PlansView, PlayResult, Saved, SettingsFields, SettingsResult, SettingsView,
+    TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState,
+    WifiResult, WifiSource, WifiView,
 };
 use wellfed_device_api::pairing::{Config, Pairing};
 use wellfed_device_api::setup::{Received, Responder};
@@ -271,6 +271,7 @@ impl Device for Fake {
                 generation: self.wifi_generation,
                 writable: true,
                 source: WifiSource::Stored,
+                saved: Saved::default(),
             },
             pending: false,
         }

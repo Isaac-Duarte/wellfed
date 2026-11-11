@@ -16,7 +16,7 @@ use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::sdk::{self, fake};
 use wellfed_sdk::storage::SETTINGS_BASE;
 
-use crate::support::{ATTEMPT_SEEN, current, start, step};
+use crate::support::{ATTEMPT_SEEN, PROGRAM_FAILS, current, start, step};
 
 #[test]
 fn changes_are_saved_once_each_inside_a_marked_attempt() {
@@ -206,6 +206,55 @@ fn wifi_credentials_are_saved_inside_a_marked_attempt_and_cleared() {
             event: WriteEvent::None,
         })
     );
+}
+
+/// A Wi-Fi save the flash refuses is published as failed, so a client's
+/// write waiting on it is refused rather than told it saved, and the store
+/// takes the next save without a restart.
+#[test]
+fn a_failed_wifi_save_is_published_as_failed_and_the_next_one_saves() {
+    use wellfed_device_api::mailbox::{SaveOutcome, WifiResult};
+    use wellfed_device_api::wifi::Credentials;
+    use wellfed_device_runtime::writer::ErrorStage;
+
+    let (_guard, mut writer, mut provider) = start();
+    for _ in 0..7 {
+        step(&mut writer, &mut provider); // the stores open, and the boot's stats save
+    }
+    let set = Credentials::new(b"net", b"password").unwrap();
+    let queued = |credentials| match network::change(credentials, None) {
+        WifiResult::Current {
+            view,
+            pending: true,
+        } => view.saved.next(),
+        other => panic!("not queued: {other:?}"),
+    };
+    let finished = |change| match network::current() {
+        WifiResult::Current {
+            view,
+            pending: false,
+        } => view.saved.outcome(change),
+        other => panic!("still pending: {other:?}"),
+    };
+
+    PROGRAM_FAILS.with(|f| f.set(true));
+    let failed = queued(Some(set));
+    assert_eq!(
+        step(&mut writer, &mut provider),
+        Some(Record::NetError {
+            stage: ErrorStage::Save
+        })
+    );
+    PROGRAM_FAILS.with(|f| f.set(false));
+    assert_eq!(finished(failed), SaveOutcome::Failed);
+
+    let saved = queued(Some(set));
+    assert!(matches!(
+        step(&mut writer, &mut provider),
+        Some(Record::NetSaved { stored: true, .. })
+    ));
+    assert_eq!(finished(saved), SaveOutcome::Done);
+    assert_eq!(finished(failed), SaveOutcome::Failed);
 }
 
 #[test]

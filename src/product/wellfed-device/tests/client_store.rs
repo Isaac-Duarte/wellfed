@@ -117,14 +117,23 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
             let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
             let mut s = saved(&mut f);
             f.budget = cut;
-            let _ = s.enroll([9; 32], label("new"), Role::Owner);
+            let enrolled = s.enroll([9; 32], label("new"), Role::Owner);
             f.budget = -1;
 
+            // The store's own memory names what flash holds, and says so:
+            // a save cut after it landed whole is saved.
             let found = keys(&mut f);
             assert!(
                 found == old || found == new,
                 "{order:?} history {history} cut {cut}"
             );
+            let held: Vec<[u8; 32]> = s.clients().map(|c| c.key).collect();
+            assert_eq!(held, found, "{order:?} history {history} cut {cut}");
+            assert_eq!(enrolled.is_ok(), found == new);
+            if found == new {
+                s.revoke(&[9; 32]).unwrap();
+                assert_eq!(keys(&mut f), old, "a landed enrollment revokes");
+            }
             let mut r = open(&mut f);
             assert!(
                 r.writable(),
@@ -138,8 +147,11 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
     }
 }
 
+/// A write that fails keeps the previous table, and the store, having read
+/// its units again, takes the next write rather than refusing every write
+/// until a restart.
 #[test]
-fn a_failed_write_keeps_the_previous_table() {
+fn a_failed_write_keeps_the_previous_table_and_the_store_writable() {
     let mut f = FakeJournalFlash::with_unit(UNIT);
     let mut s = open(&mut f);
     s.enroll([1; 32], label("a"), Role::Owner).unwrap();
@@ -149,10 +161,8 @@ fn a_failed_write_keeps_the_previous_table() {
         Err(ClientError::Io)
     );
     assert_eq!(s.clients().count(), 1);
-    assert_eq!(
-        s.enroll([2; 32], label("b"), Role::Member),
-        Err(ClientError::NotWritable)
-    );
+    s.enroll([2; 32], label("b"), Role::Member).unwrap();
+    assert_eq!(keys(&mut f), [[1; 32], [2; 32]]);
 }
 
 #[test]
@@ -294,4 +304,55 @@ fn a_failed_read_of_either_unit_serves_no_table() {
         assert!(!r.writable(), "read {fail}");
     }
     assert!(keys(&mut f).is_empty(), "the revocation stands");
+}
+
+/// A save that fails and whose re-read fails too leaves no clients and a
+/// store closed to writes: the clients fail closed, as a boot whose read
+/// fails does, so every session ends until a restart reads the table.
+#[test]
+fn a_failed_save_whose_reread_fails_fails_closed() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    s.enroll([1; 32], label("a"), Role::Owner).unwrap();
+
+    f.budget = 0;
+    f.reads_fail = true;
+    assert_eq!(
+        s.enroll([2; 32], label("b"), Role::Member),
+        Err(ClientError::Io)
+    );
+    assert_eq!(s.status, ClientStatus::Io);
+    assert_eq!(s.clients().count(), 0);
+    assert!(!s.writable());
+
+    f.budget = -1;
+    f.reads_fail = false;
+    assert_eq!(keys(&mut f), [[1; 32]]);
+}
+
+/// A re-read after a failed save that misreads both units as erased is
+/// not taken for an empty store, which would be open to writes: the
+/// clients fail closed, and the unit holding the table is left alone.
+#[test]
+fn a_reread_that_reads_nothing_after_a_failed_save_fails_closed() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    s.enroll([1; 32], label("a"), Role::Owner).unwrap();
+
+    f.budget = 0;
+    f.reads_erased = true;
+    assert_eq!(
+        s.enroll([2; 32], label("b"), Role::Member),
+        Err(ClientError::Io)
+    );
+    assert_eq!(s.status, ClientStatus::Io);
+    assert_eq!(s.clients().count(), 0);
+
+    f.budget = -1;
+    f.reads_erased = false;
+    assert_eq!(
+        s.enroll([3; 32], label("c"), Role::Member),
+        Err(ClientError::NotWritable)
+    );
+    assert_eq!(keys(&mut f), [[1; 32]]);
 }

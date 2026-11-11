@@ -193,6 +193,9 @@ impl Server {
                     return Ok(false);
                 };
                 let enrolled = match outcome {
+                    // Unanswered, the client cannot tell whether it was
+                    // enrolled.
+                    KeyOutcome::Lost => return Err(Reason::Forgotten),
                     KeyOutcome::Done => SetupEnrolled::New,
                     KeyOutcome::Duplicate => SetupEnrolled::Already,
                     KeyOutcome::Full => {

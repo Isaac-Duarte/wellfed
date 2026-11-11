@@ -1,10 +1,10 @@
 //! One request: who may run it, what it asks of the device, and its
 //! compact answer.
 
-use super::feeder::{self, FeederAction, FeederMemory, FeederReply, FeederWait};
+use super::feeder::{self, FeederAction, FeederReply};
 use super::handshake::{find, fingerprint, invite};
-use super::memory::Remembered;
-use super::{Phase, Server, Waiting, slot_id};
+use super::memory::{Recall, Remembered, recall};
+use super::{Phase, Server, Wait, Waiting, slot_id};
 use crate::access::Access;
 use crate::clients::{Label, Role};
 use crate::mailbox::{
@@ -49,29 +49,13 @@ impl Server {
             record(Record::Retried {
                 slot: slot_id(index),
             });
-            return Some(match remembered {
-                Remembered::Done(generation) => Reply::Done(generation),
-                Remembered::Refused(refusal) => Reply::Refused(refusal),
-                Remembered::Invite { id } => pairing
-                    .invite_secret(now_ms, id)
-                    .map_or(Reply::Refused(Refusal::NotFound), |secret| {
-                        Reply::Invite(invite(id, secret))
-                    }),
-                Remembered::Feeder(FeederMemory::Feeding { feed }) => {
-                    Reply::Feeder(FeederReply::Feeding(feed))
-                }
-                Remembered::Feeder(FeederMemory::Queued { feed }) => {
-                    return self.wait(
-                        index,
-                        id,
-                        action,
-                        Waiting::Feeder(FeederWait::Feed { feed }),
-                    );
-                }
-                Remembered::Update => device
-                    .update_view()
-                    .map_or(Reply::Refused(Refusal::Unavailable), Reply::Update),
-            });
+            // A write still under way, or one whose outcome is lost, goes
+            // through the pending poll, which waits on the first or ends
+            // this session unanswered.
+            return match recall(remembered, device, pairing, now_ms) {
+                Recall::Answer(reply) => Some(reply),
+                Recall::Waiting | Recall::Lost => self.wait(index, id, action, Waiting::Retry),
+            };
         }
         if !access.allows(proto_role(role)) {
             let outcome = Reply::Refused(Refusal::Forbidden);
@@ -90,7 +74,7 @@ impl Server {
             Action::Alive => Reply::Done(None),
             Action::Status => Reply::Status,
             Action::PutWifi { base, wifi } => match put_wifi(base, wifi, by, device) {
-                Ok(()) => return self.wait(index, id, action, Waiting::Wifi),
+                Ok(change) => return self.queued(index, id, action, Wait::Wifi { change }),
                 Err(refusal) => Reply::Refused(refusal),
             },
             Action::TimeSync(fields) => match device.time_sync(fields, origin(role)) {
@@ -126,8 +110,7 @@ impl Server {
                 if find(&self.clients, &revoked).is_none() {
                     Reply::Refused(Refusal::NotFound)
                 } else if let Some(ticket) = device.keys(KeyChange::Revoke { key: revoked, by }) {
-                    let waiting = Waiting::Keys { ticket };
-                    return self.wait(index, id, action, waiting);
+                    return self.queued(index, id, action, Wait::Keys { ticket });
                 } else {
                     Reply::Refused(Refusal::Busy)
                 }
@@ -140,7 +123,7 @@ impl Server {
                 }
             },
             Action::PutTime { base, zone, ntp } => match put_time(base, zone, ntp, device) {
-                Ok(digest) => return self.wait(index, id, action, Waiting::Time { digest }),
+                Ok(digest) => return self.queued(index, id, action, Wait::Time { digest }),
                 Err(refusal) => Reply::Refused(refusal),
             },
             Action::Invalid => Reply::Refused(Refusal::Invalid),
@@ -154,7 +137,7 @@ impl Server {
             }
             Action::OfferUpdate | Action::CancelUpdate | Action::UpdateKeyStatement => {
                 match self.update_request(action, device) {
-                    Ok(ticket) => return self.wait(index, id, action, Waiting::Update { ticket }),
+                    Ok(ticket) => return self.queued(index, id, action, Wait::Update { ticket }),
                     Err(refusal) => Reply::Refused(refusal.into()),
                 }
             }
@@ -173,6 +156,16 @@ impl Server {
                     pairing::Event::Confirming { .. } => {
                         // Only this offer's press counts: a decision left
                         // over from an earlier one must not admit it.
+                        //
+                        // The one write not remembered while under way: its
+                        // press is this session's, cancelled when it ends,
+                        // so a retry on a new session asks for a press of
+                        // its own. A known exception to retries hearing the
+                        // first answer: if the first enrollment landed and
+                        // nobody presses again, the retry is refused
+                        // `Unconfirmed` though the key is enrolled. A false
+                        // refusal is possible; a false `Done` never is, since
+                        // `Done` comes only from an enrollment that landed.
                         self.signer = None;
                         let waiting = Waiting::Signer { key, label };
                         return self.wait(index, id, action, waiting);
@@ -266,7 +259,7 @@ fn put_wifi<D: Device>(
     credentials: Option<Credentials>,
     by: Source,
     device: &mut D,
-) -> Result<(), Refusal> {
+) -> Result<u32, Refusal> {
     match device.wifi(None) {
         WifiResult::Current { pending: true, .. } | WifiResult::Busy => Err(Refusal::Busy),
         WifiResult::ReadOnly => Err(Refusal::NotWritable),
@@ -278,7 +271,10 @@ fn put_wifi<D: Device>(
             change: credentials,
             by,
         })) {
-            WifiResult::Current { pending: true, .. } => Ok(()),
+            WifiResult::Current {
+                view,
+                pending: true,
+            } => Ok(view.saved.next()),
             WifiResult::Current { .. } | WifiResult::Busy => Err(Refusal::Busy),
             WifiResult::ReadOnly => Err(Refusal::NotWritable),
             WifiResult::Invalid => Err(Refusal::Invalid),

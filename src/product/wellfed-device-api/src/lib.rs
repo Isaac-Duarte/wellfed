@@ -16,9 +16,11 @@
 //!   last frame is sent, so a flood costs only its own turn.
 //! - **Every write has an id** the server remembers per client key, so a
 //!   retry, even after a reconnect, gets the first answer instead of
-//!   running again. A feed's id is remembered from the moment the feed is
-//!   queued, so a retry on a new session waits for that feed rather than
-//!   queueing another.
+//!   running again. A write the device finishes later is remembered from
+//!   the moment it is queued, so a retry on any session waits for that
+//!   write rather than running it again (refused `Stale` by its own
+//!   change, or `Busy` behind it), and a write whose session ended first
+//!   is settled by the pass, so its answer is what the device did then.
 //! - **Writes carry their base generation;** a stale one is refused with
 //!   the current generation.
 //! - **A feed is answered once it is durably reserved,** with the number

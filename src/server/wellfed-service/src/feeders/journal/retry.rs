@@ -10,8 +10,10 @@ use crate::RequestId;
 /// request id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Resend {
-    /// The feeder answers a repeated id from memory, and a write that
-    /// left it runs again harmlessly or is refused as stale.
+    /// The feeder answers a repeated id from memory, including a write
+    /// still under way, which the resend waits on. Only once the id is gone
+    /// (after a feeder restart, or once newer ids pushed it out) does the
+    /// write run again, harmlessly or refused as stale.
     SameId,
     /// Sent again only after reading the feeder's meal call: never over
     /// a change that came after the first send (`feeders/call.rs`).

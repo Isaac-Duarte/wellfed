@@ -79,9 +79,12 @@
 //! short, and taking them for another writer's would leave every store
 //! whose first save was cut refusing writes for good.
 //! The slot layer never retries a failed step; the store records the
-//! fault, and the journal and the newest-wins stores write nothing more
-//! until they are opened again (settings writes its next change to the
-//! same unit, which the rule makes as safe as the first try).
+//! fault. The journal, the seed store and the update store write nothing
+//! more until they are opened again, at the next boot. The settings, Wi-Fi,
+//! time and client stores open their units again at once, so memory names
+//! what flash holds, and write their next change to the same unit, which
+//! the rule makes as safe as the first try; one whose re-read fails, or
+//! reads less than it held, stays closed to writes until the next boot.
 //!
 //! What a state means is the store's policy, since what may be lost
 //! differs:
@@ -420,6 +423,12 @@ impl<I> DualSlot<I> {
     /// The I/O it is bound to, if any.
     pub const fn io(&self) -> Option<&I> {
         self.io.as_ref()
+    }
+
+    /// Hand the I/O back, leaving the units unbound, for a store to open
+    /// again on it.
+    pub fn unbind(&mut self) -> Option<I> {
+        self.io.take()
     }
 }
 

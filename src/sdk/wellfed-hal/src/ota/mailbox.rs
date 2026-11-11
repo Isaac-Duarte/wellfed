@@ -175,6 +175,19 @@ pub fn outcome(ticket: u32) -> Option<Result<Answer, Refused>> {
     Some(answer)
 }
 
+/// The loop's half: whether the request with `ticket` finished and its
+/// answer is gone. Only one outcome is held, and a request is queued only
+/// once the one before it has finished and published its own, so a later
+/// ticket queued with this one's outcome no longer held means a later
+/// answer replaced it: nobody can learn what it did.
+pub fn lost(ticket: u32) -> bool {
+    let held = sdk::unscheduled(|| {
+        // SAFETY: the stage writes it only with the scheduler paused.
+        unsafe { *OUTCOME.get() }
+    });
+    TICKET.load(Ordering::Acquire) != ticket && held.is_none_or(|(done, _)| done != ticket)
+}
+
 /// The loop's half: hand one chunk to the stage, or `Busy` while both
 /// slots wait to be written.
 pub fn chunk(offset: u32, data: &[u8]) -> Result<(), Refused> {

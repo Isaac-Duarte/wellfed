@@ -354,6 +354,9 @@ pub trait Platform {
     fn update_cancel(&mut self) -> Result<u32, Refused>;
     /// The answer to the request with `ticket`, once the stage has one.
     fn update_outcome(&mut self, ticket: u32) -> Option<Result<Answer, Refused>>;
+    /// Whether the request with `ticket` finished and a later one's answer
+    /// replaced its own, so it will never have one.
+    fn update_lost(&mut self, ticket: u32) -> bool;
     fn update_chunk(&mut self, offset: u32, data: &[u8]) -> Result<(), Refused>;
     /// The stage's state, once it has published one.
     fn update_progress(&mut self) -> Option<Progress>;

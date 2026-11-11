@@ -293,9 +293,9 @@ impl<I: SlotIo> ClientStore<I> {
 
     /// The enrolled clients. Like [`Self::identity`], they come from the
     /// table open loaded or the last save committed: an open that is not
-    /// `Loaded` holds none, and a save that fails keeps the table it was
-    /// opened or saved with. So nothing after an `Io` open means unknown,
-    /// not none enrolled.
+    /// `Loaded` holds none, and a save that fails reads the units again and
+    /// holds what they hold (none, if that read fails too). So nothing
+    /// after an `Io` open means unknown, not none enrolled.
     pub fn clients(&self) -> impl Iterator<Item = &Client> {
         self.table.clients.iter().flatten()
     }
@@ -354,8 +354,10 @@ impl<I: SlotIo> ClientStore<I> {
         })
     }
 
-    /// Write `table` to the other unit by the torn-write rule. A failure
-    /// keeps the previous table in memory.
+    /// Write `table` to the other unit by the torn-write rule. A save that
+    /// reports failure reads both units again: memory
+    /// then holds what flash does, so a revocation that landed takes effect
+    /// and its sessions end, and the store stays writable.
     fn save(&mut self, table: &Table) -> Result<(), ClientError> {
         if !self.writable() || !self.units.writable() {
             return Err(ClientError::NotWritable);
@@ -364,12 +366,54 @@ impl<I: SlotIo> ClientStore<I> {
         let slot = target(self.generation, self.slot);
         let from = (self.generation > 0).then_some(self.slot);
         if !self.units.replace(slot, from, &encode(generation, table)) {
-            self.status = ClientStatus::Io;
-            return Err(ClientError::Io);
+            return self.reread(generation);
         }
         self.slot = slot;
         self.generation = generation;
         self.table = *table;
         Ok(())
+    }
+
+    /// After a save that reported failure: open the units again, so memory
+    /// names what flash holds. The save may have landed whole before the
+    /// failure was reported, or left its unit torn, which the newest-valid
+    /// rule reads past and the next save writes over; either way the store
+    /// stays writable. `Ok` if the save at `generation` landed.
+    ///
+    /// A re-read that fails too, or that reads less than the store held
+    /// (only a misread can: the replaced unit is never touched), leaves the
+    /// table empty and the store `Io`,
+    /// unlike the Wi-Fi and time stores, which keep their last value: the
+    /// clients fail closed, as a boot whose read fails does, so every
+    /// session ends and none opens until a restart reads the table again.
+    /// Keeping the old table instead could keep a revocation that landed
+    /// from taking effect.
+    fn reread(&mut self, generation: u64) -> Result<(), ClientError> {
+        let held = self.generation;
+        let Some(io) = self.units.unbind() else {
+            self.status = ClientStatus::Io;
+            return Err(ClientError::Io);
+        };
+
+        // The save never touches the unit it replaces, so a store that held
+        // a table reads that table or the new one again: anything older, or
+        // nothing at all, is a misread, which fails closed as a failed read
+        // does rather than leave an empty table open to writes.
+        let status = self.open(io);
+        let read = match status {
+            ClientStatus::Loaded => self.generation >= held,
+            ClientStatus::Empty => held == 0,
+            _ => false,
+        };
+        if !read {
+            self.table = Table::EMPTY;
+            self.status = ClientStatus::Io;
+            return Err(ClientError::Io);
+        }
+        if status == ClientStatus::Loaded && self.generation == generation {
+            Ok(())
+        } else {
+            Err(ClientError::Io)
+        }
     }
 }
