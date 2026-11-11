@@ -7,6 +7,8 @@ use wellfed_model as model;
 use wellfed_model::{Answer, FeederSettingsPatch, Generation, Op};
 use wellfed_proto::api::{self as proto, EventBody};
 
+use wellfed_client::api::Incoming;
+
 use crate::support::{
     Client_, MEMBER, OWNER, Rig, ask, fingerprint, open, poll_answer, send_unwritten,
 };
@@ -70,32 +72,135 @@ fn store_events(rig: &Rig) -> Vec<EventBody> {
         .collect()
 }
 
-/// The owner's settings change or Wi-Fi clear, sent and left for the
-/// writer; the event it records.
-fn send_store_write(rig: &mut Rig, owner: &mut Client_, wifi: bool) -> EventBody {
-    let by = proto::Source::Client(fingerprint(OWNER));
+/// The owner's settings change or Wi-Fi clear over the stores as they are,
+/// and the generation it saves them at.
+fn store_write(rig: &Rig, wifi: bool) -> (Op, u32) {
     if wifi {
         let base = rig.device.wifi_generation;
         let op = Op::PutWifi {
             base: Generation(base),
             wifi: None,
         };
-        send_unwritten(rig, owner, 1, op);
-        assert!(rig.device.wifi_pending.is_some(), "queued");
-        let generation = base + 1;
-        return EventBody::Wifi { generation, by };
+        return (op, base + 1);
     }
+    let base = rig.device.settings.generation;
     let changes = FeederSettingsPatch {
         volume: Some(60),
         ..FeederSettingsPatch::default()
     };
     let op = Op::PutSettings {
-        base: Generation(7),
+        base: Generation(base),
         changes,
     };
+    (op, base + 1)
+}
+
+/// The owner's settings change or Wi-Fi clear, sent and left for the
+/// writer; the event it records.
+fn send_store_write(rig: &mut Rig, owner: &mut Client_, wifi: bool) -> EventBody {
+    let by = proto::Source::Client(fingerprint(OWNER));
+    let (op, generation) = store_write(rig, wifi);
     send_unwritten(rig, owner, 1, op);
+    if wifi {
+        assert!(rig.device.wifi_pending.is_some(), "queued");
+        return EventBody::Wifi { generation, by };
+    }
     assert!(rig.device.settings_pending.is_some(), "queued");
-    EventBody::Settings { generation: 8, by }
+    EventBody::Settings { generation, by }
+}
+
+/// Passes with the writer held off, collecting what the session is sent:
+/// whether it heard an answer to `id`.
+fn answered_unwritten(rig: &mut Rig, client: &mut Client_, id: u8) -> bool {
+    let mut answered = false;
+    for _ in 0..5 {
+        rig.deliver(client.slot, &mut client.outbox);
+        rig.pass();
+        let bytes = rig.collect(client.slot);
+        if !bytes.is_empty() {
+            client.session.receive(&bytes).unwrap();
+        }
+        while let Some(incoming) = client.session.next_incoming().unwrap() {
+            answered |= matches!(incoming, Incoming::Answer { id: got, .. } if got == [id; 16]);
+        }
+    }
+    answered
+}
+
+/// A store write whose session went before its answer still lands, and a
+/// retry under the same id, on a new session, hears that it did: `Done`
+/// at the generation it saved, never `Stale` against the generation it
+/// moved, nor `Busy` against its own change still queued. The write runs
+/// once.
+#[test]
+fn a_retried_store_write_hears_the_write_that_landed() {
+    for wifi in [false, true] {
+        // Saved before the retry came, and another write since.
+        let mut rig = Rig::new();
+        let mut owner = open(&mut rig, OWNER);
+        let (op, generation) = store_write(&rig, wifi);
+        let expected = send_store_write(&mut rig, &mut owner, wifi);
+        let records = &mut rig.records;
+        rig.server.closed(owner.slot, |r| records.push(r));
+        rig.pass();
+        rig.device.write();
+        rig.pass();
+        let mut again = open(&mut rig, OWNER);
+        let (next, _) = store_write(&rig, wifi);
+        let later = ask(&mut rig, &mut again, 2, next);
+        assert_eq!(
+            later,
+            Answer::Done {
+                generation: Some(Generation(generation + 1))
+            }
+        );
+        let retried = ask(&mut rig, &mut again, 1, op.clone());
+        assert_eq!(
+            retried,
+            Answer::Done {
+                generation: Some(Generation(generation))
+            },
+            "wifi={wifi}"
+        );
+        assert_eq!(store_events(&rig)[0], expected);
+        assert_eq!(store_events(&rig).len(), 2, "each write ran once");
+
+        // Retried while the writer still holds it: the retry waits for it.
+        // Opening a session runs the writer, so both open first.
+        let mut rig = Rig::new();
+        let mut owner = open(&mut rig, OWNER);
+        let mut again = open(&mut rig, OWNER);
+        send_store_write(&mut rig, &mut owner, wifi);
+        let records = &mut rig.records;
+        rig.server.closed(owner.slot, |r| records.push(r));
+        rig.pass();
+        send_unwritten(&mut rig, &mut again, 1, op.clone());
+        assert!(!answered_unwritten(&mut rig, &mut again, 1), "wifi={wifi}");
+        let retried = poll_answer(&mut rig, &mut again, 1, 5);
+        assert_eq!(
+            retried,
+            Some(Answer::Done {
+                generation: Some(Generation(generation))
+            }),
+            "wifi={wifi}"
+        );
+        assert_eq!(store_events(&rig), [expected]);
+
+        // Retried on a second session while the first still waits: both
+        // hear the one answer.
+        let mut rig = Rig::new();
+        let mut owner = open(&mut rig, OWNER);
+        let mut again = open(&mut rig, OWNER);
+        send_store_write(&mut rig, &mut owner, wifi);
+        send_unwritten(&mut rig, &mut again, 1, op);
+        assert!(!answered_unwritten(&mut rig, &mut again, 1), "wifi={wifi}");
+        let done = Some(Answer::Done {
+            generation: Some(Generation(generation)),
+        });
+        assert_eq!(poll_answer(&mut rig, &mut owner, 1, 5), done);
+        assert_eq!(poll_answer(&mut rig, &mut again, 1, 5), done);
+        assert_eq!(store_events(&rig), [expected]);
+    }
 }
 
 /// A session that goes once its settings or Wi-Fi change is queued: the

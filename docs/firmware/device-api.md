@@ -173,6 +173,8 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 **Writes are remembered per client key**, as [above](#messages). A settings, Wi-Fi, time, plans or calibration write names the generation it was based on, and is refused `Stale { current }` when the store has moved. The loop is the only requester, so the check and the queuing can't interleave with another writer.
 
+**A write the device finishes later is remembered from the moment it is queued,** as a feed is. A settings, Wi-Fi, time, plans, calibration, skip, meal call or revocation write, or an update offer, cancel or key statement, whose session ended before its answer still runs. A retry of its id, on any session, waits for that write and hears its answer, never `Stale` against the generation the write itself moved nor `Busy` behind its own change. Once the write's session has gone, the server settles the write on its next pass, so a retry hears what the write did, not what the store holds when the retry comes. Within the boot, as for feeds: after a restart a resent id is a new request.
+
 **Roles.**
 
 - An owner does everything, and may invite any role but an update signer.

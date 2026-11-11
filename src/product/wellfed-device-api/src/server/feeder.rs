@@ -7,9 +7,8 @@
 //! [`FeederWait`], polled with every other write (`pending`), and its
 //! answer goes out from [`Server::seal_feeder`].
 
-use super::memory::Remembered;
 use super::request::{Action, Reply};
-use super::{Server, Waiting};
+use super::{Server, Wait};
 use crate::mailbox::{
     Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, FeederFields,
     LockResult, MealReminder, MealSkip, PLANS, Plan, PlansResult, PlayResult, SaveOutcome,
@@ -93,21 +92,6 @@ pub(super) enum FeederWait {
     },
     /// The feed it waited for ended refused, before anything moved.
     FeedRefused(Refusal),
-}
-
-/// What a feeder write's id keeps for a retry.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum FeederMemory {
-    Feeding {
-        feed: u32,
-    },
-    /// A feed queued under `feed` and not yet reserved: a retry waits for
-    /// its reservation as the first request did, rather than queueing a
-    /// second feed. Remembered from the moment the feed is queued, so a
-    /// client whose session ended before the answer still gets it.
-    Queued {
-        feed: u32,
-    },
 }
 
 /// What a feeder request asks, owned, as [`Action`] is.
@@ -334,7 +318,7 @@ impl Server {
                 match put_settings(base, Asked { change: fields, by }, device) {
                     Ok(change) => {
                         let wait = FeederWait::Settings { change };
-                        return self.wait(index, id, whole, Waiting::Feeder(wait));
+                        return self.queued(index, id, whole, Wait::Feeder(wait));
                     }
                     Err(refusal) => Reply::Refused(refusal),
                 }
@@ -342,7 +326,7 @@ impl Server {
             FeederAction::ResetDesiccant => match reset_desiccant(now_ms, by, device) {
                 Ok(change) => {
                     let wait = FeederWait::Settings { change };
-                    return self.wait(index, id, whole, Waiting::Feeder(wait));
+                    return self.queued(index, id, whole, Wait::Feeder(wait));
                 }
                 Err(refusal) => Reply::Refused(refusal),
             },
@@ -382,11 +366,11 @@ impl Server {
                 base, calibration, ..
             } => match put_calibration(base, calibration, device) {
                 Ok(digest) => {
-                    return self.wait(
+                    return self.queued(
                         index,
                         id,
                         whole,
-                        Waiting::Feeder(FeederWait::Calibration { digest }),
+                        Wait::Feeder(FeederWait::Calibration { digest }),
                     );
                 }
                 Err(refusal) => Reply::Refused(refusal),
@@ -400,11 +384,11 @@ impl Server {
             },
             FeederAction::PutPlans { base } => match self.put_plans(base, by, device) {
                 Ok(revision) => {
-                    return self.wait(
+                    return self.queued(
                         index,
                         id,
                         whole,
-                        Waiting::Feeder(FeederWait::Plans { revision }),
+                        Wait::Feeder(FeederWait::Plans { revision }),
                     );
                 }
                 Err(refusal) => Reply::Refused(refusal),
@@ -413,7 +397,7 @@ impl Server {
                 match device.skip_meal(slot, due_s, Asked { change: skip, by }, now_ms) {
                     Ok(()) => {
                         let wait = FeederWait::Skip { slot, due_s, skip };
-                        return self.wait(index, id, whole, Waiting::Feeder(wait));
+                        return self.queued(index, id, whole, Wait::Feeder(wait));
                     }
                     Err(refusal) => Reply::Refused(refusal),
                 }
@@ -427,11 +411,11 @@ impl Server {
                 let change = CallChange::Start { bytes, crc };
                 match put_call(change, device) {
                     Ok(()) => {
-                        return self.wait(
+                        return self.queued(
                             index,
                             id,
                             whole,
-                            Waiting::Feeder(FeederWait::Call { change }),
+                            Wait::Feeder(FeederWait::Call { change }),
                         );
                     }
                     Err(refusal) => Reply::Refused(refusal),
@@ -440,11 +424,11 @@ impl Server {
             FeederAction::DeleteCall => match put_call(CallChange::Delete, device) {
                 Ok(()) => {
                     let change = CallChange::Delete;
-                    return self.wait(
+                    return self.queued(
                         index,
                         id,
                         whole,
-                        Waiting::Feeder(FeederWait::Call { change }),
+                        Wait::Feeder(FeederWait::Call { change }),
                     );
                 }
                 Err(refusal) => Reply::Refused(refusal),
@@ -464,13 +448,11 @@ impl Server {
                 Readiness::Blocked(blocked) => Reply::Refused(blocked.refusal()),
                 Readiness::Ready => match device.feed(portions, by) {
                     Ok(feed) => {
-                        self.memories[memory]
-                            .remember(id, Remembered::Feeder(FeederMemory::Queued { feed }));
-                        return self.wait(
+                        return self.queued(
                             index,
                             id,
                             whole,
-                            Waiting::Feeder(FeederWait::Feed { feed }),
+                            Wait::Feeder(FeederWait::Feed { feed }),
                         );
                     }
                     Err(refusal) => Reply::Refused(refusal),

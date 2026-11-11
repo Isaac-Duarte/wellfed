@@ -1,11 +1,14 @@
-//! The write ids each client's sessions have answered, kept per client key
+//! The write ids each client's sessions have asked, kept per client key
 //! so that a retry, even after a reconnect, gets the first answer instead of
-//! running again.
+//! running again: the answer once there is one, and the write under way
+//! before.
 
-use super::feeder::{FeederMemory, FeederReply};
+use super::feeder::{FeederReply, FeederWait};
+use super::handshake::invite;
 use super::request::{Action, Reply};
-use super::{Phase, Server};
-use crate::{REMEMBERED, SESSIONS};
+use super::{Phase, Server, Wait};
+use crate::pairing::Pairing;
+use crate::{Device, REMEMBERED, SESSIONS};
 use wellfed_proto::api::{Refusal, RequestId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,13 +18,19 @@ pub(super) enum Remembered {
     Invite {
         id: u32,
     },
-    /// A feeder write's.
-    Feeder(FeederMemory),
+    /// A feed reserved under `feed`.
+    Feeding {
+        feed: u32,
+    },
     /// An update op: a retry gets the update's state now.
     Update,
+    /// A write queued and not yet finished: a retry waits for it as the
+    /// first request did. Remembered from the moment the write is queued,
+    /// so a client whose session ended before the answer still gets it.
+    Waiting(Wait),
 }
 
-/// The write ids one client's sessions have answered.
+/// The write ids one client's sessions have asked.
 #[derive(Clone, Copy)]
 pub(super) struct Memory {
     key: [u8; 32],
@@ -47,24 +56,40 @@ impl Memory {
             .map(|&(_, result)| result)
     }
 
+    /// The entry at `index`, for the pass that settles writes whose
+    /// session has gone.
+    pub(super) fn entry(&self, index: usize) -> Option<(RequestId, Remembered)> {
+        self.ids.get(index).copied().flatten()
+    }
+
     /// A feed remembered as queued was refused: a retry hears that.
     pub(super) fn refuse_queued(&mut self, feed: u32, refusal: Refusal) {
         for (_, result) in self.ids.iter_mut().flatten() {
-            if *result == (Remembered::Feeder(FeederMemory::Queued { feed })) {
+            if let Remembered::Waiting(Wait::Feeder(FeederWait::Feed { feed: queued })) = *result
+                && queued == feed
+            {
                 *result = Remembered::Refused(refusal);
             }
         }
     }
 
     /// Remember `id`'s answer, replacing what an earlier stage of the same
-    /// write left (a queued feed's reservation).
+    /// write left (its wait). A new id takes the oldest entry that holds an
+    /// answer: a write under way keeps its entry until it is settled, so a
+    /// retry waiting on it never finds it gone. Writes under way number at
+    /// most one a session and those whose session went since the last pass,
+    /// far fewer than the entries.
     pub(super) fn remember(&mut self, id: RequestId, result: Remembered) {
         if let Some(entry) = self.ids.iter_mut().flatten().find(|(seen, _)| *seen == id) {
             entry.1 = result;
             return;
         }
-        self.ids[self.next] = Some((id, result));
-        self.next = (self.next + 1) % REMEMBERED;
+        let free = (0..REMEMBERED)
+            .map(|offset| (self.next + offset) % REMEMBERED)
+            .find(|&index| !matches!(self.ids[index], Some((_, Remembered::Waiting(_)))))
+            .unwrap_or(self.next);
+        self.ids[free] = Some((id, result));
+        self.next = (free + 1) % REMEMBERED;
     }
 }
 
@@ -73,9 +98,7 @@ pub(super) fn remembered(reply: Reply) -> Remembered {
         Reply::Refused(refusal) => Remembered::Refused(refusal),
         Reply::Done(generation) => Remembered::Done(generation),
         Reply::Invite(invite) => Remembered::Invite { id: invite.id },
-        Reply::Feeder(FeederReply::Feeding(feed)) => {
-            Remembered::Feeder(FeederMemory::Feeding { feed })
-        }
+        Reply::Feeder(FeederReply::Feeding(feed)) => Remembered::Feeding { feed },
         Reply::Update(_) => Remembered::Update,
         Reply::Status
         | Reply::Feeder(FeederReply::Settings(_))
@@ -89,6 +112,30 @@ pub(super) fn remembered(reply: Reply) -> Remembered {
         | Reply::Feeder(FeederReply::Call)
         | Reply::Alerts => Remembered::Done(None),
     }
+}
+
+/// What a retry of a write hears from what its id holds; `None` while the
+/// write is still under way, for the retry to wait on.
+pub(super) fn recall<D: Device>(
+    remembered: Remembered,
+    device: &mut D,
+    pairing: &mut Pairing,
+    now_ms: u32,
+) -> Option<Reply> {
+    Some(match remembered {
+        Remembered::Done(generation) => Reply::Done(generation),
+        Remembered::Refused(refusal) => Reply::Refused(refusal),
+        Remembered::Invite { id } => pairing
+            .invite_secret(now_ms, id)
+            .map_or(Reply::Refused(Refusal::NotFound), |secret| {
+                Reply::Invite(invite(id, secret))
+            }),
+        Remembered::Feeding { feed } => Reply::Feeder(FeederReply::Feeding(feed)),
+        Remembered::Update => device
+            .update_view()
+            .map_or(Reply::Refused(Refusal::Unavailable), Reply::Update),
+        Remembered::Waiting(_) => return None,
+    })
 }
 
 impl Server {

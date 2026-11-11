@@ -1,15 +1,18 @@
-//! Writes the device finishes on a later pass. The session keeps the
-//! request pending and polls it each pass, then answers it and remembers
-//! the answer once the device is done.
+//! Writes the device finishes on a later pass. A write is remembered as
+//! under way from the moment it is queued (`Remembered::Waiting`); the
+//! session that asked polls it each pass, then answers it and remembers the
+//! answer once the device is done. A retry of it, on any session, waits for
+//! that answer rather than running the write again, and a write whose
+//! session has gone is settled by the pass ([`Server::settle_left`]).
 
 use super::feeder::{self, FeederReply};
 use super::handshake::find;
-use super::memory::remembered;
+use super::memory::{Remembered, recall, remembered};
 use super::request::{Action, Name, Reply};
-use super::{Pending, Phase, Server, Waiting, slot_id};
+use super::{Pending, Phase, Server, Wait, Waiting, slot_id};
 use crate::clients::Role;
 use crate::mailbox::{NtpResult, NtpServer, Origin, SaveOutcome, TimeSettingsResult, WifiResult};
-use crate::pairing::{self, Path};
+use crate::pairing::{self, Pairing, Path};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record, UpdateAnswer, UpdateKeyChange};
 use wellfed_proto::api::{
     self as proto, DeviceMessage, Outcome, Refusal, RequestId, TimeView, UpdateRefusal,
@@ -17,7 +20,8 @@ use wellfed_proto::api::{
 use wellfed_signed::offer::key_id;
 
 impl Server {
-    /// Hold the answer until the device finishes the write.
+    /// Hold the answer until the device finishes the write: one the session
+    /// waits on alone (an update key's press), or a retry of one under way.
     pub(super) fn wait(
         &mut self,
         index: usize,
@@ -35,11 +39,71 @@ impl Server {
         None
     }
 
+    /// Hold the answer until the device finishes the write just queued, and
+    /// remember the wait under its id at once: a retry, on this session or
+    /// on another after a reconnect, waits for this write instead of running
+    /// it again, and the pass settles it if this session goes first.
+    pub(super) fn queued(
+        &mut self,
+        index: usize,
+        id: RequestId,
+        action: Action,
+        wait: Wait,
+    ) -> Option<Reply> {
+        if let Phase::Open { memory, .. } = self.slots[index].phase {
+            self.memories[memory].remember(id, Remembered::Waiting(wait));
+        }
+        self.wait(index, id, action, Waiting::Write(wait))
+    }
+
+    /// Settle every write whose session has gone, so its client's memory
+    /// holds the answer for a retry, and holds it as the device finished it
+    /// rather than as the stores read when the retry comes. A write its own
+    /// session still waits on is that session's to poll. Out of line, so
+    /// its polls stay out of `step`'s frame.
+    #[inline(never)]
+    pub(super) fn settle_left<D: Device>(
+        &mut self,
+        device: &mut D,
+        record: &mut impl FnMut(Record),
+    ) {
+        for memory in 0..self.memories.len() {
+            for entry in 0..crate::REMEMBERED {
+                let Some((id, Remembered::Waiting(wait))) = self.memories[memory].entry(entry)
+                else {
+                    continue;
+                };
+                let asking = self.slots.iter().any(|slot| {
+                    matches!(
+                        slot.phase,
+                        Phase::Open {
+                            memory: held,
+                            pending: Some(Pending {
+                                id: waited,
+                                waiting: Waiting::Write(_),
+                                ..
+                            }),
+                            ..
+                        } if held == memory && waited == id
+                    )
+                });
+                if asking {
+                    continue;
+                }
+                if let Some(reply) = poll(wait, u8::MAX, device, record) {
+                    self.memories[memory].remember(id, remembered(reply));
+                }
+            }
+        }
+    }
+
     /// A pending write's answer, once the device has finished it.
     pub(super) fn poll_pending<D: Device>(
         &mut self,
         index: usize,
         device: &mut D,
+        pairing: &mut Pairing,
+        now_ms: u32,
         record: &mut impl FnMut(Record),
     ) -> Result<Option<(RequestId, &'static str, Reply)>, Reason> {
         let Phase::Open {
@@ -52,65 +116,27 @@ impl Server {
         };
 
         let outcome = match pending.waiting {
-            Waiting::Feeder(wait) => match device.feeder() {
-                Some(feeder) => match feeder::poll(wait, feeder) {
-                    Some(reply) => reply,
-                    None => return Ok(None),
-                },
-                None => Reply::Refused(Refusal::Unavailable),
+            Waiting::Write(wait) => match poll(wait, slot_id(index), device, record) {
+                Some(reply) => reply,
+                None => return Ok(None),
             },
-            // The writer's outcome for this change decides: a store no
-            // longer pending says only that the writer finished, and a save
-            // it could not make (unarmed, or refused) leaves the old
-            // credentials. It recorded the `Wifi` event as it saved one.
-            Waiting::Wifi { change } => match device.wifi(None) {
-                WifiResult::Current { view, .. } => match view.saved.outcome(change) {
-                    SaveOutcome::Pending => return Ok(None),
-                    SaveOutcome::Done => Reply::Done(Some(view.generation)),
-                    SaveOutcome::Failed => Reply::Refused(Refusal::NotWritable),
-                },
-                WifiResult::Busy => return Ok(None),
-                WifiResult::ReadOnly | WifiResult::Invalid => Reply::Refused(Refusal::NotWritable),
-            },
-            // No event: the history's settings events carry the settings
-            // store's generation, and the time settings have their own. A
-            // write the writer could not make (unarmed, or a failed save)
-            // leaves the store as it was: refused, never `Done`.
-            Waiting::Time { digest } => match device.time_settings(None) {
-                TimeSettingsResult::Current {
-                    view,
-                    pending: false,
-                } if view.settings.digest() == digest => Reply::Done(Some(view.generation)),
-                TimeSettingsResult::Current { pending: false, .. } => {
-                    Reply::Refused(Refusal::NotWritable)
-                }
-                TimeSettingsResult::Current { pending: true, .. } | TimeSettingsResult::Busy => {
+            // The write's own session, or the pass once it has gone, settles
+            // it; a retry hears what the memory holds then, as any retry
+            // does. The memory keeps a write under way for as long as a
+            // session of its client is open (`Memory::remember`), so this
+            // session cannot lose it.
+            Waiting::Retry => {
+                let remembered = self.memories[memory]
+                    .find(&pending.id)
+                    .ok_or(Reason::Forgotten)?;
+                let Some(reply) = recall(remembered, device, pairing, now_ms) else {
                     return Ok(None);
+                };
+                if let Phase::Open { pending, .. } = &mut self.slots[index].phase {
+                    *pending = None;
                 }
-                TimeSettingsResult::ReadOnly | TimeSettingsResult::Unserved => {
-                    Reply::Refused(Refusal::NotWritable)
-                }
-            },
-            // The writer recorded the revocation as it made it.
-            Waiting::Keys { ticket } => match device.keys_outcome(ticket) {
-                None => return Ok(None),
-                Some(KeyOutcome::Done) => Reply::Done(None),
-                Some(KeyOutcome::NotFound) => Reply::Refused(Refusal::NotFound),
-                Some(_) => Reply::Refused(Refusal::NotWritable),
-            },
-            Waiting::Update { ticket } => match device.update_outcome(ticket) {
-                None => return Ok(None),
-                Some(Ok(UpdateAnswer::View(view))) => Reply::Update(view),
-                Some(Ok(UpdateAnswer::Key { change, id })) => {
-                    record(Record::UpdateKey {
-                        slot: slot_id(index),
-                        change,
-                        key: id,
-                    });
-                    Reply::Done(None)
-                }
-                Some(Err(refusal)) => Reply::Refused(refusal.into()),
-            },
+                return Ok(Some((pending.id, pending.op, reply)));
+            }
             Waiting::Signer { key, label } => match self.signer {
                 Some(pairing::Event::Admit {
                     path: Path::Signer, ..
@@ -281,6 +307,73 @@ fn signer_landed(slot: u8, key: &[u8; 32], record: &mut impl FnMut(Record)) {
         change: UpdateKeyChange::Enrolled,
         key: key_id(key),
     });
+}
+
+/// A write's answer once the device has finished it; `None` while it is
+/// still under way. `slot` names the session whose answer it is in the
+/// log, `u8::MAX` for one that has gone.
+fn poll<D: Device>(
+    wait: Wait,
+    slot: u8,
+    device: &mut D,
+    record: &mut impl FnMut(Record),
+) -> Option<Reply> {
+    Some(match wait {
+        Wait::Feeder(wait) => match device.feeder() {
+            Some(feeder) => feeder::poll(wait, feeder)?,
+            None => Reply::Refused(Refusal::Unavailable),
+        },
+        // The writer's outcome for this change decides: a store no longer
+        // pending says only that the writer finished, and a save it could
+        // not make (unarmed, or refused) leaves the old credentials. It
+        // recorded the `Wifi` event as it saved one.
+        Wait::Wifi { change } => match device.wifi(None) {
+            WifiResult::Current { view, .. } => match view.saved.outcome(change) {
+                SaveOutcome::Pending => return None,
+                SaveOutcome::Done => Reply::Done(Some(view.generation)),
+                SaveOutcome::Failed => Reply::Refused(Refusal::NotWritable),
+            },
+            WifiResult::Busy => return None,
+            WifiResult::ReadOnly | WifiResult::Invalid => Reply::Refused(Refusal::NotWritable),
+        },
+        // No event: the history's settings events carry the settings
+        // store's generation, and the time settings have their own. A
+        // write the writer could not make (unarmed, or a failed save)
+        // leaves the store as it was: refused, never `Done`.
+        Wait::Time { digest } => match device.time_settings(None) {
+            TimeSettingsResult::Current {
+                view,
+                pending: false,
+            } if view.settings.digest() == digest => Reply::Done(Some(view.generation)),
+            TimeSettingsResult::Current { pending: false, .. } => {
+                Reply::Refused(Refusal::NotWritable)
+            }
+            TimeSettingsResult::Current { pending: true, .. } | TimeSettingsResult::Busy => {
+                return None;
+            }
+            TimeSettingsResult::ReadOnly | TimeSettingsResult::Unserved => {
+                Reply::Refused(Refusal::NotWritable)
+            }
+        },
+        // The writer recorded the revocation as it made it.
+        Wait::Keys { ticket } => match device.keys_outcome(ticket)? {
+            KeyOutcome::Done => Reply::Done(None),
+            KeyOutcome::NotFound => Reply::Refused(Refusal::NotFound),
+            _ => Reply::Refused(Refusal::NotWritable),
+        },
+        Wait::Update { ticket } => match device.update_outcome(ticket)? {
+            Ok(UpdateAnswer::View(view)) => Reply::Update(view),
+            Ok(UpdateAnswer::Key { change, id }) => {
+                record(Record::UpdateKey {
+                    slot,
+                    change,
+                    key: id,
+                });
+                Reply::Done(None)
+            }
+            Err(refusal) => Reply::Refused(refusal.into()),
+        },
+    })
 }
 
 /// The zone's text, copied out of the device's view for the answer to

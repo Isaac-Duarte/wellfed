@@ -51,9 +51,13 @@ pub struct Pass<'a, D> {
     pub signer: Option<pairing::Event>,
 }
 
-/// A write the device is still completing.
+/// A write the device is still completing, as its client's memory keeps
+/// it from the moment it is queued (`Remembered::Waiting`): polled by the
+/// session that asked while it stays, and by the pass once it has gone, so
+/// a retry on any session waits for the same write rather than running it
+/// again.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Waiting {
+enum Wait {
     /// A Wi-Fi change, which finishes as change `change` of this boot
     /// (`Saved::next` when it was queued).
     Wifi {
@@ -72,16 +76,21 @@ enum Waiting {
     Update {
         ticket: u32,
     },
-    /// An update key waits for its Dispense press.
-    Signer {
-        key: [u8; 32],
-        label: Label,
-    },
+}
+
+/// What a session's pending request waits for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Waiting {
+    /// The write it queued.
+    Write(Wait),
+    /// A retry of a write still under way: its answer, once the client's
+    /// memory holds it.
+    Retry,
+    /// An update key waits for its Dispense press. The session's own: the
+    /// offer is cancelled when it ends.
+    Signer { key: [u8; 32], label: Label },
     /// The pressed key's enrollment is queued.
-    SignerKeys {
-        ticket: u32,
-        key: [u8; 32],
-    },
+    SignerKeys { ticket: u32, key: [u8; 32] },
 }
 
 #[derive(Clone, Copy)]
@@ -334,9 +343,9 @@ impl Server {
                 pending: Some(pending),
                 ..
             } = &mut slot.phase
-                && matches!(pending.waiting, Waiting::Feeder(FeederWait::Feed { feed: waited }) if waited == feed)
+                && matches!(pending.waiting, Waiting::Write(Wait::Feeder(FeederWait::Feed { feed: waited })) if waited == feed)
             {
-                pending.waiting = Waiting::Feeder(FeederWait::FeedRefused(refusal));
+                pending.waiting = Waiting::Write(Wait::Feeder(FeederWait::FeedRefused(refusal)));
             }
         }
         for memory in &mut self.memories {
@@ -430,6 +439,7 @@ impl Server {
             self.signer = None;
         }
         self.tell_readers_left(device);
+        self.settle_left(device, &mut record);
 
         // A feed queued before the deadline (a Dispense press: the server
         // refuses its own) holds the restart until it has ended, so the

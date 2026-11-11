@@ -1,10 +1,10 @@
 //! One request: who may run it, what it asks of the device, and its
 //! compact answer.
 
-use super::feeder::{self, FeederAction, FeederMemory, FeederReply, FeederWait};
+use super::feeder::{self, FeederAction, FeederReply};
 use super::handshake::{find, fingerprint, invite};
-use super::memory::Remembered;
-use super::{Phase, Server, Waiting, slot_id};
+use super::memory::{Remembered, recall};
+use super::{Phase, Server, Wait, Waiting, slot_id};
 use crate::access::Access;
 use crate::clients::{Label, Role};
 use crate::mailbox::{
@@ -49,29 +49,10 @@ impl Server {
             record(Record::Retried {
                 slot: slot_id(index),
             });
-            return Some(match remembered {
-                Remembered::Done(generation) => Reply::Done(generation),
-                Remembered::Refused(refusal) => Reply::Refused(refusal),
-                Remembered::Invite { id } => pairing
-                    .invite_secret(now_ms, id)
-                    .map_or(Reply::Refused(Refusal::NotFound), |secret| {
-                        Reply::Invite(invite(id, secret))
-                    }),
-                Remembered::Feeder(FeederMemory::Feeding { feed }) => {
-                    Reply::Feeder(FeederReply::Feeding(feed))
-                }
-                Remembered::Feeder(FeederMemory::Queued { feed }) => {
-                    return self.wait(
-                        index,
-                        id,
-                        action,
-                        Waiting::Feeder(FeederWait::Feed { feed }),
-                    );
-                }
-                Remembered::Update => device
-                    .update_view()
-                    .map_or(Reply::Refused(Refusal::Unavailable), Reply::Update),
-            });
+            return match recall(remembered, device, pairing, now_ms) {
+                Some(reply) => Some(reply),
+                None => self.wait(index, id, action, Waiting::Retry),
+            };
         }
         if !access.allows(proto_role(role)) {
             let outcome = Reply::Refused(Refusal::Forbidden);
@@ -90,7 +71,7 @@ impl Server {
             Action::Alive => Reply::Done(None),
             Action::Status => Reply::Status,
             Action::PutWifi { base, wifi } => match put_wifi(base, wifi, by, device) {
-                Ok(change) => return self.wait(index, id, action, Waiting::Wifi { change }),
+                Ok(change) => return self.queued(index, id, action, Wait::Wifi { change }),
                 Err(refusal) => Reply::Refused(refusal),
             },
             Action::TimeSync(fields) => match device.time_sync(fields, origin(role)) {
@@ -126,8 +107,7 @@ impl Server {
                 if find(&self.clients, &revoked).is_none() {
                     Reply::Refused(Refusal::NotFound)
                 } else if let Some(ticket) = device.keys(KeyChange::Revoke { key: revoked, by }) {
-                    let waiting = Waiting::Keys { ticket };
-                    return self.wait(index, id, action, waiting);
+                    return self.queued(index, id, action, Wait::Keys { ticket });
                 } else {
                     Reply::Refused(Refusal::Busy)
                 }
@@ -140,7 +120,7 @@ impl Server {
                 }
             },
             Action::PutTime { base, zone, ntp } => match put_time(base, zone, ntp, device) {
-                Ok(digest) => return self.wait(index, id, action, Waiting::Time { digest }),
+                Ok(digest) => return self.queued(index, id, action, Wait::Time { digest }),
                 Err(refusal) => Reply::Refused(refusal),
             },
             Action::Invalid => Reply::Refused(Refusal::Invalid),
@@ -154,7 +134,7 @@ impl Server {
             }
             Action::OfferUpdate | Action::CancelUpdate | Action::UpdateKeyStatement => {
                 match self.update_request(action, device) {
-                    Ok(ticket) => return self.wait(index, id, action, Waiting::Update { ticket }),
+                    Ok(ticket) => return self.queued(index, id, action, Wait::Update { ticket }),
                     Err(refusal) => Reply::Refused(refusal.into()),
                 }
             }
