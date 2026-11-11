@@ -4,9 +4,10 @@
 //!
 //! - **Grow first.** Within a major a file grows by fields an older build
 //!   skips: none of these files' types denies unknown fields, and a field
-//!   an older build did not write reads as absent in the newer one. An enum
-//!   value an older build cannot read, or a field it must not drop when it
-//!   saves, is a new major instead.
+//!   an older build did not write reads as absent in the newer one. A save
+//!   carries the fields it did not read over from the file it replaces
+//!   ([`Kept::carry`]), so an older build's save never drops a newer minor's
+//!   data. An enum value an older build cannot read is a new major instead.
 //! - **A reader for every major since the beta.** A build that makes a new
 //!   major keeps the old one's reader in [`Kept::earlier`] and converts.
 //! - **Never write over newer data.** A file of a newer major reads as
@@ -20,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 /// A kept file's type.
 pub trait Kept: DeserializeOwned {
@@ -36,6 +38,69 @@ pub trait Kept: DeserializeOwned {
             writes: Self::MAJOR,
         })
     }
+
+    /// Copy into `new`, the file about to be written, what `old` (the file
+    /// it replaces, at this major) holds that this build did not read, so a
+    /// newer minor's fields outlast an older build's save. JSON passed
+    /// through unread. The file's own top level by default; a type whose
+    /// file nests structs carries each of them too, by its path, matching
+    /// list elements by what identifies them ([`carry`], [`same`],
+    /// [`pairs`]).
+    fn carry(old: &Value, new: &mut Value) {
+        carry(old, new);
+    }
+}
+
+/// Copy each field of `old` that `new` lacks into `new`, when both are
+/// objects: one level, for a plain struct only. A tagged enum is never
+/// carried into, since another variant's fields would come with it.
+pub fn carry(old: &Value, new: &mut Value) {
+    let (Value::Object(old), Value::Object(new)) = (old, new) else {
+        return;
+    };
+    for (key, value) in old {
+        if !new.contains_key(key) {
+            new.insert(key.clone(), value.clone());
+        }
+    }
+}
+
+/// Whether `old` and `new` are the same record: each of `keys` is present
+/// in both, and equal.
+pub fn same(old: &Value, new: &Value, keys: &[&str]) -> bool {
+    keys.iter().all(|key| {
+        let old = old.pointer(key);
+        old.is_some() && old == new.pointer(key)
+    })
+}
+
+/// The values at `pointer` in both, when both have one.
+pub fn both<'a>(
+    old: &'a Value,
+    new: &'a mut Value,
+    pointer: &str,
+) -> Option<(&'a Value, &'a mut Value)> {
+    Some((old.pointer(pointer)?, new.pointer_mut(pointer)?))
+}
+
+/// The elements of the lists at `pointer` that are the same record
+/// ([`same`] on `keys`, JSON pointers within an element), each new one
+/// with the old one it was read from.
+pub fn pairs<'a>(
+    old: &'a Value,
+    new: &'a mut Value,
+    pointer: &str,
+    keys: &[&str],
+) -> Vec<(&'a Value, &'a mut Value)> {
+    let Some((Value::Array(old), Value::Array(new))) = both(old, new, pointer) else {
+        return Vec::new();
+    };
+    new.iter_mut()
+        .filter_map(|new| {
+            let old = old.iter().find(|old| same(old, new, keys))?;
+            Some((old, new))
+        })
+        .collect()
 }
 
 /// Why a kept file does not read.
@@ -92,31 +157,56 @@ pub fn read<T: Kept>(bytes: &[u8]) -> Result<Found<T>, Unreadable> {
 
 /// Replace `path` with `value`, a file at `T`'s major, atomically
 /// ([`crate::private::write_json`]), unless the file there is a newer
-/// major's. A file there that does not read at all is replaced: its reader
-/// set it aside first.
+/// major's. What the file there holds at this major that `value` does not
+/// is carried over ([`Kept::carry`]). A file there that does not read at
+/// all is replaced: its reader set it aside first.
 pub fn write<T: Kept>(path: &Path, value: &impl Serialize) -> Result<(), WriteRefused> {
-    if let Some(major) = newer(path, T::MAJOR)? {
-        return Err(WriteRefused::Newer {
-            path: path.to_owned(),
-            major,
-            writes: T::MAJOR,
-        });
+    let mut new = serde_json::to_value(value).map_err(crate::Error::from)?;
+
+    match there(path, T::MAJOR)? {
+        Some(There::Newer(major)) => {
+            return Err(WriteRefused::Newer {
+                path: path.to_owned(),
+                major,
+                writes: T::MAJOR,
+            });
+        }
+        Some(There::Same(old)) => T::carry(&old, &mut new),
+        None => {}
     }
-    crate::private::write_json(path, value)?;
+    crate::private::write_json(path, &new)?;
     Ok(())
 }
 
-/// The major of the file at `path` when it is newer than `writes`.
-fn newer(path: &Path, writes: u32) -> Result<Option<u32>, crate::Error> {
+/// What the file at `path` holds that a write must heed.
+enum There {
+    /// A newer major's.
+    Newer(u32),
+    /// This major's, as JSON.
+    Same(Value),
+}
+
+fn there(path: &Path, writes: u32) -> Result<Option<There>, crate::Error> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),
     };
-    Ok(serde_json::from_slice::<Header>(&bytes)
-        .ok()
-        .map(|header| header.version)
-        .filter(|major| *major > writes))
+    let Ok(old) = serde_json::from_slice::<Value>(&bytes) else {
+        return Ok(None);
+    };
+    let Some(major) = old
+        .get("version")
+        .and_then(Value::as_u64)
+        .and_then(|major| u32::try_from(major).ok())
+    else {
+        return Ok(None);
+    };
+    Ok(match major.cmp(&writes) {
+        Ordering::Greater => Some(There::Newer(major)),
+        Ordering::Equal => Some(There::Same(old)),
+        Ordering::Less => None,
+    })
 }
 
 #[cfg(test)]
@@ -219,5 +309,41 @@ mod tests {
             let bytes = std::fs::read(&path).unwrap();
             assert_eq!(read::<Now>(&bytes).unwrap(), Found::Read(value.clone()));
         }
+    }
+
+    #[test]
+    fn a_save_carries_what_a_newer_minor_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("kept.json");
+        std::fs::write(
+            &path,
+            br#"{"version": 2, "count": 1, "added": {"by": "newer"}}"#,
+        )
+        .unwrap();
+
+        let Found::Read(mut now) = read::<Now>(&std::fs::read(&path).unwrap()).unwrap() else {
+            panic!("this major");
+        };
+        now.count = 4;
+        write::<Now>(&path, &now).unwrap();
+
+        let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["count"], 4);
+        assert_eq!(saved["added"], serde_json::json!({"by": "newer"}));
+    }
+
+    #[test]
+    fn records_are_matched_by_what_identifies_them() {
+        let old = serde_json::json!({"list": [{"id": 1, "x": "a"}, {"id": 2, "x": "b"}]});
+        let mut new = serde_json::json!({"list": [{"id": 2}, {"id": 3}]});
+
+        for (old, new) in pairs(&old, &mut new, "/list", &["/id"]) {
+            carry(old, new);
+        }
+
+        assert_eq!(
+            new,
+            serde_json::json!({"list": [{"id": 2, "x": "b"}, {"id": 3}]})
+        );
     }
 }

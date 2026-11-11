@@ -26,6 +26,7 @@ use std::path::Path;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 pub(crate) use wellfed_formats::kept::Found;
 use wellfed_formats::kept::Unreadable;
 use wellfed_formats::kept::{self, Kept};
@@ -49,6 +50,13 @@ pub(crate) trait Versioned: Serialize + DeserializeOwned {
             writes: Self::VERSION,
         })
     }
+
+    /// Carry what the `data` this replaces holds that this build did not
+    /// read into `new` ([`Kept::carry`]): its top level by default; a file
+    /// with nested structs names each one.
+    fn carry(old: &Value, new: &mut Value) {
+        kept::carry(old, new);
+    }
 }
 
 /// A file as this build reads it at its own version: the data, with the
@@ -63,6 +71,13 @@ impl<T: Versioned> Kept for File<T> {
 
     fn earlier(major: u32, bytes: &[u8]) -> Result<Self, Unreadable> {
         T::earlier(major, bytes).map(|data| Self { data })
+    }
+
+    fn carry(old: &Value, new: &mut Value) {
+        kept::carry(old, new);
+        if let Some((old, new)) = kept::both(old, new, "/data") {
+            T::carry(old, new);
+        }
     }
 }
 

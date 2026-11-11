@@ -38,11 +38,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
+use wellfed_formats::kept;
 
 use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::router::{PendingWrite, RoutePath, WriteKind};
-use crate::api::store::{SetAside, StoreKind};
+use crate::api::store::{self, SetAside, StoreKind};
 use crate::route::core::Book;
 use crate::stored::{self, Opened, Versioned};
 
@@ -165,6 +167,27 @@ pub(crate) struct PinFile {
 
 impl Versioned for PinFile {
     const VERSION: u32 = 1;
+
+    /// What a newer minor added: each pin (and its server mark) by its key,
+    /// each running feed by feeder and number, each lost adoption by
+    /// feeder, and the notice while it names the same file. A pin's write
+    /// is a tagged enum and is never carried into.
+    fn carry(old: &Value, new: &mut Value) {
+        kept::carry(old, new);
+        for (old, new) in kept::pairs(old, new, "/pins", &["/key"]) {
+            kept::carry(old, new);
+            if let Some((old, new)) = kept::both(old, new, "/server") {
+                kept::carry(old, new);
+            }
+        }
+        for (old, new) in kept::pairs(old, new, "/running", &["/feeder", "/feed"]) {
+            kept::carry(old, new);
+        }
+        for (old, new) in kept::pairs(old, new, "/adoptions", &["/feeder"]) {
+            kept::carry(old, new);
+        }
+        store::carry_set_aside(old, new);
+    }
 }
 
 /// A pins file open in this process: its lock, and the fence of the store
@@ -591,5 +614,37 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         let sample: serde_json::Value = serde_json::from_str(sample).unwrap();
         assert_eq!(written, sample);
+    }
+
+    /// A newer minor's fields, at every struct the file nests, outlast a
+    /// load and a save.
+    #[test]
+    fn a_save_carries_what_a_newer_minor_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+        let mut grown: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/pending-v1.json")).unwrap();
+        let places = [
+            "",
+            "/data",
+            "/data/pins/0",
+            "/data/pins/0/server",
+            "/data/running/0",
+            "/data/adoptions/0",
+            "/data/set_aside",
+        ];
+        for place in places {
+            grown.pointer_mut(place).unwrap()["added"] = serde_json::json!(place);
+        }
+        std::fs::write(&path, grown.to_string()).unwrap();
+
+        let (store, book) = PinStore::open(&path).unwrap();
+        store.save(&book).unwrap();
+
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for place in places {
+            assert_eq!(saved.pointer(place).unwrap()["added"], place, "{place}");
+        }
     }
 }

@@ -9,6 +9,8 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use wellfed_formats::kept;
 
 use crate::api::error::{BridgeError, ErrorKind};
 pub use crate::api::server_views::{KnownServer, ListedFeeder, ServerLink};
@@ -38,6 +40,47 @@ pub(crate) struct AppFile {
 
 impl Versioned for AppFile {
     const VERSION: u32 = 1;
+
+    /// The store's types cross the bridge as they are, so what a newer
+    /// minor added to them is carried here: the store, each feeder by its
+    /// identity, the server while it is the same one (its link, its
+    /// account and each listed feeder by id), and the notice while it names
+    /// the same file.
+    fn carry(old: &Value, new: &mut Value) {
+        kept::carry(old, new);
+        if let Some((old, new)) = kept::both(old, new, "/store") {
+            kept::carry(old, new);
+            for (old, new) in kept::pairs(old, new, "/feeders", &["/identity"]) {
+                kept::carry(old, new);
+            }
+            if let Some((old, new)) = kept::both(old, new, "/server")
+                && kept::same(old, new, &["/link/url"])
+            {
+                kept::carry(old, new);
+                if let Some((old, new)) = kept::both(old, new, "/link") {
+                    kept::carry(old, new);
+                }
+                if let Some((old, new)) = kept::both(old, new, "/account")
+                    && kept::same(old, new, &["/id"])
+                {
+                    kept::carry(old, new);
+                }
+                for (old, new) in kept::pairs(old, new, "/feeders", &["/id"]) {
+                    kept::carry(old, new);
+                }
+            }
+        }
+        carry_set_aside(old, new);
+    }
+}
+
+/// The set-aside notice's unread fields, while it names the same file.
+pub(crate) fn carry_set_aside(old: &Value, new: &mut Value) {
+    if let Some((old, new)) = kept::both(old, new, "/set_aside")
+        && kept::same(old, new, &["/moved_to"])
+    {
+        kept::carry(old, new);
+    }
 }
 
 /// Which of the app's files was set aside.
@@ -255,5 +298,42 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         let sample: serde_json::Value = serde_json::from_str(sample).unwrap();
         assert_eq!(written, sample);
+    }
+
+    /// A newer minor's fields, at every struct the file nests, outlast the
+    /// start's read and a save of the store Dart hands back.
+    #[test]
+    fn a_save_carries_what_a_newer_minor_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let mut grown: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/wellfed-v1.json")).unwrap();
+        let places = [
+            "",
+            "/data",
+            "/data/store",
+            "/data/store/feeders/0",
+            "/data/store/server",
+            "/data/store/server/link",
+            "/data/store/server/feeders/0",
+            "/data/store/server/account",
+            "/data/set_aside",
+        ];
+        for place in places {
+            grown.pointer_mut(place).unwrap()["added"] = serde_json::json!(place);
+        }
+        std::fs::write(&path, grown.to_string()).unwrap();
+        let path = path.to_str().unwrap();
+
+        let mut store = open_store(path).unwrap().store;
+        store.label = "renamed".into();
+        save_store(path, &store).unwrap();
+
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(saved["data"]["store"]["label"], "renamed");
+        for place in places {
+            assert_eq!(saved.pointer(place).unwrap()["added"], place, "{place}");
+        }
     }
 }
