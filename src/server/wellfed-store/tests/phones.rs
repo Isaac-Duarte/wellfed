@@ -10,7 +10,7 @@ use wellfed_api::{
     ClientRole, CoreEvent, EventBody, FeederId, Hex, Home, HomeId, Model, RevokeReason, TimeFormat,
     TokenId, Units, UserId,
 };
-use wellfed_store::{NewEvent, NewFeeder, NewPhone, Recorded, SealedKey, Store, Whose};
+use wellfed_store::{Listed, NewEvent, NewFeeder, NewPhone, Recorded, SealedKey, Store, Whose};
 
 fn at(ms: i64) -> Timestamp {
     Timestamp::from_millisecond(ms).unwrap()
@@ -150,8 +150,13 @@ async fn attribute(store: &Store, feeder: FeederId, listed: &[u8], now: i64) -> 
                 .filter(|&&n| [n; 7] == invitation.invitee)
                 .map(|&n| ([n; 32], ClientRole::Member))
                 .collect();
+            let present = if joined.is_empty() {
+                Listed::No
+            } else {
+                Listed::Yes
+            };
             owed |= store
-                .attribute_invitation(&invitation, &joined, at(now))
+                .attribute_invitation(&invitation, &joined, present, at(now))
                 .await
                 .unwrap();
         }
@@ -302,6 +307,27 @@ async fn a_key_dropped_twice_keeps_the_joins_from_its_first_life() {
     assert!(attribute(&store, feeder, &[2], 50).await);
     let invitee = store.phone(feeder, &[2; 32]).await.unwrap();
     assert_eq!(reason(invitee), Some(RevokeReason::InviterRevoked));
+}
+
+/// A join of a key still listed but no phone's (the server's own,
+/// rejoined through a phone's invite) leaves no dropped record, so the
+/// joins it invites in turn are not that phone's account's.
+#[tokio::test]
+async fn a_listed_key_that_is_no_phones_leaves_no_dropped_record() {
+    let (_dir, store, feeder) = fresh().await;
+    store.record_phone(&phone(feeder, 1, 7, 10)).await.unwrap();
+    joined(&store, feeder, 1, 9, 1).await;
+    let pending = store.invitations(feeder).await.unwrap();
+    for invitation in &pending {
+        let owed = store
+            .attribute_invitation(invitation, &[], Listed::Yes, at(40))
+            .await
+            .unwrap();
+        assert!(!owed);
+    }
+
+    joined(&store, feeder, 2, 3, 9).await;
+    assert!(store.invitations(feeder).await.unwrap().is_empty());
 }
 
 /// A key an owner kept stays theirs, whoever invited it.

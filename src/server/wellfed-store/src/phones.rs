@@ -15,8 +15,8 @@ mod invitees;
 mod reconcile;
 mod revoke;
 
-pub use invitees::Invitation;
 pub(crate) use invitees::project as project_invitation;
+pub use invitees::{Invitation, Listed};
 
 /// A phone key about to be invited.
 pub struct NewPhone {

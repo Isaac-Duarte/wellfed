@@ -13,9 +13,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::TryStreamExt;
 use wellfed_api::{
-    ClientOwner, ClientRole, Connection as Link, CoreEvent, EventBody, EventQuery, FeederId, Hex,
-    NewPhoneInvite, NewToken, NewUser, PhoneClaim, Role, User,
+    AdoptFeeder, ClientOwner, ClientRole, Connection as Link, CoreEvent, EventBody, EventQuery,
+    ExportFormat, FeederId, Hex, NewPhoneInvite, NewToken, NewUser, PhoneClaim, Role, User,
 };
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::fixed::ManualClock;
@@ -480,6 +481,72 @@ fn a_revoke_on_the_lan_is_followed_up_after_a_restart() {
         let service = server.service();
         clock.advance(Duration::from_secs(u64::from(u16::MAX) + 120));
         revoked(service, &sim, &[92, 93]).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// An owner's phone, recorded, gives the server the invite it adopts the
+/// feeder again with. The feeder reports the server's own key as that
+/// phone's invitee, which is no phone's and still listed, so nothing is
+/// recorded of it: no dropped record under its prefix, which would make
+/// every join through the server's own invites that phone's account's.
+#[test]
+fn a_readoption_through_a_phones_invite_records_nothing_of_the_server() {
+    local(async {
+        let (sim, server, id) = started().await;
+        let service = server.service();
+        let (ada, _bob) = ada_and_bob(service).await;
+        let phone = token_of(service, ada.user.clone()).await;
+        join(service, &sim, id, &phone, 100).await;
+
+        service.remove_feeder(&ada, id).await.unwrap();
+        let adopt = AdoptFeeder {
+            invite: feeder::phone_invite(&sim, secret(100), ClientRole::Owner).await,
+            name: "kitchen".into(),
+            address: Some(sim.address.to_string()),
+            phone_key: None,
+        };
+        assert_eq!(service.adopt(&ada, adopt).await.unwrap().id, id);
+        server.link(id, Link::Online).await;
+        let clients = service.clients(id).await.unwrap();
+        let own = clients
+            .iter()
+            .find(|client| client.owner == ClientOwner::Server)
+            .unwrap()
+            .key
+            .0;
+        read(
+            service,
+            id,
+            |event| matches!(event, CoreEvent::Invited { client, .. } if client.0[..] == own[..7]),
+        )
+        .await;
+        // A later join through the phone's invite is settled after the
+        // server's, in the order they were recorded.
+        invite_directly(&sim, 100, 101).await;
+        attributed(service, id, &phone, 101).await;
+
+        let archive: Vec<Vec<u8>> = service
+            .export(ExportFormat::Json, "test")
+            .await
+            .unwrap()
+            .try_collect()
+            .await
+            .unwrap();
+        let archive = String::from_utf8_lossy(&archive.concat()).into_owned();
+        let prefix = own[..7]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert!(
+            archive.contains("dropped_phones"),
+            "the table is in the archive"
+        );
+        assert!(
+            !archive.contains(&format!("\"prefix\":\"{prefix}\"")),
+            "{archive}"
+        );
         server.shutdown().await;
         sim.stop().await;
     });

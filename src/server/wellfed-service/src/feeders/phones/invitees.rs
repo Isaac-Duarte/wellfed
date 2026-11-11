@@ -23,7 +23,7 @@ use tracing::{info, warn};
 use wellfed_api::FeederId;
 use wellfed_model::Client;
 use wellfed_session::hex;
-use wellfed_store::Invitation;
+use wellfed_store::{Invitation, Listed};
 
 use crate::{Result, Service};
 
@@ -54,14 +54,26 @@ impl Service {
         let store = &self.shared.store;
         let mut owed = false;
         for invitation in pending {
-            let joined: Vec<_> = listed
+            let named: Vec<&Client> = listed
                 .iter()
-                .filter(|client| !client.you && client.key.0.starts_with(&invitation.invitee))
+                .filter(|client| client.key.0.starts_with(&invitation.invitee))
+                .collect();
+            // The server's own key is never a phone's, but still listed: a
+            // join of it (a re-adoption through a phone's invite) is no
+            // key that left.
+            let joined: Vec<_> = named
+                .iter()
+                .filter(|client| !client.you)
                 .map(|client| (client.key.0, client.role))
                 .collect();
+            let present = if named.is_empty() {
+                Listed::No
+            } else {
+                Listed::Yes
+            };
             let now: Timestamp = self.shared.clock.now();
             owed |= store
-                .attribute_invitation(&invitation, &joined, now)
+                .attribute_invitation(&invitation, &joined, present, now)
                 .await?;
             let invitee = hex::Lower(&invitation.invitee).to_string();
             let inviter = hex::Lower(&invitation.inviter).to_string();

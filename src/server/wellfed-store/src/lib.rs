@@ -70,7 +70,7 @@ pub use foods::FoodSet;
 pub use history::{EventRow, NewEvent};
 pub use import::Import;
 pub use pets::WeightCursor;
-pub use phones::{Invitation, NewPhone, Recorded, Whose};
+pub use phones::{Invitation, Listed, NewPhone, Recorded, Whose};
 pub use projections::{Boot, ClockSync, Feed, LockChange, PROJECTION_VERSION, Projected, Refresh};
 pub use samples::{HourRow, NewSample, SampleKey, SampleRefresh, SampleRow, Span};
 pub use tokens::{NewToken, TokenUse};

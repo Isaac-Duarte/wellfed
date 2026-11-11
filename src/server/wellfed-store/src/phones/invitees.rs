@@ -50,6 +50,16 @@ pub struct Invitation {
     pub(crate) id: i64,
 }
 
+/// Whether the feeder lists any client whose key starts with a join's
+/// invitee prefix, the server's own key included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Listed {
+    /// Some client still holds a key with the prefix.
+    Yes,
+    /// None does: the key that joined left before the join was read.
+    No,
+}
+
 /// The account and token a joined key is recorded under, and whether the
 /// key that invited it is on its way out.
 struct Inviter {
@@ -221,13 +231,16 @@ impl Store {
     /// stands. It counts as recorded from the join on, so the joins it made
     /// in turn are its. A key recorded or kept already
     /// stays as it is, and a join no such phone key invited records nothing.
-    /// With no key joined (the feeder dropped it first), the invitee's
-    /// prefix is recorded as a dropped phone key's, so the keys it invited
-    /// go too. Whether a key it recorded is owed a revoke.
+    /// With no client listed under the invitee's prefix (`listed`; the
+    /// feeder dropped it first), the prefix is recorded as a dropped phone
+    /// key's, so the keys it invited go too. A prefix still listed but not
+    /// in `joined` (the server's own key, rejoined through a phone's invite)
+    /// records nothing. Whether a key it recorded is owed a revoke.
     pub async fn attribute_invitation(
         &self,
         invitation: &Invitation,
         joined: &[([u8; 32], ClientRole)],
+        listed: Listed,
         at: Timestamp,
     ) -> Result<bool> {
         let feeder = invitation.feeder;
@@ -306,7 +319,7 @@ impl Store {
             // the server read its join. Its own joins are still the
             // inviter's, and they go as they are recorded, as a dropped
             // phone key's do.
-            if joined.is_empty() {
+            if listed == Listed::No {
                 let invitee = invitation.invitee.as_slice();
                 sqlx::query!(
                     "INSERT INTO dropped_phones
