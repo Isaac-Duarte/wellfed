@@ -144,7 +144,9 @@ pub(crate) async fn dropped(
 
     // A prefix dropped again keeps its earliest mark, and the account and
     // token that came with it: a join the first key made, read between the
-    // two, is still its, and still that key's account's.
+    // two, is still its, and still that key's account's. SQLite evaluates
+    // every `SET` expression against the old row, so each `CASE` compares
+    // with the mark as it was before `MIN` lowers it.
     let prefix = prefix(key);
     let prefix = prefix.as_slice();
     sqlx::query!(
