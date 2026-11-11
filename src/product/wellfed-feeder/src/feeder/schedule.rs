@@ -26,12 +26,16 @@
 //!
 //! **A change of zone.** Marks hold occurrences by instant, so a zone
 //! further west puts a plan's minute at a later instant, past the mark of
-//! the meal already fed that local day. A meal already fed that day never
-//! runs again: the schedule keeps each mark with the offset it fell at, and
-//! the same instant at another offset means the zone changed. It then
-//! passes, unreported, the plan's occurrence on the date the mark took
-//! (`same_day_again`) before anything else runs. A restart between the
-//! zone's save and that pass forgets the old offset, and with it the pass.
+//! the meal already fed that local day. A meal fed or skipped that day
+//! never runs again: the schedule keeps each mark with the offset it fell
+//! at, and the same instant at another offset means the offsets changed (a
+//! new zone, or a client's sync replacing the offsets of a feeder with no
+//! zone). If the mark is a meal fed or a client's skip, it then passes,
+//! unreported, the plan's occurrence on the date the mark took
+//! (`same_day_again`) before anything else runs. A meal missed, or a mark
+//! a save left, takes nothing from the day: the meal runs at the new
+//! zone's minute if that is still to come. A restart between the zone's
+//! save and that pass forgets the old offset, and with it the pass.
 //!
 //! **Waiting.** An occurrence that comes due while the feeder cannot feed
 //! (another feed, a join, an install, a held battery) waits, and runs as
@@ -552,7 +556,9 @@ impl Schedule {
                 let now = offset_at(u64::from(seen) * 1000)?;
                 (now != offset).then_some(offset)
             });
-            let plan = view.table[slot].filter(|plan| plan.enabled);
+            // Only a meal fed or skipped took the day's meal.
+            let taken = view.fed(slot) || view.skipped(slot).is_some();
+            let plan = view.table[slot].filter(|plan| plan.enabled && taken);
             if let (Some(old_offset), Some(plan), Some(mark)) = (changed, plan, mark) {
                 let again = same_day_again(&plan, u64::from(mark) * 1000, old_offset, offset_at);
                 if let Some(due_s) = again.and_then(|due| u32::try_from(due / 1000).ok()) {

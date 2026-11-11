@@ -9,7 +9,7 @@
 //! | 0..12 | magic `PLFPLN01`, major 4, minor, record size |
 //! | 12..16 | sequence: the save count, which picks the newest record |
 //! | 16..20 | revision: bumped by every change to the table |
-//! | 20..70 | ten plans of 5 bytes: flags (bit 0 present, bit 1 enabled, bits 2-4 the meal call's plays, bit 5 the mark is a client's skip), minute (u16), portions, weekdays |
+//! | 20..70 | ten plans of 5 bytes: flags (bit 0 present, bit 1 enabled, bits 2-4 the meal call's plays, bit 5 the mark is a client's skip, bit 6 the mark is a meal fed), minute (u16), portions, weekdays |
 //! | 70..110 | ten marks (Unix seconds, u32; 0 for none) |
 //! | 110..120 | the claim: flags (bit 0 present, bit 1 it disabled a plan that runs once), slot, due (Unix seconds, u32), the journal's high water (u32) |
 //! | 120..248 | spare, zero |
@@ -40,7 +40,9 @@
 //! occurrence. The bit, not the mark alone, tells a skip from a claim, a
 //! pass or a save that left the mark at the same instant: after a
 //! backward clock jump those can look like a skip still to come, and
-//! undoing one would run its occurrence twice.
+//! undoing one would run its occurrence twice. The fed bit likewise tells
+//! a meal the schedule took from one it passed as missed: a change of zone
+//! repeats only the day's meal that was fed or skipped.
 //!
 //! The two sectors were reserved for plans before this store, so a record
 //! here is ours; the newest valid one wins, and a torn newer slot falls
@@ -85,6 +87,8 @@ const PRESENT: u8 = 1;
 const ENABLED: u8 = 2;
 /// The slot's mark is a client's skip (`Plans::skips`).
 const SKIPPED: u8 = 1 << 5;
+/// The slot's mark is a meal fed: a claim folded into it (`Plans::fed`).
+const FED: u8 = 1 << 6;
 /// A plan's meal call, in plays (0 to `clip::PLAYS_MAX`, below 8).
 const CALL_SHIFT: u8 = 2;
 const CALL_MASK: u8 = 0b111 << CALL_SHIFT;
@@ -104,6 +108,10 @@ pub struct Plans {
     /// and every other change that moves the slot's mark clears it, so a
     /// mark left by a claim, a pass or a save is never undone.
     pub skips: u16,
+    /// Bit `slot` set: that slot's mark is a meal fed, a claim folded into
+    /// it. Only a fold sets it, and every other change that moves the
+    /// slot's mark clears it, an interrupted claim's settle among them.
+    pub fed: u16,
     pub claim: Option<Claim>,
     pub revision: u32,
 }
@@ -117,6 +125,7 @@ impl Plans {
             table: self.table,
             marks: self.marks,
             skips: self.skips,
+            fed: self.fed,
             claim: self.claim,
             revision: self.revision,
             replaced: 0,
@@ -151,6 +160,7 @@ impl Plans {
                     };
                     if kept.is_none() {
                         next.set_skip(slot, false);
+                        next.set_fed(slot, false);
                     }
                 }
                 // A claim that disabled its plan enables it again when given
@@ -192,8 +202,12 @@ impl Plans {
                 }
             }
             PlansChange::Settle { claim } => {
+                // The claim's feed was never reserved: its occurrence is
+                // spent, but no meal was fed.
                 let held = self.held(claim)?;
-                next.fold(held);
+                if next.fold(held) {
+                    next.set_fed(usize::from(held.plan), false);
+                }
                 next.set_skip(usize::from(held.plan), false);
                 next.claim = None;
             }
@@ -208,8 +222,12 @@ impl Plans {
                 // runs once keeps waiting for its next.
                 let expected = self.marked(plan);
                 let mark = next.marks.get_mut(usize::from(plan))?;
+                let raised = due_s > *mark;
                 *mark = (*mark).max(due_s);
                 next.set_skip(usize::from(plan), false);
+                if raised {
+                    next.set_fed(usize::from(plan), false);
+                }
                 if found.days.once() && expected {
                     next.set_enabled(plan, false);
                 }
@@ -226,6 +244,7 @@ impl Plans {
                 }
                 *mark = due_s;
                 next.set_skip(usize::from(plan), true);
+                next.set_fed(usize::from(plan), false);
                 if found.days.once() {
                     next.set_enabled(plan, false);
                 }
@@ -249,12 +268,20 @@ impl Plans {
                 // between the two: the meal runs, and nothing else does.
                 *mark = due_s - 1;
                 next.set_skip(slot, false);
+                next.set_fed(slot, false);
                 if found.days.once() {
                     next.set_enabled(plan, true);
                 }
             }
         }
         Some(next)
+    }
+
+    fn set_fed(&mut self, slot: usize, fed: bool) {
+        if slot < PLANS {
+            let bit = 1 << slot;
+            self.fed = if fed { self.fed | bit } else { self.fed & !bit };
+        }
     }
 
     /// The stored claim, if it is `claim`'s occurrence. Whether it still
@@ -299,16 +326,19 @@ impl Plans {
                 .is_some_and(|&mark| mark != 0)
     }
 
-    /// The claim's occurrence into its plan's mark; a mark it raises is
-    /// no longer a skip.
-    fn fold(&mut self, claim: Claim) {
+    /// The claim's occurrence into its plan's mark; a mark it raises is a
+    /// meal fed, and no longer a skip. Whether it raised the mark.
+    fn fold(&mut self, claim: Claim) -> bool {
         let slot = usize::from(claim.plan);
         if let Some(mark) = self.marks.get_mut(slot)
             && claim.due_s > *mark
         {
             *mark = claim.due_s;
             self.set_skip(slot, false);
+            self.set_fed(slot, true);
+            return true;
         }
+        false
     }
 
     fn set_enabled(&mut self, slot: u8, enabled: bool) {
@@ -387,7 +417,8 @@ fn encode(sequence: u32, plans: &Plans) -> [u8; RECORD_BYTES] {
             p[at] = PRESENT
                 | if plan.enabled { ENABLED } else { 0 }
                 | plan.call << CALL_SHIFT
-                | if plans.skipped(slot) { SKIPPED } else { 0 };
+                | if plans.skipped(slot) { SKIPPED } else { 0 }
+                | if plans.fed & (1 << slot) != 0 { FED } else { 0 };
             p[at + 1..at + 3].copy_from_slice(&plan.minute.to_le_bytes());
             p[at + 3] = plan.portions;
             p[at + 4] = plan.days.0;
@@ -423,11 +454,15 @@ fn decode(p: &[u8; RECORD_BYTES]) -> Option<(u32, Plans)> {
         *entry = match bytes[0] {
             0 if bytes.iter().all(|&b| b == 0) => None,
             flags
-                if flags & !(PRESENT | ENABLED | CALL_MASK | SKIPPED) == 0
-                    && flags & PRESENT != 0 =>
+                if flags & !(PRESENT | ENABLED | CALL_MASK | SKIPPED | FED) == 0
+                    && flags & PRESENT != 0
+                    && flags & (SKIPPED | FED) != SKIPPED | FED =>
             {
                 if flags & SKIPPED != 0 {
                     plans.skips |= 1 << slot;
+                }
+                if flags & FED != 0 {
+                    plans.fed |= 1 << slot;
                 }
                 let plan = Plan {
                     minute: u16::from_le_bytes([bytes[1], bytes[2]]),

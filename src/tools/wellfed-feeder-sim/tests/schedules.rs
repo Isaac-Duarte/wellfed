@@ -517,6 +517,40 @@ fn a_plan_saved_after_its_minute_waits_for_the_next_day() {
     assert!(feeder.missed().is_empty());
 }
 
+const BERLIN: &str = "CET-1CEST,M3.5.0,M10.5.0/3";
+const DENVER: &str = "MST7MDT,M3.2.0,M11.1.0";
+
+/// Wednesday at `hours`:`minutes` UTC.
+fn at(hours: u64, minutes: u64) -> u64 {
+    WEDNESDAY + hours * HOUR_MS + minutes * MINUTE_MS
+}
+
+/// Plan 0's `n`th meal, of 2 portions.
+const fn meal(feed: u32) -> (u32, u8, FeedOutcome, Source) {
+    (feed, 2, FeedOutcome::Done, Source::Schedule(0))
+}
+
+/// Run until `to`, with an owner's sync every few hours that keeps the
+/// unlearned clock valid.
+fn advance(feeder: &mut Feeder, to: u64) {
+    while let Some(wall) = feeder.wall().filter(|&wall| wall + 4 * HOUR_MS < to) {
+        feeder.run_until(wall + 4 * HOUR_MS);
+        feeder.sync(wall + 4 * HOUR_MS);
+    }
+    feeder.run_until(to);
+}
+
+/// A feeder in Berlin, synced at 06:00 CET on Wednesday (05:00Z), with
+/// breakfast at 07:30 (06:30Z).
+fn berlin_breakfast() -> Feeder {
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.zone(BERLIN);
+    feeder.sync(at(5, 0));
+    feeder.put(table(&[(0, plan(7 * 60 + 30, 2))]));
+    feeder
+}
+
 /// A meal already fed that local day never runs again across a change of
 /// zone. Breakfast at 07:30 in Berlin (06:30Z), then the zone moves to
 /// Denver, where 07:30 the same date is 13:30Z: passed unreported, and
@@ -524,49 +558,146 @@ fn a_plan_saved_after_its_minute_waits_for_the_next_day() {
 /// either, and the next day's meal comes at the new zone's minute.
 #[test]
 fn a_meal_fed_today_never_runs_again_across_a_change_of_zone() {
-    const BERLIN: &str = "CET-1CEST,M3.5.0,M10.5.0/3";
-    const DENVER: &str = "MST7MDT,M3.2.0,M11.1.0";
-    let at = |hours: u64, minutes: u64| WEDNESDAY + hours * HOUR_MS + minutes * MINUTE_MS;
-    let schedule = |feed| (feed, 2, FeedOutcome::Done, Source::Schedule(0));
-    // Owner syncs every few hours keep the unlearned clock valid.
-    let advance = |feeder: &mut Feeder, to: u64| {
-        while let Some(wall) = feeder.wall().filter(|&wall| wall + 4 * HOUR_MS < to) {
-            feeder.run_until(wall + 4 * HOUR_MS);
-            feeder.sync(wall + 4 * HOUR_MS);
-        }
-        feeder.run_until(to);
-    };
-
-    let mut feeder = Feeder::new();
-    feeder.run(100);
-    feeder.zone(BERLIN);
-    feeder.sync(at(6, 0));
-    feeder.put(table(&[(0, plan(7 * 60 + 30, 2))]));
+    let mut feeder = berlin_breakfast();
     feeder.run_until(at(6, 31));
-    assert_eq!(feeder.fed(), [schedule(1)], "07:30 in Berlin");
+    assert_eq!(feeder.fed(), [meal(1)], "07:30 in Berlin");
 
     feeder.run_until(at(7, 0));
     feeder.zone(DENVER);
     advance(&mut feeder, at(13, 45));
-    assert_eq!(feeder.fed(), [schedule(1)], "not again at 07:30 in Denver");
+    assert_eq!(feeder.fed(), [meal(1)], "not again at 07:30 in Denver");
     assert!(feeder.missed().is_empty());
     assert_eq!(feeder.plans().mark(0), Some(seconds(at(13, 30))));
 
     advance(&mut feeder, at(24 + 13, 31));
-    assert_eq!(
-        feeder.fed(),
-        [schedule(1), schedule(2)],
-        "Thursday in Denver"
-    );
+    assert_eq!(feeder.fed(), [meal(1), meal(2)], "Thursday in Denver");
 
     // Denver to Berlin after Thursday's meal: Friday 07:30 in Berlin, 06:30Z.
     feeder.zone(BERLIN);
     advance(&mut feeder, at(48 + 6, 31));
     assert_eq!(
         feeder.fed(),
-        [schedule(1), schedule(2), schedule(3)],
+        [meal(1), meal(2), meal(3)],
         "Friday in Berlin"
     );
+    assert!(feeder.missed().is_empty());
+}
+
+/// A meal the owner skipped in Berlin is the day's meal too: not fed at
+/// Denver's 07:30 the same date, and Thursday's feeds.
+#[test]
+fn a_meal_skipped_today_is_not_fed_across_a_change_of_zone() {
+    let mut feeder = berlin_breakfast();
+    feeder.run_until(at(6, 0));
+    assert_eq!(feeder.skip(at(6, 30), MealSkip::Skip), Ok(()));
+    feeder.run_until(at(7, 0));
+    feeder.zone(DENVER);
+    advance(&mut feeder, at(13, 45));
+    assert!(feeder.fed().is_empty(), "not at 07:30 in Denver");
+    assert!(feeder.missed().is_empty());
+
+    advance(&mut feeder, at(24 + 13, 31));
+    assert_eq!(feeder.fed(), [meal(1)], "Thursday in Denver");
+}
+
+/// A meal missed in Berlin took nothing from the day: it feeds at Denver's
+/// 07:30 the same date, once.
+#[test]
+fn a_meal_missed_today_feeds_at_the_new_zone_s_minute() {
+    let mut feeder = berlin_breakfast();
+    feeder.run_until(at(6, 25));
+    feeder.sim.refuse_feeds(true);
+    feeder.run_until(at(6, 50));
+    feeder.sim.refuse_feeds(false);
+    assert_eq!(
+        feeder.missed(),
+        [(
+            0,
+            seconds(at(6, 30)),
+            MissedReason::Blocked(Blocked::Feeding)
+        )]
+    );
+
+    feeder.run_until(at(7, 0));
+    feeder.zone(DENVER);
+    advance(&mut feeder, at(13, 45));
+    assert_eq!(feeder.fed(), [meal(1)], "07:30 in Denver");
+    advance(&mut feeder, at(24 + 13, 31));
+    assert_eq!(feeder.fed(), [meal(1), meal(2)], "Thursday in Denver");
+}
+
+/// A plan saved in Berlin after its minute waits for tomorrow there, but
+/// had no meal today: moved to Denver, it feeds at Denver's 07:30, still
+/// ahead the same date.
+#[test]
+fn a_plan_saved_after_its_minute_feeds_at_the_new_zone_s_minute() {
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.zone(BERLIN);
+    feeder.sync(at(6, 0));
+    feeder.run_until(at(6, 35));
+    feeder.put(table(&[(0, plan(7 * 60 + 30, 2))]));
+    feeder.run_until(at(7, 0));
+    assert!(feeder.fed().is_empty());
+
+    feeder.zone(DENVER);
+    advance(&mut feeder, at(13, 45));
+    assert_eq!(feeder.fed(), [meal(1)], "07:30 in Denver");
+    assert!(feeder.missed().is_empty());
+}
+
+/// A feeder with no zone keeps local time from a client's sync: Denver's
+/// offset and the fall-back change it names. 01:30 on November 1 comes
+/// twice; the plan feeds on the first pass (07:30Z). A sync after the
+/// change gives standard time with no change named, which puts 01:30 at
+/// 08:30Z, after the mark: the same meal, not fed again. November 2's
+/// 01:30 feeds as usual.
+#[test]
+fn a_no_zone_feeder_synced_across_the_fall_change_feeds_the_repeated_minute_once() {
+    use wellfed_core::clock::wall::{Origin, Sync};
+
+    let sync = |feeder: &mut Feeder, unix_ms: u64, offset_s: i32, next: Option<(u64, i32)>| {
+        let sync = Sync {
+            unix_ms,
+            offset_s,
+            next_change_s: next.map_or(0, |(at, _)| at),
+            next_offset_s: next.map_or(offset_s, |(_, offset)| offset),
+        };
+        let now = feeder.now;
+        feeder
+            .sim
+            .platform()
+            .time_sync(now, sync, Origin::Owner)
+            .unwrap();
+    };
+    let (mdt, mst) = (-6 * 3600, -7 * 3600);
+
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    sync(
+        &mut feeder,
+        FALL - 2 * HOUR_MS,
+        mdt,
+        Some((FALL / 1000, mst)),
+    );
+    feeder.put(table(&[(0, plan(90, 2))]));
+    feeder.run_until(FALL - 29 * MINUTE_MS);
+    assert_eq!(feeder.fed(), [meal(1)], "01:30 MDT");
+
+    feeder.run_until(FALL + 10 * MINUTE_MS);
+    sync(&mut feeder, FALL + 10 * MINUTE_MS, mst, None);
+    feeder.run_until(FALL + HOUR_MS);
+    assert_eq!(feeder.fed(), [meal(1)], "not again at 01:30 MST");
+    assert!(feeder.missed().is_empty());
+
+    let mut wall = FALL + HOUR_MS;
+    while wall + 4 * HOUR_MS < FALL + 24 * HOUR_MS + 31 * MINUTE_MS {
+        wall += 4 * HOUR_MS;
+        feeder.run_until(wall);
+        sync(&mut feeder, wall, mst, None);
+    }
+    feeder.run_until(FALL + 24 * HOUR_MS + 31 * MINUTE_MS);
+    assert_eq!(feeder.fed(), [meal(1), meal(2)], "November 2");
     assert!(feeder.missed().is_empty());
 }
 

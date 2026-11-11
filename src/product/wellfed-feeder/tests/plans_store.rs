@@ -217,7 +217,7 @@ fn records_that_fail_their_checks_are_not_read() {
         }),
         ("no portions", |r| r[23] = 0),
         ("days past Sunday", |r| r[24] = 0x80),
-        ("unknown plan flag", |r| r[20] |= 0x40),
+        ("unknown plan flag", |r| r[20] |= 0x80),
         ("bytes in an empty slot", |r| r[26] = 1),
         ("claim past the last slot", |r| {
             r[110] = 1;
@@ -831,6 +831,94 @@ fn a_release_after_a_table_changes_the_claimed_slot_leaves_it_as_saved() {
         .unwrap();
     assert_eq!(released.table[0], Some(ONCE), "the plan the claim took");
     assert_eq!(released.table[1], Some(DINNER_OFF));
+}
+
+/// The fed bit marks a meal the schedule took: a claim folded into the
+/// mark. An interrupted claim's settle, a pass, a skip and a save that
+/// resets the mark clear it; it saves and reloads in bit 6 of the plan's
+/// flags, never beside the skip bit.
+#[test]
+fn only_a_fed_meal_sets_the_fed_bit_and_it_reloads() {
+    let plans = breakfast(1_000);
+    let held = claim(0, 2_000, 4);
+    let claimed = plans
+        .changed(&PlansChange::Claim {
+            claim: held,
+            revision: plans.revision,
+        })
+        .unwrap();
+    assert!(claimed.view(true).fed(0), "the claim's meal");
+    assert_eq!(claimed.fed, 0, "not yet folded");
+
+    // The next claim folds this one into the mark.
+    let next = claimed
+        .changed(&PlansChange::Claim {
+            claim: claim(0, 90_000, 5),
+            revision: claimed.revision,
+        })
+        .unwrap();
+    assert_eq!(next.fed, 1);
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&next));
+    assert_eq!(f.bytes[0][20] & 0x40, 0x40);
+    assert_eq!(open(&mut f).plans.fed, 1);
+
+    // A settled claim was never fed.
+    let settled = claimed
+        .changed(&PlansChange::Settle { claim: held })
+        .unwrap();
+    assert!(!settled.view(true).fed(0));
+    // A pass, a skip and a save that moves the plan clear it.
+    let passed = next
+        .changed(&PlansChange::Pass {
+            plan: 0,
+            due_s: 200_000,
+            revision: next.revision,
+        })
+        .unwrap();
+    assert_eq!(passed.fed, 0);
+    let skipped = next
+        .changed(&PlansChange::Skip {
+            plan: 0,
+            due_s: 200_000,
+            revision: next.revision,
+        })
+        .unwrap();
+    assert_eq!((skipped.fed, skipped.skips), (0, 1));
+    let moved = next
+        .changed(&PlansChange::Replace {
+            table: table(&[(
+                0,
+                Plan {
+                    minute: 8 * 60,
+                    ..BREAKFAST
+                },
+            )]),
+            at_s: Some(100_000),
+        })
+        .unwrap();
+    assert_eq!(moved.fed, 0);
+    let kept = next
+        .changed(&PlansChange::Replace {
+            table: table(&[(
+                0,
+                Plan {
+                    portions: 3,
+                    ..BREAKFAST
+                },
+            )]),
+            at_s: Some(100_000),
+        })
+        .unwrap();
+    assert_eq!(kept.fed, 1, "the same times keep the mark and the bit");
+
+    // Both bits at once is no record of ours.
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&next));
+    rewrite(&mut f, |record| record[20] |= 0x20);
+    assert_eq!(open(&mut f).status, PlansStatus::Corrupt);
 }
 
 mod sequences {
