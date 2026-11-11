@@ -12,7 +12,7 @@ use wellfed_api::{
     WifiSource, Window,
 };
 use wellfed_store::{
-    Change, Error, FeederRow, NewEvent, NewFeeder, NewUser, Schema, SealedKey, Store, Synced,
+    Change, Error, FeederRow, NewEvent, NewFeeder, NewUser, SealedKey, Store, Synced,
 };
 
 async fn fresh() -> (TempDir, Store) {
@@ -590,48 +590,4 @@ fn migrations() -> i64 {
         .unwrap()
         .count();
     i64::try_from(count).unwrap()
-}
-
-/// A database a newer build migrated (its record names a migration this
-/// build lacks) opens read-only: it reads, every write is refused, nothing
-/// runs or is copied, and its file is as that build left it.
-#[tokio::test]
-async fn a_database_a_newer_build_migrated_opens_read_only() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("server.db");
-    let store = Store::open(&path, at(0)).await.unwrap();
-    store
-        .create_first_owner(user("ada"), &home())
-        .await
-        .unwrap();
-    store.close().await;
-
-    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
-        .await
-        .unwrap();
-    sqlx::query(
-        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
-         VALUES (9999, 'from a newer build', 1, x'00', 0)",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    pool.close().await;
-    let before = std::fs::read(&path).unwrap();
-
-    let store = Store::open(&path, at(1)).await.unwrap();
-
-    assert_eq!(
-        store.schema(),
-        Schema::Newer {
-            applied: 9999,
-            embedded: migrations(),
-        }
-    );
-    assert!(store.users_exist().await.unwrap(), "it reads");
-    let written = store.create_home(&home(), at(2)).await;
-    assert!(matches!(written, Err(Error::Sqlx(_))), "{written:?}");
-    store.close().await;
-    assert_eq!(copies(dir.path()), 0, "nothing ran, so nothing was copied");
-    assert_eq!(std::fs::read(&path).unwrap(), before, "left as it was");
 }

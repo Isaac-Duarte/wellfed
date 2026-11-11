@@ -1,7 +1,9 @@
-//! Codes a newer server stored, read by this one. A device API revision
-//! grows without a migration, so a server rolled back to an older build
-//! reads rows the newer one wrote: each reads as unknown, as the device
-//! API's own lenient enums do, and the rows beside it read as ever.
+//! What a newer server left, read by this one. A database a newer build
+//! migrated opens read-only, and refuses a caller that writes. Without a
+//! migration (a device API revision grows without one) a server rolled back
+//! to an older build reads rows the newer one wrote: each code it does not
+//! know reads as unknown, as the device API's own lenient enums do, and the
+//! rows beside it read as ever.
 
 use jiff::Timestamp;
 use uuid::Uuid;
@@ -9,7 +11,7 @@ use wellfed_api::{
     Blocked, ClientRole, EventKind, FeedOutcome, FeedReason, FeederId, Home, HomeId, Model, Source,
     TimeFormat, Units,
 };
-use wellfed_store::{Error, NewFeeder, SealedKey, Store};
+use wellfed_store::{Error, NewFeeder, Schema, SealedKey, Store};
 
 const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
 const FEEDER: FeederId = FeederId(Uuid::from_u128(1));
@@ -125,5 +127,72 @@ async fn codes_a_newer_server_stored_read_as_unknown() {
     assert!(matches!(damaged, Err(Error::Corrupt(_))), "{damaged:?}");
 
     pool.close().await;
+    store.close().await;
+}
+
+fn migrations() -> i64 {
+    let count = std::fs::read_dir(env!("CARGO_MANIFEST_DIR").to_owned() + "/migrations")
+        .unwrap()
+        .count();
+    i64::try_from(count).unwrap()
+}
+
+/// A database whose record names a migration this build lacks opens
+/// read-only: it reads, every write is refused, nothing runs or is copied,
+/// a caller that writes is refused, and the file is as that build left it.
+#[tokio::test]
+async fn a_database_a_newer_build_migrated_opens_read_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("server.db");
+    adopted(&path).await.close().await;
+
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+         VALUES (9999, 'from a newer build', 1, x'00', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    let before = std::fs::read(&path).unwrap();
+
+    let store = Store::open(&path, at(1)).await.unwrap();
+
+    let newer = Schema::Newer {
+        applied: 9999,
+        embedded: migrations(),
+    };
+    assert_eq!(store.schema(), newer);
+    assert!(store.feeder(FEEDER).await.unwrap().is_some(), "it reads");
+    let written = store.archive_feeder(FEEDER, at(2)).await;
+    assert!(matches!(written, Err(Error::Sqlx(_))), "{written:?}");
+    let refused = store.clone().writable().await;
+    assert!(
+        matches!(refused, Err(Error::Newer { applied: 9999, .. })),
+        "{refused:?}"
+    );
+    store.close().await;
+
+    let copies = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter(|entry| {
+            let name = entry.as_ref().unwrap().file_name();
+            name.to_string_lossy().contains(".before-")
+        })
+        .count();
+    assert_eq!(copies, 0, "nothing ran, so nothing was copied");
+    assert_eq!(std::fs::read(&path).unwrap(), before, "left as it was");
+}
+
+#[tokio::test]
+async fn a_current_database_is_writable() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = adopted(&dir.path().join("server.db")).await;
+
+    assert_eq!(store.schema(), Schema::Current);
+    let store = store.writable().await.unwrap();
     store.close().await;
 }

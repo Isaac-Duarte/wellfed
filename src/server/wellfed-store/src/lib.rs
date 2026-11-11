@@ -99,6 +99,10 @@ pub enum Error {
     Json(&'static str, serde_json::Error),
     #[error("{0} is not a UTF-8 path")]
     Path(std::path::PathBuf),
+    #[error(
+        "the database was migrated by a newer server (migration {applied}; this build's newest is {embedded}), so it was opened read-only and left as it is"
+    )]
+    Newer { applied: i64, embedded: i64 },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -183,6 +187,18 @@ impl Store {
     /// Whose schema the database has: a newer build's is read-only.
     pub fn schema(&self) -> Schema {
         self.schema
+    }
+
+    /// This store, for a caller that writes: one a newer build migrated is
+    /// closed and refused ([`Error::Newer`]), having written nothing.
+    pub async fn writable(self) -> Result<Self> {
+        match self.schema {
+            Schema::Current => Ok(self),
+            Schema::Newer { applied, embedded } => {
+                self.close().await;
+                Err(Error::Newer { applied, embedded })
+            }
+        }
     }
 
     /// A trivial query on the writer and on a reader, for readiness: the
