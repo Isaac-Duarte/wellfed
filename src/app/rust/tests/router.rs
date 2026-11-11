@@ -1509,6 +1509,68 @@ fn a_server_whose_token_is_gone_closes_the_phones_own_keys_until_it_is_removed()
     });
 }
 
+/// An app that stops while its adoption is out finds it unsettled at its
+/// next start: written down before the invite went, so the next attempt
+/// only reads the server's list and makes no second owner invite.
+#[test]
+fn an_adoption_cut_off_by_the_app_stopping_is_only_read_for_at_the_next_start() {
+    local(async {
+        let sim = feeder::start().await;
+        let (server, owner) = started().await;
+        let front = Relay::start(server.address()).await;
+        let phone = Phone::new();
+        let session = phone.log_in_as_ada(&server).await;
+        let _fronted = phone
+            .through(&session, format!("http://{}", front.address))
+            .await;
+        let direct = phone.open(&sim, sim.address).await;
+        let kitchen = identity(&sim);
+
+        // The POST reaches the server; the app stops before its answer.
+        front.hold_answers();
+        let adopting = phone.router.adopt(
+            kitchen.clone(),
+            "kitchen".into(),
+            Some(sim.address.to_string()),
+            &phone.key,
+        );
+        let stopped = tokio::time::timeout(GIVE_UP / 2, adopting).await;
+        assert!(stopped.is_err(), "the app stopped with the POST out");
+        let pins = std::fs::read_to_string(path(&phone.pins)).unwrap();
+        assert!(
+            pins.contains("adoptions") && pins.contains(&kitchen),
+            "{pins}"
+        );
+        eventually("the server holds it", async || {
+            (owner.feeders().await.unwrap().len() == 1).then_some(())
+        })
+        .await;
+        drop(direct);
+
+        let phone = phone.restarted().await;
+        let _fronted = phone
+            .through(&session, format!("http://{}", front.address))
+            .await;
+        let _direct = phone.open(&sim, sim.address).await;
+        let again = phone
+            .router
+            .adopt(kitchen.clone(), "kitchen".into(), None, &phone.key)
+            .await;
+        assert!(matches!(again, Adoption::Unsettled { .. }), "{again:?}");
+
+        front.cut();
+        front.resume();
+        let checked = phone
+            .router
+            .check_adoption(kitchen.clone(), &phone.key)
+            .await;
+        assert!(matches!(checked, Adoption::Adopted { .. }), "{checked:?}");
+        assert_eq!(owner.feeders().await.unwrap().len(), 1);
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
 #[test]
 fn an_adoption_whose_answer_is_lost_is_settled_by_reading_and_never_invited_twice() {
     local(async {

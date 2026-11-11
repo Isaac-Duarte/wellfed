@@ -634,6 +634,26 @@ impl Router {
         }
     }
 
+    /// `feeder`'s adoption is about to go: kept on disk as one whose answer
+    /// was lost until it settles, so an app that stops while it is out
+    /// never makes a second owner invite at its next start. Refused, with
+    /// nothing kept, if it cannot be written down.
+    pub(crate) fn guard_adoption(&self, feeder: &str) -> Result<(), BridgeError> {
+        let mut state = self.state();
+        let before = state.book.adoptions.clone();
+        state.book.adoptions.retain(|lost| lost.feeder != feeder);
+        state.book.adoptions.push(LostAdoption {
+            feeder: feeder.to_owned(),
+            at_ms: now_ms(),
+        });
+        let saved = state.save();
+        if saved.is_err() {
+            state.book.adoptions = before;
+        }
+        state.note_attempts();
+        saved
+    }
+
     /// How long after a lost attempt the server's silence counts as never
     /// sent.
     pub(crate) fn grace_ms(&self) -> i64 {
@@ -1519,7 +1539,10 @@ const fn answered(
     }
 }
 
-const fn nowhere(reason: NotSentReason, server_error: Option<ServerError>) -> RoutedReply {
+pub(crate) const fn nowhere(
+    reason: NotSentReason,
+    server_error: Option<ServerError>,
+) -> RoutedReply {
     RoutedReply {
         path: None,
         reply: FeederReply::NotSent,
