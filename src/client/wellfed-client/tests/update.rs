@@ -16,7 +16,9 @@ use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use wellfed_client::connection::{Connection, Event};
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
-use wellfed_core::ota::install::{Blocked, Install, Phase, Progress, Refused, Stop, Taken};
+use wellfed_core::ota::install::{
+    Blocked, Install, Marking, Phase, Progress, Refused, Stop, Taken,
+};
 use wellfed_core::store::update::{Candidate, State, UpdateStore};
 use wellfed_core::tone::Tune;
 use wellfed_device::update as wire;
@@ -330,7 +332,7 @@ impl Feeder {
             let (at, marker) = install.commit().unwrap();
             let at = (at - BANK1_OFFSET) as usize;
             self.bank1[at..at + 8].copy_from_slice(&marker);
-            install.marked(true).unwrap();
+            install.marked(Marking::ReadBack).unwrap();
             self.attempt = false;
             self.restart = true;
         }

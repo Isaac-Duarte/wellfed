@@ -88,7 +88,9 @@ Both banks must carry the same built-in keys. Bank 1 checks the offer's key agai
 
 ### Stops
 
-Every failure before activation leaves bank 1's marker clear, so the loader keeps booting bank 0, which keeps answering and feeding. The failures: a flipped byte (the whole-image hash), a chunk not wanted or of the wrong length (order), a failed program or readback (write), a marker that doesn't read back, a minute without a chunk (timeout), a cancel, an update store that can't be written, and a manifest or key the checks refuse.
+Every failure before activation leaves bank 1's marker clear, so the loader keeps booting bank 0, which keeps answering and feeding. The failures: a flipped byte (the whole-image hash), a chunk not wanted or of the wrong length (order), a failed program or readback (write), a minute without a chunk (timeout), a cancel, an update store that can't be written, and a manifest or key the checks refuse.
+
+**A marker that doesn't read back** is not one of them. Once its program has been tried, the marker may be down whatever the program or its readback reported (a stale read, a program that wrote and then reported a fault), so bank 1 may be valid. The activation stands, a stock image's handover mark stays, and the feeder restarts as after any activation (`PLOTA1 activated … marker=uncertain`); the boot decides. If the marker landed, the new build boots and raises the floor as it confirms. If not, bank 0 boots again with the manifest activated, as after a failed trial, and refuses it from then on. Reverting to the pending offer would let a build that boots from that marker confirm below the floor. Only a marker never programmed stops the install (`stage=marker`).
 
 - The loop records each stop as an `UpdateStop` event, since the update's state forgets it at the next offer or restart ([alerts](alerts.md)).
 - A stop leaves the candidate recorded, so bank 0 refuses any other manifest (`Pending`) until a `CancelUpdate` forgets it (`wellfed-bench ota NAME --cancel`). A cancel answers `Busy` when the store can't be written, rather than claiming it forgot.

@@ -45,7 +45,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use sha2::{Digest, Sha256};
 pub use wellfed_core::ota::SectorStep;
 use wellfed_core::ota::install::{
-    Bank0Check, Bank0Error, Blocked, CandidateState, Install, Phase, Progress, Refused, Stop, Taken,
+    Bank0Check, Bank0Error, Blocked, CandidateState, Install, Marking, Phase, Progress, Refused,
+    Stop, Taken,
 };
 use wellfed_core::record::Tag;
 use wellfed_core::store::handover;
@@ -304,6 +305,8 @@ pub enum Record {
         version: u32,
         bytes: u32,
         sectors: u32,
+        /// Whether the marker read back, or only was programmed.
+        marking: Marking,
     },
     Stopped {
         stop: Stop,
@@ -445,10 +448,18 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
             version,
             bytes,
             sectors,
-        } => write!(
-            f,
-            "activated version={version} bytes={bytes} sectors={sectors}"
-        ),
+            marking,
+        } => {
+            write!(
+                f,
+                "activated version={version} bytes={bytes} sectors={sectors}"
+            )?;
+            // The readback is only missing when the restart decides.
+            match marking {
+                Marking::Uncertain => f.write_str(" marker=uncertain"),
+                Marking::ReadBack | Marking::Unwritten => Ok(()),
+            }
+        }
         Record::Stopped { stop, write } => {
             write!(f, "error stage={}", stop.stage())?;
             match write {
@@ -1267,17 +1278,25 @@ impl<I: SlotIo + Clone> Update<I> {
         let Some(install) = self.install.as_mut() else {
             return next(IDLE_MS, None);
         };
-        let marked = match install.commit() {
-            Ok((offset, marker)) => {
+        // Once the program is tried, the marker may be down whatever the
+        // program or its readback reported, so the activation and the
+        // handover mark stand and the restart decides: the new build
+        // boots and raises the floor when it confirms, or this bank boots
+        // again with the manifest activated, as after a failed trial, and
+        // never takes it again.
+        let marking = match install.commit() {
+            Ok((offset, marker)) if offset == BANK1_OFFSET => {
                 let mut readback = [0u8; 8];
-                offset == BANK1_OFFSET
-                    && under_marker(|| flash.program(0, 0, &marker))
-                    && flash.read(0, 0, &mut readback)
-                    && readback == marker
+                let programmed = under_marker(|| flash.program(0, 0, &marker));
+                if programmed && flash.read(0, 0, &mut readback) && readback == marker {
+                    Marking::ReadBack
+                } else {
+                    Marking::Uncertain
+                }
             }
-            Err(_) => false,
+            _ => Marking::Unwritten,
         };
-        if install.marked(marked).is_err() {
+        if install.marked(marking).is_err() {
             // Bank 1 stays invalid: a later offer of the same manifest may
             // try again, as it never ran. This feeder also keeps its owner.
             let _ = under_marker(|| self.store.set_pending(candidate));
@@ -1300,6 +1319,7 @@ impl<I: SlotIo + Clone> Update<I> {
                 version: manifest.version,
                 bytes: manifest.image_len,
                 sectors: self.sectors,
+                marking,
             }),
         )
     }

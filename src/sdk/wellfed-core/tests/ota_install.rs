@@ -4,7 +4,7 @@
 
 use sha2::{Digest, Sha256};
 use wellfed_core::ota::MAX_CHUNK;
-use wellfed_core::ota::install::{IDLE_MS, Install, Stop, Taken, WANTED};
+use wellfed_core::ota::install::{IDLE_MS, Install, Marking, Phase, Stop, Taken, WANTED};
 use wellfed_signed::offer::{Admitted, ImageKind, Signed, Trust};
 use wellfed_signed::{BANK1_OFFSET, MARKER, Manifest, SECTOR};
 
@@ -65,7 +65,7 @@ fn every_chunk_once_makes_the_install_ready_and_the_marker_comes_last() {
     assert_eq!(&flash[..8], &[0xff; 8], "the marker is withheld");
     assert_eq!(&flash[8..], &payload[8..]);
     assert_eq!(install.commit(), Ok((BANK1_OFFSET, MARKER)));
-    install.marked(true).unwrap();
+    install.marked(Marking::ReadBack).unwrap();
     assert!(install.activated());
     assert_eq!(install.wanted(), [None; WANTED]);
 }
@@ -147,16 +147,25 @@ fn a_quiet_install_times_out_and_a_cancelled_one_never_activates() {
     push(&mut install, &payload, &mut Vec::new(), 1).unwrap();
     install.abort(Stop::Cancelled);
     assert_eq!(install.commit(), Err(Stop::Cancelled));
-    assert_eq!(install.marked(true), Err(Stop::Cancelled));
+    assert_eq!(install.marked(Marking::ReadBack), Err(Stop::Cancelled));
     assert!(!install.activated());
 }
 
+/// A marker never programmed is a stop; one programmed whose readback did
+/// not confirm it may be down, so the install stands activated.
 #[test]
-fn a_marker_that_does_not_read_back_is_a_stop() {
+fn only_a_marker_never_programmed_is_a_stop() {
     let payload = image(SECTOR);
     let mut install = Install::new(admitted(&payload), 0).unwrap();
     push(&mut install, &payload, &mut Vec::new(), 1).unwrap();
     install.commit().unwrap();
-    assert_eq!(install.marked(false), Err(Stop::Activate));
+    assert_eq!(install.marked(Marking::Unwritten), Err(Stop::Activate));
     assert!(!install.activated());
+
+    let mut install = Install::new(admitted(&payload), 0).unwrap();
+    push(&mut install, &payload, &mut Vec::new(), 1).unwrap();
+    install.commit().unwrap();
+    assert_eq!(install.marked(Marking::Uncertain), Ok(()));
+    assert!(install.activated() && install.stopped().is_none());
+    assert_eq!(install.progress(0, 0).phase, Phase::Activated);
 }
