@@ -104,8 +104,10 @@ class AccountScreen extends StatelessWidget {
                       'Log in again, or remove the server.',
                 ServerProblem.other => 'The server answered something this app does not read.',
                 ServerProblem.plainHttp =>
-                  "This server's address is plain http:// beyond the home network, which would send "
-                      'its sign-in unencrypted. Remove the server and add it again by its https:// address.',
+                  "This server's address is plain http:// beyond the home network, so this $deviceName's "
+                      'token has already crossed the network unencrypted, and it never expires. '
+                      'Remove the server, add it again by its https:// address, then revoke the old '
+                      "token for this $deviceName from the server's token list.",
                 ServerProblem.storage =>
                   "This $deviceName's storage couldn't read the server's sign-in. Nothing was deleted. "
                       'Close the app and open it again; if this stays, restart the $deviceName.',

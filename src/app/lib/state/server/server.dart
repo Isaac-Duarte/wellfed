@@ -24,8 +24,10 @@ enum ServerProblem {
   other,
 
   /// The kept address is plain `http://` beyond the home network, which
-  /// this app no longer uses: the server is added again by its `https://`
-  /// address.
+  /// this app no longer uses. The token already crossed the network in the
+  /// clear and never expires, so the owner adds the server again by its
+  /// `https://` address and revokes the old token on the server: removing
+  /// the server here only forgets its secret.
   plainHttp,
 
   /// This phone's secure storage failed to read the server's token, which
