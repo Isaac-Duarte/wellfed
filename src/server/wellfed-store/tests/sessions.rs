@@ -149,7 +149,7 @@ async fn users_are_listed_changed_and_deleted_but_never_the_last_owner() {
 
     assert!(
         store
-            .set_password(ada_id, "$argon2id$new", None)
+            .set_password(ada_id, "$argon2id$new", None, None)
             .await
             .unwrap()
     );
@@ -169,7 +169,33 @@ async fn users_are_listed_changed_and_deleted_but_never_the_last_owner() {
         store.update_user(ada_id, role(Role::Member)).await.unwrap(),
         Change::NotFound
     );
-    assert!(!store.set_password(ada_id, "x", None).await.unwrap());
+    assert!(!store.set_password(ada_id, "x", None, None).await.unwrap());
+}
+
+/// A change checked against a hash that has changed since replaces
+/// nothing and ends no session: the reset that landed in between stands.
+#[tokio::test]
+async fn a_password_change_checked_against_an_old_hash_changes_nothing() {
+    let (_dir, store) = fresh().await;
+    let ada = user("ada");
+    let ada_id = ada.id;
+    store.create_first_owner(ada, &home()).await.unwrap();
+    assert!(
+        store
+            .create_session(&[1; 32], ada_id, HASH, at(0))
+            .await
+            .unwrap()
+    );
+    let reset = store.set_password(ada_id, "$argon2id$reset", None, None);
+    assert!(reset.await.unwrap());
+
+    let stale = store.set_password(ada_id, "$argon2id$mine", Some(HASH), None);
+    assert!(!stale.await.unwrap());
+    let login = store.login("ada").await.unwrap().unwrap();
+    assert_eq!(login.password_hash, "$argon2id$reset");
+
+    let current = store.set_password(ada_id, "$argon2id$mine", Some("$argon2id$reset"), None);
+    assert!(current.await.unwrap());
 }
 
 #[tokio::test]
@@ -188,7 +214,7 @@ async fn a_password_change_ends_that_users_other_sessions() {
     let kept = Some(&[2; 32]);
     assert!(
         store
-            .set_password(ada_id, "$argon2id$new", kept)
+            .set_password(ada_id, "$argon2id$new", None, kept)
             .await
             .unwrap()
     );
@@ -258,7 +284,7 @@ async fn a_password_change_and_its_ended_sessions_commit_together() {
     store.create_user(bob).await.unwrap();
     assert!(
         store
-            .set_password(ada_id, "$argon2id$new", None)
+            .set_password(ada_id, "$argon2id$new", None, None)
             .await
             .is_err()
     );
@@ -317,7 +343,7 @@ async fn a_session_opens_only_on_the_verified_hash_of_a_live_account() {
     );
     assert!(
         store
-            .set_password(bob_id, "$argon2id$new", None)
+            .set_password(bob_id, "$argon2id$new", None, None)
             .await
             .unwrap()
     );

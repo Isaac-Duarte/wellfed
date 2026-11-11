@@ -218,7 +218,7 @@ pub async fn reset_owner(
     let typed = password.clone();
     let hash = sessions::blocking(move || hash_password(&typed, &salt)).await?;
 
-    if !store.set_password(owner.id, &hash, None).await? {
+    if !store.set_password(owner.id, &hash, None, None).await? {
         return Err(Error::NotFound(Resource::User));
     }
     let action = AuditAction::PasswordSet {

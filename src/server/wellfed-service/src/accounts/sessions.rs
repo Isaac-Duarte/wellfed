@@ -257,17 +257,22 @@ impl Service {
         password(&change.password)?;
         let store = &self.shared.store;
         let hash = store.password_hash(user.id).await?;
-        let hash = hash.ok_or(Error::NotFound(Resource::User))?;
-        let current = change.current;
-        let matches = blocking(move || Ok(verify_password(&current, &hash))).await?;
+        let checked = hash.ok_or(Error::NotFound(Resource::User))?;
+        let (current, against) = (change.current, checked.clone());
+        let matches = blocking(move || Ok(verify_password(&current, &against))).await?;
         if !matches {
             return Err(AccountError::BadCredentials.into());
         }
 
+        // Only over the hash just checked: a reset that landed since stands,
+        // and the current password given was not its.
         let hash = self.hash_password(change.password).await?;
         let keep = session.and_then(SessionToken::hash);
-        if !store.set_password(user.id, &hash, keep.as_ref()).await? {
-            return Err(Error::NotFound(Resource::User));
+        if !store
+            .set_password(user.id, &hash, Some(&checked), keep.as_ref())
+            .await?
+        {
+            return Err(AccountError::BadCredentials.into());
         }
         let action = AuditAction::PasswordSet {
             account: user.id,

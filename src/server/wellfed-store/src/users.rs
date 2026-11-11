@@ -215,18 +215,23 @@ impl Store {
     }
 
     /// Replace a user's password hash and end every session of theirs but
-    /// `keep`, in one transaction; whether the user exists.
+    /// `keep`, in one transaction; whether it was replaced. `checked`, when
+    /// given, is the hash the caller verified the current password against:
+    /// a hash changed since (a reset that landed meanwhile) is left as it
+    /// is, so the change cannot undo it.
     pub async fn set_password(
         &self,
         id: UserId,
         password_hash: &str,
+        checked: Option<&str>,
         keep: Option<&[u8; 32]>,
     ) -> Result<bool> {
         let mut tx = self.writer.begin().await?;
         let done = sqlx::query!(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            "UPDATE users SET password_hash = ?1 WHERE id = ?2 AND (?3 IS NULL OR password_hash = ?3)",
             password_hash,
-            id.0
+            id.0,
+            checked,
         )
         .execute(&mut *tx)
         .await?;
