@@ -15,7 +15,9 @@ One instance per entry, so a reload and a config flow write the same one.
 The store is kept by the beta upgrade rule:
 
 - It grows within its major as a minor (Home Assistant's `minor_version`)
-  whose additions this build keeps unread, so an older build reads it.
+  whose additions this build keeps unread, so an older build reads it, and
+  saves it at the newer of the two minors, so a newer build never takes its
+  own data for an older minor's.
 - A newer integration's major (after a downgrade) is read as nothing and
   never written: the store is made read-only, and the entry starts empty.
 - A file that does not read as this shape is copied aside under a numbered
@@ -28,7 +30,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import UnsupportedStorageVersionError
@@ -115,12 +117,26 @@ def set_aside(path: str) -> str:
     raise OSError(f"{ASIDE_MOST} copies of {path} are already set aside")
 
 
+class _Store(Store[KeptData]):
+    """The entry's store, reading any minor of its major as it is."""
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> KeptData:
+        if old_major_version != self.version:
+            raise NotImplementedError
+        # Home Assistant saves what this returns at the store's minor: keep a
+        # newer one's, whose additions the data still carries.
+        self.minor_version = max(self.minor_version, old_minor_version)
+        return cast(KeptData, old_data)
+
+
 class Kept:
     """One entry's store; changes are written at once, and again at shutdown."""
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         self._hass = hass
-        self._store: Store[KeptData] = Store(
+        self._store: Store[KeptData] = _Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}", minor_version=STORAGE_MINOR_VERSION
         )
         self._data: KeptData = _empty()

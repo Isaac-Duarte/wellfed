@@ -66,9 +66,10 @@ async def test_a_newer_minor_reads_and_keeps_what_it_added(
     store.add_pending(_a_pending())
     await _flushed(hass)
 
-    saved = hass_storage[KEY]["data"]
-    assert saved["added"] == {"by": "a newer minor"}
-    assert len(saved["pending"]) == 3
+    saved = hass_storage[KEY]
+    assert saved["minor_version"] == 2, "saved at the newer minor"
+    assert saved["data"]["added"] == {"by": "a newer minor"}
+    assert len(saved["data"]["pending"]) == 3
 
 
 async def test_a_newer_major_is_read_as_nothing_and_never_written(
