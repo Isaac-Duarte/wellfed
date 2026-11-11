@@ -46,7 +46,15 @@ pub(crate) fn source_columns(source: Source) -> (&'static str, Option<Vec<u8>>) 
     }
 }
 
+/// The source the two columns name. A kind this server does not know (a
+/// newer server's) reads as [`Source::Unknown`]; a known kind whose
+/// `client` column does not fit it is damage.
 pub(crate) fn source(kind: &str, client: Option<Vec<u8>>) -> Result<Source> {
+    const KNOWN: [&str; 4] = ["panel", "feeder", "schedule", "client"];
+    if !KNOWN.contains(&kind) {
+        return Ok(Source::Unknown);
+    }
+
     match (kind, client) {
         ("panel", None) => Ok(Source::Panel),
         ("feeder", None) => Ok(Source::Feeder),

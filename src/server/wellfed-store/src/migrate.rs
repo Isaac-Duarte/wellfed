@@ -3,7 +3,11 @@
 //! A database whose record names a migration this build does not embed was
 //! migrated by a newer build. It is opened read-only and nothing runs on it,
 //! so going forward to that build again loses nothing (the upgrade rule's
-//! "never write over newer data").
+//! "never write over newer data"). A build that stores a new value of a code
+//! the server owns (a model, role, unit, job or state) adds a migration with
+//! it, even an empty one, so an older build that would refuse the value
+//! opens the database read-only instead. Codes from the feeder's events grow
+//! with the device API and read as unknown.
 
 use std::path::{Path, PathBuf};
 
