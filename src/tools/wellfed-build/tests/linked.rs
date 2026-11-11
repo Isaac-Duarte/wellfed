@@ -157,6 +157,7 @@ fn hook_bypasses_in_real_listings_and_tables_are_refused() {
                 format!("f000 f800 bl {address:x} <{legacy}>"),
                 format!("bf18 it ne\n 2: f000 f800 blne {address:x} <{legacy}>"),
                 format!("b108 cbz r0, {address:x} <{legacy}>"),
+                format!("f000 f800 bl {:x} <{legacy}+0x4>", address + 4),
             ] {
                 let bypass = format!("{listing}\n00000000 <unmediated_sdk_caller>:\n 0: {call}\n");
                 let error = hooks::legacy_routes(&bypass).unwrap_err();

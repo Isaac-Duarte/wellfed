@@ -75,8 +75,12 @@ static SECTION: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\s*\d+\s+\.\S+\s+([0-9a-f]+)\s+([0-9a-f]+)\s+[0-9a-f]+\s+([0-9a-f]+)")
         .expect("section pattern")
 });
-static BRANCH_TARGET: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b[0-9a-f]+\s+<([^>]+)>").expect("branch target pattern"));
+/// A transfer's target symbol, without the `+0x…` offset objdump appends
+/// for an address inside it: a transfer into a legacy entry at any offset
+/// needs its wrapper as much as one to its start.
+static BRANCH_TARGET: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b[0-9a-f]+\s+<([^>+]+)(?:\+0x[0-9a-f]+)?>").expect("branch target pattern")
+});
 
 fn functions() -> BTreeSet<&'static str> {
     RENAMES
@@ -357,6 +361,24 @@ mod tests {
                 "{mnemonic}: {error}"
             );
         }
+
+        // A transfer into the entry, past its first instruction.
+        let inside = format!(
+            "10000000 <unmediated_sdk_caller>:\n 10000000:\tf000 f800 \tbl\t10000104 <wellfed_sdk_flash_legacy_lock+0x4>\n{}",
+            wrapped("FLASH_Write_Lock", "bl", target)
+        );
+        let error = legacy_routes(&inside).unwrap_err();
+        assert!(
+            matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == "unmediated_sdk_caller"),
+            "{error}"
+        );
+        let routes = legacy_routes(&wrapped(
+            "FLASH_Write_Lock",
+            "b.w",
+            "10000108 <wellfed_sdk_flash_legacy_lock+0x8>",
+        ))
+        .unwrap();
+        assert_eq!(routes["wellfed_sdk_flash_legacy_lock"].len(), 1);
 
         // A register call names no target, and is no direct route.
         assert!(!DIRECT_TRANSFER.is_match("bx"));
