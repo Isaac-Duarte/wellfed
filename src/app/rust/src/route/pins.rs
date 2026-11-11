@@ -497,7 +497,9 @@ mod tests {
         let newer = br#"{"version": 99, "data": {"pins": "of a newer shape"}}"#;
         std::fs::write(&path, newer).unwrap();
 
-        let error = PinStore::open(&path).err().expect("refused");
+        let Err(error) = PinStore::open(&path) else {
+            panic!("a newer build's pins are refused");
+        };
 
         assert_eq!(error.kind, ErrorKind::Store);
         assert_eq!(std::fs::read(&path).unwrap(), newer);

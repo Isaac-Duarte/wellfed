@@ -11,6 +11,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 import pytest
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.wellfed.const import DOMAIN
 from custom_components.wellfed.kept import kept, set_aside
@@ -25,6 +26,12 @@ SAMPLE: dict[str, Any] = json.loads(
 
 def _stored(version: int, minor: int, data: dict[str, Any]) -> dict[str, Any]:
     return {"version": version, "minor_version": minor, "key": KEY, "data": data}
+
+
+async def _flushed(hass: HomeAssistant) -> None:
+    """Run the store's delayed write, if one is due."""
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
 
 
 def _a_pending() -> bridge.Pending:
@@ -57,7 +64,7 @@ async def test_a_newer_minor_reads_and_keeps_what_it_added(
     assert store.answered == [41, 9]
 
     store.add_pending(_a_pending())
-    await hass.async_block_till_done()
+    await _flushed(hass)
 
     saved = hass_storage[KEY]["data"]
     assert saved["added"] == {"by": "a newer minor"}
@@ -76,7 +83,7 @@ async def test_a_newer_major_is_read_as_nothing_and_never_written(
 
     store.add_pending(_a_pending())
     store.answered_feed(7)
-    await hass.async_block_till_done()
+    await _flushed(hass)
 
     assert hass_storage[KEY] == newer, "left as it was"
 
@@ -93,7 +100,7 @@ async def test_a_store_that_cannot_be_set_aside_is_never_saved_over(
     assert "could not be set aside" in caplog.text
 
     store.add_pending(_a_pending())
-    await hass.async_block_till_done()
+    await _flushed(hass)
 
     assert hass_storage[KEY] == other, "left as it was"
 

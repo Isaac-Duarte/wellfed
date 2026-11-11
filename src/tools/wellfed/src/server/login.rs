@@ -232,7 +232,9 @@ mod tests {
 
     #[test]
     fn a_newer_major_is_refused() {
-        let error = TokenFile::read(br#"{"version":2}"#).err().unwrap();
+        let Err(error) = TokenFile::read(br#"{"version":2}"#) else {
+            panic!("a newer build's token file is refused");
+        };
         assert!(error.to_string().contains("version 2"), "{error}");
     }
 }
