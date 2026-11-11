@@ -1,12 +1,17 @@
-//! Writes the device finishes later whose outcome it lost: every session
-//! waiting on one ends unanswered.
+//! Retries of writes the device finishes later: a retry under the same id,
+//! on a new session after the first one dropped, waits for the write the
+//! first queued and hears its answer, never running it again; and a write
+//! whose outcome the device lost ends every session waiting on it
+//! unanswered.
 
 use wellfed_device_api::mailbox::KEYS_FINISHED;
 use wellfed_device_api::{KeyOutcome, Reason, UpdateAnswer};
-use wellfed_model::Op;
+use wellfed_model as model;
+use wellfed_model::{Answer, Generation, Op};
 
 use crate::support::{
-    Client_, MEMBER, OWNER, Rig, answered_unwritten, open, public, receiving, send_unwritten,
+    Client_, MEMBER, OWNER, Rig, answered_unwritten, open, poll_answer, public, receiving,
+    send_unwritten, view,
 };
 
 /// The connection under `client` drops.
@@ -35,11 +40,72 @@ fn revoke_member() -> Op {
     }
 }
 
+fn put_time() -> Op {
+    Op::PutTime {
+        base: Generation(0),
+        changes: model::TimeChanges {
+            zone: Some("MST7MDT,M3.2.0,M11.1.0".to_owned()),
+            ntp: Some(model::NtpServer::Gateway { port: 1123 }),
+        },
+    }
+}
+
 fn offer() -> Op {
     Op::OfferUpdate {
         manifest: vec![0xa5; 160],
         downgrade: None,
     }
+}
+
+/// A revocation and a time settings write, each queued by a session that
+/// dropped before its answer: the retry waits while the writer holds the
+/// change, then hears it landed, and the change runs once.
+#[test]
+fn a_retried_revocation_or_time_write_waits_for_the_first() {
+    for time in [false, true] {
+        let mut rig = Rig::new();
+        // Opening a session runs the writer, so both open first.
+        let mut owner = open(&mut rig, OWNER);
+        let mut again = open(&mut rig, OWNER);
+        let op = if time { put_time() } else { revoke_member() };
+
+        send_unwritten(&mut rig, &mut owner, 1, op.clone());
+        drop_connection(&mut rig, &owner);
+        send_unwritten(&mut rig, &mut again, 1, op);
+        assert!(!answered_unwritten(&mut rig, &mut again, 1), "time={time}");
+
+        let answer = poll_answer(&mut rig, &mut again, 1, 5);
+        let generation = time.then_some(Generation(1));
+        assert_eq!(answer, Some(Answer::Done { generation }), "time={time}");
+        if time {
+            assert_eq!(rig.device.time.generation, 1, "saved once");
+        } else {
+            assert!(!rig.device.clients.iter().any(|c| c.key == public(MEMBER)));
+        }
+    }
+}
+
+/// An update offer queued by a session that dropped: its retry waits for
+/// the update stage's answer instead of offering again, and hears the
+/// install it started.
+#[test]
+fn a_retried_update_offer_waits_for_the_first() {
+    let mut rig = Rig::new();
+    rig.device.update = true;
+    let mut owner = open(&mut rig, OWNER);
+    let mut again = open(&mut rig, OWNER);
+    rig.device.hold = true;
+
+    send_unwritten(&mut rig, &mut owner, 1, offer());
+    drop_connection(&mut rig, &owner);
+    send_unwritten(&mut rig, &mut again, 1, offer());
+    assert!(!answered_unwritten(&mut rig, &mut again, 1));
+
+    rig.device.hold = false;
+    rig.device.answer_held();
+    let answer = poll_answer(&mut rig, &mut again, 1, 5);
+    assert_eq!(answer, Some(view(receiving())));
+    assert_eq!(rig.device.updates.len(), 1, "offered once");
 }
 
 /// A revocation whose result left the mailbox before anyone read it: the
