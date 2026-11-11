@@ -6,47 +6,9 @@
 mod support;
 
 use proptest::prelude::*;
-use support::Rig;
+use support::{Rig, answer, request, send};
 use wellfed_device_api::Reason;
-use wellfed_proto::api::{
-    ClientMessage, DeviceMessage, FRAME_MAX, Op, Outcome, Refusal, RequestId, Role,
-    UPDATE_CHUNK_MAX, UpdateOp,
-};
-use wellfed_session::noise::Transport;
-
-/// Seal `plain` to the slot; the answers that come within a few passes,
-/// as their plaintext.
-fn send(rig: &mut Rig, slot: usize, transport: &mut Transport, plain: &[u8]) -> Vec<Vec<u8>> {
-    let mut sealed = [0; FRAME_MAX];
-    let len = transport.seal(plain, &mut sealed).unwrap();
-    let bytes = support::framed(&sealed[..len]);
-    assert_eq!(rig.deliver(slot, &bytes), bytes.len());
-
-    let mut answers = Vec::new();
-    for _ in 0..8 {
-        rig.pass();
-        for reply in rig.collect(slot) {
-            let mut out = [0; FRAME_MAX];
-            let read = transport.open(&reply, &mut out).unwrap();
-            answers.push(out[..read].to_vec());
-        }
-    }
-    answers
-}
-
-fn request(id: RequestId, op: Op<'_>) -> Vec<u8> {
-    let mut out = vec![0; FRAME_MAX];
-    let len = wellfed_proto::encode(&ClientMessage::Request { id, op }, &mut out).unwrap();
-    out.truncate(len);
-    out
-}
-
-fn answer(plain: &[u8]) -> (RequestId, Outcome<'_>) {
-    match wellfed_proto::decode::<DeviceMessage<'_>>(plain) {
-        Ok(DeviceMessage::Response { id, result }) => (id, result),
-        other => panic!("not a response: {other:?}"),
-    }
-}
+use wellfed_proto::api::{Op, Outcome, Refusal, Role, UPDATE_CHUNK_MAX, UpdateOp};
 
 /// An op past every one this build knows, as a newer client would send it:
 /// refused `Unavailable` under its id, and the session still serves.
