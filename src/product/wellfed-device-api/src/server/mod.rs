@@ -324,13 +324,6 @@ impl Server {
         match self.slots[slot].phase {
             Phase::Free => {}
             Phase::Closing => self.slots[slot] = Slot::FREE,
-            Phase::Recovery(_) => {
-                // An offer waiting for its code goes with its client.
-                self.cancel_rescue = true;
-                self.rescue.stop();
-                self.end(slot, Reason::Closed, &mut record);
-                self.slots[slot] = Slot::FREE;
-            }
             _ => {
                 self.end(slot, Reason::Closed, &mut record);
                 self.slots[slot] = Slot::FREE;
@@ -506,23 +499,23 @@ impl Server {
         }
         slot.wire.discard();
 
-        // Ending by the driver's `closed` would see to this; the slot reaches
-        // that call already closing.
-        if matches!(slot.phase, Phase::Recovery(_)) {
-            self.cancel_rescue = true;
-            self.rescue.stop();
-        }
         self.end(index, Reason::Stalled, record);
         true
     }
 
     /// End `index` with `reason`: anything queued still goes out, then the
-    /// driver closes it.
+    /// driver closes it. A recovery session's offer waiting for its code
+    /// goes with it, however it ended (a hang-up, a stall or an error), so
+    /// the owner's next presses work the panel again.
     fn end(&mut self, index: usize, reason: Reason, record: &mut impl FnMut(Record)) {
         self.forget_waiting(index);
         let slot = &mut self.slots[index];
         if matches!(slot.phase, Phase::Free | Phase::Closing) {
             return;
+        }
+        if matches!(slot.phase, Phase::Recovery(_)) {
+            self.cancel_rescue = true;
+            self.rescue.stop();
         }
         if let Phase::Open {
             events: Some(_), ..

@@ -6,7 +6,7 @@
 use super::handshake::find;
 use super::{Phase, Server, slot_id};
 use crate::clients::Role;
-use crate::pairing::{self, Pairing, Path};
+use crate::pairing::{self, Pairing};
 use crate::setup::{self as rescue, Offer, Received};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record};
 use wellfed_core::deadline_passed;
@@ -90,7 +90,6 @@ impl Server {
         index: usize,
         now_ms: u32,
         device: &mut D,
-        pairing: &mut Pairing,
         record: &mut impl FnMut(Record),
     ) -> Result<bool, Reason> {
         let slot = &mut self.slots[index];
@@ -106,7 +105,6 @@ impl Server {
             Rescue::Asked { offer } => {
                 // The client speaks only in the handshake and the proof.
                 if slot.wire.frame()?.is_some() {
-                    pairing.cancel(Path::Recovery);
                     return Err(Reason::Malformed);
                 }
                 match self.decision.take() {

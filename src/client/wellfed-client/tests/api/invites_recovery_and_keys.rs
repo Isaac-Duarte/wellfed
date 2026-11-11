@@ -599,6 +599,43 @@ fn a_recovery_client_that_stops_reading_gives_up_its_offer() {
     assert_eq!(rig.pairing.awaiting(), None, "the offer went with it");
 }
 
+/// A recovery session that ends on an error, here a frame whose length no
+/// frame has, loses its offer too: the owner's next presses work the panel.
+#[test]
+fn a_recovery_session_ended_by_an_error_gives_up_its_offer() {
+    use wellfed_client::setup::{Ask, Session as Setup};
+
+    let mut rig = Rig::new();
+    open_recovery(&mut rig);
+    let slot = rig.accept().unwrap();
+    let ask = Ask {
+        label: "laptop".into(),
+        wifi: None,
+    };
+    let keys = Keypair::from_secret(STRANGER);
+    let code = Code::from_bits(0x0abc);
+    let setup = Setup::new(&keys, [0x61; 32], ask, code, [0x62; 32]).unwrap();
+    let mut recovery = Recovery::new(setup).unwrap();
+    let mut outbox = Vec::new();
+    while rig.pairing.awaiting().is_none() {
+        while let Some(bytes) = recovery.poll_transmit() {
+            outbox.extend(bytes);
+        }
+        rig.deliver(slot, &mut outbox);
+        rig.pass();
+        let received = rig.collect(slot);
+        recovery.handle_input(&received).unwrap();
+    }
+
+    rig.deliver(slot, &mut vec![0xff, 0xff]);
+    rig.pass();
+    assert!(rig.ended(Reason::Malformed));
+    let records = &mut rig.records;
+    rig.server.closed(slot, |r| records.push(r));
+    rig.pass();
+    assert_eq!(rig.pairing.awaiting(), None, "the offer went with it");
+}
+
 #[test]
 fn the_recovery_window_admits_one_owner_who_proves_the_code() {
     use wellfed_model::setup::{Enrolled, Reply, WifiSaved};

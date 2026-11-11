@@ -119,7 +119,7 @@ impl Server {
                 }
                 Ok(false)
             }
-            Phase::Recovery(_) => self.rescue_step(index, now_ms, device, pairing, record),
+            Phase::Recovery(_) => self.rescue_step(index, now_ms, device, record),
         }
     }
 
