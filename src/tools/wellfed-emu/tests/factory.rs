@@ -8,10 +8,12 @@
 use std::fs;
 use std::path::PathBuf;
 
+use wellfed_core::ota::{CONFIRM_LEN, confirm_record};
 use wellfed_emu::factory::{self, Entry, execute, inputs, selected};
 use wellfed_emu::{BANKS, Error};
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::review::{FactoryRun, Stop};
+use wellfed_hal_common::trial::{self, Decision};
 
 const STOCK: &str = "private/firmware/PLAF103_OTA_010115.bin";
 const STOCK_SHA256: &str = "05147476fc70c91cc77ad7da6d6772376b2081d460ac7b1912e2d73868a09498";
@@ -262,5 +264,85 @@ fn any_single_cleared_marker_bit_gives_way_to_bank_0() {
         marker[index] &= marker[index] - 1; // The lowest set bit, as NOR programs.
         place(&mut flash, 1, &f.stock, &marker, true);
         assert_eq!(selected(&flash, &f.rom).unwrap(), Some(0), "byte {index}");
+    }
+}
+
+/// KM0's trial over `flash` for `boots` boots in one power-on, each ending in
+/// a reset nobody asked for, with the confirmation `record`: bank 0's
+/// headers read from the flash as the glue maps them, and a give-way
+/// clearing bank 1's first marker byte as the glue does. After every boot
+/// the factory loader must still select a bank. The decisions.
+fn trial_boots(
+    flash: &mut [u8],
+    rom: &[u8],
+    record: &[u8; CONFIRM_LEN],
+    boots: usize,
+) -> Vec<Decision> {
+    let identity = [0x5a; 32];
+    let mut register = 0u32;
+    let mut out = Vec::new();
+    for boot in 0..boots {
+        let bank1: [u8; 8] = flash[bank(1)..bank(1) + 8].try_into().unwrap();
+        let bank0 = trial::fallback(|at, header| {
+            let at = bank(0) + at as usize;
+            header.copy_from_slice(&flash[at..at + 32]);
+            true
+        });
+        register = (register & 0xffff_0000) | ((register + 1) & 0xffff);
+        let (decision, value) = trial::decide(&bank1, &bank0, record, register, &identity);
+        register = value;
+        if decision.gives_way() {
+            flash[bank(1)] = 0;
+        }
+        out.push(decision);
+
+        let chosen = selected(flash, rom);
+        assert!(
+            matches!(chosen, Ok(Some(_))),
+            "boot {boot} ({decision:?}) leaves {chosen:?}"
+        );
+    }
+    out
+}
+
+/// Bank 0 with its marker intact but its KM4 header damaged, which the
+/// loader refuses (its warning loop): neither a trial that runs out nor a
+/// storm may clear bank 1's marker over it, which would leave nothing to
+/// boot. With bank 0 intact, both give way and the loader boots bank 0.
+#[test]
+#[ignore = "needs the private baseline, SDK ROM and stock OTA"]
+fn a_trial_or_storm_never_gives_way_onto_a_bank_0_the_loader_refuses() {
+    let f = fixture();
+    let mut both = f.flash.clone();
+    place(&mut both, 0, &f.stock, MARKER, true);
+    place(&mut both, 1, &f.stock, MARKER, true);
+    let mut damaged = both.clone();
+    damaged[bank(0) + 0x17000] ^= 1;
+    let alone = {
+        let mut flash = damaged.clone();
+        flash[bank(1)] = 0;
+        flash
+    };
+    let refused = execute(&alone, &f.rom, Entry::Select).unwrap();
+    assert_eq!(
+        refused.stop,
+        Stop::Warning,
+        "the loader refuses that bank 0"
+    );
+
+    let unconfirmed = [0xff; CONFIRM_LEN];
+    let confirmed = confirm_record(&[0x5a; 32], 0);
+    let limit = trial::LIMIT as usize + 1;
+    let storm = trial::STORM_LIMIT as usize + 1;
+    for (record, boots) in [(&unconfirmed, limit), (&confirmed, storm)] {
+        let mut flash = both.clone();
+        let out = trial_boots(&mut flash, &f.rom, record, boots);
+        assert!(out.last().is_some_and(|d| d.gives_way()), "{out:?}");
+        assert_eq!(selected(&flash, &f.rom).unwrap(), Some(0));
+
+        let mut flash = damaged.clone();
+        let out = trial_boots(&mut flash, &f.rom, record, boots + 3);
+        assert!(!out.iter().any(|d| d.gives_way()), "{out:?}");
+        assert_eq!(selected(&flash, &f.rom).unwrap(), Some(1));
     }
 }
