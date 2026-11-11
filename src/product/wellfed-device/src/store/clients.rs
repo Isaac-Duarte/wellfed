@@ -293,9 +293,9 @@ impl<I: SlotIo> ClientStore<I> {
 
     /// The enrolled clients. Like [`Self::identity`], they come from the
     /// table open loaded or the last save committed: an open that is not
-    /// `Loaded` holds none, and a save that fails keeps the table it was
-    /// opened or saved with. So nothing after an `Io` open means unknown,
-    /// not none enrolled.
+    /// `Loaded` holds none, and a save that fails reads the units again and
+    /// holds what they hold (none, if that read fails too). So nothing
+    /// after an `Io` open means unknown, not none enrolled.
     pub fn clients(&self) -> impl Iterator<Item = &Client> {
         self.table.clients.iter().flatten()
     }
