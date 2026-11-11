@@ -85,12 +85,15 @@ impl Server {
                 }
                 TimeResult::Refused(_) => Reply::Refused(Refusal::Time),
             },
-            Action::CreateInvite { role: invited, key } => {
+            Action::CreateInvite {
+                role: invited,
+                key: bound,
+            } => {
                 let mut secret = [0; 32];
                 if !device.random(&mut secret) {
                     return Some(Reply::Refused(Refusal::Busy));
                 }
-                let event = pairing.invite(now_ms, role, invited, key, secret);
+                let event = pairing.invite(now_ms, role, key, invited, bound, secret);
                 record(Record::Pairing(event));
                 match event {
                     pairing::Event::Invited { id: invite_id } => {

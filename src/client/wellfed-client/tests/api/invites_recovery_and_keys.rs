@@ -264,6 +264,30 @@ fn an_invite_enrolls_a_new_client_once() {
     assert_eq!(rig.device.counter, drawn);
 }
 
+/// Revoking a client takes back the invites it made: one a member minted
+/// before an owner revoked it admits nobody, though it has not expired.
+#[test]
+fn a_revoked_clients_invite_admits_nobody() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let mut member = open(&mut rig, MEMBER);
+    let invite = member_invite(&mut rig, &mut member, 1);
+
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    assert_eq!(
+        ask(&mut rig, &mut owner, 2, revoke),
+        Answer::Done { generation: None }
+    );
+    rig.publish();
+
+    assert_eq!(redeem(&mut rig, invite, STRANGER), None);
+    assert!(rig.ended(Reason::Invite));
+    rig.publish();
+    assert!(!rig.device.clients.iter().any(|c| c.key == public(STRANGER)));
+}
+
 /// The history's enrollments: the client, its role and how it came.
 fn enrollments(rig: &Rig) -> Vec<(proto::Fingerprint, proto::Role, proto::Path)> {
     rig.device

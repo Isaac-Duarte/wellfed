@@ -16,7 +16,9 @@
 //!   client's Noise XXpsk3 handshake over the LAN. An invite may name the
 //!   one static key that can redeem it, so whoever asked for it knows the
 //!   key it enrolls. An invite never grants more than its issuer holds,
-//!   and invites live in RAM only, so a reboot cancels them.
+//!   and dies with the issuer's key ([`Pairing::issuers_left`]), so a
+//!   revoked client cannot leave a way back in behind it. Invites live in
+//!   RAM only, so a reboot cancels them.
 //! - **Recovery:** with the panel unlocked, holding Lock and Dispense
 //!   together opens a LAN window. A client that connects in it runs the same
 //!   exchange as BLE setup over the device API: its offer closes the
@@ -173,6 +175,8 @@ enum Confirm {
 struct Invite {
     id: u32,
     role: Role,
+    /// The static key of the client that asked for it.
+    issuer: [u8; 32],
     /// The only static key that may redeem it, if the issuer named one.
     key: Option<[u8; 32]>,
     secret: [u8; 32],
@@ -322,13 +326,14 @@ impl Pairing {
         Some(Event::Entered { path, code })
     }
 
-    /// A client with role `by` asks for an invite granting `role`, for the
-    /// client with static key `key` alone if it names one, with a secret
-    /// the firmware drew from its generator.
+    /// A client with role `by` and static key `issuer` asks for an invite
+    /// granting `role`, for the client with static key `key` alone if it
+    /// names one, with a secret the firmware drew from its generator.
     pub fn invite(
         &mut self,
         now_ms: u32,
         by: Role,
+        issuer: [u8; 32],
         role: Role,
         key: Option<[u8; 32]>,
         secret: [u8; 32],
@@ -351,6 +356,7 @@ impl Pairing {
         *slot = Some(Invite {
             id,
             role,
+            issuer,
             key,
             secret,
             deadline_ms: now_ms.wrapping_add(self.config.invite_ms),
@@ -389,6 +395,17 @@ impl Pairing {
                 role: invite.role,
             },
             None => refused(Path::Invite, Refusal::Unknown),
+        }
+    }
+
+    /// The client table changed: drop every invite whose issuer
+    /// `enrolled` no longer holds, so revoking a client also takes back
+    /// the invites it made.
+    pub fn issuers_left(&mut self, enrolled: impl Fn(&[u8; 32]) -> bool) {
+        for slot in &mut self.invites {
+            if slot.is_some_and(|invite| !enrolled(&invite.issuer)) {
+                *slot = None;
+            }
         }
     }
 

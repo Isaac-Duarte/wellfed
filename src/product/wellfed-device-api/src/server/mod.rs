@@ -178,6 +178,9 @@ pub struct Server {
     signer: Option<pairing::Event>,
     /// A session waiting for an update key's press ended: cancel the offer.
     cancel_signer: bool,
+    /// The client table changed: drop the invites of every key gone from
+    /// it at the next pass, before any handshake can redeem one.
+    prune_invites: bool,
     /// Subscribers that ended since the last pass, by slot: the device
     /// hears of each on the next.
     readers_left: [bool; SESSIONS],
@@ -224,6 +227,7 @@ impl Server {
             cancel_rescue: false,
             signer: None,
             cancel_signer: false,
+            prune_invites: false,
             readers_left: [false; SESSIONS],
             feeding: false,
             handshook: false,
@@ -241,9 +245,11 @@ impl Server {
         (&mut self.clients, self.clients_generation)
     }
 
-    /// The table changed: close every session whose key is gone.
+    /// The table changed: close every session whose key is gone, and
+    /// (at the next pass) drop the invites it made.
     pub fn clients_changed(&mut self, generation: u32, mut record: impl FnMut(Record)) {
         self.clients_generation = generation;
+        self.prune_invites = true;
         for index in 0..SESSIONS {
             let Phase::Open { key, .. } = self.slots[index].phase else {
                 continue;
@@ -437,6 +443,10 @@ impl Server {
         if core::mem::take(&mut self.cancel_signer) {
             pairing.cancel(Path::Signer);
             self.signer = None;
+        }
+        if core::mem::take(&mut self.prune_invites) {
+            let clients = &self.clients;
+            pairing.issuers_left(|key| clients.iter().flatten().any(|c| c.key == *key));
         }
         self.tell_readers_left(device);
         self.settle_left(device, &mut record);
