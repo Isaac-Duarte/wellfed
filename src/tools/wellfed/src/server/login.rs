@@ -5,7 +5,9 @@
 //! The file sits beside the device API's key file in the owner's data
 //! directory ([`crate::home`]), mode
 //! 0600 like every private file, and holds the server's address, the
-//! account's name and the token. Only a login session can make a token, so
+//! account's name and the token, versioned as a file an owner keeps
+//! ([`wellfed_formats::kept`]): one a newer build wrote is refused and never
+//! written over or deleted. Only a login session can make a token, so
 //! `login` opens one, makes the token and ends the session: nothing but
 //! the token outlives the command, and revoking it is all a lost laptop
 //! needs.
@@ -17,7 +19,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde::{Deserialize, Serialize};
-use wellfed_formats::private;
+use wellfed_formats::kept::{self, Found, Kept};
 use wellfed_server_client::api::{Credentials, ErrorCode, NewToken, TokenId};
 use wellfed_server_client::{Auth, Client, Error, Url};
 
@@ -39,9 +41,14 @@ pub(crate) struct LoginArgs {
     token_name: String,
 }
 
-/// What the token file holds.
+/// The token file's major.
+const VERSION: u32 = 1;
+
+/// What the token file holds. No field is denied: a newer minor's
+/// additions are skipped.
 #[derive(Serialize, Deserialize)]
 struct TokenFile {
+    version: u32,
     /// The server's base URL, as `login` was given it.
     server: String,
     /// The account the token belongs to.
@@ -62,6 +69,10 @@ impl fmt::Debug for TokenFile {
     }
 }
 
+impl Kept for TokenFile {
+    const MAJOR: u32 = VERSION;
+}
+
 impl TokenFile {
     fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
@@ -70,8 +81,17 @@ impl TokenFile {
                 path.display()
             );
         }
-        wellfed_formats::load(path)
-            .with_context(|| format!("read the token file {}", path.display()))
+        let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+        Self::read(&bytes).with_context(|| format!("read the token file {}", path.display()))
+    }
+
+    fn read(bytes: &[u8]) -> Result<Self> {
+        match kept::read::<Self>(bytes)? {
+            Found::Read(file) => Ok(file),
+            Found::Newer { major } => bail!(
+                "it is version {major}, a newer build's (this one reads up to {VERSION}), and is left as it is"
+            ),
+        }
     }
 
     fn client(&self) -> Result<Client> {
@@ -113,12 +133,13 @@ pub(super) async fn login(args: LoginArgs, path: &Path, out: Output) -> Result<S
     let created = client.create_token(&new).await?;
 
     let file = TokenFile {
+        version: VERSION,
         server: args.server.as_str().to_owned(),
         user: user.name.clone(),
         id: created.token.id,
         secret: created.secret,
     };
-    let written = private::write_json(path, &file)
+    let written = kept::write::<TokenFile>(path, &file)
         .with_context(|| format!("write the token file {}", path.display()));
 
     // A token no file holds could never be revoked from here, so it goes
@@ -189,4 +210,29 @@ fn password() -> Result<String> {
         .read_line(&mut line)
         .context("read the password")?;
     Ok(line.trim_end_matches(['\r', '\n']).to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE: &str = include_str!("../../tests/fixtures/token-v1.json");
+
+    #[test]
+    fn version_1_reads_and_writes_as_its_sample() {
+        let file = TokenFile::read(SAMPLE.as_bytes()).unwrap();
+
+        assert_eq!(file.server, "http://192.0.2.7:8080/");
+        assert_eq!(file.user, "ada");
+        assert_eq!(file.secret, "a-sample-token-secret");
+        let written = serde_json::to_value(&file).unwrap();
+        let sample: serde_json::Value = serde_json::from_str(SAMPLE).unwrap();
+        assert_eq!(written, sample);
+    }
+
+    #[test]
+    fn a_newer_major_is_refused() {
+        let error = TokenFile::read(br#"{"version":2}"#).err().unwrap();
+        assert!(error.to_string().contains("version 2"), "{error}");
+    }
 }

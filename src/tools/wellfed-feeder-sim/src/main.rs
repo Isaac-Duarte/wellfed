@@ -83,7 +83,7 @@ fn remember(path: &Path, identity: &[u8; 32]) -> Result<()> {
         return Ok(());
     }
     file.feeders.push(EnrolledFeeder { identity });
-    private::write_json(path, &file).with_context(|| format!("write {}", path.display()))
+    owner::save(path, &file).with_context(|| format!("write {}", path.display()))
 }
 
 fn system_random() -> Random {
