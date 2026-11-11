@@ -615,6 +615,7 @@ fn a_warm_reset_resumes_the_clock_with_the_rtc_gap_in_its_error() {
         Ok(Resumed {
             gap_s: 12,
             error_ms: 1_300 + 1_000 + 130,
+            contested: false,
         })
     );
 
@@ -816,4 +817,95 @@ fn occurrences_run_once_and_late_ones_are_missed() {
         Occurrence::Evaluated
     );
     assert_eq!(occurrence(due, Some(due), due + 1), Occurrence::Evaluated);
+}
+
+/// A contested clock is carried across a warm reset with its anchor, so
+/// the reset hands the next NTP answer nothing: one a day ahead is still
+/// refused, the clock still needs the time, and an honest answer or an
+/// owner's sync sets it.
+#[test]
+fn a_contested_clock_keeps_its_bound_across_a_warm_reset() {
+    const DAY_MS: u64 = 86_400_000;
+    let contested = || {
+        let mut clock = WallClock::default();
+        clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+        for n in 1..=u32::from(DISJOINT_LIMIT) {
+            let now = n * 1_000;
+            let ahead = NOON + u64::from(now) + DAY_MS;
+            assert_eq!(clock.fix(now, ntp(ahead, 20)), Err(SyncError::Bounded));
+        }
+        assert_eq!(clock.read(4_000), None);
+        clock
+            .carry(10_000, 1_000)
+            .expect("a contested clock is carried")
+    };
+
+    // Ten RTC seconds on, two seconds into the new boot.
+    let mut clock = WallClock::default();
+    let resumed = clock.resume(2_000, &contested(), Some(1_010), Restart::Warm);
+    assert!(resumed.is_ok_and(|resumed| resumed.contested));
+    assert_eq!(clock.read(2_000), None, "still needs the time");
+    let truth = NOON + 20_000;
+    assert_eq!(
+        clock.fix(2_000, ntp(truth + DAY_MS, 20)),
+        Err(SyncError::Bounded)
+    );
+    // Carried again, it stays contested.
+    let again = clock.carry(3_000, 1_011).expect("still carried");
+    let mut next = WallClock::default();
+    assert!(
+        next.resume(1_000, &again, Some(1_012), Restart::Warm)
+            .is_ok_and(|resumed| resumed.contested)
+    );
+
+    assert_eq!(clock.fix(2_000, ntp(truth, 20)), Ok(Jump::First));
+    assert!(clock.read(2_000).is_some());
+    let mut clock = WallClock::default();
+    clock
+        .resume(2_000, &contested(), Some(1_010), Restart::Warm)
+        .unwrap();
+    assert_eq!(
+        clock.fix(2_000, fix(truth + DAY_MS, 20, Origin::Owner)),
+        Ok(Jump::First)
+    );
+}
+
+/// A learned rate gone wrong (the uptime clock's drift moved past the
+/// learned bound) makes honest NTP answers miss. Once three have, the rate
+/// is forgotten and the bound grows at the unlearned rate, so the next
+/// honest answer sets the clock without a client's sync.
+#[test]
+fn a_wrong_learned_rate_is_forgotten_and_honest_ntp_sets_the_clock() {
+    let mut clock = WallClock::default();
+    clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+    let step = 1_024_000;
+    for i in 1..=7u64 {
+        let truth = i * step;
+        clock
+            .fix(slow(truth), fix(NOON + truth, 20, Origin::Owner))
+            .unwrap();
+    }
+    assert!(clock.state(slow(7 * step)).learned);
+
+    // The drift moves from 735 to 3,735 ppm slow: three hours on, the
+    // learned clock is about 32 s fast, outside its 200 ppm bound.
+    let base = 7 * step;
+    let uptime = |truth: u64| slow(base) + slow_by(3_735, truth - base);
+    let mut truth = base + 3 * u64::from(HOUR_MS);
+    for _ in 0..DISJOINT_LIMIT {
+        assert_eq!(
+            clock.fix(uptime(truth), ntp(NOON + truth, 20)),
+            Err(SyncError::Bounded)
+        );
+        truth += 60_000;
+    }
+    let state = clock.state(uptime(truth));
+    assert!(state.reading.is_none());
+    assert!(!state.learned, "the rate is forgotten");
+
+    assert_eq!(
+        clock.fix(uptime(truth), ntp(NOON + truth, 20)),
+        Ok(Jump::First)
+    );
+    honest(clock.read(uptime(truth)).unwrap(), NOON + truth, "re-set");
 }
