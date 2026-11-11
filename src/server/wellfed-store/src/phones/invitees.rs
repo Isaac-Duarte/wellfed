@@ -10,7 +10,9 @@
 //! or given an expiry, the token revoked, or the key revoked by an owner)
 //! revokes the keys it invited, and theirs in turn. A token's key replaced
 //! by a new one hands its invitees to the new key instead, and an owner who
-//! keeps an invitee takes it out of all of this.
+//! keeps an invitee takes it out of all of this. Keeping one key vouches
+//! for that key alone: the keys it invited stay its inviter's account's,
+//! and a join it makes once kept is attributed to no one.
 //!
 //! The prefixes are long enough that no one can grind a key sharing one,
 //! so a join is never pinned on another phone; were two keys ever to share
