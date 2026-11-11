@@ -14,12 +14,13 @@
 
 use std::fmt;
 use std::io::BufRead;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde::{Deserialize, Serialize};
 use wellfed_formats::kept::{self, Found, Kept};
+use wellfed_formats::private;
 use wellfed_server_client::api::{Credentials, ErrorCode, NewToken, TokenId};
 use wellfed_server_client::{Auth, Client, Error, Url};
 
@@ -82,7 +83,12 @@ impl TokenFile {
             );
         }
         let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
-        Self::read(&bytes).with_context(|| format!("read the token file {}", path.display()))
+        Self::read(&bytes).with_context(|| {
+            format!(
+                "read the token file {}; `wellfed server login` sets one that doesn't read aside",
+                path.display()
+            )
+        })
     }
 
     fn read(bytes: &[u8]) -> Result<Self> {
@@ -107,17 +113,45 @@ pub(super) fn client(path: &Path) -> Result<Client> {
     TokenFile::load(path)?.client()
 }
 
-/// Log in, make a token for this computer, keep it, and end the session.
-pub(super) async fn login(args: LoginArgs, path: &Path, out: Output) -> Result<Settled> {
-    if path.exists() {
-        let kept = TokenFile::load(path)?;
-        bail!(
+/// Make way for a login's token file at `path`: refused while a token file
+/// that reads is there (log out first) or one a newer build wrote (left as
+/// it is). One that doesn't read at all (damaged, or from before the file
+/// had a version) can't be logged out of, so it is set aside, never deleted,
+/// and the path where it went returned.
+fn make_way(path: &Path) -> Result<Option<PathBuf>> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("read {}", path.display())),
+    };
+    match kept::read::<TokenFile>(&bytes) {
+        Ok(Found::Read(kept)) => bail!(
             "already logged in to {} as {} ({}); run `wellfed server logout` first",
             kept.server,
             kept.user,
             path.display()
-        );
+        ),
+        Ok(Found::Newer { major }) => bail!(
+            "{} is version {major}, a newer build's (this one reads up to {VERSION}), and is left as it is",
+            path.display()
+        ),
+        Err(why) => {
+            let aside = private::set_aside(path)
+                .with_context(|| format!("set aside {}, which does not read", path.display()))?;
+            eprintln!(
+                "The token file {} does not read ({why}); kept as {}. If its token is still \
+                 listed on the server, revoke it there.",
+                path.display(),
+                aside.display()
+            );
+            Ok(Some(aside))
+        }
     }
+}
+
+/// Log in, make a token for this computer, keep it, and end the session.
+pub(super) async fn login(args: LoginArgs, path: &Path, out: Output) -> Result<Settled> {
+    make_way(path)?;
     let password = password()?;
 
     let mut client = Client::new(&args.server)?;
@@ -236,5 +270,40 @@ mod tests {
             panic!("a newer build's token file is refused");
         };
         assert!(error.to_string().contains("version 2"), "{error}");
+    }
+
+    /// A token file that doesn't read (here from before it had a version)
+    /// is set aside whole, so logging in again is all it takes.
+    #[test]
+    fn a_login_sets_aside_a_token_file_that_does_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wellfed-server.json");
+        let unversioned = br#"{"server": "http://192.0.2.7:8080/", "user": "ada"}"#;
+        std::fs::write(&path, unversioned).unwrap();
+
+        let aside = make_way(&path).unwrap().unwrap();
+
+        assert!(!path.exists());
+        assert_eq!(aside, dir.path().join("wellfed-server.json.damaged-1"));
+        assert_eq!(std::fs::read(&aside).unwrap(), unversioned);
+        assert_eq!(make_way(&path).unwrap(), None, "nothing in the way now");
+    }
+
+    #[test]
+    fn a_login_is_refused_over_a_token_file_that_reads_or_is_newer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wellfed-server.json");
+
+        for (held, says) in [
+            (SAMPLE.as_bytes(), "already logged in"),
+            (&br#"{"version": 2}"#[..], "newer build"),
+        ] {
+            std::fs::write(&path, held).unwrap();
+            let Err(error) = make_way(&path) else {
+                panic!("refused");
+            };
+            assert!(error.to_string().contains(says), "{error}");
+            assert_eq!(std::fs::read(&path).unwrap(), held, "left as it was");
+        }
     }
 }
