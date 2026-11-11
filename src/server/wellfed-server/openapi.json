@@ -1332,7 +1332,7 @@
         "responses": {
           "204": {},
           "403": {
-            "description": "forbidden: owners only",
+            "description": "forbidden: owners only; session_required: not from a token",
             "content": {
               "application/json": {
                 "schema": {

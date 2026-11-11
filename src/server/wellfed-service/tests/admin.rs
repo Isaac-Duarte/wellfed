@@ -8,7 +8,7 @@ use wellfed_api::{
 };
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::{TestService, ada, local, until};
-use wellfed_service::{Caller, ClientError, Error, FeederError, Invalid, Service};
+use wellfed_service::{AccountError, Caller, ClientError, Error, FeederError, Invalid, Service};
 
 async fn started(role: ClientRole) -> (Running, TestService, FeederId) {
     let sim = feeder::start().await;
@@ -52,7 +52,20 @@ fn an_unowned_client_is_kept_or_revoked_and_the_servers_own_key_is_not_revoked()
         };
         assert_eq!(owner_of(cli).await, Some(ClientOwner::Unowned));
 
-        service.keep_client(id, cli).await.unwrap();
+        // A token cannot vouch for a key: a leaked one could keep the key
+        // it enrolled past every revocation.
+        let by_token = Caller {
+            token: Some(wellfed_api::TokenId(uuid::Uuid::from_u128(9))),
+            ..owner()
+        };
+        let refused = service.keep_client(&by_token, id, cli).await;
+        assert!(
+            matches!(refused, Err(Error::Account(AccountError::SessionRequired))),
+            "{refused:?}"
+        );
+        assert_eq!(owner_of(cli).await, Some(ClientOwner::Unowned));
+
+        service.keep_client(&owner(), id, cli).await.unwrap();
         assert_eq!(owner_of(cli).await, Some(ClientOwner::Kept));
 
         // Another client, joined at the feeder without the server.

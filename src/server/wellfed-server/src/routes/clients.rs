@@ -83,17 +83,20 @@ pub(crate) async fn revoke_client(
     params(("id" = FeederId, Path), ("key" = String, Path)),
     responses(
         (status = 204),
-        (status = 403, body = Problem, description = "forbidden: owners only"),
+        (status = 403, body = Problem, description = "forbidden: owners only; session_required: not from a token"),
         (status = 404, body = Problem),
         (status = 409, body = Problem, description = "feeder_archived"),
     ),
 )]
 pub(crate) async fn keep_client(
     State(state): State<AppState>,
-    _: Allowed<need::FeederAdmin>,
+    Allowed(caller, _): Allowed<need::FeederAdmin>,
     WithRejection(Path((id, key)), _): ClientPath,
 ) -> ApiResult<StatusCode> {
-    state.service.keep_client(FeederId(id), key.0).await?;
+    state
+        .service
+        .keep_client(&caller, FeederId(id), key.0)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
