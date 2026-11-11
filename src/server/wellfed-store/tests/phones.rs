@@ -246,6 +246,34 @@ async fn a_join_read_before_its_inviter_was_recorded_is_not_attributed() {
     assert!(store.invitations(feeder).await.unwrap().is_empty());
 }
 
+/// Key 1 invites 2, 2 invites 3, and 1 revokes 2, all before the server
+/// attributes anything: 2 settles with no key listed, and 3 still goes.
+#[tokio::test]
+async fn an_invitee_dropped_before_it_was_attributed_takes_its_own() {
+    let (_dir, store, feeder) = fresh().await;
+    store.record_phone(&phone(feeder, 1, 7, 10)).await.unwrap();
+    joined(&store, feeder, 1, 2, 1).await;
+    joined(&store, feeder, 2, 3, 2).await;
+
+    assert!(attribute(&store, feeder, &[1, 3], 40).await);
+    assert_eq!(store.phone(feeder, &[2; 32]).await.unwrap(), None);
+    let chained = store.phone(feeder, &[3; 32]).await.unwrap();
+    assert_eq!(
+        chained.as_ref().unwrap().token,
+        Some(TokenId(Uuid::from_u128(7)))
+    );
+    assert_eq!(reason(chained), Some(RevokeReason::InviterRevoked));
+    assert!(
+        store
+            .phone(feeder, &[1; 32])
+            .await
+            .unwrap()
+            .unwrap()
+            .revoking
+            .is_none()
+    );
+}
+
 /// A key an owner kept stays theirs, whoever invited it.
 #[tokio::test]
 async fn a_kept_invitee_is_not_attributed() {

@@ -5,7 +5,8 @@
 //! deleting the account, revoking the token or revoking the inviting key
 //! revokes it too, and a key it invited in turn. An owner who keeps such a
 //! key detaches it, and then nothing of the inviter's revokes it. A join
-//! the server read before it knew the inviting key is not attributed.
+//! the server read before it knew the inviting key is not attributed, and
+//! a chain the feeder cut while the server was away still goes whole.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -288,6 +289,32 @@ fn a_claimed_phone_takes_only_the_invites_it_makes_after() {
             .unwrap();
         revoked(service, &sim, &[30, 32]).await;
         assert!(feeder::client_keys(&sim).await.contains(&key(31)));
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// An owner's phone invites a key, that key invites another, and the
+/// phone revokes the first, all while the server is away. Back, the server
+/// finds the first key gone, and the key it invited still goes with it.
+#[test]
+fn a_chain_the_feeder_cut_while_the_server_was_away_still_goes() {
+    local(async {
+        let (sim, server, id) = started().await;
+        let service = server.service();
+        let (ada, _bob) = ada_and_bob(service).await;
+        let phone = token_of(service, ada.user.clone()).await;
+        join(service, &sim, id, &phone, 40).await;
+
+        let store = server.stop().await;
+        invite_directly(&sim, 40, 41).await;
+        invite_directly(&sim, 41, 42).await;
+        feeder::phone_revoke(&sim, secret(40), key(41)).await;
+
+        let server = TestService::reopen(store).await;
+        let service = server.service();
+        revoked(service, &sim, &[41, 42]).await;
+        assert!(feeder::client_keys(&sim).await.contains(&key(40)));
         server.shutdown().await;
         sim.stop().await;
     });

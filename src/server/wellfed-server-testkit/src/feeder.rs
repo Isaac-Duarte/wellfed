@@ -233,6 +233,23 @@ pub async fn phone_invite(sim: &Running, secret: [u8; 32], role: ClientRole) -> 
     .text()
 }
 
+/// The joined phone whose secret is `secret` revokes `key` over its own
+/// session, without the server.
+pub async fn phone_revoke(sim: &Running, secret: [u8; 32], key: [u8; 32]) {
+    static IDS: AtomicU8 = AtomicU8::new(0x60);
+    let id = [IDS.fetch_add(1, Ordering::Relaxed); 16];
+
+    let mut connection = open_phone(sim, secret).await;
+    let answer = connection
+        .ask(id, &Op::RevokeClient { key })
+        .await
+        .expect("the simulator answers the phone's revoke");
+    assert!(
+        matches!(answer, Answer::Done { .. }),
+        "the phone's revoke answered {answer:?}"
+    );
+}
+
 /// The public keys in the simulator's client table, as its owner reads
 /// them.
 pub async fn client_keys(sim: &Running) -> Vec<[u8; 32]> {

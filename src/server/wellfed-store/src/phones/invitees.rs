@@ -17,7 +17,9 @@
 //! one, the cascade matches by prefix and revokes too much, never too
 //! little. A phone key the feeder already dropped leaves a row in
 //! `dropped_phones`, so a join it made that the server reads only later is
-//! revoked as soon as it is recorded.
+//! revoked as soon as it is recorded. So does an invitee the feeder dropped
+//! before the server attributed it, so a chain stays whole however long
+//! the server was away.
 
 use jiff::Timestamp;
 use sqlx::SqliteConnection;
@@ -211,7 +213,9 @@ impl Store {
     /// still stands. It counts as recorded from when the join was read, so
     /// the joins it made in turn are its. A key recorded or kept already
     /// stays as it is, and a join no such phone key invited records nothing.
-    /// Whether a key it recorded is owed a revoke.
+    /// With no key joined (the feeder dropped it first), the invitee's
+    /// prefix is recorded as a dropped phone key's, so the keys it invited
+    /// go too. Whether a key it recorded is owed a revoke.
     pub async fn attribute_invitation(
         &self,
         invitation: &Invitation,
@@ -286,6 +290,26 @@ impl Store {
                 .execute(&mut *tx)
                 .await?;
                 owed |= inviter.revoking && added.rows_affected() == 1;
+            }
+            // The feeder no longer lists the key that joined: it left before
+            // the server read its join. Its own joins are still the
+            // inviter's, and they go as they are recorded, as a dropped
+            // phone key's do.
+            if joined.is_empty() {
+                let invitee = invitation.invitee.as_slice();
+                sqlx::query!(
+                    "INSERT INTO dropped_phones
+                         (feeder_id, prefix, user_id, token_id, invited_ms, dropped_ms)
+                     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+                    feeder.0,
+                    invitee,
+                    inviter.user,
+                    inviter.token,
+                    received,
+                    at,
+                )
+                .execute(&mut *tx)
+                .await?;
             }
         }
 
