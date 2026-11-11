@@ -225,8 +225,15 @@ impl Key {
     /// A key statement retiring `id` for good. Only a key an image builds
     /// in signs one, the bench or the release key: a feeder refuses an
     /// owner's, so one is never written.
+    ///
+    /// A key never signs its own retirement. Where another key may still
+    /// sign statements, that key signs it; where none may, the feeder would
+    /// be left with no key that can sign one, and on a consumer feeder
+    /// with no key for releases either. The statement names no feeder, so
+    /// its bytes would do the same to every feeder they reach.
     pub fn revoke(&self, id: &KeyId) -> Result<Vec<u8>> {
         self.require_built_in(KeyError::OwnerRevoke)?;
+        require(*id != self.id(), || KeyError::SelfRevoke)?;
         Ok(self.signed(&offer::revoke_body(&self.id(), id)))
     }
 
@@ -845,6 +852,23 @@ mod tests {
         assert_eq!(hex::Lower(&key.public()).to_string(), public);
         assert!(key.revoke(&[7; 8]).is_ok());
         assert!(key.add_key(&[8; 32]).is_ok());
+    }
+
+    /// No key signs its own retirement, whatever its scope: the statement
+    /// could leave a feeder with no key to sign the next one.
+    #[test]
+    fn a_key_never_signs_its_own_retirement() {
+        for scope in [KeyScope::Bench, KeyScope::Release] {
+            let key = Key {
+                key: SigningKey::from_bytes(&[4; 32]),
+                scope,
+            };
+            assert!(matches!(
+                key.revoke(&key.id()),
+                Err(Error::Key(KeyError::SelfRevoke))
+            ));
+            assert!(key.revoke(&bench_key(5).id()).is_ok());
+        }
     }
 
     /// `keygen` writes bench and owner keys only: the release key comes

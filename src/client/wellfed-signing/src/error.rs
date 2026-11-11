@@ -45,6 +45,10 @@ pub enum KeyError {
     OwnerRevoke,
     #[error("An owner's update key signs no release-slot key (PLKEY1)")]
     OwnerAddKey,
+    /// A key retiring itself: the key that should still sign statements
+    /// signs this one, and where none would be left, no key may.
+    #[error("A key signs no retirement of itself; another built-in or release-slot key signs it")]
+    SelfRevoke,
     /// The release key is written only by `release-keygen`, which keeps it
     /// out of a checkout.
     #[error("keygen writes bench and owner keys; use release-keygen for the release key")]
