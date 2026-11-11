@@ -19,7 +19,10 @@
 //! too few to pick a key by, so on one the server reads the feeder's
 //! clients and forgets each phone key no longer listed whose invite can no
 //! longer be redeemed: the keys it invited then go as they would through
-//! the server.
+//! the server. Each connect, gap in the history and lag in reading it does
+//! the same, so a `revoked` event the server missed (it crashed after
+//! storing it, or the event was lost) and a wait for an invite's deadline
+//! that a restart dropped are still followed up.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -230,7 +233,8 @@ impl Service {
     /// and each time a client joins it (an owed key's invite redeemed, or a
     /// phone key's invite, whose join is then attributed) or its history
     /// has a gap that may hide one. A client revoked follows up a revoke on
-    /// the LAN.
+    /// the LAN, and so does each connect, gap and lag, in case its event
+    /// was missed.
     pub(crate) fn watch_revocations(&self, id: FeederId, mut updates: Receiver<MirrorEvent>) {
         let service = self.clone();
         let cancel = self.cancel.child_token();
@@ -243,10 +247,15 @@ impl Service {
                     update = updates.recv() => update,
                 };
                 match update {
+                    // A revoke on the LAN this server never followed up (one
+                    // read before a crash, one a lag or a gap hid, or one
+                    // whose invite wake a restart lost) is followed up here,
+                    // by the client list, whatever became of its event.
                     Ok(MirrorEvent::Link(Link::Online)) => {
                         if let Err(error) = service.reconcile_phones().await {
                             warn!(%error, "the phone keys could not be reconciled");
                         }
+                        service.forget_unlisted(id).await;
                         service.revoke_owed(id).await;
                     }
                     Ok(MirrorEvent::Event(event))
@@ -264,10 +273,14 @@ impl Service {
                             service.revoke_owed(id).await;
                         }
                     }
-                    Ok(MirrorEvent::Gap(_)) => service.revoke_owed(id).await,
+                    Ok(MirrorEvent::Gap(_)) => {
+                        service.forget_unlisted(id).await;
+                        service.revoke_owed(id).await;
+                    }
                     Ok(_) => {}
                     Err(RecvError::Lagged(_)) => {
                         updates = updates.resubscribe();
+                        service.forget_unlisted(id).await;
                         service.revoke_owed(id).await;
                     }
                     Err(RecvError::Closed) => return,

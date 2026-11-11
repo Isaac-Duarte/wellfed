@@ -446,3 +446,41 @@ fn a_bare_tokens_logout_revokes_its_keys_and_keeps_none() {
         sim.stop().await;
     });
 }
+
+/// A revoke on the LAN whose follow-up waits for the revoked phone's
+/// invite, when the server restarts in the meantime: the wait is lost with
+/// the process, and the reconnect follows the revoke up instead.
+#[test]
+fn a_revoke_on_the_lan_is_followed_up_after_a_restart() {
+    local(async {
+        let sim = feeder::start().await;
+        let clock = ManualClock::new();
+        let server = TestService::start_with_clock(Arc::new(clock.clone())).await;
+        let id = server
+            .adopt_as(&sim, &sim.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let (ada, bob) = ada_and_bob(service).await;
+        let phone = token_of(service, ada.user.clone()).await;
+        join(service, &sim, id, &phone, 90).await;
+        join(service, &sim, id, &bob, 92).await;
+        invite_directly(&sim, 92, 93).await;
+        attributed(service, id, &bob, 93).await;
+
+        feeder::phone_revoke(&sim, secret(90), key(92)).await;
+        read(service, id, |event| {
+            matches!(event, CoreEvent::Revoked { .. })
+        })
+        .await;
+        let store = server.stop().await;
+
+        let server = TestService::reopen_with_clock(store, Arc::new(clock.clone())).await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        clock.advance(Duration::from_secs(u64::from(u16::MAX) + 120));
+        revoked(service, &sim, &[92, 93]).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
