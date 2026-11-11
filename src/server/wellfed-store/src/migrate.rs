@@ -17,7 +17,7 @@ use sqlx::migrate::{Migrate, Migrator};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection, SqlitePool};
 
-use crate::{Result, Schema};
+use crate::{Error, Result, Schema};
 
 static MIGRATOR: Migrator = sqlx::migrate!();
 
@@ -91,12 +91,17 @@ pub(crate) async fn run(writer: &SqlitePool, path: &Path, now: Timestamp) -> Res
 
     if let (Some(version), false) = (pending, applied.is_empty()) {
         let copy = backup_path(path, version, now);
+        let partial = partial_path(&copy);
+        let into = partial
+            .to_str()
+            .ok_or_else(|| Error::Path(partial.clone()))?;
         // `VACUUM INTO` takes a consistent copy of a live database. It is
         // not a table query, so it has no offline metadata to check.
         sqlx::query("VACUUM INTO ?")
-            .bind(copy.to_string_lossy().into_owned())
+            .bind(into)
             .execute(&mut *connection)
             .await?;
+        keep(&partial, &copy)?;
     }
     drop(connection);
 
@@ -109,4 +114,34 @@ fn backup_path(path: &Path, version: i64, now: Timestamp) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".before-{version}-{now}"));
     path.with_file_name(name)
+}
+
+/// The hidden name a copy is written under until it is whole and synced.
+fn partial_path(copy: &Path) -> PathBuf {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(copy.file_name().unwrap_or_default());
+    name.push(".partial");
+    copy.with_file_name(name)
+}
+
+/// Sync the copy written at `partial`, move it to `copy` and sync the
+/// directory, so a copy under its final name is a whole one that outlasts a
+/// power cut, as the server's backups are.
+fn keep(partial: &Path, copy: &Path) -> Result<()> {
+    let failed = |path: &Path| {
+        let path = path.to_owned();
+        move |source| Error::Copy { path, source }
+    };
+
+    std::fs::File::open(partial)
+        .and_then(|file| file.sync_all())
+        .map_err(failed(partial))?;
+    std::fs::rename(partial, copy).map_err(failed(copy))?;
+    let dir = copy
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    std::fs::File::open(dir)
+        .and_then(|dir| dir.sync_all())
+        .map_err(failed(dir))
 }

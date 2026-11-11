@@ -577,7 +577,7 @@ async fn pending_migrations_copy_the_database_first_on_every_attempt() {
         let now = at(ms);
         let opened = Store::open(&path, now).await;
         assert!(matches!(opened, Err(Error::Migrate(_))), "{opened:?}");
-        assert_eq!(copies(dir.path()), attempt);
+        assert_eq!(copies(dir.path()), attempt, "no partial copy left");
         // Named for the newest pending migration and the time given.
         let newest = migrations();
         let copy = format!("server.db.before-{newest}-{}", now.as_millisecond());
