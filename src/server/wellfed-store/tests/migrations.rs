@@ -5,6 +5,7 @@
 //! lists each one; this test holds the embedded migrations to it.
 
 use sqlx::migrate::Migrator;
+use wellfed_session::hex::Lower;
 
 static MIGRATOR: Migrator = sqlx::migrate!();
 
@@ -37,7 +38,7 @@ fn pinned() -> Vec<Pinned<'static>> {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    Lower(bytes).to_string()
 }
 
 #[test]

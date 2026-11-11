@@ -6043,6 +6043,7 @@ dependencies = [
  "uuid",
  "wellfed-api",
  "wellfed-formats",
+ "wellfed-session",
 ]
 
 [[package]]

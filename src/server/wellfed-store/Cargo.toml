@@ -23,6 +23,7 @@ proptest.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 utoipa.workspace = true
+wellfed-session.workspace = true
 
 [lints]
 workspace = true

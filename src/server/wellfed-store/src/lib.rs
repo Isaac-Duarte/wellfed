@@ -197,7 +197,10 @@ impl Store {
     }
 
     /// This store, for a caller that writes: one a newer build migrated is
-    /// closed and refused ([`Error::Newer`]), having written nothing.
+    /// closed and refused ([`Error::Newer`]), having written nothing. The
+    /// pools are shared by every clone of this store, so a refusal closes
+    /// them for each clone too: call it right after [`Store::open`], before
+    /// handing out clones.
     pub async fn writable(self) -> Result<Self> {
         match self.schema {
             Schema::Current => Ok(self),
