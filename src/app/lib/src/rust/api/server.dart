@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'feeder.dart';
+import 'keys.dart';
 import 'model.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
@@ -102,6 +103,13 @@ abstract class ServerSession implements RustOpaqueInterface {
   /// The server's version, with no login: whether it answers at all.
   Future<String> health();
 
+  /// The phones this phone invited on its feeders, as the server recorded
+  /// them: one entry per phone, the server's id for its feeder. Revoking
+  /// this phone's token revokes them too, so a logout names them first.
+  /// They are the keys under this phone's token other than `key`, this
+  /// phone's own, and those not already being revoked.
+  Future<List<String>> invitedPhones({required ClientKey key});
+
   /// What the app's file keeps of this session.
   ServerLink link();
 
@@ -123,8 +131,10 @@ abstract class ServerSession implements RustOpaqueInterface {
   );
 
   /// Revoke this phone's token on the server and end every follow. The
-  /// phone's own keys on its feeders stay: it reaches them directly. A
-  /// token the server already stopped counts as revoked.
+  /// server then revokes the keys recorded under the token on its
+  /// feeders: this phone's own, and the phones it invited
+  /// ([`Self::invited_phones`]). A token the server already stopped counts
+  /// as revoked.
   Future<void> logout();
 
   /// A pet's intake over the last `days` (1-31, default 7).

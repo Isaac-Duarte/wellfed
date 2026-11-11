@@ -20,6 +20,7 @@ use wellfed_api::{
 pub use wellfed_server_client::Timeouts;
 use wellfed_server_client::{Auth, Client, PlainHttp, Url};
 
+use crate::api::keys::ClientKey;
 pub use crate::api::model::{FeedOutcome, FeedReason};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 pub use crate::api::server_views::{
@@ -238,9 +239,28 @@ impl ServerSession {
         Ok(self.client.session().await?.into())
     }
 
+    /// The phones this phone invited on its feeders, as the server recorded
+    /// them: one entry per phone, the server's id for its feeder. Revoking
+    /// this phone's token revokes them too, so a logout names them first.
+    /// They are the keys under this phone's token other than `key`, this
+    /// phone's own, and those not already being revoked.
+    pub async fn invited_phones(&self, key: &ClientKey) -> Result<Vec<String>, ServerError> {
+        let token = TokenId(ids::parse(&self.link.token_id)?);
+        let own = *key.keypair().public();
+        let phones = self.client.phones().await?;
+        Ok(phones
+            .into_iter()
+            .filter(|phone| phone.token == Some(token) && phone.key.0 != own)
+            .filter(|phone| phone.revoking.is_none())
+            .map(|phone| phone.feeder.to_string())
+            .collect())
+    }
+
     /// Revoke this phone's token on the server and end every follow. The
-    /// phone's own keys on its feeders stay: it reaches them directly. A
-    /// token the server already stopped counts as revoked.
+    /// server then revokes the keys recorded under the token on its
+    /// feeders: this phone's own, and the phones it invited
+    /// ([`Self::invited_phones`]). A token the server already stopped counts
+    /// as revoked.
     pub async fn logout(&self) -> Result<(), ServerError> {
         self.close();
 

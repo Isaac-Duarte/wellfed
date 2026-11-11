@@ -9,17 +9,46 @@ import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 
-/// What logging out or removing the server leaves, said where both are.
+/// What removing the server leaves.
 String get keptKeysWords =>
     'This $deviceName keeps its own keys on its feeders and reaches them directly, '
     'as before the server. Deleting your account on the server revokes those keys.';
 
+/// What a logout revokes with the token: this phone's own keys, and the
+/// phones it invited, `invited` holding the server's id of each one's
+/// feeder (`null`: the server could not say), named by `feeders`.
+String logOutWords(List<String>? invited, List<ListedFeeder> feeders) {
+  final String others = switch (invited) {
+    null => ', and any phone it invited',
+    [] => '',
+    [_] => ', and the phone it invited (${_perFeeder(invited, feeders)})',
+    _ => ', and the ${invited.length} phones it invited (${_perFeeder(invited, feeders)})',
+  };
+  return 'The server stops taking this $deviceName and revokes the keys its token holds on your feeders: '
+      "this $deviceName's own$others. To keep them, remove the server instead.";
+}
+
+/// How many of `invited` are on each feeder: "2 on Kitchen, 1 on Hall".
+String _perFeeder(List<String> invited, List<ListedFeeder> feeders) {
+  final counts = <String, int>{};
+  for (final String id in invited) {
+    counts[id] = (counts[id] ?? 0) + 1;
+  }
+  String name(String id) => feeders.where((feeder) => feeder.id == id).firstOrNull?.name ?? 'a feeder';
+  return [for (final MapEntry(:key, :value) in counts.entries) '$value on ${name(key)}'].join(', ');
+}
+
 /// The account this phone is logged in to the home server as: who, and the
 /// way out.
 class AccountScreen extends StatelessWidget {
-  const AccountScreen({super.key, required this.server, this.household, this.logInAgain});
+  const AccountScreen({super.key, required this.server, this.household, this.logInAgain, this.invitedPhones});
 
   final HomeServer server;
+
+  /// The phones this phone invited, which a logout revokes too: the
+  /// server's id of each one's feeder, or `null` when the server did not
+  /// say.
+  final Future<List<String>?> Function()? invitedPhones;
 
   /// Opens the home's pets and foods.
   final VoidCallback? household;
@@ -28,7 +57,13 @@ class AccountScreen extends StatelessWidget {
   final VoidCallback? logInAgain;
 
   Future<void> _logOut(BuildContext context) async {
-    if (!await _confirm(context, 'Log out?', 'The server stops taking this $deviceName. $keptKeysWords')) return;
+    final List<String>? invited = await invitedPhones?.call();
+    if (!context.mounted) return;
+    final List<ListedFeeder> feeders = switch (server.state) {
+      ServerLinked(:final List<ListedFeeder> feeders) => feeders,
+      _ => const [],
+    };
+    if (!await _confirm(context, 'Log out?', logOutWords(invited, feeders))) return;
     final bool revoked = await server.logOut();
     if (!context.mounted) return;
     if (!revoked) {
