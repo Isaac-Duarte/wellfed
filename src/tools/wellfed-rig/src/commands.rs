@@ -412,17 +412,24 @@ impl Bench {
         Ok(on)
     }
 
-    /// Release the strap and cut power, then isolate the UART, with no wait:
-    /// safe in cleanup paths.
+    /// Cut power, then release the strap and isolate the UART, with no
+    /// wait: safe in cleanup paths, and the kill switch of unattended
+    /// motion. Power goes first and every channel is tried even when one
+    /// fails, so a strap or UART relay fault never leaves the feeder
+    /// powered; the first failure is returned once all were tried.
     pub fn cut_power(&mut self) -> Result<()> {
-        self.set(STRAP, Switch::Off)?;
-        self.set(POWER, Switch::Off)?;
+        let mut channels = vec![POWER, STRAP];
         if self.uart_when_off == UartWhenOff::Isolated {
-            for channel in UART {
-                self.set(channel, Switch::Off)?;
+            channels.extend(UART);
+        }
+
+        let mut first = None;
+        for channel in channels {
+            if let Err(error) = self.set(channel, Switch::Off) {
+                first.get_or_insert(error);
             }
         }
-        Ok(())
+        first.map_or(Ok(()), Err)
     }
 
     /// Connect the UART, then power the feeder. The lines go live a relay's

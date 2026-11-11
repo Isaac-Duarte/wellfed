@@ -15,7 +15,7 @@ use crate::device::{Answer, DeviceError, DeviceStatus};
 use crate::tools::{Capture, CaptureFailure, Captured, InstallJob, Installing, PushError};
 use wellfed_formats::bench::VERIFICATION;
 use wellfed_formats::bench::progress::{FlashTool, StepState};
-use wellfed_relay::FakeBoard;
+use wellfed_relay::{FakeBoard, Switch};
 use wellfed_signed::SECTOR;
 
 fn sector() -> PlannedSector {
@@ -494,11 +494,11 @@ fn prepare_plan(rig: &Rig, name: &str) {
     fs::write(&p.plan, r#"{"operation_plan": {"staging_packets": 4, "commit_packets": 1, "region": {"bytes": 4096}}}"#).unwrap();
 }
 
-/// Strap released, power off, UART isolated; then the strap held across the
+/// Power off, strap released, UART isolated; then the strap held across the
 /// UART connecting and power on, then released.
 const LOADER_RELAYS: [(u8, bool); 9] = [
-    (2, false),
     (1, false),
+    (2, false),
     (3, false),
     (4, false),
     (2, true),
@@ -524,6 +524,31 @@ fn loader_holds_strap_across_power_on_and_leaves_feeder_powered() {
     assert_eq!(rig.tools.0.borrow().observed, [out]);
     assert_eq!(rig.board.log(), LOADER_RELAYS);
     assert_eq!(rig.board.state(), [true, false, true, true]);
+}
+
+/// The kill switch cuts power whatever the other relays do: a strap or
+/// UART relay that refuses still leaves the feeder unpowered, and the
+/// refusal is reported once every channel was tried.
+#[test]
+fn a_failed_strap_or_uart_relay_still_cuts_power() {
+    for failing in [2, 3, 4] {
+        let mut rig = rig();
+        rig.bench.power_on().unwrap();
+        rig.bench.set(2, Switch::On).unwrap();
+        rig.board.lock().refuse_channel = Some(failing);
+
+        assert!(rig.bench.cut_power().is_err(), "relay {failing}");
+        let state = rig.board.state();
+        assert!(!state[0], "relay {failing}: power stays on");
+        for channel in [2u8, 3, 4] {
+            if channel != failing {
+                assert!(
+                    !state[usize::from(channel) - 1],
+                    "relay {failing}: {channel}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -1086,19 +1111,19 @@ fn boot_cycles_power_on_after_arming_and_end_off() {
         0
     );
 
-    // Each cycle: strap released, power off and the UART isolated, then the
-    // UART connected and power on, then off.
+    // Each cycle: power off, strap released and the UART isolated, then
+    // the UART connected and power on, then off.
     assert_eq!(
         rig.board.log()[..8],
         [
-            (2, false),
             (1, false),
+            (2, false),
             (3, false),
             (4, false),
             (3, true),
             (4, true),
             (1, true),
-            (2, false)
+            (1, false)
         ]
     );
     assert!(!rig.board.state()[0]);

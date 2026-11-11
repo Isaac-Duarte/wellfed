@@ -92,7 +92,7 @@ Dependencies run down the table. Their shared shapes (the bench config, progress
 | `banks` | The [bank ledger](bench-server.md#the-bank-ledger). `--seed DUMP_SESSION` starts it, from that dump's inspection or, when it names no build, from `--bank N --build HASH` |
 | `note` | The [operator's notes](bench-server.md#the-operators-notes): the step under way, the next steps, timers and evidence by card |
 | `mcp` | The bench's tools for an agent, over the [Model Context Protocol](bench-server.md#mcp) on stdio, as a client of the server |
-| `on`, `off` | Power the feeder with the strap released, or release the strap and cut power |
+| `on`, `off` | Power the feeder with the strap released, or cut power and release the strap |
 | `capture NAME` | Receive-only recording of the running feeder; power untouched |
 | `press CHORD` | Hold panel buttons on a running `virtual-panel` build ([below](#virtual-panel)): `dispense`, or several joined by `+` (`lock+dispense`), for `--hold-ms` (150 by default, at most 15000); power untouched |
 | `boot NAME` | Power off, start a receive-only capture, confirm it holds the port, then power on |
