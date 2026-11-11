@@ -178,6 +178,10 @@ class FakeServerPorts implements ServerPorts {
   String? kept;
   int forgets = 0;
 
+  /// What reading the kept token throws while set, as a Keystore fault
+  /// would, the token still there.
+  Object? secretFails;
+
   @override
   Future<ServerSession> login({
     required String url,
@@ -195,7 +199,11 @@ class FakeServerPorts implements ServerPorts {
   ServerSession restore(ServerLink link, String secret) => session;
 
   @override
-  Future<String?> secret() async => kept;
+  Future<String?> secret() async {
+    // ignore: only_throw_errors, this stands in for the platform's exception.
+    if (secretFails case final error?) throw error;
+    return kept;
+  }
 
   @override
   Future<void> keepSecret(String secret) async => kept = secret;

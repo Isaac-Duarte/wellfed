@@ -22,6 +22,11 @@ enum ServerProblem {
 
   /// It answered something this app does not read.
   other,
+
+  /// This phone's secure storage failed to read the server's token, which
+  /// is still kept: a new start reads it again. Not signed out, so nothing
+  /// asks for a login that would write over it.
+  storage,
 }
 
 /// The owner's server as this phone knows it.
@@ -317,7 +322,17 @@ class HomeServer extends ChangeNotifier {
   String get _phone => _book.label.isEmpty ? 'Wellfed phone' : _book.label;
 
   Future<void> _restore(KnownServer kept) async {
-    final String? secret = await _ports.secret();
+    final String? secret;
+    try {
+      secret = await _ports.secret();
+    } on Object catch (error) {
+      // The phone's own keys stay closed, as with any server it cannot use.
+      debugPrint('the server token could not be read: $error');
+      if (_disposed) return;
+      _router?.refuseServer();
+      _set(ServerLinked(link: kept.link, feeders: kept.feeders, problem: ServerProblem.storage));
+      return;
+    }
     if (_disposed) return;
     // With no token the phone has no standing on its server, and with a
     // link that does not open it cannot ask: either way the router keeps

@@ -107,6 +107,26 @@ void main() {
     });
   });
 
+  test("a token secure storage can't read keeps the phone's keys closed, and asks no login over it", () async {
+    final book = FakeBook()
+      ..feeders = [_kitchen]
+      ..server = const KnownServer(link: serverLink, feeders: []);
+    final ports = FakeServerPorts()
+      ..kept = 'token-secret'
+      ..secretFails = Exception('keystore');
+    final router = FakeRouter();
+    final server = HomeServer(book, ports, router);
+    addTearDown(server.dispose);
+    await pumpEventQueue();
+
+    expect(router.refusals, 1);
+    expect(router.connected, isEmpty);
+    expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', ServerProblem.storage));
+    expect(ports.kept, 'token-secret', reason: 'the token stays for the next start');
+    expect(ports.forgets, 0);
+    expect(book.server, isNotNull);
+  });
+
   test('a cold start hands the router the kept account, and keeps the one the server reads', () async {
     const viewer = ServerAccount(id: 'u2', name: 'sam', role: ServerRole.viewer);
     final book = FakeBook()

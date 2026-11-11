@@ -80,11 +80,19 @@ PhoneNetwork phoneNetwork(Map<Object?, Object?>? found) => switch (found) {
 const _locateWait = Duration(seconds: 6);
 
 /// The owner's server this phone is logged in to, for catch-ups away from
-/// home: `null` with none, or with no token kept.
+/// home: `null` with none, or with no token kept, or with one secure storage
+/// failed to read this time. The round still reaches the feeders at home,
+/// and the token, left where it is, is read again next round.
 Future<AlertServer?> alertServer(String dir) async {
   final KnownServer? server = (await loadStore(path: '$dir/wellfed.json')).server;
   if (server == null) return null;
-  final String? secret = await secureStorage.read(key: serverSecretName);
+  final String? secret;
+  try {
+    secret = await secureStorage.read(key: serverSecretName);
+  } on Object catch (error) {
+    debugPrint('the server token could not be read for this round: $error');
+    return null;
+  }
   return secret == null ? null : AlertServer(server: server, secret: secret);
 }
 
