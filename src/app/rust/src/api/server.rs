@@ -634,7 +634,6 @@ impl ServerHandle {
     }
 }
 
-/// A client of the server at `url`, with no credentials yet.
 /// A client of the server in `link` under the phone token `secret`, for a
 /// catch-up's one read of a feeder's alerts.
 pub(crate) fn alert_client(link: &ServerLink, secret: &str) -> Result<Client, ServerError> {
