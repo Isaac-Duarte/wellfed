@@ -1557,6 +1557,75 @@ fn a_server_read_begun_under_a_replaced_session_is_never_applied() {
     });
 }
 
+/// A refusal of an old token, heard after a fresh login replaced it, says
+/// nothing of the new one: the phone's own keys stay open.
+#[test]
+fn a_late_refusal_of_a_replaced_token_never_closes_the_phones_own_keys() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let (server, owner) = started().await;
+        adopt(&owner, &sim, sim.address).await;
+        let front = Relay::start(server.address()).await;
+        let phone = Phone::new();
+        let old = phone.log_in_as_ada(&server).await;
+        let login = ada_login();
+        let fresh = ServerSession::login(
+            format!("http://{}", server.address()),
+            login.name.clone(),
+            login.password.clone(),
+            "pixel".into(),
+        )
+        .await
+        .unwrap();
+        let account = fresh.account().await.unwrap();
+        let _fronted = phone
+            .through(&old, format!("http://{}", front.address))
+            .await;
+        let _direct = phone.open(&sim, sim.address).await;
+        let kitchen = identity(&sim);
+
+        // The old token is revoked; a feed under it is refused, and that
+        // answer is held until the fresh login has replaced it.
+        let token = wellfed_api::TokenId(old.link().token_id.parse().unwrap());
+        owner.revoke_token(token).await.unwrap();
+        front.hold_answers();
+        let (fed, ()) = tokio::join!(phone.router.feed(kitchen.clone(), 1), async {
+            tokio::time::sleep(GIVE_UP / 4).await;
+            phone.router.connect_server(&fresh, account.clone());
+            front.resume();
+        });
+        let RoutedFeed::NotSent {
+            error: Some(error), ..
+        } = fed
+        else {
+            panic!("the old token sent nothing: {fed:?}");
+        };
+        assert_eq!(error.kind, ServerErrorKind::TokenRevoked);
+
+        // The fresh login's owner still uses the phone's own key where the
+        // server has no route.
+        let invite = phone
+            .router
+            .ask(
+                kitchen.clone(),
+                FeederRequest::CreateInvite {
+                    role: ClientRole::Member,
+                },
+            )
+            .await;
+        assert_eq!(invite.path, Some(RoutePath::Direct));
+        assert!(
+            matches!(invite.reply, FeederReply::Invite { .. }),
+            "{:?}",
+            invite.reply
+        );
+        assert_eq!(feeder::feeds(&flash), 0);
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
 /// An app that stops while its adoption is out finds it unsettled at its
 /// next start: written down before the invite went, so the next attempt
 /// only reads the server's list and makes no second owner invite.

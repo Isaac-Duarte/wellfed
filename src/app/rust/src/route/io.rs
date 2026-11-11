@@ -266,11 +266,12 @@ impl State {
         self.announce();
     }
 
-    /// The server's client and its id for `feeder`.
-    fn server_for(&self, feeder: &str) -> Option<(wellfed_server_client::Client, FeederId)> {
+    /// The server's client and its id for `feeder`, and the session the
+    /// call goes under.
+    fn server_for(&self, feeder: &str) -> Option<(wellfed_server_client::Client, FeederId, u64)> {
         let client = self.client()?;
         let id = self.feeders.get(feeder)?.server?;
-        Some((client, id))
+        Some((client, id, self.session))
     }
 
     fn server_id(&self, feeder: &str) -> Option<Uuid> {
@@ -350,8 +351,13 @@ impl State {
         }
     }
 
-    /// What a failed call says of the server.
-    fn heard_failure(&mut self, failure: ServerFailure, now: i64) {
+    /// What a failed call made under `session` says of the server: nothing
+    /// once that session was replaced, so a late refusal of an old token
+    /// never closes the phone's own keys under a fresh login.
+    fn heard_failure(&mut self, session: u64, failure: ServerFailure, now: i64) {
+        if session != self.session {
+            return;
+        }
         self.reach = core::reach_after(failure, now);
         self.standing = core::standing_after(self.standing, failure);
     }
@@ -568,6 +574,7 @@ impl Router {
             Err(error) => error,
         };
         let failure = error.failure();
+        state.heard_failure(session, failure, now_ms());
         state.new_session();
         let (keys, user) = match (&cached, failure) {
             (_, ServerFailure::Unauthorized) | (None, _) => (Keys::ServerOnly, None),
@@ -579,7 +586,6 @@ impl Router {
             user,
             account: cached,
         });
-        state.heard_failure(failure, now_ms());
         state.announce();
         Err(error.into())
     }
@@ -613,7 +619,7 @@ impl Router {
         let (user, feeders) = match read {
             Ok(read) => read,
             Err(error) => {
-                state.heard_failure(error.failure(), now);
+                state.heard_failure(session, error.failure(), now);
                 state.announce();
                 return Err(error.into());
             }
@@ -730,7 +736,7 @@ impl Router {
                 state.reach = ServerReach::Up;
                 state.account_is(user);
             }
-            Err(error) => state.heard_failure(error.failure(), now_ms()),
+            Err(error) => state.heard_failure(session, error.failure(), now_ms()),
         }
         state.announce();
     }
@@ -966,7 +972,7 @@ impl Router {
     }
 
     async fn feed_on_server(&self, feeder: &str, portions: u8, key: Uuid) -> FeedTry {
-        let Some((client, id)) = self.state().server_for(feeder) else {
+        let Some((client, id, session)) = self.state().server_for(feeder) else {
             return FeedTry::Unsent(NotSentReason::NoPath, None);
         };
         let sent = client.feed(id, portions, key).await;
@@ -985,7 +991,7 @@ impl Router {
             }
             Err(error) => {
                 let failure = error.failure();
-                state.heard_failure(failure, now_ms());
+                state.heard_failure(session, failure, now_ms());
                 let refusal = calls::refusal(&error).map(calls::feed_refusal);
                 let error = Some(error.into());
                 match core::server_ended(failure) {
@@ -1063,9 +1069,10 @@ impl Router {
         if path == RoutePath::Server {
             let server = self.state().server_for(feeder);
             let read = match &server {
-                Some((client, id)) => calls::read(client, *id, &request).await,
+                Some((client, id, _)) => calls::read(client, *id, &request).await,
                 None => None,
             };
+            let session = server.map(|(_, _, session)| session);
             let mut state = self.state();
             match read {
                 Some(Ok(reply)) => {
@@ -1074,7 +1081,9 @@ impl Router {
                 }
                 Some(Err(error)) => {
                     let failure = error.failure();
-                    state.heard_failure(failure, now_ms());
+                    if let Some(session) = session {
+                        state.heard_failure(session, failure, now_ms());
+                    }
                     let elsewhere = core::server_ended(failure) == Ended::Unsent;
                     // What the phone may use now, not before the call: the
                     // server may have narrowed the account meanwhile.
@@ -1205,7 +1214,7 @@ impl Router {
         stream: Option<Vec<u8>>,
         key: Uuid,
     ) -> WriteTry {
-        let Some((client, id)) = self.state().server_for(feeder) else {
+        let Some((client, id, session)) = self.state().server_for(feeder) else {
             return WriteTry::unsent(NotSentReason::NoPath, None);
         };
         let Some(sent) = calls::send(&client, id, write, stream, key).await else {
@@ -1226,7 +1235,7 @@ impl Router {
             }
             Err(error) => {
                 let failure = error.failure();
-                state.heard_failure(failure, now_ms());
+                state.heard_failure(session, failure, now_ms());
                 let ended = core::server_ended(failure);
                 let reply = match (ended, calls::refusal(&error)) {
                     (Ended::Uncertain, _) => FeederReply::Unanswered,
@@ -1302,10 +1311,10 @@ impl Router {
 
     /// What the server's journal says of `pin` now: only ever a read.
     async fn read_journal(&self, pin: &PinRecord) -> Option<Settlement> {
-        let (client, mark) = {
+        let (client, mark, session) = {
             let state = self.state();
             let server = state.server.as_ref()?;
-            (server.handle.client.clone(), server.mark())
+            (server.handle.client.clone(), server.mark(), state.session)
         };
         let read = client.command(pin.key).await;
 
@@ -1324,7 +1333,7 @@ impl Router {
                 settled_unfound(pin, mark, since, self.inner.grace_ms)
             }
             Err(error) => {
-                state.heard_failure(error.failure(), now_ms());
+                state.heard_failure(session, error.failure(), now_ms());
                 None
             }
         }
