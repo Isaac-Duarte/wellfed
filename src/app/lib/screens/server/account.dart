@@ -17,8 +17,8 @@ String get keptKeysWords =>
 
 /// What a logout does, and why it asks for the password.
 String get logOutWords =>
-    'The server stops taking this $deviceName. $keptKeysWords The phones it invited keep theirs too, '
-    'kept as an owner keeps a client, so deleting your account no longer revokes any of them. '
+    'The server stops taking this $deviceName. $keptKeysWords The phones it invited keep theirs too. '
+    "All of them stay your account's, so deleting your account still revokes them. "
     'Enter your password to log out.';
 
 /// The account this phone is logged in to the home server as: who, and the

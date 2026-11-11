@@ -82,9 +82,10 @@ pub(crate) async fn revoke_token(
 }
 
 /// Log a phone out: revoke the caller's own token while its keys on the
-/// feeders stay, kept, with the keys they invited, so the phone still
-/// reaches them on the LAN. From a login session only, so a leaked token
-/// cannot keep the keys it enrolled; `DELETE /tokens/{id}` revokes them.
+/// feeders, and the keys they invited, stay the account's with no token,
+/// so the phone still reaches them on the LAN and the account's removal
+/// still revokes them. From a login session only, so a leaked token cannot
+/// keep the keys it enrolled; `DELETE /tokens/{id}` revokes them.
 #[utoipa::path(
     post,
     path = "/tokens/{id}/logout",

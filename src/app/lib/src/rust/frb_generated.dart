@@ -21982,8 +21982,9 @@ class ServerSessionImpl extends RustOpaque implements ServerSession {
       RustLib.instance.api.crateApiServerServerSessionLink(that: this);
 
   /// Log this phone out: revoke its token on the server while its keys on
-  /// the feeders stay, kept with the keys they invited, so it still
-  /// reaches them directly. The server takes that only from a login, so a
+  /// the feeders, and the keys they invited, stay the account's, so it
+  /// still reaches them directly and the account's removal still revokes
+  /// them. The server takes that only from a login, so a
   /// leaked token cannot keep the keys it enrolled: `password` is the
   /// account's, used once for a login that ends here, and never kept. A
   /// token the server already dropped counts as logged out. Every follow

@@ -18,7 +18,7 @@
 //! login to log in with and make them. Revoking it also revokes its phone
 //! keys on every feeder and the keys they invited there, as the feeders
 //! reported them, unless the phone logs out from a login session, which
-//! keeps them ([`Service::log_out_token`]). What revoking it cannot undo is what it already did on a
+//! leaves them the account's with no token ([`Service::log_out_token`]). What revoking it cannot undo is what it already did on a
 //! feeder: a key a phone key invited that its feeder's history lost before
 //! the server read it, or a write it made.
 //!
@@ -210,9 +210,10 @@ impl Service {
 
     /// Log a phone out: revoke its token `id`, the caller's own, keeping
     /// its keys on the feeders. Every key under the token not already being
-    /// revoked (the phone's own, and the keys they invited) is kept first,
-    /// as an owner keeps a client, so the phone still reaches its feeders
-    /// on the LAN and nothing of the account revokes those keys any more.
+    /// revoked (the phone's own, and the keys they invited) stays the
+    /// account's with no token, so the phone still reaches its feeders on
+    /// the LAN, the account's deletion, demotion or expiry still revokes
+    /// those keys, and no token's revocation does.
     ///
     /// Only from a login session: the token alone cannot ask, since a
     /// leaked token could then keep the keys it enrolled past its own
@@ -225,8 +226,7 @@ impl Service {
             return Err(Error::NotFound(Resource::Token));
         };
 
-        let now = self.shared.clock.now();
-        if !self.shared.store.log_out_token(id, now).await? {
+        if !self.shared.store.log_out_token(id).await? {
             return Err(Error::NotFound(Resource::Token));
         }
         let action = AuditAction::TokenRevoked {

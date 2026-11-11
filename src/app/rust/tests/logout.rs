@@ -2,7 +2,8 @@
 //! simulated feeder (simulation, not hardware): a phone's own key asks the
 //! feeder for an invite and a pet sitter's phone joins with it, which the
 //! server records under the phone's token. Logging out with the password
-//! keeps both keys on the feeder, as kept; a wrong password changes
+//! keeps both keys on the feeder, the account's with no token; a wrong
+//! password changes
 //! nothing; revoking the token from elsewhere revokes both.
 
 use wellfed_api::{AdoptFeeder, ClientOwner, ClientRole, FeederId, Hex};
@@ -66,14 +67,18 @@ fn a_logout_keeps_the_phones_key_and_its_sitters() {
         assert_eq!(wrong.kind, ServerErrorKind::BadCredentials);
         assert!(session.account().await.is_ok(), "the token still holds");
 
+        let ada = owner.session().await.unwrap().id;
         session.logout(ada_login().password).await.unwrap();
         let clients = owner.clients(kitchen).await.unwrap();
         for secret in [OWN, SITTER] {
             let key = feeder::phone_key(secret);
             let client = clients.iter().find(|client| client.key.0 == key);
-            assert_eq!(client.map(|client| &client.owner), Some(&ClientOwner::Kept));
+            let owner = client.map(|client| &client.owner);
+            assert!(
+                matches!(owner, Some(ClientOwner::Phone { user, token: None, revoking: None }) if *user == ada),
+                "{owner:?}"
+            );
         }
-        assert!(owner.phones().await.unwrap().is_empty());
         server.stop().await;
         sim.stop().await;
     });

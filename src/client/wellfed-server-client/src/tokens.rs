@@ -32,7 +32,7 @@ impl Client {
     }
 
     /// Log a phone out from a login session: revoke its token `id` while its
-    /// keys on the feeders stay, kept.
+    /// keys on the feeders stay the account's.
     pub async fn log_out_token(&self, id: TokenId) -> Result<(), Error> {
         let response = self
             .api(Method::POST, &format!("/tokens/{id}/logout"))

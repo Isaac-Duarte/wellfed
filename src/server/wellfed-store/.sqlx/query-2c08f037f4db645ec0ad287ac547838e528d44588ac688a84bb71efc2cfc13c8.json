@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE phone_keys SET token_id = NULL WHERE token_id = ? AND revoke IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "2c08f037f4db645ec0ad287ac547838e528d44588ac688a84bb71efc2cfc13c8"
+}

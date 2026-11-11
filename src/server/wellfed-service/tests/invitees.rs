@@ -8,7 +8,8 @@
 //! the server read before it knew the inviting key is not attributed, and
 //! a chain the feeder cut while the server was away still goes whole. A
 //! key an owner revokes on the LAN, without the server, takes its own too.
-//! A phone that logs out from a login session keeps both, as kept.
+//! A phone that logs out from a login session keeps both, still its
+//! account's, so the account's removal revokes them.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,6 +18,7 @@ use futures_util::TryStreamExt;
 use wellfed_api::{
     AdoptFeeder, ClientOwner, ClientRole, Connection as Link, CoreEvent, EventBody, EventQuery,
     ExportFormat, FeederId, Hex, NewPhoneInvite, NewToken, NewUser, PhoneClaim, Role, User,
+    UserPatch,
 };
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::fixed::ManualClock;
@@ -376,11 +378,31 @@ fn a_key_revoked_on_the_lan_takes_its_invitees() {
     });
 }
 
+/// Bob logs his phone out from a login session.
+async fn log_out(service: &Service, bob: &Caller) {
+    let login = Caller {
+        user: bob.user.clone(),
+        token: None,
+    };
+    let token = bob.token.unwrap();
+    service.log_out_token(&login, token).await.unwrap();
+}
+
+/// Until phone `n` is listed as `user`'s, with no token.
+async fn tokenless(service: &Service, id: FeederId, user: &User, n: u8) {
+    let owner = owner_of(service, id, n).await;
+    assert!(
+        matches!(&owner, Some(ClientOwner::Phone { user: whose, token: None, revoking: None }) if *whose == user.id),
+        "{n}: {owner:?}"
+    );
+}
+
 /// A phone that logs out from a login session keeps its key and the key it
-/// invited, both as kept: the member's removal later revokes neither. The
-/// token alone cannot ask, nor can another account's session.
+/// invited, both still the account's with no token: revoking another of
+/// the account's tokens leaves them, and demoting the account revokes them.
+/// The token alone cannot ask, nor can another account's session.
 #[test]
-fn a_phone_that_logs_out_keeps_its_key_and_its_invitee() {
+fn a_phone_that_logs_out_keeps_its_keys_under_the_account() {
     local(async {
         let (sim, server, id) = started().await;
         let service = server.service();
@@ -401,23 +423,48 @@ fn a_phone_that_logs_out_keeps_its_key_and_its_invitee() {
             "{by_another:?}"
         );
 
-        let login = Caller {
-            user: bob.user.clone(),
-            token: None,
-        };
-        service.log_out_token(&login, token).await.unwrap();
+        log_out(service, &bob).await;
         for n in [70, 71] {
-            assert_eq!(
-                owner_of(service, id, n).await,
-                Some(ClientOwner::Kept),
-                "{n}"
-            );
+            tokenless(service, id, &bob.user, n).await;
         }
-        assert!(service.phones(&bob.user).await.unwrap().is_empty());
+        let other = token_of(service, bob.user.clone()).await;
+        service
+            .revoke_token(&other, other.token.unwrap())
+            .await
+            .unwrap();
+        for n in [70, 71] {
+            tokenless(service, id, &bob.user, n).await;
+        }
 
+        let viewer = UserPatch {
+            role: Some(Role::Viewer),
+            ..UserPatch::default()
+        };
+        service
+            .update_user(&ada, None, bob.user.id, viewer)
+            .await
+            .unwrap();
+        revoked(service, &sim, &[70, 71]).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// Deleting an account revokes the keys a logout left it.
+#[test]
+fn deleting_the_account_revokes_the_keys_a_logout_left_it() {
+    local(async {
+        let (sim, server, id) = started().await;
+        let service = server.service();
+        let (ada, bob) = ada_and_bob(service).await;
+        join(service, &sim, id, &bob, 74).await;
+        invite_directly(&sim, 74, 75).await;
+        attributed(service, id, &bob, 75).await;
+
+        log_out(service, &bob).await;
+        tokenless(service, id, &bob.user, 74).await;
         service.delete_user(&ada, bob.user.id).await.unwrap();
-        let held = feeder::client_keys(&sim).await;
-        assert!(held.contains(&key(70)) && held.contains(&key(71)));
+        revoked(service, &sim, &[74, 75]).await;
         server.shutdown().await;
         sim.stop().await;
     });

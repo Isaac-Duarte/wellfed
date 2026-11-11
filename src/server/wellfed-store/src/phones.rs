@@ -289,26 +289,17 @@ impl Store {
         Ok(())
     }
 
-    /// Log a phone out: keep every phone key of `token` not already being
-    /// revoked, on every feeder, as a kept client (the phone's own keys and
-    /// the keys they invited), and delete the token, in one transaction, so
-    /// no revocation of the token can land between the two and catch the
-    /// keys half kept. A key on its way out (a replaced one) still goes.
-    /// Whether the token was there to delete.
-    pub async fn log_out_token(&self, token: TokenId, at: Timestamp) -> Result<bool> {
-        let at = millis(at);
+    /// Log a phone out: take `token` off every phone key under it not
+    /// already being revoked, on every feeder (the phone's own keys and the
+    /// keys they invited), and delete the token, in one transaction, so no
+    /// revocation of the token can land between the two. The keys stay the
+    /// account's: its deletion, demotion or expiry still revokes them, and
+    /// no token's revocation does. A key on its way out (a replaced one)
+    /// still goes. Whether the token was there to delete.
+    pub async fn log_out_token(&self, token: TokenId) -> Result<bool> {
         let mut tx = self.writer.begin().await?;
         sqlx::query!(
-            "INSERT INTO kept_clients (feeder_id, key, kept_ms)
-             SELECT feeder_id, key, ? FROM phone_keys WHERE token_id = ? AND revoke IS NULL
-             ON CONFLICT DO NOTHING",
-            at,
-            token.0,
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query!(
-            "DELETE FROM phone_keys WHERE token_id = ? AND revoke IS NULL",
+            "UPDATE phone_keys SET token_id = NULL WHERE token_id = ? AND revoke IS NULL",
             token.0,
         )
         .execute(&mut *tx)

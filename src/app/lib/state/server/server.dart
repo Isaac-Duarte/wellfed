@@ -231,7 +231,7 @@ class HomeServer extends ChangeNotifier {
   /// Revoke this phone's token on the server with the account's
   /// `password`, then forget the server. The phone keeps its own keys on
   /// its feeders, and the phones it invited keep theirs, so it reaches them
-  /// directly. A wrong password, or too many, changes nothing; a server
+  /// directly; they stay the account's on the server. A wrong password, or too many, changes nothing; a server
   /// that could not take it is forgotten all the same, its token valid
   /// until it is revoked there.
   Future<LogOutOutcome> logOut(String password) async {
