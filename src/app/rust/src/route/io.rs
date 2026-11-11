@@ -81,6 +81,10 @@ struct State {
     /// only when this clock agrees with the wall clock's record.
     tried: Steady<Uuid>,
     adoptions_lost: Steady<String>,
+    /// Which server session the state is for, raised whenever the server is
+    /// configured, connected, refused or removed: what a read of the server
+    /// begun under another session says is never applied to this one.
+    session: u64,
     /// A server the app keeps, before its session is handed over: the keys
     /// its kept account may use, so no feeder goes on the phone's own key
     /// that the account would not allow while the app is still reading its
@@ -165,6 +169,14 @@ impl<K: Eq + Hash> Steady<K> {
     }
 }
 
+/// A read of a server session the router has since let go.
+fn replaced() -> ServerError {
+    ServerError::new(
+        ServerErrorKind::Closed,
+        "the server changed while it was read",
+    )
+}
+
 fn new_key() -> Result<Uuid, BridgeError> {
     Ok(uuid::Builder::from_random_bytes(random()?).into_uuid())
 }
@@ -228,6 +240,30 @@ impl State {
         self.server
             .as_ref()
             .map(|server| server.handle.client.clone())
+    }
+
+    /// The server's client, and the session it belongs to.
+    fn session_client(&self) -> Option<(wellfed_server_client::Client, u64)> {
+        Some((self.client()?, self.session))
+    }
+
+    /// Another server session from here on.
+    const fn new_session(&mut self) {
+        self.session = self.session.wrapping_add(1);
+    }
+
+    /// Route through `handle`, under `account`.
+    fn connect(&mut self, handle: ServerHandle, account: &ServerAccount) {
+        self.new_session();
+        self.server = Some(Server {
+            handle,
+            keys: keys_of(account),
+            user: Uuid::parse_str(&account.id).ok(),
+            account: Some(account.clone()),
+        });
+        self.reach = ServerReach::Up;
+        self.standing = Standing::Taken;
+        self.announce();
     }
 
     /// The server's client and its id for `feeder`.
@@ -442,6 +478,7 @@ impl Router {
             cold: None,
             tried: Steady::new(),
             adoptions_lost: Steady::new(),
+            session: 0,
         };
         // What the last run left counts from this run's start, never from
         // the wall clock's record alone.
@@ -465,16 +502,7 @@ impl Router {
     }
 
     pub(crate) fn connect_server(&self, handle: ServerHandle, account: &ServerAccount) {
-        let mut state = self.state();
-        state.server = Some(Server {
-            handle,
-            keys: keys_of(account),
-            user: Uuid::parse_str(&account.id).ok(),
-            account: Some(account.clone()),
-        });
-        state.reach = ServerReach::Up;
-        state.standing = Standing::Taken;
-        state.announce();
+        self.state().connect(handle, account);
     }
 
     /// The server the app keeps, before anything else asks the router: its
@@ -483,6 +511,7 @@ impl Router {
     /// nothing.
     pub(crate) fn configure(&self, kept: &KnownServer) {
         let mut state = self.state();
+        state.new_session();
         for listed in &kept.feeders {
             // A kept id that does not parse: the next list replaces it.
             if let Ok(id) = crate::server::ids::feeder(&listed.id) {
@@ -502,6 +531,7 @@ impl Router {
     /// token, until a login or removing the server.
     pub(crate) fn refuse_server(&self) {
         let mut state = self.state();
+        state.new_session();
         state.server = None;
         state.standing = Standing::Refused;
         state.following.clear();
@@ -520,18 +550,25 @@ impl Router {
         handle: ServerHandle,
         cached: Option<ServerAccount>,
     ) -> Result<ServerAccount, ServerError> {
+        let session = self.state().session;
         let read = handle.client.session().await;
 
+        let mut state = self.state();
+        // Another server, or none, since the read began: this one was let
+        // go, and what it says is not applied.
+        if state.session != session {
+            return Err(replaced());
+        }
         let error = match read {
             Ok(user) => {
                 let account = ServerAccount::from(user);
-                self.connect_server(handle, &account);
+                state.connect(handle, &account);
                 return Ok(account);
             }
             Err(error) => error,
         };
         let failure = error.failure();
-        let mut state = self.state();
+        state.new_session();
         let (keys, user) = match (&cached, failure) {
             (_, ServerFailure::Unauthorized) | (None, _) => (Keys::ServerOnly, None),
             (Some(account), _) => (keys_of(account), Uuid::parse_str(&account.id).ok()),
@@ -549,6 +586,7 @@ impl Router {
 
     pub(crate) fn disconnect_server(&self) {
         let mut state = self.state();
+        state.new_session();
         state.server = None;
         state.cold = None;
         state.reach = ServerReach::Up;
@@ -558,7 +596,7 @@ impl Router {
     }
 
     pub(crate) async fn refresh(&self) -> Result<Vec<ServerFeeder>, ServerError> {
-        let Some(client) = self.state().client() else {
+        let Some((client, session)) = self.state().session_client() else {
             return Err(ServerError::new(
                 ServerErrorKind::Closed,
                 "no server is configured",
@@ -567,6 +605,9 @@ impl Router {
 
         let (account, listed) = tokio::join!(client.session(), client.feeders());
         let mut state = self.state();
+        if state.session != session {
+            return Err(replaced());
+        }
         let now = now_ms();
         let read = account.and_then(|user| listed.map(|feeders| (user, feeders)));
         let (user, feeders) = match read {
@@ -676,11 +717,14 @@ impl Router {
     /// Read the account again, so a demotion or a new expiry routes from
     /// now on.
     async fn reread_account(&self) {
-        let Some(client) = self.state().client() else {
+        let Some((client, session)) = self.state().session_client() else {
             return;
         };
         let read = client.session().await;
         let mut state = self.state();
+        if state.session != session {
+            return;
+        }
         match read {
             Ok(user) => {
                 state.reach = ServerReach::Up;

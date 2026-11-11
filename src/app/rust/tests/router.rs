@@ -1509,6 +1509,54 @@ fn a_server_whose_token_is_gone_closes_the_phones_own_keys_until_it_is_removed()
     });
 }
 
+/// What a server read begun under one session says is never applied to the
+/// session that replaced it: an owner's account, read just before the app
+/// switched to a viewer's, never sets the viewer's routing.
+#[test]
+fn a_server_read_begun_under_a_replaced_session_is_never_applied() {
+    local(async {
+        let (server, owner) = started().await;
+        let front = Relay::start(server.address()).await;
+        let phone = Phone::new();
+        let session = phone.log_in_as_ada(&server).await;
+        let viewer = NewUser {
+            name: "vic".into(),
+            password: "temporary pass".into(),
+            role: Role::Viewer,
+            expires: None,
+        };
+        owner.create_user(&viewer).await.unwrap();
+        let vic = ServerSession::login(
+            format!("http://{}", server.address()),
+            "vic".into(),
+            "temporary pass".into(),
+            "pixel".into(),
+        )
+        .await
+        .unwrap();
+        let vic_account = vic.account().await.unwrap();
+        let _fronted = phone
+            .through(&session, format!("http://{}", front.address))
+            .await;
+        while phone.updates.borrow_mut().try_recv().is_ok() {}
+
+        front.hold_answers();
+        let (read, ()) = tokio::join!(phone.router.refresh(), async {
+            tokio::time::sleep(GIVE_UP / 4).await;
+            phone.router.connect_server(&vic, vic_account.clone());
+            front.resume();
+        });
+
+        assert!(read.is_err(), "{read:?}");
+        while let Ok(update) = phone.updates.borrow_mut().try_recv() {
+            if let RouterUpdate::Account { account } = update {
+                assert_eq!(account, vic_account, "only the viewer's own account");
+            }
+        }
+        server.stop().await;
+    });
+}
+
 /// An app that stops while its adoption is out finds it unsettled at its
 /// next start: written down before the invite went, so the next attempt
 /// only reads the server's list and makes no second owner invite.
