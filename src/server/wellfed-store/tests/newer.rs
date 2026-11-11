@@ -260,9 +260,16 @@ async fn a_database_a_newer_build_migrated_opens_read_only() {
 #[tokio::test]
 async fn a_current_database_is_writable() {
     let dir = tempfile::tempdir().unwrap();
-    let store = adopted(&dir.path().join("server.db")).await;
+    let path = dir.path().join("server.db");
+    adopted(&path).await.close().await;
+    // A pre-migration copy a cut start left half-written.
+    let half = dir.path().join(".server.db.before-17-1.partial");
+    std::fs::write(&half, b"half").unwrap();
+
+    let store = Store::open(&path, at(1)).await.unwrap();
 
     assert_eq!(store.schema(), Schema::Current);
+    assert!(!half.exists(), "a partial copy goes at a writable start");
     let store = store.writable().await.unwrap();
     store.close().await;
 }

@@ -18,7 +18,7 @@ use sqlx::migrate::{Migrate, Migrator};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection, SqlitePool};
 
-use crate::{Error, Result, Schema};
+use crate::{Error, Result, Schema, copies};
 
 static MIGRATOR: Migrator = sqlx::migrate!();
 
@@ -72,8 +72,17 @@ pub(crate) fn read_only(path: &Path) -> SqliteConnectOptions {
         .busy_timeout(crate::BUSY)
 }
 
-/// Apply pending migrations, copying an existing database first.
+/// Apply pending migrations, copying an existing database first. A copy a
+/// start cut off left half-written goes first.
 pub(crate) async fn run(writer: &SqlitePool, path: &Path, now: Timestamp) -> Result<()> {
+    let dir = path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+        copies::remove_partials(dir, &format!("{name}.before-"))?;
+    }
+
     let mut connection = writer.acquire().await?;
     connection
         .ensure_migrations_table(&MIGRATOR.table_name)
@@ -92,7 +101,7 @@ pub(crate) async fn run(writer: &SqlitePool, path: &Path, now: Timestamp) -> Res
 
     if let (Some(version), false) = (pending, applied.is_empty()) {
         let copy = backup_path(path, version, now);
-        let partial = partial_path(&copy);
+        let partial = copies::partial(&copy);
         let into = partial
             .to_str()
             .ok_or_else(|| Error::Path(partial.clone()))?;
@@ -102,7 +111,7 @@ pub(crate) async fn run(writer: &SqlitePool, path: &Path, now: Timestamp) -> Res
             .bind(into)
             .execute(&mut *connection)
             .await?;
-        crate::copies::finish(&partial, &copy)?;
+        copies::finish(&partial, &copy)?;
     }
     drop(connection);
 
@@ -115,12 +124,4 @@ fn backup_path(path: &Path, version: i64, now: Timestamp) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".before-{version}-{now}"));
     path.with_file_name(name)
-}
-
-/// The hidden name a copy is written under until it is whole and synced.
-fn partial_path(copy: &Path) -> PathBuf {
-    let mut name = std::ffi::OsString::from(".");
-    name.push(copy.file_name().unwrap_or_default());
-    name.push(".partial");
-    copy.with_file_name(name)
 }

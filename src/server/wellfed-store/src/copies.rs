@@ -21,6 +21,8 @@ pub enum Step {
     Sync,
     Rename,
     SyncDirectory,
+    List,
+    Remove,
 }
 
 impl fmt::Display for Step {
@@ -31,6 +33,8 @@ impl fmt::Display for Step {
             Self::Sync => "sync",
             Self::Rename => "rename",
             Self::SyncDirectory => "sync the directory of",
+            Self::List => "list",
+            Self::Remove => "remove",
         })
     }
 }
@@ -45,6 +49,46 @@ pub enum CopyError {
         #[source]
         source: io::Error,
     },
+}
+
+/// The hidden name a copy is written under until it is whole and synced:
+/// `.<name>.partial` beside it.
+pub fn partial(copy: &Path) -> PathBuf {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(copy.file_name().unwrap_or_default());
+    name.push(PARTIAL);
+    copy.with_file_name(name)
+}
+
+const PARTIAL: &str = ".partial";
+
+/// Remove the partial copies in `dir` whose copy's name starts with
+/// `prefix`: left by a copy cut off before it was whole, which a later one
+/// never finishes, since each copy has a name of its own.
+pub fn remove_partials(dir: &Path, prefix: &str) -> Result<(), CopyError> {
+    let failed = |step, path: &Path| {
+        let path = path.to_owned();
+        move |source| CopyError::Io { step, path, source }
+    };
+
+    let hidden = format!(".{prefix}");
+    for entry in fs::read_dir(dir).map_err(failed(Step::List, dir))? {
+        let entry = entry.map_err(failed(Step::List, dir))?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.starts_with(&hidden) && name.ends_with(PARTIAL) {
+            let path = entry.path();
+            match fs::remove_file(&path) {
+                Err(error) if error.kind() != io::ErrorKind::NotFound => {
+                    return Err(failed(Step::Remove, &path)(error));
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Make the copy written at `partial` the server's user's alone, sync it,
@@ -88,6 +132,29 @@ mod tests {
         assert_eq!(fs::read(&copy).unwrap(), b"whole");
         let mode = fs::metadata(&copy).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    fn partial_copies_left_behind_are_removed_and_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let left = partial(&dir.path().join("server.db.before-17-1"));
+        let names = [
+            "server.db",
+            "server.db.before-16-1",
+            ".server.db.before-15-1.partial.kept",
+            ".other.db.partial",
+        ];
+        fs::write(&left, b"half").unwrap();
+        for name in names {
+            fs::write(dir.path().join(name), b"").unwrap();
+        }
+
+        remove_partials(dir.path(), "server.db.before-").unwrap();
+
+        assert!(!left.exists());
+        for name in names {
+            assert!(dir.path().join(name).exists(), "{name}");
+        }
     }
 
     #[test]
