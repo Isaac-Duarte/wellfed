@@ -313,6 +313,10 @@ impl Frozen {
     /// Refuse a `manifest` an installer could not rely on for this image.
     /// An installer carries its manifest from before the feeder has any
     /// enrolled key to trust, so only the image's built-in key can sign it.
+    /// The firmware's own admission then checks it against that key alone
+    /// (the signature, the model, the bank and the size bound), and it must
+    /// name this image's kind and length: the feeder finds a bad manifest
+    /// only at promotion, after the install's earlier steps ran.
     pub fn require_installable(&self, manifest: &[u8]) -> Result<()> {
         self.require_same_image(manifest)?;
 
@@ -321,8 +325,38 @@ impl Frozen {
             .as_ref()
             .and_then(|manifest| manifest.ota_public_key.as_deref())
             .ok_or(FrozenError::NoBuiltInKey)?;
+        require_built_in_signer(built_in, &self.build_id, manifest)?;
 
-        require_built_in_signer(built_in, &self.build_id, manifest)
+        let keys = [id_bytes(built_in)?];
+        let context = offer::Context {
+            ring: offer::KeyRing {
+                built_in: &keys,
+                added: None,
+                enrolled: &[],
+                revoked: &[],
+            },
+            floor: 0,
+            device: [0; 32],
+            running: None,
+            model: self.model()?.code(),
+        };
+        let admitted = offer::admit_offer(manifest, None, &context)
+            .map_err(|error| FrozenError::NotAdmitted { error })?;
+        let signed = admitted.signed;
+        require(signed.kind == OfferKind::Replacement, || {
+            FrozenError::OtherKind
+        })?;
+        let length = self.payload().len();
+        require(
+            usize::try_from(signed.manifest.image_len).is_ok_and(|bytes| bytes == length),
+            || {
+                FrozenError::OtherLength {
+                    manifest: signed.manifest.image_len,
+                    image: length,
+                }
+                .into()
+            },
+        )
     }
 
     /// Refuse a `manifest` signed over other bytes than this review's image.
@@ -935,6 +969,64 @@ mod tests {
         assert!(matches!(
             require_built_in_signer(&public, &[0; 32], &signed(&built_in)),
             Err(Error::Frozen(FrozenError::OtherBuild { .. }))
+        ));
+    }
+
+    /// The installer's manifest passes the firmware's own admission with
+    /// the built-in key: a damaged signature, or a correctly signed body
+    /// naming another model, kind, bank or length, is refused.
+    #[test]
+    fn an_installer_manifest_must_pass_the_firmware_s_admission() {
+        let key = bench_key(7);
+        let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
+                            "ota_public_key": hex::Lower(&key.public()).to_string()});
+        let (checkout, review) = freeze_with(&build_image(), &fields);
+        let frozen = Frozen::open(checkout.path(), &review).unwrap();
+        let signed = frozen.offer(&key, 9, Motion::Refused).unwrap();
+        frozen.require_installable(&signed).unwrap();
+
+        let body = offer::MANIFEST_BODY;
+        for at in body..offer::MANIFEST_LEN {
+            let mut damaged = signed;
+            damaged[at] ^= 0x01;
+            assert!(
+                matches!(
+                    frozen.require_installable(&damaged),
+                    Err(Error::Frozen(FrozenError::NotAdmitted {
+                        error: offer::OfferError::Signature
+                    }))
+                ),
+                "signature byte {at}"
+            );
+        }
+
+        let resigned = |edit: &dyn Fn(&mut Signed)| {
+            let mut parsed = offer::parse_manifest(&signed).unwrap();
+            edit(&mut parsed);
+            let body = offer::manifest_body(&parsed);
+            let mut out = body.to_vec();
+            out.extend_from_slice(&key.key.sign(&body).to_bytes());
+            frozen.require_installable(&out).unwrap_err()
+        };
+        assert!(matches!(
+            resigned(&|s| s.model = Model::Plwf106.code()),
+            Error::Frozen(FrozenError::NotAdmitted {
+                error: offer::OfferError::Model
+            })
+        ));
+        assert!(matches!(
+            resigned(&|s| s.manifest.target_bank = 0),
+            Error::Frozen(FrozenError::NotAdmitted {
+                error: offer::OfferError::Bank
+            })
+        ));
+        assert!(matches!(
+            resigned(&|s| s.kind = OfferKind::Stock),
+            Error::Frozen(FrozenError::NotAdmitted { .. } | FrozenError::OtherKind)
+        ));
+        assert!(matches!(
+            resigned(&|s| s.manifest.image_len += 1),
+            Error::Frozen(FrozenError::OtherLength { .. })
         ));
     }
 

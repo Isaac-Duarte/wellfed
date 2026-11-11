@@ -103,6 +103,16 @@ pub enum FrozenError {
     /// handover from stock clears those.
     #[error("The manifest is signed by key {signer}, the image has key {built_in} built in")]
     NotBuiltInSigner { signer: String, built_in: String },
+    /// A manifest the firmware's own admission refuses with the built-in
+    /// key alone.
+    #[error("The firmware would refuse the manifest: {error:?}")]
+    NotAdmitted { error: OfferError },
+    /// A manifest that does not name the image as a replacement build.
+    #[error("The manifest does not offer the image as a replacement build")]
+    OtherKind,
+    /// A manifest naming another length than the image's.
+    #[error("The manifest names {manifest} bytes, the image has {image}")]
+    OtherLength { manifest: u32, image: usize },
     /// A motion policy the caller did not name as the one it attends.
     #[error("Image drives the motor ({policy}); sign it only attending that policy")]
     Unattended { policy: String },
