@@ -128,6 +128,8 @@ pub(crate) async fn dropped(
         return Ok(());
     };
 
+    // A prefix dropped again keeps its earliest mark: a join the first key
+    // made, read between the two, is still its.
     let prefix = prefix(key);
     let prefix = prefix.as_slice();
     sqlx::query!(
@@ -136,7 +138,8 @@ pub(crate) async fn dropped(
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (feeder_id, prefix) DO UPDATE SET
              user_id = excluded.user_id, token_id = excluded.token_id,
-             last_invitation = excluded.last_invitation, dropped_ms = excluded.dropped_ms",
+             last_invitation = MIN(last_invitation, excluded.last_invitation),
+             dropped_ms = excluded.dropped_ms",
         feeder.0,
         prefix,
         phone.user_id,

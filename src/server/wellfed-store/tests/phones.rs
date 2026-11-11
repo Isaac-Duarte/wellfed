@@ -288,6 +288,22 @@ async fn a_join_read_after_the_clock_stepped_back_is_still_attributed() {
     assert_eq!(invitee.token, Some(TokenId(Uuid::from_u128(7))));
 }
 
+/// A key dropped, recorded again and dropped again keeps the earliest
+/// mark, so a join it made in between is still its, and goes.
+#[tokio::test]
+async fn a_key_dropped_twice_keeps_the_joins_from_its_first_life() {
+    let (_dir, store, feeder) = fresh().await;
+    store.record_phone(&phone(feeder, 1, 7, 10)).await.unwrap();
+    store.forget_client(feeder, &[1; 32], at(20)).await.unwrap();
+    joined(&store, feeder, 1, 2, 1).await;
+    store.record_phone(&phone(feeder, 1, 7, 10)).await.unwrap();
+    store.forget_client(feeder, &[1; 32], at(40)).await.unwrap();
+
+    assert!(attribute(&store, feeder, &[2], 50).await);
+    let invitee = store.phone(feeder, &[2; 32]).await.unwrap();
+    assert_eq!(reason(invitee), Some(RevokeReason::InviterRevoked));
+}
+
 /// A key an owner kept stays theirs, whoever invited it.
 #[tokio::test]
 async fn a_kept_invitee_is_not_attributed() {
