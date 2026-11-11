@@ -151,9 +151,14 @@ impl Panel {
                 Gesture::Up { chord, .. } if alone(chord, waiting.button) => {
                     return Some(self.asked(waiting.action));
                 }
-                // Another button joined (or the window was already over and
-                // the tick has yet to act): a chord, which asks for nothing.
+                // Another button joined within the window: a chord, which
+                // asks for nothing.
                 Gesture::Down { .. } if !deadline_passed(now_ms, waiting.until) => {}
+                // The window is over and the tick has yet to act: a button
+                // joined too late to make a chord, or the lone button was
+                // held on. The press stands alone and asks now, as the tick
+                // would have; the rest of this gesture continues the same
+                // press, so it asks for nothing more.
                 _ => return Some(self.asked(waiting.action)),
             }
         }
