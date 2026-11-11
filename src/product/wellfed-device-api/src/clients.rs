@@ -16,7 +16,9 @@ named_enum! {
         Owner = "owner",
         /// Feeding and settings, but no client management.
         Member = "member",
-        /// The optional server: history and release fetching.
+        /// The owner's optional server: feeding, settings, plans and the
+        /// lock as a member, but not the portion weight, the meal call or
+        /// invites (the device API's access classes say exactly).
         Server = "server",
         /// An owner's Ed25519 key for update signatures.
         UpdateSigner = "update-signer",
