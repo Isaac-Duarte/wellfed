@@ -499,7 +499,8 @@ fn create_cuts() {
 }
 
 /// The `create` after a cut one erases unit 0 first. Every cut of it, in
-/// its erase (which only raises bits) or its program, reads as empty again
+/// its erase (which only raises bits in the fake, a model assumption) or its
+/// program, reads as empty again
 /// or as the journal created, whatever order either program kept.
 #[test]
 fn create_cuts_after_a_cut_create() {

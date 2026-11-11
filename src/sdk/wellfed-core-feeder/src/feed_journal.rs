@@ -50,9 +50,11 @@
 //! units. A cut there leaves unit 0 holding some of a genesis's cleared
 //! bits beside an erased unit 1, which `open` reads as empty, as it read
 //! before the write, and the next `create` erases unit 0 and writes it
-//! again, which a cut also leaves in that state: a cut first boot never
-//! leaves the feeder unable to feed. Only a later record decayed in a
-//! particular way could read as empty too (`cut_genesis`).
+//! again, whose program a cut also leaves in that state: a cut first boot
+//! does not leave the feeder unable to feed. A second cut inside that
+//! erase may, unless the erase only raises bits, as the model assumes; and
+//! a later record decayed in a particular way could read as empty
+//! (`cut_genesis`).
 
 use core::ffi::c_uint;
 
@@ -166,8 +168,10 @@ fn all(p: &[u8], value: u8) -> bool {
 
 /// Whether `unit` could be `record` cut short: every bit the record keeps
 /// set is still set, so the unit holds nothing but some of the bits the
-/// record clears. A page program clears its bits in no promised order and a
-/// cut erase only raises bits, so this state is closed under both.
+/// record clears. A page program clears its bits in no promised order, so
+/// this state is closed under a cut program toward the record; it is closed
+/// under a cut erase only if the erase only raises bits, which the model
+/// assumes and the part does not promise (`FeedJournal::cut_genesis`).
 fn dominated(unit: &[u8; RECORD_BYTES], record: &[u8; RECORD_BYTES]) -> bool {
     unit.iter().zip(record).all(|(&u, &r)| u & r == r)
 }
@@ -500,10 +504,15 @@ impl<I: SlotIo> FeedJournal<I> {
     /// marker another after it, so a cut leaves any subset of the body's
     /// cleared bits with the marker erased, or the whole body and part of
     /// the marker: the slot layer reads either as `Partial` or `Unmarked`,
-    /// never as a committed or torn record. The next `create`'s erase of
-    /// unit 0, cut too, only raises bits, so it still matches. The
-    /// genesis's direction and phase are the caller's, so each one `create`
-    /// accepts is tried.
+    /// never as a committed or torn record. The genesis's direction and
+    /// phase are the caller's, so each one `create` accepts is tried.
+    ///
+    /// The next `create` erases unit 0. That a cut erase only raises bits,
+    /// so the unit still matches, is a model assumption (the fake NOR's):
+    /// a NOR part may program bits to 0 inside an erase before it raises
+    /// them, and a cut then can clear bits genesis keeps set. So a second
+    /// cut, inside that erase, on the boot after a cut first boot, may
+    /// still fault the journal: the residual of a cut first boot.
     ///
     /// No reserved ID is forgotten unless a later record matches, which
     /// needs all of this at once: it sits at rest in unit 0 beside an
@@ -514,9 +523,8 @@ impl<I: SlotIo> FeedJournal<I> {
     /// limits), genesis keeps set only its sequence's low bit, which a
     /// result's odd sequence keeps too, its phase flags and its checksum,
     /// so the checksum decides that last part: about 2^-16 for one of 16
-    /// set bits. A committed genesis
-    /// whose marker decayed can match too; it reserved nothing, so writing
-    /// it again loses nothing.
+    /// set bits. A committed genesis whose marker decayed can match too; it
+    /// reserved nothing, so writing it again loses nothing.
     fn cut_genesis(&self, a: &Found<JournalView>, b: &Found<JournalView>) -> Option<bool> {
         if !b.is_erased() || !matches!(a, Found::Partial | Found::Unmarked) {
             return Some(false);

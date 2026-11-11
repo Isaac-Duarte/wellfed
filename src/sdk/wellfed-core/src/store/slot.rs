@@ -69,11 +69,13 @@
 //! record. A program clears bits only, but the part programs a whole page
 //! at once and promises no byte order, so a cut program leaves any subset
 //! of the bits the record clears, the marker still erased; and an erase
-//! raises bits in no particular order, so a cut erase leaves anything at
-//! all, which fails the checksum or loses the marker. The slot layer never retries a failed step; the store records
-//! the fault, and the journal and the newest-wins stores write nothing more
-//! until they are opened again (settings writes its next change to the same
-//! unit, which the rule makes as safe as the first try).
+//! raises bits in no particular order (and a part may program bits to 0
+//! inside an erase first), so a cut erase leaves anything at all, which
+//! fails the checksum or loses the marker. The slot layer never retries a
+//! failed step; the store records the fault, and the journal and the
+//! newest-wins stores write nothing more until they are opened again
+//! (settings writes its next change to the same unit, which the rule makes
+//! as safe as the first try).
 //!
 //! What a state means is the store's policy, since what may be lost
 //! differs:
