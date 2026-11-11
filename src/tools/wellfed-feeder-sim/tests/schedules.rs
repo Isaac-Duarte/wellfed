@@ -1352,6 +1352,73 @@ fn a_stored_claim_with_a_faulted_journal_holds_no_restart() {
     );
 }
 
+/// A stored claim waits for the journal before it is settled, which with a
+/// faulted journal is the whole boot. A client's table is taken meanwhile:
+/// nothing is queued for the claim. Once the journal opens again, the
+/// claim, whose feed was never reserved, still settles as interrupted,
+/// and the table stays.
+#[test]
+fn a_table_is_taken_while_a_stored_claim_waits_for_a_faulted_journal() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("flash.bin");
+    let flash = Flash::file(&path).unwrap();
+    let banks = Banks::new();
+    let sim = open(&flash, &banks, 1);
+    let mut feeder = Feeder {
+        flash,
+        banks,
+        sim,
+        now: 0,
+        boots: 1,
+        claims: 0,
+        calls: Vec::new(),
+    };
+    feeder.run(100);
+    feeder.sync(WEDNESDAY + 7 * HOUR_MS);
+    feeder.put(table(&[(0, plan(7 * 60 + 30, 2))]));
+    feeder.run_until(BREAKFAST - 500);
+    // The claim on flash, then a cut before its feed is queued.
+    while feeder.plans().claim.is_none() {
+        feeder.run(1);
+    }
+    let claim = feeder.plans().claim.unwrap();
+
+    // The journal's sectors spoiled: the claim can't be compared with it.
+    let kept = std::fs::read(&path).unwrap();
+    let mut spoiled = kept.clone();
+    spoiled[..0x2000].fill(0);
+    std::fs::write(&path, spoiled).unwrap();
+    feeder.flash = Flash::file(&path).unwrap();
+    feeder.restart();
+    feeder.run(1_000);
+    assert_eq!(feeder.plans().claim, Some(claim), "waiting for the journal");
+
+    let more = table(&[(0, plan(7 * 60 + 30, 3))]);
+    let by = Source::Client([1, 2, 3, 4]);
+    let now = feeder.now;
+    let taken = feeder.sim.put_plans(now, Asked { change: more, by });
+    assert!(matches!(taken, PlansResult::Current { pending: true, .. }));
+    feeder.run(1_000);
+    assert_eq!(feeder.plans().table, more);
+
+    // The journal back: the claim's feed was never reserved.
+    let mut restored = std::fs::read(&path).unwrap();
+    restored[..0x2000].copy_from_slice(&kept[..0x2000]);
+    std::fs::write(&path, restored).unwrap();
+    feeder.flash = Flash::file(&path).unwrap();
+    feeder.restart();
+    feeder.run(100);
+    feeder.sync(BREAKFAST + MINUTE_MS);
+    feeder.run(2 * MINUTE_MS);
+    assert_eq!(feeder.plans().claim, None, "settled");
+    assert_eq!(
+        feeder.missed(),
+        [(0, claim.due_s, MissedReason::Interrupted)]
+    );
+    assert!(feeder.fed().is_empty());
+    assert_eq!(feeder.plans().table, more);
+}
+
 /// Breakfast calling twice, with a 2,000-byte clip (500 ms a play): the
 /// call starts 2 s ahead of the meal (both plays and the spare second).
 fn called_breakfast() -> Feeder {
