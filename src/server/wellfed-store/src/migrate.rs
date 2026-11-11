@@ -102,7 +102,7 @@ pub(crate) async fn run(writer: &SqlitePool, path: &Path, now: Timestamp) -> Res
             .bind(into)
             .execute(&mut *connection)
             .await?;
-        keep(&partial, &copy)?;
+        crate::copies::finish(&partial, &copy)?;
     }
     drop(connection);
 
@@ -123,26 +123,4 @@ fn partial_path(copy: &Path) -> PathBuf {
     name.push(copy.file_name().unwrap_or_default());
     name.push(".partial");
     copy.with_file_name(name)
-}
-
-/// Sync the copy written at `partial`, move it to `copy` and sync the
-/// directory, so a copy under its final name is a whole one that outlasts a
-/// power cut, as the server's backups are.
-fn keep(partial: &Path, copy: &Path) -> Result<()> {
-    let failed = |path: &Path| {
-        let path = path.to_owned();
-        move |source| Error::Copy { path, source }
-    };
-
-    std::fs::File::open(partial)
-        .and_then(|file| file.sync_all())
-        .map_err(failed(partial))?;
-    std::fs::rename(partial, copy).map_err(failed(copy))?;
-    let dir = copy
-        .parent()
-        .filter(|dir| !dir.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    std::fs::File::open(dir)
-        .and_then(|dir| dir.sync_all())
-        .map_err(failed(dir))
 }

@@ -1,5 +1,6 @@
 //! The store against a fresh SQLite file per test.
 
+use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jiff::Timestamp;
@@ -581,7 +582,11 @@ async fn pending_migrations_copy_the_database_first_on_every_attempt() {
         // Named for the newest pending migration and the time given.
         let newest = migrations();
         let copy = format!("server.db.before-{newest}-{}", now.as_millisecond());
-        assert!(dir.path().join(copy).exists(), "named for the time given");
+        let mode = std::fs::metadata(dir.path().join(copy))
+            .expect("named for the time given")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "the server's user's alone");
     }
 }
 

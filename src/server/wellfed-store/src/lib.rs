@@ -31,6 +31,7 @@ mod audit;
 mod call_writes;
 mod commands;
 mod convert;
+pub mod copies;
 mod diagnostics;
 mod export;
 mod feeders;
@@ -100,12 +101,8 @@ pub enum Error {
     #[error("{0} is not a UTF-8 path")]
     Path(std::path::PathBuf),
     /// Keeping the copy taken before a migration failed.
-    #[error("keep the pre-migration copy at {}", path.display())]
-    Copy {
-        path: std::path::PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
+    #[error("keep the pre-migration copy")]
+    Copy(#[from] copies::CopyError),
     #[error(
         "the database was migrated by a newer server (migration {applied}; this build's newest is {embedded}), so it was opened read-only and left as it is"
     )]
