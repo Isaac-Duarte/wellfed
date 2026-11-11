@@ -679,3 +679,49 @@ fn a_carried_rewrite_cut_or_failed_leaves_the_old_record_or_the_new() {
         assert!(!units(&mut f, layout).replace(1, Some(0), &next));
     }
 }
+
+/// The deliberate trade-off: a lone foreign byte, with the magic and the
+/// marker still erased, beside an erased unit cannot be told from a first
+/// save cut short, so it reads as unwritten and a store starts empty and
+/// writes over it, rather than refusing writes for good. Bytes that clear
+/// a bit the magic keeps set are another writer's.
+#[test]
+fn a_lone_foreign_byte_beside_an_erased_unit_reads_as_unwritten() {
+    use wellfed_core::store::update::{UpdateStatus, UpdateStore};
+
+    for layout in [&UNIT, &RECORD] {
+        let mut f = FakeJournalFlash::with_unit(256);
+        f.bytes[0][9] = 0x12;
+        let (a, b) = (scan(&mut f, layout, 0), scan(&mut f, layout, 1));
+        assert_eq!((a, b), (Found::Partial, Found::Erased));
+        assert!(unwritten(&a, &b));
+
+        f.bytes[0][0] = 0;
+        let a = scan(&mut f, layout, 0);
+        assert_eq!(a, Found::Unmarked);
+        assert!(!unwritten(&a, &Found::<(u64, u8)>::Erased));
+    }
+
+    let mut f = FakeJournalFlash::with_unit(512);
+    f.bytes[0][9] = 0x12;
+    let mut s = UpdateStore::default();
+    // SAFETY: the fake flash outlives the store.
+    unsafe { s.open(f.io()) };
+    assert_eq!(s.status, UpdateStatus::Empty);
+    assert!(s.writable());
+    s.revoke(&[0x11; 8]).unwrap();
+    let mut r = UpdateStore::default();
+    // SAFETY: as above.
+    unsafe { r.open(f.io()) };
+    assert_eq!(r.status, UpdateStatus::Loaded);
+    assert!(r.record().revoked().contains(&[0x11; 8]));
+
+    f.bytes[0].fill(u8::MAX);
+    f.bytes[1].fill(u8::MAX);
+    f.bytes[0][0] = 0;
+    f.bytes[0][9] = 0x12;
+    let mut s = UpdateStore::default();
+    // SAFETY: as above.
+    unsafe { s.open(f.io()) };
+    assert_eq!(s.status, UpdateStatus::Corrupt, "another writer's bytes");
+}

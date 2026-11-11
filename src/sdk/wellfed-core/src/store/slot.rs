@@ -75,6 +75,9 @@
 //! as one cleared bit anywhere in its record, so bytes another writer left
 //! that clear no bit the magic or the marker keeps set read as one too:
 //! beside an erased unit, the store starts empty and writes over them.
+//! That is deliberate: such bytes cannot be told from a first save cut
+//! short, and taking them for another writer's would leave every store
+//! whose first save was cut refusing writes for good.
 //! The slot layer never retries a failed step; the store records the
 //! fault, and the journal and the newest-wins stores write nothing more
 //! until they are opened again (settings writes its next change to the
@@ -363,6 +366,10 @@ pub fn newest<V>(a: Found<V>, b: Found<V>, generation: impl Fn(&V) -> u64) -> Pi
 /// committed record of its own reads the same once its marker decays out
 /// of `CMIT` while keeping every bit `CMIT` keeps set; beside an erased
 /// unit (the next save's erase cut late) the store then starts empty too.
+/// Bytes another writer left beside an erased unit, clearing no bit the
+/// magic or the marker keeps set, read as unwritten too. That is
+/// deliberate: they cannot be told from a first save cut short, and a
+/// store refusing writes for good is the worse failure.
 pub const fn unwritten<V>(a: &Found<V>, b: &Found<V>) -> bool {
     matches!(
         (a, b),
