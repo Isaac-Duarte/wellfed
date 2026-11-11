@@ -190,6 +190,21 @@ impl Key {
         })
     }
 
+    /// Load a release-scope key from offline media, refusing a file inside
+    /// a Git working tree as `release_keygen` refuses to write one there,
+    /// or any other scope. A bench stand-in made with `keygen` in a
+    /// checkout's `private/` fails both: it is never a release key's
+    /// successor.
+    pub fn load_release(path: &Path) -> Result<Self> {
+        release::require_outside_checkout(path)?;
+        let key = Self::load(path)?;
+        require(key.scope == KeyScope::Release, || KeyError::NotRelease {
+            path: path.to_path_buf(),
+            scope: key.scope,
+        })?;
+        Ok(key)
+    }
+
     /// The public half, as the firmware embeds it or an owner enrolls it.
     pub fn public(&self) -> [u8; 32] {
         self.key.verifying_key().to_bytes()
@@ -476,23 +491,37 @@ impl Frozen {
         self.sign(key, version, motion)
     }
 
-    /// Sign, as [`Self::offer`] does, the consumer build that builds in
-    /// `successor` instead of the signing key: how a feeder moves from one
-    /// release key to the next. Its release slot takes one live key, and a
-    /// key that signs key statements is a built-in key or the slot's, so
-    /// once the slot's key is the only one left, no order of statements
-    /// alone replaces it. Running this build, the successor is built in: it
-    /// retires the old key and then fills the slot with itself, so bank 0,
-    /// which keeps the key it was written with, trusts it too.
+    /// Sign with the release key `key`, as [`Self::offer`] does, the
+    /// consumer build that builds in `successor`, another release key,
+    /// instead: how a feeder moves from one release key to the next. Its
+    /// release slot takes one live key, and a key that signs key statements
+    /// is a built-in key or the slot's, so no order of statements alone
+    /// replaces the last one. Running this build, the successor is built
+    /// in: it retires the old key and then fills the slot with itself, so
+    /// bank 0, which keeps the key it was written with, trusts it too.
+    ///
+    /// The successor is a loaded key, never a typed public key, so the
+    /// build can only hand feeders to a release key someone holds; load it
+    /// with [`Key::load_release`].
     pub fn hand_over(
         &self,
         key: &Key,
         version: u32,
         motion: Motion,
-        successor: &[u8; 32],
+        successor: &Key,
     ) -> Result<[u8; offer::MANIFEST_LEN]> {
+        require(
+            key.scope == KeyScope::Release && successor.scope == KeyScope::Release,
+            || FrozenError::HandOverScope {
+                signer: key.scope,
+                successor: successor.scope,
+            },
+        )?;
+        require(successor.public() != key.public(), || {
+            FrozenError::HandOverToSelf
+        })?;
         require(self.manifest.is_some(), || FrozenError::NoBuiltInKey)?;
-        self.require_release_build(successor)?;
+        self.require_release_build(&successor.public())?;
         self.sign(key, version, motion)
     }
 
@@ -1263,54 +1292,94 @@ mod tests {
         ));
     }
 
-    /// The release key hands a consumer build over to the successor it
-    /// names, and to no other key; a build that builds the signer itself in
-    /// needs no hand-over.
+    /// The release key hands a consumer build over only to the other
+    /// release key that build builds in; a build that builds the signer
+    /// itself in needs no hand-over.
     #[test]
     fn the_release_key_hands_over_only_to_the_successor_the_build_builds_in() {
-        let release = Key {
-            key: SigningKey::from_bytes(&[1; 32]),
-            scope: KeyScope::Release,
+        let scoped = |seed: u8, scope| Key {
+            key: SigningKey::from_bytes(&[seed; 32]),
+            scope,
         };
-        let successor = Key {
-            key: SigningKey::from_bytes(&[6; 32]),
-            scope: KeyScope::Release,
+        let release = scoped(1, KeyScope::Release);
+        let successor = scoped(6, KeyScope::Release);
+        let builds_in = |key: &Key, provisioning: &str, variant: Option<&str>| {
+            let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
+                                "provisioning": provisioning, "variant": variant,
+                                "ota_public_key": hex::Lower(&key.public()).to_string()});
+            let (checkout, review) = freeze_with(&build_image(), &fields);
+            let frozen = Frozen::open(checkout.path(), &review).unwrap();
+            (checkout, frozen)
         };
-        let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
-                            "provisioning": "consumer",
-                            "ota_public_key": hex::Lower(&successor.public()).to_string()});
-        let (checkout, review) = freeze_with(&build_image(), &fields);
-        let frozen = Frozen::open(checkout.path(), &review).unwrap();
+        let (_dir, frozen) = builds_in(&successor, "consumer", None);
+        let hand_over =
+            |frozen: &Frozen, key: &Key, to: &Key| frozen.hand_over(key, 9, Motion::Refused, to);
 
         assert!(matches!(
             frozen.offer(&release, 9, Motion::Refused),
             Err(Error::Frozen(FrozenError::OtherBuiltIn { .. }))
         ));
-        let signed = frozen
-            .hand_over(&release, 9, Motion::Refused, &successor.public())
-            .unwrap();
+        let signed = hand_over(&frozen, &release, &successor).unwrap();
         assert_eq!(offer::parse_manifest(&signed).unwrap().key_id, release.id());
+
+        // Another release key than the one the build builds in.
         assert!(matches!(
-            frozen.hand_over(&release, 9, Motion::Refused, &[0x77; 32]),
+            hand_over(&frozen, &release, &scoped(7, KeyScope::Release)),
             Err(Error::Frozen(FrozenError::OtherBuiltIn { .. }))
+        ));
+        // Both keys are release keys: a bench stand-in or an owner's key is
+        // no successor, and only the release key hands over.
+        for (signer, to) in [
+            (&release, &scoped(6, KeyScope::Bench)),
+            (&release, &scoped(6, KeyScope::Owner)),
+            (&scoped(1, KeyScope::Bench), &successor),
+        ] {
+            assert!(matches!(
+                hand_over(&frozen, signer, to),
+                Err(Error::Frozen(FrozenError::HandOverScope { .. }))
+            ));
+        }
+        let (_dir, own) = builds_in(&release, "consumer", None);
+        assert!(matches!(
+            hand_over(&own, &release, &release),
+            Err(Error::Frozen(FrozenError::HandOverToSelf))
         ));
 
         // The hand-over is still a release build: no bench build, no variant.
-        for fields in [
-            json!({"startup_identity": BUILD, "firmware": "feeder", "provisioning": "bench",
-                   "ota_public_key": hex::Lower(&successor.public()).to_string()}),
-            json!({"startup_identity": BUILD, "firmware": "feeder", "provisioning": "consumer",
-                   "variant": "virtual-panel",
-                   "ota_public_key": hex::Lower(&successor.public()).to_string()}),
-        ] {
-            let (checkout, review) = freeze_with(&build_image(), &fields);
-            let frozen = Frozen::open(checkout.path(), &review).unwrap();
-            assert!(
-                frozen
-                    .hand_over(&release, 9, Motion::Refused, &successor.public())
-                    .is_err()
-            );
+        for (provisioning, variant) in [("bench", None), ("consumer", Some("virtual-panel"))] {
+            let (_dir, frozen) = builds_in(&successor, provisioning, variant);
+            assert!(hand_over(&frozen, &release, &successor).is_err());
         }
+    }
+
+    /// A successor loads only as a release key from outside any checkout:
+    /// the bench stand-in `keygen` writes into `private/` is neither.
+    #[test]
+    fn a_successor_loads_only_as_a_release_key_off_any_checkout() {
+        let media = tempfile::tempdir().unwrap();
+        let release = media.path().join("successor.json");
+        let release = release_keygen(&release).unwrap().private;
+        Key::load_release(&release).unwrap();
+
+        let stand_in = media.path().join("stand-in.json");
+        keygen(&stand_in, KeyScope::Bench).unwrap();
+        assert!(matches!(
+            Key::load_release(&stand_in),
+            Err(Error::Key(KeyError::NotRelease {
+                scope: KeyScope::Bench,
+                ..
+            }))
+        ));
+
+        let checkout = tempfile::tempdir().unwrap();
+        fs::create_dir_all(checkout.path().join(".git")).unwrap();
+        fs::create_dir_all(checkout.path().join("private")).unwrap();
+        let inside = checkout.path().join("private/release-standin-key.json");
+        fs::copy(&release, &inside).unwrap();
+        assert!(matches!(
+            Key::load_release(&inside),
+            Err(Error::Key(KeyError::InCheckout { .. }))
+        ));
     }
 
     /// An owner's backup signs as stock only when it is the pinned stock

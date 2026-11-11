@@ -90,7 +90,7 @@ fn public_path(output: &Path) -> Result<PathBuf> {
 /// Refuse `output` if it, as written or once its directory's symlinks are
 /// resolved, lies inside a Git working tree: a directory with a `.git`
 /// entry, which a linked worktree's is a file.
-fn require_outside_checkout(output: &Path) -> Result<()> {
+pub(crate) fn require_outside_checkout(output: &Path) -> Result<()> {
     let directory = output.parent().ok_or_else(|| KeyError::NoFileName {
         path: output.to_path_buf(),
     })?;

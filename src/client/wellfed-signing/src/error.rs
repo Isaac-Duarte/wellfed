@@ -4,6 +4,7 @@
 //! A refusal is final: nothing here signs a fallback or retries.
 
 use std::path::PathBuf;
+use wellfed_formats::credentials::KeyScope;
 use wellfed_formats::manifest::Provisioning;
 use wellfed_proto::device::Model;
 
@@ -75,6 +76,9 @@ pub enum KeyError {
         checkout.display()
     )]
     InCheckout { path: PathBuf, checkout: PathBuf },
+    /// A key loaded as a release key that its file scopes otherwise.
+    #[error("{} is a {scope:?} key, not a release key", path.display())]
+    NotRelease { path: PathBuf, scope: KeyScope },
     #[error("{} already exists; a key is never replaced", path.display())]
     Exists { path: PathBuf },
 }
@@ -127,6 +131,17 @@ pub enum FrozenError {
     /// A test variant, which never ships, offered to the release key.
     #[error("The release key signs no variant build ({variant})")]
     ReleaseVariant { variant: String },
+    /// A hand-over signed by, or to, a key that is not a release key.
+    #[error(
+        "A hand-over goes from a release key to a release key, not {signer:?} to {successor:?}"
+    )]
+    HandOverScope {
+        signer: KeyScope,
+        successor: KeyScope,
+    },
+    /// A hand-over to the signing key itself, which needs none.
+    #[error("The successor is the signing key; sign the build without a hand-over")]
+    HandOverToSelf,
     /// A build for the release key that builds in another key than the
     /// one expected: once installed, the feeder would trust that key
     /// instead.

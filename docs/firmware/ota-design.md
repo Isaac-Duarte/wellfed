@@ -141,7 +141,7 @@ A `PLREV1` statement retires any key id for good. Built-in keys and the release 
 
 **Rotating the release key.** The slot holds one live key, and filling it again is refused while that key is live (`Occupied`). Once the slot's key `R1` is the only one left that signs statements, statements alone can't replace it: `R1` adding `R2` finds the slot taken, and `R1` retiring itself would leave no key to sign the add. The rotation goes through a build:
 
-1. Build the consumer image with `R2`'s public half as its release key, and sign it with `R1`: `wellfed-build sign --key <R1> --hand-over-to <R2's public key>`. The feeder takes it through the slot.
+1. Build the consumer image with `R2`'s public half as its release key, and sign it with `R1`: `wellfed-build sign --key <R1's file> --hand-over-to <R2's file>`, both on offline media. The feeder takes it through the slot.
 2. Running it, `R2` is built in. It signs `revoke` for `R1`, then `add-key` for itself, in that order.
 3. Bank 0 still builds in the key it was written with, and now finds `R2` in the slot, so it takes `R2`'s next offer and no longer `R1`'s.
 

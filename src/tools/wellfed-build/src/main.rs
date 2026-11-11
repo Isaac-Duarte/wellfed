@@ -119,11 +119,11 @@ enum Command {
         /// declares, with the owner watching the feeder.
         #[arg(long)]
         attended_motion: Option<String>,
-        /// Sign a consumer build that builds in this release key (64 hex)
-        /// instead of the signing key: the step that moves feeders to a
-        /// new release key.
+        /// Sign, with the release key, a consumer build that builds in the
+        /// release key in this file, on offline media, instead: the step
+        /// that moves feeders to a new release key.
         #[arg(long)]
-        hand_over_to: Option<String>,
+        hand_over_to: Option<PathBuf>,
         /// New file for the signed manifest.
         #[arg(long)]
         output: PathBuf,
@@ -352,14 +352,7 @@ fn run(command: Command) -> Result<()> {
                 .as_deref()
                 .map_or(Motion::Refused, Motion::Attended);
             let successor = hand_over_to
-                .map(|text| {
-                    wellfed_session::hex::decode_array_either_case::<32>(text.as_bytes()).ok_or(
-                        Failure::Hex {
-                            flag: "hand-over-to",
-                            characters: 64,
-                        },
-                    )
-                })
+                .map(|path| Key::load_release(&repo.root.join(path)))
                 .transpose()?;
             let (key, output) = (repo.root.join(key), repo.root.join(output));
             let frozen = Frozen::open(&repo.root, &repo.root.join(review))?;
