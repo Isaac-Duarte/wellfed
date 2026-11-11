@@ -4,7 +4,9 @@
 //!
 //! - **Grow first.** Within a major a file grows by fields an older build
 //!   skips: none of these files' types denies unknown fields, and a field
-//!   an older build did not write reads as absent in the newer one.
+//!   an older build did not write reads as absent in the newer one. An enum
+//!   value an older build cannot read, or a field it must not drop when it
+//!   saves, is a new major instead.
 //! - **A reader for every major since the beta.** A build that makes a new
 //!   major keeps the old one's reader in [`Kept::earlier`] and converts.
 //! - **Never write over newer data.** A file of a newer major reads as

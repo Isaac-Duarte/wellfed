@@ -32,7 +32,6 @@ pub(crate) const FILE_NAME: &str = "alerts.json";
 
 /// The alert state the phone keeps.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct AlertState {
     pub(crate) settings: AlertSettings,
     /// One entry per feeder this phone has caught up with.
@@ -60,7 +59,6 @@ pub(crate) const SWEEP_HOLD: SignedDuration = SignedDuration::from_mins(1);
 /// One notification a sweep is taking off, since `since` by the phone's
 /// clock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct SweepHold {
     pub(crate) id: i32,
     pub(crate) since: Timestamp,
@@ -72,7 +70,6 @@ impl Versioned for AlertState {
 
 /// How this phone takes alerts.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct AlertSettings {
     /// "Instant while home": a foreground service catches up every minute.
     pub(crate) instant: bool,
@@ -88,7 +85,6 @@ pub(crate) struct AlertSettings {
 
 /// One feeder's watch.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Watched {
     /// The feeder's identity key, lowercase hex, as `wellfed.json` names it.
     pub(crate) identity: String,
@@ -739,8 +735,8 @@ mod tests {
     #[test]
     fn version_1_reads_and_writes_as_its_sample() {
         let sample = include_str!("../tests/fixtures/alerts-v1.json");
-        let read: AlertState = stored::read(sample.as_bytes()).unwrap();
-        assert_eq!(read, every_field());
+        let read = stored::read::<AlertState>(sample.as_bytes()).unwrap();
+        assert_eq!(read, stored::Found::Read(every_field()));
 
         let dir = tempfile::tempdir().unwrap();
         stored::write(&path(dir.path()), &every_field()).unwrap();

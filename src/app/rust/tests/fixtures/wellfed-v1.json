@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "data": {
+    "store": {
+      "label": "pixel",
+      "feeders": [
+        {
+          "identity": "abababababababababababababababababababababababababababababababab",
+          "name": "kitchen",
+          "address": "192.0.2.7:4747",
+          "manual_address": "10.8.0.7:4747"
+        }
+      ],
+      "appearance": "dark",
+      "server": {
+        "link": {
+          "url": "http://192.0.2.9:8080/",
+          "user": "ada",
+          "token_id": "01920000-0000-7000-8000-000000000001"
+        },
+        "feeders": [
+          {
+            "id": "01920000-0000-7000-8000-000000000002",
+            "identity": "abababababababababababababababababababababababababababababababab",
+            "name": "kitchen"
+          }
+        ],
+        "account": {
+          "id": "01920000-0000-7000-8000-000000000003",
+          "name": "ada",
+          "role": "member",
+          "expires_ms": 6000
+        }
+      }
+    },
+    "set_aside": {
+      "kind": "app",
+      "moved_to": "/data/wellfed.json.damaged-1",
+      "reason": "not this file's shape",
+      "at_ms": 5000
+    }
+  }
+}

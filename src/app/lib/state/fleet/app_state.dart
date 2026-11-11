@@ -179,7 +179,7 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   /// Read this phone's key and file, making a key the first time. A file
   /// that does not read is set aside ([notice]); only the storage itself
-  /// failing throws.
+  /// failing, or a file a newer app wrote, throws.
   static Future<AppState> load() async {
     final String? saved = await secureStorage.read(key: clientSecretName);
     final ClientKey key;

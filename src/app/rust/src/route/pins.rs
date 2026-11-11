@@ -49,7 +49,6 @@ use crate::stored::{self, Opened, Versioned};
 /// A write pinned to the path it went on, from its confirmation to its
 /// result.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct PinRecord {
     /// Its one idempotency key, from the owner's confirmation on.
     pub(crate) key: Uuid,
@@ -80,7 +79,6 @@ pub(crate) struct PinRecord {
 /// token belongs to one server) and the account. A journal is trusted to
 /// lack a write only when it is the same one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct ServerMark {
     pub(crate) token: Uuid,
     pub(crate) user: Uuid,
@@ -103,7 +101,7 @@ pub(crate) enum PinState {
 /// a pin, and it holds no device API type, so a change to the device API never
 /// changes this file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "write", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "write", rename_all = "snake_case")]
 pub(crate) enum PinnedWrite {
     Feed { portions: u8 },
     Other { kind: WriteKind },
@@ -139,7 +137,6 @@ impl PinRecord {
 /// A direct feed this phone saw the feeder reserve, until its `Fed` is read
 /// or the week it is kept passes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct RunningFeed {
     pub(crate) feeder: String,
     pub(crate) feed: u32,
@@ -150,7 +147,6 @@ pub(crate) struct RunningFeed {
 /// server lists it, or the router's grace passes, no second owner invite is
 /// made for it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct LostAdoption {
     pub(crate) feeder: String,
     pub(crate) at_ms: i64,
@@ -158,7 +154,6 @@ pub(crate) struct LostAdoption {
 
 /// The file's shape.
 #[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct PinFile {
     pins: Vec<PinRecord>,
     running: Vec<RunningFeed>,
@@ -479,22 +474,39 @@ mod tests {
     }
 
     #[test]
-    fn a_pins_file_of_another_version_is_set_aside_too() {
+    fn a_pins_file_of_a_version_no_reader_takes_is_set_aside_too() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pending.json");
-        std::fs::write(
-            &path,
-            br#"{"version": 99, "data": {"pins": [], "running": [], "adoptions": [], "set_aside": null}}"#,
-        )
-        .unwrap();
+        std::fs::write(&path, br#"{"version": 0, "data": {}}"#).unwrap();
 
         let (_store, book) = PinStore::open(&path).unwrap();
         let set_aside = book.set_aside.expect("set aside");
         assert!(
-            set_aside.reason.contains("version 99"),
+            set_aside.reason.contains("version 0"),
             "{}",
             set_aside.reason
         );
+    }
+
+    /// After a downgrade: a newer build's pins are refused, so nothing is
+    /// sent, and the file is left for that build to read again.
+    #[test]
+    fn a_newer_builds_pins_file_is_refused_and_left_as_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+        let newer = br#"{"version": 99, "data": {"pins": "of a newer shape"}}"#;
+        std::fs::write(&path, newer).unwrap();
+
+        let error = PinStore::open(&path).err().expect("refused");
+
+        assert_eq!(error.kind, ErrorKind::Store);
+        assert_eq!(std::fs::read(&path).unwrap(), newer);
+        let aside = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().contains("damaged"))
+            .count();
+        assert_eq!(aside, 0, "nothing set aside");
     }
 
     #[test]
@@ -519,5 +531,63 @@ mod tests {
         assert!(json.contains("\"kind\":\"wifi\""), "{json}");
         assert_eq!(wifi.view().kind, WriteKind::Wifi);
         assert_eq!(wifi.view().portions, None);
+    }
+
+    /// Every field of the file set, each once.
+    fn every_field() -> PinFile {
+        PinFile {
+            pins: vec![
+                feed(1),
+                PinRecord {
+                    key: Uuid::from_u128(2),
+                    server_feeder: None,
+                    server: None,
+                    path: RoutePath::Direct,
+                    write: PinnedWrite::Other {
+                        kind: WriteKind::Settings,
+                    },
+                    state: PinState::Uncertain,
+                    mark: Some(41),
+                    excluded: vec![3, 4],
+                    acknowledged_ms: Some(2_000),
+                    ..feed(2)
+                },
+            ],
+            running: vec![RunningFeed {
+                feeder: "cd".repeat(32),
+                feed: 5,
+                until_ms: 3_000,
+            }],
+            adoptions: vec![LostAdoption {
+                feeder: "ef".repeat(32),
+                at_ms: 4_000,
+            }],
+            set_aside: Some(SetAside {
+                kind: StoreKind::Pending,
+                moved_to: "/data/pending.json.damaged-1".into(),
+                reason: "not this file's shape".into(),
+                at_ms: 5_000,
+            }),
+        }
+    }
+
+    #[test]
+    fn version_1_reads_and_writes_as_its_sample() {
+        let sample = include_str!("../../tests/fixtures/pending-v1.json");
+        let stored::Found::Read(read) = stored::read::<PinFile>(sample.as_bytes()).unwrap() else {
+            panic!("version 1 is this build's");
+        };
+        assert_eq!(read.pins, every_field().pins);
+        assert_eq!(read.running, every_field().running);
+        assert_eq!(read.adoptions, every_field().adoptions);
+        assert_eq!(read.set_aside, every_field().set_aside);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+        stored::write(&path, &every_field()).unwrap();
+        let written: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let sample: serde_json::Value = serde_json::from_str(sample).unwrap();
+        assert_eq!(written, sample);
     }
 }
