@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
@@ -12,11 +13,11 @@ import '../support/fakes.dart';
 
 const _kitchen = KnownFeeder(identity: 'aa', name: 'Kitchen', address: 'lan:4747');
 
-(HomeServer, FakeServerPorts, FakeRouter, FakeBook) _server() {
+(HomeServer, FakeServerPorts, FakeRouter, FakeBook) _server({ClientKey? key}) {
   final book = FakeBook()..feeders = [_kitchen];
   final ports = FakeServerPorts();
   final router = FakeRouter();
-  final server = HomeServer(book, ports, router);
+  final server = HomeServer(book, ports, router, key ?? FakeClientKey());
   addTearDown(server.dispose);
   return (server, ports, router, book);
 }
@@ -42,6 +43,19 @@ void main() {
     expect('${book.server?.link.url}${book.server?.link.user}${book.server?.link.tokenId}', isNot(contains('hunter2')));
     expect(router.connected, [serverOwner]);
     expect(server.state, isA<ServerLinked>().having((linked) => linked.account, 'account', serverOwner));
+  });
+
+  test("each list of the feeders has the router claim the phone's own key, and a failed one does not", () async {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, _) = _server(key: key);
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    expect(router.claims, [same(key)], reason: 'claimed once the login lists the feeders');
+
+    await server.refresh();
+    expect(router.claims, hasLength(2), reason: 'each list tries again');
+
+    router.refreshWait = Completer<List<ServerFeeder>>()..completeError(serverError(ServerErrorKind.unreachable));
+    await server.refresh();
+    expect(router.claims, hasLength(2), reason: 'a list that failed claims nothing');
   });
 
   test('a refused login says why and keeps nothing', () async {
@@ -113,7 +127,7 @@ void main() {
       ..feeders = [_kitchen]
       ..server = const KnownServer(link: serverLink, feeders: []);
     final router = FakeRouter();
-    final server = HomeServer(book, FakeServerPorts(), router);
+    final server = HomeServer(book, FakeServerPorts(), router, FakeClientKey());
     addTearDown(server.dispose);
     return pumpEventQueue().then((_) {
       expect(router.refusals, 1);
@@ -130,7 +144,7 @@ void main() {
       ..kept = 'token-secret'
       ..secretFails = Exception('keystore');
     final router = FakeRouter();
-    final server = HomeServer(book, ports, router);
+    final server = HomeServer(book, ports, router, FakeClientKey());
     addTearDown(server.dispose);
     await pumpEventQueue();
 
@@ -150,7 +164,7 @@ void main() {
       ..kept = 'token-secret'
       ..restoreFails = serverError(ServerErrorKind.plainHttp);
     final router = FakeRouter();
-    final server = HomeServer(book, ports, router);
+    final server = HomeServer(book, ports, router, FakeClientKey());
     addTearDown(server.dispose);
     await pumpEventQueue();
 
@@ -204,7 +218,7 @@ void main() {
       ..server = const KnownServer(link: serverLink, feeders: [], account: viewer);
     final ports = FakeServerPorts()..kept = 'token-secret';
     final router = FakeRouter();
-    final server = HomeServer(book, ports, router);
+    final server = HomeServer(book, ports, router, FakeClientKey());
     addTearDown(server.dispose);
     await pumpEventQueue();
 
@@ -219,7 +233,7 @@ void main() {
       ..feeders = [_kitchen]
       ..server = kept;
     final router = FakeRouter();
-    final server = HomeServer(book, FakeServerPorts()..kept = 'token-secret', router);
+    final server = HomeServer(book, FakeServerPorts()..kept = 'token-secret', router, FakeClientKey());
     addTearDown(server.dispose);
 
     // Synchronously, in the constructor: no session or feed can come first.

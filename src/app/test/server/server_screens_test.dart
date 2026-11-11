@@ -26,7 +26,7 @@ const _cat = ServerPet(id: 'p1', name: 'Miso', species: Species.cat, feeders: ['
 (HomeServer, FakeServerPorts, FakeBook) _server() {
   final book = FakeBook()..feeders = [_kitchen];
   final ports = FakeServerPorts();
-  final server = HomeServer(book, ports, FakeRouter());
+  final server = HomeServer(book, ports, FakeRouter(), FakeClientKey());
   addTearDown(server.dispose);
   return (server, ports, book);
 }

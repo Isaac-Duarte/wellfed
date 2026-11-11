@@ -26,14 +26,14 @@ void main() {
   for (final Brightness brightness in Brightness.values) {
     group(brightness.name, () {
       golden('adding a home server', (tester) async {
-        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter());
+        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter(), FakeClientKey());
         addTearDown(server.dispose);
         await showPhone(tester, overBlank(AddServerScreen(newFlow: () => AddServerFlow(server))), brightness);
         await matchesGolden('server_add', brightness);
       });
 
       golden('the home server account', (tester) async {
-        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter());
+        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter(), FakeClientKey());
         addTearDown(server.dispose);
         await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
         await showPhone(

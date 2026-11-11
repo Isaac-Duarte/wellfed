@@ -3,11 +3,13 @@
 //! feeder for an invite and a pet sitter's phone joins with it, which the
 //! server records under the phone's token. Logging out with the password
 //! keeps both keys on the feeder, the account's with no token; a wrong
-//! password changes
-//! nothing; revoking the token from elsewhere revokes both.
+//! password changes nothing; revoking the token from elsewhere revokes
+//! both. A fresh login claims the phone's own key under its new token, so
+//! revoking that one revokes the key again.
 
-use wellfed_api::{AdoptFeeder, ClientOwner, ClientRole, FeederId, Hex};
+use wellfed_api::{AdoptFeeder, ClientOwner, ClientRole, FeederId, Hex, TokenId};
 use wellfed_app_bridge::api::keys::ClientKey;
+use wellfed_app_bridge::api::router::PathRouter;
 use wellfed_app_bridge::api::server::ServerSession;
 use wellfed_app_bridge::api::server_error::ServerErrorKind;
 use wellfed_server_client::{Auth, Client};
@@ -19,6 +21,15 @@ const SITTER: [u8; 32] = [2; 32];
 /// This phone's own key.
 fn own() -> ClientKey {
     ClientKey::restore(OWN.to_vec()).unwrap()
+}
+
+/// Log in as the owner from this phone, as its account screen does.
+async fn log_in(server: &TestServer) -> ServerSession {
+    let credentials = ada_login();
+    let url = format!("http://{}", server.address());
+    ServerSession::login(url, credentials.name, credentials.password, "pixel".into())
+        .await
+        .unwrap()
 }
 
 /// The server with a feeder its owner adopted, the owner's client, and
@@ -38,11 +49,7 @@ async fn phone_with_a_sitter(
     let kitchen = owner.adopt(&adopt).await.unwrap().id;
     server.caught_up(kitchen).await;
 
-    let credentials = ada_login();
-    let url = format!("http://{}", server.address());
-    let session = ServerSession::login(url, credentials.name, credentials.password, "pixel".into())
-        .await
-        .unwrap();
+    let session = log_in(&server).await;
     let token = server
         .client()
         .with_auth(Some(Auth::Token(session.secret())));
@@ -102,7 +109,7 @@ fn revoking_the_token_from_elsewhere_revokes_both_keys() {
         // Another session of the same account, as on a lost phone.
         owner.login(&ada_login()).await.unwrap();
         let id = session.link().token_id.parse().unwrap();
-        owner.revoke_token(wellfed_api::TokenId(id)).await.unwrap();
+        owner.revoke_token(TokenId(id)).await.unwrap();
         until("both keys are revoked", || async {
             let held = feeder::client_keys(&sim).await;
             [OWN, SITTER]
@@ -110,6 +117,45 @@ fn revoking_the_token_from_elsewhere_revokes_both_keys() {
                 .all(|&secret| !held.contains(&feeder::phone_key(secret)))
         })
         .await;
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+#[test]
+fn a_fresh_login_claims_the_phones_key_so_revoking_its_token_revokes_it() {
+    local(async {
+        let sim = feeder::start().await;
+        let (server, mut owner, kitchen, session) = phone_with_a_sitter(&sim).await;
+        session.logout(ada_login().password, &own()).await.unwrap();
+
+        // The app logs in again, connects its router and lists the feeders,
+        // then claims its own key on each.
+        let again = log_in(&server).await;
+        let pins = tempfile::tempdir().unwrap();
+        let pending = pins.path().join("pending.json").display().to_string();
+        let router = PathRouter::new(pending).unwrap();
+        router.connect_server(&again, again.account().await.unwrap());
+        router.refresh().await.unwrap();
+        router.claim_own(&own()).await;
+
+        let token = TokenId(again.link().token_id.parse().unwrap());
+        let phones = owner.phones().await.unwrap();
+        let ours = phones
+            .iter()
+            .find(|phone| phone.feeder == kitchen && phone.key.0 == feeder::phone_key(OWN));
+        assert_eq!(ours.map(|phone| phone.token), Some(Some(token)));
+
+        // The phone is lost: another session revokes its new token.
+        owner.login(&ada_login()).await.unwrap();
+        owner.revoke_token(token).await.unwrap();
+        until("the phone's key is revoked", || async {
+            !feeder::client_keys(&sim)
+                .await
+                .contains(&feeder::phone_key(OWN))
+        })
+        .await;
+        router.close();
         server.stop().await;
         sim.stop().await;
     });

@@ -87,6 +87,14 @@ abstract class PathRouter implements RustOpaqueInterface {
     required ClientKey key,
   });
 
+  /// Claim `key`, this phone's own, on every feeder the server lists, so
+  /// the token this login minted covers it: call it after each connect
+  /// and list. Each feeder is claimed once a session; a claim the server
+  /// could not settle is logged and tried again on the next call, and
+  /// none holds up another. An account with no key of its own claims
+  /// none.
+  Future<void> claimOwn({required ClientKey key});
+
   /// Record `key`, this phone's own key on `feeder`, as the account's
   /// phone key, for an adoption that left it [`Adoption::Unclaimed`].
   Future<Adoption> claimPhone({required String feeder, required ClientKey key});

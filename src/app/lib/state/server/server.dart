@@ -140,8 +140,9 @@ class HomeServer extends ChangeNotifier {
   ///
   /// The router is told of the kept server before anything is awaited, so
   /// no feed goes on the phone's own key that the kept account (or, with
-  /// none kept, an account not yet read) would not allow.
-  HomeServer(this._book, this._ports, this._router) {
+  /// none kept, an account not yet read) would not allow. `_key` is this
+  /// phone's own.
+  HomeServer(this._book, this._ports, this._router, this._key) {
     final KnownServer? kept = _book.server;
     _routed = _router?.updates().listen(_routerSaid);
     if (kept != null) {
@@ -158,6 +159,7 @@ class HomeServer extends ChangeNotifier {
   final FeederBook _book;
   final ServerPorts _ports;
   final PathRouter? _router;
+  final ClientKey _key;
 
   /// The server as it stands.
   ServerState get state => _state;
@@ -229,15 +231,12 @@ class HomeServer extends ChangeNotifier {
     return const LoginDone();
   }
 
-  /// Revoke this phone's token on the server with the account's
-  /// `password`, then forget the server. The phone keeps its own keys on
-  /// its feeders, and the phones it invited keep theirs, so it reaches them
-  /// directly; they stay the account's on the server. A wrong password, or too many, changes nothing; a server
-  /// that could not take it is forgotten all the same, its token valid
-  /// until it is revoked there.
-  ///
-  /// `key` is this phone's own: the server keeps only the keys the phone
-  /// names as its own, and revokes any other under the token.
+  /// Revoke this phone's token with the account's `password`, then forget
+  /// the server. The server keeps `key`, this phone's own, on its feeders
+  /// with the account, and the keys of phones it invited; it revokes any
+  /// other under the token. A wrong password, or too many, changes nothing;
+  /// a server that could not take it is forgotten all the same, its token
+  /// valid until it is revoked there.
   Future<LogOutOutcome> logOut(String password, ClientKey key) async {
     final ServerSession? session = _session;
     var revoked = false;
@@ -273,6 +272,9 @@ class HomeServer extends ChangeNotifier {
       return;
     }
     if (_disposed || _session != session) return;
+    // The phone's own key under this token on each feeder, so revoking the
+    // token revokes it; one that failed is tried again on the next list.
+    unawaited(router.claimOwn(key: _key));
 
     final List<ServerFeeder> current = [
       for (final ServerFeeder feeder in feeders)

@@ -465,6 +465,17 @@ impl PathRouter {
         self.router.claim_phone(&feeder, phone).await
     }
 
+    /// Claim `key`, this phone's own, on every feeder the server lists, so
+    /// the token this login minted covers it: call it after each connect
+    /// and list. Each feeder is claimed once a session; a claim the server
+    /// could not settle is logged and tried again on the next call, and
+    /// none holds up another. An account with no key of its own claims
+    /// none.
+    pub async fn claim_own(&self, key: &ClientKey) {
+        let phone = *key.keypair().public();
+        self.router.claim_own(phone).await;
+    }
+
     /// The path a new request to `feeder` takes now.
     #[frb(sync)]
     pub fn path(&self, feeder: String) -> Option<RoutePath> {

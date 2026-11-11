@@ -197,7 +197,7 @@ void main() {
 
       _desktopGolden('adding a home server', (tester) async {
         final FeederFleet fleet = await _fleet(tester);
-        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter());
+        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter(), FakeClientKey());
         addTearDown(server.dispose);
         await _desktop(
           tester,
