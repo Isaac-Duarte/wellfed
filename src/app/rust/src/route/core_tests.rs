@@ -838,3 +838,57 @@ proptest! {
         }
     }
 }
+
+/// A direct write's pin goes only on an answer that names its end: one this
+/// build can't read, or the wrong one, may follow a write that ran, so its
+/// pin stays, uncertain, through a restart.
+#[test]
+fn a_direct_write_stays_uncertain_unless_its_answer_names_its_end() {
+    for reply in [
+        FeederReply::Unanswered,
+        FeederReply::Unreadable,
+        FeederReply::Unexpected,
+    ] {
+        assert_eq!(direct_ended(&reply), (Ended::Uncertain, None), "{reply:?}");
+
+        let mut book = Book::default();
+        let pin = PinRecord {
+            write: PinnedWrite::Other {
+                kind: WriteKind::Settings,
+            },
+            ..feed_pin(1, "a", RoutePath::Direct)
+        };
+        book.admit(pin, NOW).unwrap();
+        book.ended(Uuid::from_u128(1), direct_ended(&reply).0, NOW);
+        assert_eq!(book.pins.len(), 1, "{reply:?}");
+        assert_eq!(book.pins[0].state, PinState::Uncertain);
+    }
+
+    assert_eq!(
+        direct_ended(&FeederReply::Done { generation: None }),
+        (Ended::Answered, None)
+    );
+    assert_eq!(
+        direct_ended(&FeederReply::Refused {
+            refusal: crate::api::feeder::FeederRefusal::Busy
+        }),
+        (Ended::Refused, None)
+    );
+    assert_eq!(
+        direct_ended(&FeederReply::NotAsked {
+            reason: NotAsked::BadPlan
+        }),
+        (Ended::Refused, None)
+    );
+    for unsent in [
+        FeederReply::NotSent,
+        FeederReply::NotAsked {
+            reason: NotAsked::Held,
+        },
+    ] {
+        assert_eq!(
+            direct_ended(&unsent),
+            (Ended::Unsent, Some(NotSentReason::Session))
+        );
+    }
+}

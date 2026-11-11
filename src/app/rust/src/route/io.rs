@@ -18,7 +18,7 @@ use wellfed_api::{ErrorCode, FeederId, User};
 use wellfed_model::{Answer, Op};
 
 use crate::api::error::{BridgeError, ErrorKind};
-use crate::api::feeder::{FeederReply, FeederRequest, NotAsked};
+use crate::api::feeder::{FeederReply, FeederRequest};
 use crate::api::keys::random;
 use crate::api::router::{
     NotSentReason, PendingWrite, RetryOutcome, RoutePath, RoutedFeed, RoutedReply, RouterUpdate,
@@ -1472,14 +1472,7 @@ const fn not_sent(reason: NotSentReason, error: Option<ServerError>) -> RoutedFe
 /// Run a write on the phone's own session behind `link`.
 async fn direct_write(link: &DirectLink, call: DirectCall) -> WriteTry {
     let reply = direct(link, call).await;
-    let (ended, not_sent) = match reply {
-        FeederReply::Unanswered => (Ended::Uncertain, None),
-        FeederReply::NotSent
-        | FeederReply::NotAsked {
-            reason: NotAsked::Held,
-        } => (Ended::Unsent, Some(NotSentReason::Session)),
-        _ => (Ended::Answered, None),
-    };
+    let (ended, not_sent) = core::direct_ended(&reply);
     WriteTry {
         ended,
         reply,

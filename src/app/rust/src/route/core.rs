@@ -15,7 +15,8 @@
 use uuid::Uuid;
 use wellfed_api::{CommandOutcome, CommandState};
 
-use crate::api::router::{RoutePath, Settlement};
+use crate::api::feeder::{FeederReply, NotAsked};
+use crate::api::router::{NotSentReason, RoutePath, Settlement};
 use crate::api::store::SetAside;
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinnedWrite, RunningFeed, ServerMark};
 
@@ -200,6 +201,34 @@ pub(crate) const fn server_ended(failure: ServerFailure) -> Ended {
         | ServerFailure::Unauthorized
         | ServerFailure::Rejected => Ended::Refused,
         ServerFailure::Interrupted | ServerFailure::OutcomeUnknown => Ended::Uncertain,
+    }
+}
+
+/// What the phone's own session's `reply` to a write says of it, and why it
+/// never went if it didn't. Only an answer that names the write's end is
+/// definite; anything else (no answer, one this build can't read, or the
+/// wrong one) may follow a write that ran, so it stays pinned, uncertain.
+pub(crate) const fn direct_ended(reply: &FeederReply) -> (Ended, Option<NotSentReason>) {
+    match reply {
+        FeederReply::Done { .. }
+        | FeederReply::Settings { .. }
+        | FeederReply::Time { .. }
+        | FeederReply::Plans { .. }
+        | FeederReply::Clients { .. }
+        | FeederReply::Invite { .. }
+        | FeederReply::Calibration { .. }
+        | FeederReply::Call { .. }
+        | FeederReply::Stats { .. }
+        | FeederReply::Trace { .. }
+        | FeederReply::Update { .. } => (Ended::Answered, None),
+        FeederReply::NotSent
+        | FeederReply::NotAsked {
+            reason: NotAsked::Held,
+        } => (Ended::Unsent, Some(NotSentReason::Session)),
+        FeederReply::Refused { .. } | FeederReply::NotAsked { .. } => (Ended::Refused, None),
+        FeederReply::Unanswered | FeederReply::Unexpected | FeederReply::Unreadable => {
+            (Ended::Uncertain, None)
+        }
     }
 }
 
