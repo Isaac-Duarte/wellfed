@@ -83,7 +83,7 @@ static SECTION: LazyLock<Regex> = LazyLock::new(|| {
 /// for an address inside it: a transfer into a legacy entry at any offset
 /// needs its wrapper as much as one to its start.
 static BRANCH_TARGET: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b[0-9a-f]+\s+<([^>+]+)(?:\+0x[0-9a-f]+)?>").expect("branch target pattern")
+    Regex::new(r"\b([0-9a-f]+)\s+<([^>+]+)(?:\+0x[0-9a-f]+)?>").expect("branch target pattern")
 });
 
 fn functions() -> BTreeSet<&'static str> {
@@ -187,8 +187,10 @@ pub fn verify_ipc_table(
 pub type Routes = BTreeMap<&'static str, Vec<Route>>;
 
 /// Every direct transfer to a legacy entry, which must come from its public
-/// wrapper: under any condition, width or offset, and through the linker's
-/// `__<entry>_veneer`, which reaches the entry for its caller. A literal
+/// wrapper and land at the entry's start: under any condition, width or
+/// offset, and through the linker's `__<entry>_veneer`, which reaches the
+/// entry for its caller. Only the entry's own branches that land inside its
+/// body (its loops and skips) are no way in. A literal
 /// word holding an entry's address (Thumb bit set or not) is a pointer an
 /// indirect call could use, so only the entry's own veneer, whose body is
 /// that word, may hold one. `names` gives the entries' addresses.
@@ -196,11 +198,14 @@ pub fn legacy_routes(disassembly: &str, names: &BTreeMap<String, Symbol>) -> Res
     let expected: BTreeMap<&'static str, &'static str> =
         RENAMES.iter().map(|(p, l)| (*l, *p)).collect();
     let mut addresses = BTreeMap::new();
+    let mut bodies = BTreeMap::new();
     for legacy in expected.keys() {
         let symbol = names.get(*legacy).ok_or(HookError::Missing {
             names: vec![*legacy],
         })?;
-        addresses.insert(symbol.address & !1, *legacy);
+        let start = symbol.address & !1;
+        addresses.insert(start, *legacy);
+        bodies.insert(*legacy, start..start + symbol.bytes);
     }
     let mut routes: Routes = expected.keys().map(|l| (*l, Vec::new())).collect();
     let mut owner: Option<String> = None;
@@ -232,18 +237,31 @@ pub fn legacy_routes(disassembly: &str, names: &BTreeMap<String, Symbol>) -> Res
         let Some(target) = BRANCH_TARGET.captures(&m[3]) else {
             continue;
         };
-        let name = target[1]
+        let veneered = target[2]
             .strip_prefix("__")
-            .and_then(|name| name.strip_suffix("_veneer"))
-            .unwrap_or(&target[1]);
-        let Some((legacy, public)) = expected.get_key_value(name) else {
+            .and_then(|name| name.strip_suffix("_veneer"));
+        let Some((legacy, public)) = expected.get_key_value(veneered.unwrap_or(&target[2])) else {
             continue;
         };
+        let Some(body) = bodies.get(legacy) else {
+            continue;
+        };
+        let address = parse_hex(&target[1])?;
 
-        require(caller == *public, || HookError::Bypass {
-            caller: caller.into(),
-            legacy,
-        })?;
+        // An entry's own loops and skips land inside its body and are no
+        // way in. Any other transfer is one, at any offset.
+        if caller == *legacy && veneered.is_none() && body.contains(&address) {
+            continue;
+        }
+        // Only the wrapper goes in, and only at the entry's start (or
+        // through the veneer, which branches there).
+        require(
+            caller == *public && (veneered.is_some() || address == body.start),
+            || HookError::Bypass {
+                caller: caller.into(),
+                legacy,
+            },
+        )?;
         if let Some(calls) = routes.get_mut(legacy) {
             calls.push(Route {
                 caller: caller.to_string(),
@@ -315,8 +333,9 @@ pub(crate) fn audit(sdk: &Path, binutils: &Binutils, objects: &Archives) -> Resu
         protocol_installed: false,
         global_exclusion_proven: false,
         scope: "Public SDK hooks and IPC table route through RAM interposer; \
-                every direct transfer to a legacy entry, under any condition, width or offset \
-                or through its linker veneer, originates only in that interposer, and no \
+                every direct transfer into a legacy entry from outside its own body, under any \
+                condition, width or offset or through its linker veneer, originates only in that \
+                interposer and lands at the entry's start, and no \
                 literal word in the scanned text holds a legacy entry's address but its veneer's. \
                 Register-indirect transfers (blx rN, bx rN, ldr pc, mov pc, pop {pc}, tbb, tbh) \
                 and data tables outside the scanned text are beyond a listing scan; \
@@ -375,6 +394,56 @@ mod tests {
             (name.to_owned(), symbol)
         })
         .collect()
+    }
+
+    /// An entry's own loop branch lands inside its body and passes; the
+    /// same branch from any other function, the wrapper or another legacy
+    /// entry included, is a way in and is refused, and so is the entry
+    /// branching past its own end.
+    #[test]
+    fn only_an_entry_s_own_branches_inside_its_body_are_exempt() {
+        let rest = "10000010 <FLASH_Write_Unlock>:\n 10000010:\tf000 f800 \tbl\t10000200 <wellfed_sdk_flash_legacy_unlock>\n\
+                    10000020 <FLASH_Write_IPC_Int>:\n 10000020:\tf000 b800 \tb.w\t10000300 <wellfed_sdk_flash_legacy_ipc>\n\
+                    10000000 <FLASH_Write_Lock>:\n 10000000:\tf000 f800 \tbl\t10000100 <wellfed_sdk_flash_legacy_lock>\n";
+        let branch = |from: &str, at: u64, to: &str| {
+            format!("{at:08x} <{from}>:\n {at:08x}:\td0fc \tbeq.n\t{to}\n{rest}")
+        };
+        let into = "1000010a <wellfed_sdk_flash_legacy_lock+0xa>";
+
+        let routes = legacy_routes(
+            &branch("wellfed_sdk_flash_legacy_lock", 0x1000_0100, into),
+            &names(),
+        )
+        .unwrap();
+        assert_eq!(
+            routes["wellfed_sdk_flash_legacy_lock"].len(),
+            1,
+            "the loop is no route"
+        );
+
+        for from in [
+            "unmediated_sdk_caller",
+            "FLASH_Write_Lock",
+            "wellfed_sdk_flash_legacy_unlock",
+        ] {
+            let error = legacy_routes(&branch(from, 0x2000_0000, into), &names()).unwrap_err();
+            assert!(
+                matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == from),
+                "{from}: {error}"
+            );
+        }
+
+        // Past its own 16 bytes is outside the body, so no loop.
+        let beyond = "10000110 <wellfed_sdk_flash_legacy_lock+0x10>";
+        let error = legacy_routes(
+            &branch("wellfed_sdk_flash_legacy_lock", 0x1000_0100, beyond),
+            &names(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == "wellfed_sdk_flash_legacy_lock"),
+            "{error}"
+        );
     }
 
     /// The linker's veneer reaches the entry for its caller, so a transfer
@@ -490,7 +559,8 @@ mod tests {
             matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == "unmediated_sdk_caller"),
             "{error}"
         );
-        let routes = legacy_routes(
+        // The wrapper itself goes in only at the entry's start.
+        let error = legacy_routes(
             &wrapped(
                 "FLASH_Write_Lock",
                 "b.w",
@@ -498,8 +568,11 @@ mod tests {
             ),
             &names(),
         )
-        .unwrap();
-        assert_eq!(routes["wellfed_sdk_flash_legacy_lock"].len(), 1);
+        .unwrap_err();
+        assert!(
+            matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == "FLASH_Write_Lock"),
+            "{error}"
+        );
 
         // A register call names no target, and is no direct route.
         assert!(!DIRECT_TRANSFER.is_match("bx"));
