@@ -107,9 +107,11 @@ impl Service {
     }
 
     /// Keep a client the server did not invite, so it no longer shows as
-    /// unowned. Nothing is sent to the feeder. Only a signed-in owner keeps
-    /// one: a kept key outlives every account and token, so a leaked
-    /// token must not vouch for a key it enrolled.
+    /// unowned, or detach one a phone key invited from that key's account,
+    /// so removing the account or the inviter leaves it. Nothing is sent to
+    /// the feeder. Only a signed-in owner keeps one: a kept key outlives
+    /// every account and token, so a leaked token must not vouch for a key
+    /// it enrolled.
     pub async fn keep_client(&self, caller: &Caller, id: FeederId, key: [u8; 32]) -> Result<()> {
         session_only(caller)?;
         self.live_row(id).await?;

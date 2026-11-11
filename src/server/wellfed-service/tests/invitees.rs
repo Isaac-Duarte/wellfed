@@ -3,15 +3,16 @@
 //! another key with it. The server attributes that key to the inviting
 //! phone's account and token from the feeder's report of the join, so
 //! deleting the account, revoking the token or revoking the inviting key
-//! revokes it too, and a key it invited in turn.
+//! revokes it too, and a key it invited in turn. An owner who keeps such a
+//! key detaches it, and then nothing of the inviter's revokes it.
 
 use wellfed_api::{
     ClientOwner, ClientRole, Connection as Link, FeederId, Hex, NewPhoneInvite, NewToken, NewUser,
-    Role, User,
+    PhoneClaim, Role, User,
 };
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::{TestService, ada_setup, local, until};
-use wellfed_service::{Caller, Service};
+use wellfed_service::{Caller, ClientError, Error, Service};
 
 /// A phone's secret key, by number.
 fn secret(n: u8) -> [u8; 32] {
@@ -157,6 +158,46 @@ fn an_invitee_goes_with_the_key_that_invited_it() {
 
         service.revoke_client(&ada, id, key(6), None).await.unwrap();
         revoked(service, &sim, &[6, 7]).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// The client list's owner of phone `n`, if the feeder lists it.
+async fn owner_of(service: &Service, id: FeederId, n: u8) -> Option<ClientOwner> {
+    let clients = service.clients(id).await.unwrap();
+    let client = clients.iter().find(|client| client.key.0 == key(n))?;
+    Some(client.owner.clone())
+}
+
+/// An owner who keeps a key a member's phone invited detaches it: it shows
+/// as kept, outlives the member's removal, and no phone of the owner's can
+/// claim it.
+#[test]
+fn a_kept_invitee_is_detached_from_its_inviter() {
+    local(async {
+        let (sim, server, id) = started().await;
+        let service = server.service();
+        let (ada, bob) = ada_and_bob(service).await;
+        join(service, &sim, id, &bob, 10).await;
+        invite_directly(&sim, 10, 11).await;
+        attributed(service, id, &bob, 11).await;
+
+        service.keep_client(&ada, id, key(11)).await.unwrap();
+        assert_eq!(owner_of(service, id, 11).await, Some(ClientOwner::Kept));
+
+        service.delete_user(&ada, bob.user.id).await.unwrap();
+        revoked(service, &sim, &[10]).await;
+        assert!(feeder::client_keys(&sim).await.contains(&key(11)));
+        assert_eq!(owner_of(service, id, 11).await, Some(ClientOwner::Kept));
+
+        let phone = token_of(service, ada.user.clone()).await;
+        let claim = PhoneClaim { key: Hex(key(11)) };
+        let claimed = service.claim_phone(&phone, id, claim).await;
+        assert!(
+            matches!(claimed, Err(Error::Client(ClientError::PhoneKeyKept))),
+            "{claimed:?}"
+        );
         server.shutdown().await;
         sim.stop().await;
     });

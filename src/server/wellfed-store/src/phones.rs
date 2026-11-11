@@ -258,9 +258,21 @@ impl Store {
     }
 
     /// Keep a client the server did not invite.
+    /// A key a phone key invited is detached from it as it is kept: it is
+    /// no longer that account's phone key, so neither the account, its
+    /// token nor the inviting key revokes it, and a revoke owed on it is
+    /// owed no more. A key the server invited itself stays its account's.
     pub async fn keep_client(&self, feeder: FeederId, key: &[u8; 32], at: Timestamp) -> Result<()> {
         let key = key.as_slice();
         let at = millis(at);
+        let mut tx = self.writer.begin().await?;
+        sqlx::query!(
+            "DELETE FROM phone_keys WHERE feeder_id = ? AND key = ? AND invited_by IS NOT NULL",
+            feeder.0,
+            key,
+        )
+        .execute(&mut *tx)
+        .await?;
         sqlx::query!(
             "INSERT INTO kept_clients (feeder_id, key, kept_ms) VALUES (?, ?, ?)
              ON CONFLICT DO NOTHING",
@@ -268,8 +280,9 @@ impl Store {
             key,
             at,
         )
-        .execute(&self.writer)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
