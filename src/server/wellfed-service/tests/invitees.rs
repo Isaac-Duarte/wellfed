@@ -6,7 +6,8 @@
 //! revokes it too, and a key it invited in turn. An owner who keeps such a
 //! key detaches it, and then nothing of the inviter's revokes it. A join
 //! the server read before it knew the inviting key is not attributed, and
-//! a chain the feeder cut while the server was away still goes whole.
+//! a chain the feeder cut while the server was away still goes whole. A
+//! key an owner revokes on the LAN, without the server, takes its own too.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -236,9 +237,9 @@ fn a_replaced_keys_invitees_move_to_the_new_key() {
     });
 }
 
-/// Until the server has read the feeder's report that phone `n` joined.
-async fn join_read(service: &Service, id: FeederId, n: u8) {
-    until("the join is read", || async {
+/// Until the server has read an event of the feeder's that `wanted` picks.
+async fn read(service: &Service, id: FeederId, wanted: impl Fn(&CoreEvent) -> bool) {
+    until("the event is read", || async {
         let query = EventQuery {
             epoch: None,
             after: None,
@@ -246,11 +247,20 @@ async fn join_read(service: &Service, id: FeederId, n: u8) {
             kind: None,
         };
         let page = service.events(id, query).await.unwrap();
-        page.events.iter().any(|event| {
-            matches!(&event.body, EventBody::Core(CoreEvent::Invited { client, .. })
-                if client.0[..] == key(n)[..7])
-        })
+        page.events
+            .iter()
+            .any(|event| matches!(&event.body, EventBody::Core(core) if wanted(core)))
     })
+    .await;
+}
+
+/// Until the server has read the feeder's report that phone `n` joined.
+async fn join_read(service: &Service, id: FeederId, n: u8) {
+    read(
+        service,
+        id,
+        |event| matches!(event, CoreEvent::Invited { client, .. } if client.0[..] == key(n)[..7]),
+    )
     .await;
 }
 
@@ -315,6 +325,50 @@ fn a_chain_the_feeder_cut_while_the_server_was_away_still_goes() {
         let service = server.service();
         revoked(service, &sim, &[41, 42]).await;
         assert!(feeder::client_keys(&sim).await.contains(&key(40)));
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// An owner's phone revokes a member's phone on the LAN, without the
+/// server: once that phone's invite can no longer be redeemed, the key it
+/// invited goes too, and the owner's own invitee stays.
+#[test]
+fn a_key_revoked_on_the_lan_takes_its_invitees() {
+    local(async {
+        let sim = feeder::start().await;
+        let clock = ManualClock::new();
+        let server = TestService::start_with_clock(Arc::new(clock.clone())).await;
+        let id = server
+            .adopt_as(&sim, &sim.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let (ada, bob) = ada_and_bob(service).await;
+        let phone = token_of(service, ada.user.clone()).await;
+        join(service, &sim, id, &phone, 60).await;
+        invite_directly(&sim, 60, 61).await;
+        attributed(service, id, &phone, 61).await;
+        join(service, &sim, id, &bob, 62).await;
+        invite_directly(&sim, 62, 63).await;
+        attributed(service, id, &bob, 63).await;
+
+        feeder::phone_revoke(&sim, secret(60), key(62)).await;
+        read(service, id, |event| {
+            matches!(event, CoreEvent::Revoked { .. })
+        })
+        .await;
+        assert!(owner_of(service, id, 62).await.is_none());
+        let recorded = service.phones(&ada.user).await.unwrap();
+        assert!(
+            recorded.iter().any(|phone| phone.key.0 == key(62)),
+            "its invite is live"
+        );
+        clock.advance(Duration::from_secs(u64::from(u16::MAX) + 120));
+        revoked(service, &sim, &[62, 63]).await;
+        let held = feeder::client_keys(&sim).await;
+        assert!(held.contains(&key(60)) && held.contains(&key(61)));
+        attributed(service, id, &phone, 61).await;
         server.shutdown().await;
         sim.stop().await;
     });
