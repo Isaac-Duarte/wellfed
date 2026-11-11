@@ -250,3 +250,62 @@ fn a_long_name_is_kept_short() {
 
     assert_eq!(kept.chars().count(), NAME_CHARS);
 }
+
+/// Ada logs in from `from` at `now`.
+fn login(limits: &Limits, from: IpAddr, now: Timestamp) {
+    let attempt = limits.attempt("ada", from, now).unwrap();
+    limits.succeeded(attempt, now);
+}
+
+/// Six other addresses hold the name's ceiling down, which stops a new
+/// address. The one Ada logged in from still takes its own five a minute,
+/// until a month has passed since that login.
+#[test]
+fn a_flood_from_six_addresses_leaves_a_known_address_free() {
+    let limits = Limits::default();
+    login(&limits, v4(1), at(0));
+
+    for n in 10..16 {
+        fail(&limits, "ada", v4(n), at(1_000), 5);
+    }
+    assert!(limits.attempt("ada", v4(20), at(1_000)).is_err());
+    fail(&limits, "ada", v4(1), at(1_000), 5);
+    assert!(
+        limits.attempt("ada", v4(1), at(1_000)).is_err(),
+        "its own bucket still limits it"
+    );
+    assert!(
+        limits.attempt("bob", v4(1), at(1_000)).is_ok(),
+        "known for Ada's name alone"
+    );
+
+    let month = KNOWN_FOR_MS;
+    for n in 10..16 {
+        fail(&limits, "ada", v4(n), at(month), 5);
+    }
+    assert!(limits.attempt("ada", v4(1), at(month)).is_err());
+}
+
+/// One name keeps at most its sixteen latest addresses, so logging in from
+/// many pushes out only that name's oldest, and the map keeps no more
+/// than its bound in all.
+#[test]
+fn known_addresses_are_bounded_per_name_and_in_all() {
+    let limits = Limits::default();
+    for n in 0..20 {
+        login(&limits, v4(n), at(i64::from(n)));
+    }
+    assert_eq!(limits.known_len(), KNOWN_PER_NAME);
+    for n in 30..36 {
+        fail(&limits, "ada", v4(n), at(100), 5);
+    }
+    assert!(limits.attempt("ada", v4(0), at(100)).is_err(), "pushed out");
+    assert!(limits.attempt("ada", v4(19), at(100)).is_ok());
+
+    let limits = Limits::default();
+    for n in 0..u32::try_from(KNOWN).unwrap() + 10 {
+        let attempt = limits.attempt(&format!("user{n}"), v4(1), at(0)).unwrap();
+        limits.succeeded(attempt, at(0));
+    }
+    assert_eq!(limits.known_len(), KNOWN);
+}

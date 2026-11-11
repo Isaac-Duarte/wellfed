@@ -8,9 +8,20 @@
 //! owner logging in from theirs. The name's ceiling across addresses bounds
 //! guessing spread over many: six addresses' worth, far above an owner's
 //! own retries, and 43,200 guesses a day at most, which a password of 10
-//! characters or more outlasts. Only an attacker spending that many
-//! addresses (an IPv6 /48 has thousands of /64s) can hold the ceiling
-//! down, and then only while the flood goes on.
+//! characters or more outlasts. Six addresses are all it takes to hold the
+//! ceiling down for as long as the flood goes on: six IPv4 addresses, or
+//! six /64s, and one IPv6 /48 holds 65,536 of them.
+//!
+//! So an address the name logged in from within the last [`KNOWN_FOR_MS`]
+//! skips the ceiling: it keeps its own bucket for the name and its own
+//! for the address, and nothing from other addresses spends either. The
+//! bar to lock an owner out is then to share their address (their home
+//! network, their carrier's NAT), or to flood while they log in from
+//! somewhere new: a new network, a /64 their carrier rotated, or after a
+//! server restart, since the known addresses are kept in memory alone.
+//! Only a login with the right password makes an address known, so
+//! guessing never does, and at most [`KNOWN_PER_NAME`] addresses are kept
+//! for a name and [`KNOWN`] in all, the oldest dropped first.
 //!
 //! Each of those is a token bucket, kept as the time it is next full (a
 //! generic cell rate: one attempt spends a minute's share, and a bucket
@@ -45,6 +56,19 @@ use crate::lock;
 /// The most buckets kept.
 pub(crate) const ENTRIES: usize = 10_000;
 
+/// How long a login vouches for its name from its address: a month, long
+/// enough for someone who logs in only now and then (a new browser, the
+/// app after a reinstall, a session that ended) to stay known through a
+/// flood, short enough that an address they left (an IPv4 address or a
+/// /64 handed to someone else) soon stops counting.
+const KNOWN_FOR_MS: i64 = 30 * 24 * 60 * MINUTE_MS;
+/// The most addresses a name is known from: a household's networks and
+/// carriers over a month, with room to spare. One account's holder logging
+/// in from many addresses pushes out only that name's oldest.
+const KNOWN_PER_NAME: usize = 16;
+/// The most (name, address) pairs known in all.
+const KNOWN: usize = 4_096;
+
 /// Failed logins a name takes a minute from one address.
 const PER_NAME_FROM: i64 = 5;
 /// Failed logins a name takes a minute from every address together.
@@ -70,14 +94,14 @@ enum Key {
 }
 
 impl Key {
-    /// The three buckets an attempt at `name` from `from` spends from.
-    fn of(name: &str, from: IpAddr) -> [Self; 3] {
-        let (name, from) = (Self::spelling(name), Self::block(from));
-        [
-            Self::NameFrom(name.clone(), from),
-            Self::Name(name),
-            Self::Address(from),
-        ]
+    /// The buckets an attempt at `name` from `from` spends from: the name's
+    /// ceiling too, unless the name is `Known` from that address.
+    fn of(name: String, from: IpAddr, known: Known) -> Vec<Self> {
+        let mut keys = vec![Self::NameFrom(name.clone(), from), Self::Address(from)];
+        if known == Known::No {
+            keys.push(Self::Name(name));
+        }
+        keys
     }
 
     fn spelling(name: &str) -> String {
@@ -113,15 +137,26 @@ pub(crate) struct Limited {
 }
 
 /// An attempt that spent from its buckets; [`Limits::succeeded`] gives the
-/// spend back.
+/// spend back, and makes its address known for its name.
 #[must_use = "a login that succeeds gives its attempt back"]
 pub(crate) struct Attempt {
-    keys: [Key; 3],
+    name: String,
+    from: IpAddr,
+    keys: Vec<Key>,
+}
+
+/// Whether a name logged in from an address within [`KNOWN_FOR_MS`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Known {
+    Yes,
+    No,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct Limits {
     buckets: Mutex<Buckets>,
+    /// When each name last logged in from each address (Unix ms).
+    known: Mutex<HashMap<(String, IpAddr), i64>>,
 }
 
 #[derive(Debug, Default)]
@@ -146,7 +181,9 @@ impl Limits {
         now: Timestamp,
     ) -> Result<Attempt, Limited> {
         let now = now.as_millisecond();
-        let keys = Key::of(name, from);
+        let (name, from) = (Key::spelling(name), Key::block(from));
+        let known = self.known(&name, from, now);
+        let keys = Key::of(name.clone(), from, known);
         let mut buckets = lock(&self.buckets);
         for key in &keys {
             buckets.rebase(key, now);
@@ -187,13 +224,25 @@ impl Limits {
             let full = buckets.full(key, now);
             buckets.set(key.clone(), full.max(now) + key.interval());
         }
-        Ok(Attempt { keys })
+        Ok(Attempt { name, from, keys })
+    }
+
+    fn known(&self, name: &str, from: IpAddr, now: i64) -> Known {
+        let known = lock(&self.known);
+        let since = known.get(&(name.to_owned(), from));
+        if since.is_some_and(|&since| now - since < KNOWN_FOR_MS) {
+            Known::Yes
+        } else {
+            Known::No
+        }
     }
 
     /// Give back a login's attempt: it was no guess. A bucket full again
-    /// holds nothing worth keeping, and is dropped.
+    /// holds nothing worth keeping, and is dropped. The name is known from
+    /// the address from now on.
     pub(crate) fn succeeded(&self, attempt: Attempt, now: Timestamp) {
         let now = now.as_millisecond();
+        self.vouch(attempt.name, attempt.from, now);
         let mut buckets = lock(&self.buckets);
         for key in attempt.keys {
             let full = buckets.full(&key, now) - key.interval();
@@ -205,9 +254,44 @@ impl Limits {
         }
     }
 
+    /// Remember that `name` logged in from `from`, dropping what is past
+    /// [`KNOWN_FOR_MS`], then the name's oldest address past
+    /// [`KNOWN_PER_NAME`], then the oldest of all past [`KNOWN`]. A scan of
+    /// a few thousand entries, and only on a login with the right password.
+    fn vouch(&self, name: String, from: IpAddr, now: i64) {
+        let mut known = lock(&self.known);
+        known.retain(|_, since| now - *since < KNOWN_FOR_MS);
+        known.remove(&(name.clone(), from));
+
+        let oldest = |known: &HashMap<(String, IpAddr), i64>, of: Option<&str>| {
+            known
+                .iter()
+                .filter(|((named, _), _)| of.is_none_or(|of| named == of))
+                .min_by_key(|(_, since)| **since)
+                .map(|(key, _)| key.clone())
+        };
+        let count = known.keys().filter(|(named, _)| *named == name).count();
+        if count >= KNOWN_PER_NAME
+            && let Some(key) = oldest(&known, Some(&name))
+        {
+            known.remove(&key);
+        }
+        if known.len() >= KNOWN
+            && let Some(key) = oldest(&known, None)
+        {
+            known.remove(&key);
+        }
+        known.insert((name, from), now);
+    }
+
     #[cfg(test)]
     fn len(&self) -> usize {
         lock(&self.buckets).entries.len()
+    }
+
+    #[cfg(test)]
+    fn known_len(&self) -> usize {
+        lock(&self.known).len()
     }
 }
 
@@ -236,7 +320,7 @@ impl Buckets {
     /// state is never dropped. The attempt's own `keys` are never the ones
     /// dropped, since it is about to set them, so the map never passes
     /// [`ENTRIES`].
-    fn make_room(&mut self, keys: &[Key; 3], new: usize, now: i64) -> i64 {
+    fn make_room(&mut self, keys: &[Key], new: usize, now: i64) -> i64 {
         let over = (self.entries.len() + new).saturating_sub(ENTRIES);
         let victims: Vec<(i64, Key)> = self
             .by_full
