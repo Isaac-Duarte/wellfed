@@ -644,6 +644,85 @@ fn the_recovery_window_admits_one_owner_who_proves_the_code() {
     let _owner = open(&mut rig, STRANGER);
 }
 
+/// A key already enrolled that redeems an invite joins only if the role it
+/// holds covers the invited one, and is then told the role it holds: a
+/// member's key redeeming an owner's invite stays a member and is told no,
+/// and an owner's key redeeming a member's invite stays an owner.
+#[test]
+fn an_enrolled_key_joins_only_if_its_role_covers_the_invite() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let invite = ask(
+        &mut rig,
+        &mut owner,
+        1,
+        Op::CreateInvite {
+            role: model::ClientRole::Owner,
+        },
+    );
+    let Answer::Invite(invite) = invite else {
+        panic!("{invite:?}");
+    };
+    let invite = Invite {
+        feeder: public(FEEDER),
+        id: invite.id,
+        secret: invite.secret.0,
+    };
+    assert_eq!(
+        redeem(&mut rig, invite, MEMBER),
+        Some(Joined::Refused(model::Refusal::Invalid))
+    );
+    let role_of = |rig: &Rig, secret| {
+        rig.device
+            .clients
+            .iter()
+            .find(|c| c.key == public(secret))
+            .map(|c| c.role)
+    };
+    assert_eq!(role_of(&rig, MEMBER), Some(Role::Member));
+
+    let invite = member_invite(&mut rig, &mut owner, 2);
+    assert_eq!(
+        redeem(&mut rig, invite, OWNER),
+        Some(Joined::Enrolled {
+            role: model::ClientRole::Owner,
+            model: model::Model::Plaf103,
+        })
+    );
+    assert_eq!(role_of(&rig, OWNER), Some(Role::Owner));
+}
+
+/// Recovery with a key already enrolled grants nothing, so it succeeds only
+/// for an owner's key: a member's is refused and stays a member.
+#[test]
+fn recovery_with_a_members_key_is_refused_and_an_owners_is_already_done() {
+    use wellfed_model::setup::{Enrolled, Refusal, Reply, WifiSaved};
+
+    let mut rig = Rig::new();
+    let code = Code::from_bits(0x0abc);
+    open_recovery(&mut rig);
+    assert_eq!(
+        recover(&mut rig, MEMBER, code, code),
+        Some(Reply::Refused(Refusal::Invalid))
+    );
+    assert!(
+        rig.device
+            .clients
+            .iter()
+            .any(|c| c.key == public(MEMBER) && c.role == Role::Member)
+    );
+
+    rig.publish();
+    open_recovery(&mut rig);
+    assert_eq!(
+        recover(&mut rig, OWNER, code, code),
+        Some(Reply::Done {
+            enrolled: Enrolled::Already,
+            wifi: WifiSaved::Unchanged
+        })
+    );
+}
+
 /// A recovery client that hangs up once its enrollment is queued is still
 /// enrolled, and the history says so once: the writer records it with the
 /// store write, not the session that has gone.

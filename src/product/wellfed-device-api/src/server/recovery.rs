@@ -3,6 +3,7 @@
 //! as an owner. Its responder's buffer would not fit a slot, so the server
 //! holds one, and one recovery session runs at a time.
 
+use super::handshake::find;
 use super::{Phase, Server, slot_id};
 use crate::clients::Role;
 use crate::pairing::{self, Pairing, Path};
@@ -197,7 +198,19 @@ impl Server {
                     // enrolled.
                     KeyOutcome::Lost => return Err(Reason::Forgotten),
                     KeyOutcome::Done => SetupEnrolled::New,
-                    KeyOutcome::Duplicate => SetupEnrolled::Already,
+                    // Enrolled already, so nothing changed: it is an owner
+                    // only if it was one. A member's or the server's key
+                    // is refused, and the client recovers with a new key.
+                    KeyOutcome::Duplicate => match find(&self.clients, &offer.key) {
+                        Some(held) if held.role.covers(Role::Owner) => SetupEnrolled::Already,
+                        _ => {
+                            return self.rescued(
+                                index,
+                                SetupReply::Refused(SetupRefusal::Invalid),
+                                record,
+                            );
+                        }
+                    },
                     KeyOutcome::Full => {
                         return self.rescued(
                             index,

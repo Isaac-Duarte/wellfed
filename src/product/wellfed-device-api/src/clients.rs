@@ -33,6 +33,20 @@ impl Role {
         }
     }
 
+    /// Whether a key holding this role may already do everything `asked`
+    /// grants: the same role, or an owner's for a role that opens a
+    /// session. An enrollment that finds its key already enrolled has
+    /// granted nothing, so it stands only if this holds.
+    pub const fn covers(self, asked: Self) -> bool {
+        matches!(
+            (self, asked),
+            (Self::Owner, Self::Owner | Self::Member | Self::Server)
+                | (Self::Member, Self::Member)
+                | (Self::Server, Self::Server)
+                | (Self::UpdateSigner, Self::UpdateSigner)
+        )
+    }
+
     pub const fn from_byte(code: u8) -> Option<Self> {
         match code {
             1 => Some(Self::Owner),
