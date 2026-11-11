@@ -351,12 +351,13 @@ async fn a_token_cannot_make_another() {
 
 /// A stolen owner's token cannot turn itself into a login: setting any
 /// password and adding an account take a session, as making a token does.
+/// Nor can it log itself out keeping its keys.
 #[tokio::test]
 async fn a_token_cannot_set_a_password_or_add_an_account() {
     let server = TestServer::start().await;
     let (owner, ada) = owner(&server).await;
     let (_, bob) = account(&server, &owner, "bob", Role::Member).await;
-    let (phone, _) = phone(&server, &owner, None).await;
+    let (phone, created) = phone(&server, &owner, None).await;
     let session_required = |what, result: Result<_, _>| {
         refused_for(
             what,
@@ -387,6 +388,8 @@ async fn a_token_cannot_set_a_password_or_add_an_account() {
         expires: None,
     };
     session_required("new account", phone.create_user(&new).await);
+    let logout = phone.log_out_token(created.token.id).await;
+    session_required("logout keeping its keys", logout.map(|()| ada.clone()));
 
     // Nothing changed: the old passwords still log in, and no account was
     // added. A token's other owner writes still go through.

@@ -286,11 +286,13 @@ impl Store {
         Ok(())
     }
 
-    /// Keep every phone key of `token` not already being revoked, on every
-    /// feeder, as a kept client: the phone's own keys and the keys they
-    /// invited, which a logout keeps. A key on its way out (a replaced one)
-    /// still goes.
-    pub async fn keep_token_phones(&self, token: TokenId, at: Timestamp) -> Result<()> {
+    /// Log a phone out: keep every phone key of `token` not already being
+    /// revoked, on every feeder, as a kept client (the phone's own keys and
+    /// the keys they invited), and delete the token, in one transaction, so
+    /// no revocation of the token can land between the two and catch the
+    /// keys half kept. A key on its way out (a replaced one) still goes.
+    /// Whether the token was there to delete.
+    pub async fn log_out_token(&self, token: TokenId, at: Timestamp) -> Result<bool> {
         let at = millis(at);
         let mut tx = self.writer.begin().await?;
         sqlx::query!(
@@ -308,8 +310,11 @@ impl Store {
         )
         .execute(&mut *tx)
         .await?;
+        let deleted = sqlx::query!("DELETE FROM tokens WHERE id = ?", token.0)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
-        Ok(())
+        Ok(deleted.rows_affected() == 1)
     }
 
     /// The clients an owner kept on a feeder.

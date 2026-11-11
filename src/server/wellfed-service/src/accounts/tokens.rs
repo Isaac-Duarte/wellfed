@@ -221,13 +221,23 @@ impl Service {
     pub async fn log_out_token(&self, caller: &Caller, id: TokenId) -> Result<()> {
         session_only(caller)?;
         let token = self.shared.store.token(id).await?;
-        if !token.is_some_and(|token| token.user == caller.user.id) {
+        let Some(token) = token.filter(|token| token.user == caller.user.id) else {
             return Err(Error::NotFound(Resource::Token));
-        }
+        };
 
         let now = self.shared.clock.now();
-        self.shared.store.keep_token_phones(id, now).await?;
-        self.revoke_token(caller, id).await
+        if !self.shared.store.log_out_token(id, now).await? {
+            return Err(Error::NotFound(Resource::Token));
+        }
+        let action = AuditAction::TokenRevoked {
+            token: id,
+            account: token.user,
+            token_name: token.name,
+        };
+        self.record(caller, action).await;
+        // Only keys already on their way out are left under the token.
+        self.revoke_phones(Whose::Token(id), RevokeReason::TokenRevoked)
+            .await
     }
 }
 

@@ -421,3 +421,28 @@ fn a_phone_that_logs_out_keeps_its_key_and_its_invitee() {
         sim.stop().await;
     });
 }
+
+/// A token that logs itself out without a login takes the cascading path:
+/// its phone key and the key that invited go, and neither is kept.
+#[test]
+fn a_bare_tokens_logout_revokes_its_keys_and_keeps_none() {
+    local(async {
+        let (sim, server, id) = started().await;
+        let service = server.service();
+        let (_ada, bob) = ada_and_bob(service).await;
+        join(service, &sim, id, &bob, 80).await;
+        invite_directly(&sim, 80, 81).await;
+        attributed(service, id, &bob, 81).await;
+        let token = bob.token.unwrap();
+
+        let kept = service.log_out_token(&bob, token).await;
+        assert!(
+            matches!(kept, Err(Error::Account(AccountError::SessionRequired))),
+            "{kept:?}"
+        );
+        service.revoke_token(&bob, token).await.unwrap();
+        revoked(service, &sim, &[80, 81]).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
