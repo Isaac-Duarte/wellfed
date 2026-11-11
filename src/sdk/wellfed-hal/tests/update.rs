@@ -1325,6 +1325,38 @@ fn a_release_key_rotates_through_a_build_that_builds_in_its_successor() {
     assert_eq!(progress(bank0.offer(&signed, None)).phase, Phase::Receiving);
 }
 
+/// With the retired list full, the hand-over's revoke is refused before
+/// anything changes and its add finds the slot still taken, so bank 0
+/// keeps taking the old release key's offers.
+#[test]
+fn a_full_retired_list_leaves_the_old_release_key_trusted() {
+    let _guard = start(0);
+    let (b, r1, r2) = rotation();
+    let held = store().record().revoked().len();
+    for n in held..wellfed_core::store::update::REVOKED {
+        let filler = [u8::try_from(n).unwrap(); 8];
+        let answer = boot(&r2).ask(statement_by(&r2, &offer::revoke_body(&id(&r2), &filler)));
+        assert_eq!(answer, Ok(Answer::Key(KeyStatement::Revoke(filler))));
+    }
+
+    assert_eq!(
+        boot(&r2).ask(key_revoke(&r2, &r1)),
+        Err(Refused::Store(UpdateError::Full))
+    );
+    assert_eq!(
+        boot(&r2).ask(key_add(&r2, &r2)),
+        Err(Refused::Store(UpdateError::Occupied))
+    );
+    assert_eq!(store().record().added_key(), Some(public(&r1)));
+
+    let payload = image(LEN);
+    let signed = manifest_for(&r1, 4, &payload, 0x44, ImageKind::Replacement);
+    assert_eq!(
+        progress(boot(&b).offer(&signed, None)).phase,
+        Phase::Receiving
+    );
+}
+
 #[test]
 fn an_owner_s_enrolled_key_signs_an_offer() {
     let _guard = start(0);

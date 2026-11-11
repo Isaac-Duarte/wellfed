@@ -139,13 +139,22 @@ The bench key enrolls the same way, so a feeder whose image embeds no key still 
 
 A `PLREV1` statement retires any key id for good. Built-in keys and the release slot's key sign key statements, so retiring the bench key leaves rotation to the release key; a retired key signs nothing, and no key signs its own retirement.
 
-**Rotating the release key.** The slot holds one live key, and filling it again is refused while that key is live (`Occupied`). Once the slot's key `R1` is the only one left that signs statements, statements alone can't replace it: `R1` adding `R2` finds the slot taken, and `R1` retiring itself would leave no key to sign the add. The rotation goes through a build:
+**Rotating the release key.** The slot holds one live key, and filling it again is refused while that key is live (`Occupied`). Once the slot's key `R1` is the only one left that signs statements, statements alone can't replace it: `R1` adding `R2` finds the slot taken, and `R1` retiring itself would leave no key to sign the add. The release key never adds another key either: the statement names no feeder, so it would fill the empty slot of every consumer feeder it reached, and `add-key` refuses it. The rotation goes through a build:
 
 1. Build the consumer image with `R2`'s public half as its release key, and sign it with `R1`: `wellfed-build sign --key <R1's file> --hand-over-to <R2's file>`, both on offline media. The feeder takes it through the slot.
-2. Running it, `R2` is built in. It signs `revoke` for `R1`, then `add-key` for itself, in that order.
+2. Running it, `R2` is built in. Sign two statements with `R2`, `revoke` for `R1` and `add-key` for `R2` itself, and send them together: `wellfed update-key statement <revoke> <add>` sends both over one session, in that order, and reads both files before it sends either.
 3. Bank 0 still builds in the key it was written with, and now finds `R2` in the slot, so it takes `R2`'s next offer and no longer `R1`'s.
 
-The first rotation, from the built-in key `R0` with an empty slot, goes the same way: `R0` signs a build that builds in `R1`, and running it `R1` retires `R0` and adds itself. The release key never adds another key: the statement names no feeder, so it would fill the empty slot of every consumer feeder it reached, and `add-key` refuses it. The bench key stays in `private/ota-key.json`, for the bench only. The release key is made offline with `wellfed-build release-keygen` and never enters a checkout; consumer images build in its public half ([the release key](../development/firmware-builds.md#the-release-key)).
+The first rotation, from the built-in key `R0` with an empty slot, goes the same way: `R0` signs a build that builds in `R1`, and running it `R1` retires `R0` and adds itself.
+
+Between the revoke and the add, bank 0 trusts no release key: its own built-in key is retired and the slot holds none. The running build still trusts `R2`, so nothing is lost while it runs, but a fallback to bank 0 then could take no update but over UART. So:
+
+- Send the revoke and the add back to back, with no offer between them, as `update-key statement` does.
+- If the add's answer doesn't come, send the add again until the feeder answers it. Adding the key the slot already holds changes nothing, so resending it is safe.
+- Keep `R1` and keep signing with it until every feeder has taken the hand-over build: a feeder that hasn't still trusts only `R1`.
+- Each rotation spends one of the store's 16 retired ids (`REVOKED`). With the list full, the revoke in step 2 is refused (`Full`) before anything changes, and the add then finds the slot still taken: the feeder keeps trusting `R1`. Rotate rarely.
+
+The bench key stays in `private/ota-key.json`, for the bench only. The release key is made offline with `wellfed-build release-keygen` and never enters a checkout; consumer images build in its public half ([the release key](../development/firmware-builds.md#the-release-key)).
 
 **The floor** (`min_version`) is the highest version a build confirmed at.
 
