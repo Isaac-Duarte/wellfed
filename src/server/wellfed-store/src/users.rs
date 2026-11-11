@@ -238,25 +238,34 @@ impl Store {
         Ok(true)
     }
 
+    /// Open a session for `user` only while their password hash is still
+    /// `verified`, the one the login was checked against, and the account
+    /// has not expired at `now`; whether it opened. One statement on the
+    /// writer, so a password change, an expiry or a deletion committed
+    /// while the login was being checked leaves no session behind it.
     pub async fn create_session(
         &self,
         token_hash: &[u8; 32],
         user: UserId,
+        verified: &str,
         now: Timestamp,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let hash = token_hash.as_slice();
         let now = millis(now);
-        sqlx::query!(
+        let done = sqlx::query!(
             "INSERT INTO sessions (token_hash, user_id, created_ms, last_used_ms)
-             VALUES (?, ?, ?, ?)",
+             SELECT ?, id, ?, ? FROM users
+             WHERE id = ? AND password_hash = ? AND (expires_ms IS NULL OR expires_ms > ?)",
             hash,
-            user.0,
             now,
+            now,
+            user.0,
+            verified,
             now,
         )
         .execute(&self.writer)
         .await?;
-        Ok(())
+        Ok(done.rows_affected() == 1)
     }
 
     /// The session with this token, and its user, however long ago it was

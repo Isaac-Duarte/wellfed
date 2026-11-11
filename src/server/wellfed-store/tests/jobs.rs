@@ -92,8 +92,11 @@ async fn idle_sessions_and_an_expired_accounts_sessions_end() {
         ([3; 32], bob_id, 8_000), // in use, but bob has expired
         ([4; 32], cy_id, 8_000),  // in use, cy not yet expired
     ];
+    // Each opened before bob expired, then used.
     for (token, user, used) in sessions {
-        store.create_session(&token, user, at(used)).await.unwrap();
+        let opened = store.create_session(&token, user, "$argon2id$hash", at(0));
+        assert!(opened.await.unwrap());
+        store.touch_session(&token, at(used)).await.unwrap();
     }
 
     let ended = store.delete_ended_sessions(at(1_000), at(9_000)).await;

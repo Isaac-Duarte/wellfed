@@ -132,7 +132,8 @@ impl Service {
         }
 
         self.mirror.set_zone(zone);
-        let token = self.open_session(user.id).await?;
+        let token = self.open_session(user.id, &hash).await?;
+        let token = token.ok_or(AccountError::BadCredentials)?;
         self.record_as(Some(&user), None, AuditAction::Setup).await;
         Ok((user, token))
     }
@@ -168,7 +169,9 @@ impl Service {
             Some(login) => (Some(login.user), decoy()?.to_owned(), false),
             None => (None, decoy()?.to_owned(), false),
         };
-        let verified = blocking(move || Ok(verify_password(&credentials.password, &hash))).await?;
+        let checked = hash.clone();
+        let verified =
+            blocking(move || Ok(verify_password(&credentials.password, &checked))).await?;
         let matches = usable && verified;
 
         let Some(user) = user else {
@@ -193,10 +196,14 @@ impl Service {
             .into());
         }
 
+        // The account may have changed while the hash was checked: a reset,
+        // an expiry or a deletion that landed since leaves no session.
+        let Some(token) = self.open_session(user.id, &hash).await? else {
+            return Err(AccountError::BadCredentials.into());
+        };
         self.accounts
             .limits
             .succeeded(attempt, self.shared.clock.now());
-        let token = self.open_session(user.id).await?;
         self.record_as(Some(&user), None, AuditAction::Login { from })
             .await;
         Ok((user, token))
@@ -270,14 +277,17 @@ impl Service {
         Ok(())
     }
 
-    async fn open_session(&self, user: UserId) -> Result<SessionToken> {
+    /// A new session for `user`, unless their password hash is no longer
+    /// `verified` or the account expired or went since it was checked.
+    async fn open_session(&self, user: UserId, verified: &str) -> Result<Option<SessionToken>> {
         let secret = self.shared.random::<32>()?;
         let token = SessionToken(hex::Lower(&secret).to_string());
         let hash: [u8; 32] = Sha256::digest(secret).into();
 
         let now = self.shared.clock.now();
-        self.shared.store.create_session(&hash, user, now).await?;
-        Ok(token)
+        let store = &self.shared.store;
+        let opened = store.create_session(&hash, user, verified, now).await?;
+        Ok(opened.then_some(token))
     }
 
     /// Hash a new password with a fresh salt.

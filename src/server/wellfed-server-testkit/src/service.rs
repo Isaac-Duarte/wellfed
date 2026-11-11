@@ -9,8 +9,8 @@ use tempfile::TempDir;
 use wellfed_api::{AdoptFeeder, ClientRole, Connection, EventBody, EventQuery, FeederId};
 use wellfed_connect::update::Pace;
 use wellfed_service::{
-    AlertReads, Backups, Clock, Config, Diagnostics, Discovery, ReleaseKeys, ReleasesConfig,
-    Service, StockConfig, StockPins, Timing,
+    AlertReads, Backups, Clock, Config, Diagnostics, Discovery, Random, ReleaseKeys,
+    ReleasesConfig, Service, StockConfig, StockPins, Timing,
 };
 use wellfed_store::Store;
 
@@ -142,6 +142,11 @@ impl TestService {
         Self::open_with_clock(TempStore::new(), config, clock).await
     }
 
+    /// The service with [`config`] on a fresh store, drawing from `random`.
+    pub async fn start_with_random(random: Arc<dyn Random>) -> Self {
+        Self::open_with(TempStore::new(), config(), Arc::new(FixedClock), random).await
+    }
+
     /// The service with `config` on `store`, which may hold a previous
     /// run's data, its release cache included. Each start draws from a
     /// seed of its own.
@@ -149,18 +154,23 @@ impl TestService {
         Self::open_with_clock(store, config, Arc::new(FixedClock)).await
     }
 
-    async fn open_with_clock(store: TempStore, mut config: Config, clock: Arc<dyn Clock>) -> Self {
+    async fn open_with_clock(store: TempStore, config: Config, clock: Arc<dyn Clock>) -> Self {
+        let random = Arc::new(SeededRandom::fresh());
+        Self::open_with(store, config, clock, random).await
+    }
+
+    async fn open_with(
+        store: TempStore,
+        mut config: Config,
+        clock: Arc<dyn Clock>,
+        random: Arc<dyn Random>,
+    ) -> Self {
         config.releases.dir = store.releases();
         config.releases.stock.dir = store.stock();
         config.backups.dir = store.backups();
-        let service = Service::start(
-            store.open().await,
-            config,
-            clock,
-            Arc::new(SeededRandom::fresh()),
-        )
-        .await
-        .expect("start the service");
+        let service = Service::start(store.open().await, config, clock, random)
+            .await
+            .expect("start the service");
         Self { store, service }
     }
 

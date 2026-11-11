@@ -1,5 +1,6 @@
 //! Users and their browser sessions in the store: the last owner kept,
-//! and a password change and the sessions it ends committed together.
+//! a password change and the sessions it ends committed together, and a
+//! session opened only on the password its login was checked against.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -69,8 +70,13 @@ async fn a_session_is_used_idles_out_or_logs_out() {
     let id = new.id;
     store.create_first_owner(new, &home()).await.unwrap();
     let (live, idle) = ([1; 32], [2; 32]);
-    store.create_session(&live, id, at(5_000)).await.unwrap();
-    store.create_session(&idle, id, at(0)).await.unwrap();
+    assert!(
+        store
+            .create_session(&live, id, HASH, at(5_000))
+            .await
+            .unwrap()
+    );
+    assert!(store.create_session(&idle, id, HASH, at(0)).await.unwrap());
 
     let session = store.session(&live).await.unwrap().unwrap();
     assert_eq!((session.user.id, session.last_used), (id, at(5_000)));
@@ -151,7 +157,8 @@ async fn users_are_listed_changed_and_deleted_but_never_the_last_owner() {
         store.login("ada").await.unwrap().unwrap().password_hash,
         "$argon2id$new"
     );
-    store.create_session(&[4; 32], ada_id, at(0)).await.unwrap();
+    let opened = store.create_session(&[4; 32], ada_id, "$argon2id$new", at(0));
+    assert!(opened.await.unwrap());
     assert_eq!(store.delete_user(ada_id).await.unwrap(), Change::Done);
     assert!(
         store.session(&[4; 32]).await.unwrap().is_none(),
@@ -175,7 +182,7 @@ async fn a_password_change_ends_that_users_other_sessions() {
     let bob_id = bob.id;
     store.create_user(bob).await.unwrap();
     for (token, id) in [([1; 32], ada_id), ([2; 32], ada_id), ([3; 32], bob_id)] {
-        store.create_session(&token, id, at(0)).await.unwrap();
+        assert!(store.create_session(&token, id, HASH, at(0)).await.unwrap());
     }
 
     let kept = Some(&[2; 32]);
@@ -224,7 +231,12 @@ async fn a_password_change_and_its_ended_sessions_commit_together() {
     let ada = user("ada");
     let ada_id = ada.id;
     store.create_first_owner(ada, &home()).await.unwrap();
-    store.create_session(&[1; 32], ada_id, at(0)).await.unwrap();
+    assert!(
+        store
+            .create_session(&[1; 32], ada_id, HASH, at(0))
+            .await
+            .unwrap()
+    );
     let raw = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();
@@ -273,4 +285,53 @@ async fn a_password_change_and_its_ended_sessions_commit_together() {
         Some("$argon2id$new")
     );
     assert!(store.session(&[1; 32]).await.unwrap().is_none());
+}
+
+/// A login opens its session only on the hash it was checked against, and
+/// only for an account still there and not expired.
+#[tokio::test]
+async fn a_session_opens_only_on_the_verified_hash_of_a_live_account() {
+    let (_dir, store) = fresh().await;
+    let ada = user("ada");
+    store.create_first_owner(ada, &home()).await.unwrap();
+    let bob = NewUser {
+        role: Role::Member,
+        expires: Some(at(5_000)),
+        ..user("bob")
+    };
+    let bob_id = bob.id;
+    store.create_user(bob).await.unwrap();
+
+    assert!(
+        store
+            .create_session(&[1; 32], bob_id, HASH, at(0))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .create_session(&[2; 32], bob_id, HASH, at(5_000))
+            .await
+            .unwrap(),
+        "expired"
+    );
+    assert!(
+        store
+            .set_password(bob_id, "$argon2id$new", None)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .create_session(&[3; 32], bob_id, HASH, at(0))
+            .await
+            .unwrap(),
+        "checked against the old password"
+    );
+    assert_eq!(store.delete_user(bob_id).await.unwrap(), Change::Done);
+    let gone = store.create_session(&[4; 32], bob_id, "$argon2id$new", at(0));
+    assert!(!gone.await.unwrap(), "deleted");
+    for token in [[1; 32], [2; 32], [3; 32], [4; 32]] {
+        assert!(store.session(&token).await.unwrap().is_none());
+    }
 }

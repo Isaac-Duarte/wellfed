@@ -1,7 +1,7 @@
 //! The accounts owners manage: roles, expiry, temporary passwords, the
 //! last owner, sliding sessions and `reset-owner`.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -13,6 +13,7 @@ use wellfed_server_testkit::{HERE, TestService, ada_login, ada_setup, local};
 use wellfed_service::{
     AccountError, Caller, Error, Invalid, Resource, Service, SessionToken, reset_owner,
 };
+use wellfed_store::Store;
 
 const HOUR: Duration = Duration::from_secs(3600);
 
@@ -444,4 +445,72 @@ fn reset_owner_gives_the_sole_owner_a_new_password() {
 
 fn clock_now(clock: &ManualClock) -> Timestamp {
     wellfed_service::Clock::now(clock)
+}
+
+/// A generator that runs `hook`, once armed, at the next draw of a session
+/// token's 32 bytes: between a login's password check and its session.
+struct Gated {
+    seeded: SeededRandom,
+    hook: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl wellfed_service::Random for Gated {
+    fn fill(&self, out: &mut [u8]) -> Result<(), wellfed_service::RandomFailed> {
+        if out.len() == 32
+            && let Some(hook) = self.hook.lock().unwrap().take()
+        {
+            hook();
+        }
+        self.seeded.fill(out)
+    }
+}
+
+/// A login checked against the old password opens no session once a reset
+/// lands before its session does: here the host's `reset-owner`, run on the
+/// database between the login's password check and its session's insert.
+#[test]
+fn a_login_checked_before_a_reset_opens_no_session() {
+    local(async {
+        let gated = Arc::new(Gated {
+            seeded: SeededRandom::fresh(),
+            hook: Mutex::new(None),
+        });
+        let server = TestService::start_with_random(gated.clone()).await;
+        let service = server.service();
+        setup(service).await;
+
+        let path = server.store().path();
+        let (reset, set) = std::sync::mpsc::channel();
+        *gated.hook.lock().unwrap() = Some(Box::new(move || {
+            // Another process's reset: its own runtime and connection.
+            let host = std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                runtime.block_on(async {
+                    let store = Store::open(&path, FixedClock.now()).await.unwrap();
+                    let random = SeededRandom::fresh();
+                    let (_, password) = reset_owner(&store, None, &random, FixedClock.now())
+                        .await
+                        .unwrap();
+                    store.close().await;
+                    password
+                })
+            });
+            reset.send(host.join().unwrap()).unwrap();
+        }));
+        assert!(matches!(
+            service.login(ada_login(), HERE).await,
+            Err(Error::Account(AccountError::BadCredentials))
+        ));
+        let password = set.recv().unwrap();
+
+        assert!(matches!(
+            service.login(ada_login(), HERE).await,
+            Err(Error::Account(AccountError::BadCredentials))
+        ));
+        service.login(login("ada", &password), HERE).await.unwrap();
+        server.shutdown().await;
+    });
 }
