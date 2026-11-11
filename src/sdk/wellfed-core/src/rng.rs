@@ -164,6 +164,10 @@ const fn apt_cutoff(eighths: u32) -> u32 {
     let target = 1.0 - 1.0 / (1u32 << ALPHA_BITS) as f64;
     let w = APT_WINDOW;
     let mode = {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the binomial's mode, floor((W + 1) p), lies in 0..=W + 1 since p is a probability"
+        )]
         let mode = ((w + 1) as f64 * p) as u32;
         if mode > w { w } else { mode }
     };
