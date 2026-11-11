@@ -125,6 +125,10 @@ class _Store(Store[KeptData]):
     ) -> KeptData:
         if old_major_version != self.version:
             raise NotImplementedError
+        # A minor that adds a field fills it in here for data an older minor
+        # saved (`old_minor_version < STORAGE_MINOR_VERSION`), and a new
+        # major converts the old one's data here too: Home Assistant runs no
+        # other step. No minor has added one yet.
         # Home Assistant saves what this returns at the store's minor: keep a
         # newer one's, whose additions the data still carries.
         self.minor_version = max(self.minor_version, old_minor_version)
