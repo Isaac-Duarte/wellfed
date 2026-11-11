@@ -177,10 +177,15 @@ class FakeRouter with FakeOpaque implements PathRouter {
     log.add('configure');
   }
 
+  /// While set, the next refresh waits for it, and ends as it does.
+  Completer<List<ServerFeeder>>? refreshWait;
+
   @override
   Future<List<ServerFeeder>> refresh() async {
     refreshes++;
-    return listed;
+    final Completer<List<ServerFeeder>>? wait = refreshWait;
+    refreshWait = null;
+    return wait == null ? listed : wait.future;
   }
 
   @override

@@ -252,15 +252,18 @@ class HomeServer extends ChangeNotifier {
   /// Read the server's feeders again.
   Future<void> refresh() async {
     final PathRouter? router = _router;
-    if (router == null || _session == null) return;
+    final ServerSession? session = _session;
+    if (router == null || session == null) return;
     final List<ServerFeeder> feeders;
     try {
       feeders = await router.refresh();
     } on ServerError catch (error) {
+      // A read of a session since replaced says nothing of this one.
+      if (_disposed || _session != session) return;
       _failed(error);
       return;
     }
-    if (_disposed) return;
+    if (_disposed || _session != session) return;
 
     final List<ServerFeeder> current = [
       for (final ServerFeeder feeder in feeders)
@@ -375,6 +378,7 @@ class HomeServer extends ChangeNotifier {
           ? await session.account()
           : await router.resumeServer(session: session, cached: _book.server?.account);
     } on ServerError catch (error) {
+      if (_disposed || _session != session) return;
       _failed(error);
       return;
     }

@@ -144,6 +144,44 @@ void main() {
     expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', ServerProblem.plainHttp));
   });
 
+  testWidgets('a refresh of a session a new login replaced neither shows a problem nor retries', (tester) async {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, _) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    final stale = Completer<List<ServerFeeder>>();
+    router.refreshWait = stale;
+    final Future<void> refreshing = server.refresh();
+
+    ports.session = FakeServerSession();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    final int refreshes = router.refreshes;
+    stale.completeError(serverError(ServerErrorKind.closed));
+    await refreshing;
+
+    expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', isNull));
+    await tester.pump(HomeServer.retryWait + const Duration(seconds: 1));
+    expect(router.refreshes, refreshes, reason: 'no retry on the new session');
+  });
+
+  testWidgets('an account read of a session a new login replaced neither shows a problem nor retries', (tester) async {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, _) = _server();
+    final answer = Completer<void>();
+    ports.session
+      ..accountWait = answer.future
+      ..accountFails = serverError(ServerErrorKind.closed);
+    final Future<LoginOutcome> first = server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    await tester.pump();
+
+    ports.session = FakeServerSession();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    final int refreshes = router.refreshes;
+    answer.complete();
+    await first;
+
+    expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', isNull));
+    await tester.pump(HomeServer.retryWait + const Duration(seconds: 1));
+    expect(router.refreshes, refreshes, reason: 'no retry on the new session');
+  });
+
   test('a cold start hands the router the kept account, and keeps the one the server reads', () async {
     const viewer = ServerAccount(id: 'u2', name: 'sam', role: ServerRole.viewer);
     final book = FakeBook()
