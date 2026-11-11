@@ -909,3 +909,56 @@ fn a_wrong_learned_rate_is_forgotten_and_honest_ntp_sets_the_clock() {
     );
     honest(clock.read(uptime(truth)).unwrap(), NOON + truth, "re-set");
 }
+
+/// A contested clock's error grows past the two minutes a valid one may
+/// claim, and its record carries it: 24 days on, about 2.9 hours, still
+/// refusing an answer a day ahead after the reset. Past half the uptime
+/// clock's range no projection holds, so nothing is carried, and a record
+/// claiming more than the carry could grow is refused as corrupt.
+#[test]
+fn a_contested_record_carries_a_grown_error_up_to_its_limit() {
+    const DAY_MS: u64 = 86_400_000;
+    let mut clock = WallClock::default();
+    clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+    for n in 1..=u32::from(DISJOINT_LIMIT) {
+        let now = n * 1_000;
+        let ahead = NOON + u64::from(now) + DAY_MS;
+        assert_eq!(clock.fix(now, ntp(ahead, 20)), Err(SyncError::Bounded));
+    }
+
+    let later = 24 * 24 * HOUR_MS;
+    let record = clock.carry(later, 5_000).expect("carried at 24 days");
+    let mut resumed = WallClock::default();
+    let result = resumed.resume(1_000, &record, Some(5_010), Restart::Warm);
+    let resumed_error = result.map(|resumed| (resumed.contested, resumed.error_ms));
+    assert!(
+        resumed_error.is_ok_and(|(contested, error_ms)| contested && error_ms > 10_000_000),
+        "{resumed_error:?}"
+    );
+    let truth = NOON + u64::from(later) + 11_000;
+    assert_eq!(
+        resumed.fix(1_000, ntp(truth + DAY_MS, 20)),
+        Err(SyncError::Bounded)
+    );
+    assert_eq!(
+        clock.carry(25 * 24 * HOUR_MS, 5_000),
+        None,
+        "past half the range"
+    );
+
+    // The same record claiming another error, with a valid check: within
+    // the most a carry grows it resumes, past it it is refused.
+    let claiming = |error_us: u64| {
+        let mut forged = record;
+        forged[5] = u32::try_from(error_us & 0xffff_ffff).unwrap();
+        forged[6] = u32::try_from(error_us >> 32).unwrap();
+        let bytes: Vec<u8> = forged[..CARRY_WORDS - 1]
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect();
+        forged[CARRY_WORDS - 1] = wellfed_core::store::slot::crc32(&bytes);
+        WallClock::default().resume(1_000, &forged, Some(5_010), Restart::Warm)
+    };
+    assert!(claiming(10_000_000_000).is_ok());
+    assert_eq!(claiming(20_000_000_000), Err(NoResume::Corrupt));
+}

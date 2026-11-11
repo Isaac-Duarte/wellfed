@@ -327,15 +327,18 @@ impl Plans {
     }
 
     /// The claim's occurrence into its plan's mark; a mark it raises is a
-    /// meal fed, and no longer a skip. Whether it raised the mark.
+    /// meal fed, and no longer a skip. Whether it raised the mark. A slot a
+    /// client's table has emptied since keeps no fed bit: the record has
+    /// no flags for an empty slot, and no plan there could repeat a meal.
     fn fold(&mut self, claim: Claim) -> bool {
         let slot = usize::from(claim.plan);
+        let present = self.table.get(slot).is_some_and(Option::is_some);
         if let Some(mark) = self.marks.get_mut(slot)
             && claim.due_s > *mark
         {
             *mark = claim.due_s;
             self.set_skip(slot, false);
-            self.set_fed(slot, true);
+            self.set_fed(slot, present);
             return true;
         }
         false

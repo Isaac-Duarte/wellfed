@@ -645,7 +645,9 @@ impl WallClock {
     /// and a reset that dropped it would hand that answer the clock.
     pub fn carry(&self, now: u32, rtc_s: u32) -> Option<[u32; CARRY_WORDS]> {
         let (trust, centre) = if self.contested {
-            let trust = self.project(self.trust?, now)?;
+            let trust = self
+                .project(self.trust?, now)
+                .filter(|trust| trust.error_us <= CONTESTED_ERROR_MAX_US)?;
             (trust, trust)
         } else {
             let (trust, centre, _) = self.current(now)?;
@@ -711,7 +713,8 @@ impl WallClock {
             unix_us: carry.centre_us + gap_us,
             error_us,
         };
-        // The record's times are inside 2026-2099 and the gap is minutes,
+        // The record's times are inside 2026-2099, its error at most
+        // `CONTESTED_ERROR_MAX_US` (about three hours) and the gap minutes,
         // so the sums above cannot overflow.
         let reported_us = signed(centre.unix_us, trust.unix_us).unsigned_abs() + error_us;
         if reported_us.div_ceil(1000) > MAX_ERROR_MS && !carry.contested {
@@ -768,6 +771,14 @@ const CARRY_MAGIC: u32 = 0x4354_4c50;
 const CARRY_VERSION: u32 = 2;
 const CARRY_HINT: u32 = 1 << 16;
 const CARRY_CONTESTED: u32 = 1 << 17;
+/// The most error a contested record carries, in microseconds: an anchor
+/// as loose as a valid clock may be, grown at the unlearned bound across
+/// half the uptime clock's range, past which no projection holds (about
+/// 1.07e10 µs, three hours). A record claiming more is no carry's, and a
+/// clock contested that long has lost its bound.
+const CONTESTED_ERROR_MAX_US: u64 =
+    MAX_ERROR_MS * 1000 + HALF_RANGE_MS * UNLEARNED_PPM as u64 / 1000;
+const HALF_RANGE_MS: u64 = crate::HALF_RANGE as u64;
 
 impl Carry {
     fn encode(&self) -> [u32; CARRY_WORDS] {
@@ -865,7 +876,12 @@ impl Carry {
         let times = MIN_UNIX_MS * 1000..MAX_UNIX_MS * 1000;
         if !times.contains(&carry.trust_us)
             || !times.contains(&carry.centre_us)
-            || (carry.trust_error_us > MAX_ERROR_MS * 1000 && !carry.contested)
+            || carry.trust_error_us
+                > if carry.contested {
+                    CONTESTED_ERROR_MAX_US
+                } else {
+                    MAX_ERROR_MS * 1000
+                }
         {
             return Err(NoResume::Corrupt);
         }

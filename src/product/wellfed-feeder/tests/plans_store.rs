@@ -928,7 +928,8 @@ mod sequences {
 
     use proptest::prelude::*;
     use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, Table, Weekdays};
-    use wellfed_feeder::store::plans::Plans;
+    use wellfed_feeder::store::plans::{Plans, PlansStatus};
+    use wellfed_testkit::journal_flash::{FakeJournalFlash, UNIT};
 
     /// Three slots keep collisions on one slot frequent.
     const SLOTS: u8 = 3;
@@ -1145,6 +1146,16 @@ mod sequences {
                         "the claim's slot holds the plan it took"
                     );
                 }
+
+                // A slot's mark is a skip or a meal fed, never both: a
+                // record with both reloads as corrupt, with no plans. And
+                // whatever the changes leave reloads as it was saved.
+                prop_assert_eq!(next.skips & next.fed, 0, "both bits after {:?}", change);
+                let mut flash = FakeJournalFlash::with_unit(UNIT);
+                prop_assert!(super::open(&mut flash).save(&next));
+                let reloaded = super::open(&mut flash);
+                prop_assert_eq!(reloaded.status, PlansStatus::Loaded);
+                prop_assert_eq!(reloaded.plans, next, "reloaded after {:?}", change);
                 plans = next;
             }
         }
