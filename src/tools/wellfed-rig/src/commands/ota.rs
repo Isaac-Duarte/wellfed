@@ -835,7 +835,9 @@ impl Watch {
             record::Event::Start { build, bank } => {
                 let build = build.to_ascii_lowercase();
                 let new = build == self.build && bank == Some(1);
-                self.started |= new;
+                // Each boot replaces the last: a later boot of another build
+                // or bank inherits nothing from the offered build's.
+                self.started = new;
                 Some(Event::Started { build, bank, new })
             }
 
@@ -1780,6 +1782,19 @@ mod tests {
             done: 16,
             total: 164
         }));
+    }
+
+    /// A confirmation counts only from the boot running now: once another
+    /// build or bank starts, the offered build's earlier start no longer
+    /// vouches for what confirms.
+    #[test]
+    fn a_later_boot_of_another_build_inherits_no_confirmation() {
+        for later in [start(OLD, 0), start(OLD, 1), start(NEW, 0)] {
+            let mut watch = Watch::of(NEW, Target::Replacement);
+            watch.feed(start(NEW, 1).as_bytes());
+            watch.feed(format!("{later}PLCNF1 confirmed=1 already=1\n").as_bytes());
+            assert_eq!(watch.outcome(), None, "{later}");
+        }
     }
 
     #[test]
