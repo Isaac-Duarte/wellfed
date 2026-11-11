@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT feeder_id AS \"feeder_id: Uuid\", key, user_id AS \"user_id: Uuid\",\n                              token_id AS \"token_id: Uuid\", role, invited_ms, invite_until_ms,\n                              revoke, revoke_ms, attempt\n                       FROM phone_keys ORDER BY feeder_id, key",
+  "query": "SELECT feeder_id AS \"feeder_id: Uuid\", key, user_id AS \"user_id: Uuid\",\n                              token_id AS \"token_id: Uuid\", role, invited_ms, invite_until_ms,\n                              revoke, revoke_ms, attempt, invited_by\n                       FROM phone_keys ORDER BY feeder_id, key",
   "describe": {
     "columns": [
       {
@@ -112,6 +112,17 @@
             "name": "attempt"
           }
         }
+      },
+      {
+        "name": "invited_by",
+        "ordinal": 10,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "invited_by"
+          }
+        }
       }
     ],
     "parameters": {
@@ -127,8 +138,9 @@
       false,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "aac372d4264a815bb1e313b9726b026637830d753828d2cd3859b3a45795759f"
+  "hash": "596719eb316e006ccc965e793588a53ce9d06db3e8f7b7ba1f776e3f2c8e80c0"
 }

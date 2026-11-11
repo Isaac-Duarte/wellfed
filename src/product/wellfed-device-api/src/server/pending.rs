@@ -159,6 +159,7 @@ impl Server {
                         label,
                         role: Role::UpdateSigner,
                         path: proto::Path::Press,
+                        inviter: None,
                     };
                     // The mailbox may be busy; the press is kept until it is not.
                     if let Some(ticket) = device.keys(change) {

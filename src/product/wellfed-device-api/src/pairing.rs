@@ -55,6 +55,7 @@
 use crate::clients::Role;
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_core::{deadline_passed, interval_valid, named_enum};
+use wellfed_proto::api::KeyPrefix;
 use wellfed_session::setup_code::{Code, PRESSES};
 
 use crate::mailbox::Lock;
@@ -152,10 +153,12 @@ pub enum Event {
         path: Path,
         code: Code,
     },
-    /// Enroll the client behind `path` with `role`.
+    /// Enroll the client behind `path` with `role`; `inviter` is the
+    /// issuer's key prefix when it redeemed an invite.
     Admit {
         path: Path,
         role: Role,
+        inviter: Option<KeyPrefix>,
     },
     Invited {
         id: u32,
@@ -292,6 +295,7 @@ impl Pairing {
                 Some(Event::Admit {
                     path: pending.path,
                     role: pending.role,
+                    inviter: None,
                 })
             }
             Gesture::Hold { chord, level }
@@ -438,6 +442,7 @@ impl Pairing {
             Some(invite) => Event::Admit {
                 path: Path::Invite,
                 role: invite.role,
+                inviter: Some(crate::key_prefix(&invite.issuer)),
             },
             None => refused(Path::Invite, Refusal::Unknown),
         }

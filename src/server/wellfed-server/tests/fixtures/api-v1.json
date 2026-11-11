@@ -1,5 +1,5 @@
 {
-  "revision": 2,
+  "revision": 3,
   "document": {
     "components": {
       "schemas": {
@@ -1834,6 +1834,28 @@
                 "kind"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "by": {
+                  "type": "string"
+                },
+                "client": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "invited"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "client",
+                "by",
+                "kind"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -2119,7 +2141,8 @@
             "update_stop",
             "update_at_boot",
             "restarting",
-            "update_confirmed"
+            "update_confirmed",
+            "invited"
           ],
           "type": "string"
         },
@@ -5815,6 +5838,7 @@
             "expiring",
             "token_revoked",
             "replaced",
+            "inviter_revoked",
             "unknown"
           ],
           "type": "string"

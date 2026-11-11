@@ -1025,6 +1025,14 @@ fn messages() -> Vec<Fixture> {
             })),
             client,
         ),
+        (
+            "event-invited",
+            entry(&EventBody::Invited {
+                client: [0x22; 7],
+                by: [0x33; 7],
+            }),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
     ]
 }
 

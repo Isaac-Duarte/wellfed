@@ -500,6 +500,9 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
         }
         EventBody::Core(CoreEvent::Restarting) => "restart asked for".to_owned(),
         EventBody::Core(CoreEvent::UpdateConfirmed) => "the installed build confirmed".to_owned(),
+        EventBody::Core(CoreEvent::Invited { client, by }) => {
+            format!("client {client}… joined through an invite from client {by}…")
+        }
     }
 }
 

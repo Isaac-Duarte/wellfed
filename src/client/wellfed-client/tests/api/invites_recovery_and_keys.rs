@@ -256,6 +256,24 @@ fn an_invite_enrolls_a_new_client_once() {
     rig.publish();
     let _stranger = open(&mut rig, STRANGER);
 
+    // Who invited it comes just before its enrollment, each by the first
+    // bytes of its key, so a server can revoke it with the owner's key.
+    let bodies: Vec<EventBody> = rig.device.events.iter().map(|e| e.body).collect();
+    let prefix = |key: [u8; 32]| wellfed_device_api::key_prefix(&key);
+    let invited = EventBody::Invited {
+        client: prefix(public(STRANGER)),
+        by: prefix(public(OWNER)),
+    };
+    let joined = EventBody::Enrolled {
+        client: fingerprint(STRANGER),
+        role: proto::Role::Member,
+        path: proto::Path::Invite,
+    };
+    assert!(
+        bodies.windows(2).any(|pair| pair == [invited, joined]),
+        "{bodies:?}"
+    );
+
     // The invite was single-use, and an open naming none still live ends
     // before the generator is drawn on, so a stranger cannot spend it.
     let drawn = rig.device.counter;

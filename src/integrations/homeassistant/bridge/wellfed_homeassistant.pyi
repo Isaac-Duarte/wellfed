@@ -241,6 +241,7 @@ class EventKind:
     Fed: Final[EventKind]
     FeedingBlocked: Final[EventKind]
     Food: Final[EventKind]
+    Invited: Final[EventKind]
     Lock: Final[EventKind]
     Lost: Final[EventKind]
     MealSoon: Final[EventKind]

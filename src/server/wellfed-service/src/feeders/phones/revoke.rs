@@ -7,10 +7,12 @@
 //! it, and again each time it reconnects, until it has dropped them; until
 //! then each key shows the last attempt, so an owner sees which feeders
 //! still hold one. A revoke is idempotent, so each attempt takes a fresh
-//! request id and needs no journal entry. The feeder does not bind an
-//! invite to a key, so `not_found` settles a revoke only once the key's
-//! invite can no longer be redeemed; before then it is tried again at the
-//! invite's deadline.
+//! request id and needs no journal entry. The server's invite may be
+//! redeemed until its deadline, so `not_found` settles a revoke only once
+//! the key's invite can no longer be redeemed; before then it is tried
+//! again at the invite's deadline. Each pass first attributes the keys
+//! phone keys invited ([`super::invitees`]), so a key that joined through a
+//! revoked key's invite is revoked in the same pass.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -64,7 +66,7 @@ impl Service {
         Ok(())
     }
 
-    pub(super) fn spawn_revoke(&self, feeder: FeederId) {
+    pub(in crate::feeders) fn spawn_revoke(&self, feeder: FeederId) {
         let service = self.clone();
         let span = info_span!(parent: None, "feeder", id = %feeder);
         self.tasks
@@ -85,21 +87,29 @@ impl Service {
         let turn = Arc::clone(lock(&self.feeders.revocations.turns).entry(id).or_default());
         let _turn = turn.lock().await;
         let store = &self.shared.store;
+        self.try_attribute_invitees(id).await;
 
+        // A key forgotten here marks the keys it invited, if any were left
+        // unmarked: they take the next pass.
+        let mut again = false;
         for phone in store.revoking(id).await? {
             let key = phone.key.0;
             let client = hex::Lower(&key[..4]).to_string();
             let op = Op::RevokeClient { key };
             let attempt = match self.mirror.ask(id, self.request_id()?, op).await {
                 Ok(Answer::Done { .. }) => {
-                    store.forget_client(id, &key).await?;
+                    again |= store
+                        .forget_client(id, &key, self.shared.clock.now())
+                        .await?;
                     info!(%client, "a phone's key is revoked");
                     continue;
                 }
                 Ok(Answer::Refused(Refusal::NotFound))
                     if self.shared.clock.now() >= phone.invite_until =>
                 {
-                    store.forget_client(id, &key).await?;
+                    again |= store
+                        .forget_client(id, &key, self.shared.clock.now())
+                        .await?;
                     info!(%client, "a phone's key never joined, and its invite has expired");
                     continue;
                 }
@@ -124,8 +134,11 @@ impl Service {
             store.revoke_attempt(id, &key, &attempt).await?;
             warn!(%client, ?attempt, "a phone's key is not revoked yet");
             if attempt == RevokeAttempt::Offline {
-                break;
+                return Ok(());
             }
+        }
+        if again {
+            self.spawn_revoke(id);
         }
         Ok(())
     }
@@ -161,8 +174,9 @@ impl Service {
     }
 
     /// Revoke the keys owed on the feeder each time its session comes up,
-    /// and each time a client joins it (an owed key's invite redeemed) or
-    /// its history has a gap that may hide one.
+    /// and each time a client joins it (an owed key's invite redeemed, or a
+    /// phone key's invite, whose join is then attributed) or its history
+    /// has a gap that may hide one.
     pub(crate) fn watch_revocations(&self, id: FeederId, mut updates: Receiver<MirrorEvent>) {
         let service = self.clone();
         let cancel = self.cancel.child_token();
@@ -182,7 +196,10 @@ impl Service {
                         service.revoke_owed(id).await;
                     }
                     Ok(MirrorEvent::Event(event))
-                        if matches!(event.body, EventBody::Core(CoreEvent::Enrolled { .. })) =>
+                        if matches!(
+                            event.body,
+                            EventBody::Core(CoreEvent::Enrolled { .. } | CoreEvent::Invited { .. })
+                        ) =>
                     {
                         service.revoke_owed(id).await;
                     }

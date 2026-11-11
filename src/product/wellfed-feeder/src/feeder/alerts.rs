@@ -505,7 +505,9 @@ impl Alerts {
             // meal is judged as one already run: no record is news, and no
             // `Missed` comes ([`super::skip`]).
             | EventBody::Skipped { .. }
-            | EventBody::Unskipped { .. } => {}
+            | EventBody::Unskipped { .. }
+            // The `Enrolled` after it reports the join.
+            | EventBody::Invited { .. } => {}
         }
     }
 

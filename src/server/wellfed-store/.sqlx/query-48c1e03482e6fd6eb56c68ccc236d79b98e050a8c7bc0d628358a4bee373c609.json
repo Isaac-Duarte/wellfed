@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT feeder_id AS \"feeder_id: Uuid\", epoch, seq, invitee, inviter,\n                              received_ms, settled_ms\n                       FROM invitations ORDER BY feeder_id, epoch, seq",
+  "describe": {
+    "columns": [
+      {
+        "name": "feeder_id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "feeder_id"
+          }
+        }
+      },
+      {
+        "name": "epoch",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "epoch"
+          }
+        }
+      },
+      {
+        "name": "seq",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "name": "invitee",
+        "ordinal": 3,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "invitee"
+          }
+        }
+      },
+      {
+        "name": "inviter",
+        "ordinal": 4,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "inviter"
+          }
+        }
+      },
+      {
+        "name": "received_ms",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "received_ms"
+          }
+        }
+      },
+      {
+        "name": "settled_ms",
+        "ordinal": 6,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "settled_ms"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "48c1e03482e6fd6eb56c68ccc236d79b98e050a8c7bc0d628358a4bee373c609"
+}

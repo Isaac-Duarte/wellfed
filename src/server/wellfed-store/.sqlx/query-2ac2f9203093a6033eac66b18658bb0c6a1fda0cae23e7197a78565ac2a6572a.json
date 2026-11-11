@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE phone_keys SET revoke = 'inviter_revoked', revoke_ms = ?\n         WHERE feeder_id = ? AND revoke IS NULL AND invited_by = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "2ac2f9203093a6033eac66b18658bb0c6a1fda0cae23e7197a78565ac2a6572a"
+}

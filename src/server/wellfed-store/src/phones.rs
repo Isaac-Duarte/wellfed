@@ -1,5 +1,6 @@
-//! The phone keys the server made invites for, the revocations still owed
-//! on them, and the clients it did not invite that an owner kept.
+//! The phone keys the server made invites for and the keys they invited
+//! ([`invitees`]), the revocations still owed on them, and the clients it
+//! did not invite that an owner kept.
 
 use jiff::Timestamp;
 use uuid::Uuid;
@@ -10,7 +11,12 @@ use wellfed_api::{
 use crate::convert::{lenient, millis, timestamp};
 use crate::{Error, Result, Store};
 
+mod invitees;
 mod reconcile;
+mod revoke;
+
+pub use invitees::Invitation;
+pub(crate) use invitees::project as project_invitation;
 
 /// A phone key about to be invited.
 pub struct NewPhone {
@@ -249,105 +255,6 @@ impl Store {
         .fetch_all(&self.reader)
         .await?;
         rows.into_iter().map(TryInto::try_into).collect()
-    }
-
-    /// Mark `whose` phone keys for revocation, those not already marked;
-    /// the feeders that hold any key so marked.
-    pub async fn revoke_phones(
-        &self,
-        whose: Whose,
-        reason: RevokeReason,
-        at: Timestamp,
-    ) -> Result<Vec<FeederId>> {
-        let reason = reason.code();
-        let at = millis(at);
-        let (user, token, feeder, keep) = match whose {
-            Whose::User(user) => (Some(user.0), None, None, None),
-            Whose::Token(token) => (None, Some(token.0), None, None),
-            Whose::Replaced {
-                feeder,
-                token,
-                keep,
-            } => (None, Some(token.0), Some(feeder.0), Some(keep.to_vec())),
-        };
-        let rows = sqlx::query!(
-            r#"UPDATE phone_keys SET revoke = ?1, revoke_ms = ?2
-               WHERE revoke IS NULL
-                 AND (?3 IS NULL OR user_id = ?3)
-                 AND (?4 IS NULL OR token_id = ?4)
-                 AND (?5 IS NULL OR feeder_id = ?5)
-                 AND (?6 IS NULL OR key != ?6)
-                 AND (?3 IS NOT NULL OR ?4 IS NOT NULL)
-               RETURNING feeder_id AS "feeder_id: Uuid""#,
-            reason,
-            at,
-            user,
-            token,
-            feeder,
-            keep,
-        )
-        .fetch_all(&self.writer)
-        .await?;
-
-        let mut feeders: Vec<FeederId> = rows
-            .into_iter()
-            .map(|row| FeederId(row.feeder_id))
-            .collect();
-        feeders.sort_unstable();
-        feeders.dedup();
-        Ok(feeders)
-    }
-
-    /// The phone keys on a feeder still to be revoked.
-    pub async fn revoking(&self, feeder: FeederId) -> Result<Vec<PhoneKey>> {
-        let phones = self.feeder_phones(feeder).await?;
-        Ok(phones
-            .into_iter()
-            .filter(|phone| phone.revoking.is_some())
-            .collect())
-    }
-
-    /// Record what an attempt to revoke a phone key came to.
-    pub async fn revoke_attempt(
-        &self,
-        feeder: FeederId,
-        key: &[u8; 32],
-        attempt: &RevokeAttempt,
-    ) -> Result<()> {
-        let key = key.as_slice();
-        let json = serde_json::to_string(attempt).map_err(|e| Error::Json("revoke attempt", e))?;
-        sqlx::query!(
-            "UPDATE phone_keys SET attempt = ? WHERE feeder_id = ? AND key = ?",
-            json,
-            feeder.0,
-            key,
-        )
-        .execute(&self.writer)
-        .await?;
-        Ok(())
-    }
-
-    /// The feeder no longer holds the key: forget it as a phone's and as a
-    /// kept client. Whether it was either.
-    pub async fn forget_client(&self, feeder: FeederId, key: &[u8; 32]) -> Result<bool> {
-        let key = key.as_slice();
-        let mut tx = self.writer.begin().await?;
-        let phone = sqlx::query!(
-            "DELETE FROM phone_keys WHERE feeder_id = ? AND key = ?",
-            feeder.0,
-            key
-        )
-        .execute(&mut *tx)
-        .await?;
-        let kept = sqlx::query!(
-            "DELETE FROM kept_clients WHERE feeder_id = ? AND key = ?",
-            feeder.0,
-            key
-        )
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        Ok(phone.rows_affected() + kept.rows_affected() > 0)
     }
 
     /// Keep a client the server did not invite.

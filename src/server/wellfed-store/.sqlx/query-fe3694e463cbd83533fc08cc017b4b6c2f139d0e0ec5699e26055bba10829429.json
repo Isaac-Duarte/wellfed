@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO dropped_phones (feeder_id, key, user_id, token_id, dropped_ms)\n         VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "fe3694e463cbd83533fc08cc017b4b6c2f139d0e0ec5699e26055bba10829429"
+}

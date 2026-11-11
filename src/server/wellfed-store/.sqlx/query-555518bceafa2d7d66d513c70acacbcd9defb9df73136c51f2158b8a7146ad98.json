@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO invitations (feeder_id, epoch, seq, invitee, inviter, received_ms, settled_ms)\n         VALUES (?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "555518bceafa2d7d66d513c70acacbcd9defb9df73136c51f2158b8a7146ad98"
+}

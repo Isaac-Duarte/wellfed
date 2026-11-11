@@ -1,5 +1,5 @@
 {
-  "revision": 2,
+  "revision": 3,
   "registry": {
     "Alert": {
       "ENUM": {
@@ -1112,6 +1112,28 @@
         },
         "21": {
           "UpdateConfirmed": "UNIT"
+        },
+        "22": {
+          "Invited": {
+            "STRUCT": [
+              {
+                "client": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 7
+                  }
+                }
+              },
+              {
+                "by": {
+                  "TUPLEARRAY": {
+                    "CONTENT": "U8",
+                    "SIZE": 7
+                  }
+                }
+              }
+            ]
+          }
         }
       }
     },

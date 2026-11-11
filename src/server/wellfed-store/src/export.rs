@@ -11,10 +11,10 @@ use futures_util::{StreamExt, TryStreamExt};
 use sqlx::{Sqlite, Transaction};
 use uuid::Uuid;
 use wellfed_formats::export::{
-    AuditEntry, BlockedChange, Boot, ClockSync, Command, Event, Feed, FeedTrace, Feeder,
-    FeederFood, FeederStat, FeederState, Food, FoodReading, Gap, Home, Install, KeptClient,
-    LockChange, Pet, PetFeeder, PetWeight, PhoneKey, ProjectionVersion, Refill, Row, Sample,
-    SampleMarks, SampleRollup, Table, User,
+    AuditEntry, BlockedChange, Boot, ClockSync, Command, DroppedPhone, Event, Feed, FeedTrace,
+    Feeder, FeederFood, FeederStat, FeederState, Food, FoodReading, Gap, Home, Install, Invitation,
+    KeptClient, LockChange, Pet, PetFeeder, PetWeight, PhoneKey, ProjectionVersion, Refill, Row,
+    Sample, SampleMarks, SampleRollup, Table, User,
 };
 
 use crate::convert::model;
@@ -90,7 +90,7 @@ impl Snapshot {
                     PhoneKey,
                     r#"SELECT feeder_id AS "feeder_id: Uuid", key, user_id AS "user_id: Uuid",
                               token_id AS "token_id: Uuid", role, invited_ms, invite_until_ms,
-                              revoke, revoke_ms, attempt
+                              revoke, revoke_ms, attempt, invited_by
                        FROM phone_keys ORDER BY feeder_id, key"#
                 )
                 .fetch(tx),
@@ -100,6 +100,24 @@ impl Snapshot {
                     KeptClient,
                     r#"SELECT feeder_id AS "feeder_id: Uuid", key, kept_ms
                        FROM kept_clients ORDER BY feeder_id, key"#
+                )
+                .fetch(tx),
+            ),
+            Table::Invitations => rows(
+                sqlx::query_as!(
+                    Invitation,
+                    r#"SELECT feeder_id AS "feeder_id: Uuid", epoch, seq, invitee, inviter,
+                              received_ms, settled_ms
+                       FROM invitations ORDER BY feeder_id, epoch, seq"#
+                )
+                .fetch(tx),
+            ),
+            Table::DroppedPhones => rows(
+                sqlx::query_as!(
+                    DroppedPhone,
+                    r#"SELECT feeder_id AS "feeder_id: Uuid", key, user_id AS "user_id: Uuid",
+                              token_id AS "token_id: Uuid", dropped_ms
+                       FROM dropped_phones ORDER BY feeder_id, key"#
                 )
                 .fetch(tx),
             ),

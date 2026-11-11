@@ -105,7 +105,7 @@ pub fn pair(event: pairing::Event, f: &mut impl fmt::Write) -> fmt::Result {
         E::Keyed { path, entered } => write!(f, "pair {path} keyed={entered}"),
         E::Swallowed { path } => write!(f, "pair {path} swallowed"),
         E::Entered { path, .. } => write!(f, "pair {path} state=entered"),
-        E::Admit { path, role } => write!(f, "pair admit path={path} role={role}"),
+        E::Admit { path, role, .. } => write!(f, "pair admit path={path} role={role}"),
         E::Invited { id } => write!(f, "pair invited id={id}"),
         E::RecoveryOpened => f.write_str("pair recovery state=opened"),
         E::RecoveryClosed => f.write_str("pair recovery state=closed"),

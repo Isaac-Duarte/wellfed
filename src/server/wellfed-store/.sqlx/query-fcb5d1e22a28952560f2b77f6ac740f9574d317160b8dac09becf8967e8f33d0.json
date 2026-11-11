@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT epoch, seq, invitee, inviter FROM invitations AS i\n             WHERE feeder_id = ?1 AND settled_ms IS NULL\n               AND (EXISTS (SELECT 1 FROM phone_keys AS p\n                            WHERE p.feeder_id = ?1 AND substr(p.key, 1, 7) = i.inviter)\n                    OR EXISTS (SELECT 1 FROM dropped_phones AS d\n                               WHERE d.feeder_id = ?1 AND substr(d.key, 1, 7) = i.inviter))\n             ORDER BY epoch, seq",
+  "describe": {
+    "columns": [
+      {
+        "name": "epoch",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "epoch"
+          }
+        }
+      },
+      {
+        "name": "seq",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "name": "invitee",
+        "ordinal": 2,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "invitee"
+          }
+        }
+      },
+      {
+        "name": "inviter",
+        "ordinal": 3,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "inviter"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fcb5d1e22a28952560f2b77f6ac740f9574d317160b8dac09becf8967e8f33d0"
+}

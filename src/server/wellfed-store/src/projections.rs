@@ -372,6 +372,12 @@ pub(crate) async fn project(
         | EventBody::Core(CoreEvent::Restarting)
         | EventBody::Core(CoreEvent::UpdateConfirmed)
         | EventBody::Feeder(FeederEvent::Supply { .. }) => {}
+
+        // Not a view: the joins the server still has to attribute, which
+        // a rebuild must not clear ([`crate::phones::Invitation`]).
+        EventBody::Core(CoreEvent::Invited { client, by }) => {
+            crate::phones::project_invitation(conn, id, place, client.0, by.0).await?;
+        }
     }
     Ok(())
 }

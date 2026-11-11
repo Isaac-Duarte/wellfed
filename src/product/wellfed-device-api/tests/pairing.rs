@@ -83,7 +83,20 @@ fn refused(path: Path, refusal: Refusal) -> Event {
 }
 
 fn admit(path: Path, role: Role) -> Event {
-    Event::Admit { path, role }
+    Event::Admit {
+        path,
+        role,
+        inviter: None,
+    }
+}
+
+/// An invite's admission, naming the key prefix of the issuer it came from.
+fn invited(role: Role, issuer: [u8; 32]) -> Event {
+    Event::Admit {
+        path: Path::Invite,
+        role,
+        inviter: Some(wellfed_device_api::key_prefix(&issuer)),
+    }
 }
 
 #[test]
@@ -202,7 +215,7 @@ fn invites_are_single_use_and_bounded_by_the_issuer() {
     };
     assert_eq!(p.invite_secret(10, id), Some([7; 32]));
     assert_eq!(p.invite_secret(10, id + 1), None);
-    assert_eq!(p.redeem(20, id, &JOINER), admit(Path::Invite, Role::Member));
+    assert_eq!(p.redeem(20, id, &JOINER), invited(Role::Member, ISSUER));
     assert_eq!(
         p.redeem(30, id, &JOINER),
         refused(Path::Invite, Refusal::Unknown)
@@ -226,7 +239,7 @@ fn a_bound_invite_admits_only_its_key() {
         refused(Path::Invite, Refusal::WrongKey)
     );
     assert_eq!(p.invite_secret(10, id), Some([7; 32]), "kept");
-    assert_eq!(p.redeem(20, id, &JOINER), admit(Path::Invite, Role::Member));
+    assert_eq!(p.redeem(20, id, &JOINER), invited(Role::Member, ISSUER));
     assert_eq!(
         p.redeem(30, id, &JOINER),
         refused(Path::Invite, Refusal::Unknown)
@@ -255,10 +268,7 @@ fn an_invite_goes_with_its_issuers_key() {
         p.redeem(10, revoked, &JOINER),
         refused(Path::Invite, Refusal::Unknown)
     );
-    assert_eq!(
-        p.redeem(10, kept, &JOINER),
-        admit(Path::Invite, Role::Member)
-    );
+    assert_eq!(p.redeem(10, kept, &JOINER), invited(Role::Member, other));
 }
 
 #[test]

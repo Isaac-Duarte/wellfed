@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO dropped_phones (feeder_id, key, user_id, token_id, dropped_ms)\n         VALUES (?, ?, ?, ?, ?)\n         ON CONFLICT (feeder_id, key) DO UPDATE SET\n             user_id = excluded.user_id, token_id = excluded.token_id,\n             dropped_ms = excluded.dropped_ms",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "4183b7efa45c894480d7a765c083f6c98ca8ac4f5c93b8b2dda5afb1092a9a09"
+}

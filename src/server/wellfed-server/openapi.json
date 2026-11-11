@@ -7882,6 +7882,29 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "The client `client` joined through an invite the client `by` asked\nfor, each named by its key's first 7 bytes. Recorded just before\nthe client's `enrolled`.",
+            "required": [
+              "client",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "type": "string"
+              },
+              "client": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "invited"
+                ]
+              }
+            }
           }
         ],
         "description": "An event every kind of device records."
@@ -8187,7 +8210,8 @@
           "update_stop",
           "update_at_boot",
           "restarting",
-          "update_confirmed"
+          "update_confirmed",
+          "invited"
         ]
       },
       "EventPage": {
@@ -12177,6 +12201,7 @@
           "expiring",
           "token_revoked",
           "replaced",
+          "inviter_revoked",
           "unknown"
         ]
       },

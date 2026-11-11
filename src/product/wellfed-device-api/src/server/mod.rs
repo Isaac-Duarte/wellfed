@@ -136,6 +136,8 @@ enum Phase {
         key: [u8; 32],
         label: Label,
         role: Role,
+        /// The prefix of the invite's issuer's key.
+        inviter: Option<proto::KeyPrefix>,
         ticket: Option<u32>,
     },
     /// The recovery window's session: the setup exchange over this

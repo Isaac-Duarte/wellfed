@@ -13,9 +13,13 @@
 //! until it is revoked, or until its own expiry if it was given one.
 //!
 //! Only a login makes a token, sets a password, adds an account, raises a
-//! role or gives an account a longer life, so revoking a leaked token is
-//! enough: it cannot have made other tokens, nor a password, an account or
-//! a promoted or revived login to log in with and make them.
+//! role or gives an account a longer life, so a leaked token cannot have
+//! made other tokens, nor a password, an account or a promoted or revived
+//! login to log in with and make them. Revoking it also revokes its phone
+//! keys on every feeder and the keys they invited there, as the feeders
+//! reported them. What revoking it cannot undo is what it already did on a
+//! feeder: a key a phone key invited that its feeder's history lost before
+//! the server read it, or a write it made.
 
 use sha2::{Digest, Sha256};
 use wellfed_api::{AuditAction, CreatedToken, NewToken, RevokeReason, Token, TokenId, User};

@@ -146,7 +146,11 @@ impl Service {
         if recorded.outcome != gone {
             done(&recorded.outcome)?;
         }
-        self.shared.store.forget_client(id, &key).await?;
+        // The keys a phone key invited go with it.
+        let now = self.shared.clock.now();
+        if self.shared.store.forget_client(id, &key, now).await? {
+            self.spawn_revoke(id);
+        }
         Ok(())
     }
 

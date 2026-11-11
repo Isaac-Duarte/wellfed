@@ -178,6 +178,7 @@ impl Server {
                         label: offer.label,
                         role: Role::Owner,
                         path: proto::Path::Recovery,
+                        inviter: None,
                     };
                     if let Some(ticket) = device.keys(change) {
                         let stage = Rescue::Enrolling {

@@ -4,9 +4,13 @@
 //! while the server is down. The server makes the invite it joins with,
 //! recording the key, account and token first, so a phone that joins with
 //! the key it named is attributed even when the invite's answer is lost.
-//! The invite is bound to that key, so the feeder admits no other: a
-//! token's holder cannot join with a key the server never recorded, which
-//! no revocation of the account or token would reach.
+//! The invite is bound to that key, so the feeder admits no other with it.
+//! A joined phone key can still ask the feeder for plain invites of its
+//! own; the feeder reports each such join, and [`invitees`] records the key
+//! under the inviting key's account and token, so revoking either, or the
+//! inviting key, revokes it too. A join the feeder's history lost before
+//! the server read it, or one on a feeder too old to report it, is not
+//! attributed: that key shows unowned until an owner revokes or keeps it.
 //! A phone that already holds a key (paired before the server, or one whose
 //! adoption named it) claims it, and [`claim`] records it the same way. A
 //! viewer, and an account or token with an expiry, holds no key: the
@@ -22,6 +26,7 @@ use wellfed_model::Op;
 use wellfed_store::{NewPhone, Recorded, Whose};
 
 mod claim;
+mod invitees;
 mod revoke;
 
 pub(crate) use revoke::{Revocations, own_revoke, rank, revocation};

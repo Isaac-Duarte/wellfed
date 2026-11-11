@@ -142,6 +142,9 @@ pub enum RevokeReason {
     TokenRevoked,
     /// Its token was given an invite for another key: one key per token.
     Replaced,
+    /// The phone key whose invite it joined with is being revoked, or is
+    /// gone: a key goes with the key that invited it.
+    InviterRevoked,
     /// A value a newer server added, which this client cannot name. The
     /// server never sends it.
     #[serde(other)]
@@ -157,6 +160,7 @@ impl RevokeReason {
             Self::Expiring => "expiring",
             Self::TokenRevoked => "token_revoked",
             Self::Replaced => "replaced",
+            Self::InviterRevoked => "inviter_revoked",
             Self::Unknown => "unknown",
         }
     }
@@ -168,6 +172,7 @@ impl RevokeReason {
             Self::Expiring,
             Self::TokenRevoked,
             Self::Replaced,
+            Self::InviterRevoked,
         ]
         .into_iter()
         .find(|reason| reason.code() == code)

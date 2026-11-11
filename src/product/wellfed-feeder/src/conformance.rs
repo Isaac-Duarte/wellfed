@@ -133,6 +133,7 @@ fn enroll(key: u8) -> KeyChange {
         label: Label::new(b"phone").expect("a short label"),
         role: Role::Member,
         path: Path::Invite,
+        inviter: None,
     }
 }
 

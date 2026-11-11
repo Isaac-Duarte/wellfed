@@ -4,9 +4,9 @@
 
 use sqlx::SqliteConnection;
 use wellfed_formats::export::{
-    AuditEntry, BlockedChange, Boot, ClockSync, Command, Feed, FeedTrace, FeederFood, FeederStat,
-    Food, FoodReading, Install, KeptClient, LockChange, Pet, PetFeeder, PetWeight, PhoneKey,
-    Refill,
+    AuditEntry, BlockedChange, Boot, ClockSync, Command, DroppedPhone, Feed, FeedTrace, FeederFood,
+    FeederStat, Food, FoodReading, Install, Invitation, KeptClient, LockChange, Pet, PetFeeder,
+    PetWeight, PhoneKey, Refill,
 };
 
 use crate::Result;
@@ -14,8 +14,8 @@ use crate::Result;
 pub(super) async fn phone_key(tx: &mut SqliteConnection, phone: &PhoneKey) -> Result<()> {
     sqlx::query!(
         "INSERT INTO phone_keys (feeder_id, key, user_id, token_id, role, invited_ms,
-                                 invite_until_ms, revoke, revoke_ms, attempt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                 invite_until_ms, revoke, revoke_ms, attempt, invited_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         phone.feeder_id,
         phone.key,
         phone.user_id,
@@ -26,6 +26,7 @@ pub(super) async fn phone_key(tx: &mut SqliteConnection, phone: &PhoneKey) -> Re
         phone.revoke,
         phone.revoke_ms,
         phone.attempt,
+        phone.invited_by,
     )
     .execute(tx)
     .await?;
@@ -38,6 +39,38 @@ pub(super) async fn kept_client(tx: &mut SqliteConnection, kept: &KeptClient) ->
         kept.feeder_id,
         kept.key,
         kept.kept_ms,
+    )
+    .execute(tx)
+    .await?;
+    Ok(())
+}
+
+pub(super) async fn invitation(tx: &mut SqliteConnection, row: &Invitation) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO invitations (feeder_id, epoch, seq, invitee, inviter, received_ms, settled_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        row.feeder_id,
+        row.epoch,
+        row.seq,
+        row.invitee,
+        row.inviter,
+        row.received_ms,
+        row.settled_ms,
+    )
+    .execute(tx)
+    .await?;
+    Ok(())
+}
+
+pub(super) async fn dropped_phone(tx: &mut SqliteConnection, row: &DroppedPhone) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO dropped_phones (feeder_id, key, user_id, token_id, dropped_ms)
+         VALUES (?, ?, ?, ?, ?)",
+        row.feeder_id,
+        row.key,
+        row.user_id,
+        row.token_id,
+        row.dropped_ms,
     )
     .execute(tx)
     .await?;

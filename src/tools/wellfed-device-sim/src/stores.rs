@@ -552,6 +552,9 @@ impl<S: KindStore> DeviceStores<S> {
         if let ClientChange::Key { change, at } = change
             && result == KeyResult::Done
         {
+            if let Some(invited) = change.invited() {
+                self.append_written(at, &invited);
+            }
             self.append_written(at, &change.event());
         }
         if self.keys_done.len() == KEYS_FINISHED {

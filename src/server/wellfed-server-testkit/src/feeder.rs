@@ -210,6 +210,29 @@ pub async fn open_phone(sim: &Running, secret: [u8; 32]) -> Connection {
         .expect("a joined phone opens a session with the simulator")
 }
 
+/// A plain invite for `role` that the joined phone whose secret is
+/// `secret` asks the feeder for itself, over its own session: the server
+/// never sees it made.
+pub async fn phone_invite(sim: &Running, secret: [u8; 32], role: ClientRole) -> String {
+    static IDS: AtomicU8 = AtomicU8::new(0x40);
+    let id = [IDS.fetch_add(1, Ordering::Relaxed); 16];
+
+    let mut connection = open_phone(sim, secret).await;
+    let answer = connection
+        .ask(id, &Op::CreateInvite { role })
+        .await
+        .expect("the simulator answers the phone's invite request");
+    let Answer::Invite(invite) = answer else {
+        panic!("the phone's invite request answered {answer:?}");
+    };
+    Invite {
+        feeder: sim.identity,
+        id: invite.id,
+        secret: invite.secret.0,
+    }
+    .text()
+}
+
 /// The public keys in the simulator's client table, as its owner reads
 /// them.
 pub async fn client_keys(sim: &Running) -> Vec<[u8; 32]> {

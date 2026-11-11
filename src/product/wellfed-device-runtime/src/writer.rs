@@ -977,9 +977,13 @@ impl<F: FlashOps> Core<F> {
         };
 
         let event = match change {
-            Change::Key { change, at } if result == KeyResult::Done => {
-                self.append_written::<P>(at, &change.event())
-            }
+            Change::Key { change, at } if result == KeyResult::Done => match change.invited() {
+                Some(invited) => match self.append_written::<P>(at, &invited) {
+                    WriteEvent::Appended => self.append_written::<P>(at, &change.event()),
+                    lost => lost,
+                },
+                None => self.append_written::<P>(at, &change.event()),
+            },
             Change::Key { .. } | Change::Reset => WriteEvent::None,
         };
 

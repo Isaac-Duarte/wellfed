@@ -200,6 +200,7 @@ pub(crate) fn phone() -> Change {
             label: Label::new(b"phone").unwrap(),
             role: Role::Owner,
             path: Path::Invite,
+            inviter: None,
         },
         at: Some(ASKED_AT),
     }

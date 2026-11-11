@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\"\n                   FROM dropped_phones WHERE feeder_id = ? AND substr(key, 1, 7) = ?\n                   ORDER BY dropped_ms DESC, key LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "user_id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "dropped_phones",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "name": "token_id: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "dropped_phones",
+            "name": "token_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "dc7ded6a3d740c7e0a49e6ec5a349faed391be6681ea570e9049dbd2aa92a867"
+}

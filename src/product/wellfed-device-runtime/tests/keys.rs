@@ -29,6 +29,7 @@ fn one_change_waits_for_the_writer() {
             label: Label::new(b"phone").unwrap(),
             role: Role::Member,
             path: Path::Invite,
+            inviter: None,
         },
         at: None,
     };

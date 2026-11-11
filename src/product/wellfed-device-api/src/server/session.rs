@@ -136,6 +136,7 @@ impl Server {
             key,
             label,
             role,
+            inviter,
             ticket,
         } = &mut slot.phase
         else {
@@ -147,6 +148,7 @@ impl Server {
                 label: *label,
                 role: *role,
                 path: proto::Path::Invite,
+                inviter: *inviter,
             });
             return Ok(false);
         };
