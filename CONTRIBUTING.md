@@ -1,6 +1,9 @@
 # Contributing
 
-Thanks for helping. You don't need a feeder for ordinary work: every check runs on the host. Start with [development setup](docs/development/README.md), then pick an area: the host tools, the portable firmware core, the AmebaD port, the server or the docs.
+> [!IMPORTANT]
+> Wellfed is in active development, and we aren't looking for outside contributions yet. Pull requests may be closed without review while the design is still moving. Bug reports and hardware findings are welcome as issues. This page describes how we work, for when that changes.
+
+You don't need a feeder for ordinary work: every check runs on the host. Start with [development setup](docs/development/README.md), then pick an area: the host tools, the portable firmware core, the AmebaD port, the server or the docs.
 
 ## Changes
 

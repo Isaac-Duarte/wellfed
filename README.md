@@ -19,7 +19,7 @@ The Android app and the optional server are still in progress. The [roadmap](doc
 
 ## Is it for you?
 
-It's a good fit if you own a PLAF103, you're comfortable at a command line, and you'd like to help test or build a feeder that works without the cloud.
+It's a good fit if you own a PLAF103, you're comfortable at a command line, and you'd like to try a feeder that works without the cloud.
 
 Wait a little longer if:
 
@@ -36,7 +36,7 @@ Wait a little longer if:
 | Learn how installing works | [Installation](docs/firmware/consumer-installation.md) |
 | Understand how it fits together | [How Wellfed works](docs/firmware/product-architecture.md) |
 | Find your way around every page | [Documentation index](docs/README.md) |
-| Help out | [Contributing](CONTRIBUTING.md) |
+| Report a bug or a hardware finding | [Contributing](CONTRIBUTING.md) (we aren't taking pull requests yet) |
 
 ## Build it
 
