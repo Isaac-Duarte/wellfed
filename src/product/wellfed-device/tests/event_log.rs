@@ -7,7 +7,7 @@ use wellfed_core::store::slot::crc32;
 use wellfed_device::store::events::{
     BODY_BYTES, Batch, EMPTY, EventError, EventLog, RECORD_BYTES, Read,
 };
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS};
 
 /// Small units keep the wrap tests fast: 4 records each.
 const UNIT: usize = 4 * RECORD_BYTES;
@@ -214,8 +214,11 @@ fn a_full_ring_drops_its_oldest_unit_and_reports_the_gap() {
 #[test]
 fn a_power_cut_at_every_mutation_loses_at_most_the_record_being_written() {
     // Enough appends to cross two erases, cut at every mutation of each.
-    for history in [3usize, 4, 7, 12] {
-        let mut clean = FakeJournalFlash::with_units(UNIT, UNITS);
+    for (order, history) in ORDERS
+        .into_iter()
+        .flat_map(|o| [3usize, 4, 7, 12].map(move |h| (o, h)))
+    {
+        let mut clean = FakeJournalFlash::with_units(UNIT, UNITS).ordered(order);
         let mut log = open(&mut clean);
         for n in 1..=history {
             log.append(None, &body(n as u8)).unwrap();
@@ -225,7 +228,7 @@ fn a_power_cut_at_every_mutation_loses_at_most_the_record_being_written() {
         let span = i64::from(clean.mutations - before);
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_units(UNIT, UNITS);
+            let mut f = FakeJournalFlash::with_units(UNIT, UNITS).ordered(order);
             let mut log = open(&mut f);
             for n in 1..=history {
                 log.append(None, &body(n as u8)).unwrap();
@@ -239,12 +242,16 @@ fn a_power_cut_at_every_mutation_loses_at_most_the_record_being_written() {
             let records = read_all(&log, None);
             let last = records.last().copied();
             let wrote = last == Some((history as u64 + 1, 99));
-            assert_eq!(result.is_ok(), wrote, "history {history} cut {cut}");
+            assert_eq!(
+                result.is_ok(),
+                wrote,
+                "{order:?} history {history} cut {cut}"
+            );
             if !wrote {
                 assert_eq!(
                     last.map(|(seq, _)| seq),
                     Some(history as u64),
-                    "history {history} cut {cut}"
+                    "{order:?} history {history} cut {cut}"
                 );
             }
 
@@ -263,8 +270,11 @@ fn a_power_cut_at_every_mutation_loses_at_most_the_record_being_written() {
 /// that lands whole and reports failure is the case a reopen hid.
 #[test]
 fn a_failed_append_answers_what_landed_without_a_reopen() {
-    for history in [3usize, 4, 7, 12] {
-        let mut clean = FakeJournalFlash::with_units(UNIT, UNITS);
+    for (order, history) in ORDERS
+        .into_iter()
+        .flat_map(|o| [3usize, 4, 7, 12].map(move |h| (o, h)))
+    {
+        let mut clean = FakeJournalFlash::with_units(UNIT, UNITS).ordered(order);
         let mut log = open(&mut clean);
         for n in 1..=history {
             log.append(None, &body(n as u8)).unwrap();
@@ -274,7 +284,7 @@ fn a_failed_append_answers_what_landed_without_a_reopen() {
         let span = i64::from(clean.mutations - before);
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_units(UNIT, UNITS);
+            let mut f = FakeJournalFlash::with_units(UNIT, UNITS).ordered(order);
             let mut log = open(&mut f);
             for n in 1..=history {
                 log.append(None, &body(n as u8)).unwrap();
@@ -293,7 +303,7 @@ fn a_failed_append_answers_what_landed_without_a_reopen() {
                     expected.push((seq, 99));
                 }
                 expected.push((second, 100));
-                assert_eq!(records, expected, "history {history} cut {cut}");
+                assert_eq!(records, expected, "{order:?} history {history} cut {cut}");
             }
         }
     }
