@@ -116,6 +116,9 @@ impl Serving {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         fs::create_dir_all(root.join("private/verification")).unwrap();
+        // The jobs' update target, `t`: a stock review, which moves nothing.
+        fs::create_dir_all(root.join("t")).unwrap();
+        fs::write(root.join("t/review.json"), r#"{"image_kind": "stock"}"#).unwrap();
         fs::write(
             root.join("private/bench.json"),
             serde_json::json!({

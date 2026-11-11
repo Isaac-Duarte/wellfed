@@ -426,6 +426,8 @@ fn rig() -> Rig {
         wellfed_formats::credentials::KeyScope::Bench,
     )
     .unwrap();
+    // The default update target, `t`: a stock review moves nothing.
+    review_kind(&tmp.path().join("t"), "stock");
     let board = FakeBoard::default();
     let tools = FakeTools::default();
     {
@@ -962,9 +964,9 @@ fn fountain_bank_1_leaves_its_original_to_wellfed_flash() {
 fn motion_targets_need_the_attended_flag() {
     let rig = rig();
     let target = rig.bench.root.join("target");
-    fs::create_dir_all(&target).unwrap();
     let mut args = update("unit");
     args.target = target.clone();
+    review_kind(&target, "build");
     fs::write(
         target.join("build-manifest.json"),
         r#"{"startup_motion_policy": "fw16-pulse-v1"}"#,
@@ -984,11 +986,14 @@ fn motion_targets_need_the_attended_flag() {
     .unwrap();
     rig.bench.require_attended_motion(&args).unwrap();
 
-    // No manifest: a stock or diagnostic target with no policy.
+    // A build's review without its manifest, or a manifest that cannot be
+    // read, is not taken as having no policy.
     fs::remove_file(target.join("build-manifest.json")).unwrap();
-    rig.bench.require_attended_motion(&args).unwrap();
-
-    // A manifest that cannot be read is not taken as having no policy.
+    assert_matches!(
+        rig.bench.require_attended_motion(&args),
+        Err(Error::Command(CommandsError::MotionPolicyUnreadable { file, .. }))
+            if file == "target/build-manifest.json"
+    );
     for unreadable in ["{", r#"{"startup_motion_policy": 1}"#] {
         fs::write(target.join("build-manifest.json"), unreadable).unwrap();
         let error = rig.bench.require_attended_motion(&args).unwrap_err();
@@ -1000,6 +1005,53 @@ fn motion_targets_need_the_attended_flag() {
             "{unreadable}"
         );
     }
+
+    // Stock has no manifest and no policy.
+    fs::remove_file(target.join("build-manifest.json")).unwrap();
+    review_kind(&target, "stock");
+    rig.bench.require_attended_motion(&args).unwrap();
+
+    // No review at all is no frozen target.
+    fs::remove_file(target.join("review.json")).unwrap();
+    assert_matches!(
+        rig.bench.require_attended_motion(&args),
+        Err(Error::Command(CommandsError::MotionPolicyUnreadable { file, .. }))
+            if file == "target/review.json"
+    );
+}
+
+/// A root-relative target is read under the bench's root, not the
+/// directory the bench runs in.
+#[test]
+fn a_relative_motion_target_is_read_under_the_root() {
+    let rig = rig();
+    let target = rig.bench.root.join("private/motion");
+    review_kind(&target, "build");
+    fs::write(
+        target.join("build-manifest.json"),
+        r#"{"startup_motion_policy": "fw16-pulse-v1"}"#,
+    )
+    .unwrap();
+    let mut args = update("unit");
+    args.target = "private/motion".into();
+    assert!(!Path::new("private/motion").exists());
+
+    let error = rig.bench.require_attended_motion(&args).unwrap_err();
+    assert_matches!(
+        error,
+        Error::Command(CommandsError::MotionNotAttended { .. })
+    );
+}
+
+/// A `review.json` naming only its image kind, which is all the motion
+/// gate reads.
+fn review_kind(target: &Path, kind: &str) {
+    fs::create_dir_all(target).unwrap();
+    fs::write(
+        target.join("review.json"),
+        json!({ "image_kind": kind }).to_string(),
+    )
+    .unwrap();
 }
 
 #[test]

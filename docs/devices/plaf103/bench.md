@@ -108,7 +108,7 @@ Dependencies run down the table. Their shared shapes (the bench config, progress
 | `restore-stock` | `wellfed restore-stock` as a job ([below](#restore-as-a-job)) |
 | `itest NAME` | The [integration suite](integration-suite.md): its own hotspot and receive-only capture, installs over the air, and the bench restored at the end. Opens the relay board only with `--power`, for cold boots |
 
-`wellfed-bench <command> --help` lists the flags. `flash-prepare` and `flash-execute` take the updater's `--bank`, `--source`, `--original-read`, `--target`, `--interrupted` and `--restore-marker`, and `--attended-motion` for a target whose manifest names a motion policy. With `--bank 0` both need `--bank1-source`, the frozen review of what bank 1 holds.
+`wellfed-bench <command> --help` lists the flags. `flash-prepare` and `flash-execute` take the updater's `--bank`, `--source`, `--original-read`, `--target`, `--interrupted` and `--restore-marker`, and `--attended-motion` for a target whose manifest names a motion policy. The target is read under `--root`, as the flash client reads it; a target with no `review.json`, or a build's review without its readable `build-manifest.json`, is refused rather than taken as motionless. With `--bank 0` both need `--bank1-source`, the frozen review of what bank 1 holds.
 
 Every command from `on` down is a job, refused with no server running (the refusal names `wellfed-bench serve --device plaf103`).
 
