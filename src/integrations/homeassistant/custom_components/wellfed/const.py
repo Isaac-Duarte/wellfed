@@ -4,6 +4,10 @@ from typing import Final
 
 DOMAIN: Final = "wellfed"
 
+# The entry's version, its major: a newer minor of it is read as it is.
+ENTRY_VERSION: Final = 2
+ENTRY_MINOR_VERSION: Final = 1
+
 # Version 2 of the entry's data (version 1 had no routes, and is not
 # migrated): `route` and `identity` on both routes,
 # then `secret` and `address` directly, or `url`, `token`, `token_id` and

@@ -19,8 +19,10 @@ use std::time::{Duration, Instant};
 
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::Mutex;
 use wellfed_client::alerts::{Change, Mutes, Watch};
+use wellfed_formats::kept;
 
 use crate::api::alerts::AlertHold;
 use crate::api::error::BridgeError;
@@ -32,7 +34,6 @@ pub(crate) const FILE_NAME: &str = "alerts.json";
 
 /// The alert state the phone keeps.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct AlertState {
     pub(crate) settings: AlertSettings,
     /// One entry per feeder this phone has caught up with.
@@ -60,7 +61,6 @@ pub(crate) const SWEEP_HOLD: SignedDuration = SignedDuration::from_mins(1);
 /// One notification a sweep is taking off, since `since` by the phone's
 /// clock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct SweepHold {
     pub(crate) id: i32,
     pub(crate) since: Timestamp,
@@ -68,11 +68,37 @@ pub(crate) struct SweepHold {
 
 impl Versioned for AlertState {
     const VERSION: u32 = 1;
+
+    /// What a newer minor added: the settings and their mutes, each
+    /// feeder's entry by identity with its watch and reach, each sweep hold
+    /// by id, and the notice while it names the same file. A watch's
+    /// notices hold tagged enums and are not carried into.
+    fn carry(old: &Value, new: &mut Value) {
+        kept::carry(old, new);
+        if let Some((old, new)) = kept::both(old, new, "/settings") {
+            kept::carry(old, new);
+            if let Some((old, new)) = kept::both(old, new, "/mutes") {
+                kept::carry(old, new);
+            }
+        }
+        for (old, new) in kept::pairs(old, new, "/feeders", &["/identity"]) {
+            kept::carry(old, new);
+            if let Some((old, new)) = kept::both(old, new, "/watch") {
+                kept::carry(old, new);
+                if let Some((old, new)) = kept::both(old, new, "/reach") {
+                    kept::carry(old, new);
+                }
+            }
+        }
+        for (old, new) in kept::pairs(old, new, "/sweeping", &["/id"]) {
+            kept::carry(old, new);
+        }
+        store::carry_set_aside(old, new);
+    }
 }
 
 /// How this phone takes alerts.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct AlertSettings {
     /// "Instant while home": a foreground service catches up every minute.
     pub(crate) instant: bool,
@@ -88,7 +114,6 @@ pub(crate) struct AlertSettings {
 
 /// One feeder's watch.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Watched {
     /// The feeder's identity key, lowercase hex, as `wellfed.json` names it.
     pub(crate) identity: String,
@@ -739,8 +764,9 @@ mod tests {
     #[test]
     fn version_1_reads_and_writes_as_its_sample() {
         let sample = include_str!("../tests/fixtures/alerts-v1.json");
-        let read: AlertState = stored::read(sample.as_bytes()).unwrap();
-        assert_eq!(read, every_field());
+        stored::assert_every_field_written::<AlertState>(sample);
+        let read = stored::read::<AlertState>(sample.as_bytes()).unwrap();
+        assert_eq!(read, stored::Found::Read(every_field()));
 
         let dir = tempfile::tempdir().unwrap();
         stored::write(&path(dir.path()), &every_field()).unwrap();
@@ -1117,5 +1143,38 @@ mod tests {
         assert!(Sitting::take([2; 32]).is_some());
         drop(first);
         assert!(Sitting::take([1; 32]).is_some());
+    }
+
+    /// A newer minor's fields, at every struct the file nests, outlast a
+    /// change and its save.
+    #[test]
+    fn a_save_carries_what_a_newer_minor_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut grown: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/alerts-v1.json")).unwrap();
+        let places = [
+            "",
+            "/data",
+            "/data/settings",
+            "/data/settings/mutes",
+            "/data/feeders/0",
+            "/data/feeders/0/watch",
+            "/data/feeders/0/watch/reach",
+            "/data/sweeping/0",
+            "/data/set_aside",
+        ];
+        for place in places {
+            grown.pointer_mut(place).unwrap()["added"] = serde_json::json!(place);
+        }
+        std::fs::write(path(dir.path()), grown.to_string()).unwrap();
+
+        run(change(dir.path(), |state| state.sweep = !state.sweep)).unwrap();
+
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path(dir.path())).unwrap()).unwrap();
+        assert_ne!(saved["data"]["sweep"], grown["data"]["sweep"], "saved");
+        for place in places {
+            assert_eq!(saved.pointer(place).unwrap()["added"], place, "{place}");
+        }
     }
 }

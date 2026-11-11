@@ -1,0 +1,31 @@
+# The enums inside the app's kept files, by file and version: `file@version
+# enum names`, or `lenient` for one that reads a name it doesn't have. A
+# new variant an older build can't read is a new version of the file: bump
+# it, keep the old version's reader, and append the new version's lines.
+# From the public beta, a line here is never changed or removed.
+wellfed.json@1 Appearance dark light system
+wellfed.json@1 ServerRole member owner unknown viewer
+wellfed.json@1 StoreKind alerts app pending
+pending.json@1 RoutePath direct server
+pending.json@1 WriteKind calibration call cancel clock desiccant feed invite lock plans play reboot revoke settings skip update wifi
+pending.json@1 PinState sending uncertain
+pending.json@1 PinnedWrite feed other
+pending.json@1 StoreKind alerts app pending
+alerts.json@1 StoreKind alerts app pending
+alerts.json@1 NoticeKind battery_below_floor cannot_feed client_joined client_revoked desiccant_due food_likely_out food_low meal_failed meal_missed meal_no_record meal_uncertain no_clock plans_stuck power_was_out repeated_restarts rolled_back unreachable update_failed
+alerts.json@1 NoticeKey alert unreachable
+alerts.json@1 Notice alert unreachable
+alerts.json@1 Delivery dismissed due posted quiet
+alerts.json@1 Absence no_clock since
+alerts.json@1 Alert battery_below_floor cannot_feed client_joined client_revoked desiccant_due food_likely_out food_low meal_failed meal_missed meal_no_record meal_uncertain no_clock plans_stuck power_was_out repeated_restarts rolled_back update_failed
+alerts.json@1 AlertKey client feed kind meal timed
+alerts.json@1 AlertKind battery_below_floor cannot_feed client_joined client_revoked desiccant_due food_likely_out food_low meal_failed meal_missed meal_no_record meal_uncertain no_clock plans_stuck power_was_out repeated_restarts rolled_back update_failed
+alerts.json@1 AlertLevel security soon urgent
+alerts.json@1 FeedOutcome lenient
+alerts.json@1 FeedReason lenient
+alerts.json@1 Blocked lenient
+alerts.json@1 MissedReason lenient
+alerts.json@1 UpdateStop lenient
+alerts.json@1 ClientRole lenient
+alerts.json@1 EnrollPath lenient
+alerts.json@1 Source lenient

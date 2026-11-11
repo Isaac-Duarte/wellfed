@@ -4,6 +4,7 @@
 //! range is reported on the way out ([`Error::Corrupt`]).
 
 use jiff::Timestamp;
+use serde::de::DeserializeOwned;
 use wellfed_api::{Hex, Model, Source};
 
 use crate::{Error, Result};
@@ -46,7 +47,15 @@ pub(crate) fn source_columns(source: Source) -> (&'static str, Option<Vec<u8>>) 
     }
 }
 
+/// The source the two columns name. A kind this server does not know (a
+/// newer server's) reads as [`Source::Unknown`]; a known kind whose
+/// `client` column does not fit it is damage.
 pub(crate) fn source(kind: &str, client: Option<Vec<u8>>) -> Result<Source> {
+    const KNOWN: [&str; 4] = ["panel", "feeder", "schedule", "client"];
+    if !KNOWN.contains(&kind) {
+        return Ok(Source::Unknown);
+    }
+
     match (kind, client) {
         ("panel", None) => Ok(Source::Panel),
         ("feeder", None) => Ok(Source::Feeder),
@@ -73,8 +82,10 @@ pub(crate) fn from_i64(value: i64, what: &'static str) -> Result<u64> {
     u64::try_from(value).map_err(|_| Error::Corrupt(what))
 }
 
-/// A cached JSON value and the time it was read, when both are stored.
-pub(crate) fn cached<T: serde::de::DeserializeOwned>(
+/// A cached JSON value and the time it was read, when both are stored. A
+/// cache this build doesn't read (a newer build's code in it) reads as
+/// absent, as before the feeder was first read.
+pub(crate) fn cached<T: DeserializeOwned>(
     json: Option<String>,
     at: Option<i64>,
     what: &'static str,
@@ -82,6 +93,27 @@ pub(crate) fn cached<T: serde::de::DeserializeOwned>(
     let (Some(json), Some(at)) = (json, at) else {
         return Ok(None);
     };
-    let value = serde_json::from_str(&json).map_err(|_| Error::Corrupt(what))?;
+    let Some(value) = known(&json, what)? else {
+        return Ok(None);
+    };
     Ok(Some((value, timestamp(at)?)))
+}
+
+/// A stored value whose type has an unknown variant: JSON that reads but
+/// that this build's type doesn't (a code a newer build wrote, nested
+/// anywhere inside it) reads as `unknown`, as the device API reads a code
+/// it doesn't know. JSON that doesn't parse at all is damage.
+pub(crate) fn lenient<T: DeserializeOwned>(
+    json: &str,
+    unknown: T,
+    what: &'static str,
+) -> Result<T> {
+    Ok(known(json, what)?.unwrap_or(unknown))
+}
+
+/// `json` as `T`, or `None` when it parses but isn't a `T` this build
+/// reads.
+fn known<T: DeserializeOwned>(json: &str, what: &'static str) -> Result<Option<T>> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|_| Error::Corrupt(what))?;
+    Ok(serde_json::from_value(value).ok())
 }

@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use uuid::Uuid;
 use wellfed_api::{CommandKind, CommandOutcome, CommandState, FeederId, TokenId, UserId};
 
-use crate::convert::{from_i64, millis, timestamp, to_i64};
+use crate::convert::{from_i64, lenient, millis, timestamp, to_i64};
 use crate::{Error, Result, Store, Synced};
 
 /// A write about to be sent.
@@ -282,7 +282,7 @@ impl TryFrom<Raw> for CommandRow {
         let small = |value: i64, what| u32::try_from(value).map_err(|_| Error::Corrupt(what));
         let outcome = raw
             .outcome
-            .map(|json| serde_json::from_str(&json).map_err(|_| Error::Corrupt("command outcome")))
+            .map(|json| lenient(&json, CommandOutcome::Unknown, "command outcome"))
             .transpose()?;
 
         Ok(Self {

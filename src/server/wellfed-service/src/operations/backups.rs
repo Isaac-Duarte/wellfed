@@ -20,6 +20,7 @@ use jiff::fmt::strtime;
 use jiff::tz::TimeZone;
 use tracing::{info, warn};
 use wellfed_api::{Backup, BackupPage};
+use wellfed_store::copies;
 
 use crate::{Result, Service};
 
@@ -46,6 +47,8 @@ pub enum BackupError {
         #[source]
         source: io::Error,
     },
+    #[error("keep the backup")]
+    Copy(#[from] copies::CopyError),
     #[error("the backup task stopped before it finished")]
     Task,
     #[error("{0} cannot name a backup")]
@@ -183,17 +186,10 @@ fn prepare(dir: &Path, taken: Timestamp) -> Result<(String, PathBuf), BackupErro
     Ok((file, partial))
 }
 
-/// Sync the partial copy and move it into place, then prune.
+/// Move the partial copy into place ([`copies::finish`]), then prune.
 fn finish(dir: &Path, file: &str, partial: &Path, keep: NonZeroU32) -> Result<Backup, BackupError> {
-    let copy = fs::File::open(partial).map_err(io_error("open", partial))?;
-    copy.set_permissions(fs::Permissions::from_mode(0o600))
-        .map_err(io_error("protect", partial))?;
-    copy.sync_all().map_err(io_error("sync", partial))?;
     let path = dir.join(file);
-    fs::rename(partial, &path).map_err(io_error("rename", partial))?;
-    fs::File::open(dir)
-        .and_then(|dir| dir.sync_all())
-        .map_err(io_error("sync", dir))?;
+    copies::finish(partial, &path)?;
 
     // The copy just written always stays, even when the clock stepped back
     // and older names now sort after it; the rest, newest first, fill the

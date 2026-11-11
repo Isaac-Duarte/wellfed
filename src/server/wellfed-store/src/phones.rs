@@ -7,7 +7,7 @@ use wellfed_api::{
     ClientRole, FeederId, Hex, PhoneKey, RevokeAttempt, RevokeReason, Revoking, TokenId, UserId,
 };
 
-use crate::convert::{millis, timestamp};
+use crate::convert::{lenient, millis, timestamp};
 use crate::{Error, Result, Store};
 
 mod reconcile;
@@ -74,9 +74,8 @@ impl TryFrom<Raw> for PhoneKey {
                 since: timestamp(since)?,
                 last: raw
                     .attempt
-                    .map(|json| serde_json::from_str(&json))
-                    .transpose()
-                    .map_err(|_| Error::Corrupt("revoke attempt"))?,
+                    .map(|json| lenient(&json, RevokeAttempt::Unknown, "revoke attempt"))
+                    .transpose()?,
             }),
             (None, None) => None,
             _ => return Err(Error::Corrupt("revocation without its time")),

@@ -3,18 +3,20 @@
 //! lives in secure storage. Written atomically, so a crash keeps the old or
 //! the new file, never a torn one, and versioned ([`crate::stored`]): a file
 //! this build cannot read is set aside at the start, never deleted, and the
-//! app carries on with an empty one and says so.
+//! app carries on with an empty one and says so. One a newer app wrote is
+//! refused and left as it is.
 
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use wellfed_formats::kept;
 
 use crate::api::error::{BridgeError, ErrorKind};
 pub use crate::api::server_views::{KnownServer, ListedFeeder, ServerLink};
 use crate::stored::{self, Opened, Versioned};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AppStore {
     /// How feeders list this phone: 1-16 bytes. Empty until setup asks.
     pub label: String,
@@ -31,7 +33,6 @@ pub struct AppStore {
 /// app that dies before then says so again at its next start.
 #[flutter_rust_bridge::frb(ignore)]
 #[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct AppFile {
     store: AppStore,
     set_aside: Option<SetAside>,
@@ -39,6 +40,47 @@ pub(crate) struct AppFile {
 
 impl Versioned for AppFile {
     const VERSION: u32 = 1;
+
+    /// The store's types cross the bridge as they are, so what a newer
+    /// minor added to them is carried here: the store, each feeder by its
+    /// identity, the server while it is the same one (its link, its
+    /// account and each listed feeder by id), and the notice while it names
+    /// the same file.
+    fn carry(old: &Value, new: &mut Value) {
+        kept::carry(old, new);
+        if let Some((old, new)) = kept::both(old, new, "/store") {
+            kept::carry(old, new);
+            for (old, new) in kept::pairs(old, new, "/feeders", &["/identity"]) {
+                kept::carry(old, new);
+            }
+            if let Some((old, new)) = kept::both(old, new, "/server")
+                && kept::same(old, new, &["/link/url"])
+            {
+                kept::carry(old, new);
+                if let Some((old, new)) = kept::both(old, new, "/link") {
+                    kept::carry(old, new);
+                }
+                if let Some((old, new)) = kept::both(old, new, "/account")
+                    && kept::same(old, new, &["/id"])
+                {
+                    kept::carry(old, new);
+                }
+                for (old, new) in kept::pairs(old, new, "/feeders", &["/id"]) {
+                    kept::carry(old, new);
+                }
+            }
+        }
+        carry_set_aside(old, new);
+    }
+}
+
+/// The set-aside notice's unread fields, while it names the same file.
+pub(crate) fn carry_set_aside(old: &Value, new: &mut Value) {
+    if let Some((old, new)) = kept::both(old, new, "/set_aside")
+        && kept::same(old, new, &["/moved_to"])
+    {
+        kept::carry(old, new);
+    }
 }
 
 /// Which of the app's files was set aside.
@@ -58,7 +100,6 @@ pub enum StoreKind {
 /// and `pending.json` until the owner reads the notice, so a change to it
 /// changes those files' shape.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct SetAside {
     pub kind: StoreKind,
     /// Where it is kept now.
@@ -94,7 +135,6 @@ pub fn app_version() -> String {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct KnownFeeder {
     /// The feeder's identity key, hex: what NSD's `id` matches and the
     /// session pins.
@@ -194,4 +234,107 @@ pub fn identity_bytes(hex: &str) -> Result<Vec<u8>, BridgeError> {
     wellfed_session::hex::decode_array_either_case::<32>(hex.as_bytes())
         .map(|key| key.to_vec())
         .ok_or_else(|| BridgeError::new(ErrorKind::Key, "a feeder identity is 64 hex digits"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::server_views::{ServerAccount, ServerRole};
+    use crate::stored::Found;
+
+    /// Every field of the file set, each once.
+    fn every_field() -> AppFile {
+        AppFile {
+            store: AppStore {
+                label: "pixel".into(),
+                feeders: vec![KnownFeeder {
+                    identity: "ab".repeat(32),
+                    name: "kitchen".into(),
+                    address: Some("192.0.2.7:4747".into()),
+                    manual_address: Some("10.8.0.7:4747".into()),
+                }],
+                appearance: Appearance::Dark,
+                server: Some(KnownServer {
+                    link: ServerLink {
+                        url: "http://192.0.2.9:8080/".into(),
+                        user: "ada".into(),
+                        token_id: "01920000-0000-7000-8000-000000000001".into(),
+                    },
+                    feeders: vec![ListedFeeder {
+                        id: "01920000-0000-7000-8000-000000000002".into(),
+                        identity: "ab".repeat(32),
+                        name: "kitchen".into(),
+                    }],
+                    account: Some(ServerAccount {
+                        id: "01920000-0000-7000-8000-000000000003".into(),
+                        name: "ada".into(),
+                        role: ServerRole::Member,
+                        expires_ms: Some(6_000),
+                    }),
+                }),
+            },
+            set_aside: Some(SetAside {
+                kind: StoreKind::App,
+                moved_to: "/data/wellfed.json.damaged-1".into(),
+                reason: "not this file's shape".into(),
+                at_ms: 5_000,
+            }),
+        }
+    }
+
+    #[test]
+    fn version_1_reads_and_writes_as_its_sample() {
+        let sample = include_str!("../../tests/fixtures/wellfed-v1.json");
+        stored::assert_every_field_written::<AppFile>(sample);
+        let Found::Read(read) = stored::read::<AppFile>(sample.as_bytes()).unwrap() else {
+            panic!("version 1 is this build's");
+        };
+        let every = every_field();
+        assert_eq!((read.store, read.set_aside), (every.store, every.set_aside));
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        stored::write(&path, &every_field()).unwrap();
+        let written: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let sample: serde_json::Value = serde_json::from_str(sample).unwrap();
+        assert_eq!(written, sample);
+    }
+
+    /// A newer minor's fields, at every struct the file nests, outlast the
+    /// start's read and a save of the store Dart hands back.
+    #[test]
+    fn a_save_carries_what_a_newer_minor_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let mut grown: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/wellfed-v1.json")).unwrap();
+        let places = [
+            "",
+            "/data",
+            "/data/store",
+            "/data/store/feeders/0",
+            "/data/store/server",
+            "/data/store/server/link",
+            "/data/store/server/feeders/0",
+            "/data/store/server/account",
+            "/data/set_aside",
+        ];
+        for place in places {
+            grown.pointer_mut(place).unwrap()["added"] = serde_json::json!(place);
+        }
+        std::fs::write(&path, grown.to_string()).unwrap();
+        let path = path.to_str().unwrap();
+
+        let mut store = open_store(path).unwrap().store;
+        store.label = "renamed".into();
+        save_store(path, &store).unwrap();
+
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(saved["data"]["store"]["label"], "renamed");
+        for place in places {
+            assert_eq!(saved.pointer(place).unwrap()["added"], place, "{place}");
+        }
+    }
 }

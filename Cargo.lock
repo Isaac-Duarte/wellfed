@@ -6039,9 +6039,11 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "utoipa",
  "uuid",
  "wellfed-api",
  "wellfed-formats",
+ "wellfed-session",
 ]
 
 [[package]]

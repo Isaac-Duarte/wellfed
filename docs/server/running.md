@@ -100,6 +100,8 @@ Until the first server release, migrations are squashed in place, so a build can
 
 An export from the old build doesn't carry over either, since the archive's rows changed with the tables. The November 8, 2026 change added `api_revision` to the `projection_version` row (migration `0004_projections.sql`) and to the export's row of that table.
 
+To go back to an older build after an upgrade migrated the database, start the older build only on a copy from before the upgrade. Each migration run leaves one beside the database as `server.db.before-<version>-<unix ms>`. An older build that finds a database a newer one migrated opens it read-only, writes nothing, and refuses to start, naming the migration it lacks. So starting the old build by mistake loses nothing, and the newer build still opens the database.
+
 ## Settings
 
 `server.toml` in the data directory holds what is neither a secret nor a setting of the home (the home's time zone lives in the database). [`server.example.toml`](../../src/server/wellfed-server/server.example.toml) lists every key with its default and a comment: copy it and keep only the keys you change.

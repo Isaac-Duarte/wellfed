@@ -29,6 +29,8 @@ mod catch_up;
 )]
 mod frb_generated;
 pub mod install;
+#[cfg(test)]
+mod kept_enums;
 mod link;
 pub mod requests;
 pub mod restore;

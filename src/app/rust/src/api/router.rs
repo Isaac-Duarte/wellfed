@@ -90,7 +90,8 @@ pub enum RoutePath {
 
 /// What a write asks of a feeder. Stored in `pending.json` (a pin keeps
 /// its write's kind), so renaming or removing a variant changes that
-/// file's shape: bump its version and keep the reader for the one before.
+/// file's shape: bump its version and keep a reader for every one before
+/// it. A new variant an older build cannot read is a new version too.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WriteKind {
