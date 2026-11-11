@@ -28,6 +28,7 @@ mod health;
 mod home;
 mod installs;
 mod pets;
+mod plain_http;
 mod releases;
 mod samples;
 mod stock;
@@ -75,6 +76,7 @@ pub use installs::{Install, InstallFailure, InstallRequest, InstallState, Instal
 // The feeder's own values are the model's, served as they are; the HTTP
 // API adds only what the server knows (when it received them, its own ids).
 pub use pets::{NewPet, NewWeight, Pet, PetLink, PetPatch, Species, Weight, WeightPage};
+pub use plain_http::{PlainHttp, at_home};
 pub use releases::{
     AssetName, RefusedAsset, Release, ReleaseCheck, ReleasePage, ReleaseQuery, ReleaseRefusal,
     ReleaseSigner, ReleaseSource,

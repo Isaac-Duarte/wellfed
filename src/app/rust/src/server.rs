@@ -93,6 +93,7 @@ impl From<Error> for ServerError {
             .map(|wait| u32::try_from(wait.as_secs()).unwrap_or(u32::MAX));
         let kind = match &error {
             Error::Base(_) => ServerErrorKind::Address,
+            Error::PlainHttp { .. } => ServerErrorKind::PlainHttp,
             Error::Redirect { .. } => ServerErrorKind::Redirected,
             Error::Http(http) if http.is_connect() => ServerErrorKind::Unreachable,
             Error::Http(_) => ServerErrorKind::Interrupted,

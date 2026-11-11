@@ -14,15 +14,18 @@
 //! list, and a second owner invite is made only once that list, read past
 //! the router's grace, still lacks the feeder. The first invite then stays
 //! on the feeder unredeemed until it expires, as any invite nobody used.
+//! Each attempt is written down as unsettled before its invite is made and
+//! cleared once the server answers, so this holds through the app stopping
+//! while the adoption is out.
 
 use wellfed_api::{AdoptFeeder, FeederId, Hex};
 
 use crate::api::feeder::{ClientRole, FeederReply, FeederRequest};
-use crate::api::router::Adoption;
+use crate::api::router::{Adoption, NotSentReason};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::ServerFeeder;
 use crate::route::core::ServerFailure;
-use crate::route::io::{Router, now_ms};
+use crate::route::io::{Router, now_ms, nowhere};
 
 fn no_server() -> ServerError {
     ServerError::new(ServerErrorKind::Closed, "no server is configured")
@@ -69,6 +72,15 @@ impl Router {
             }
         }
 
+        // Written down before the invite is made, or nothing goes: an app
+        // that stops while the adoption is out finds it unsettled at its
+        // next start, and makes no second owner invite until the server's
+        // list, read past the grace, still lacks the feeder.
+        if self.guard_adoption(feeder).is_err() {
+            return Adoption::NoInvite {
+                reply: nowhere(NotSentReason::Store, None),
+            };
+        }
         let asked = self
             .ask(
                 feeder,
@@ -78,6 +90,8 @@ impl Router {
             )
             .await;
         let FeederReply::Invite { invite } = &asked.reply else {
+            // No invite, so nothing could be adopted.
+            self.adoption_lost(feeder, None);
             return Adoption::NoInvite { reply: asked };
         };
         let request = AdoptFeeder {
@@ -89,6 +103,7 @@ impl Router {
 
         let failed = match client.adopt(&request).await {
             Ok(adopted) => {
+                self.adoption_lost(feeder, None);
                 let adopted = ServerFeeder::from(adopted);
                 // The list routes by it from here; one that fails to read
                 // is read again by the next refresh.
@@ -109,6 +124,8 @@ impl Router {
                 None => Adoption::Unsettled { error },
             };
         }
+        // Answered: the server adopted it, or never will from this attempt.
+        self.adoption_lost(feeder, None);
         match error.kind {
             // Someone adopted it first, or a lost attempt of this phone's
             // did: the list has it, and the key is claimed there.
@@ -147,7 +164,7 @@ impl Router {
             Err(error) => return Adoption::Failed { error },
         }
         match lost_at {
-            Some(at) if now_ms().saturating_sub(at) < self.grace_ms() => {
+            Some(at) if !self.adoption_waited(feeder, at).passed(self.grace_ms()) => {
                 Adoption::Unsettled { error: unsettled() }
             }
             _ => {

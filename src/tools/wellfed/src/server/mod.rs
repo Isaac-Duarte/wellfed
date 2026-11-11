@@ -317,6 +317,7 @@ fn uncertain(error: &Error) -> bool {
         // A redirect is the address's answer before any write: it is never
         // followed, so the write reached no server.
         Error::Base(_)
+        | Error::PlainHttp { .. }
         | Error::Build(_)
         | Error::Redirect { .. }
         | Error::Stale(_)

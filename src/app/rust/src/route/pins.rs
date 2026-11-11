@@ -213,8 +213,9 @@ pub(crate) struct PinStore {
     /// The path as [`OPEN`] holds it.
     registered: PathBuf,
     /// The exclusive lock, held for as long as a store of this process has
-    /// the file, and handed to the next one that takes it over.
-    _lock: Arc<File>,
+    /// the file, and handed to the next one that takes it over. `None` only
+    /// inside [`Drop`], which lets it go under the registry's lock.
+    lock: Option<Arc<File>>,
     /// Set once a newer store in this process took the file over: this one
     /// writes nothing again.
     fence: Arc<AtomicBool>,
@@ -250,16 +251,16 @@ impl PinStore {
             .ok_or_else(|| BridgeError::new(ErrorKind::Store, "the pins path names no file"))?;
         let registered = parent.canonicalize().map_err(store_error)?.join(name);
 
-        let store = {
+        let (store, fenced) = {
             let mut open = OPEN.lock().unwrap_or_else(PoisonError::into_inner);
             let fence = Arc::new(AtomicBool::new(false));
-            let lock = match open.iter_mut().find(|held| held.path == registered) {
+            let (lock, fenced) = match open.iter_mut().find(|held| held.path == registered) {
                 Some(held) => {
                     // Fenced under the registry's lock, so the old store
                     // never writes once the new one has read the file.
                     held.fence.store(true, Ordering::SeqCst);
-                    held.fence = Arc::clone(&fence);
-                    Arc::clone(&held.lock)
+                    let fenced = std::mem::replace(&mut held.fence, Arc::clone(&fence));
+                    (Arc::clone(&held.lock), Some(fenced))
                 }
                 None => {
                     let lock = Arc::new(lock_file(path)?);
@@ -268,18 +269,41 @@ impl PinStore {
                         lock: Arc::clone(&lock),
                         fence: Arc::clone(&fence),
                     });
-                    lock
+                    (lock, None)
                 }
             };
-            Self {
+            let store = Self {
                 path: path.to_owned(),
                 registered,
-                _lock: lock,
+                lock: Some(lock),
                 fence,
-            }
+            };
+            (store, fenced)
         };
-        let book = store.load()?;
-        Ok((store, book))
+
+        match store.load() {
+            Ok(book) => Ok((store, book)),
+            Err(error) => {
+                // This open never read the file, so the store it took the
+                // file from writes again, as if it had never been asked.
+                if let Some(fenced) = fenced {
+                    store.hand_back(fenced);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Give the file back to the store this one took it from, `fenced`.
+    fn hand_back(&self, fenced: Arc<AtomicBool>) {
+        let mut open = OPEN.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(held) = open
+            .iter_mut()
+            .find(|held| held.path == self.registered && Arc::ptr_eq(&held.fence, &self.fence))
+        {
+            fenced.store(false, Ordering::SeqCst);
+            held.fence = fenced;
+        }
     }
 
     /// What the file holds. One that does not read is set aside and
@@ -327,9 +351,19 @@ impl PinStore {
 
 impl Drop for PinStore {
     fn drop(&mut self) {
-        // A store that was taken over leaves the file to the one that took it.
+        // The file stays registered, its lock with it, while any store of
+        // this process still holds the lock, whichever was dropped first:
+        // a fenced store still alive keeps the lock taken, and an open that
+        // found no entry would be refused by its own process. The next
+        // open takes the entry over, as from a live store. This store's
+        // reference goes under the registry's lock, so of stores dropped
+        // at once the last always sees itself last and lets the lock go.
         let mut open = OPEN.lock().unwrap_or_else(PoisonError::into_inner);
-        open.retain(|held| held.path != self.registered || !Arc::ptr_eq(&held.fence, &self.fence));
+        drop(self.lock.take());
+        open.retain(|held| {
+            // Only the registry's reference is left: no store holds it.
+            held.path != self.registered || Arc::strong_count(&held.lock) > 1
+        });
     }
 }
 
@@ -458,6 +492,75 @@ mod tests {
         new.save(&loaded).unwrap();
         drop(new);
         assert!(PinStore::open(&path).is_ok(), "free once the last closes");
+    }
+
+    /// A store dropped while the one it fenced lives on leaves the file
+    /// open to the next store of this process, and the last one dropped
+    /// lets the lock go.
+    #[test]
+    fn dropping_the_newest_store_first_never_blocks_the_next_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+
+        let (old, _) = PinStore::open(&path).unwrap();
+        let (new, _) = PinStore::open(&path).unwrap();
+        drop(new);
+        let (next, _) = PinStore::open(&path).expect("a fenced store left alive blocks nothing");
+        assert!(next.save(&Book::default()).is_ok());
+        assert!(old.save(&Book::default()).is_err(), "still fenced");
+
+        drop(next);
+        drop(old);
+        let foreign = lock_file(&path).expect("the last store let the lock go");
+        drop(foreign);
+    }
+
+    /// Two stores dropped at once on two threads: one of them is last, and
+    /// it lets the lock go.
+    #[test]
+    fn stores_dropped_at_once_let_the_lock_go() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+        for _ in 0..200 {
+            let (old, _) = PinStore::open(&path).unwrap();
+            let (new, _) = PinStore::open(&path).unwrap();
+            let start = Arc::new(std::sync::Barrier::new(2));
+            let other = Arc::clone(&start);
+            let dropping = std::thread::spawn(move || {
+                other.wait();
+                drop(old);
+            });
+            start.wait();
+            drop(new);
+            dropping.join().unwrap();
+
+            let foreign = lock_file(&path).expect("the last store let the lock go");
+            drop(foreign);
+        }
+    }
+
+    /// An open whose read fails hands the file back to the store it took
+    /// it from, and a later open still takes it over.
+    #[test]
+    fn an_open_that_cannot_read_the_file_hands_it_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+        let (old, _) = PinStore::open(&path).unwrap();
+        old.save(&Book::default()).unwrap();
+
+        // An IO error, not a file that doesn't read: a directory.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(PinStore::open(&path).is_err());
+        std::fs::remove_dir(&path).unwrap();
+        assert!(
+            old.save(&Book::default()).is_ok(),
+            "the old store writes again"
+        );
+
+        let (next, _) = PinStore::open(&path).expect("taken over");
+        assert!(old.save(&Book::default()).is_err());
+        assert!(next.save(&Book::default()).is_ok());
     }
 
     #[test]

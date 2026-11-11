@@ -6,18 +6,10 @@
 //! plain-`http://` server address does.
 
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use reqwest::Url;
-
-/// Whether a plain `http://` URL to a host off the home network is taken.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum PlainHttp {
-    #[default]
-    Refused,
-    /// The owner said so (`webhook.allow_plain_http`).
-    Allowed,
-}
+pub use wellfed_api::PlainHttp;
+use wellfed_api::at_home;
 
 /// A checked webhook URL. It never prints whole, since its path may be a
 /// secret; only its host does.
@@ -71,33 +63,6 @@ impl fmt::Debug for Target {
             .field("host", &self.host())
             .finish_non_exhaustive()
     }
-}
-
-/// Whether `host` is this computer or on the home network: a loopback,
-/// private or link-local address, `localhost`, or an mDNS `.local` name,
-/// which resolves only on the local link.
-fn at_home(host: &str) -> bool {
-    let host = host.trim_start_matches('[').trim_end_matches(']');
-    let lower = host.to_ascii_lowercase();
-    if lower == "localhost" || lower.ends_with(".local") {
-        return true;
-    }
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(address)) => v4_at_home(address),
-        Ok(IpAddr::V6(address)) => match address.to_ipv4_mapped() {
-            Some(mapped) => v4_at_home(mapped),
-            None => v6_at_home(address),
-        },
-        Err(_) => false,
-    }
-}
-
-const fn v4_at_home(address: Ipv4Addr) -> bool {
-    address.is_loopback() || address.is_private() || address.is_link_local()
-}
-
-const fn v6_at_home(address: Ipv6Addr) -> bool {
-    address.is_loopback() || address.is_unique_local() || address.is_unicast_link_local()
 }
 
 #[cfg(test)]
