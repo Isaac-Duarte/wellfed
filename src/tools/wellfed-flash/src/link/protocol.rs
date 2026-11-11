@@ -1221,9 +1221,11 @@ enum Echo {
     /// The build pressed something else: bytes were lost into another
     /// valid line.
     Other { echoed: String },
-    /// Only refused lines: the press line lost bytes.
+    /// Only refused lines, past the poison's own: the press line lost
+    /// bytes.
     Refused,
-    /// No echo at all: not a virtual-panel build, or not running.
+    /// No echo but the poison's refusal at most: not a virtual-panel build,
+    /// not running, or the press line lost whole.
     Silent,
 }
 
@@ -1259,7 +1261,13 @@ impl Echo {
                 released: lines[at..].iter().any(|line| line.starts_with(&released)),
             };
         }
-        if lines.contains(&"PLKEY1 virtual refused") {
+        // The poison ends a line of its own, which the build refuses before
+        // the press line: only a refusal past that one is the press's.
+        let refusals = lines
+            .iter()
+            .filter(|line| **line == "PLKEY1 virtual refused")
+            .count();
+        if refusals > 1 {
             return Self::Refused;
         }
         Self::Silent
@@ -1366,6 +1374,10 @@ mod press_tests {
 
         fn write(&mut self, data: &[u8]) -> io::Result<usize> {
             self.sent.extend_from_slice(data);
+            // The build refuses the poison's line as it ends.
+            if self.sent.ends_with(b"!\n") {
+                self.reply.extend_from_slice(b"PLKEY1 virtual refused\r\n");
+            }
             if self.sent.ends_with(b"150\n") {
                 self.reply.extend_from_slice(self.answer);
             }
@@ -1515,6 +1527,24 @@ mod press_tests {
                 String::from_utf8_lossy(partial)
             );
         }
+    }
+
+    /// The poison's own refused line is no answer to the press: a press the
+    /// build dropped, with only that line back, is unanswered, and only a
+    /// second refusal is the press line's.
+    #[test]
+    fn the_poison_s_refusal_is_not_the_press_s() {
+        assert_eq!(
+            Echo::read(b"PLKEY1 virtual refused\r\n", DISPENSE),
+            Echo::Silent
+        );
+        assert_eq!(
+            Echo::read(
+                b"PLKEY1 virtual refused\r\nPLKEY1 virtual refused\r\n",
+                DISPENSE
+            ),
+            Echo::Refused
+        );
     }
 
     /// Another press echoed before this one's is a mismatch, even when this
