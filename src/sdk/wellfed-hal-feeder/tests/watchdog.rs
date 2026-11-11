@@ -10,7 +10,7 @@ use common::*;
 use wellfed_core::flash_coord::{FlashParty, FlashReply};
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::supervision::watchdog::{
-    Watchdog, WatchdogConfig, WatchdogFault, force_enable, force_reset,
+    ForcedReset, Forcing, Watchdog, WatchdogConfig, WatchdogFault, force_reset,
 };
 use wellfed_hal_feeder::board::Board;
 
@@ -315,7 +315,7 @@ fn a_watchdog_that_will_not_open_still_resets() {
     hw(|h| h.watchdog_vendor |= sdk::WDG_BIT_ENABLE);
     assert!(!w.open(&CONFIG) && !w.claimed);
 
-    assert!(force_reset(&CONFIG));
+    assert_eq!(force_reset(&CONFIG), Some(true));
     assert!(hw(|h| h.watchdog_period) == 4032 && hw(|h| h.watchdog_ticks) == 0);
     assert!(sdk::hs_platform_para() & sdk::HS_WDTRST_OPT != 0);
     assert!(sdk::lp_km0_ctrl() & sdk::LP_WDT_RESET_HS_ALL != 0);
@@ -336,39 +336,99 @@ fn a_watchdog_that_will_not_open_still_resets() {
         h.watchdog_enable_corrupt = false;
         h.watchdog_disable_blocked = false;
     });
-    assert!(force_reset(&CONFIG));
+    assert_eq!(force_reset(&CONFIG), Some(true));
     fake::watchdog_advance(4032);
     assert_eq!(hw(|h| h.watchdog_reset_requests), 1);
 
     // An invalid configuration touches nothing.
     fake::reset_hardware();
-    assert!(!force_reset(&WatchdogConfig {
-        divisor: 0,
-        ..CONFIG
-    }));
+    assert_eq!(
+        force_reset(&WatchdogConfig {
+            divisor: 0,
+            ..CONFIG
+        }),
+        None
+    );
     assert!(hw(|h| h.watchdog_init_calls) == 0 && sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE == 0);
 }
 
-/// An enable that does not read back while the counter runs: the forced
-/// reset reports it did not take, and its retries only enable the counter
-/// again, never programming it, so its count runs on and the reset still
-/// comes within the configured expiry.
+/// An enable that does not read back while the counter runs, as a halt
+/// polls it: the first poll tries the supervision watchdog, which fails and
+/// disables the counter, then programs the forced reset; later polls never
+/// open the watchdog again (opening would program the counter afresh, a
+/// failed open would disable it), so the count runs on and the reset comes
+/// within the configured expiry.
 #[test]
 fn a_forced_reset_whose_enable_does_not_read_back_still_resets() {
     let mut w = fresh();
-    hw(|h| h.watchdog_vendor |= sdk::WDG_BIT_ENABLE);
-    assert!(!w.open(&CONFIG));
     hw(|h| h.watchdog_enable_hidden = true);
+    let forced = ForcedReset::new();
+    let mut opens = 0;
 
-    assert!(!force_reset(&CONFIG));
-    assert_eq!(hw(|h| h.watchdog_init_calls), 1);
-    // Retries a quarter of the expiry apart, as the feeder task's would be.
+    let mut now = 0;
+    let mut open = |w: &mut Watchdog| {
+        opens += 1;
+        w.open(&CONFIG)
+    };
+    assert_eq!(
+        forced.poll(&CONFIG, now, || open(&mut w)),
+        Forcing::Started { enabled: false }
+    );
+    assert_eq!(
+        hw(|h| h.watchdog_init_calls),
+        2,
+        "the open's, then the force's"
+    );
+    // Polls a quarter of the expiry apart, as a halt's are against it.
     for _ in 0..3 {
         fake::watchdog_advance(1000);
-        assert!(!force_enable());
+        now += 31;
+        assert_eq!(forced.poll(&CONFIG, now, || open(&mut w)), Forcing::Waiting);
         assert_eq!(hw(|h| h.watchdog_reset_requests), 0);
     }
     fake::watchdog_advance(1032);
     assert_eq!(hw(|h| h.watchdog_reset_requests), 1);
-    assert_eq!(hw(|h| h.watchdog_init_calls), 1, "programmed once");
+    assert_eq!(hw(|h| h.watchdog_init_calls), 2, "programmed once");
+    assert_eq!(opens, 1, "the watchdog opened once");
+}
+
+/// A counter that stopped is enabled again, but only once a whole expiry
+/// has passed with no reset, so a re-enable that restarts the count on the
+/// chip can never hold a running count's reset off.
+#[test]
+fn a_forced_reset_enables_again_only_after_a_whole_expiry() {
+    let _w = fresh();
+    let forced = ForcedReset::new();
+    assert_eq!(
+        forced.poll(&CONFIG, 1_000, || false),
+        Forcing::Started { enabled: true }
+    );
+    assert!(forced.started());
+    hw(|h| h.watchdog_vendor &= !sdk::WDG_BIT_ENABLE); // The count stops.
+
+    let expiry = CONFIG.max_expiry_ms;
+    assert_eq!(
+        forced.poll(&CONFIG, 1_000 + expiry - 1, || true),
+        Forcing::Waiting
+    );
+    assert_eq!(sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE, 0);
+    assert_eq!(
+        forced.poll(&CONFIG, 1_000 + expiry, || true),
+        Forcing::Enabled { enabled: true }
+    );
+    assert_eq!(hw(|h| h.watchdog_init_calls), 1, "enabled, not programmed");
+    fake::watchdog_advance(4032);
+    assert_eq!(hw(|h| h.watchdog_reset_requests), 1);
+
+    // Nothing programmed (an invalid configuration) has not started.
+    let _w = fresh();
+    let forced = ForcedReset::new();
+    let invalid = WatchdogConfig {
+        divisor: 0,
+        ..CONFIG
+    };
+    assert_eq!(forced.poll(&invalid, 0, || false), Forcing::Waiting);
+    assert!(!forced.started());
+    // A watchdog that opens ends it at once.
+    assert_eq!(forced.poll(&CONFIG, 0, || true), Forcing::Opened);
 }

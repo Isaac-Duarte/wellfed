@@ -4,6 +4,7 @@
 //! Caller-owned fixed-address object, task context with interrupts enabled.
 
 use core::ptr;
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use wellfed_core::clock::tick::TickClock;
 use wellfed_core::flash_coord::FlashCoord;
@@ -103,12 +104,12 @@ impl WatchdogConfig {
 /// (a trial gives way, a storm holds) rather than the boot running on with
 /// no watchdog, where reboots, the trial deadline, flash arming and updates
 /// would each wait for a reset that never comes. Whether the counter reads
-/// enabled afterwards. The caller must never refresh it, and calls this
-/// once: programming the counter again restarts its count, so a retry is
-/// [`force_enable`].
-pub fn force_reset(config: &WatchdogConfig) -> bool {
+/// enabled afterwards; `None` when nothing was programmed (an invalid
+/// configuration). The caller must never refresh it, and programs it once:
+/// programming the counter again restarts its count ([`ForcedReset`]).
+pub fn force_reset(config: &WatchdogConfig) -> Option<bool> {
     if !config.valid() {
-        return false;
+        return None;
     }
 
     let _guard = IrqGuard::lock();
@@ -119,17 +120,91 @@ pub fn force_reset(config: &WatchdogConfig) -> bool {
         sdk::wdg_init(u32::from(config.count_id), u32::from(config.divisor));
         sdk::wdg_cmd(true);
     }
-    sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE != 0
+    Some(sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE != 0)
 }
 
 /// Enable the counter [`force_reset`] programmed again, without
-/// programming it: its count runs on, so a retry never postpones the
-/// reset. Whether it reads enabled.
+/// programming it. Whether it reads enabled.
 pub fn force_enable() -> bool {
     let _guard = IrqGuard::lock();
     // SAFETY: as for `force_reset`, whose counter this is.
     unsafe { sdk::wdg_cmd(true) };
     sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE != 0
+}
+
+/// A boot that must reset, polled until the reset comes: the feeder task
+/// whose watchdog would not open, a halt that has run its time, or a
+/// halted start with no task to poll from. A static, shared by whichever
+/// of them runs this boot (never two at once).
+#[derive(Debug, Default)]
+pub struct ForcedReset {
+    started: AtomicBool,
+    /// Uptime when the counter was programmed or last enabled again.
+    since_ms: AtomicU32,
+}
+
+/// What one [`ForcedReset::poll`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Forcing {
+    /// The supervision watchdog opened: left unfed, it resets the platform.
+    Opened,
+    /// The counter was programmed and enabled; whether it reads enabled.
+    Started { enabled: bool },
+    /// Waiting for the reset; poll again.
+    Waiting,
+    /// A whole expiry passed with no reset, so the counter was enabled
+    /// again; whether it reads enabled.
+    Enabled { enabled: bool },
+}
+
+impl ForcedReset {
+    pub const fn new() -> Self {
+        Self {
+            started: AtomicBool::new(false),
+            since_ms: AtomicU32::new(0),
+        }
+    }
+
+    /// Whether the forced path has programmed the counter.
+    pub fn started(&self) -> bool {
+        self.started.load(Ordering::Acquire)
+    }
+
+    /// One poll at uptime `now_ms`. Until the counter is programmed, `open`
+    /// (the supervision watchdog's) is tried first; after, never again:
+    /// opening programs the counter afresh and a failed open disables it,
+    /// so each would hold the reset off for good. The counter is
+    /// programmed once, and enabled again only once a whole
+    /// `max_expiry_ms` has passed with no reset: whether enabling restarts
+    /// the count on the chip is not known, and by then the count has
+    /// evidently stopped.
+    pub fn poll(
+        &self,
+        config: &WatchdogConfig,
+        now_ms: u32,
+        open: impl FnOnce() -> bool,
+    ) -> Forcing {
+        if !self.started() {
+            if open() {
+                return Forcing::Opened;
+            }
+            let Some(enabled) = force_reset(config) else {
+                return Forcing::Waiting;
+            };
+            self.since_ms.store(now_ms, Ordering::Relaxed);
+            self.started.store(true, Ordering::Release);
+            return Forcing::Started { enabled };
+        }
+
+        let since = self.since_ms.load(Ordering::Relaxed);
+        if now_ms.wrapping_sub(since) < config.max_expiry_ms {
+            return Forcing::Waiting;
+        }
+        self.since_ms.store(now_ms, Ordering::Relaxed);
+        Forcing::Enabled {
+            enabled: force_enable(),
+        }
+    }
 }
 
 fn context() -> bool {
