@@ -196,6 +196,17 @@ impl State {
         self.link(feeder).is_some_and(|link| link.is_open())
     }
 
+    /// Whether a write whose attempt on `path` ended `ended` goes once more
+    /// on the phone's own session, by what the phone may use now: while the
+    /// server call was out, the server may have refused the token or
+    /// narrowed the account, or the owner removed it, and an access read
+    /// before the call would still allow the phone's own key.
+    fn falls_back(&self, feeder: &str, path: RoutePath, ended: Ended, fell_back: bool) -> bool {
+        self.access(feeder).is_some_and(|access| {
+            core::fallback(path, ended, access, self.direct_open(feeder), fell_back).is_some()
+        })
+    }
+
     fn link(&self, feeder: &str) -> Option<Arc<DirectLink>> {
         self.feeders.get(feeder)?.direct.clone()
     }
@@ -735,7 +746,7 @@ impl Router {
         };
         let now = now_ms();
 
-        let (access, mut path) = {
+        let mut path = {
             let mut state = self.state();
             let Some(access) = state.access(feeder) else {
                 return not_sent(NotSentReason::NoPath, None);
@@ -759,7 +770,7 @@ impl Router {
                 state.book.settle(key);
                 return not_sent(NotSentReason::Store, None);
             }
-            (access, path)
+            path
         };
 
         let mut fell_back = false;
@@ -770,8 +781,7 @@ impl Router {
             };
 
             let mut state = self.state();
-            let direct_open = state.direct_open(feeder);
-            if core::fallback(path, tried.ended(), access, direct_open, fell_back).is_some() {
+            if state.falls_back(feeder, path, tried.ended(), fell_back) {
                 let mark = state.link(feeder).and_then(|link| link.newest());
                 if state.book.moved(key, mark, now_ms()) {
                     if state.save().is_ok() {
@@ -1002,7 +1012,10 @@ impl Router {
                     let failure = error.failure();
                     state.heard_failure(failure, now_ms());
                     let elsewhere = core::server_ended(failure) == Ended::Unsent;
-                    if !(elsewhere && access == Access::Both && state.direct_open(feeder)) {
+                    // What the phone may use now, not before the call: the
+                    // server may have narrowed the account meanwhile.
+                    let own = state.access(feeder) == Some(Access::Both);
+                    if !(elsewhere && own && state.direct_open(feeder)) {
                         let reply = calls::refusal(&error)
                             .map_or(FeederReply::NotSent, |refusal| FeederReply::Refused {
                                 refusal,
@@ -1037,7 +1050,7 @@ impl Router {
         };
         let now = now_ms();
 
-        let (access, mut path) = {
+        let mut path = {
             let mut state = self.state();
             let Some(access) = state.access(feeder) else {
                 return nowhere(NotSentReason::NoPath, None);
@@ -1050,7 +1063,7 @@ impl Router {
                 state.book.settle(key);
                 return nowhere(NotSentReason::Store, None);
             }
-            (access, path)
+            path
         };
 
         let mut call = Some(call);
@@ -1072,8 +1085,7 @@ impl Router {
             };
 
             let mut state = self.state();
-            let direct_open = state.direct_open(feeder);
-            if core::fallback(path, tried.ended, access, direct_open, fell_back).is_some()
+            if state.falls_back(feeder, path, tried.ended, fell_back)
                 && state.book.moved(key, None, now_ms())
             {
                 if state.save().is_ok() {

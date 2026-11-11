@@ -567,6 +567,49 @@ fn a_feeder_the_server_reports_offline_is_fed_direct_and_the_server_sends_nothin
     });
 }
 
+/// The phone's own key is used by what the phone may use when the server's
+/// answer comes, not when the feed went: a token refused while the call
+/// was out closes the fallback, though the server never sent the feed.
+#[test]
+fn a_token_refused_while_the_server_call_is_out_never_falls_back_to_the_own_key() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let link = Relay::start(sim.address).await;
+        let (server, owner) = started().await;
+        adopt(&owner, &sim, link.address).await;
+        let front = Relay::start(server.address()).await;
+        let phone = Phone::new();
+        let session = phone.log_in_as_ada(&server).await;
+        let _fronted = phone
+            .through(&session, format!("http://{}", front.address))
+            .await;
+        let _direct = phone.open(&sim, sim.address).await;
+        let kitchen = identity(&sim);
+
+        // The server has lost the feeder, so it answers `feeder_offline`
+        // without sending; the router still believes it online.
+        link.pause();
+        link.cut();
+        linked(&owner, false).await;
+        front.hold_answers();
+        let (fed, ()) = tokio::join!(phone.router.feed(kitchen.clone(), 1), async {
+            tokio::time::sleep(GIVE_UP / 4).await;
+            phone.router.refuse_server();
+            front.resume();
+        });
+
+        assert!(
+            matches!(fed, RoutedFeed::NotSent { .. }),
+            "nothing goes on the phone's own key: {fed:?}"
+        );
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(feeder::feeds(&flash), 0);
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
 #[test]
 fn a_direct_feed_left_uncertain_is_never_resent_through_the_server_once_it_is_back() {
     local(async {
