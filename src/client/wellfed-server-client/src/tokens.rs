@@ -1,7 +1,7 @@
 //! Bearer tokens: the caller's own, or anyone's for an owner.
 
 use reqwest::{Method, StatusCode};
-use wellfed_api::{CreatedToken, NewToken, Token, TokenId};
+use wellfed_api::{CreatedToken, LogOut, NewToken, Token, TokenId};
 
 use crate::{Client, Error, decode, expect_status};
 
@@ -31,11 +31,13 @@ impl Client {
         Ok(())
     }
 
-    /// Log a phone out from a login session: revoke its token `id` while its
-    /// keys on the feeders stay the account's.
-    pub async fn log_out_token(&self, id: TokenId) -> Result<(), Error> {
+    /// Log a phone out from a login session: revoke its token `id` while the
+    /// phone's own keys, `request.keys`, and the keys they invited stay the
+    /// account's.
+    pub async fn log_out_token(&self, id: TokenId, request: &LogOut) -> Result<(), Error> {
         let response = self
             .api(Method::POST, &format!("/tokens/{id}/logout"))
+            .json(request)
             .send()
             .await?;
         expect_status(response, StatusCode::NO_CONTENT).await?;

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/server_ports.dart';
+import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
@@ -55,9 +56,13 @@ class FakeServerSession with FakeOpaque implements ServerSession {
   /// The password each logout carried.
   final logoutPasswords = <String>[];
 
+  /// The key each logout named as the phone's own.
+  final logoutKeys = <ClientKey>[];
+
   @override
-  Future<void> logout({required String password}) async {
+  Future<void> logout({required String password, required ClientKey key}) async {
     logoutPasswords.add(password);
+    logoutKeys.add(key);
     logouts++;
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (logoutFails case final error?) throw error;
@@ -270,4 +275,11 @@ class FakeHome {
     if (fails case final error?) throw error;
     return made();
   }
+}
+
+/// This phone's key, as the screens hand it on: the tests only check it is
+/// the one passed.
+class FakeClientKey with FakeOpaque implements ClientKey {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

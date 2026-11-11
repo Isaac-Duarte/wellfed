@@ -7,6 +7,7 @@
 //! nothing; revoking the token from elsewhere revokes both.
 
 use wellfed_api::{AdoptFeeder, ClientOwner, ClientRole, FeederId, Hex};
+use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::server::ServerSession;
 use wellfed_app_bridge::api::server_error::ServerErrorKind;
 use wellfed_server_client::{Auth, Client};
@@ -14,6 +15,11 @@ use wellfed_server_testkit::{TestServer, ada_login, ada_setup, feeder, local, un
 
 const OWN: [u8; 32] = [1; 32];
 const SITTER: [u8; 32] = [2; 32];
+
+/// This phone's own key.
+fn own() -> ClientKey {
+    ClientKey::restore(OWN.to_vec()).unwrap()
+}
 
 /// The server with a feeder its owner adopted, the owner's client, and
 /// the phone logged in, holding its own key and the sitter's it invited.
@@ -63,12 +69,15 @@ fn a_logout_keeps_the_phones_key_and_its_sitters() {
         let sim = feeder::start().await;
         let (server, owner, kitchen, session) = phone_with_a_sitter(&sim).await;
 
-        let wrong = session.logout("not the password".into()).await.unwrap_err();
+        let wrong = session
+            .logout("not the password".into(), &own())
+            .await
+            .unwrap_err();
         assert_eq!(wrong.kind, ServerErrorKind::BadCredentials);
         assert!(session.account().await.is_ok(), "the token still holds");
 
         let ada = owner.session().await.unwrap().id;
-        session.logout(ada_login().password).await.unwrap();
+        session.logout(ada_login().password, &own()).await.unwrap();
         let clients = owner.clients(kitchen).await.unwrap();
         for secret in [OWN, SITTER] {
             let key = feeder::phone_key(secret);

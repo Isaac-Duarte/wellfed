@@ -388,7 +388,8 @@ async fn a_token_cannot_set_a_password_or_add_an_account() {
         expires: None,
     };
     session_required("new account", phone.create_user(&new).await);
-    let logout = phone.log_out_token(created.token.id).await;
+    let own = wellfed_api::LogOut { keys: Vec::new() };
+    let logout = phone.log_out_token(created.token.id, &own).await;
     session_required("logout keeping its keys", logout.map(|()| ada.clone()));
 
     // Nothing changed: the old passwords still log in, and no account was

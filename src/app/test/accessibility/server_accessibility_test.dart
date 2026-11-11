@@ -57,7 +57,7 @@ void main() {
         final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter());
         addTearDown(server.dispose);
         await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
-        await _show(tester, AccountScreen(server: server, household: () {}), brightness);
+        await _show(tester, AccountScreen(server: server, phoneKey: FakeClientKey(), household: () {}), brightness);
         await expectAccessible(tester);
       });
 

@@ -8,8 +8,7 @@
 //! the server read before it knew the inviting key is not attributed, and
 //! a chain the feeder cut while the server was away still goes whole. A
 //! key an owner revokes on the LAN, without the server, takes its own too.
-//! A phone that logs out from a login session keeps both, still its
-//! account's, so the account's removal revokes them.
+//! A phone's logout is `logout.rs`'s.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,12 +17,11 @@ use futures_util::TryStreamExt;
 use wellfed_api::{
     AdoptFeeder, ClientOwner, ClientRole, Connection as Link, CoreEvent, EventBody, EventQuery,
     ExportFormat, FeederId, Hex, NewPhoneInvite, NewToken, NewUser, PhoneClaim, Role, User,
-    UserPatch,
 };
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::fixed::ManualClock;
 use wellfed_server_testkit::{TestService, ada_setup, local, until};
-use wellfed_service::{AccountError, Caller, ClientError, Error, Service};
+use wellfed_service::{Caller, ClientError, Error, Service};
 
 /// A phone's secret key, by number.
 fn secret(n: u8) -> [u8; 32] {
@@ -373,123 +371,6 @@ fn a_key_revoked_on_the_lan_takes_its_invitees() {
         let held = feeder::client_keys(&sim).await;
         assert!(held.contains(&key(60)) && held.contains(&key(61)));
         attributed(service, id, &phone, 61).await;
-        server.shutdown().await;
-        sim.stop().await;
-    });
-}
-
-/// Bob logs his phone out from a login session.
-async fn log_out(service: &Service, bob: &Caller) {
-    let login = Caller {
-        user: bob.user.clone(),
-        token: None,
-    };
-    let token = bob.token.unwrap();
-    service.log_out_token(&login, token).await.unwrap();
-}
-
-/// Until phone `n` is listed as `user`'s, with no token.
-async fn tokenless(service: &Service, id: FeederId, user: &User, n: u8) {
-    let owner = owner_of(service, id, n).await;
-    assert!(
-        matches!(&owner, Some(ClientOwner::Phone { user: whose, token: None, revoking: None }) if *whose == user.id),
-        "{n}: {owner:?}"
-    );
-}
-
-/// A phone that logs out from a login session keeps its key and the key it
-/// invited, both still the account's with no token: revoking another of
-/// the account's tokens leaves them, and demoting the account revokes them.
-/// The token alone cannot ask, nor can another account's session.
-#[test]
-fn a_phone_that_logs_out_keeps_its_keys_under_the_account() {
-    local(async {
-        let (sim, server, id) = started().await;
-        let service = server.service();
-        let (ada, bob) = ada_and_bob(service).await;
-        join(service, &sim, id, &bob, 70).await;
-        invite_directly(&sim, 70, 71).await;
-        attributed(service, id, &bob, 71).await;
-        let token = bob.token.unwrap();
-
-        let by_token = service.log_out_token(&bob, token).await;
-        assert!(
-            matches!(by_token, Err(Error::Account(AccountError::SessionRequired))),
-            "{by_token:?}"
-        );
-        let by_another = service.log_out_token(&ada, token).await;
-        assert!(
-            matches!(by_another, Err(Error::NotFound(_))),
-            "{by_another:?}"
-        );
-
-        log_out(service, &bob).await;
-        for n in [70, 71] {
-            tokenless(service, id, &bob.user, n).await;
-        }
-        let other = token_of(service, bob.user.clone()).await;
-        service
-            .revoke_token(&other, other.token.unwrap())
-            .await
-            .unwrap();
-        for n in [70, 71] {
-            tokenless(service, id, &bob.user, n).await;
-        }
-
-        let viewer = UserPatch {
-            role: Some(Role::Viewer),
-            ..UserPatch::default()
-        };
-        service
-            .update_user(&ada, None, bob.user.id, viewer)
-            .await
-            .unwrap();
-        revoked(service, &sim, &[70, 71]).await;
-        server.shutdown().await;
-        sim.stop().await;
-    });
-}
-
-/// Deleting an account revokes the keys a logout left it.
-#[test]
-fn deleting_the_account_revokes_the_keys_a_logout_left_it() {
-    local(async {
-        let (sim, server, id) = started().await;
-        let service = server.service();
-        let (ada, bob) = ada_and_bob(service).await;
-        join(service, &sim, id, &bob, 74).await;
-        invite_directly(&sim, 74, 75).await;
-        attributed(service, id, &bob, 75).await;
-
-        log_out(service, &bob).await;
-        tokenless(service, id, &bob.user, 74).await;
-        service.delete_user(&ada, bob.user.id).await.unwrap();
-        revoked(service, &sim, &[74, 75]).await;
-        server.shutdown().await;
-        sim.stop().await;
-    });
-}
-
-/// A token that logs itself out without a login takes the cascading path:
-/// its phone key and the key that invited go, and neither is kept.
-#[test]
-fn a_bare_tokens_logout_revokes_its_keys_and_keeps_none() {
-    local(async {
-        let (sim, server, id) = started().await;
-        let service = server.service();
-        let (_ada, bob) = ada_and_bob(service).await;
-        join(service, &sim, id, &bob, 80).await;
-        invite_directly(&sim, 80, 81).await;
-        attributed(service, id, &bob, 81).await;
-        let token = bob.token.unwrap();
-
-        let kept = service.log_out_token(&bob, token).await;
-        assert!(
-            matches!(kept, Err(Error::Account(AccountError::SessionRequired))),
-            "{kept:?}"
-        );
-        service.revoke_token(&bob, token).await.unwrap();
-        revoked(service, &sim, &[80, 81]).await;
         server.shutdown().await;
         sim.stop().await;
     });

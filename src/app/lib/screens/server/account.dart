@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:wellfed/screens/server/server_words.dart';
+import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/state/server/log_out.dart';
@@ -24,9 +25,12 @@ String get logOutWords =>
 /// The account this phone is logged in to the home server as: who, and the
 /// way out.
 class AccountScreen extends StatelessWidget {
-  const AccountScreen({super.key, required this.server, this.household, this.logInAgain});
+  const AccountScreen({super.key, required this.server, required this.phoneKey, this.household, this.logInAgain});
 
   final HomeServer server;
+
+  /// This phone's own key, which a logout names to the server.
+  final ClientKey phoneKey;
 
   /// Opens the home's pets and foods.
   final VoidCallback? household;
@@ -37,7 +41,7 @@ class AccountScreen extends StatelessWidget {
   Future<void> _logOut(BuildContext context) async {
     final String? password = await showDialog<String>(context: context, builder: (_) => const _LogOutDialog());
     if (password == null) return;
-    final LogOutOutcome outcome = await server.logOut(password);
+    final LogOutOutcome outcome = await server.logOut(password, phoneKey);
     if (!context.mounted) return;
     final String? words = switch (outcome) {
       LogOutRefused(:final ServerError error) => serverErrorWords(error),

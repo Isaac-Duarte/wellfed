@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import 'feeder.dart';
+import 'keys.dart';
 import 'model.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
@@ -122,15 +123,15 @@ abstract class ServerSession implements RustOpaqueInterface {
     phone: phone,
   );
 
-  /// Log this phone out: revoke its token on the server while its keys on
-  /// the feeders, and the keys they invited, stay the account's, so it
-  /// still reaches them directly and the account's removal still revokes
-  /// them. The server takes that only from a login, so a
+  /// Log this phone out: revoke its token on the server while its own key
+  /// on the feeders (`key`), and the keys it invited, stay the account's,
+  /// so it still reaches them directly and the account's removal still
+  /// revokes them. Any other key under the token goes with it. The server takes that only from a login, so a
   /// leaked token cannot keep the keys it enrolled: `password` is the
   /// account's, used once for a login that ends here, and never kept. A
   /// token the server already dropped counts as logged out. Every follow
   /// ends once it is; a wrong password changes nothing.
-  Future<void> logout({required String password});
+  Future<void> logout({required String password, required ClientKey key});
 
   /// A pet's intake over the last `days` (1-31, default 7).
   Future<ServerPetIntake> petIntake({required String pet, int? days});

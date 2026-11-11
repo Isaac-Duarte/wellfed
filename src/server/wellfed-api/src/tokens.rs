@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::UserId;
+use crate::{Hex, UserId};
 
 /// The `Authorization` scheme a token travels under:
 /// `Authorization: Bearer <secret>`.
@@ -30,6 +30,17 @@ impl fmt::Display for TokenId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
+}
+
+/// A phone logging itself out (`POST /tokens/{id}/logout`): its own public
+/// keys on the feeders, which stay the account's with the keys they
+/// invited. Every other key under the token is revoked with it, so a key
+/// someone else got through the token never outlives it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct LogOut {
+    /// Each a public key, 64 hex digits.
+    #[schema(value_type = Vec<String>)]
+    pub keys: Vec<Hex<32>>,
 }
 
 /// A token to make, for the user asking.

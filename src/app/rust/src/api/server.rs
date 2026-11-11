@@ -14,12 +14,13 @@ use std::time::Duration;
 use flutter_rust_bridge::frb;
 use tokio::sync::watch;
 use wellfed_api::{
-    Credentials, EventQuery, FoodPatch, IntakeQuery, NewFood, NewPet, NewToken, NewWeight,
-    PageQuery, PetPatch, StreamQuery, TokenId, at_home,
+    Credentials, EventQuery, FoodPatch, Hex, IntakeQuery, LogOut, NewFood, NewPet, NewToken,
+    NewWeight, PageQuery, PetPatch, StreamQuery, TokenId, at_home,
 };
 pub use wellfed_server_client::Timeouts;
 use wellfed_server_client::{Auth, Client, PlainHttp, Url};
 
+use crate::api::keys::ClientKey;
 pub use crate::api::model::{FeedOutcome, FeedReason};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 pub use crate::api::server_views::{
@@ -238,23 +239,28 @@ impl ServerSession {
         Ok(self.client.session().await?.into())
     }
 
-    /// Log this phone out: revoke its token on the server while its keys on
-    /// the feeders, and the keys they invited, stay the account's, so it
-    /// still reaches them directly and the account's removal still revokes
-    /// them. The server takes that only from a login, so a
+    /// Log this phone out: revoke its token on the server while its own key
+    /// on the feeders (`key`), and the keys it invited, stay the account's,
+    /// so it still reaches them directly and the account's removal still
+    /// revokes them. Any other key under the token goes with it. The server takes that only from a login, so a
     /// leaked token cannot keep the keys it enrolled: `password` is the
     /// account's, used once for a login that ends here, and never kept. A
     /// token the server already dropped counts as logged out. Every follow
     /// ends once it is; a wrong password changes nothing.
-    pub async fn logout(&self, password: String) -> Result<(), ServerError> {
+    pub async fn logout(&self, password: String, key: &ClientKey) -> Result<(), ServerError> {
         let id = TokenId(ids::parse(&self.link.token_id)?);
+        // The server keeps only the keys the phone names as its own: one
+        // someone else got through the token goes with it.
+        let request = LogOut {
+            keys: vec![Hex(*key.keypair().public())],
+        };
         let mut login = open(&self.link.url, TIMEOUTS)?;
         let credentials = Credentials {
             name: self.link.user.clone(),
             password,
         };
         login.login(&credentials).await?;
-        let ended = login.log_out_token(id).await;
+        let ended = login.log_out_token(id, &request).await;
         // The login was only the way to the logout; one that never ends
         // expires on the server.
         let _ = login.logout().await;

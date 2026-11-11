@@ -22,6 +22,8 @@ const _kitchen = KnownFeeder(identity: 'aa', name: 'Kitchen', address: 'lan:4747
 }
 
 void main() {
+  final key = FakeClientKey();
+
   test('no server configured runs nothing', () {
     final (HomeServer server, FakeServerPorts ports, FakeRouter router, _) = _server();
     expect(server.state, isA<ServerAbsent>());
@@ -57,8 +59,9 @@ void main() {
     final (HomeServer server, FakeServerPorts ports, FakeRouter router, FakeBook book) = _server();
     await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
 
-    expect(await server.logOut('hunter2'), isA<LoggedOut>().having((out) => out.revoked, 'revoked', isTrue));
+    expect(await server.logOut('hunter2', key), isA<LoggedOut>().having((out) => out.revoked, 'revoked', isTrue));
     expect(ports.session.logoutPasswords, ['hunter2']);
+    expect(ports.session.logoutKeys, [key], reason: 'the phone names its own key');
     expect(ports.kept, isNull);
     expect(book.server, isNull);
     expect(book.feeders, [_kitchen]);
@@ -71,7 +74,7 @@ void main() {
     await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
     ports.session.logoutFails = serverError(ServerErrorKind.unreachable);
 
-    expect(await server.logOut('hunter2'), isA<LoggedOut>().having((out) => out.revoked, 'revoked', isFalse));
+    expect(await server.logOut('hunter2', key), isA<LoggedOut>().having((out) => out.revoked, 'revoked', isFalse));
     expect(book.server, isNull);
   });
 
@@ -80,7 +83,7 @@ void main() {
     await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
     ports.session.logoutFails = serverError(ServerErrorKind.badCredentials);
 
-    final LogOutOutcome outcome = await server.logOut('wrong');
+    final LogOutOutcome outcome = await server.logOut('wrong', key);
     expect(outcome, isA<LogOutRefused>().having((out) => out.error.kind, 'kind', ServerErrorKind.badCredentials));
     expect(book.server, isNotNull);
     expect(server.state, isA<ServerLinked>());

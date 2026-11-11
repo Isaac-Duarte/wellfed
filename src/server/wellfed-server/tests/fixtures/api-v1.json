@@ -709,6 +709,32 @@
             },
             {
               "properties": {
+                "account": {
+                  "$ref": "#/components/schemas/UserId"
+                },
+                "kind": {
+                  "enum": [
+                    "logged_out"
+                  ],
+                  "type": "string"
+                },
+                "token": {
+                  "$ref": "#/components/schemas/TokenId"
+                },
+                "token_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "token",
+                "account",
+                "token_name",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
                 "home": {
                   "$ref": "#/components/schemas/Home"
                 },
@@ -4379,6 +4405,20 @@
               "type": "object"
             }
           ]
+        },
+        "LogOut": {
+          "properties": {
+            "keys": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "type": "object"
         },
         "LoginFailure": {
           "enum": [
@@ -12991,8 +13031,27 @@
               }
             }
           ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogOut"
+                }
+              }
+            },
+            "required": true
+          },
           "responses": {
             "204": {},
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "401": {
               "content": {
                 "application/json": {

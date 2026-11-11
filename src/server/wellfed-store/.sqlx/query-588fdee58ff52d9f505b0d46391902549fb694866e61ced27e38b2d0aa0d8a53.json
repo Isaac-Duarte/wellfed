@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE phone_keys SET token_id = NULL\n                   WHERE feeder_id = ? AND token_id = ? AND invited_by = ? AND revoke IS NULL\n                   RETURNING feeder_id AS \"feeder_id: Uuid\", key",
+  "describe": {
+    "columns": [
+      {
+        "name": "feeder_id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "feeder_id"
+          }
+        }
+      },
+      {
+        "name": "key",
+        "ordinal": 1,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "588fdee58ff52d9f505b0d46391902549fb694866e61ced27e38b2d0aa0d8a53"
+}

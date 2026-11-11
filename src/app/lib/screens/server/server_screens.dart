@@ -7,6 +7,7 @@ import 'package:wellfed/screens/server/add_server.dart';
 import 'package:wellfed/screens/server/feeder_food.dart';
 import 'package:wellfed/screens/server/household.dart';
 import 'package:wellfed/screens/server/server_words.dart';
+import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/adopt.dart';
@@ -24,6 +25,7 @@ import 'package:wellfed/widgets/desktop.dart';
 class ServerScreens {
   const ServerScreens({
     required this.server,
+    required this.phoneKey,
     required this.adopt,
     required this.newAddServer,
     required this.newHousehold,
@@ -33,6 +35,9 @@ class ServerScreens {
   });
 
   final HomeServer server;
+
+  /// This phone's own key, which a logout names to the server.
+  final ClientKey phoneKey;
 
   /// Putting feeders this phone paired onto the server.
   final AdoptFlow adopt;
@@ -58,6 +63,7 @@ class ServerScreens {
       (context) => FormWidth(
         child: AccountScreen(
           server: server,
+          phoneKey: phoneKey,
           household: () => unawaited(openHousehold(context)),
           logInAgain: () => unawaited(_push(context, (_) => FormWidth(child: AddServerScreen(newFlow: newAddServer)))),
         ),

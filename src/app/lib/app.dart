@@ -266,6 +266,7 @@ class _WellfedAppState extends State<WellfedApp> {
   /// Each server screen's controller, on the session open when it is made.
   late final _serverScreens = ServerScreens(
     server: _server,
+    phoneKey: widget.app.key,
     adopt: _adopt,
     newAddServer: () => AddServerFlow(_server),
     newHousehold: () => switch (_server.session) {

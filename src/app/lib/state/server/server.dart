@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/server_ports.dart';
+import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server.dart';
@@ -234,12 +235,15 @@ class HomeServer extends ChangeNotifier {
   /// directly; they stay the account's on the server. A wrong password, or too many, changes nothing; a server
   /// that could not take it is forgotten all the same, its token valid
   /// until it is revoked there.
-  Future<LogOutOutcome> logOut(String password) async {
+  ///
+  /// `key` is this phone's own: the server keeps only the keys the phone
+  /// names as its own, and revokes any other under the token.
+  Future<LogOutOutcome> logOut(String password, ClientKey key) async {
     final ServerSession? session = _session;
     var revoked = false;
     if (session != null) {
       try {
-        await session.logout(password: password);
+        await session.logout(password: password, key: key);
         revoked = true;
       } on ServerError catch (error) {
         if (error.kind case ServerErrorKind.badCredentials || ServerErrorKind.rateLimited) {

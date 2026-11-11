@@ -426,6 +426,7 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiServerServerSessionLogout({
     required ServerSession that,
     required String password,
+    required ClientKey key,
   });
 
   Future<ServerPetIntake> crateApiServerServerSessionPetIntake({
@@ -3405,6 +3406,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<void> crateApiServerServerSessionLogout({
     required ServerSession that,
     required String password,
+    required ClientKey key,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3415,6 +3417,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_String(password, serializer);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientKey(
+            key,
+            serializer,
+          );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3427,7 +3433,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_server_error,
         ),
         constMeta: kCrateApiServerServerSessionLogoutConstMeta,
-        argValues: [that, password],
+        argValues: [that, password, key],
         apiImpl: this,
       ),
     );
@@ -3436,7 +3442,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiServerServerSessionLogoutConstMeta =>
       const TaskConstMeta(
         debugName: "ServerSession_logout",
-        argNames: ["that", "password"],
+        argNames: ["that", "password", "key"],
       );
 
   @override
@@ -21981,16 +21987,20 @@ class ServerSessionImpl extends RustOpaque implements ServerSession {
   ServerLink link() =>
       RustLib.instance.api.crateApiServerServerSessionLink(that: this);
 
-  /// Log this phone out: revoke its token on the server while its keys on
-  /// the feeders, and the keys they invited, stay the account's, so it
-  /// still reaches them directly and the account's removal still revokes
-  /// them. The server takes that only from a login, so a
+  /// Log this phone out: revoke its token on the server while its own key
+  /// on the feeders (`key`), and the keys it invited, stay the account's,
+  /// so it still reaches them directly and the account's removal still
+  /// revokes them. Any other key under the token goes with it. The server takes that only from a login, so a
   /// leaked token cannot keep the keys it enrolled: `password` is the
   /// account's, used once for a login that ends here, and never kept. A
   /// token the server already dropped counts as logged out. Every follow
   /// ends once it is; a wrong password changes nothing.
-  Future<void> logout({required String password}) => RustLib.instance.api
-      .crateApiServerServerSessionLogout(that: this, password: password);
+  Future<void> logout({required String password, required ClientKey key}) =>
+      RustLib.instance.api.crateApiServerServerSessionLogout(
+        that: this,
+        password: password,
+        key: key,
+      );
 
   /// A pet's intake over the last `days` (1-31, default 7).
   Future<ServerPetIntake> petIntake({required String pet, int? days}) => RustLib

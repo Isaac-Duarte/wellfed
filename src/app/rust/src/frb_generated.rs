@@ -4200,16 +4200,25 @@ fn wire__crate__api__server__ServerSession_logout_impl(
                 flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ServerSession>,
             >>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
+            let api_key = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ClientKey>,
+            >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::server_error::ServerError>(
                     (move || async move {
                         let mut api_that_guard = None;
+                        let mut api_key_guard = None;
                         let decode_indices_ =
                             flutter_rust_bridge::for_generated::lockable_compute_decode_order(
-                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                                    &api_that, 0, false,
-                                )],
+                                vec![
+                                    flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                        &api_that, 0, false,
+                                    ),
+                                    flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                        &api_key, 1, false,
+                                    ),
+                                ],
                             );
                         for i in decode_indices_ {
                             match i {
@@ -4217,13 +4226,18 @@ fn wire__crate__api__server__ServerSession_logout_impl(
                                     api_that_guard =
                                         Some(api_that.lockable_decode_async_ref().await)
                                 }
+                                1 => {
+                                    api_key_guard = Some(api_key.lockable_decode_async_ref().await)
+                                }
                                 _ => unreachable!(),
                             }
                         }
                         let api_that_guard = api_that_guard.unwrap();
+                        let api_key_guard = api_key_guard.unwrap();
                         let output_ok = crate::api::server::ServerSession::logout(
                             &*api_that_guard,
                             api_password,
+                            &*api_key_guard,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)

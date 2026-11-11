@@ -99,7 +99,7 @@ void main() {
     _phone(tester);
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
-    await tester.pumpWidget(themed(AccountScreen(server: server)));
+    await tester.pumpWidget(themed(AccountScreen(server: server, phoneKey: FakeClientKey())));
     await settle(tester);
 
     expect(find.text('Owner'), findsOneWidget);

@@ -6,7 +6,7 @@ use axum::extract::{Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum_extra::extract::WithRejection;
-use wellfed_api::{CreatedToken, NewToken, Problem, Token, TokenId};
+use wellfed_api::{CreatedToken, LogOut, NewToken, Problem, Token, TokenId};
 
 use super::{ApiResult, JsonBody, TAG_TOKENS, insert};
 use crate::AppState;
@@ -81,18 +81,21 @@ pub(crate) async fn revoke_token(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Log a phone out: revoke the caller's own token while its keys on the
-/// feeders, and the keys they invited, stay the account's with no token,
-/// so the phone still reaches them on the LAN and the account's removal
-/// still revokes them. From a login session only, so a leaked token cannot
+/// Log a phone out: revoke the caller's own token while the keys the body
+/// names as the phone's own, and the keys they invited, stay the account's
+/// with no token, so the phone still reaches its feeders on the LAN and the
+/// account's removal still revokes them. Any other key under the token is
+/// revoked with it. From a login session only, so a leaked token cannot
 /// keep the keys it enrolled; `DELETE /tokens/{id}` revokes them.
 #[utoipa::path(
     post,
     path = "/tokens/{id}/logout",
     tag = TAG_TOKENS,
     params(("id" = TokenId, Path)),
+    request_body = LogOut,
     responses(
         (status = 204),
+        (status = 400, body = Problem, description = "invalid: the body"),
         (status = 401, body = Problem),
         (status = 403, body = Problem, description = "session_required: a token cannot keep its own keys"),
         (status = 404, body = Problem, description = "not found: another user's token, or none"),
@@ -102,7 +105,8 @@ pub(crate) async fn log_out_token(
     State(state): State<AppState>,
     Allowed(caller, _): Allowed<need::OwnAccount>,
     WithRejection(Path(id), _): WithRejection<Path<TokenId>, ApiError>,
+    WithRejection(Json(request), _): JsonBody<LogOut>,
 ) -> ApiResult<StatusCode> {
-    state.service.log_out_token(&caller, id).await?;
+    state.service.log_out_token(&caller, id, &request).await?;
     Ok(StatusCode::NO_CONTENT)
 }

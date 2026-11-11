@@ -31,7 +31,9 @@
 //! This is a known gap, without a design yet.
 
 use sha2::{Digest, Sha256};
-use wellfed_api::{AuditAction, CreatedToken, NewToken, RevokeReason, Token, TokenId, User};
+use wellfed_api::{
+    AuditAction, CreatedToken, LogOut, NewToken, RevokeReason, Token, TokenId, User,
+};
 use wellfed_session::hex;
 use wellfed_store::Whose;
 
@@ -209,35 +211,46 @@ impl Service {
     }
 
     /// Log a phone out: revoke its token `id`, the caller's own, keeping
-    /// its keys on the feeders. Every key under the token not already being
-    /// revoked (the phone's own, and the keys they invited) stays the
-    /// account's with no token, so the phone still reaches its feeders on
-    /// the LAN, the account's deletion, demotion or expiry still revokes
-    /// those keys, and no token's revocation does.
+    /// its keys on the feeders. The phone's own keys under the token
+    /// (`request.keys`) and the keys they invited stay the account's with
+    /// no token, so the phone still reaches its feeders on the LAN, the
+    /// account's deletion, demotion or expiry still revokes those keys, and
+    /// no token's revocation does. Every other key under the token, one
+    /// someone else got through it, is revoked with it. A named key not
+    /// under the token is passed over: the phone does not know which
+    /// feeders recorded its key.
     ///
     /// Only from a login session: the token alone cannot ask, since a
     /// leaked token could then keep the keys it enrolled past its own
     /// revocation. The phone asks with its account's password. Revoking
     /// the token any other way ([`Self::revoke_token`]) revokes its keys.
-    pub async fn log_out_token(&self, caller: &Caller, id: TokenId) -> Result<()> {
+    pub async fn log_out_token(
+        &self,
+        caller: &Caller,
+        id: TokenId,
+        request: &LogOut,
+    ) -> Result<()> {
         session_only(caller)?;
         let token = self.shared.store.token(id).await?;
         let Some(token) = token.filter(|token| token.user == caller.user.id) else {
             return Err(Error::NotFound(Resource::Token));
         };
 
-        if !self.shared.store.log_out_token(id).await? {
+        let own: Vec<[u8; 32]> = request.keys.iter().map(|key| key.0).collect();
+        let now = self.shared.clock.now();
+        let Some(feeders) = self.shared.store.log_out_token(id, &own, now).await? else {
             return Err(Error::NotFound(Resource::Token));
-        }
-        let action = AuditAction::TokenRevoked {
+        };
+        let action = AuditAction::LoggedOut {
             token: id,
             account: token.user,
             token_name: token.name,
         };
         self.record(caller, action).await;
-        // Only keys already on their way out are left under the token.
-        self.revoke_phones(Whose::Token(id), RevokeReason::TokenRevoked)
-            .await
+        for feeder in feeders {
+            self.spawn_revoke(feeder);
+        }
+        Ok(())
     }
 }
 
