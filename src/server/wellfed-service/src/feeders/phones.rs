@@ -21,7 +21,7 @@ use wellfed_store::{NewPhone, Recorded, Whose};
 mod claim;
 mod revoke;
 
-pub(crate) use revoke::{Revocations, own_revoke, revocation};
+pub(crate) use revoke::{Revocations, own_revoke, rank, revocation};
 
 use crate::feeders::journal::Write;
 use crate::{

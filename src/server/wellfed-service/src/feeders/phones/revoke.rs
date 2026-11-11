@@ -204,18 +204,20 @@ impl Service {
 /// a lower role (a viewer holds no key, a member's phone no owner's), or
 /// an expiry where there was none or another.
 pub(crate) fn revocation(before: &User, after: &User) -> Option<RevokeReason> {
-    const fn rank(role: Role) -> u8 {
-        match role {
-            Role::Owner => 2,
-            Role::Member => 1,
-            Role::Viewer | Role::Unknown => 0,
-        }
-    }
-
     if rank(after.role) < rank(before.role) {
         return Some(RevokeReason::Demoted);
     }
     (after.expires.is_some() && after.expires != before.expires).then_some(RevokeReason::Expiring)
+}
+
+/// How much a role may do, for comparing two: an owner above a member,
+/// above a viewer or a role this build does not know.
+pub(crate) const fn rank(role: Role) -> u8 {
+    match role {
+        Role::Owner => 2,
+        Role::Member => 1,
+        Role::Viewer | Role::Unknown => 0,
+    }
 }
 
 /// What the feeder answered a revoke of the server's own key, as a

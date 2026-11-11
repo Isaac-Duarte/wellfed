@@ -12,9 +12,10 @@
 //! tokens refused, though kept, until an owner extends it. A token lasts
 //! until it is revoked, or until its own expiry if it was given one.
 //!
-//! Only a login makes a token, sets a password or adds an account, so
-//! revoking a leaked token is enough: it cannot have made other tokens,
-//! nor a password or an account to log in with and make them.
+//! Only a login makes a token, sets a password, adds an account, raises a
+//! role or gives an account a longer life, so revoking a leaked token is
+//! enough: it cannot have made other tokens, nor a password, an account or
+//! a promoted or revived login to log in with and make them.
 
 use sha2::{Digest, Sha256};
 use wellfed_api::{AuditAction, CreatedToken, NewToken, RevokeReason, Token, TokenId, User};

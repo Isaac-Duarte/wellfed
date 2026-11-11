@@ -13,7 +13,7 @@ use wellfed_store::{Change, NewAudit, Store, Whose};
 
 use crate::accounts::sessions::{self, disabled, hash_password, password, user_name};
 use crate::accounts::tokens::session_only;
-use crate::feeders::phones::revocation;
+use crate::feeders::phones::{rank, revocation};
 use crate::{
     AccountError, Caller, Error, Invalid, Random, Resource, Result, Service, SessionToken,
 };
@@ -69,8 +69,12 @@ impl Service {
     }
 
     /// Change a user's role, expiry or password, as `actor` (an owner)
-    /// on the session `session`. Setting a password takes a login: a token
-    /// could otherwise set one and log in as that user.
+    /// on the session `session`. Setting a password, raising a role, and
+    /// clearing or extending an expiry take a login: a token could otherwise
+    /// set a password and log in as that user, or give an account whose
+    /// password its holder knows owner rights or its life back, and so a
+    /// login that outlives the token. A token may still demote, shorten an
+    /// expiry or delete.
     pub async fn update_user(
         &self,
         actor: &Caller,
@@ -78,9 +82,6 @@ impl Service {
         id: UserId,
         patch: UserPatch,
     ) -> Result<User> {
-        if patch.password.is_some() {
-            session_only(actor)?;
-        }
         let caller = actor;
         let actor = &actor.user;
         let current = self.user(id).await?;
@@ -89,6 +90,9 @@ impl Service {
             expires: patch.expires.unwrap_or(current.expires),
             ..current.clone()
         };
+        if patch.password.is_some() || grants(&current, &updated) {
+            session_only(caller)?;
+        }
         known_role(updated.role)?;
         owner_never_expires(updated.role, updated.expires)?;
         let hash = match patch.password {
@@ -157,6 +161,17 @@ impl Service {
         let user = self.shared.store.user(id).await?;
         user.ok_or_else(|| Error::NotFound(Resource::User))
     }
+}
+
+/// Whether a change from `before` to `after` gives the account more: a
+/// higher role, or an expiry cleared or moved later.
+fn grants(before: &User, after: &User) -> bool {
+    let longer = match (before.expires, after.expires) {
+        (Some(_), None) => true,
+        (Some(was), Some(now)) => now > was,
+        (None, _) => false,
+    };
+    rank(after.role) > rank(before.role) || longer
 }
 
 /// Give a locked-out owner a new temporary password, straight on the

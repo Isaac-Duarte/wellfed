@@ -7,7 +7,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use wellfed_api::{
     AdoptFeeder, Credentials, ErrorCode, FeederId, FeederSettingsPatch, Generation, HomePatch,
-    NewUser, PLANS, PasswordChange, PlansChange, Role, Units, User, UserPatch,
+    NewToken, NewUser, PLANS, PasswordChange, PlansChange, Role, Units, User, UserPatch,
 };
 use wellfed_server_client::{Auth, Client, Lock, StatusCode};
 use wellfed_server_testkit::fixed::ManualClock;
@@ -371,5 +371,62 @@ async fn a_viewer_changes_their_own_password_and_stays_logged_in() {
         StatusCode::UNAUTHORIZED,
         ErrorCode::BadCredentials,
     );
+    server.stop().await;
+}
+
+/// A stolen owner's token cannot give an account whose password its holder
+/// knows more than it has, a login that would outlive the token: raising a
+/// role, clearing an expiry or moving it later take a login. A token may
+/// still demote and shorten an expiry.
+#[tokio::test]
+async fn a_token_cannot_promote_or_extend_an_account() {
+    let clock = ManualClock::new();
+    let server = TestServer::start_with_clock(Arc::new(clock.clone())).await;
+    let (owner, _) = owner(&server).await;
+    let (_, bob) = account(&server, &owner, "bob", Role::Member, None).await;
+    let now = wellfed_service::Clock::now(&clock);
+    let soon = Some(now + Duration::from_secs(60));
+    let (_, sitter) = account(&server, &owner, "sitter", Role::Viewer, soon).await;
+    let new = NewToken {
+        name: "phone".into(),
+        expires: None,
+    };
+    let secret = owner.create_token(&new).await.unwrap().secret;
+    let phone = server.client().with_auth(Some(Auth::Token(secret)));
+    clock.advance(Duration::from_secs(120));
+
+    let role = |role| UserPatch {
+        role: Some(role),
+        ..UserPatch::default()
+    };
+    let expires = |expires| UserPatch {
+        expires: Some(expires),
+        ..UserPatch::default()
+    };
+    let later = Some(now + Duration::from_secs(3_600));
+    for (what, id, patch) in [
+        ("promote", bob.id, role(Role::Owner)),
+        ("clear", sitter.id, expires(None)),
+        ("extend", sitter.id, expires(later)),
+    ] {
+        let result = phone.update_user(id, &patch).await.map(drop);
+        refused_for(
+            what,
+            result,
+            StatusCode::FORBIDDEN,
+            ErrorCode::SessionRequired,
+        );
+    }
+    let users = owner.users().await.unwrap();
+    let bob_now = users.iter().find(|user| user.id == bob.id);
+    assert_eq!(bob_now.map(|user| user.role), Some(Role::Member));
+
+    // Taking away goes through, and an owner's login may grant.
+    let demoted = phone.update_user(bob.id, &role(Role::Viewer)).await;
+    assert_eq!(demoted.unwrap().role, Role::Viewer);
+    let sooner = expires(Some(now + Duration::from_secs(30)));
+    assert!(phone.update_user(sitter.id, &sooner).await.is_ok());
+    let promoted = owner.update_user(bob.id, &role(Role::Owner)).await;
+    assert_eq!(promoted.unwrap().role, Role::Owner);
     server.stop().await;
 }
