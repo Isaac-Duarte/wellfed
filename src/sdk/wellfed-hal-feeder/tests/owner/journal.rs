@@ -10,7 +10,7 @@ use wellfed_core_feeder::feed_journal::{FeedJournal, JournalConfig, JournalError
 use wellfed_hal::sdk::fake;
 use wellfed_hal_feeder::board::MOTOR_MASK;
 use wellfed_hal_feeder::owner::{OwnerFault, OwnerState, SubmitResult};
-use wellfed_testkit::journal_flash::{FakeJournalFlash, UNIT};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, ProgramOrder, UNIT};
 
 #[test]
 fn journal_success_and_reboot_preserve_ids() {
@@ -295,15 +295,21 @@ fn a_reset_mid_feed_resolves_as_uncertain_and_the_owner_opens() {
     }
 }
 
-/// A power cut at any byte of the first boot's journal creation: the next
+/// A power cut at any step of the first boot's journal creation, its
+/// program laid down byte by byte or scattered across the page: the next
 /// boot finds the journal empty, as the boot before it did, creates it and
 /// feeds, rather than holding the feeder closed on a journal it calls
 /// corrupt.
 #[test]
 fn a_power_cut_creating_the_journal_leaves_a_feeder_that_feeds() {
-    for cut in 0..=RECORD_BYTES as i64 + 1 {
+    let orders = [ProgramOrder::Bytes, ProgramOrder::Scattered(0x5eed)];
+    for (order, cut) in orders
+        .into_iter()
+        .flat_map(|order| (0..=RECORD_BYTES as i64 + 1).map(move |cut| (order, cut)))
+    {
         let mut first = FakeJournalFlash {
             budget: cut,
+            program_order: order,
             ..FakeJournalFlash::default()
         };
         let mut journal = FeedJournal::default();
@@ -314,11 +320,13 @@ fn a_power_cut_creating_the_journal_leaves_a_feeder_that_feeds() {
         };
         // SAFETY: `first` stays in place while the journal uses it.
         let created = unsafe { journal.create(first.io(), c, Direction::D0, true, true) };
-        assert_eq!(created == JournalError::Ok, cut > RECORD_BYTES as i64);
+        if order == ProgramOrder::Bytes {
+            assert_eq!(created == JournalError::Ok, cut > RECORD_BYTES as i64);
+        }
 
         let (flash, _, ()) = boot_on(first.bytes, false, -1, move |f| {
             let s = f.status();
-            assert_eq!(s.state, OwnerState::Idle, "cut {cut}");
+            assert_eq!(s.state, OwnerState::Idle, "{order:?} cut {cut}");
             assert!(s.fault == OwnerFault::Ok && s.high_water_id == 0);
             feed(f);
             let s = f.status();

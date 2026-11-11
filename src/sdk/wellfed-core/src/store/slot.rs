@@ -64,11 +64,13 @@
 //! marker, checks it, programs the marker, and checks the whole record.
 //! A record counts only once its marker is down and its checksum holds, so
 //! a power cut at any point leaves the other unit untouched and this one in
-//! one of the states [`Found`] names: erased, cut short ([`Found::Partial`]),
-//! unmarked or torn by a cut erase, or the new record. Programming lays
-//! bytes down in order; an erase raises bits in no particular order, so a
-//! cut erase leaves anything at all, which fails the checksum or loses the
-//! marker. The slot layer never retries a failed step; the store records
+//! one of the states [`Found`] names: erased, cut short ([`Found::Partial`]
+//! or [`Found::Unmarked`]), unmarked or torn by a cut erase, or the new
+//! record. A program clears bits only, but the part programs a whole page
+//! at once and promises no byte order, so a cut program leaves any subset
+//! of the bits the record clears, the marker still erased; and an erase
+//! raises bits in no particular order, so a cut erase leaves anything at
+//! all, which fails the checksum or loses the marker. The slot layer never retries a failed step; the store records
 //! the fault, and the journal and the newest-wins stores write nothing more
 //! until they are opened again (settings writes its next change to the same
 //! unit, which the rule makes as safe as the first try).
@@ -95,8 +97,8 @@
 //!   reservation is resolved again, and beside a record at rest the cut
 //!   write is the next reservation, resolved as uncertain under the next
 //!   ID. It starts empty when both units are erased, or after its first
-//!   record cut short beside an erased unit, when the cut bytes are that
-//!   record's own. Anything else, including a newer or older major, is
+//!   record cut short beside an erased unit, when the unit holds only bits
+//!   that record clears. Anything else, including a newer or older major, is
 //!   corrupt.
 //!
 //! The journal and settings read the whole unit ([`Extent::Unit`]): written
@@ -743,8 +745,8 @@ impl<C: SlotIo> Units<'_, C> {
     }
 
     /// [`DualSlot::replace`] keeping a newer minor's bytes: the body a chunk at
-    /// a time in order, so a cut leaves a prefix as one program would, then
-    /// the checksum, a check, the marker and a check.
+    /// a time, in order, then the checksum, a check, the marker and a check.
+    /// A cut leaves the chunks before it, then some of the cut chunk's bits.
     fn write_carried(&self, slot: c_uint, record: &[u8], newer: Newer) -> bool {
         let Some(end) = newer.length.checked_sub(TRAILER_BYTES) else {
             return false;
@@ -883,9 +885,12 @@ fn erased(p: &[u8]) -> bool {
     p.iter().all(|&b| b == u8::MAX)
 }
 
-/// Programming lays bytes down in order, so a save cut short leaves a prefix
-/// of the magic followed by erased bytes, or the whole magic. Anything else
-/// is not evidence of the store's own write.
+/// A save cut short in byte order leaves a prefix of the magic followed by
+/// erased bytes, or the whole magic: this store's own write. A cut page
+/// program, which keeps no byte order, can leave the magic partly
+/// programmed out of order too, which reads as another writer's
+/// ([`Found::Unmarked`]); the feed journal's rule for its first record
+/// covers that case itself.
 fn ours(p: &[u8], magic: &[u8; 8]) -> bool {
     let matched = magic.iter().zip(p).take_while(|(m, r)| m == r).count();
     matched == magic.len() || p.get(matched..).is_some_and(erased)

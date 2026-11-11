@@ -7,7 +7,8 @@
 //! The invariant under test: after any cut or failure, reopening yields the
 //! committed state, an unresolved pending intent, or `CORRUPT`, never an idle
 //! journal that has forgotten a reserved request ID. A cut first `create`
-//! alone reads as empty, as the erased units before it did. A cut result or
+//! reads as empty, as the erased units before it did, in byte order or
+//! scattered across its page. A cut result or
 //! resolution always yields the pending intent or the committed result, and
 //! a cut reservation the committed state or a pending intent: no cut ever
 //! faults the journal.
@@ -21,7 +22,7 @@ use wellfed_core_feeder::feed::storage::{
 use wellfed_core_feeder::feed_journal::{
     FeedJournal, JournalConfig, JournalError, REQUEST_ID_AT, REQUEST_ID_END,
 };
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ProgramOrder, UNIT};
 
 /// Unit sizes for torn-write/restart coverage: the virtual feeder's 256, a
 /// 4 KiB sector, and units whose blank tail ends in a chunk shorter than the
@@ -455,54 +456,69 @@ fn assert_genesis(f: &mut FakeJournalFlash, g: (BowlMode, Direction, bool, bool)
     assert_eq!(j.view.recovery.high_water_id, 1);
 }
 
-/// A first `create` cut at any byte reads as empty, as it did before the
+/// The orders a cut program is tried in: byte by byte, and seeded orders
+/// across the whole program, as a page program keeps no byte order.
+const ORDERS: [ProgramOrder; 4] = [
+    ProgramOrder::Bytes,
+    ProgramOrder::Scattered(1),
+    ProgramOrder::Scattered(0x5eed),
+    ProgramOrder::Scattered(0x9a7e_c0de),
+];
+
+/// A first `create` cut at any step reads as empty, as it did before the
 /// write, and the next `create` (a boot finding it empty) succeeds: no cut
 /// of the first boot leaves the feeder unable to feed.
 #[test]
 fn create_cuts() {
-    for (g, unit, cut) in GENESES.into_iter().flat_map(|g| {
-        UNITS
+    for (order, g, unit) in ORDERS.into_iter().flat_map(|order| {
+        GENESES
             .into_iter()
-            .flat_map(move |unit| (0..=(RECORD_BYTES + 1) as i64).map(move |cut| (g, unit, cut)))
+            .flat_map(move |g| UNITS.into_iter().map(move |unit| (order, g, unit)))
     }) {
-        let mut f = FakeJournalFlash {
-            budget: cut,
-            ..FakeJournalFlash::with_unit(unit)
-        };
-        let mut j = FeedJournal::default();
-        let before = create_genesis(&mut f, &mut j, g);
-        let after = reopen(&mut f, &mut j, &genesis_config(g.0));
+        for cut in 0..=(RECORD_BYTES + 1) as i64 {
+            let mut f = FakeJournalFlash {
+                budget: cut,
+                program_order: order,
+                ..FakeJournalFlash::with_unit(unit)
+            };
+            let mut j = FeedJournal::default();
+            let before = create_genesis(&mut f, &mut j, g);
+            let after = reopen(&mut f, &mut j, &genesis_config(g.0));
+            let at = format!("{order:?} {g:?} unit {unit} cut {cut}");
 
-        if before == JournalError::Ok || after == JournalError::Ok {
-            // Cut after the marker, as the write checks it back.
-            assert_eq!(after, JournalError::Ok, "{g:?} unit {unit} cut {cut}");
-            assert!(cut < 0 || cut >= RECORD_BYTES as i64);
-        } else {
-            assert_eq!(after, JournalError::Empty, "{g:?} unit {unit} cut {cut}");
-            assert_eq!(create_genesis(&mut f, &mut j, g), JournalError::Ok);
+            if before == JournalError::Ok || after == JournalError::Ok {
+                // Cut after the marker, as the write checks it back.
+                assert_eq!(after, JournalError::Ok, "{at}");
+            } else {
+                assert_eq!(after, JournalError::Empty, "{at}");
+                assert_eq!(create_genesis(&mut f, &mut j, g), JournalError::Ok);
+            }
+            assert_genesis(&mut f, g);
         }
-        assert_genesis(&mut f, g);
     }
 }
 
-/// The `create` after a cut one erases unit 0 first. A cut in its program
-/// reads as empty again; a cut in its erase reads as empty when the erase
-/// left the unit erased or untouched, and otherwise faults: bits an erase
-/// raised anywhere cannot be told from a record that decayed.
+/// The `create` after a cut one erases unit 0 first. Every cut of it, in
+/// its erase (which only raises bits) or its program, reads as empty again
+/// or as the journal created, whatever order either program kept.
 #[test]
 fn create_cuts_after_a_cut_create() {
     let g = GENESES[0];
     let config = genesis_config(g.0);
-    for (unit, first) in UNITS
-        .into_iter()
-        .flat_map(|unit| [1, 4, 8, 13, 47, 123, 125, 127].map(move |first| (unit, first)))
-    {
+    for (order, unit, first) in ORDERS.into_iter().flat_map(|order| {
+        UNITS.into_iter().flat_map(move |unit| {
+            [1, 4, 8, 13, 47, 90, 123, 125, 127].map(move |first| (order, unit, first))
+        })
+    }) {
         let mut cut_once = FakeJournalFlash {
             budget: first,
+            program_order: order,
             ..FakeJournalFlash::with_unit(unit)
         };
         let mut j = FeedJournal::default();
-        assert_ne!(create_genesis(&mut cut_once, &mut j, g), JournalError::Ok);
+        if create_genesis(&mut cut_once, &mut j, g) == JournalError::Ok {
+            continue; // A scattered program done within its budget.
+        }
         assert_eq!(reopen(&mut cut_once, &mut j, &config), JournalError::Empty);
 
         // Every cut of the program, and cuts through the erase (each
@@ -520,25 +536,12 @@ fn create_cuts_after_a_cut_create() {
             let mut j = FeedJournal::default();
             let before = create_genesis(&mut f, &mut j, g);
             let after = reopen(&mut f, &mut j, &config);
+            let at = format!("{order:?} unit {unit} first {first} cut {cut}");
 
             if before == JournalError::Ok || after == JournalError::Ok {
-                assert_eq!(
-                    after,
-                    JournalError::Ok,
-                    "unit {unit} first {first} cut {cut}"
-                );
-            } else if after == JournalError::Corrupt {
-                assert!(
-                    0 < cut && cut < erase,
-                    "unit {unit} first {first} cut {cut}"
-                );
-                continue;
+                assert_eq!(after, JournalError::Ok, "{at}");
             } else {
-                assert_eq!(
-                    after,
-                    JournalError::Empty,
-                    "unit {unit} first {first} cut {cut}"
-                );
+                assert_eq!(after, JournalError::Empty, "{at}");
                 assert_eq!(create_genesis(&mut f, &mut j, g), JournalError::Ok);
             }
             assert_genesis(&mut f, g);
@@ -549,8 +552,9 @@ fn create_cuts_after_a_cut_create() {
 /// Only a cut genesis of this journal's own reads as empty. A later record
 /// at rest in unit 0 beside an erased unit 1 (a reservation's erase cut
 /// late) whose marker decayed still faults, as does a cut genesis beside
-/// anything but an erased unit, under another binding, or with a stray bit
-/// past its cut.
+/// anything but an erased unit, under another binding, or with a bit
+/// cleared that genesis keeps set. The residual the rule accepts is shown
+/// too: a later record whose checksum and marker both read erased.
 #[test]
 fn only_a_cut_first_create_reads_as_empty() {
     let mut f = FakeJournalFlash::default();
@@ -563,7 +567,7 @@ fn only_a_cut_first_create_reads_as_empty() {
         |p| p[124] = 0,
         |p| p[127] = u8::MAX,
         |p| p[124..128].fill(u8::MAX),
-        |p| p[100..128].fill(u8::MAX),
+        |p| p[16] &= 0xfe,
     ];
     for decay in decayed {
         let mut f = f.clone();
@@ -578,6 +582,15 @@ fn only_a_cut_first_create_reads_as_empty() {
         assert_eq!(again, JournalError::State);
         assert_eq!(f.bytes, held, "nothing written over it");
     }
+
+    // The residual: with its checksum and marker erased as well, nothing
+    // is left that genesis keeps set and the record lacks.
+    let mut residual = f.clone();
+    residual.bytes[0].clone_from(&at_rest);
+    residual.bytes[0][120..128].fill(u8::MAX);
+    residual.bytes[1].fill(u8::MAX);
+    let mut j = FeedJournal::default();
+    assert_eq!(reopen(&mut residual, &mut j, &CONFIG), JournalError::Empty);
 
     let cut_genesis = |cut: i64| {
         let mut f = FakeJournalFlash {
@@ -606,8 +619,9 @@ fn only_a_cut_first_create_reads_as_empty() {
         };
         assert_eq!(reopen(&mut f, &mut j, &other), expected, "cut {cut}");
 
+        // The marker's first byte, `C`, keeps its low bit set.
         let mut stray = f.clone();
-        stray.bytes[0][cut as usize + 1] &= 0xfe;
+        stray.bytes[0][124] &= 0xfe;
         assert_eq!(reopen(&mut stray, &mut j, &CONFIG), JournalError::Corrupt);
         let mut tail = f.clone();
         tail.bytes[0][RECORD_BYTES] = 0;
