@@ -9,7 +9,7 @@ mod common;
 use common::*;
 use wellfed_core::flash_coord::{FlashParty, FlashReply};
 use wellfed_hal::sdk::{self, fake};
-use wellfed_hal::supervision::watchdog::{Watchdog, WatchdogConfig, WatchdogFault};
+use wellfed_hal::supervision::watchdog::{Watchdog, WatchdogConfig, WatchdogFault, force_reset};
 use wellfed_hal_feeder::board::Board;
 
 const CONFIG: WatchdogConfig = WatchdogConfig {
@@ -301,4 +301,48 @@ fn sdk_init_action_bits_read_back_clear() {
     assert!(vendor & sdk::WDG_BIT_ISR_CLEAR == 0 && vendor & (1 << 24) == 0);
     assert!(vendor & sdk::WDG_BIT_ENABLE != 0 && vendor & sdk::WDG_BIT_RST_MODE != 0);
     close_port(&mut w);
+}
+
+/// A watchdog that will not open (its enable bit already set, or its scope
+/// held) still resets the platform: `force_reset` programs the scope and
+/// the counter as `open` does and leaves it unfed, so the reset comes
+/// within the configured expiry and KM0 counts the boot.
+#[test]
+fn a_watchdog_that_will_not_open_still_resets() {
+    let mut w = fresh();
+    hw(|h| h.watchdog_vendor |= sdk::WDG_BIT_ENABLE);
+    assert!(!w.open(&CONFIG) && !w.claimed);
+
+    assert!(force_reset(&CONFIG));
+    assert!(hw(|h| h.watchdog_period) == 4032 && hw(|h| h.watchdog_ticks) == 0);
+    assert!(sdk::hs_platform_para() & sdk::HS_WDTRST_OPT != 0);
+    assert!(sdk::lp_km0_ctrl() & sdk::LP_WDT_RESET_HS_ALL != 0);
+    assert_eq!(hw(|h| h.interrupts), 0, "interrupts as they were");
+    fake::watchdog_advance(4031);
+    assert_eq!(hw(|h| h.watchdog_reset_requests), 0);
+    fake::watchdog_advance(1);
+    assert_eq!(hw(|h| h.watchdog_reset_requests), 1);
+
+    // A setup that did not verify, the claim retained: the same reset.
+    let mut w = fresh();
+    hw(|h| {
+        h.watchdog_enable_corrupt = true;
+        h.watchdog_disable_blocked = true;
+    });
+    assert!(!w.open(&CONFIG) && w.claimed);
+    hw(|h| {
+        h.watchdog_enable_corrupt = false;
+        h.watchdog_disable_blocked = false;
+    });
+    assert!(force_reset(&CONFIG));
+    fake::watchdog_advance(4032);
+    assert_eq!(hw(|h| h.watchdog_reset_requests), 1);
+
+    // An invalid configuration touches nothing.
+    fake::reset_hardware();
+    assert!(!force_reset(&WatchdogConfig {
+        divisor: 0,
+        ..CONFIG
+    }));
+    assert!(hw(|h| h.watchdog_init_calls) == 0 && sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE == 0);
 }

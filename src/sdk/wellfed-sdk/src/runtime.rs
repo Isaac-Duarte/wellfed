@@ -31,7 +31,7 @@ use wellfed_hal::ota::confirm::{self, Confirm, HookedStorage};
 use wellfed_hal::ota::update::{self as update, Floor, SdkFlash, StoreSlots, Update};
 use wellfed_hal::supervision::beat;
 use wellfed_hal::supervision::supervise::{self, Feeding, LIVENESS_MS, Startup};
-use wellfed_hal::supervision::watchdog::Watchdog;
+use wellfed_hal::supervision::watchdog::{self, Watchdog};
 use wellfed_hal::supervision::{self, config, crumb, trail};
 use wellfed_hal::{
     cell::TaskCell, leds, net_status, power, rng, sdk, startup, stopped, trial, writer_wake,
@@ -419,8 +419,13 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
     // feed period exceeds the refresh rate limit), so a reset's host
     // timestamp, less this, times the watchdog's expiry.
     static FED_MS: AtomicU32 = AtomicU32::new(0);
+    // The watchdog could not open: this boot is ending in a forced reset.
+    static UNSUPERVISED: AtomicBool = AtomicBool::new(false);
     // Every pass, fed or not: the tick hook's crumb counts from here.
     crumb::fed();
+    if UNSUPERVISED.load(Ordering::Acquire) {
+        return force_reset();
+    }
     if !WATCHDOG_OPEN.load(Ordering::Acquire) {
         // A trial that ran out with no fallback runs on as a build in no
         // trial: no deadline, its resets a storm's (`trial.rs`).
@@ -437,7 +442,14 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
             sdk::log(line);
         }
         if !opened {
-            return 0; // Unsupervised: nothing to feed.
+            // A boot the watchdog cannot supervise is a startup failure,
+            // and ends in a reset KM0 counts, never in a boot that runs on
+            // with no reset to give: no reboot, trial deadline, arming or
+            // update could then take effect. Not asked for, so the storm
+            // count keeps it.
+            UNSUPERVISED.store(true, Ordering::Release);
+            supervision::stopping();
+            return force_reset();
         }
     }
 
@@ -533,6 +545,27 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
     flush_before_reset(&REFUSED);
     FEED_MS
 }
+
+/// Reset the platform through the watchdog's reset path, unfed
+/// (`watchdog::force_reset`), and say so once. The feeder task's next
+/// pass, or the halt's: retried until the counter takes, since a boot that
+/// cannot reset must not run on. Never feeds.
+fn force_reset() -> u32 {
+    static SAID: AtomicBool = AtomicBool::new(false);
+    let forced = watchdog::force_reset(&config::WATCHDOG);
+    if !SAID.swap(true, Ordering::Relaxed) {
+        sdk::log(if forced {
+            c"PLSUP1 stop watchdog=forced reset=1\r\n"
+        } else {
+            c"PLSUP1 error watchdog=forced\r\n"
+        });
+        sdk::log_flush();
+    }
+    if forced { 0 } else { FORCE_RETRY_MS }
+}
+
+/// How often a forced reset that did not take is tried again.
+const FORCE_RETRY_MS: u32 = 1_000;
 
 /// The watchdog feeder's share of a crash's last words: with the reset certain
 /// a hung task may be why, and the drain may never run again, so this task
@@ -1202,9 +1235,10 @@ unsafe extern "C" fn halt_task(_: *mut c_void) -> u32 {
     if SdkHooks::watchdog() {
         return 0;
     }
-    // Asked again on the next poll: a halt must end.
+    // A halt must end: through the watchdog's reset path if it will not
+    // open, asked again on the next poll if that does not take either.
     sdk::log(c"PLSUP1 error watchdog=open\r\n");
-    HALT_POLL_MS
+    if force_reset() == 0 { 0 } else { HALT_POLL_MS }
 }
 
 const HALT_POLL_MS: u32 = 1_000;
@@ -1323,6 +1357,7 @@ pub extern "C" fn wellfed_app_start() {
                 update_trial_register(|register| trial::halt_over(register, &identity));
                 if !SdkHooks::watchdog() {
                     sdk::log(c"PLSUP1 error watchdog=open\r\n");
+                    force_reset();
                 }
             }
             return;

@@ -94,6 +94,32 @@ impl WatchdogConfig {
     }
 }
 
+/// Reset the platform through the watchdog's own reset path, for a boot
+/// the supervision watchdog could not open (its enable bit already set by
+/// another writer, or a register that did not verify). Programs the reset
+/// scope and the counter as [`Watchdog::open`] does, without its checks or
+/// a claim, and leaves the counter unfed: the platform resets within the
+/// configured expiry, as at any supervision stop, so KM0 counts the boot
+/// (a trial gives way, a storm holds) rather than the boot running on with
+/// no watchdog, where reboots, the trial deadline, flash arming and updates
+/// would each wait for a reset that never comes. Whether the counter reads
+/// enabled afterwards. The caller must never refresh it.
+pub fn force_reset(config: &WatchdogConfig) -> bool {
+    if !config.valid() {
+        return false;
+    }
+
+    let _guard = IrqGuard::lock();
+    sdk::set_hs_platform_para(sdk::hs_platform_para() | sdk::HS_WDTRST_OPT);
+    // SAFETY: no supervision watchdog opened this boot, so nothing feeds the
+    // counter or relies on its settings; this boot ends at its expiry.
+    unsafe {
+        sdk::wdg_init(u32::from(config.count_id), u32::from(config.divisor));
+        sdk::wdg_cmd(true);
+    }
+    sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE != 0
+}
+
 fn context() -> bool {
     sdk::primask() == 0 && sdk::ipsr() == 0
 }
