@@ -204,6 +204,12 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
     /// `Lost` once a later change was queued and this one's result is not
     /// among those the mailbox keeps: changes queue one at a time, so a
     /// later ticket means this one finished, and its result aged out.
+    ///
+    /// That holds only while every key request and every poll of a result
+    /// runs in the loop's task, as they do now (the device API, BLE setup
+    /// and the panel's factory reset). A requester in another task could queue a change between
+    /// this result's read and the ticket's, and a result arriving just then
+    /// would be called lost.
     fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome> {
         let Some(result) = self.platform.keys_outcome(ticket) else {
             return (self.platform.keys_ticket().max(1) != ticket).then_some(KeyOutcome::Lost);
