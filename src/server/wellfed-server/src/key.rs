@@ -13,12 +13,19 @@
 //! An existing `keys` directory that others could read or enter is
 //! tightened to 0700 when a key is written into it, and the change logged.
 //!
+//! Two first starts on one data directory (a service and a manual run)
+//! may race to make the key. Each stages its key under a name only it uses
+//! and links that name into place, so the one whose link lands returns the
+//! key the file holds, and the other is refused rather than return a key
+//! that seals nothing it could open again.
+//!
 //! A database with no key file is refused rather than given a new key,
 //! which could not open its feeder keys: that is a backup restored without
 //! the key, or a key file lost.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Deserialize;
 use wellfed_api::Hex;
@@ -129,8 +136,8 @@ pub fn sealing_key(data: &Path, random: &dyn Random) -> Result<([u8; 32], KeySou
             );
         }
         // A start stopped between linking the key into place and removing
-        // the staged copy leaves a second copy of the secret.
-        remove(&path.with_extension("key.new"), Missing::Allowed)?;
+        // its staged copy leaves a second copy of the secret.
+        remove_staged(&dir)?;
         return Ok((key, KeySource::Read));
     }
 
@@ -210,8 +217,12 @@ fn read_old(path: &Path) -> Result<Option<[u8; 32]>, KeyError> {
 /// Write the key beside its final name and link it into place, so a crash
 /// leaves either no key file or a whole one, never a short one. A link,
 /// unlike a rename, never replaces a key file another start made meanwhile.
+///
+/// The staged name is this writer's own (its process and a count within
+/// it), so no other start removes or rewrites the file between its sync and
+/// the link: what the link puts in place is the key this call returns.
 fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(), KeyError> {
-    let staged = path.with_extension("key.new");
+    let staged = staged_name(dir);
     let write = |path: &Path| {
         let path = path.to_owned();
         move |source| KeyError::Write { path, source }
@@ -227,8 +238,9 @@ fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(),
     // its key is created.
     sync_dir(data)?;
 
-    // A staged file from an interrupted start may have been made with other
-    // permissions; `mode` applies only to a file this call creates.
+    // Only a crashed run of an earlier process with this id can have left
+    // this name, perhaps with other permissions: `mode` applies only to a
+    // file this call creates.
     remove(&staged, Missing::Allowed)?;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -240,10 +252,18 @@ fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(),
         .map_err(write(&staged))?;
 
     let linked = std::fs::hard_link(&staged, path);
-    remove(&staged, Missing::Refused)?;
+    // A start that read the finished key may have cleared this copy already.
+    remove(&staged, Missing::Allowed)?;
     match linked {
         Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+        // Another start's key is in place, or one that read it cleared the
+        // staged copy first: either way this key is not the file's.
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::NotFound
+            ) =>
+        {
             return Err(KeyError::Exists {
                 path: path.to_owned(),
             });
@@ -251,6 +271,45 @@ fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(),
         Err(source) => return Err(write(path)(source)),
     }
     sync_dir(dir)
+}
+
+/// The prefix and suffix of every staged key's name.
+const STAGED_PREFIX: &str = "server.key.";
+const STAGED_SUFFIX: &str = ".new";
+
+/// A staged name no other writer uses: a live process's id is its own, and
+/// the count tells apart the calls within it.
+fn staged_name(dir: &Path) -> PathBuf {
+    static CALLS: AtomicU64 = AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, Ordering::Relaxed);
+    dir.join(format!(
+        "{STAGED_PREFIX}{}-{call}{STAGED_SUFFIX}",
+        std::process::id()
+    ))
+}
+
+/// Remove every staged copy of the key, from starts stopped before they
+/// removed theirs. A start still writing loses its copy and is refused,
+/// never handed a key the file does not hold.
+fn remove_staged(dir: &Path) -> Result<(), KeyError> {
+    let entries = std::fs::read_dir(dir).map_err(|source| KeyError::Read {
+        path: dir.to_owned(),
+        source,
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| KeyError::Read {
+            path: dir.to_owned(),
+            source,
+        })?;
+        let name = entry.file_name();
+        let staged = name
+            .to_str()
+            .is_some_and(|name| name.starts_with(STAGED_PREFIX) && name.ends_with(STAGED_SUFFIX));
+        if staged {
+            remove(&entry.path(), Missing::Allowed)?;
+        }
+    }
+    Ok(())
 }
 
 /// Tighten an existing key directory that others could read or enter to
