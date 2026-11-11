@@ -109,6 +109,7 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(users::update_user, users::delete_user))
         .routes(routes!(tokens::tokens, tokens::create_token))
         .routes(routes!(tokens::revoke_token))
+        .routes(routes!(tokens::log_out_token))
         .routes(routes!(home::home, home::update_home))
         .routes(routes!(feeders::feeders, feeders::adopt))
         .routes(routes!(feeders::feeder, admin::remove))

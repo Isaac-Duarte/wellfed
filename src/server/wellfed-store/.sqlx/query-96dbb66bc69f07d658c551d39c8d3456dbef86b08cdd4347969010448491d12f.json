@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM phone_keys WHERE token_id = ? AND revoke IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "96dbb66bc69f07d658c551d39c8d3456dbef86b08cdd4347969010448491d12f"
+}

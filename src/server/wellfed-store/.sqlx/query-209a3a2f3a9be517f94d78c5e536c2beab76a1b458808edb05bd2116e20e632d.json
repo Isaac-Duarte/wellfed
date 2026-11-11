@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO kept_clients (feeder_id, key, kept_ms)\n             SELECT feeder_id, key, ? FROM phone_keys WHERE token_id = ? AND revoke IS NULL\n             ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "209a3a2f3a9be517f94d78c5e536c2beab76a1b458808edb05bd2116e20e632d"
+}

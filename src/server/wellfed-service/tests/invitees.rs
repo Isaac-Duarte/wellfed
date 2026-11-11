@@ -8,6 +8,7 @@
 //! the server read before it knew the inviting key is not attributed, and
 //! a chain the feeder cut while the server was away still goes whole. A
 //! key an owner revokes on the LAN, without the server, takes its own too.
+//! A phone that logs out from a login session keeps both, as kept.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,7 +20,7 @@ use wellfed_api::{
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::fixed::ManualClock;
 use wellfed_server_testkit::{TestService, ada_setup, local, until};
-use wellfed_service::{Caller, ClientError, Error, Service};
+use wellfed_service::{AccountError, Caller, ClientError, Error, Service};
 
 /// A phone's secret key, by number.
 fn secret(n: u8) -> [u8; 32] {
@@ -369,6 +370,53 @@ fn a_key_revoked_on_the_lan_takes_its_invitees() {
         let held = feeder::client_keys(&sim).await;
         assert!(held.contains(&key(60)) && held.contains(&key(61)));
         attributed(service, id, &phone, 61).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A phone that logs out from a login session keeps its key and the key it
+/// invited, both as kept: the member's removal later revokes neither. The
+/// token alone cannot ask, nor can another account's session.
+#[test]
+fn a_phone_that_logs_out_keeps_its_key_and_its_invitee() {
+    local(async {
+        let (sim, server, id) = started().await;
+        let service = server.service();
+        let (ada, bob) = ada_and_bob(service).await;
+        join(service, &sim, id, &bob, 70).await;
+        invite_directly(&sim, 70, 71).await;
+        attributed(service, id, &bob, 71).await;
+        let token = bob.token.unwrap();
+
+        let by_token = service.log_out_token(&bob, token).await;
+        assert!(
+            matches!(by_token, Err(Error::Account(AccountError::SessionRequired))),
+            "{by_token:?}"
+        );
+        let by_another = service.log_out_token(&ada, token).await;
+        assert!(
+            matches!(by_another, Err(Error::NotFound(_))),
+            "{by_another:?}"
+        );
+
+        let login = Caller {
+            user: bob.user.clone(),
+            token: None,
+        };
+        service.log_out_token(&login, token).await.unwrap();
+        for n in [70, 71] {
+            assert_eq!(
+                owner_of(service, id, n).await,
+                Some(ClientOwner::Kept),
+                "{n}"
+            );
+        }
+        assert!(service.phones(&bob.user).await.unwrap().is_empty());
+
+        service.delete_user(&ada, bob.user.id).await.unwrap();
+        let held = feeder::client_keys(&sim).await;
+        assert!(held.contains(&key(70)) && held.contains(&key(71)));
         server.shutdown().await;
         sim.stop().await;
     });

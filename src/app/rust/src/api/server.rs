@@ -20,7 +20,6 @@ use wellfed_api::{
 pub use wellfed_server_client::Timeouts;
 use wellfed_server_client::{Auth, Client, PlainHttp, Url};
 
-use crate::api::keys::ClientKey;
 pub use crate::api::model::{FeedOutcome, FeedReason};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 pub use crate::api::server_views::{
@@ -239,42 +238,34 @@ impl ServerSession {
         Ok(self.client.session().await?.into())
     }
 
-    /// The phones this phone invited on its feeders, as the server recorded
-    /// them: one entry per phone, the server's id for its feeder. Revoking
-    /// this phone's token revokes them too, so a logout names them first.
-    /// They are the keys under this phone's token other than `key`, this
-    /// phone's own, and those not already being revoked.
-    pub async fn invited_phones(&self, key: &ClientKey) -> Result<Vec<String>, ServerError> {
-        let token = TokenId(ids::parse(&self.link.token_id)?);
-        let own = *key.keypair().public();
-        let phones = self.client.phones().await?;
-        Ok(phones
-            .into_iter()
-            .filter(|phone| phone.token == Some(token) && phone.key.0 != own)
-            .filter(|phone| phone.revoking.is_none())
-            .map(|phone| phone.feeder.to_string())
-            .collect())
-    }
-
-    /// Revoke this phone's token on the server and end every follow. The
-    /// server then revokes the keys recorded under the token on its
-    /// feeders: this phone's own, and the phones it invited
-    /// ([`Self::invited_phones`]). A token the server already stopped counts
-    /// as revoked.
-    pub async fn logout(&self) -> Result<(), ServerError> {
-        self.close();
-
+    /// Log this phone out: revoke its token on the server while its keys on
+    /// the feeders stay, kept with the keys they invited, so it still
+    /// reaches them directly. The server takes that only from a login, so a
+    /// leaked token cannot keep the keys it enrolled: `password` is the
+    /// account's, used once for a login that ends here, and never kept. A
+    /// token the server already dropped counts as logged out. Every follow
+    /// ends once it is; a wrong password changes nothing.
+    pub async fn logout(&self, password: String) -> Result<(), ServerError> {
         let id = TokenId(ids::parse(&self.link.token_id)?);
-        match self.client.revoke_token(id).await {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                let error = ServerError::from(error);
-                match error.kind {
-                    ServerErrorKind::TokenRevoked => Ok(()),
-                    _ => Err(error),
-                }
+        let mut login = open(&self.link.url, TIMEOUTS)?;
+        let credentials = Credentials {
+            name: self.link.user.clone(),
+            password,
+        };
+        login.login(&credentials).await?;
+        let ended = login.log_out_token(id).await;
+        // The login was only the way to the logout; one that never ends
+        // expires on the server.
+        let _ = login.logout().await;
+
+        if let Err(error) = ended {
+            let error = ServerError::from(error);
+            if error.kind != ServerErrorKind::NotFound {
+                return Err(error);
             }
         }
+        self.close();
+        Ok(())
     }
 
     pub async fn feeders(&self) -> Result<Vec<ServerFeeder>, ServerError> {

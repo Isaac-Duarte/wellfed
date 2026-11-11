@@ -5,6 +5,7 @@ import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/server/log_out.dart';
 import 'package:wellfed/state/server/server.dart';
 
 import '../support/fakes.dart';
@@ -52,12 +53,12 @@ void main() {
     expect(server.state, isA<ServerAbsent>());
   });
 
-  test('logging out revokes the token and forgets the server, and the feeders stay', () async {
+  test('logging out revokes the token with the password and forgets the server, and the feeders stay', () async {
     final (HomeServer server, FakeServerPorts ports, FakeRouter router, FakeBook book) = _server();
     await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
 
-    expect(await server.logOut(), isTrue);
-    expect(ports.session.logouts, 1);
+    expect(await server.logOut('hunter2'), isA<LoggedOut>().having((out) => out.revoked, 'revoked', isTrue));
+    expect(ports.session.logoutPasswords, ['hunter2']);
     expect(ports.kept, isNull);
     expect(book.server, isNull);
     expect(book.feeders, [_kitchen]);
@@ -70,8 +71,19 @@ void main() {
     await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
     ports.session.logoutFails = serverError(ServerErrorKind.unreachable);
 
-    expect(await server.logOut(), isFalse);
+    expect(await server.logOut('hunter2'), isA<LoggedOut>().having((out) => out.revoked, 'revoked', isFalse));
     expect(book.server, isNull);
+  });
+
+  test('a wrong password logs nothing out', () async {
+    final (HomeServer server, FakeServerPorts ports, _, FakeBook book) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    ports.session.logoutFails = serverError(ServerErrorKind.badCredentials);
+
+    final LogOutOutcome outcome = await server.logOut('wrong');
+    expect(outcome, isA<LogOutRefused>().having((out) => out.error.kind, 'kind', ServerErrorKind.badCredentials));
+    expect(book.server, isNotNull);
+    expect(server.state, isA<ServerLinked>());
   });
 
   test('removing the server leaves its token as it is', () async {

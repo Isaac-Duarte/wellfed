@@ -41,7 +41,6 @@ import 'package:wellfed/state/join/join.dart';
 import 'package:wellfed/state/server/add_server.dart';
 import 'package:wellfed/state/server/feeder_food.dart';
 import 'package:wellfed/state/server/household.dart';
-import 'package:wellfed/state/server/invited.dart';
 import 'package:wellfed/state/server/pet.dart';
 import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/state/server/server_history.dart';
@@ -285,7 +284,6 @@ class _WellfedAppState extends State<WellfedApp> {
       final ServerSession session? => ServerHistoryFlow(session, feeder),
       null => null,
     },
-    invitedPhones: () => invitedPhones(_server.session, widget.app.key),
   );
   late final AppLifecycleListener _lifecycle;
 

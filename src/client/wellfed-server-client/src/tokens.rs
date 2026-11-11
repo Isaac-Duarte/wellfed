@@ -30,4 +30,15 @@ impl Client {
         expect_status(response, StatusCode::NO_CONTENT).await?;
         Ok(())
     }
+
+    /// Log a phone out from a login session: revoke its token `id` while its
+    /// keys on the feeders stay, kept.
+    pub async fn log_out_token(&self, id: TokenId) -> Result<(), Error> {
+        let response = self
+            .api(Method::POST, &format!("/tokens/{id}/logout"))
+            .send()
+            .await?;
+        expect_status(response, StatusCode::NO_CONTENT).await?;
+        Ok(())
+    }
 }

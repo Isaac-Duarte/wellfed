@@ -95,7 +95,7 @@ void main() {
     expect(book.server, isNull);
   });
 
-  testWidgets('the account says the phone keeps its keys, and logging out revokes the token', (tester) async {
+  testWidgets('the account says the phone keeps its keys, and logging out asks the password for it', (tester) async {
     _phone(tester);
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
@@ -103,44 +103,18 @@ void main() {
     await settle(tester);
 
     expect(find.text('Owner'), findsOneWidget);
-    expect(find.textContaining('Deleting your account on the server revokes those keys'), findsOneWidget);
+    expect(find.textContaining('keeps its own keys on its feeders'), findsOneWidget);
     await tester.tap(find.text('Log out').first);
     await settle(tester);
+    expect(find.textContaining('The phones it invited keep theirs too'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'hunter2');
+    await tester.pump();
     await tester.tap(find.widgetWithText(TextButton, 'Log out'));
     await settle(tester);
 
-    expect(ports.session.logouts, 1);
+    expect(ports.session.logoutPasswords, ['hunter2']);
     expect(book.server, isNull);
     expect(book.feeders, [_kitchen]);
-  });
-
-  testWidgets('logging out says it revokes the phones this one invited, before it does', (tester) async {
-    _phone(tester);
-    final (HomeServer server, FakeServerPorts ports, FakeBook _) = _server();
-    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
-    await tester.pumpWidget(themed(AccountScreen(server: server, invitedPhones: () async => ['id-k', 'id-k'])));
-    await settle(tester);
-
-    await tester.tap(find.text('Log out').first);
-    await settle(tester);
-    expect(find.textContaining("this phone's own, and the 2 phones it invited (2 on a feeder)"), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
-    await settle(tester);
-    expect(ports.session.logouts, 0);
-  });
-
-  test('the logout names each feeder the invited phones are on', () {
-    const feeders = [
-      ListedFeeder(id: 'id-k', identity: 'aa', name: 'Kitchen'),
-      ListedFeeder(id: 'id-h', identity: 'bb', name: 'Hall'),
-    ];
-    expect(
-      logOutWords(['id-k', 'id-h', 'id-k'], feeders),
-      contains('the 3 phones it invited (2 on Kitchen, 1 on Hall)'),
-    );
-    expect(logOutWords(['id-h'], feeders), contains('and the phone it invited (1 on Hall)'));
-    expect(logOutWords([], feeders), contains("this phone's own. To keep them, remove the server instead."));
-    expect(logOutWords(null, feeders), contains('and any phone it invited'));
   });
 
   test('pets and foods are read, and a change reads them again', () async {

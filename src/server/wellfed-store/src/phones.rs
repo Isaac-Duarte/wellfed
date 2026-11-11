@@ -286,6 +286,32 @@ impl Store {
         Ok(())
     }
 
+    /// Keep every phone key of `token` not already being revoked, on every
+    /// feeder, as a kept client: the phone's own keys and the keys they
+    /// invited, which a logout keeps. A key on its way out (a replaced one)
+    /// still goes.
+    pub async fn keep_token_phones(&self, token: TokenId, at: Timestamp) -> Result<()> {
+        let at = millis(at);
+        let mut tx = self.writer.begin().await?;
+        sqlx::query!(
+            "INSERT INTO kept_clients (feeder_id, key, kept_ms)
+             SELECT feeder_id, key, ? FROM phone_keys WHERE token_id = ? AND revoke IS NULL
+             ON CONFLICT DO NOTHING",
+            at,
+            token.0,
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query!(
+            "DELETE FROM phone_keys WHERE token_id = ? AND revoke IS NULL",
+            token.0,
+        )
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// The clients an owner kept on a feeder.
     pub async fn kept_clients(&self, feeder: FeederId) -> Result<Vec<[u8; 32]>> {
         let rows = sqlx::query!(

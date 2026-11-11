@@ -1,5 +1,5 @@
 {
-  "revision": 3,
+  "revision": 4,
   "document": {
     "components": {
       "schemas": {
@@ -12958,6 +12958,51 @@
           "responses": {
             "204": {},
             "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/tokens/{id}/logout": {
+        "post": {
+          "operationId": "log_out_token",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "$ref": "#/components/schemas/TokenId"
+              }
+            }
+          ],
+          "responses": {
+            "204": {},
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
               "content": {
                 "application/json": {
                   "schema": {

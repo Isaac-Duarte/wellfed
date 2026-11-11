@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/server_ports.dart';
-import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
@@ -53,14 +52,12 @@ class FakeServerSession with FakeOpaque implements ServerSession {
     return who;
   }
 
-  /// The feeders of the phones this phone invited, one per phone.
-  List<String> invited = const [];
+  /// The password each logout carried.
+  final logoutPasswords = <String>[];
 
   @override
-  Future<List<String>> invitedPhones({required ClientKey key}) async => invited;
-
-  @override
-  Future<void> logout() async {
+  Future<void> logout({required String password}) async {
+    logoutPasswords.add(password);
     logouts++;
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (logoutFails case final error?) throw error;

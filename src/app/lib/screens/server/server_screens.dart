@@ -30,7 +30,6 @@ class ServerScreens {
     required this.newPet,
     required this.newFood,
     required this.newHistory,
-    this.invitedPhones,
   });
 
   final HomeServer server;
@@ -48,9 +47,6 @@ class ServerScreens {
   /// One feeder's long history, by the server's id for it.
   final ServerHistoryFlow? Function(String feeder) newHistory;
 
-  /// The phones this phone invited, which a logout revokes too.
-  final Future<List<String>?> Function()? invitedPhones;
-
   /// The account screen, or adding a server when there is none.
   Future<void> open(BuildContext context) async {
     if (server.state is! ServerLinked) {
@@ -64,7 +60,6 @@ class ServerScreens {
           server: server,
           household: () => unawaited(openHousehold(context)),
           logInAgain: () => unawaited(_push(context, (_) => FormWidth(child: AddServerScreen(newFlow: newAddServer)))),
-          invitedPhones: invitedPhones,
         ),
       ),
     );

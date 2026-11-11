@@ -2,53 +2,31 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:wellfed/screens/server/server_words.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
+import 'package:wellfed/state/server/log_out.dart';
 import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 
-/// What removing the server leaves.
+/// What logging out or removing the server leaves, said where both are.
 String get keptKeysWords =>
-    'This $deviceName keeps its own keys on its feeders and reaches them directly, '
-    'as before the server. Deleting your account on the server revokes those keys.';
+    'This $deviceName keeps its own keys on its feeders and reaches them directly, as before the server.';
 
-/// What a logout revokes with the token: this phone's own keys, and the
-/// phones it invited, `invited` holding the server's id of each one's
-/// feeder (`null`: the server could not say), named by `feeders`.
-String logOutWords(List<String>? invited, List<ListedFeeder> feeders) {
-  final String others = switch (invited) {
-    null => ', and any phone it invited',
-    [] => '',
-    [_] => ', and the phone it invited (${_perFeeder(invited, feeders)})',
-    _ => ', and the ${invited.length} phones it invited (${_perFeeder(invited, feeders)})',
-  };
-  return 'The server stops taking this $deviceName and revokes the keys its token holds on your feeders: '
-      "this $deviceName's own$others. To keep them, remove the server instead.";
-}
-
-/// How many of `invited` are on each feeder: "2 on Kitchen, 1 on Hall".
-String _perFeeder(List<String> invited, List<ListedFeeder> feeders) {
-  final counts = <String, int>{};
-  for (final String id in invited) {
-    counts[id] = (counts[id] ?? 0) + 1;
-  }
-  String name(String id) => feeders.where((feeder) => feeder.id == id).firstOrNull?.name ?? 'a feeder';
-  return [for (final MapEntry(:key, :value) in counts.entries) '$value on ${name(key)}'].join(', ');
-}
+/// What a logout does, and why it asks for the password.
+String get logOutWords =>
+    'The server stops taking this $deviceName. $keptKeysWords The phones it invited keep theirs too, '
+    'kept as an owner keeps a client, so deleting your account no longer revokes any of them. '
+    'Enter your password to log out.';
 
 /// The account this phone is logged in to the home server as: who, and the
 /// way out.
 class AccountScreen extends StatelessWidget {
-  const AccountScreen({super.key, required this.server, this.household, this.logInAgain, this.invitedPhones});
+  const AccountScreen({super.key, required this.server, this.household, this.logInAgain});
 
   final HomeServer server;
-
-  /// The phones this phone invited, which a logout revokes too: the
-  /// server's id of each one's feeder, or `null` when the server did not
-  /// say.
-  final Future<List<String>?> Function()? invitedPhones;
 
   /// Opens the home's pets and foods.
   final VoidCallback? household;
@@ -57,29 +35,24 @@ class AccountScreen extends StatelessWidget {
   final VoidCallback? logInAgain;
 
   Future<void> _logOut(BuildContext context) async {
-    final List<String>? invited = await invitedPhones?.call();
+    final String? password = await showDialog<String>(context: context, builder: (_) => const _LogOutDialog());
+    if (password == null) return;
+    final LogOutOutcome outcome = await server.logOut(password);
     if (!context.mounted) return;
-    final List<ListedFeeder> feeders = switch (server.state) {
-      ServerLinked(:final List<ListedFeeder> feeders) => feeders,
-      _ => const [],
+    final String? words = switch (outcome) {
+      LogOutRefused(:final ServerError error) => serverErrorWords(error),
+      LoggedOut(revoked: false) =>
+        "The server couldn't be reached, so this $deviceName's token works until it is revoked there.",
+      LoggedOut(revoked: true) => null,
     };
-    if (!await _confirm(context, 'Log out?', logOutWords(invited, feeders))) return;
-    final bool revoked = await server.logOut();
-    if (!context.mounted) return;
-    if (!revoked) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("The server couldn't be reached, so this $deviceName's token works until it is revoked there."),
-        ),
-      );
-    }
-    Navigator.pop(context);
+    if (words != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(words)));
+    if (outcome is LoggedOut) Navigator.pop(context);
   }
 
   Future<void> _remove(BuildContext context) async {
     final words =
         "The server keeps this $deviceName's token until it is revoked there; log out instead to end it now. "
-        '$keptKeysWords';
+        '$keptKeysWords Deleting your account on the server revokes those keys.';
     if (!await _confirm(context, 'Remove the server?', words)) return;
     await server.removeServer();
     if (context.mounted) Navigator.pop(context);
@@ -176,5 +149,51 @@ class AccountScreen extends StatelessWidget {
         ],
       );
     },
+  );
+}
+
+/// Asks for the account's password to log out: the password, or `null`
+/// when cancelled.
+class _LogOutDialog extends StatefulWidget {
+  const _LogOutDialog();
+
+  @override
+  State<_LogOutDialog> createState() => _LogOutDialogState();
+}
+
+class _LogOutDialogState extends State<_LogOutDialog> {
+  final _password = TextEditingController();
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Log out?'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(logOutWords),
+        const SizedBox(height: Space.s3),
+        TextField(
+          controller: _password,
+          obscureText: true,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Password'),
+          onChanged: (_) => setState(() {}),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(
+        onPressed: _password.text.isEmpty ? null : () => Navigator.pop(context, _password.text),
+        child: const Text('Log out'),
+      ),
+    ],
   );
 }

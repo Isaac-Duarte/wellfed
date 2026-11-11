@@ -5697,6 +5697,57 @@
         }
       }
     },
+    "/api/v1/tokens/{id}/logout": {
+      "post": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Log a phone out: revoke the caller's own token while its keys on the\nfeeders stay, kept, with the keys they invited, so the phone still\nreaches them on the LAN. From a login session only, so a leaked token\ncannot keep the keys it enrolled; `DELETE /tokens/{id}` revokes them.",
+        "operationId": "log_out_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TokenId"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "session_required: a token cannot keep its own keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found: another user's token, or none",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users": {
       "get": {
         "tags": [

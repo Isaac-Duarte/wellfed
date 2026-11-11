@@ -246,7 +246,7 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
             .await;
         assert!(caught_up, "the first event after the command is the lock's");
 
-        session.logout().await.unwrap();
+        session.logout(ada_login().password).await.unwrap();
         heard(
             &mut updates,
             "the stream ends at logout",
@@ -264,7 +264,7 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
             Some(ServerErrorKind::TokenRevoked)
         );
         // Again: the token is already gone, which is what logging out wants.
-        restored.logout().await.unwrap();
+        restored.logout(ada_login().password).await.unwrap();
         assert!(owner.tokens().await.unwrap().is_empty());
 
         server.stop().await;

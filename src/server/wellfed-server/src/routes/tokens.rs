@@ -80,3 +80,28 @@ pub(crate) async fn revoke_token(
     state.service.revoke_token(&caller, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Log a phone out: revoke the caller's own token while its keys on the
+/// feeders stay, kept, with the keys they invited, so the phone still
+/// reaches them on the LAN. From a login session only, so a leaked token
+/// cannot keep the keys it enrolled; `DELETE /tokens/{id}` revokes them.
+#[utoipa::path(
+    post,
+    path = "/tokens/{id}/logout",
+    tag = TAG_TOKENS,
+    params(("id" = TokenId, Path)),
+    responses(
+        (status = 204),
+        (status = 401, body = Problem),
+        (status = 403, body = Problem, description = "session_required: a token cannot keep its own keys"),
+        (status = 404, body = Problem, description = "not found: another user's token, or none"),
+    ),
+)]
+pub(crate) async fn log_out_token(
+    State(state): State<AppState>,
+    Allowed(caller, _): Allowed<need::OwnAccount>,
+    WithRejection(Path(id), _): WithRejection<Path<TokenId>, ApiError>,
+) -> ApiResult<StatusCode> {
+    state.service.log_out_token(&caller, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}

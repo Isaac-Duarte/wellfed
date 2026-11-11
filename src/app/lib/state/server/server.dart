@@ -9,6 +9,7 @@ import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/server/log_out.dart';
 
 /// Why the owner's server is not serving this phone right now.
 enum ServerProblem {
@@ -227,23 +228,27 @@ class HomeServer extends ChangeNotifier {
     return const LoginDone();
   }
 
-  /// Revoke this phone's token on the server, then forget the server. The
-  /// phone keeps its own keys on its feeders and reaches them directly.
-  /// Whether the server took the revocation: when it could not be reached the
-  /// token stays valid until it is revoked there.
-  Future<bool> logOut() async {
+  /// Revoke this phone's token on the server with the account's
+  /// `password`, then forget the server. The phone keeps its own keys on
+  /// its feeders, and the phones it invited keep theirs, so it reaches them
+  /// directly. A wrong password, or too many, changes nothing; a server
+  /// that could not take it is forgotten all the same, its token valid
+  /// until it is revoked there.
+  Future<LogOutOutcome> logOut(String password) async {
     final ServerSession? session = _session;
     var revoked = false;
     if (session != null) {
       try {
-        await session.logout();
+        await session.logout(password: password);
         revoked = true;
-      } on ServerError {
-        revoked = false;
+      } on ServerError catch (error) {
+        if (error.kind case ServerErrorKind.badCredentials || ServerErrorKind.rateLimited) {
+          return LogOutRefused(error);
+        }
       }
     }
     await _forget();
-    return revoked;
+    return LoggedOut(revoked: revoked);
   }
 
   /// Forget the server on this phone alone, its token left as it is.
