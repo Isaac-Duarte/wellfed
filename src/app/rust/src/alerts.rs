@@ -764,6 +764,7 @@ mod tests {
     #[test]
     fn version_1_reads_and_writes_as_its_sample() {
         let sample = include_str!("../tests/fixtures/alerts-v1.json");
+        stored::assert_every_field_written::<AlertState>(sample);
         let read = stored::read::<AlertState>(sample.as_bytes()).unwrap();
         assert_eq!(read, stored::Found::Read(every_field()));
 

@@ -193,6 +193,95 @@ fn store_error(error: std::io::Error) -> BridgeError {
     BridgeError::new(ErrorKind::Store, error)
 }
 
+/// Hold `T` to writing every field it knows, absent ones as `null`: the
+/// sample (a file with every value set) with each field `T` reads as `null`
+/// set so, by trying each one, is read and written back, and each object
+/// the result holds must have every key the sample's has there. Done twice:
+/// the outermost fields first, then the innermost, so a field inside one
+/// that can be absent is tried too. A field skipped when `None` would let
+/// a save's carry ([`Versioned::carry`]) put back the value the save
+/// cleared.
+#[cfg(test)]
+pub(crate) fn assert_every_field_written<T: Versioned>(sample: &str) {
+    fn readable<T: Versioned>(value: &Value) -> bool {
+        matches!(read::<T>(value.to_string().as_bytes()), Ok(Found::Read(_)))
+    }
+
+    /// Set each field under `pointer` that still reads as `null`, or else
+    /// look inside it; `Inner` looks inside first, nulling only plain
+    /// values.
+    fn null<T: Versioned>(file: &mut Value, pointer: &str, order: Order) {
+        let keys: Vec<String> = match file.pointer(pointer) {
+            Some(Value::Object(object)) => object.keys().cloned().collect(),
+            Some(Value::Array(items)) => (0..items.len()).map(|i| i.to_string()).collect(),
+            _ => return,
+        };
+        for key in keys {
+            let inner = format!("{pointer}/{}", key.replace('~', "~0").replace('/', "~1"));
+            let nested = file
+                .pointer(&inner)
+                .is_some_and(|value| value.is_object() || value.is_array());
+            if order == Order::Inner && nested {
+                null::<T>(file, &inner, order);
+                continue;
+            }
+            let mut tried = file.clone();
+            if let Some(field) = tried.pointer_mut(&inner) {
+                *field = Value::Null;
+            }
+            if !file.pointer(&inner).is_some_and(Value::is_null) && readable::<T>(&tried) {
+                *file = tried;
+            } else {
+                null::<T>(file, &inner, order);
+            }
+        }
+    }
+
+    /// Each object in `written`, with the sample's at the same place.
+    fn compare(written: &Value, sample: &Value, pointer: &str) {
+        match (written, sample) {
+            (Value::Object(written), Value::Object(sample)) => {
+                let keys = |object: &serde_json::Map<String, Value>| {
+                    object.keys().cloned().collect::<Vec<_>>()
+                };
+                assert_eq!(keys(written), keys(sample), "the fields at {pointer:?}");
+                for (key, inner) in written {
+                    compare(inner, &sample[key], &format!("{pointer}/{key}"));
+                }
+            }
+            (Value::Array(written), Value::Array(sample)) => {
+                for (i, (written, sample)) in written.iter().zip(sample).enumerate() {
+                    compare(written, sample, &format!("{pointer}/{i}"));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Order {
+        Outer,
+        Inner,
+    }
+
+    let sample: Value = serde_json::from_str(sample).expect("the sample is JSON");
+    for order in [Order::Outer, Order::Inner] {
+        let mut absent = sample.clone();
+        null::<T>(&mut absent, "", order);
+        assert_ne!(absent, sample, "the sample has a field that can be absent");
+
+        let Ok(Found::Read(value)) = read::<T>(absent.to_string().as_bytes()) else {
+            panic!("the sample with its absent fields reads");
+        };
+        let written = serde_json::to_value(Written {
+            version: T::VERSION,
+            data: &value,
+        })
+        .expect("the file serializes");
+        compare(&written, &sample, "");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,5 +415,22 @@ mod tests {
             b"[]",
             "a strict load moves nothing"
         );
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Skips {
+        kept: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        skipped: Option<u32>,
+    }
+
+    impl Versioned for Skips {
+        const VERSION: u32 = 1;
+    }
+
+    #[test]
+    #[should_panic(expected = "the fields at \"/data\"")]
+    fn a_field_skipped_when_absent_is_caught() {
+        assert_every_field_written::<Skips>(r#"{"version": 1, "data": {"kept": 1, "skipped": 2}}"#);
     }
 }

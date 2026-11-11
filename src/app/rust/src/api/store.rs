@@ -285,6 +285,7 @@ mod tests {
     #[test]
     fn version_1_reads_and_writes_as_its_sample() {
         let sample = include_str!("../../tests/fixtures/wellfed-v1.json");
+        stored::assert_every_field_written::<AppFile>(sample);
         let Found::Read(read) = stored::read::<AppFile>(sample.as_bytes()).unwrap() else {
             panic!("version 1 is this build's");
         };

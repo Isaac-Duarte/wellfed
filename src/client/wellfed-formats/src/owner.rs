@@ -107,6 +107,8 @@ mod tests {
                 }],
             }
         );
+        // No field can be absent, so the sample written back is every key
+        // written (`crate::kept`).
         let written: serde_json::Value = serde_json::to_value(&file).unwrap();
         let sample: serde_json::Value = serde_json::from_str(SAMPLE).unwrap();
         assert_eq!(written, sample, "written as the sample");

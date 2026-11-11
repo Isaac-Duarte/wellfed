@@ -259,6 +259,8 @@ mod tests {
         assert_eq!(file.server, "http://192.0.2.7:8080/");
         assert_eq!(file.user, "ada");
         assert_eq!(file.secret, "a-sample-token-secret");
+        // No field can be absent, so the sample written back is every key
+        // written (`wellfed_formats::kept`).
         let written = serde_json::to_value(&file).unwrap();
         let sample: serde_json::Value = serde_json::from_str(SAMPLE).unwrap();
         assert_eq!(written, sample);

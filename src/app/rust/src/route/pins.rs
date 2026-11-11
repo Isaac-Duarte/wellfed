@@ -599,6 +599,7 @@ mod tests {
     #[test]
     fn version_1_reads_and_writes_as_its_sample() {
         let sample = include_str!("../../tests/fixtures/pending-v1.json");
+        stored::assert_every_field_written::<PinFile>(sample);
         let stored::Found::Read(read) = stored::read::<PinFile>(sample.as_bytes()).unwrap() else {
             panic!("version 1 is this build's");
         };

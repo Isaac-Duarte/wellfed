@@ -8,6 +8,12 @@
 //!   carries the fields it did not read over from the file it replaces
 //!   ([`Kept::carry`]), so an older build's save never drops a newer minor's
 //!   data. An enum value an older build cannot read is a new major instead.
+//! - **Every field written.** A kept type writes every field it knows, an
+//!   absent one as `null`, never skipped (no `skip_serializing_if`): the
+//!   carry takes a key the new file lacks for one this build didn't read,
+//!   and would put back the value a save cleared. Each file's sample test
+//!   writes it with every field that can be absent left absent, and checks
+//!   every key is there.
 //! - **A reader for every major since the beta.** A build that makes a new
 //!   major keeps the old one's reader in [`Kept::earlier`] and converts.
 //! - **Never write over newer data.** A file of a newer major reads as
