@@ -2,7 +2,10 @@
 //! ([API design](../../../../docs/server/design.md#storage)).
 //!
 //! SQLite in WAL mode, with one writer connection and a small read pool,
-//! so writes never contend. Migrations are embedded and run at open, after
+//! so writes never contend. Every commit is synced before it returns
+//! (`synchronous=FULL`): the command journal's row must outlast a power cut
+//! before its write goes to the feeder, and an adopted feeder's key before
+//! the feeder is told it is adopted. Migrations are embedded and run at open, after
 //! a copy of the database is taken if any are pending. Queries are
 //! `query!`/`query_as!`, checked at build time against the offline
 //! metadata in `.sqlx/` (`make sqlx-prepare` regenerates it).
@@ -28,6 +31,7 @@ mod audit;
 mod call_writes;
 mod commands;
 mod convert;
+pub mod copies;
 mod diagnostics;
 mod export;
 mod feeders;
@@ -96,6 +100,13 @@ pub enum Error {
     Json(&'static str, serde_json::Error),
     #[error("{0} is not a UTF-8 path")]
     Path(std::path::PathBuf),
+    /// Keeping the copy taken before a migration failed.
+    #[error("keep the pre-migration copy")]
+    Copy(#[from] copies::CopyError),
+    #[error(
+        "the database was migrated by a newer server (migration {applied}; this build's newest is {embedded}), so it was opened read-only and left as it is"
+    )]
+    Newer { applied: i64, embedded: i64 },
 }
 
 #[cfg(test)]
@@ -132,6 +143,18 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub struct Store {
     writer: SqlitePool,
     reader: SqlitePool,
+    schema: Schema,
+}
+
+/// Whose schema the database has, as [`Store::open`] found it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Schema {
+    /// This build's: its pending migrations ran, and it is read and written.
+    Current,
+    /// A newer build's, which ran migration `applied` where this build's
+    /// newest is `embedded`. Both pools are read-only, so SQLite refuses
+    /// every write and nothing that build stored is written over.
+    Newer { applied: i64, embedded: i64 },
 }
 
 impl Store {
@@ -140,16 +163,41 @@ impl Store {
     /// copied beside itself as `<name>.before-<version>-<unix ms>`, the
     /// time being `now`: a copy per attempt, so one left by a migration
     /// that failed never blocks the next one made at a later time.
+    ///
+    /// A database a newer build migrated is opened read-only instead, with
+    /// nothing run or copied ([`Schema::Newer`]); the caller decides what a
+    /// read-only database is good for.
     pub async fn open(path: &Path, now: Timestamp) -> Result<Self> {
         let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            // A committed command journal row must survive power loss
-            // before the service sends its physical action to a feeder.
+            // In WAL, `NORMAL` syncs only at checkpoints, so a power cut
+            // can roll back a commit that already returned: a journal row
+            // the server then sends nothing for, and a client is told a
+            // write never went that may have. One fsync per commit is cheap
+            // at a household's write rate.
             .synchronous(SqliteSynchronous::Full)
             .foreign_keys(true)
             .busy_timeout(BUSY);
+        let schema = migrate::schema(path).await?;
+        if let Schema::Newer { .. } = schema {
+            let options = migrate::read_only(path);
+            let writer = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(options.clone())
+                .await?;
+            let reader = SqlitePoolOptions::new()
+                .max_connections(READERS)
+                .connect_with(options)
+                .await?;
+            return Ok(Self {
+                writer,
+                reader,
+                schema,
+            });
+        }
+
         let writer = SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(options.clone())
@@ -160,7 +208,31 @@ impl Store {
             .max_connections(READERS)
             .connect_with(options.read_only(true))
             .await?;
-        Ok(Self { writer, reader })
+        Ok(Self {
+            writer,
+            reader,
+            schema,
+        })
+    }
+
+    /// Whose schema the database has: a newer build's is read-only.
+    pub fn schema(&self) -> Schema {
+        self.schema
+    }
+
+    /// This store, for a caller that writes: one a newer build migrated is
+    /// closed and refused ([`Error::Newer`]), having written nothing. The
+    /// pools are shared by every clone of this store, so a refusal closes
+    /// them for each clone too: call it right after [`Store::open`], before
+    /// handing out clones.
+    pub async fn writable(self) -> Result<Self> {
+        match self.schema {
+            Schema::Current => Ok(self),
+            Schema::Newer { applied, embedded } => {
+                self.close().await;
+                Err(Error::Newer { applied, embedded })
+            }
+        }
     }
 
     /// A trivial query on the writer and on a reader, for readiness: the
@@ -193,5 +265,28 @@ impl Store {
     pub async fn close(&self) {
         self.reader.close().await;
         self.writer.close().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A commit is synced before it returns, so a journal row that went out
+    /// to a feeder outlasts a power cut: `FULL` is 2.
+    #[tokio::test]
+    async fn the_writer_syncs_every_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("server.db"), Timestamp::UNIX_EPOCH)
+            .await
+            .unwrap();
+
+        let synchronous: i64 = sqlx::query_scalar("PRAGMA synchronous")
+            .fetch_one(&store.writer)
+            .await
+            .unwrap();
+
+        assert_eq!(synchronous, 2);
+        store.close().await;
     }
 }

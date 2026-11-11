@@ -18,11 +18,13 @@ use sha2::{Digest, Sha256};
 use wellfed_core::flash_coord::{FlashFault, FlashPhase, FlashReply};
 use wellfed_core::ota::MAX_CHUNK;
 use wellfed_core::ota::install::{
-    Bank0Check, Bank0Error, Blocked, IDLE_MS, Phase, Progress, Refused, Stop,
+    Bank0Check, Bank0Error, Blocked, IDLE_MS, Marking, Phase, Progress, Refused, Stop,
 };
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
-use wellfed_core::store::update::{Bank0, Candidate, State, UpdateStatus, UpdateStore};
+use wellfed_core::store::update::{
+    Bank0, Candidate, State, UpdateError, UpdateStatus, UpdateStore,
+};
 use wellfed_hal::flash::park::{self, Mmio};
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::{self, Arming, Event, Hooks, Poll, UPDATE_BIT};
@@ -115,7 +117,15 @@ struct TestFlash {
     handover_at_marker: u32,
     handover_cleared: u32,
     fail_handover: bool,
+    /// The marker's program reports a failure: with `wrote`, after
+    /// programming it all the same.
     fail_marker: bool,
+    wrote: bool,
+    /// The marker's readback fails.
+    fail_marker_read: bool,
+    /// The hooks read unarmed once the activation is recorded, just before
+    /// the marker.
+    disarm_at_marker: bool,
     /// The attempt register as each bank-1 program found it: what a reset
     /// inside that write would leave behind.
     register_seen: Vec<u32>,
@@ -126,7 +136,8 @@ struct TestFlash {
 
 impl Flash for TestFlash {
     fn armed(&self) -> bool {
-        self.inner.armed()
+        let at_marker = matches!(store().record().state, State::Activated(_));
+        self.inner.armed() && !(self.disarm_at_marker && at_marker)
     }
     fn erase(&mut self, sector: u32) -> bool {
         self.inner.erase(sector)
@@ -142,6 +153,10 @@ impl Flash for TestFlash {
             .push(fake::with(|h| h.backup[MARKER_REGISTER as usize]));
         let n = self.programs;
         self.programs += 1;
+        if self.fail_marker && data == MARKER && self.wrote {
+            let _ = self.inner.program(sector, offset, data);
+            return false;
+        }
         if self.fail_program == Some(n) || (self.fail_marker && data == MARKER) {
             return false;
         }
@@ -162,6 +177,10 @@ impl Flash for TestFlash {
         self.inner.clear_handover()
     }
     fn read(&mut self, sector: u32, offset: u32, bytes: &mut [u8]) -> bool {
+        let marker_read = sector == 0 && offset == 0 && bytes.len() == MARKER.len();
+        if self.fail_marker_read && marker_read && self.state_at_marker.is_some() {
+            return false;
+        }
         let n = self.reads;
         self.reads += 1;
         if self.stale_read == Some(n) {
@@ -500,19 +519,78 @@ fn a_failed_program_or_readback_stops_the_install() {
     }
 }
 
+/// Each way the marker's program can end without reading back: it may be
+/// down all the same, so the activation stands and the feeder restarts as
+/// after any activation. The boot decides: the new build (when the marker
+/// landed) raises the floor as it confirms; bank 0 again (when it did not)
+/// finds the manifest activated, as after a failed trial, and never takes
+/// it again. Never `Pending`, which would leave a build booting from that
+/// marker below the floor.
 #[test]
-fn a_marker_that_fails_stops_the_install_and_keeps_the_offer_pending() {
-    let _guard = start(0);
-    let mut rig = Rig::bench(0);
-    let payload = image(SECTOR);
-    // 16 page programs for the one sector, then the marker.
-    rig.flash.fail_program = Some(16);
-    rig.offer(&manifest(3, &payload), None).unwrap();
-    let stopped = rig.push(&payload, None);
-    assert_eq!(stopped.stopped, Some(Stop::Activate));
-    assert!(fake::with(|h| h.bank1[..8] != MARKER));
-    assert!(matches!(store().record().state, State::Pending(c) if c.version == 3));
-    assert!(!rig.restarted);
+fn a_marker_that_does_not_read_back_stands_activated_and_the_boot_decides() {
+    type Fault = fn(&mut TestFlash);
+    let faults: [(&str, Fault, bool); 4] = [
+        // 16 page programs for the one sector, then the marker's readback.
+        ("stale read", |f| f.stale_read = Some(16), true),
+        ("failed read", |f| f.fail_marker_read = true, true),
+        (
+            "failed program that wrote",
+            |f| {
+                f.fail_marker = true;
+                f.wrote = true;
+            },
+            true,
+        ),
+        // Armed, so the program may have run before it reported a fault.
+        ("failed program", |f| f.fail_marker = true, false),
+    ];
+    for (label, fault, landed) in faults {
+        let _guard = start(0);
+        let mut rig = Rig::bench(0);
+        let payload = image(SECTOR);
+        let signed = manifest(3, &payload);
+        fault(&mut rig.flash);
+        rig.offer(&signed, None).unwrap();
+
+        let done = rig.push(&payload, None);
+        assert_eq!(done.phase, Phase::Activated, "{label}");
+        assert_eq!(done.stopped, None, "{label}");
+        assert!(matches!(store().record().state, State::Activated(c) if c.version == 3));
+        assert_eq!(fake::with(|h| h.bank1[..8] == MARKER), landed, "{label}");
+        assert!(!arming::update_attempted(), "{label}");
+        assert!(rig.records.iter().any(|r| matches!(
+            r,
+            Record::Activated {
+                version: 3,
+                marking: Marking::Uncertain,
+                ..
+            }
+        )));
+        rig.steps(1);
+        rig.now += LEAVE_MAX_MS;
+        rig.steps(1);
+        assert!(rig.restarted, "{label}: restarts as after any activation");
+
+        if landed {
+            // The new build boots, confirms and raises the floor.
+            let mut booted = Update::new(1, [0x22; 32], None, StageSlots(Slots::new()));
+            assert_eq!(
+                booted.raise_floor(),
+                Floor::Raised { version: 3 },
+                "{label}"
+            );
+            assert_eq!(store().record().min_version, 3);
+        } else {
+            // Bank 0 boots again: the same manifest is never installed
+            // again, as after a failed trial. The restart clears what the
+            // boot before held in RAM.
+            mailbox::reset();
+            INTERLOCK.reset();
+            let mut rig = Rig::bench(0);
+            assert_eq!(rig.offer(&signed, None), Err(Refused::Failed), "{label}");
+            assert_eq!(store().record().min_version, 0);
+        }
+    }
 }
 
 #[test]
@@ -1130,6 +1208,155 @@ fn a_retired_key_signs_nothing_more() {
     );
 }
 
+/// Release-key rotation through the statement path, booting between steps:
+/// `b` is the key bank 0 builds in, and the release slot's key `r1`, which
+/// `b` added, has retired it. A booted stage whose build builds in `key`.
+fn rotation() -> (SigningKey, SigningKey, SigningKey) {
+    let (b, r1, r2) = (
+        bench(),
+        SigningKey::from_bytes(&[0x51; 32]),
+        SigningKey::from_bytes(&[0x52; 32]),
+    );
+    let answer = boot(&b).ask(key_add(&b, &r1));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Add(public(&r1)))));
+    let answer = boot(&b).ask(key_revoke(&r1, &b));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Revoke(id(&b)))));
+    (b, r1, r2)
+}
+
+fn boot(built_in: &SigningKey) -> Rig {
+    mailbox::reset();
+    INTERLOCK.reset();
+    Rig::new(0, Some(public(built_in)))
+}
+
+fn public(key: &SigningKey) -> [u8; 32] {
+    key.verifying_key().to_bytes()
+}
+
+fn id(key: &SigningKey) -> [u8; 8] {
+    key_id(&public(key))
+}
+
+fn statement_by(signer: &SigningKey, body: &[u8]) -> Request {
+    let mut statement = body.to_vec();
+    statement.extend_from_slice(&signer.sign(body).to_bytes());
+    Request::statement(&statement).unwrap()
+}
+
+fn key_add(signer: &SigningKey, added: &SigningKey) -> Request {
+    statement_by(signer, &offer::key_add_body(&id(signer), &public(added)))
+}
+
+fn key_revoke(signer: &SigningKey, retired: &SigningKey) -> Request {
+    statement_by(signer, &offer::revoke_body(&id(signer), &id(retired)))
+}
+
+/// Once the slot's key is the only one left that signs statements, no
+/// order of statements alone replaces it: adding the successor finds the
+/// slot taken, and a key that retires itself leaves no key to sign the
+/// add. The signer writes no such retirement; this pins why.
+#[test]
+fn statements_alone_do_not_replace_the_last_statement_signer() {
+    let _guard = start(0);
+    let (b, r1, r2) = rotation();
+
+    assert_eq!(
+        boot(&b).ask(key_add(&r1, &r2)),
+        Err(Refused::Store(UpdateError::Occupied))
+    );
+
+    let answer = boot(&b).ask(key_revoke(&r1, &r1));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Revoke(id(&r1)))));
+    for signer in [&r1, &b] {
+        assert_eq!(
+            boot(&b).ask(key_add(signer, &r2)),
+            Err(Refused::Statement(StatementError::Key(KeyError::Revoked)))
+        );
+    }
+    assert_eq!(store().record().added_key(), None);
+}
+
+/// The supported rotation: the slot's key signs a build that builds in the
+/// successor. Running that build, the successor retires the old key and
+/// then fills the slot with itself, so bank 0, which builds in the first
+/// key, takes the successor's offers and no longer the old key's.
+#[test]
+fn a_release_key_rotates_through_a_build_that_builds_in_its_successor() {
+    let _guard = start(0);
+    let (b, r1, r2) = rotation();
+    let payload = image(LEN);
+    let handover = manifest_for(&r1, 3, &payload, 0x33, ImageKind::Replacement);
+    let admitted = offer::admit_offer(
+        &handover,
+        None,
+        &offer::Context {
+            ring: offer::KeyRing {
+                built_in: &[public(&b)],
+                added: store().record().added_key(),
+                enrolled: &[],
+                revoked: store().record().revoked(),
+            },
+            floor: 0,
+            device: DEVICE,
+            running: None,
+            model: MODEL,
+        },
+    );
+    assert_eq!(admitted.map(|a| a.trust), Ok(offer::Trust::Added));
+
+    // The handed-over build runs, with the successor built in.
+    let answer = boot(&r2).ask(key_revoke(&r2, &r1));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Revoke(id(&r1)))));
+    let answer = boot(&r2).ask(key_add(&r2, &r2));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Add(public(&r2)))));
+    assert_eq!(store().record().added_key(), Some(public(&r2)));
+
+    // Bank 0 still builds in the first key.
+    let mut bank0 = boot(&b);
+    for retired in [&r1, &b] {
+        let signed = manifest_for(retired, 4, &payload, 0x44, ImageKind::Replacement);
+        assert_eq!(
+            bank0.offer(&signed, None),
+            Err(Refused::Offer(OfferError::Key(KeyError::Revoked)))
+        );
+    }
+    let signed = manifest_for(&r2, 4, &payload, 0x44, ImageKind::Replacement);
+    assert_eq!(progress(bank0.offer(&signed, None)).phase, Phase::Receiving);
+}
+
+/// With the retired list full, the hand-over's revoke is refused before
+/// anything changes and its add finds the slot still taken, so bank 0
+/// keeps taking the old release key's offers.
+#[test]
+fn a_full_retired_list_leaves_the_old_release_key_trusted() {
+    let _guard = start(0);
+    let (b, r1, r2) = rotation();
+    let held = store().record().revoked().len();
+    for n in held..wellfed_core::store::update::REVOKED {
+        let filler = [u8::try_from(n).unwrap(); 8];
+        let answer = boot(&r2).ask(statement_by(&r2, &offer::revoke_body(&id(&r2), &filler)));
+        assert_eq!(answer, Ok(Answer::Key(KeyStatement::Revoke(filler))));
+    }
+
+    assert_eq!(
+        boot(&r2).ask(key_revoke(&r2, &r1)),
+        Err(Refused::Store(UpdateError::Full))
+    );
+    assert_eq!(
+        boot(&r2).ask(key_add(&r2, &r2)),
+        Err(Refused::Store(UpdateError::Occupied))
+    );
+    assert_eq!(store().record().added_key(), Some(public(&r1)));
+
+    let payload = image(LEN);
+    let signed = manifest_for(&r1, 4, &payload, 0x44, ImageKind::Replacement);
+    assert_eq!(
+        progress(boot(&b).offer(&signed, None)).phase,
+        Phase::Receiving
+    );
+}
+
 #[test]
 fn an_owner_s_enrolled_key_signs_an_offer() {
     let _guard = start(0);
@@ -1686,9 +1913,42 @@ fn a_handover_that_will_not_mark_stops_the_activation() {
     assert_eq!(rig.flash.state_at_marker, None, "no marker went in");
 }
 
-/// A bank-1 marker that does not land takes the mark back with it.
+/// Hooks unarmed at the marker refuse its program before it touches flash:
+/// the marker is never written, so the offer goes back to pending, a stock
+/// image's handover mark is taken back, and the install stops without a
+/// restart, as before any activation.
 #[test]
-fn a_marker_that_fails_takes_the_handover_back() {
+fn a_marker_the_flash_was_not_armed_for_stops_and_keeps_the_offer_pending() {
+    for stock in [false, true] {
+        let _guard = start(0);
+        let mut rig = Rig::bench(0);
+        let payload = image(SECTOR);
+        if stock {
+            let (manifest, statement) = stock_offer(&payload);
+            progress(rig.offer(&manifest, Some(&statement)));
+        } else {
+            progress(rig.offer(&manifest(3, &payload), None));
+        }
+        rig.flash.disarm_at_marker = true;
+
+        let stopped = rig.push(&payload, None);
+        assert_eq!(stopped.stopped, Some(Stop::Activate), "stock {stock}");
+        assert_eq!(rig.flash.state_at_marker, None, "no marker program");
+        assert!(fake::with(|h| h.bank1[..8] != MARKER));
+        assert!(matches!(store().record().state, State::Pending(c) if c.version == 3));
+        assert_eq!(handover_bytes(), [0xff; 16]);
+        rig.steps(1);
+        rig.now += LEAVE_MAX_MS;
+        rig.steps(1);
+        assert!(!rig.restarted);
+    }
+}
+
+/// A bank-1 marker whose program failed may have landed: stock may boot,
+/// so the handover mark stays, and a Wellfed boot after it clears itself
+/// into Bluetooth setup whether or not stock went in.
+#[test]
+fn a_marker_that_fails_keeps_the_handover() {
     let _guard = start(0);
     let mut rig = Rig::bench(0);
     let payload = image(LEN);
@@ -1698,8 +1958,9 @@ fn a_marker_that_fails_takes_the_handover_back() {
 
     let done = rig.push(&payload, None);
 
-    assert_ne!(done.phase, Phase::Activated);
-    assert_eq!(handover_bytes(), [0xff; 16]);
+    assert_eq!(done.phase, Phase::Activated);
+    assert_eq!(rig.flash.handover_cleared, 0);
+    assert_eq!(handover_bytes(), handover::MARKER);
 }
 
 #[test]

@@ -488,6 +488,28 @@ async def test_an_entry_of_a_newer_integration_is_refused(
     assert entry.state is ConfigEntryState.MIGRATION_ERROR
 
 
+async def test_an_entry_of_a_newer_minor_is_read_as_it_is(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=fake.IDENTITY.hex(),
+        data={**DIRECT_DATA, "added_by_a_newer_minor": True},
+        version=2,
+        minor_version=2,
+    )
+    entry.add_to_hass(hass)
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert (entry.version, entry.minor_version) == (2, 2), "left at its minor"
+    assert entry.data["added_by_a_newer_minor"] is True
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_an_entry_from_before_the_routes_fails_to_migrate_and_deletes_cleanly(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:

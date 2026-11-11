@@ -5,6 +5,7 @@ mod homes;
 #[path = "store/passwords.rs"]
 mod passwords;
 
+use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jiff::Timestamp;
@@ -524,30 +525,24 @@ fn copies(dir: &std::path::Path) -> usize {
         .count()
 }
 
-/// A database whose record says a migration ran that this build lacks has
-/// its own migrations pending and fails them. Each attempt copies the
-/// database first, named for the time the caller gives, and a copy left by
-/// one attempt does not block the next.
+/// A database whose own migrations are pending and fail. Each attempt
+/// copies the database first, named for the time the caller gives, and a
+/// copy left by one attempt does not block the next.
 #[tokio::test]
 async fn pending_migrations_copy_the_database_first_on_every_attempt() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.db");
     Store::open(&path, at(0)).await.unwrap().close().await;
 
+    // The record forgets every migration after the first, whose tables
+    // stay: the second runs again and fails on its table.
     let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
         .await
         .unwrap();
-    sqlx::query("DELETE FROM _sqlx_migrations")
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version > 1")
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query(
-        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
-         VALUES (0, 'from another build', 1, x'00', 0)",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
     pool.close().await;
 
     // The caller's clock names each copy; two attempts are two times.
@@ -555,12 +550,21 @@ async fn pending_migrations_copy_the_database_first_on_every_attempt() {
         let now = at(ms);
         let opened = Store::open(&path, now).await;
         assert!(matches!(opened, Err(Error::Migrate(_))), "{opened:?}");
-        assert_eq!(copies(dir.path()), attempt);
+        assert_eq!(copies(dir.path()), attempt, "no partial copy left");
         // Named for the newest pending migration and the time given.
-        let newest = std::fs::read_dir(env!("CARGO_MANIFEST_DIR").to_owned() + "/migrations")
-            .unwrap()
-            .count();
+        let newest = migrations();
         let copy = format!("server.db.before-{newest}-{}", now.as_millisecond());
-        assert!(dir.path().join(copy).exists(), "named for the time given");
+        let mode = std::fs::metadata(dir.path().join(copy))
+            .expect("named for the time given")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "the server's user's alone");
     }
+}
+
+fn migrations() -> i64 {
+    let count = std::fs::read_dir(env!("CARGO_MANIFEST_DIR").to_owned() + "/migrations")
+        .unwrap()
+        .count();
+    i64::try_from(count).unwrap()
 }

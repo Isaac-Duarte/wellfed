@@ -154,10 +154,7 @@ impl Store {
             .map(|row| {
                 let value = row
                     .reason
-                    .map(|reason| {
-                        Blocked::from_code(&reason).ok_or(Error::Corrupt("blocked reason"))
-                    })
-                    .transpose()?;
+                    .map(|reason| Blocked::from_code(&reason).unwrap_or(Blocked::Unknown));
                 projected(row.epoch, row.seq, row.at_s, row.received_ms, value)
             })
             .collect()
@@ -190,8 +187,10 @@ impl TryFrom<FeedRow> for Projected<Feed> {
                 .map_err(|_| Error::Corrupt("requested portions"))?,
             completed: u8::try_from(row.completed)
                 .map_err(|_| Error::Corrupt("completed portions"))?,
-            outcome: FeedOutcome::from_code(&row.outcome).ok_or(Error::Corrupt("feed outcome"))?,
-            reason: FeedReason::from_code(&row.reason).ok_or(Error::Corrupt("feed reason"))?,
+            // A code a newer server stored reads as unknown, as the device
+            // API's own lenient enums do, rather than fail the whole read.
+            outcome: FeedOutcome::from_code(&row.outcome).unwrap_or(FeedOutcome::Unknown),
+            reason: FeedReason::from_code(&row.reason).unwrap_or(FeedReason::Unknown),
         };
         projected(row.epoch, row.seq, row.at_s, row.received_ms, value)
     }

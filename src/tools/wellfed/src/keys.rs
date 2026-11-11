@@ -174,7 +174,7 @@ impl OwnerKey {
     }
 
     fn save(&self) -> Result<()> {
-        private::write_json(&self.path, &self.file)
+        owner::save(&self.path, &self.file)
             .with_context(|| format!("write the key file {}", self.path.display()))
     }
 }

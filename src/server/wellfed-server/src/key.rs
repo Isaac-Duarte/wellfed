@@ -13,6 +13,13 @@
 //! An existing `keys` directory that others could read or enter is
 //! tightened to 0700 when a key is written into it, and the change logged.
 //!
+//! Two first starts on one data directory (a service and a manual run, or
+//! two containers on one volume) may race to make the key. Each stages its
+//! key under a random name only it uses ([`crate::staged`]) and links that
+//! name into place, so the one whose link lands returns the key the file
+//! holds, and the other is refused rather than return a key that seals
+//! nothing it could open again.
+//!
 //! A database with no key file is refused rather than given a new key,
 //! which could not open its feeder keys: that is a backup restored without
 //! the key, or a key file lost.
@@ -25,6 +32,7 @@ use wellfed_api::Hex;
 use wellfed_service::Random;
 
 use crate::config::DATABASE;
+use crate::staged::{self, StageError};
 
 /// The key file, under the data directory.
 pub const KEY_DIR: &str = "keys";
@@ -129,8 +137,8 @@ pub fn sealing_key(data: &Path, random: &dyn Random) -> Result<([u8; 32], KeySou
             );
         }
         // A start stopped between linking the key into place and removing
-        // the staged copy leaves a second copy of the secret.
-        remove(&path.with_extension("key.new"), Missing::Allowed)?;
+        // its staged copy leaves a second copy of the secret.
+        remove_staged(&dir)?;
         return Ok((key, KeySource::Read));
     }
 
@@ -154,7 +162,7 @@ pub fn sealing_key(data: &Path, random: &dyn Random) -> Result<([u8; 32], KeySou
         }
     };
 
-    write_key(data, &dir, &path, &key)?;
+    write_key(data, &dir, &path, &key, random)?;
     if source == KeySource::Moved {
         remove_old(&old_path, data)?;
         tracing::info!(
@@ -210,8 +218,15 @@ fn read_old(path: &Path) -> Result<Option<[u8; 32]>, KeyError> {
 /// Write the key beside its final name and link it into place, so a crash
 /// leaves either no key file or a whole one, never a short one. A link,
 /// unlike a rename, never replaces a key file another start made meanwhile.
-fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(), KeyError> {
-    let staged = path.with_extension("key.new");
+/// The staged name is this writer's own, so what the link puts in place is
+/// the key this call returns.
+fn write_key(
+    data: &Path,
+    dir: &Path,
+    path: &Path,
+    key: &[u8; 32],
+    random: &dyn Random,
+) -> Result<(), KeyError> {
     let write = |path: &Path| {
         let path = path.to_owned();
         move |source| KeyError::Write { path, source }
@@ -227,23 +242,28 @@ fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(),
     // its key is created.
     sync_dir(data)?;
 
-    // A staged file from an interrupted start may have been made with other
-    // permissions; `mode` applies only to a file this call creates.
-    remove(&staged, Missing::Allowed)?;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options.open(&staged).map_err(write(&staged))?;
+    let (staged, mut file) =
+        staged::create(dir, STAGED_PREFIX, 0o600, random).map_err(|error| match error {
+            StageError::Random(source) => KeyError::Random(source),
+            StageError::Create { path, source } => KeyError::Write { path, source },
+        })?;
     file.write_all(key)
         .and_then(|()| file.sync_all())
         .map_err(write(&staged))?;
 
     let linked = std::fs::hard_link(&staged, path);
-    remove(&staged, Missing::Refused)?;
+    // A start that read the finished key may have cleared this copy already.
+    remove(&staged, Missing::Allowed)?;
     match linked {
         Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+        // Another start's key is in place, or one that read it cleared the
+        // staged copy first: either way this key is not the file's.
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::NotFound
+            ) =>
+        {
             return Err(KeyError::Exists {
                 path: path.to_owned(),
             });
@@ -251,6 +271,23 @@ fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(),
         Err(source) => return Err(write(path)(source)),
     }
     sync_dir(dir)
+}
+
+/// The prefix of every staged key's name.
+const STAGED_PREFIX: &str = "server.key.";
+
+/// Remove every staged copy of the key, from starts stopped before they
+/// removed theirs. A start still writing loses its copy and is refused,
+/// never handed a key the file does not hold.
+fn remove_staged(dir: &Path) -> Result<(), KeyError> {
+    let leftovers = staged::leftovers(dir, STAGED_PREFIX).map_err(|source| KeyError::Read {
+        path: dir.to_owned(),
+        source,
+    })?;
+    for path in leftovers {
+        remove(&path, Missing::Allowed)?;
+    }
+    Ok(())
 }
 
 /// Tighten an existing key directory that others could read or enter to

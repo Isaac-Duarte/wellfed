@@ -15,7 +15,7 @@ use crate::device::{Answer, DeviceError, DeviceStatus};
 use crate::tools::{Capture, CaptureFailure, Captured, InstallJob, Installing, PushError};
 use wellfed_formats::bench::VERIFICATION;
 use wellfed_formats::bench::progress::{FlashTool, StepState};
-use wellfed_relay::FakeBoard;
+use wellfed_relay::{FakeBoard, Switch};
 use wellfed_signed::SECTOR;
 
 fn sector() -> PlannedSector {
@@ -426,6 +426,8 @@ fn rig() -> Rig {
         wellfed_formats::credentials::KeyScope::Bench,
     )
     .unwrap();
+    // The default update target, `t`: a stock review moves nothing.
+    review_kind(&tmp.path().join("t"), "stock");
     let board = FakeBoard::default();
     let tools = FakeTools::default();
     {
@@ -492,11 +494,11 @@ fn prepare_plan(rig: &Rig, name: &str) {
     fs::write(&p.plan, r#"{"operation_plan": {"staging_packets": 4, "commit_packets": 1, "region": {"bytes": 4096}}}"#).unwrap();
 }
 
-/// Strap released, power off, UART isolated; then the strap held across the
+/// Power off, strap released, UART isolated; then the strap held across the
 /// UART connecting and power on, then released.
 const LOADER_RELAYS: [(u8, bool); 9] = [
-    (2, false),
     (1, false),
+    (2, false),
     (3, false),
     (4, false),
     (2, true),
@@ -522,6 +524,31 @@ fn loader_holds_strap_across_power_on_and_leaves_feeder_powered() {
     assert_eq!(rig.tools.0.borrow().observed, [out]);
     assert_eq!(rig.board.log(), LOADER_RELAYS);
     assert_eq!(rig.board.state(), [true, false, true, true]);
+}
+
+/// The kill switch cuts power whatever the other relays do: a strap or
+/// UART relay that refuses still leaves the feeder unpowered, and the
+/// refusal is reported once every channel was tried.
+#[test]
+fn a_failed_strap_or_uart_relay_still_cuts_power() {
+    for failing in [2, 3, 4] {
+        let mut rig = rig();
+        rig.bench.power_on().unwrap();
+        rig.bench.set(2, Switch::On).unwrap();
+        rig.board.lock().refuse_channel = Some(failing);
+
+        assert!(rig.bench.cut_power().is_err(), "relay {failing}");
+        let state = rig.board.state();
+        assert!(!state[0], "relay {failing}: power stays on");
+        for channel in [2u8, 3, 4] {
+            if channel != failing {
+                assert!(
+                    !state[usize::from(channel) - 1],
+                    "relay {failing}: {channel}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -962,9 +989,9 @@ fn fountain_bank_1_leaves_its_original_to_wellfed_flash() {
 fn motion_targets_need_the_attended_flag() {
     let rig = rig();
     let target = rig.bench.root.join("target");
-    fs::create_dir_all(&target).unwrap();
     let mut args = update("unit");
     args.target = target.clone();
+    review_kind(&target, "build");
     fs::write(
         target.join("build-manifest.json"),
         r#"{"startup_motion_policy": "fw16-pulse-v1"}"#,
@@ -984,11 +1011,14 @@ fn motion_targets_need_the_attended_flag() {
     .unwrap();
     rig.bench.require_attended_motion(&args).unwrap();
 
-    // No manifest: a stock or diagnostic target with no policy.
+    // A build's review without its manifest, or a manifest that cannot be
+    // read, is not taken as having no policy.
     fs::remove_file(target.join("build-manifest.json")).unwrap();
-    rig.bench.require_attended_motion(&args).unwrap();
-
-    // A manifest that cannot be read is not taken as having no policy.
+    assert_matches!(
+        rig.bench.require_attended_motion(&args),
+        Err(Error::Command(CommandsError::MotionPolicyUnreadable { file, .. }))
+            if file == "target/build-manifest.json"
+    );
     for unreadable in ["{", r#"{"startup_motion_policy": 1}"#] {
         fs::write(target.join("build-manifest.json"), unreadable).unwrap();
         let error = rig.bench.require_attended_motion(&args).unwrap_err();
@@ -1000,6 +1030,53 @@ fn motion_targets_need_the_attended_flag() {
             "{unreadable}"
         );
     }
+
+    // Stock has no manifest and no policy.
+    fs::remove_file(target.join("build-manifest.json")).unwrap();
+    review_kind(&target, "stock");
+    rig.bench.require_attended_motion(&args).unwrap();
+
+    // No review at all is no frozen target.
+    fs::remove_file(target.join("review.json")).unwrap();
+    assert_matches!(
+        rig.bench.require_attended_motion(&args),
+        Err(Error::Command(CommandsError::MotionPolicyUnreadable { file, .. }))
+            if file == "target/review.json"
+    );
+}
+
+/// A root-relative target is read under the bench's root, not the
+/// directory the bench runs in.
+#[test]
+fn a_relative_motion_target_is_read_under_the_root() {
+    let rig = rig();
+    let target = rig.bench.root.join("private/motion");
+    review_kind(&target, "build");
+    fs::write(
+        target.join("build-manifest.json"),
+        r#"{"startup_motion_policy": "fw16-pulse-v1"}"#,
+    )
+    .unwrap();
+    let mut args = update("unit");
+    args.target = "private/motion".into();
+    assert!(!Path::new("private/motion").exists());
+
+    let error = rig.bench.require_attended_motion(&args).unwrap_err();
+    assert_matches!(
+        error,
+        Error::Command(CommandsError::MotionNotAttended { .. })
+    );
+}
+
+/// A `review.json` naming only its image kind, which is all the motion
+/// gate reads.
+fn review_kind(target: &Path, kind: &str) {
+    fs::create_dir_all(target).unwrap();
+    fs::write(
+        target.join("review.json"),
+        json!({ "image_kind": kind }).to_string(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1034,19 +1111,19 @@ fn boot_cycles_power_on_after_arming_and_end_off() {
         0
     );
 
-    // Each cycle: strap released, power off and the UART isolated, then the
-    // UART connected and power on, then off.
+    // Each cycle: power off, strap released and the UART isolated, then
+    // the UART connected and power on, then off.
     assert_eq!(
         rig.board.log()[..8],
         [
-            (2, false),
             (1, false),
+            (2, false),
             (3, false),
             (4, false),
             (3, true),
             (4, true),
             (1, true),
-            (2, false)
+            (1, false)
         ]
     );
     assert!(!rig.board.state()[0]);

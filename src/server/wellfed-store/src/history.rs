@@ -38,14 +38,15 @@ pub struct EventRow {
     pub body: Vec<u8>,
 }
 
-/// A stored kind, `None` for a body that came unread.
-fn stored_kind(code: &str) -> Result<Option<EventKind>> {
+/// A stored kind, `None` for a body that came unread, and for a kind a
+/// newer server stored that this one does not know: the row reads as
+/// unread, as it would have had this server received it, rather than fail
+/// every page it is on.
+fn stored_kind(code: &str) -> Option<EventKind> {
     if code == UNREAD {
-        return Ok(None);
+        return None;
     }
     EventKind::from_code(code)
-        .map(Some)
-        .ok_or(Error::Corrupt("event kind"))
 }
 
 impl Store {
@@ -150,7 +151,7 @@ impl Store {
                     seq: from_i64(row.seq, "event sequence")?,
                     at: seconds(row.at_s)?,
                     received: timestamp(row.received_ms)?,
-                    kind: stored_kind(&row.kind)?,
+                    kind: stored_kind(&row.kind),
                     body: row.body,
                 })
             })
@@ -189,7 +190,7 @@ impl Store {
                     seq: from_i64(row.seq, "event sequence")?,
                     at: seconds(row.at_s)?,
                     received: timestamp(row.received_ms)?,
-                    kind: stored_kind(&row.kind)?,
+                    kind: stored_kind(&row.kind),
                     body: row.body,
                 };
                 Ok((epoch, event))

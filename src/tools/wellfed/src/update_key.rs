@@ -21,7 +21,7 @@ use wellfed_signing::Key;
 use crate::ask::Asker;
 use crate::device::Connection;
 use crate::report::Printer;
-use crate::{Target, ask_and_print, connect};
+use crate::{Target, connect};
 
 #[derive(Args)]
 pub(crate) struct UpdateKeyArgs {
@@ -42,13 +42,18 @@ enum Action {
     Enroll(EnrollArgs),
     /// The update keys the feeder has enrolled.
     Show(Target),
-    /// Send a key statement a built-in or the release key signed offline: a
-    /// key the feeder then trusts or stops trusting, with no press there.
+    /// Send key statements a built-in or the release key signed offline,
+    /// in order over one session: keys the feeder then trusts or stops
+    /// trusting, with no press there. A rotation's revoke and add go
+    /// together, so nothing is offered between them. Every file is read
+    /// before anything is sent, and the first refusal or failure stops the
+    /// rest; nothing is sent again.
     Statement {
         #[command(flatten)]
         target: Target,
-        /// The signed statement.
-        file: PathBuf,
+        /// The signed statements, sent in this order.
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
     },
 }
 
@@ -89,12 +94,28 @@ pub(crate) async fn command(args: UpdateKeyArgs) -> Result<()> {
             let (_, _, mut connection) = connect(&target).await?;
             show(&mut connection).await
         }
-        Action::Statement { target, file } => {
-            let statement =
-                std::fs::read(&file).with_context(|| format!("read {}", file.display()))?;
-            ask_and_print(&target, &Op::UpdateKeyStatement { statement }).await
+        Action::Statement { target, files } => {
+            let statements = read_statements(&files)?;
+            let (_, _, mut connection) = connect(&target).await?;
+            for (file, statement) in files.iter().zip(statements) {
+                let answer = connection
+                    .ask(&Op::UpdateKeyStatement { statement })
+                    .await
+                    .with_context(|| format!("send {}", file.display()))?;
+                crate::print_answer(&answer).with_context(|| file.display().to_string())?;
+            }
+            Ok(())
         }
     }
+}
+
+/// Every statement, read before any is sent: a file that cannot be read
+/// must not leave a rotation half done.
+fn read_statements(files: &[PathBuf]) -> Result<Vec<Vec<u8>>> {
+    files
+        .iter()
+        .map(|file| std::fs::read(file).with_context(|| format!("read {}", file.display())))
+        .collect()
 }
 
 /// Enroll the key in `file` over `connection`, the request a press at the
@@ -163,4 +184,27 @@ async fn show(connection: &mut Connection) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file that cannot be read stops the statements before any is sent.
+    #[test]
+    fn every_statement_is_read_before_any_is_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let revoke = dir.path().join("revoke.bin");
+        std::fs::write(&revoke, b"revoke").unwrap();
+        let add = dir.path().join("add.bin");
+
+        let error = read_statements(&[revoke.clone(), add.clone()]).unwrap_err();
+        assert!(format!("{error:#}").contains("add.bin"), "{error:#}");
+
+        std::fs::write(&add, b"add").unwrap();
+        assert_eq!(
+            read_statements(&[revoke, add]).unwrap(),
+            [b"revoke".to_vec(), b"add".to_vec()]
+        );
+    }
 }

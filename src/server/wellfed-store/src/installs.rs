@@ -7,7 +7,7 @@ use wellfed_api::{
     FeederId, Hex, Install, InstallFailure, InstallId, InstallState, InstallTarget, UserId,
 };
 
-use crate::convert::{millis, timestamp};
+use crate::convert::{lenient, millis, timestamp};
 use crate::{Error, Result, Store};
 
 impl Store {
@@ -140,7 +140,7 @@ impl TryFrom<Raw> for Install {
         let small = |value: i64, what| u32::try_from(value).map_err(|_| Error::Corrupt(what));
         let failure = raw
             .failure
-            .map(|json| serde_json::from_str(&json).map_err(|_| Error::Corrupt("install failure")))
+            .map(|json| lenient(&json, InstallFailure::Unknown, "install failure"))
             .transpose()?;
         let name = Hex(raw
             .release_id

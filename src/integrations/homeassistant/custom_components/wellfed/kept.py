@@ -12,18 +12,28 @@
   to the server route, while the feeder may still list it.
 
 One instance per entry, so a reload and a config flow write the same one.
-A file that does not read as this shape is set aside, never deleted, and
-the entry starts empty.
+The store is kept by the beta upgrade rule:
+
+- It grows within its major as a minor (Home Assistant's `minor_version`)
+  whose additions this build keeps unread, so an older build reads it, and
+  saves it at the newer of the two minors, so a newer build never takes its
+  own data for an older minor's.
+- A newer integration's major (after a downgrade) is read as nothing and
+  never written: the store is made read-only, and the entry starts empty.
+- A file that does not read as this shape is copied aside under a numbered
+  name, never deleted, and the entry starts empty. When the copy fails, the
+  store is made read-only rather than saved over the file.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import time
-from typing import Any, TypedDict
+from pathlib import Path
+from typing import Any, TypedDict, cast
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import UnsupportedStorageVersionError
 from homeassistant.helpers.storage import Store
 from homeassistant.util.hass_dict import HassKey
 
@@ -34,6 +44,11 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
+STORAGE_MINOR_VERSION = 1
+
+# Copies set aside beside the store: never more, so a store that keeps
+# failing cannot fill the disk.
+ASIDE_MOST = 1000
 
 STORES: HassKey[dict[str, Kept]] = HassKey(f"{DOMAIN}_kept")
 
@@ -84,12 +99,50 @@ def _valid(data: Any) -> bool:
     )
 
 
+def set_aside(path: str) -> str:
+    """Copy the file at `path` to the first free `<path>.bad-<n>`, durably,
+    and leave it in place for the next save to replace. Never replaces an
+    earlier copy. The copy's path."""
+    data = Path(path).read_bytes()
+    for number in range(1, ASIDE_MOST + 1):
+        aside = f"{path}.bad-{number}"
+        try:
+            with open(aside, "xb") as file:
+                file.write(data)
+                file.flush()
+                os.fsync(file.fileno())
+        except FileExistsError:
+            continue
+        return aside
+    raise OSError(f"{ASIDE_MOST} copies of {path} are already set aside")
+
+
+class _Store(Store[KeptData]):
+    """The entry's store, reading any minor of its major as it is."""
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> KeptData:
+        if old_major_version != self.version:
+            raise NotImplementedError
+        # A minor that adds a field fills it in here for data an older minor
+        # saved (`old_minor_version < STORAGE_MINOR_VERSION`), and a new
+        # major converts the old one's data here too: Home Assistant runs no
+        # other step. No minor has added one yet.
+        # Home Assistant saves what this returns at the store's minor: keep a
+        # newer one's, whose additions the data still carries.
+        self.minor_version = max(self.minor_version, old_minor_version)
+        return cast(KeptData, old_data)
+
+
 class Kept:
     """One entry's store; changes are written at once, and again at shutdown."""
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         self._hass = hass
-        self._store: Store[KeptData] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
+        self._store: Store[KeptData] = _Store(
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}", minor_version=STORAGE_MINOR_VERSION
+        )
         self._data: KeptData = _empty()
         self._loaded = False
 
@@ -97,22 +150,38 @@ class Kept:
         """Read the store once; later calls keep what is in memory."""
         if self._loaded:
             return
-        data: Any = await self._store.async_load()
+        try:
+            data: Any = await self._store.async_load()
+        except UnsupportedStorageVersionError as error:
+            self._store.make_read_only()
+            _LOGGER.warning(
+                "Wellfed's store for this entry is from a newer version of the integration "
+                "and is left as it is (%s); until the integration is updated, the entry keeps "
+                "no lost feeds across restarts",
+                error,
+            )
+            data = None
         if data is None:
             self._data = _empty()
         elif _valid(data):
             self._data = data
         else:
-            aside = f"{self._store.path}.bad-{int(time.time())}"
             try:
-                await self._hass.async_add_executor_job(os.replace, self._store.path, aside)
+                aside = await self._hass.async_add_executor_job(set_aside, self._store.path)
             except OSError as error:
-                _LOGGER.warning("Could not set Wellfed's store aside as %s: %s", aside, error)
-            _LOGGER.warning(
-                "Wellfed's store for this entry is not in the shape it writes; kept as %s, "
-                "and the entry starts with no lost feeds on record",
-                aside,
-            )
+                self._store.make_read_only()
+                _LOGGER.warning(
+                    "Wellfed's store for this entry is not in the shape it writes and could "
+                    "not be set aside (%s); it is left as it is, nothing is saved over it, "
+                    "and the entry starts with no lost feeds on record",
+                    error,
+                )
+            else:
+                _LOGGER.warning(
+                    "Wellfed's store for this entry is not in the shape it writes; kept as "
+                    "%s, and the entry starts with no lost feeds on record",
+                    aside,
+                )
             self._data = _empty()
         self._loaded = True
 

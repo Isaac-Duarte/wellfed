@@ -108,6 +108,9 @@ impl Checkout {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join("private/verification")).unwrap();
+        // The jobs' update target, `t`: a stock review, which moves nothing.
+        fs::create_dir_all(root.join("t")).unwrap();
+        fs::write(root.join("t/review.json"), r#"{"image_kind": "stock"}"#).unwrap();
         fs::write(
             root.join("private/bench.json"),
             r#"{"relay_port": "relay", "uart_port": "uart", "baseline": "b", "rom_report": "r"}"#,

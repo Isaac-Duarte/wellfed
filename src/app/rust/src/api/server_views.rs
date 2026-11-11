@@ -22,7 +22,6 @@ use crate::api::session::{Card, HistoryEntry};
 /// token is this phone's. The token's secret is not here; it lives in
 /// secure storage beside the client secret.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ServerLink {
     /// The base URL, as the owner typed it or discovery found it.
     pub url: String,
@@ -36,7 +35,6 @@ pub struct ServerLink {
 /// and the feeders its last list gave, so a cold start with the server down
 /// still knows which feeders are the server's and reaches them directly.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct KnownServer {
     pub link: ServerLink,
     pub feeders: Vec<ListedFeeder>,
@@ -48,7 +46,6 @@ pub struct KnownServer {
 
 /// One feeder of the server's last list, as the phone keeps it.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ListedFeeder {
     /// The server's id for it.
     pub id: String,
@@ -70,7 +67,6 @@ impl From<&ServerFeeder> for ListedFeeder {
 
 /// The logged-in account.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ServerAccount {
     pub id: String,
     pub name: String,

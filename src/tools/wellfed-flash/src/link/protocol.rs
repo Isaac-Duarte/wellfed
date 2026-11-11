@@ -1208,6 +1208,9 @@ const PRESS_BYTE_GAP: Duration = Duration::from_millis(2);
 /// release: the echo is at once, the release a debounce after the hold.
 const PRESS_MARGIN: Duration = Duration::from_millis(1500);
 
+/// A byte no press line holds, so any partial line it ends is refused.
+const POISON: char = '!';
+
 /// What the build said about a press line, from every `PLKEY1 virtual`
 /// line in the reply: a stray byte before the line ends a refused line of
 /// its own first, so the first echo is not always the press's.
@@ -1218,9 +1221,11 @@ enum Echo {
     /// The build pressed something else: bytes were lost into another
     /// valid line.
     Other { echoed: String },
-    /// Only refused lines: the press line lost bytes.
+    /// Only refused lines, past the poison's own: the press line lost
+    /// bytes.
     Refused,
-    /// No echo at all: not a virtual-panel build, or not running.
+    /// No echo but the poison's refusal at most: not a virtual-panel build,
+    /// not running, or the press line lost whole.
     Silent,
 }
 
@@ -1241,20 +1246,28 @@ impl Echo {
             .map(|line| line.trim_matches(|c: char| c.is_whitespace() || c.is_control()))
             .collect();
 
-        if let Some(at) = lines.iter().position(|line| *line == pressed) {
+        // The first press the build echoes must be this one: an earlier one
+        // pressed something nobody asked for in this job.
+        if let Some(at) = lines
+            .iter()
+            .position(|line| line.starts_with("PLKEY1 virtual press="))
+        {
+            if lines[at] != pressed {
+                return Self::Other {
+                    echoed: lines[at].into(),
+                };
+            }
             return Self::Pressed {
                 released: lines[at..].iter().any(|line| line.starts_with(&released)),
             };
         }
-        if let Some(other) = lines
+        // The poison ends a line of its own, which the build refuses before
+        // the press line: only a refusal past that one is the press's.
+        let refusals = lines
             .iter()
-            .find(|line| line.starts_with("PLKEY1 virtual press="))
-        {
-            return Self::Other {
-                echoed: (*other).into(),
-            };
-        }
-        if lines.contains(&"PLKEY1 virtual refused") {
+            .filter(|line| **line == "PLKEY1 virtual refused")
+            .count();
+        if refusals > 1 {
             return Self::Refused;
         }
         Self::Silent
@@ -1266,9 +1279,11 @@ impl Echo {
 /// whole lines, and otherwise reads until the hold plus [`PRESS_MARGIN`],
 /// so a wrong answer is classified on everything the window brought. The line
 /// is built here from the typed press and read back through the firmware's
-/// own parser, so nothing else is ever sent; a leading line end first ends
-/// any partial line the build holds. It is sent once, never again: a line
-/// the build read wrongly may already have pressed something.
+/// own parser, so nothing else is ever sent. It starts with [`POISON`] and
+/// a line end, which end any partial line the build holds as a refused one:
+/// a bare line end would complete a cut-off `press dispense` into a press.
+/// It is sent once, never again: a line the build read wrongly may already
+/// have pressed something.
 pub fn press(
     port: &mut dyn Port,
     press: wellfed_core::virtual_panel::Press,
@@ -1280,7 +1295,7 @@ pub fn press(
         ProtocolError::PressLine
     })?;
 
-    for byte in format!("\n{line}\n").as_bytes() {
+    for byte in format!("{POISON}\n{line}\n").as_bytes() {
         send(port, std::slice::from_ref(byte))?;
         std::thread::sleep(PRESS_BYTE_GAP);
     }
@@ -1359,6 +1374,10 @@ mod press_tests {
 
         fn write(&mut self, data: &[u8]) -> io::Result<usize> {
             self.sent.extend_from_slice(data);
+            // The build refuses the poison's line as it ends.
+            if self.sent.ends_with(b"!\n") {
+                self.reply.extend_from_slice(b"PLKEY1 virtual refused\r\n");
+            }
             if self.sent.ends_with(b"150\n") {
                 self.reply.extend_from_slice(self.answer);
             }
@@ -1378,7 +1397,7 @@ mod press_tests {
         chord: Buttons::of(Button::Dispense),
         hold_ms: 150,
     };
-    const LINE: &[u8] = b"\npress dispense hold 150\n";
+    const LINE: &[u8] = b"!\npress dispense hold 150\n";
 
     #[test]
     fn a_press_sends_its_one_line_and_reads_the_echo_and_release() {
@@ -1427,6 +1446,122 @@ mod press_tests {
               \rPLKEY1 up chord=dispense level=0 held_ms=143 dropped=0\r\n",
         );
         assert!(press(&mut feeder, DISPENSE).unwrap().released);
+    }
+
+    /// A feeder whose firmware line reader is the build's own, echoing each
+    /// line it finishes as the build does, with every press it took.
+    struct Panel {
+        reader: wellfed_core::virtual_panel::Reader,
+        pressed: Vec<Press>,
+        reply: Vec<u8>,
+    }
+
+    impl Port for Panel {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if self.reply.is_empty() {
+                std::thread::sleep(Duration::from_millis(10));
+                return Ok(0);
+            }
+            let count = self.reply.len().min(buffer.len());
+            buffer[..count].copy_from_slice(&self.reply[..count]);
+            self.reply.drain(..count);
+            Ok(count)
+        }
+
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            use wellfed_core::virtual_panel::Line;
+
+            for &byte in data {
+                let echo = match self.reader.byte(byte) {
+                    Some(Line::Press(press)) => {
+                        self.pressed.push(press);
+                        format!(
+                            "PLKEY1 virtual press={} hold_ms={}\r\n\
+                             PLKEY1 up chord={} level=0 held_ms={} dropped=0\r\n",
+                            press.chord, press.hold_ms, press.chord, press.hold_ms
+                        )
+                    }
+                    Some(Line::Refused) => "PLKEY1 virtual refused\r\n".into(),
+                    None => continue,
+                };
+                self.reply.extend_from_slice(echo.as_bytes());
+            }
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn in_waiting(&mut self) -> io::Result<usize> {
+            Ok(self.reply.len())
+        }
+    }
+
+    /// A press cut off before its line end stays in the build's line
+    /// buffer; the next press ends it as a refused line, not as a press.
+    #[test]
+    fn a_partial_press_left_in_the_build_is_refused_not_pressed() {
+        for partial in [
+            &b"press dispense"[..],
+            b"press dispense ",
+            b"press dispense hold 15",
+            b"press",
+            b"",
+        ] {
+            let mut panel = Panel {
+                reader: wellfed_core::virtual_panel::Reader::new(),
+                pressed: Vec::new(),
+                reply: Vec::new(),
+            };
+            for &byte in partial {
+                assert_eq!(panel.reader.byte(byte), None);
+            }
+
+            let result = press(&mut panel, DISPENSE).unwrap();
+            assert!(result.echoed && result.released);
+            assert_eq!(
+                panel.pressed,
+                [DISPENSE],
+                "{}",
+                String::from_utf8_lossy(partial)
+            );
+        }
+    }
+
+    /// The poison's own refused line is no answer to the press: a press the
+    /// build dropped, with only that line back, is unanswered, and only a
+    /// second refusal is the press line's.
+    #[test]
+    fn the_poison_s_refusal_is_not_the_press_s() {
+        assert_eq!(
+            Echo::read(b"PLKEY1 virtual refused\r\n", DISPENSE),
+            Echo::Silent
+        );
+        assert_eq!(
+            Echo::read(
+                b"PLKEY1 virtual refused\r\nPLKEY1 virtual refused\r\n",
+                DISPENSE
+            ),
+            Echo::Refused
+        );
+    }
+
+    /// Another press echoed before this one's is a mismatch, even when this
+    /// one's exact echo follows: the build pressed something unasked.
+    #[test]
+    fn an_earlier_press_echo_is_a_mismatch() {
+        assert_eq!(
+            Echo::read(
+                b"PLKEY1 virtual press=dispense hold_ms=1500\r\n\
+                  PLKEY1 virtual press=dispense hold_ms=150\r\n\
+                  PLKEY1 up chord=dispense level=0 held_ms=150 dropped=0\r\n",
+                DISPENSE
+            ),
+            Echo::Other {
+                echoed: "PLKEY1 virtual press=dispense hold_ms=1500".into()
+            }
+        );
     }
 
     #[test]

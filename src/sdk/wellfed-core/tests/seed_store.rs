@@ -4,7 +4,7 @@
 
 use wellfed_core::store::seed::{self, SeedStatus, SeedStore};
 use wellfed_core::store::slot::{RECORD_BYTES, crc32};
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS, UNIT};
 
 fn open(f: &mut FakeJournalFlash) -> SeedStore<FlashIo> {
     let mut s = SeedStore::default();
@@ -42,7 +42,10 @@ fn each_boot_stores_a_new_seed_and_never_repeats_a_stream() {
 
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
-    for history in 0..3u8 {
+    for (order, history) in ORDERS
+        .into_iter()
+        .flat_map(|o| (0..3u8).map(move |h| (o, h)))
+    {
         let saved = |f: &mut FakeJournalFlash| {
             let mut s = open(f);
             for n in 0..history {
@@ -50,14 +53,14 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
             }
             s
         };
-        let mut probe = FakeJournalFlash::with_unit(UNIT);
+        let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
         let mut s = saved(&mut probe);
         let start = probe.mutations;
         assert!(s.save(&[9; 32]));
         let span = i64::from(probe.mutations - start);
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_unit(UNIT);
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
             let mut s = saved(&mut f);
             f.budget = cut;
             let _ = s.save(&[9; 32]);
@@ -67,9 +70,13 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
             let old = history.checked_sub(1).map(|n| [n; 32]);
             assert!(
                 r.seed().copied() == old || r.seed() == Some(&[9; 32]),
-                "history {history} cut {cut}"
+                "{order:?} history {history} cut {cut}"
             );
-            assert!(r.writable(), "history {history} cut {cut}: {:?}", r.status);
+            assert!(
+                r.writable(),
+                "{order:?} history {history} cut {cut}: {:?}",
+                r.status
+            );
             assert!(r.save(&[5; 32]));
             assert_eq!(open(&mut f).seed(), Some(&[5; 32]));
         }

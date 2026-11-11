@@ -31,7 +31,7 @@ use wellfed_hal::ota::confirm::{self, Confirm, HookedStorage};
 use wellfed_hal::ota::update::{self as update, Floor, SdkFlash, StoreSlots, Update};
 use wellfed_hal::supervision::beat;
 use wellfed_hal::supervision::supervise::{self, Feeding, LIVENESS_MS, Startup};
-use wellfed_hal::supervision::watchdog::Watchdog;
+use wellfed_hal::supervision::watchdog::{ForcedReset, Forcing, Watchdog};
 use wellfed_hal::supervision::{self, config, crumb, trail};
 use wellfed_hal::{
     cell::TaskCell, leds, net_status, power, rng, sdk, startup, stopped, trial, writer_wake,
@@ -419,8 +419,13 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
     // feed period exceeds the refresh rate limit), so a reset's host
     // timestamp, less this, times the watchdog's expiry.
     static FED_MS: AtomicU32 = AtomicU32::new(0);
+    // The watchdog could not open: this boot is ending in a forced reset.
+    static UNSUPERVISED: AtomicBool = AtomicBool::new(false);
     // Every pass, fed or not: the tick hook's crumb counts from here.
     crumb::fed();
+    if UNSUPERVISED.load(Ordering::Acquire) {
+        return force_reset(sdk::uptime_ms(), || false).unwrap_or(0);
+    }
     if !WATCHDOG_OPEN.load(Ordering::Acquire) {
         // A trial that ran out with no fallback runs on as a build in no
         // trial: no deadline, its resets a storm's (`trial.rs`).
@@ -437,7 +442,14 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
             sdk::log(line);
         }
         if !opened {
-            return 0; // Unsupervised: nothing to feed.
+            // A boot the watchdog cannot supervise is a startup failure,
+            // and ends in a reset KM0 counts, never in a boot that runs on
+            // with no reset to give: no reboot, trial deadline, arming or
+            // update could then take effect. Not asked for, so the storm
+            // count keeps it.
+            UNSUPERVISED.store(true, Ordering::Release);
+            supervision::stopping();
+            return force_reset(sdk::uptime_ms(), || false).unwrap_or(0);
         }
     }
 
@@ -533,6 +545,45 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
     flush_before_reset(&REFUSED);
     FEED_MS
 }
+
+/// This boot's forced reset, once its watchdog would not open.
+static FORCED: ForcedReset = ForcedReset::new();
+
+/// Poll this boot's forced reset (`ForcedReset`) at `now_ms`, `open` first
+/// until the counter is programmed, and say once how it started. `None`
+/// once the supervision watchdog opened (left unfed, it resets the
+/// platform), or the poll period. Never feeds.
+fn force_reset(now_ms: u32, open: impl FnOnce() -> bool) -> Option<u32> {
+    match FORCED.poll(&config::WATCHDOG, now_ms, open) {
+        Forcing::Opened => return None,
+        Forcing::Started { enabled } => {
+            sdk::log(if enabled {
+                c"PLSUP1 stop watchdog=forced reset=1\r\n"
+            } else {
+                c"PLSUP1 error watchdog=forced\r\n"
+            });
+            // Its last words: a reset is coming, and no task may drain
+            // the ring again before it.
+            sdk::log_flush();
+        }
+        Forcing::Enabled { enabled } => {
+            // A whole expiry passed with no reset. At most one retry per
+            // expiry, so each can be sent at once like the first.
+            sdk::log(if enabled {
+                c"PLSUP1 retry watchdog=forced reset=1\r\n"
+            } else {
+                c"PLSUP1 error watchdog=forced retry=1\r\n"
+            });
+            sdk::log_flush();
+        }
+        Forcing::Waiting => {}
+    }
+    Some(FORCE_POLL_MS)
+}
+
+/// How often a forced reset is polled. A counter that does not reset is
+/// enabled again only after a whole expiry (`ForcedReset::poll`).
+const FORCE_POLL_MS: u32 = 1_000;
 
 /// The watchdog feeder's share of a crash's last words: with the reset certain
 /// a hung task may be why, and the drain may never run again, so this task
@@ -1199,15 +1250,47 @@ unsafe extern "C" fn halt_task(_: *mut c_void) -> u32 {
         update_trial_register(|register| trial::halt_over(register, &identity));
         sdk::log(c"PLSUP1 storm halt_over=1 reset=1\r\n");
     }
-    if SdkHooks::watchdog() {
-        return 0;
-    }
-    // Asked again on the next poll: a halt must end.
-    sdk::log(c"PLSUP1 error watchdog=open\r\n");
-    HALT_POLL_MS
+    // A halt must end: by the supervision watchdog left unfed, or through
+    // the watchdog's reset path if it will not open; once that path has
+    // started, the watchdog is never opened again (`ForcedReset::poll`).
+    let opened = || {
+        let opened = SdkHooks::watchdog();
+        if !opened {
+            sdk::log(c"PLSUP1 error watchdog=open\r\n");
+        }
+        opened
+    };
+    force_reset(sdk::uptime_ms(), opened).unwrap_or(0)
 }
 
 const HALT_POLL_MS: u32 = 1_000;
+
+/// A halted start with no task to end the halt from: reset now, polling
+/// the forced reset on the system timer, since the scheduler and its
+/// uptime have not started, until the reset comes.
+fn halted_reset() {
+    let hz = u64::from(config::WATCHDOG.systimer_hz);
+    let start = sdk::systimer_ticks();
+    let mut next = 0;
+    let mut opened = || {
+        let opened = SdkHooks::watchdog();
+        if !opened {
+            sdk::log(c"PLSUP1 error watchdog=open\r\n");
+        }
+        opened
+    };
+    loop {
+        let ticks = u64::from(sdk::systimer_ticks().wrapping_sub(start));
+        let now = u32::try_from(ticks * 1000 / hz).unwrap_or(u32::MAX);
+        if now >= next {
+            match force_reset(now, &mut opened) {
+                None => return,
+                Some(period) => next = now.saturating_add(period),
+            }
+        }
+        sdk::spin_once();
+    }
+}
 
 /// The hang's call trail: a summary line, each sticky mark, then each
 /// note oldest first; or why the RAM held none of the last boot's.
@@ -1321,9 +1404,7 @@ pub extern "C" fn wellfed_app_start() {
                 sdk::log(c"PLSUP1 error task=create\r\n");
                 let identity = trial::identity();
                 update_trial_register(|register| trial::halt_over(register, &identity));
-                if !SdkHooks::watchdog() {
-                    sdk::log(c"PLSUP1 error watchdog=open\r\n");
-                }
+                halted_reset();
             }
             return;
         }

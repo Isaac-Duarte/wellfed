@@ -8,7 +8,7 @@ use uuid::Uuid;
 use wellfed_api::{AuditAction, TokenId, UserId};
 
 use crate::commands::{CommandRow, Raw as CommandRaw};
-use crate::convert::{from_i64, millis, timestamp, to_i64};
+use crate::convert::{from_i64, lenient, millis, timestamp, to_i64};
 use crate::{Error, Result, Store};
 
 /// An account change to record.
@@ -191,9 +191,11 @@ impl TryFrom<Joined> for AuditRow {
         let command = joined.command()?;
         let record = match (command, joined.action.as_deref()) {
             (Some(command), None) => AuditRecord::Command(Box::new(command)),
-            (None, Some(json)) => AuditRecord::Change(Box::new(
-                serde_json::from_str(json).map_err(|_| Error::Corrupt("audit action"))?,
-            )),
+            (None, Some(json)) => AuditRecord::Change(Box::new(lenient(
+                json,
+                AuditAction::Unknown,
+                "audit action",
+            )?)),
             _ => return Err(Error::Corrupt("audit row")),
         };
 

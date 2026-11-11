@@ -137,10 +137,11 @@ pub enum CommandsError {
          (version skew). Bank 0 is likely written and verified; rebuild wellfed-flash"
     )]
     FlashSkew,
-    /// A target manifest that cannot be read is not taken as motionless.
-    #[error("Cannot read {manifest} to check its motion policy: {error}")]
+    /// A target whose review or manifest cannot be read is not taken as
+    /// motionless.
+    #[error("Cannot read {file} to check the target's motion policy: {error}")]
     MotionPolicyUnreadable {
-        manifest: String,
+        file: String,
         error: wellfed_formats::Error,
     },
     #[error(
@@ -411,17 +412,24 @@ impl Bench {
         Ok(on)
     }
 
-    /// Release the strap and cut power, then isolate the UART, with no wait:
-    /// safe in cleanup paths.
+    /// Cut power, then release the strap and isolate the UART, with no
+    /// wait: safe in cleanup paths, and the kill switch of unattended
+    /// motion. Power goes first and every channel is tried even when one
+    /// fails, so a strap or UART relay fault never leaves the feeder
+    /// powered; the first failure is returned once all were tried.
     pub fn cut_power(&mut self) -> Result<()> {
-        self.set(STRAP, Switch::Off)?;
-        self.set(POWER, Switch::Off)?;
+        let mut channels = vec![POWER, STRAP];
         if self.uart_when_off == UartWhenOff::Isolated {
-            for channel in UART {
-                self.set(channel, Switch::Off)?;
+            channels.extend(UART);
+        }
+
+        let mut first = None;
+        for channel in channels {
+            if let Err(error) = self.set(channel, Switch::Off) {
+                first.get_or_insert(error);
             }
         }
-        Ok(())
+        first.map_or(Ok(()), Err)
     }
 
     /// Connect the UART, then power the feeder. The lines go live a relay's
@@ -966,20 +974,29 @@ impl Bench {
     }
 
     /// A target whose manifest names a motion policy drives the motor after
-    /// boot. A target without a manifest (stock, diagnostics) has no policy;
-    /// one whose manifest cannot be read is refused rather than assumed safe.
+    /// boot. The target is root-relative, as `wellfed-flash` resolves it,
+    /// whatever directory the bench runs in. Only a stock review has no
+    /// manifest; a review or manifest that cannot be read is refused rather
+    /// than assumed motionless, and so is a target with no review at all.
     fn require_attended_motion(&self, args: &UpdateArgs) -> Result<()> {
-        let path = args.target.join("build-manifest.json");
-        if !path.exists() {
+        #[derive(Deserialize)]
+        struct Reviewed {
+            image_kind: ImageKind,
+        }
+
+        let target = self.root.join(&args.target);
+        let unreadable = |path: &Path| {
+            let file = self.rel(path);
+            move |error| CommandsError::MotionPolicyUnreadable { file, error }
+        };
+        let review = target.join("review.json");
+        let reviewed: Reviewed = wellfed_formats::load(&review).map_err(unreadable(&review))?;
+        if reviewed.image_kind == ImageKind::Stock {
             return Ok(());
         }
 
-        let manifest: BuildManifest = wellfed_formats::load(&path).map_err(|error| {
-            CommandsError::MotionPolicyUnreadable {
-                manifest: self.rel(&path),
-                error,
-            }
-        })?;
+        let path = target.join("build-manifest.json");
+        let manifest: BuildManifest = wellfed_formats::load(&path).map_err(unreadable(&path))?;
         self.attended_motion(&manifest, Attendance::from_flag(args.attended_motion))
     }
 

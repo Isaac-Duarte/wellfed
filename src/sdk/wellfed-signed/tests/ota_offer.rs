@@ -559,3 +559,67 @@ fn an_image_for_another_model_is_refused_and_one_naming_none_does_not_parse() {
         Err(OfferError::Kind)
     );
 }
+
+/// A small-order public key, the identity point, signs anything under the
+/// lax Ed25519 check: with `R` the identity and `s` zero, `[s]B = R + [k]A`
+/// holds for every message. The strict check refuses such a key, so a weak
+/// key an owner enrolled forges no offer, downgrade or key statement. The
+/// enrolled list takes any 32 bytes, so this check is what holds the line.
+#[test]
+fn a_small_order_key_signs_nothing() {
+    use ed25519_dalek::{Signature, VerifyingKey};
+
+    let mut weak = [0u8; 32];
+    weak[0] = 1;
+    let mut forged = [0u8; 64];
+    forged[0] = 1;
+    let forge = |body: &[u8]| [body, &forged[..]].concat();
+
+    // The forgery is one: the lax check takes it.
+    let lax = VerifyingKey::from_bytes(&weak).unwrap();
+    assert!(lax.is_weak());
+    assert!(
+        lax.verify_strict(b"x", &Signature::from_bytes(&forged))
+            .is_err()
+    );
+    assert!(ed25519_dalek::Verifier::verify(&lax, b"x", &Signature::from_bytes(&forged)).is_ok());
+
+    let mut fields = signed(&signer(1), 3, ImageKind::Replacement);
+    fields.key_id = key_id(&weak);
+    let offer = forge(&manifest_body(&fields));
+    for (built_in, enrolled) in [(&[weak][..], &[][..]), (&[], &[weak][..])] {
+        assert_eq!(
+            admit_offer(&offer, None, &context(built_in, enrolled, &[], 0)),
+            Err(OfferError::Signature)
+        );
+    }
+
+    let real = signer(1);
+    let genuine = manifest(&real, &signed(&real, 3, ImageKind::Replacement));
+    let statement = forge(&downgrade_body(
+        &key_id(&weak),
+        &DEVICE,
+        &manifest_digest(&genuine),
+        3,
+    ));
+    assert_eq!(
+        admit_offer(
+            &genuine,
+            Some(&statement),
+            &context(&[public(&real)], &[weak], &[], 3)
+        ),
+        Err(OfferError::Statement(StatementError::Signature))
+    );
+
+    let built_in = [weak];
+    let ring = context(&built_in, &[], &[], 0).ring;
+    for body in [
+        revoke_body(&key_id(&weak), &[7; 8]).to_vec(),
+        key_add_body(&key_id(&weak), &[8; 32]).to_vec(),
+    ] {
+        assert_eq!(
+            admit_statement(&forge(&body), &ring),
+            Err(StatementError::Signature)
+        );
+    }
+}

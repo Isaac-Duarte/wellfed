@@ -5,7 +5,7 @@
 use wellfed_core::store::slot::{RECORD_BYTES, crc32};
 use wellfed_device::store::time::{TimeStatus, TimeStore};
 use wellfed_device_api::mailbox::{NtpServer, TimeSettings, Zone};
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS, UNIT};
 
 fn open(f: &mut FakeJournalFlash) -> TimeStore<FlashIo> {
     let mut s = TimeStore::default();
@@ -58,8 +58,11 @@ fn defaults_until_saved_then_alternate_and_reload() {
 
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
-    for history in 0..3u8 {
-        let mut probe = FakeJournalFlash::with_unit(UNIT);
+    for (order, history) in ORDERS
+        .into_iter()
+        .flat_map(|o| (0..3u8).map(move |h| (o, h)))
+    {
+        let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
         let mut s = open(&mut probe);
         for n in 0..history {
             assert!(s.save(&settings(n)));
@@ -69,7 +72,7 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
         let span = i64::from(probe.mutations - start);
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_unit(UNIT);
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
             let mut s = open(&mut f);
             for n in 0..history {
                 assert!(s.save(&settings(n)));
@@ -84,9 +87,13 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
                 .map_or_else(TimeSettings::default, settings);
             assert!(
                 r.settings == old || r.settings == settings(9),
-                "history {history} cut {cut}"
+                "{order:?} history {history} cut {cut}"
             );
-            assert!(r.writable(), "history {history} cut {cut}: {:?}", r.status);
+            assert!(
+                r.writable(),
+                "{order:?} history {history} cut {cut}: {:?}",
+                r.status
+            );
             assert!(r.save(&settings(7)));
             assert_eq!(open(&mut f).settings, settings(7));
         }

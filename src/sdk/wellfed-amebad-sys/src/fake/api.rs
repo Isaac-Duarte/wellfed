@@ -672,7 +672,13 @@ pub fn wakelock_release(id: u32) {
 }
 
 pub fn wdg_vendor() -> u32 {
-    with(|h| h.watchdog_vendor)
+    with(|h| {
+        if h.watchdog_enable_hidden {
+            h.watchdog_vendor & !WDG_BIT_ENABLE
+        } else {
+            h.watchdog_vendor
+        }
+    })
 }
 
 /// # Safety

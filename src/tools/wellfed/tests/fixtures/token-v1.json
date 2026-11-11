@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "server": "http://192.0.2.7:8080/",
+  "user": "ada",
+  "id": "01920000-0000-7000-8000-000000000001",
+  "secret": "a-sample-token-secret"
+}

@@ -879,8 +879,8 @@ fn a_set_aside_uncertain_feed_is_never_replayed_and_waits_for_the_bowls_check() 
         front.cut();
         phone.router.disconnect_server();
 
-        // A downgrade can read the version header but not the newer
-        // payload. Keep that payload opaque, including the real lost feed.
+        // A newer major is left for that build to read again. A router
+        // that cannot read it must not replace it or admit another feed.
         #[derive(Deserialize, Serialize)]
         struct SavedFile {
             version: u32,
@@ -890,12 +890,37 @@ fn a_set_aside_uncertain_feed_is_never_replayed_and_waits_for_the_bowls_check() 
             serde_json::from_slice(&std::fs::read(path(&phone.pins)).unwrap()).unwrap();
         assert_eq!(saved.version, 1);
         saved.version = 99;
+        let newer = serde_json::to_vec(&saved).unwrap();
+        std::fs::write(path(&phone.pins), &newer).unwrap();
+        let Err(error) = PathRouter::new(path(&phone.pins)) else {
+            panic!("a newer build's pins are refused");
+        };
+        assert_eq!(error.kind, ErrorKind::Store);
+        assert_eq!(std::fs::read(path(&phone.pins)).unwrap(), newer);
+        assert_eq!(
+            std::fs::read_dir(phone.pins.path())
+                .unwrap()
+                .filter(|entry| entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("damaged"))
+                .count(),
+            0,
+            "newer data is not set aside"
+        );
+        assert_eq!(feeder::feeds(&flash), 1);
+
+        // An unsupported pre-beta version has no reader. Keep its payload
+        // opaque, including the real lost feed, through the bowl-check hold.
+        saved.version = 0;
         let unreadable = serde_json::to_vec(&saved).unwrap();
         std::fs::write(path(&phone.pins), &unreadable).unwrap();
 
         let phone = phone.restarted().await;
         let set_aside = phone.router.set_aside().expect("the pins were set aside");
-        assert!(set_aside.reason.contains("version 99"));
+        assert!(set_aside.reason.contains("version 0"));
         assert_eq!(std::fs::read(&set_aside.moved_to).unwrap(), unreadable);
         phone
             .router

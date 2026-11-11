@@ -1,11 +1,15 @@
 //! NOR model of equal erase units (two by default) enforcing aligned 1->0 programming, with power-cut and
 //! call-failure injection.
 //!
-//! Programming is byte-ordered: a cut leaves a durable prefix of the bytes.
-//! Erase raises every bit of the unit in a deterministic pseudo-random order,
-//! so a cut during erase leaves old data with an arbitrary subset of bits
-//! raised rather than a clean 0xFF prefix. Neither model covers weakly
-//! programmed or weakly erased cells that read back inconsistently.
+//! Programming is byte-ordered by default: a cut leaves a durable prefix of
+//! the bytes. A real NOR part programs a whole page at once and promises no
+//! order, so [`ProgramOrder::Scattered`] instead clears the call's bits in a
+//! seeded pseudo-random order across all of its bytes: a cut leaves any
+//! subset of the bits the data clears. Erase raises every bit of the unit in
+//! a deterministic pseudo-random order, so a cut during erase leaves old
+//! data with an arbitrary subset of bits raised rather than a clean 0xFF
+//! prefix. Neither model covers weakly programmed or weakly erased cells
+//! that read back inconsistently.
 
 use core::cell::RefCell;
 use core::ffi::c_void;
@@ -15,6 +19,25 @@ use wellfed_core::store::slot::SlotIo;
 
 /// Default unit size, as used by the virtual feeder image.
 pub const UNIT: usize = 256;
+
+/// How a program call lays its bits down, which decides what a cut leaves.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProgramOrder {
+    /// A byte at a time, in order: one mutation per byte.
+    #[default]
+    Bytes,
+    /// The bits the call clears, across all of its bytes, in an order this
+    /// seed fixes: one mutation per eight bits.
+    Scattered(u64),
+}
+
+/// The orders a store's cut tests run in: byte by byte, and two seeded
+/// orders across each program, as a page program keeps no byte order.
+pub const ORDERS: [ProgramOrder; 3] = [
+    ProgramOrder::Bytes,
+    ProgramOrder::Scattered(0x5eed),
+    ProgramOrder::Scattered(0x9a7e_c0de),
+];
 
 #[derive(Clone)]
 pub struct FakeJournalFlash {
@@ -34,6 +57,7 @@ pub struct FakeJournalFlash {
 
     pub silent_program: bool,
     pub silent_erase: bool,
+    pub program_order: ProgramOrder,
 
     /// Runs after every durable mutation. No reference to the flash is live
     /// while it runs, so it may read the flash through the I/O context.
@@ -66,8 +90,17 @@ impl FakeJournalFlash {
             mutations: 0,
             silent_program: false,
             silent_erase: false,
+            program_order: ProgramOrder::Bytes,
             after_mutation: None,
             mutation_context: core::ptr::null_mut(),
+        }
+    }
+
+    /// This flash, programming in `order`.
+    pub fn ordered(self, order: ProgramOrder) -> Self {
+        Self {
+            program_order: order,
+            ..self
         }
     }
 
@@ -162,8 +195,16 @@ fn erase_order(slot: usize, unit: usize) -> Rc<Vec<u32>> {
 fn shuffled_bits(slot: usize, unit: usize) -> Vec<u32> {
     let bits = u32::try_from(unit * 8).expect("a unit below 512 MiB");
     let mut order: Vec<u32> = (0..bits).collect();
-    let mut state =
-        0x9e37_79b9_7f4a_7c15u64 ^ (slot as u64 + 1).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    shuffle(
+        &mut order,
+        (slot as u64 + 1).wrapping_mul(0xbf58_476d_1ce4_e5b9),
+    );
+    order
+}
+
+/// Shuffle `order` reproducibly from `seed`.
+fn shuffle(order: &mut [u32], seed: u64) {
+    let mut state = 0x9e37_79b9_7f4a_7c15u64 ^ seed;
 
     for i in (1..order.len()).rev() {
         // xorshift64*: reproducible across runs and platforms.
@@ -173,8 +214,48 @@ fn shuffled_bits(slot: usize, unit: usize) -> Vec<u32> {
         let j = (state.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 32) as usize % (i + 1);
         order.swap(i, j);
     }
+}
 
-    order
+/// Program `bytes` at `offset` of unit `slot`, clearing the bits they
+/// clear in the order `seed` fixes, eight at a time.
+///
+/// # Safety
+/// `flash` is the pointer of a [`FlashIo`].
+unsafe fn program_scattered(
+    flash: *mut FakeJournalFlash,
+    slot: usize,
+    offset: usize,
+    bytes: &[u8],
+    seed: u64,
+) -> bool {
+    let mut cleared = Vec::new();
+    {
+        // SAFETY: the context is live; this reference ends before any hook.
+        let f = unsafe { &*flash };
+        for (i, &value) in bytes.iter().enumerate() {
+            let old = f.bytes[slot][offset + i];
+            assert_eq!(old & value, value, "NOR programming only clears bits");
+            let clears = old & !value;
+            for bit in 0..8 {
+                if clears & (1 << bit) != 0 {
+                    cleared.push(u32::try_from(i * 8 + bit).expect("a program below 512 MiB"));
+                }
+            }
+        }
+    }
+    shuffle(
+        &mut cleared,
+        seed ^ (offset as u64).wrapping_mul(0x94d0_49bb_1331_11eb),
+    );
+
+    // SAFETY: no reference into the flash is live across these calls.
+    cleared.chunks(8).all(|bits| unsafe {
+        mutate(flash, |f| {
+            for &bit in bits {
+                f.bytes[slot][offset + bit as usize / 8] &= !(1 << (bit % 8));
+            }
+        })
+    })
 }
 
 /// Slot I/O over a [`FakeJournalFlash`], from [`FakeJournalFlash::io`] or
@@ -217,6 +298,11 @@ impl SlotIo for FlashIo {
             (slot, offset)
         };
 
+        // SAFETY: the constructor's contract; a read only.
+        if let ProgramOrder::Scattered(seed) = unsafe { (*flash).program_order } {
+            // SAFETY: as for the byte-ordered program below.
+            return unsafe { program_scattered(flash, slot, offset, bytes, seed) };
+        }
         for (i, &value) in bytes.iter().enumerate() {
             let index = offset + i;
             // SAFETY: no reference into the flash is live across this call.
@@ -316,6 +402,37 @@ mod tests {
 
         // The two units tear differently.
         assert_ne!(erase_order(0, UNIT), erase_order(1, UNIT));
+    }
+
+    #[test]
+    fn a_scattered_program_cut_clears_a_seeded_subset_across_the_call() {
+        let data: Vec<u8> = (0..124u8).map(|i| i.wrapping_mul(37)).collect();
+        let cleared: u32 = data.iter().map(|b| b.count_zeros()).sum();
+        let cut = |seed, budget| {
+            let mut f = FakeJournalFlash {
+                program_order: ProgramOrder::Scattered(seed),
+                budget,
+                ..FakeJournalFlash::default()
+            };
+            // SAFETY: the flash is this closure's, in place for the call.
+            let ok = unsafe { f.io() }.program(0, 0, &data);
+            (f, ok)
+        };
+
+        let (whole, ok) = cut(7, -1);
+        assert!(ok && whole.bytes[0][..124] == data[..]);
+        assert_eq!(whole.mutations, cleared.div_ceil(8));
+
+        let (f, ok) = cut(7, 5);
+        assert!(!ok && f.bytes[0] == cut(7, 5).0.bytes[0], "deterministic");
+        let now: u32 = f.bytes[0][..124].iter().map(|b| b.count_zeros()).sum();
+        assert_eq!(now, 40, "eight bits a mutation");
+        // Only bits the data clears, spread over the call, not a prefix.
+        assert!(f.bytes[0].iter().zip(&data).all(|(&u, &d)| u & d == d));
+        let touched = f.bytes[0][..124].iter().filter(|&&b| b != u8::MAX).count();
+        let prefix = f.bytes[0].iter().take_while(|&&b| b != u8::MAX).count();
+        assert!(touched > prefix + 4, "{touched} {prefix}");
+        assert_ne!(f.bytes[0], cut(8, 5).0.bytes[0], "the seed decides");
     }
 
     #[test]

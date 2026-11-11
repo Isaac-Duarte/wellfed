@@ -5392,7 +5392,9 @@ version = "0.1.0"
 dependencies = [
  "thiserror 2.0.21",
  "unicorn-engine",
+ "wellfed-core",
  "wellfed-formats",
+ "wellfed-hal-common",
 ]
 
 [[package]]
@@ -6037,9 +6039,11 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "utoipa",
  "uuid",
  "wellfed-api",
  "wellfed-formats",
+ "wellfed-session",
 ]
 
 [[package]]

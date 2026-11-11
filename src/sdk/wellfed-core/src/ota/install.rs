@@ -36,7 +36,9 @@ pub enum Stop {
     Write,
     /// The whole image's SHA-256 differs from the manifest's.
     Hash,
-    /// The marker did not read back.
+    /// The marker was never programmed: its write could not start (the
+    /// flash was not armed). A marker programmed but not read back
+    /// activates ([`Marking`]).
     Activate,
     /// The activation could not be recorded.
     Store,
@@ -54,7 +56,7 @@ crate::named_enum! {
         Image = "image",
         Write = "write",
         Hash = "hash",
-        /// [`Stop::Activate`]: the marker did not read back.
+        /// [`Stop::Activate`]: the marker was never programmed.
         Marker = "marker",
         Store = "store",
     }
@@ -305,6 +307,23 @@ pub enum Answer {
     Key(KeyStatement),
 }
 
+/// What became of bank 1's marker, as the activation left it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Marking {
+    /// Programmed and read back: bank 1 is valid.
+    ReadBack,
+    /// Programmed, but the program reported a failure or the readback
+    /// failed or differed. The cells may hold the marker all the same (a
+    /// stale read, a program that wrote and then reported a fault), so bank
+    /// 1 may be valid: the activation stands, and the restart's boot
+    /// decides it. Never treated as never activated, which would leave a
+    /// build that boots from that marker below the floor.
+    Uncertain,
+    /// Never programmed (the flash was not armed for it): bank 1 stays
+    /// invalid.
+    Unwritten,
+}
+
 /// What one chunk did.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Taken<'a> {
@@ -467,12 +486,14 @@ impl Install {
             .map_err(|error| self.stop(Stop::of(error)))
     }
 
-    /// The marker read back: bank 1 is valid.
-    pub fn marked(&mut self, readback_ok: bool) -> Result<(), Stop> {
+    /// What the marker's program came to ([`Marking`]): activated once it
+    /// was programmed, whether or not it read back, and stopped only when
+    /// it never was.
+    pub fn marked(&mut self, marking: Marking) -> Result<(), Stop> {
         if self.phase != State::Ready {
             return Err(self.stop(Stop::Order));
         }
-        if !readback_ok {
+        if marking == Marking::Unwritten {
             return Err(self.stop(Stop::Activate));
         }
         self.phase = State::Activated;

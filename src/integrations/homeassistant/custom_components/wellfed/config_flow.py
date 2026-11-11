@@ -67,6 +67,8 @@ from .const import (
     CONF_TOKEN_ID,
     CONF_URL,
     DOMAIN,
+    ENTRY_MINOR_VERSION,
+    ENTRY_VERSION,
     LEFTOVER_KEY_ISSUE,
     ROUTE_DIRECT,
     ROUTE_SERVER,
@@ -157,8 +159,8 @@ def _server_data(url: str, login: bridge.Login, feeder: bridge.ServerFeeder) -> 
 class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up one feeder, directly or through the owner's server."""
 
-    VERSION = 2
-    MINOR_VERSION = 1
+    VERSION = ENTRY_VERSION
+    MINOR_VERSION = ENTRY_MINOR_VERSION
 
     def __init__(self) -> None:
         self._address: str | None = None

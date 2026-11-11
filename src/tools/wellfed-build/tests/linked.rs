@@ -149,21 +149,43 @@ fn hook_bypasses_in_real_listings_and_tables_are_refused() {
             &elf,
         )
         .unwrap();
-        hooks::legacy_routes(&listing).unwrap();
+        hooks::legacy_routes(&listing, &names).unwrap();
 
         for (_, legacy) in hooks::RENAMES {
             let address = names[legacy].address;
-            let bypass = format!(
-                "{listing}\n00000000 <unmediated_sdk_caller>:\n 0: f000 f800 bl {address:x} <{legacy}>\n"
+            for call in [
+                format!("f000 f800 bl {address:x} <{legacy}>"),
+                format!("bf18 it ne\n 2: f000 f800 blne {address:x} <{legacy}>"),
+                format!("b108 cbz r0, {address:x} <{legacy}>"),
+                format!("f000 f800 bl {:x} <{legacy}+0x4>", address + 4),
+                format!("f000 f800 bl 30000000 <__{legacy}_veneer>"),
+            ] {
+                let bypass = format!("{listing}\n00000000 <unmediated_sdk_caller>:\n 0: {call}\n");
+                let error = hooks::legacy_routes(&bypass, &names).unwrap_err();
+                assert!(
+                    matches!(
+                        &error,
+                        Error::Hooks(HookError::Bypass { caller, legacy: bypassed })
+                            if caller == "unmediated_sdk_caller" && *bypassed == legacy
+                    ),
+                    "{core} {legacy} {call}: {error}"
+                );
+            }
+
+            // A literal word holding the entry's address, Thumb bit set.
+            let pointer = format!(
+                "{listing}\n00000000 <unmediated_sdk_caller>:\n 0: 4b01 ldr r3, [pc, #4]\n 8: {:08x} .word 0x{:08x}\n",
+                address | 1,
+                address | 1
             );
-            let error = hooks::legacy_routes(&bypass).unwrap_err();
+            let error = hooks::legacy_routes(&pointer, &names).unwrap_err();
             assert!(
                 matches!(
                     &error,
-                    Error::Hooks(HookError::Bypass { caller, legacy: bypassed })
-                        if caller == "unmediated_sdk_caller" && *bypassed == legacy
+                    Error::Hooks(HookError::Pointer { owner, legacy: pointed })
+                        if owner == "unmediated_sdk_caller" && *pointed == legacy
                 ),
-                "{core} {legacy}: {error}"
+                "{core} {legacy} pointer: {error}"
             );
         }
 

@@ -167,7 +167,6 @@ impl NoticeKind {
 /// What a phone mutes: no notice posts for these, though the app still lists
 /// them.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Mutes {
     pub kinds: Vec<NoticeKind>,
     pub levels: Vec<AlertLevel>,
@@ -312,7 +311,6 @@ pub enum Delivery {
 
 /// One notice the phone tracks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Tracked {
     pub key: NoticeKey,
     pub notice: Notice,
@@ -337,7 +335,6 @@ pub enum Absence {
 
 /// The alert table a catch-up last applied.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Cursor {
     /// The ring's epoch, from the welcome.
     pub epoch: u32,
@@ -349,7 +346,6 @@ pub struct Cursor {
 
 /// What the phone knows of reaching the feeder, for [`NoticeKind::Unreachable`].
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Reach {
     /// The network the feeder last answered on, by the caller's fingerprint
     /// of it: the phone's home for this feeder. Only a failure there counts.
@@ -413,7 +409,6 @@ pub struct RelayedTable<'a> {
 
 /// What a phone keeps of one feeder's alerts.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Watch {
     /// The table last applied; `None` before the first.
     pub cursor: Option<Cursor>,

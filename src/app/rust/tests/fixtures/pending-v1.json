@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "data": {
+    "pins": [
+      {
+        "key": "00000000-0000-0000-0000-000000000001",
+        "feeder": "abababababababababababababababababababababababababababababababab",
+        "server_feeder": "00000000-0000-0000-0000-000000000009",
+        "server": {
+          "token": "00000000-0000-0000-0000-000000000007",
+          "user": "00000000-0000-0000-0000-000000000008"
+        },
+        "path": "server",
+        "write": {
+          "write": "feed",
+          "portions": 2
+        },
+        "state": "sending",
+        "sent_ms": 1000,
+        "tried_ms": 1000,
+        "mark": null,
+        "excluded": [],
+        "acknowledged_ms": null
+      },
+      {
+        "key": "00000000-0000-0000-0000-000000000002",
+        "feeder": "abababababababababababababababababababababababababababababababab",
+        "server_feeder": null,
+        "server": null,
+        "path": "direct",
+        "write": {
+          "write": "other",
+          "kind": "settings"
+        },
+        "state": "uncertain",
+        "sent_ms": 1000,
+        "tried_ms": 1000,
+        "mark": 41,
+        "excluded": [
+          3,
+          4
+        ],
+        "acknowledged_ms": 2000
+      }
+    ],
+    "running": [
+      {
+        "feeder": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "feed": 5,
+        "until_ms": 3000
+      }
+    ],
+    "adoptions": [
+      {
+        "feeder": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+        "at_ms": 4000
+      }
+    ],
+    "set_aside": {
+      "kind": "pending",
+      "moved_to": "/data/pending.json.damaged-1",
+      "reason": "not this file's shape",
+      "at_ms": 5000
+    }
+  }
+}
