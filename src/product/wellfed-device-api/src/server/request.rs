@@ -5,6 +5,7 @@ use super::feeder::{self, FeederAction, FeederMemory, FeederReply, FeederWait};
 use super::handshake::{find, fingerprint, invite};
 use super::memory::Remembered;
 use super::{Phase, Server, Waiting, slot_id};
+use crate::access::Access;
 use crate::clients::{Label, Role};
 use crate::mailbox::{
     Asked, NtpServer, Origin, TimeFields, TimeResult, TimeSettingsResult, WifiResult, Zone,
@@ -21,12 +22,14 @@ impl Server {
     /// Answer or queue one request. `None` when the answer waits on the
     /// device (it then goes out from [`Self::poll_pending`]). A feeder
     /// request, once its id, role and retry are checked, goes to the
-    /// feeder's module (`feeder`).
+    /// feeder's module (`feeder`). `access` is the class of the op the
+    /// action came from, which decides who may send it.
     #[expect(clippy::too_many_arguments, reason = "one request's whole context")]
     pub(super) fn request<D: Device>(
         &mut self,
         index: usize,
         id: RequestId,
+        access: Access,
         action: Action,
         now_ms: u32,
         device: &mut D,
@@ -70,7 +73,7 @@ impl Server {
                     .map_or(Reply::Refused(Refusal::Unavailable), Reply::Update),
             });
         }
-        if !allowed(role, action) {
+        if !access.allows(proto_role(role)) {
             let outcome = Reply::Refused(Refusal::Forbidden);
             return Some(self.remember(memory, id, action, outcome));
         }
@@ -325,44 +328,6 @@ const fn origin(role: Role) -> Origin {
     match role {
         Role::Owner => Origin::Owner,
         Role::Member | Role::Server | Role::UpdateSigner => Origin::Client,
-    }
-}
-
-/// Whether `role` may run `action`. Owners do everything; members and the
-/// server feed, change settings and the lock, and read; members also set the
-/// portion weight, which the people at the feeder weigh, while the server's
-/// key does not; nobody else opens a session at all.
-const fn allowed(role: Role, action: Action) -> bool {
-    match role {
-        Role::Owner => true,
-        // The server's key never sets the portion weight, which the
-        // people at the feeder weigh.
-        Role::Server if matches!(action, Action::Feeder(FeederAction::PutCalibration { .. })) => {
-            false
-        }
-        Role::Member | Role::Server => match action {
-            Action::Feeder(action) => !action.owners_only(),
-            _ => !matches!(
-                action,
-                Action::PutWifi { .. }
-                    | Action::RevokeClient { .. }
-                    | Action::Reboot
-                    | Action::OfferUpdate
-                    | Action::UpdateChunk { .. }
-                    | Action::UpdateState
-                    | Action::CancelUpdate
-                    | Action::EnrollUpdateKey { .. }
-                    | Action::UpdateKeyStatement
-                    | Action::PutTime { .. }
-                    | Action::TailLog { .. }
-                    | Action::Stats {
-                        section: StatsSection::Memory,
-                    }
-                    // The stock backup is the owner's copy to keep.
-                    | Action::ReadBank1 { .. }
-            ),
-        },
-        Role::UpdateSigner => false,
     }
 }
 

@@ -5,6 +5,7 @@
 use super::recovery::Rescue;
 use super::request::{Action, Reply, proto_role};
 use super::{Phase, Server, proto_encode, slot_id};
+use crate::access::Access;
 use crate::pairing::Pairing;
 use crate::{
     Device, EventRead, HANDSHAKE_MS, IDLE_MS, KeyChange, KeyOutcome, Reader, Reason, Record,
@@ -249,8 +250,9 @@ impl Server {
                 return Ok(());
             }
             Ok(ClientMessage::Request { id, op }) => {
+                let access = Access::of(&op);
                 let action = Action::from(op);
-                match self.request(index, id, action, now_ms, device, pairing, record) {
+                match self.request(index, id, access, action, now_ms, device, pairing, record) {
                     Some(reply) => (id, action.name(), reply),
                     None => return Ok(()),
                 }

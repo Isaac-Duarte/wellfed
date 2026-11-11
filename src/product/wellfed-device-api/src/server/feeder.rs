@@ -264,16 +264,6 @@ impl FeederAction {
         )
     }
 
-    /// Whether only an owner may run it: the meal call is the owner's
-    /// voice, or the clip they chose. A member also sets the portion
-    /// weight; the server's key does not (`request::allowed`).
-    pub(super) const fn owners_only(self) -> bool {
-        matches!(
-            self,
-            Self::StartCall { .. } | Self::CallChunk { .. } | Self::DeleteCall
-        )
-    }
-
     pub(super) const fn name(self) -> &'static str {
         match self {
             Self::GetSettings => "get-settings",

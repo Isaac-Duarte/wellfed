@@ -151,6 +151,36 @@ pub fn latest_due(plan: &Plan, now_ms: u64, offset_at: impl Fn(u64) -> Option<i3
     None
 }
 
+/// The occurrence a change of zone would run a second time on one local
+/// day: `plan`'s, under the offsets `offset_at` gives now, on the local
+/// date its mark `mark_ms` fell on under the offset it had then
+/// (`old_offset_s`), when that date's occurrence was at or before the mark
+/// and the new one comes after it. Marks hold occurrences by instant, so a
+/// zone further west puts the same local minute at a later instant, past
+/// the mark of the meal already fed that day.
+///
+/// `None` for a plan that runs once, which never runs twice anyway: one
+/// that ran is disabled, and one still waiting has had no meal.
+pub fn same_day_again(
+    plan: &Plan,
+    mark_ms: u64,
+    old_offset_s: i32,
+    offset_at: impl Fn(u64) -> Option<i32>,
+) -> Option<u64> {
+    if plan.days.once() {
+        return None;
+    }
+    let local_mark = i64::try_from(mark_ms).ok()? + i64::from(old_offset_s) * 1000;
+    let day = local_mark.div_euclid(DAY_MS);
+    let local_due = day * DAY_MS + i64::from(plan.minute) * MINUTE_MS;
+    if local_due > local_mark || !plan.days.contains(weekday(day)) {
+        return None;
+    }
+
+    let due = utc_of(local_due, offset_at)?;
+    (due > mark_ms).then_some(due)
+}
+
 /// The earliest occurrence of `plan` after `now_ms` (Unix milliseconds),
 /// whether or not the plan is enabled; `None` without offsets. The same
 /// instants as [`latest_due`]: a plan that runs once occurs every day until

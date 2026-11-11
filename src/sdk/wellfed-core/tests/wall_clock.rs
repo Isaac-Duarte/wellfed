@@ -432,13 +432,43 @@ fn ntp_answers_that_keep_missing_the_clock_make_it_need_the_time() {
     assert!(clock.read(5_000).is_some());
     assert_eq!(clock.fix(6_000, ntp(off, 20)), Err(SyncError::Bounded));
     assert_eq!(clock.read(6_000), None, "the clock needs the time");
-    assert_eq!(clock.fix(7_000, ntp(off, 20)), Ok(Jump::First));
+
+    // The anchor still bounds NTP: the same answer again is refused, and
+    // one inside the interval it missed sets the clock.
+    assert_eq!(clock.fix(7_000, ntp(off, 20)), Err(SyncError::Bounded));
+    assert_eq!(clock.read(7_000), None);
+    assert_eq!(clock.fix(8_000, ntp(NOON + 8_000, 20)), Ok(Jump::First));
+    assert_eq!(clock.read(8_000).unwrap().unix_ms, NOON + 8_000);
+}
+
+/// An attacker on the path answering a day ahead never sets the clock,
+/// however many answers it sends: after `DISJOINT_LIMIT` of them the clock
+/// needs the time, and only an owner's or a client's sync gives it.
+#[test]
+fn ntp_answers_a_day_ahead_never_set_an_anchored_clock() {
+    const DAY_MS: u64 = 86_400_000;
+    for origin in [Origin::Owner, Origin::Client] {
+        let mut clock = WallClock::default();
+        clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+        let mut now = 0;
+        for n in 0..=4 * u32::from(DISJOINT_LIMIT) {
+            now = (n + 1) * 1_000;
+            let ahead = NOON + u64::from(now) + DAY_MS;
+            assert_eq!(clock.fix(now, ntp(ahead, 20)), Err(SyncError::Bounded));
+            let valid = n + 1 < u32::from(DISJOINT_LIMIT);
+            assert_eq!(clock.read(now).is_some(), valid, "answer {n}");
+        }
+
+        now += 1_000;
+        let truth = NOON + u64::from(now);
+        assert_eq!(clock.fix(now, fix(truth, 20, origin)), Ok(Jump::First));
+        assert_eq!(clock.read(now).unwrap().unix_ms, truth);
+    }
 }
 
 /// After expiry NTP must still fall inside the old anchor's interval, grown
 /// at the bound without the two-minute cap: each re-set moves the clock by
-/// at most that interval, not to whatever answers. A miss counts as one,
-/// and only after `DISJOINT_LIMIT` of them may any answer set it.
+/// at most that interval, not to whatever answers, however many miss.
 #[test]
 fn an_expired_clock_is_re_set_by_ntp_only_inside_its_old_interval() {
     let mut clock = WallClock::default();
@@ -492,15 +522,18 @@ fn an_expired_clock_is_re_set_by_ntp_only_inside_its_old_interval() {
     let walked = clock.read(now).unwrap().unix_ms - (NOON + u64::from(now));
     assert!(walked <= 4 * 130_000, "walked {walked} ms");
 
-    // Three misses in a row: the anchor is forgotten and any answer sets it.
+    // Misses in a row never free it: the old interval still bounds NTP.
     let mut clock = WallClock::default();
     clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
     let now = 7 * HOUR_MS;
     let far = NOON + u64::from(now) + 3_600_000;
-    for _ in 0..DISJOINT_LIMIT {
+    for _ in 0..=DISJOINT_LIMIT {
         assert_eq!(clock.fix(now, ntp(far, 20)), Err(SyncError::Bounded));
     }
-    assert_eq!(clock.fix(now, ntp(far, 20)), Ok(Jump::First));
+    assert_eq!(
+        clock.fix(now, ntp(NOON + u64::from(now), 20)),
+        Ok(Jump::First)
+    );
 }
 
 #[test]
@@ -582,6 +615,7 @@ fn a_warm_reset_resumes_the_clock_with_the_rtc_gap_in_its_error() {
         Ok(Resumed {
             gap_s: 12,
             error_ms: 1_300 + 1_000 + 130,
+            contested: false,
         })
     );
 
@@ -783,4 +817,148 @@ fn occurrences_run_once_and_late_ones_are_missed() {
         Occurrence::Evaluated
     );
     assert_eq!(occurrence(due, Some(due), due + 1), Occurrence::Evaluated);
+}
+
+/// A contested clock is carried across a warm reset with its anchor, so
+/// the reset hands the next NTP answer nothing: one a day ahead is still
+/// refused, the clock still needs the time, and an honest answer or an
+/// owner's sync sets it.
+#[test]
+fn a_contested_clock_keeps_its_bound_across_a_warm_reset() {
+    const DAY_MS: u64 = 86_400_000;
+    let contested = || {
+        let mut clock = WallClock::default();
+        clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+        for n in 1..=u32::from(DISJOINT_LIMIT) {
+            let now = n * 1_000;
+            let ahead = NOON + u64::from(now) + DAY_MS;
+            assert_eq!(clock.fix(now, ntp(ahead, 20)), Err(SyncError::Bounded));
+        }
+        assert_eq!(clock.read(4_000), None);
+        clock
+            .carry(10_000, 1_000)
+            .expect("a contested clock is carried")
+    };
+
+    // Ten RTC seconds on, two seconds into the new boot.
+    let mut clock = WallClock::default();
+    let resumed = clock.resume(2_000, &contested(), Some(1_010), Restart::Warm);
+    assert!(resumed.is_ok_and(|resumed| resumed.contested));
+    assert_eq!(clock.read(2_000), None, "still needs the time");
+    let truth = NOON + 20_000;
+    assert_eq!(
+        clock.fix(2_000, ntp(truth + DAY_MS, 20)),
+        Err(SyncError::Bounded)
+    );
+    // Carried again, it stays contested.
+    let again = clock.carry(3_000, 1_011).expect("still carried");
+    let mut next = WallClock::default();
+    assert!(
+        next.resume(1_000, &again, Some(1_012), Restart::Warm)
+            .is_ok_and(|resumed| resumed.contested)
+    );
+
+    assert_eq!(clock.fix(2_000, ntp(truth, 20)), Ok(Jump::First));
+    assert!(clock.read(2_000).is_some());
+    let mut clock = WallClock::default();
+    clock
+        .resume(2_000, &contested(), Some(1_010), Restart::Warm)
+        .unwrap();
+    assert_eq!(
+        clock.fix(2_000, fix(truth + DAY_MS, 20, Origin::Owner)),
+        Ok(Jump::First)
+    );
+}
+
+/// A learned rate gone wrong (the uptime clock's drift moved past the
+/// learned bound) makes honest NTP answers miss. Once three have, the rate
+/// is forgotten and the bound grows at the unlearned rate, so the next
+/// honest answer sets the clock without a client's sync.
+#[test]
+fn a_wrong_learned_rate_is_forgotten_and_honest_ntp_sets_the_clock() {
+    let mut clock = WallClock::default();
+    clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+    let step = 1_024_000;
+    for i in 1..=7u64 {
+        let truth = i * step;
+        clock
+            .fix(slow(truth), fix(NOON + truth, 20, Origin::Owner))
+            .unwrap();
+    }
+    assert!(clock.state(slow(7 * step)).learned);
+
+    // The drift moves from 735 to 3,735 ppm slow: three hours on, the
+    // learned clock is about 32 s fast, outside its 200 ppm bound.
+    let base = 7 * step;
+    let uptime = |truth: u64| slow(base) + slow_by(3_735, truth - base);
+    let mut truth = base + 3 * u64::from(HOUR_MS);
+    for _ in 0..DISJOINT_LIMIT {
+        assert_eq!(
+            clock.fix(uptime(truth), ntp(NOON + truth, 20)),
+            Err(SyncError::Bounded)
+        );
+        truth += 60_000;
+    }
+    let state = clock.state(uptime(truth));
+    assert!(state.reading.is_none());
+    assert!(!state.learned, "the rate is forgotten");
+
+    assert_eq!(
+        clock.fix(uptime(truth), ntp(NOON + truth, 20)),
+        Ok(Jump::First)
+    );
+    honest(clock.read(uptime(truth)).unwrap(), NOON + truth, "re-set");
+}
+
+/// A contested clock's error grows past the two minutes a valid one may
+/// claim, and its record carries it: 24 days on, about 2.9 hours, still
+/// refusing an answer a day ahead after the reset. Past half the uptime
+/// clock's range no projection holds, so nothing is carried, and a record
+/// claiming more than the carry could grow is refused as corrupt.
+#[test]
+fn a_contested_record_carries_a_grown_error_up_to_its_limit() {
+    const DAY_MS: u64 = 86_400_000;
+    let mut clock = WallClock::default();
+    clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+    for n in 1..=u32::from(DISJOINT_LIMIT) {
+        let now = n * 1_000;
+        let ahead = NOON + u64::from(now) + DAY_MS;
+        assert_eq!(clock.fix(now, ntp(ahead, 20)), Err(SyncError::Bounded));
+    }
+
+    let later = 24 * 24 * HOUR_MS;
+    let record = clock.carry(later, 5_000).expect("carried at 24 days");
+    let mut resumed = WallClock::default();
+    let result = resumed.resume(1_000, &record, Some(5_010), Restart::Warm);
+    let resumed_error = result.map(|resumed| (resumed.contested, resumed.error_ms));
+    assert!(
+        resumed_error.is_ok_and(|(contested, error_ms)| contested && error_ms > 10_000_000),
+        "{resumed_error:?}"
+    );
+    let truth = NOON + u64::from(later) + 11_000;
+    assert_eq!(
+        resumed.fix(1_000, ntp(truth + DAY_MS, 20)),
+        Err(SyncError::Bounded)
+    );
+    assert_eq!(
+        clock.carry(25 * 24 * HOUR_MS, 5_000),
+        None,
+        "past half the range"
+    );
+
+    // The same record claiming another error, with a valid check: within
+    // the most a carry grows it resumes, past it it is refused.
+    let claiming = |error_us: u64| {
+        let mut forged = record;
+        forged[5] = u32::try_from(error_us & 0xffff_ffff).unwrap();
+        forged[6] = u32::try_from(error_us >> 32).unwrap();
+        let bytes: Vec<u8> = forged[..CARRY_WORDS - 1]
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect();
+        forged[CARRY_WORDS - 1] = wellfed_core::store::slot::crc32(&bytes);
+        WallClock::default().resume(1_000, &forged, Some(5_010), Restart::Warm)
+    };
+    assert!(claiming(10_000_000_000).is_ok());
+    assert_eq!(claiming(20_000_000_000), Err(NoResume::Corrupt));
 }

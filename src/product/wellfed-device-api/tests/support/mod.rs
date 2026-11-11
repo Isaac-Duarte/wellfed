@@ -28,8 +28,9 @@ use wellfed_device_api::{
     SESSIONS, Server,
 };
 use wellfed_proto::api::{
-    self as proto, DeviceMessage, EventBody, FRAME_MAX, FoodLevel, Hello, MESSAGE_MAX, Open,
-    PROLOGUE, PROTOCOL_MAJOR, Refusal, Stats, StatsSection, Status, Welcome,
+    self as proto, ClientMessage, DeviceMessage, EventBody, FRAME_MAX, FoodLevel, Hello,
+    MESSAGE_MAX, Op, Open, Outcome, PROLOGUE, PROTOCOL_MAJOR, Refusal, RequestId, Stats,
+    StatsSection, Status, Welcome,
 };
 use wellfed_proto::device::Model;
 use wellfed_proto::setup::{self, Answer, Reply};
@@ -39,6 +40,7 @@ use wellfed_session::setup_code::{Code, Exchange, Round, Side};
 
 pub const FEEDER: [u8; 32] = [0x10; 32];
 pub const OWNER: [u8; 32] = [0x20; 32];
+pub const MEMBER: [u8; 32] = [0x30; 32];
 /// Passes a driver runs after its input is spent, for answers to leave.
 const SETTLE: usize = 8;
 
@@ -783,15 +785,33 @@ impl<D: Faked> Rig<D> {
         true
     }
 
+    /// Enroll a member's key (`MEMBER`) beside the owner.
+    pub fn enroll_member(&mut self) {
+        let (table, _) = self.server.clients_table();
+        table[1] = Some(Client {
+            key: *Keypair::from_secret(MEMBER).public(),
+            label: Label::new(b"member").expect("a valid label"),
+            role: Role::Member,
+            enrolled: 2,
+        });
+        let records = &mut self.records;
+        self.server.clients_changed(2, |r| records.push(r));
+    }
+
     /// Open the owner's IK session on a new slot: the slot, and the
     /// client's transport.
     pub fn open(&mut self) -> (usize, Transport) {
+        self.open_as(OWNER)
+    }
+
+    /// Open an IK session with the enrolled key of secret `secret`.
+    pub fn open_as(&mut self, secret: [u8; 32]) -> (usize, Transport) {
         let slot = self.accept().expect("a free slot");
         let mut handshake = Handshake::new(
             Pattern::Ik,
             NoiseRole::Initiator,
             PROLOGUE,
-            &Keypair::from_secret(OWNER),
+            &Keypair::from_secret(secret),
             Some(*self.identity.public()),
             [0x77; 32],
         )
@@ -827,6 +847,47 @@ impl<D: Faked> Rig<D> {
             }
         }
         panic!("the feeder never answered the handshake");
+    }
+}
+
+/// Seal `plain` to the slot; the answers that come within a few passes,
+/// as their plaintext.
+pub fn send<D: Faked>(
+    rig: &mut Rig<D>,
+    slot: usize,
+    transport: &mut Transport,
+    plain: &[u8],
+) -> Vec<Vec<u8>> {
+    let mut sealed = [0; FRAME_MAX];
+    let len = transport.seal(plain, &mut sealed).unwrap();
+    let bytes = framed(&sealed[..len]);
+    assert_eq!(rig.deliver(slot, &bytes), bytes.len());
+
+    let mut answers = Vec::new();
+    for _ in 0..SETTLE {
+        rig.pass();
+        for reply in rig.collect(slot) {
+            let mut out = [0; FRAME_MAX];
+            let read = transport.open(&reply, &mut out).unwrap();
+            answers.push(out[..read].to_vec());
+        }
+    }
+    answers
+}
+
+/// A request's plaintext.
+pub fn request(id: RequestId, op: Op<'_>) -> Vec<u8> {
+    let mut out = vec![0; FRAME_MAX];
+    let len = wellfed_proto::encode(&ClientMessage::Request { id, op }, &mut out).unwrap();
+    out.truncate(len);
+    out
+}
+
+/// A response's id and outcome.
+pub fn answer(plain: &[u8]) -> (RequestId, Outcome<'_>) {
+    match wellfed_proto::decode::<DeviceMessage<'_>>(plain) {
+        Ok(DeviceMessage::Response { id, result }) => (id, result),
+        other => panic!("not a response: {other:?}"),
     }
 }
 

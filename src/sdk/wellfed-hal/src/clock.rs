@@ -191,8 +191,14 @@ pub fn resume(restart: Restart) {
     let mut report = startup::Report::new();
     let line = match result {
         Ok(resumed) => report.record(format_args!(
-            "PLTIM1 carry result=resumed gap_s={} error_ms={} rtc_s={rtc} at_ms={at} count_ms={now}\r\n",
-            resumed.gap_s, resumed.error_ms
+            "PLTIM1 carry result={} gap_s={} error_ms={} rtc_s={rtc} at_ms={at} count_ms={now}\r\n",
+            if resumed.contested {
+                "contested"
+            } else {
+                "resumed"
+            },
+            resumed.gap_s,
+            resumed.error_ms
         )),
         Err(why) => report.record(format_args!(
             "PLTIM1 carry result={} rtc_s={rtc} at_ms={at} count_ms={now}\r\n",

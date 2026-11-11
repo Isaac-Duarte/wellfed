@@ -5,7 +5,7 @@
 use proptest::prelude::*;
 use wellfed_core::clock::zone::{Rule, Zone};
 use wellfed_core_feeder::schedule::{
-    PLANS, Plan, Weekdays, latest_due, next_due, table_valid, utc_of, weekday,
+    PLANS, Plan, Weekdays, latest_due, next_due, same_day_again, table_valid, utc_of, weekday,
 };
 
 const MINUTE_MS: u64 = 60_000;
@@ -250,4 +250,45 @@ proptest! {
         prop_assert_eq!(latest_due(&plan, next, &denver), Some(next));
         prop_assert!(latest_due(&plan, next - 1, &denver).is_none_or(|due| due <= now));
     }
+}
+
+/// A meal fed in Berlin at 07:30 comes again at Denver's 07:30 the same
+/// date; one not yet due in Berlin, a once plan and a day the plan skips
+/// give nothing; a move east gives nothing.
+#[test]
+fn a_zone_further_west_names_the_day_s_meal_again() {
+    let berlin = offsets(rule("CET-1CEST,M3.5.0,M10.5.0/3"));
+    let denver = offsets(rule("MST7MDT,M3.2.0,M11.1.0"));
+    let tokyo = offsets(rule("JST-9"));
+    // Wednesday 07:30 CET is 06:30Z; 07:30 MDT is 13:30Z.
+    let fed = WEDNESDAY + 6 * HOUR_MS + 30 * MINUTE_MS;
+    let breakfast = daily(7 * 60 + 30);
+    let cet = 3_600;
+
+    assert_eq!(
+        same_day_again(&breakfast, fed, cet, &denver),
+        Some(WEDNESDAY + 13 * HOUR_MS + 30 * MINUTE_MS)
+    );
+    // Later the same day, the mark of a skip or a pass alike.
+    assert_eq!(
+        same_day_again(&breakfast, fed + 2 * HOUR_MS, cet, &denver),
+        Some(WEDNESDAY + 13 * HOUR_MS + 30 * MINUTE_MS)
+    );
+    assert_eq!(same_day_again(&breakfast, fed, cet, &tokyo), None);
+    assert_eq!(same_day_again(&breakfast, fed, cet, &berlin), None);
+
+    // Saved at 06:00 in Berlin, before the day's meal: nothing taken yet.
+    let saved = WEDNESDAY + 5 * HOUR_MS;
+    assert_eq!(same_day_again(&breakfast, saved, cet, &denver), None);
+
+    let once = Plan {
+        days: Weekdays::ONCE,
+        ..breakfast
+    };
+    assert_eq!(same_day_again(&once, fed, cet, &denver), None);
+    let weekends = Plan {
+        days: Weekdays(0b110_0000),
+        ..breakfast
+    };
+    assert_eq!(same_day_again(&weekends, fed, cet, &denver), None);
 }

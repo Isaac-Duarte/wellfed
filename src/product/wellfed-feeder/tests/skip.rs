@@ -46,6 +46,7 @@ fn view(plan: Plan, mark_s: u32) -> PlansView {
         table,
         marks,
         skips: 0,
+        fed: 0,
         claim: None,
         revision: REVISION,
         replaced: 0,
@@ -59,6 +60,7 @@ fn apply(view: &PlansView, change: &PlansChange) -> PlansView {
         table: view.table,
         marks: view.marks,
         skips: view.skips,
+        fed: view.fed,
         claim: view.claim,
         revision: view.revision,
     };
