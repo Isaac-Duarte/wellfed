@@ -120,6 +120,9 @@ impl Limits {
         let now = now.as_millisecond();
         let keys = [Key::name(name), Key::address(from)];
         let mut buckets = lock(&self.buckets);
+        for key in &keys {
+            buckets.rebase(key, now);
+        }
 
         let wait = keys
             .iter()
@@ -187,6 +190,17 @@ impl Buckets {
     fn full(&self, key: &Key, now: i64) -> i64 {
         let full = self.entries.get(key).copied().unwrap_or(now);
         full.min(now + MINUTE_MS)
+    }
+
+    /// Bring `key`'s bucket back to at most a minute ahead of `now`, and
+    /// keep it there: after the clock steps back, a refused attempt would
+    /// otherwise leave the old deadline stored, and each later attempt
+    /// would be refused anew until the clock caught up with it.
+    fn rebase(&mut self, key: &Key, now: i64) {
+        let latest = now + MINUTE_MS;
+        if self.entries.get(key).is_some_and(|&full| full > latest) {
+            self.set(key.clone(), latest);
+        }
     }
 
     /// Drop buckets full again until `new` more fit, or say how long until

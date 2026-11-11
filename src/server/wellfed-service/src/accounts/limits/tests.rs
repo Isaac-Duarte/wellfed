@@ -119,6 +119,10 @@ fn a_clock_stepped_back_limits_for_a_minute_at_most() {
             retry_after: Duration::from_secs(12)
         })
     );
+    // The wait it named holds: the bucket counts from the new time, not
+    // from the old deadline an hour ahead.
+    assert!(limits.attempt("ada", v4(2), at(-3_588_001)).is_err());
+    assert!(limits.attempt("ada", v4(2), at(-3_588_000)).is_ok());
 }
 
 /// A fresh IPv6 /64 for each `n`, so every flood attempt needs two new
