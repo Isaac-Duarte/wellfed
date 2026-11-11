@@ -380,18 +380,40 @@ impl<I: SlotIo> ClientStore<I> {
     /// rule reads past and the next save writes over; either way the store
     /// stays writable. `Ok` if the save at `generation` landed.
     ///
-    /// A re-read that fails too leaves the table empty and the store `Io`,
+    /// A re-read that fails too, or that reads less than the store held
+    /// (only a misread can: the replaced unit is never touched), leaves the
+    /// table empty and the store `Io`,
     /// unlike the Wi-Fi and time stores, which keep their last value: the
     /// clients fail closed, as a boot whose read fails does, so every
     /// session ends and none opens until a restart reads the table again.
     /// Keeping the old table instead could keep a revocation that landed
     /// from taking effect.
     fn reread(&mut self, generation: u64) -> Result<(), ClientError> {
+        let held = self.generation;
         let Some(io) = self.units.unbind() else {
             self.status = ClientStatus::Io;
             return Err(ClientError::Io);
         };
-        let landed = self.open(io) == ClientStatus::Loaded && self.generation == generation;
-        if landed { Ok(()) } else { Err(ClientError::Io) }
+
+        // The save never touches the unit it replaces, so a store that held
+        // a table reads that table or the new one again: anything older, or
+        // nothing at all, is a misread, which fails closed as a failed read
+        // does rather than leave an empty table open to writes.
+        let status = self.open(io);
+        let read = match status {
+            ClientStatus::Loaded => self.generation >= held,
+            ClientStatus::Empty => held == 0,
+            _ => false,
+        };
+        if !read {
+            self.table = Table::EMPTY;
+            self.status = ClientStatus::Io;
+            return Err(ClientError::Io);
+        }
+        if status == ClientStatus::Loaded && self.generation == generation {
+            Ok(())
+        } else {
+            Err(ClientError::Io)
+        }
     }
 }

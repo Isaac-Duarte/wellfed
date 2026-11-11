@@ -190,3 +190,26 @@ fn a_failed_save_whose_reread_fails_keeps_the_old_settings() {
     f.reads_fail = false;
     assert_eq!(open(&mut f).settings, settings(1));
 }
+
+/// A re-read after a failed save that misreads both units as erased is
+/// not taken for an empty store: the settings stay, marked `Io`, and the
+/// next save is refused rather than erase the unit holding them.
+#[test]
+fn a_reread_that_reads_nothing_after_a_failed_save_is_a_misread() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&settings(1)));
+
+    f.budget = 0;
+    f.reads_erased = true;
+    assert!(!s.save(&settings(2)));
+    assert_eq!(
+        (s.status, s.generation, s.settings),
+        (TimeStatus::Io, 1, settings(1))
+    );
+
+    f.budget = -1;
+    f.reads_erased = false;
+    assert!(!s.save(&settings(3)), "closed to writes");
+    assert_eq!(open(&mut f).settings, settings(1));
+}

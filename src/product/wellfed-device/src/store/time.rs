@@ -206,9 +206,10 @@ impl<I: SlotIo> TimeStore<I> {
     /// names what flash holds. The save may have landed whole before the
     /// failure was reported, or left its unit torn, which the newest-valid
     /// rule reads past and the next save writes over; either way the store
-    /// stays writable. A re-read that fails too keeps the value from before
-    /// the save, marked `Io`: the device goes on with what it last knew
-    /// rather than with nothing. Whether the save at `generation` landed.
+    /// stays writable. A re-read that fails too, or that reads less than the
+    /// store held, keeps the value from before the save, marked `Io`: the
+    /// device goes on with what it last knew rather than with nothing.
+    /// Whether the save at `generation` landed.
     fn reread(&mut self, generation: u64) -> bool {
         let before = (self.slot, self.generation, self.settings);
         let Some(io) = self.units.unbind() else {
@@ -216,9 +217,14 @@ impl<I: SlotIo> TimeStore<I> {
             return false;
         };
 
+        // The save never touches the unit it replaces, so a store that held
+        // a record reads that record or the new one again: anything older,
+        // or nothing at all, is a misread. Taken for empty, it would let the
+        // next save erase the unit still holding the current record.
+        let held = before.1;
         match self.open(io) {
-            TimeStatus::Loaded => self.generation == generation,
-            TimeStatus::Empty => false,
+            TimeStatus::Loaded if self.generation >= held => self.generation == generation,
+            TimeStatus::Empty if held == 0 => false,
             _ => {
                 (self.slot, self.generation, self.settings) = before;
                 self.status = TimeStatus::Io;

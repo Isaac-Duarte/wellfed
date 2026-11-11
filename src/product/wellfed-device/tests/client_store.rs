@@ -329,3 +329,30 @@ fn a_failed_save_whose_reread_fails_fails_closed() {
     f.reads_fail = false;
     assert_eq!(keys(&mut f), [[1; 32]]);
 }
+
+/// A re-read after a failed save that misreads both units as erased is
+/// not taken for an empty store, which would be open to writes: the
+/// clients fail closed, and the unit holding the table is left alone.
+#[test]
+fn a_reread_that_reads_nothing_after_a_failed_save_fails_closed() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    s.enroll([1; 32], label("a"), Role::Owner).unwrap();
+
+    f.budget = 0;
+    f.reads_erased = true;
+    assert_eq!(
+        s.enroll([2; 32], label("b"), Role::Member),
+        Err(ClientError::Io)
+    );
+    assert_eq!(s.status, ClientStatus::Io);
+    assert_eq!(s.clients().count(), 0);
+
+    f.budget = -1;
+    f.reads_erased = false;
+    assert_eq!(
+        s.enroll([3; 32], label("c"), Role::Member),
+        Err(ClientError::NotWritable)
+    );
+    assert_eq!(keys(&mut f), [[1; 32]]);
+}

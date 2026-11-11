@@ -59,6 +59,9 @@ pub struct FakeJournalFlash {
     pub silent_erase: bool,
     /// Every read fails, as a flash that stopped answering does.
     pub reads_fail: bool,
+    /// Every read returns erased bytes, as a misread of a written unit
+    /// might, while reporting success.
+    pub reads_erased: bool,
     pub program_order: ProgramOrder,
 
     /// Runs after every durable mutation. No reference to the flash is live
@@ -93,6 +96,7 @@ impl FakeJournalFlash {
             silent_program: false,
             silent_erase: false,
             reads_fail: false,
+            reads_erased: false,
             program_order: ProgramOrder::Bytes,
             after_mutation: None,
             mutation_context: core::ptr::null_mut(),
@@ -280,7 +284,11 @@ impl SlotIo for FlashIo {
             return false;
         }
 
-        bytes.copy_from_slice(&f.bytes[slot][offset..offset + bytes.len()]);
+        if f.reads_erased {
+            bytes.fill(u8::MAX);
+        } else {
+            bytes.copy_from_slice(&f.bytes[slot][offset..offset + bytes.len()]);
+        }
         f.reads += 1;
         true
     }

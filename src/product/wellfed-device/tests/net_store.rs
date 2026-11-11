@@ -154,3 +154,27 @@ fn a_failed_save_whose_reread_fails_keeps_the_old_credentials() {
     f.reads_fail = false;
     assert_eq!(open(&mut f).credentials, Some(creds(1)));
 }
+
+/// A re-read after a failed save that misreads both units as erased is
+/// not taken for an empty store: the save never touched the unit holding
+/// the current record, so the store keeps its credentials, marked `Io`, and
+/// refuses the next save rather than erase that unit.
+#[test]
+fn a_reread_that_reads_nothing_after_a_failed_save_is_a_misread() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(Some(&creds(1))));
+
+    f.budget = 0;
+    f.reads_erased = true;
+    assert!(!s.save(Some(&creds(2))));
+    assert_eq!(
+        (s.status, s.generation, s.credentials),
+        (NetStatus::Io, 1, Some(creds(1)))
+    );
+
+    f.budget = -1;
+    f.reads_erased = false;
+    assert!(!s.save(Some(&creds(3))), "closed to writes");
+    assert_eq!(open(&mut f).credentials, Some(creds(1)));
+}
