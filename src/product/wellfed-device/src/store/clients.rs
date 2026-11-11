@@ -354,8 +354,10 @@ impl<I: SlotIo> ClientStore<I> {
         })
     }
 
-    /// Write `table` to the other unit by the torn-write rule. A failure
-    /// keeps the previous table in memory.
+    /// Write `table` to the other unit by the torn-write rule. A save that
+    /// reports failure reads both units again: memory
+    /// then holds what flash does, so a revocation that landed takes effect
+    /// and its sessions end, and the store stays writable.
     fn save(&mut self, table: &Table) -> Result<(), ClientError> {
         if !self.writable() || !self.units.writable() {
             return Err(ClientError::NotWritable);
@@ -364,12 +366,26 @@ impl<I: SlotIo> ClientStore<I> {
         let slot = target(self.generation, self.slot);
         let from = (self.generation > 0).then_some(self.slot);
         if !self.units.replace(slot, from, &encode(generation, table)) {
-            self.status = ClientStatus::Io;
-            return Err(ClientError::Io);
+            return self.reread(generation);
         }
         self.slot = slot;
         self.generation = generation;
         self.table = *table;
         Ok(())
+    }
+
+    /// After a save that reported failure: open the units again, so memory
+    /// names what flash holds. The save may have landed whole before the
+    /// failure was reported, or left its unit torn, which the newest-valid
+    /// rule reads past and the next save writes over; either way the store
+    /// stays writable unless the read fails too. `Ok` if the save at
+    /// `generation` landed.
+    fn reread(&mut self, generation: u64) -> Result<(), ClientError> {
+        let Some(io) = self.units.unbind() else {
+            self.status = ClientStatus::Io;
+            return Err(ClientError::Io);
+        };
+        let landed = self.open(io) == ClientStatus::Loaded && self.generation == generation;
+        if landed { Ok(()) } else { Err(ClientError::Io) }
     }
 }

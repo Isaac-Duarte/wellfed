@@ -421,6 +421,12 @@ impl<I> DualSlot<I> {
     pub const fn io(&self) -> Option<&I> {
         self.io.as_ref()
     }
+
+    /// Hand the I/O back, leaving the units unbound, for a store to open
+    /// again on it.
+    pub fn unbind(&mut self) -> Option<I> {
+        self.io.take()
+    }
 }
 
 impl<I: SlotIo> DualSlot<I> {

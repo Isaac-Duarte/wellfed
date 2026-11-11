@@ -179,8 +179,10 @@ impl<I: SlotIo> TimeStore<I> {
         matches!(self.status, TimeStatus::Empty | TimeStatus::Loaded)
     }
 
-    /// Store `settings` to the other slot by the torn-write rule. A failure
-    /// keeps the previous settings in memory.
+    /// Store `settings` to the other slot by the torn-write rule; whether
+    /// flash now holds them. A save that reports failure reads both units
+    /// again, so memory names what flash holds and the
+    /// store stays writable.
     pub fn save(&mut self, settings: &TimeSettings) -> bool {
         if !self.writable() || !self.units.writable() {
             return false;
@@ -192,12 +194,25 @@ impl<I: SlotIo> TimeStore<I> {
             .units
             .replace(slot, from, &encode(generation, settings))
         {
-            self.status = TimeStatus::Io;
-            return false;
+            return self.reread(generation);
         }
         self.slot = slot;
         self.generation = generation;
         self.settings = *settings;
         true
+    }
+
+    /// After a save that reported failure: open the units again, so memory
+    /// names what flash holds. The save may have landed whole before the
+    /// failure was reported, or left its unit torn, which the newest-valid
+    /// rule reads past and the next save writes over; either way the store
+    /// stays writable unless the read fails too. Whether the save at
+    /// `generation` landed.
+    fn reread(&mut self, generation: u64) -> bool {
+        let Some(io) = self.units.unbind() else {
+            self.status = TimeStatus::Io;
+            return false;
+        };
+        self.open(io) == TimeStatus::Loaded && self.generation == generation
     }
 }

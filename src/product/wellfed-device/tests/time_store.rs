@@ -78,6 +78,26 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
                 assert!(s.save(&settings(n)));
             }
             f.budget = cut;
+            let saved = s.save(&settings(9));
+            f.budget = -1;
+
+            // The store's own memory names what flash holds, says whether
+            // the save landed, and takes the next save without a restart.
+            let held = open(&mut f).settings;
+            assert_eq!(s.settings, held, "{order:?} history {history} cut {cut}");
+            assert_eq!(saved, held == settings(9));
+            assert!(
+                s.save(&settings(8)),
+                "{order:?} history {history} cut {cut}"
+            );
+            assert_eq!(open(&mut f).settings, settings(8));
+
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
+            let mut s = open(&mut f);
+            for n in 0..history {
+                assert!(s.save(&settings(n)));
+            }
+            f.budget = cut;
             let _ = s.save(&settings(9));
             f.budget = -1;
 
