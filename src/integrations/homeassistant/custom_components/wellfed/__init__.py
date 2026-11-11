@@ -34,6 +34,7 @@ from .const import (
     CONF_TOKEN_ID,
     CONF_URL,
     DOMAIN,
+    ENTRY_VERSION,
     LEFTOVER_KEY_ISSUE,
     PORTIONS_MAX,
     PORTIONS_MIN,
@@ -116,7 +117,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_migrate_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> bool:
     """Version 2 is the first with two routes. A version 1 entry, from before
     them, is not carried over: it fails to migrate, and the owner deletes it
-    and pairs again. An entry a newer integration wrote is refused too."""
+    and pairs again. A newer minor of version 2 grew only by what this build
+    reads past, so it is read as it is and left at its minor; a newer major is
+    refused before this is asked."""
+    if entry.version == ENTRY_VERSION:
+        return True
     if entry.version == 1:
         _LOGGER.error(
             "This Wellfed entry is from an earlier test build: delete it and pair the feeder again"
