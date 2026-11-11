@@ -75,7 +75,7 @@ The zone is a feeder setting (`PutTime`'s `zone`): a POSIX TZ rule such as `MST7
 A client turns the owner's IANA name into the rule with `wellfed_client::time::rule`:
 
 - It takes the footer of the zone's TZif file (RFC 8536) from the tzdb that `jiff-tzdb` bundles.
-- It checks the footer with the feeder's own parser (offsets −12 h to +14 h, as syncs). It also checks it against both the bundled zone and the host's view of it, which the caller passes in, on both sides of every transition of the next ten years, the rule's own included. So a rule that keeps daylight time a newer host tzdb has dropped is refused, even in winter, when the two still agree.
+- It checks the footer with the feeder's own parser (offsets −12 h to +14 h, as syncs). It also checks it against both the bundled zone and the host's view of it, which the caller passes in, on both sides of every transition of the next ten years, the rule's own included. So a rule that keeps daylight time a newer host tzdb has dropped is refused (`RuleError::HostDisagrees`), even in winter, when the two still agree.
 - A footer only describes the zone after its file's last listed transition. So a zone that lists irregular changes ahead is refused (`RuleError::Irregular`) and stays on the syncs' offsets. No zone in the current tzdb is (host-tested over every zone).
 - Every footer fits the 48 bytes the store keeps.
 

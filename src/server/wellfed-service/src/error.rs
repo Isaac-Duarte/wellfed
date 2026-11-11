@@ -179,7 +179,10 @@ impl Error {
             // name the tzdb does not know is a plain `invalid`.
             Self::Zone(ZoneError::Unknown(_)) => ErrorCode::Invalid,
             Self::Zone(
-                ZoneError::NoRule(_) | ZoneError::Unsupported { .. } | ZoneError::Irregular { .. },
+                ZoneError::NoRule(_)
+                | ZoneError::Unsupported { .. }
+                | ZoneError::Irregular { .. }
+                | ZoneError::HostDisagrees { .. },
             ) => ErrorCode::ZoneUnsupported,
             Self::Account(account) => account.code(),
             Self::Feeder(feeder) => feeder.code(),

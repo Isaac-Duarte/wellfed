@@ -154,6 +154,17 @@ pub enum RuleError {
         rule: String,
         at: Timestamp,
     },
+    /// The bundled rule agrees with the bundled zone but not with the
+    /// host's: one of the two tzdb releases is out of date.
+    #[error(
+        "{name}'s rule {rule:?} disagrees with this host's time zone data at {at}: \
+         one of the two is out of date"
+    )]
+    HostDisagrees {
+        name: String,
+        rule: String,
+        at: Timestamp,
+    },
 }
 
 /// The POSIX TZ rule the feeder keeps for the IANA zone `name` from
@@ -177,14 +188,19 @@ pub fn rule(name: &str, now: Timestamp, host: Option<&TimeZone>) -> Result<Strin
     // feeder must not keep a rule either one contradicts.
     let bundled =
         TimeZone::tzif(canonical, tzif).map_err(|_| RuleError::NoRule(canonical.to_owned()))?;
-    for full in core::iter::once(&bundled).chain(host) {
-        if let Some(at) = disagreement(zone.rule(), full, now) {
-            return Err(RuleError::Irregular {
-                name: canonical.to_owned(),
-                rule,
-                at,
-            });
-        }
+    if let Some(at) = disagreement(zone.rule(), &bundled, now) {
+        return Err(RuleError::Irregular {
+            name: canonical.to_owned(),
+            rule,
+            at,
+        });
+    }
+    if let Some(at) = host.and_then(|host| disagreement(zone.rule(), host, now)) {
+        return Err(RuleError::HostDisagrees {
+            name: canonical.to_owned(),
+            rule,
+            at,
+        });
     }
     Ok(rule)
 }
@@ -451,7 +467,7 @@ mod tests {
         let december = at(1_796_083_200);
         assert!(matches!(
             rule("Europe/Berlin", december, Some(&cet)),
-            Err(RuleError::Irregular { .. })
+            Err(RuleError::HostDisagrees { .. })
         ));
         // In summer the rule already differs.
         let july = at(1_814_400_000);
@@ -494,7 +510,9 @@ mod tests {
                     assert!(rule.len() <= TEXT_MAX, "{name}: {rule}");
                     regular += 1;
                 }
-                Err(RuleError::Irregular { name, .. }) => irregular.push(name),
+                Err(RuleError::Irregular { name, .. } | RuleError::HostDisagrees { name, .. }) => {
+                    irregular.push(name);
+                }
                 Err(error) => panic!("{error}"),
             }
         }
