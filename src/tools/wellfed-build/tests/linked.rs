@@ -153,18 +153,22 @@ fn hook_bypasses_in_real_listings_and_tables_are_refused() {
 
         for (_, legacy) in hooks::RENAMES {
             let address = names[legacy].address;
-            let bypass = format!(
-                "{listing}\n00000000 <unmediated_sdk_caller>:\n 0: f000 f800 bl {address:x} <{legacy}>\n"
-            );
-            let error = hooks::legacy_routes(&bypass).unwrap_err();
-            assert!(
-                matches!(
-                    &error,
-                    Error::Hooks(HookError::Bypass { caller, legacy: bypassed })
-                        if caller == "unmediated_sdk_caller" && *bypassed == legacy
-                ),
-                "{core} {legacy}: {error}"
-            );
+            for call in [
+                format!("f000 f800 bl {address:x} <{legacy}>"),
+                format!("bf18 it ne\n 2: f000 f800 blne {address:x} <{legacy}>"),
+                format!("b108 cbz r0, {address:x} <{legacy}>"),
+            ] {
+                let bypass = format!("{listing}\n00000000 <unmediated_sdk_caller>:\n 0: {call}\n");
+                let error = hooks::legacy_routes(&bypass).unwrap_err();
+                assert!(
+                    matches!(
+                        &error,
+                        Error::Hooks(HookError::Bypass { caller, legacy: bypassed })
+                            if caller == "unmediated_sdk_caller" && *bypassed == legacy
+                    ),
+                    "{core} {legacy} {call}: {error}"
+                );
+            }
         }
 
         let directory = tempfile::tempdir_in(&build.dir).unwrap();

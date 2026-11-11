@@ -14,7 +14,7 @@ use regex::Regex;
 use wellfed_formats::audit::{HookAudit, HookImage, Route, Symbol};
 
 use super::{
-    Archives, Binutils, DIRECT_BRANCH, HEADING, INSTRUCTION, archive_record, elf, hex, index,
+    Archives, Binutils, DIRECT_TRANSFER, HEADING, INSTRUCTION, archive_record, elf, hex, index,
     parse_hex, tool, word,
 };
 use crate::Result;
@@ -178,8 +178,8 @@ pub fn verify_ipc_table(
 /// Each legacy entry's routes.
 pub type Routes = BTreeMap<&'static str, Vec<Route>>;
 
-/// Every direct branch to a legacy entry, which must come from its public
-/// wrapper.
+/// Every direct transfer to a legacy entry, conditional or not, which must
+/// come from its public wrapper.
 pub fn legacy_routes(disassembly: &str) -> Result<Routes> {
     let expected: BTreeMap<&'static str, &'static str> =
         RENAMES.iter().map(|(p, l)| (*l, *p)).collect();
@@ -194,7 +194,7 @@ pub fn legacy_routes(disassembly: &str) -> Result<Routes> {
         let Some(m) = INSTRUCTION.captures(line) else {
             continue;
         };
-        if !(DIRECT_BRANCH.is_match(&m[2]) || &m[2] == "bl") {
+        if !DIRECT_TRANSFER.is_match(&m[2]) {
             continue;
         }
         let Some(target) = BRANCH_TARGET.captures(&m[3]) else {
@@ -310,6 +310,57 @@ mod tests {
                 ));
             }
         }
+    }
+
+    /// Each direct transfer shape, under every condition and width, from an
+    /// unrelated caller is a bypass; from the wrapper it is a route.
+    #[test]
+    fn a_conditional_or_compare_branch_to_a_legacy_entry_is_a_bypass() {
+        const CONDITIONS: [&str; 17] = [
+            "", "eq", "ne", "cs", "hs", "cc", "lo", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt",
+            "gt", "le",
+        ];
+        let target = "10000100 <wellfed_sdk_flash_legacy_lock>";
+        let wrapped = |caller: &str, mnemonic: &str, operands: &str| {
+            format!(
+                "10000000 <{caller}>:\n 10000000:\tf000 f800 \t{mnemonic}\t{operands}\n\
+                 10000010 <FLASH_Write_Unlock>:\n 10000010:\tf000 f800 \tbl\t10000200 <wellfed_sdk_flash_legacy_unlock>\n\
+                 10000020 <FLASH_Write_IPC_Int>:\n 10000020:\tf000 b800 \tb.w\t10000300 <wellfed_sdk_flash_legacy_ipc>\n"
+            )
+        };
+        let mut shapes = Vec::new();
+        for base in ["b", "bl", "blx"] {
+            for condition in CONDITIONS {
+                for width in ["", ".n", ".w"] {
+                    shapes.push((format!("{base}{condition}{width}"), target.to_owned()));
+                }
+            }
+        }
+        for compare in ["cbz", "cbnz"] {
+            shapes.push((compare.to_owned(), format!("r0, {target}")));
+        }
+
+        for (mnemonic, operands) in &shapes {
+            let routes = legacy_routes(&wrapped("FLASH_Write_Lock", mnemonic, operands)).unwrap();
+            assert_eq!(
+                routes["wellfed_sdk_flash_legacy_lock"][0].caller, "FLASH_Write_Lock",
+                "{mnemonic}"
+            );
+
+            let error =
+                legacy_routes(&wrapped("unmediated_sdk_caller", mnemonic, operands)).unwrap_err();
+            assert!(
+                matches!(
+                    &error,
+                    Error::Hooks(HookError::Bypass { caller, .. }) if caller == "unmediated_sdk_caller"
+                ),
+                "{mnemonic}: {error}"
+            );
+        }
+
+        // A register call names no target, and is no direct route.
+        assert!(!DIRECT_TRANSFER.is_match("bx"));
+        assert!(!DIRECT_TRANSFER.is_match("ldr"));
     }
 
     #[test]
