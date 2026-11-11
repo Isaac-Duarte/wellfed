@@ -312,6 +312,37 @@ fn a_plan_feeds_once_at_its_minute() {
     assert!(feeder.missed().is_empty());
 }
 
+/// NTP answers a day ahead, as a host on the path could send, never step
+/// an owner-synced clock onto tomorrow's breakfast: after enough of them
+/// the clock needs the time, plans hold, and the owner's next sync finds
+/// breakfast fed once.
+#[test]
+fn ntp_answers_a_day_ahead_never_run_tomorrow_s_meal() {
+    use wellfed_core::clock::wall::{DISJOINT_LIMIT, Fix, Origin};
+
+    let mut feeder = breakfast();
+    feeder.run_until(BREAKFAST + MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
+
+    for _ in 0..2 * DISJOINT_LIMIT {
+        let now = feeder.now;
+        let wall = feeder.wall().unwrap_or(BREAKFAST + MINUTE_MS);
+        let ahead = Fix {
+            unix_ms: wall + 24 * HOUR_MS,
+            error_ms: 25,
+            origin: Origin::Ntp,
+        };
+        assert!(feeder.sim.platform().time_fix(now, ahead).is_err());
+        feeder.run(MINUTE_MS);
+    }
+    assert_eq!(feeder.wall(), None, "the feeder needs the time");
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
+
+    feeder.sync(BREAKFAST + 10 * MINUTE_MS);
+    feeder.run(30 * MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0], "fed once");
+}
+
 #[test]
 fn a_restart_and_a_backward_jump_never_run_it_twice() {
     let mut feeder = breakfast();

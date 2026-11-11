@@ -432,13 +432,43 @@ fn ntp_answers_that_keep_missing_the_clock_make_it_need_the_time() {
     assert!(clock.read(5_000).is_some());
     assert_eq!(clock.fix(6_000, ntp(off, 20)), Err(SyncError::Bounded));
     assert_eq!(clock.read(6_000), None, "the clock needs the time");
-    assert_eq!(clock.fix(7_000, ntp(off, 20)), Ok(Jump::First));
+
+    // The anchor still bounds NTP: the same answer again is refused, and
+    // one inside the interval it missed sets the clock.
+    assert_eq!(clock.fix(7_000, ntp(off, 20)), Err(SyncError::Bounded));
+    assert_eq!(clock.read(7_000), None);
+    assert_eq!(clock.fix(8_000, ntp(NOON + 8_000, 20)), Ok(Jump::First));
+    assert_eq!(clock.read(8_000).unwrap().unix_ms, NOON + 8_000);
+}
+
+/// An attacker on the path answering a day ahead never sets the clock,
+/// however many answers it sends: after `DISJOINT_LIMIT` of them the clock
+/// needs the time, and only an owner's or a client's sync gives it.
+#[test]
+fn ntp_answers_a_day_ahead_never_set_an_anchored_clock() {
+    const DAY_MS: u64 = 86_400_000;
+    for origin in [Origin::Owner, Origin::Client] {
+        let mut clock = WallClock::default();
+        clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+        let mut now = 0;
+        for n in 0..=4 * u32::from(DISJOINT_LIMIT) {
+            now = (n + 1) * 1_000;
+            let ahead = NOON + u64::from(now) + DAY_MS;
+            assert_eq!(clock.fix(now, ntp(ahead, 20)), Err(SyncError::Bounded));
+            let valid = n + 1 < u32::from(DISJOINT_LIMIT);
+            assert_eq!(clock.read(now).is_some(), valid, "answer {n}");
+        }
+
+        now += 1_000;
+        let truth = NOON + u64::from(now);
+        assert_eq!(clock.fix(now, fix(truth, 20, origin)), Ok(Jump::First));
+        assert_eq!(clock.read(now).unwrap().unix_ms, truth);
+    }
 }
 
 /// After expiry NTP must still fall inside the old anchor's interval, grown
 /// at the bound without the two-minute cap: each re-set moves the clock by
-/// at most that interval, not to whatever answers. A miss counts as one,
-/// and only after `DISJOINT_LIMIT` of them may any answer set it.
+/// at most that interval, not to whatever answers, however many miss.
 #[test]
 fn an_expired_clock_is_re_set_by_ntp_only_inside_its_old_interval() {
     let mut clock = WallClock::default();
@@ -492,15 +522,18 @@ fn an_expired_clock_is_re_set_by_ntp_only_inside_its_old_interval() {
     let walked = clock.read(now).unwrap().unix_ms - (NOON + u64::from(now));
     assert!(walked <= 4 * 130_000, "walked {walked} ms");
 
-    // Three misses in a row: the anchor is forgotten and any answer sets it.
+    // Misses in a row never free it: the old interval still bounds NTP.
     let mut clock = WallClock::default();
     clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
     let now = 7 * HOUR_MS;
     let far = NOON + u64::from(now) + 3_600_000;
-    for _ in 0..DISJOINT_LIMIT {
+    for _ in 0..=DISJOINT_LIMIT {
         assert_eq!(clock.fix(now, ntp(far, 20)), Err(SyncError::Bounded));
     }
-    assert_eq!(clock.fix(now, ntp(far, 20)), Ok(Jump::First));
+    assert_eq!(
+        clock.fix(now, ntp(NOON + u64::from(now), 20)),
+        Ok(Jump::First)
+    );
 }
 
 #[test]

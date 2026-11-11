@@ -52,10 +52,14 @@
 //! without the two-minute cap (so each re-set moves the clock by at most
 //! that), and such an answer teaches no rate. A run of
 //! [`DISJOINT_LIMIT`] NTP answers that all miss the trusted interval means
-//! the anchor or the learned rate is wrong (or the server is): the clock
-//! forgets both and reads invalid, so it needs the time rather than
-//! staying silently valid. An owner's sync that disagrees with the clock
-//! also forgets the learned rate.
+//! the anchor or the learned rate is wrong, or the server is: the clock
+//! reads invalid, so it needs the time rather than staying silently valid.
+//! It keeps the anchor as NTP's bound all the same, as an expired clock
+//! does, since NTP is unauthenticated: forgetting it would let the next
+//! answer set any time, so a host on the path could step the clock past a
+//! day and run its meals. An owner's or a client's sync sets it freely,
+//! and an answer inside the old interval re-sets it. An owner's sync that
+//! disagrees with the clock forgets the learned rate.
 //!
 //! **Local time.** The zone setting's rule ([`Rule`]) gives the offset at
 //! any instant. Without one, a client sync's offset and next change stand
@@ -107,7 +111,7 @@ pub const MAX_ERROR_MS: u64 = 120_000;
 /// A fix within this of the running estimate is in step, not a jump.
 pub const STEP_MS: i64 = 2000;
 /// NTP answers in a row that miss the trusted interval before the clock
-/// gives up on it.
+/// reads invalid, still bounded by the interval they missed.
 pub const DISJOINT_LIMIT: u8 = 3;
 /// A scheduled occurrence at most this late still runs (the feeding-plan policy).
 pub const MISSED_GRACE_MS: u64 = 15 * 60 * 1000;
@@ -303,6 +307,9 @@ pub struct WallClock {
     learned: bool,
     /// NTP answers in a row outside the trusted interval.
     disjoint: u8,
+    /// A run of `DISJOINT_LIMIT` such answers came: the clock reads
+    /// invalid, but NTP is still held to the anchor, until a fix sets it.
+    contested: bool,
     hint: Option<Hint>,
     rule: Option<Rule>,
     syncs: u32,
@@ -342,6 +349,7 @@ impl WallClock {
             rate_bound_ppb: UNLEARNED_PPM * 1000,
             learned: false,
             disjoint: 0,
+            contested: false,
             hint: None,
             rule: None,
             syncs: 0,
@@ -382,10 +390,11 @@ impl WallClock {
             error_us: u64::from(fix.error_ms) * 1000,
         };
 
-        // An expired clock still knows where the time lies, only too loosely
-        // to read: NTP must fall inside that, so an answer re-sets the clock
-        // by at most the old interval each expiry, not to anything. Owner
-        // and client syncs re-set it freely, as before the anchor.
+        // An expired or contested clock still knows where the time lies,
+        // only too loosely or too doubtfully to read: NTP must fall inside
+        // that, so an answer re-sets the clock by at most the old interval
+        // each time, not to anything. Owner and client syncs re-set it
+        // freely, as before the anchor.
         let expired = match self.current(now) {
             None if fix.origin == Origin::Ntp => self.trust.and_then(|t| self.project(t, now)),
             _ => None,
@@ -448,31 +457,35 @@ impl WallClock {
 
     /// An NTP answer outside the trusted interval: after `DISJOINT_LIMIT`
     /// in a row the anchor, the rate or the server is wrong, so the clock
-    /// forgets the anchor and needs the time from any source.
+    /// reads invalid and needs the time. The anchor stays NTP's bound,
+    /// as an expired one does: which of them is wrong is for an owner's
+    /// or a client's sync to say, not for the next unauthenticated answer.
     fn missed(&mut self) {
         self.disjoint = self.disjoint.saturating_add(1);
         if self.disjoint >= DISJOINT_LIMIT {
-            self.forget();
+            self.contested = true;
+            self.disjoint = 0;
         }
     }
 
     /// Forget the time, its anchor and the learned rate, so the clock reads
     /// invalid and needs the time from any source; the zone rule and a
-    /// client's offsets stay. For an anchor that can no longer be trusted,
-    /// and for a millisecond count that lost its place, across which no
-    /// projection holds.
+    /// client's offsets stay. For a millisecond count that lost its place,
+    /// across which no projection holds, so the anchor bounds nothing.
     pub fn forget(&mut self) {
         self.trust = None;
         self.centre = None;
         self.forget_rate();
         self.base = None;
         self.disjoint = 0;
+        self.contested = false;
     }
 
     fn trusted(&mut self, point: Anchor) {
         self.trust = Some(point);
         self.centre = Some(point);
         self.disjoint = 0;
+        self.contested = false;
     }
 
     fn forget_rate(&mut self) {
@@ -559,6 +572,9 @@ impl WallClock {
     /// The trusted interval and the centre at `now`, and the error the
     /// reading reports, while the clock is valid.
     fn current(&self, now: u32) -> Option<(Anchor, Anchor, u64)> {
+        if self.contested {
+            return None;
+        }
         let trust = self.project(self.trust?, now)?;
         let centre = self.project(self.centre?, now)?;
         let error_us = signed(centre.unix_us, trust.unix_us).unsigned_abs() + trust.error_us;
