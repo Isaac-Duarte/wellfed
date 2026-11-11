@@ -90,14 +90,12 @@ class AddServerFlow extends ChangeNotifier {
     _set(AddServerState(found: List.unmodifiable([..._state.found, heard]), stage: _state.stage));
   }
 
-  /// Log in to `url` as `name`. A URL with no scheme is taken as `http://`,
-  /// as a LAN address usually is.
+  /// Log in to `url` as `name`. A URL with no scheme gets one in Rust:
+  /// plain `http://` only for a host on the home network.
   Future<void> logIn({required String url, required String name, required String password}) async {
     if (_state.stage is AddServerLoggingIn) return;
     _stage(const AddServerLoggingIn());
-    final String trimmed = url.trim();
-    final String full = trimmed.contains('://') ? trimmed : 'http://$trimmed';
-    final LoginOutcome outcome = await _server.logIn(url: full, name: name.trim(), password: password);
+    final LoginOutcome outcome = await _server.logIn(url: url.trim(), name: name.trim(), password: password);
     if (_disposed) return;
     _stage(switch (outcome) {
       LoginDone() => const AddServerDone(),

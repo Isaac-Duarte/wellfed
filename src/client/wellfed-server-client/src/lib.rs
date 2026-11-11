@@ -17,6 +17,9 @@
 //! Nothing follows a redirect either: following one would send a login's
 //! password, or a write's body, to whatever host the answer names. A
 //! redirect is [`Error::Redirect`], and the caller names the final URL.
+//! Nor does a client speak plain `http://` beyond this computer and the
+//! home network unless its caller asked the owner ([`PlainHttp`]): a login
+//! carries the password and every call a token that can feed.
 //! How long a client waits on a server that goes quiet is its
 //! [`Timeouts`]; by default only the connection's opening is bounded.
 //!
@@ -54,7 +57,7 @@ use std::time::Duration;
 use reqwest::header::{self, HeaderValue};
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
-use wellfed_api::{PREFIX, Problem, SESSION_COOKIE};
+use wellfed_api::{PREFIX, Problem, SESSION_COOKIE, at_home};
 
 pub use diagnostics::LogBatches;
 pub use error::{Error, Failure};
@@ -66,6 +69,7 @@ pub use stream::{Update, Updates};
 /// The API's bodies, for a caller that may not depend on `wellfed-api`
 /// itself: the CLI reaches the server through this crate alone.
 pub use wellfed_api as api;
+pub use wellfed_api::PlainHttp;
 
 /// How long a connection to the server may take to open. A server on the
 /// LAN answers in milliseconds; a request's own time is the caller's to
@@ -119,20 +123,29 @@ pub struct Client {
 }
 
 impl Client {
-    /// A client of the server at `base`, an `http` or `https` URL such as
-    /// `http://192.0.2.7:8080` (a path is kept as a prefix, for a server
+    /// A client of the server at `base`, an `https` URL, or an `http` one
+    /// on this computer or the home network such as
+    /// `http://192.168.1.20:8080` (a path is kept as a prefix, for a server
     /// behind a reverse proxy), with no credentials yet and no
     /// [`Timeouts`].
     pub fn new(base: &Url) -> Result<Self, Error> {
-        Self::with_timeouts(base, Timeouts::default())
+        Self::with_timeouts(base, Timeouts::default(), PlainHttp::Refused)
     }
 
     /// [`Self::new`], waiting on a quiet server only as long as `timeouts`
-    /// say.
-    pub fn with_timeouts(base: &Url, timeouts: Timeouts) -> Result<Self, Error> {
+    /// say, and taking plain `http://` anywhere if `plain` is
+    /// [`PlainHttp::Allowed`]: only a caller that asked the owner passes
+    /// that.
+    pub fn with_timeouts(base: &Url, timeouts: Timeouts, plain: PlainHttp) -> Result<Self, Error> {
         let http_url = matches!(base.scheme(), "http" | "https") && base.host().is_some();
         if !http_url || base.query().is_some() || base.fragment().is_some() {
             return Err(Error::Base(base.clone()));
+        }
+        let host = base.host_str().unwrap_or_default();
+        if base.scheme() == "http" && plain == PlainHttp::Refused && !at_home(host) {
+            return Err(Error::PlainHttp {
+                host: host.to_owned(),
+            });
         }
         let origin = HeaderValue::from_str(&base.origin().ascii_serialization())
             .map_err(|_| Error::Base(base.clone()))?;
@@ -356,16 +369,22 @@ mod tests {
 
     #[test]
     fn the_base_is_an_http_url_and_its_origin_goes_with_every_request() {
-        let client = open("http://192.0.2.7:8080/").expect("an http base");
-        assert_eq!(client.url("/health"), "http://192.0.2.7:8080/health");
+        let client = open("http://192.168.1.20:8080/").expect("an http base");
+        assert_eq!(client.url("/health"), "http://192.168.1.20:8080/health");
 
         let request = client
             .with_auth(Some(Auth::Session("abc".into())))
             .api(Method::POST, "/setup")
             .build()
             .expect("a request");
-        assert_eq!(request.url().as_str(), "http://192.0.2.7:8080/api/v1/setup");
-        assert_eq!(request.headers()[header::ORIGIN], "http://192.0.2.7:8080");
+        assert_eq!(
+            request.url().as_str(),
+            "http://192.168.1.20:8080/api/v1/setup"
+        );
+        assert_eq!(
+            request.headers()[header::ORIGIN],
+            "http://192.168.1.20:8080"
+        );
         assert_eq!(request.headers()[header::COOKIE], "wellfed_session=abc");
 
         for base in [
@@ -375,6 +394,34 @@ mod tests {
             "http://192.0.2.7/#top",
         ] {
             assert!(matches!(open(base), Err(Error::Base(_))), "{base}");
+        }
+    }
+
+    #[test]
+    fn plain_http_stays_home_unless_the_caller_asked_the_owner() {
+        for base in [
+            "http://192.168.1.20:8080",
+            "http://127.0.0.1:8080",
+            "http://[fd00::4]:8080",
+            "http://wellfed.local:8080",
+            "https://feeder.example",
+            "https://203.0.113.4/wellfed",
+        ] {
+            assert!(open(base).is_ok(), "{base}");
+        }
+
+        for base in [
+            "http://feeder.example",
+            "http://203.0.113.4:8080",
+            "http://nas:8080",
+        ] {
+            assert!(matches!(open(base), Err(Error::PlainHttp { .. })), "{base}");
+            let allowed = Client::with_timeouts(
+                &Url::parse(base).expect("a URL"),
+                Timeouts::default(),
+                PlainHttp::Allowed,
+            );
+            assert!(allowed.is_ok(), "{base}");
         }
     }
 

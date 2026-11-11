@@ -45,7 +45,7 @@ use wellfed_server_client::api::{
     self as server, CommandOutcome, Connection, ErrorCode, EventQuery, FeederDetail, FeederId,
     HistoryEvent, PlansChange, ServerSkew, StreamEvent, StreamQuery,
 };
-use wellfed_server_client::{Auth, Client, Failure, Lock, Timeouts, Updates, Url};
+use wellfed_server_client::{Auth, Client, Failure, Lock, PlainHttp, Timeouts, Updates, Url};
 
 pub use account::{
     Login, Refused, ServerFeeder, address, client_listed, feeder, feeders, login, revoke_client,
@@ -115,7 +115,9 @@ impl Clocks {
 
 /// The client `target` is reached through, on `clocks`.
 pub(crate) fn client(target: &Target, clocks: Clocks) -> Result<Client, Error> {
-    let client = Client::with_timeouts(&target.url, clocks.timeouts)?;
+    // An entry's address went through the config flow, which asks the
+    // owner before any plain `http://` beyond this host.
+    let client = Client::with_timeouts(&target.url, clocks.timeouts, PlainHttp::Allowed)?;
     Ok(client.with_auth(Some(Auth::Token(target.token.clone()))))
 }
 

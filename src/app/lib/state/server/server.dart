@@ -23,6 +23,11 @@ enum ServerProblem {
   /// It answered something this app does not read.
   other,
 
+  /// The kept address is plain `http://` beyond the home network, which
+  /// this app no longer uses: the server is added again by its `https://`
+  /// address.
+  plainHttp,
+
   /// This phone's secure storage failed to read the server's token, which
   /// is still kept: a new start reads it again. Not signed out, so nothing
   /// asks for a login that would write over it.
@@ -345,9 +350,12 @@ class HomeServer extends ChangeNotifier {
     final ServerSession session;
     try {
       session = _ports.restore(kept.link, secret);
-    } on ServerError {
+    } on ServerError catch (error) {
       _router?.refuseServer();
-      _set(ServerLinked(link: kept.link, feeders: kept.feeders, problem: ServerProblem.other));
+      final ServerProblem problem = error.kind == ServerErrorKind.plainHttp
+          ? ServerProblem.plainHttp
+          : ServerProblem.other;
+      _set(ServerLinked(link: kept.link, feeders: kept.feeders, problem: problem));
       return;
     }
     _session = session;

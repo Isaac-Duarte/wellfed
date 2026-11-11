@@ -154,6 +154,8 @@ The server announces itself on the home network over mDNS, so the app can list i
 
 ## Reach it from outside
 
+The app and the CLI speak plain `http://` only to this computer or the home network: a loopback, private or link-local address, `localhost`, or a `.local` name, as the [alert webhook](README.md#alert-webhook) does. Any other name takes the server's `https://` address, since a login sends the password and every later call a token that can feed. An address typed into the app with no scheme is `http://` for a home-network host and `https://` for any other. A name only your router resolves (`nas.lan`) counts as off the home network, so use the server's IP address or its `.local` name. Home Assistant asks you to confirm a plain `http://` address instead.
+
 The server speaks plain HTTP. On your home network, reach it directly: set `listen = "0.0.0.0:8080"` and leave `trusted_proxies` empty. From outside, a VPN into your home network needs nothing more. The other way is a reverse proxy that terminates HTTPS, such as Caddy:
 
 ```caddyfile

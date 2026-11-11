@@ -15,7 +15,7 @@ import 'server_views.dart';
 import 'session.dart';
 part 'server.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `alert_client`, `follow`, `handle`, `open`, `stream`, `with_token`
+// These functions are ignored because they are not marked as `pub`: `alert_client`, `follow`, `handle`, `open`, `stream`, `with_scheme`, `with_token`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ServerHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`, `fmt`, `fmt`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `restore_with`
@@ -107,7 +107,9 @@ abstract class ServerSession implements RustOpaqueInterface {
 
   /// Log in to the server at `url` as `name`, mint a token for this phone
   /// named `phone` (the phone's name, as feeders list it), and end the
-  /// login: from here the token alone speaks for the phone.
+  /// login: from here the token alone speaks for the phone. A `url` with
+  /// no scheme is `http://` for a host on the home network and `https://`
+  /// for any other, and is kept so.
   static Future<ServerSession> login({
     required String url,
     required String name,

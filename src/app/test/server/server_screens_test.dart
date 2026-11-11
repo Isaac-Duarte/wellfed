@@ -40,7 +40,7 @@ void _phone(WidgetTester tester) {
 HistoryEntry _entry(int seq) => HistoryEntry(seq: BigInt.from(seq), atMs: 1000 * seq, body: const HistoryBody.other());
 
 void main() {
-  testWidgets('adding a server offers what the LAN announces, and logs in at a bare address as http', (tester) async {
+  testWidgets('adding a server offers what the LAN announces, and logs in at the address as typed', (tester) async {
     _phone(tester);
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
@@ -57,9 +57,26 @@ void main() {
     await tester.tap(find.text('Log in'));
     await settle(tester);
 
-    expect(ports.logins.single.url, 'http://192.168.1.20:8080');
+    expect(ports.logins.single.url, '192.168.1.20:8080', reason: 'Rust picks the scheme, never Dart');
     expect(book.server?.link, serverLink);
     expect(server.state, isA<ServerLinked>());
+  });
+
+  testWidgets('plain http beyond the home network is refused, and says how to reach the server', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
+    ports.loginFails = serverError(ServerErrorKind.plainHttp);
+    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+    await tester.enterText(find.byType(TextField).at(0), 'http://feeder.example');
+    await tester.enterText(find.byType(TextField).at(1), 'ada');
+    await tester.enterText(find.byType(TextField).at(2), 'hunter2');
+    await tester.pump();
+    await tester.tap(find.text('Log in'));
+    await settle(tester);
+
+    expect(find.textContaining("Use the server's https:// address"), findsOneWidget);
+    expect(book.server, isNull);
+    expect(ports.kept, isNull);
   });
 
   testWidgets('a refused login says why, and keeps nothing', (tester) async {

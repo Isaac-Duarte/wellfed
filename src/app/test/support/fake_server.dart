@@ -195,8 +195,15 @@ class FakeServerPorts implements ServerPorts {
     return session;
   }
 
+  /// What restoring a kept session throws while set.
+  ServerError? restoreFails;
+
   @override
-  ServerSession restore(ServerLink link, String secret) => session;
+  ServerSession restore(ServerLink link, String secret) {
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
+    if (restoreFails case final error?) throw error;
+    return session;
+  }
 
   @override
   Future<String?> secret() async {
