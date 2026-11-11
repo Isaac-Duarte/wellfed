@@ -6,11 +6,11 @@ use crate::common::owner::*;
 use wellfed_core::store::slot::RECORD_BYTES;
 use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
 use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery, RotorPhase};
-use wellfed_core_feeder::feed_journal::{JournalConfig, JournalError};
+use wellfed_core_feeder::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_hal::sdk::fake;
 use wellfed_hal_feeder::board::MOTOR_MASK;
 use wellfed_hal_feeder::owner::{OwnerFault, OwnerState, SubmitResult};
-use wellfed_testkit::journal_flash::UNIT;
+use wellfed_testkit::journal_flash::{FakeJournalFlash, UNIT};
 
 #[test]
 fn journal_success_and_reboot_preserve_ids() {
@@ -290,6 +290,45 @@ fn a_reset_mid_feed_resolves_as_uncertain_and_the_owner_opens() {
             let s = f.status();
             assert!(s.state == OwnerState::Idle && f.resolve_calls == 0);
             assert_eq!(s.high_water_id, if dual { 1 } else { 2 });
+        });
+        assert_eq!(writes, 0);
+    }
+}
+
+/// A power cut at any byte of the first boot's journal creation: the next
+/// boot finds the journal empty, as the boot before it did, creates it and
+/// feeds, rather than holding the feeder closed on a journal it calls
+/// corrupt.
+#[test]
+fn a_power_cut_creating_the_journal_leaves_a_feeder_that_feeds() {
+    for cut in 0..=RECORD_BYTES as i64 + 1 {
+        let mut first = FakeJournalFlash {
+            budget: cut,
+            ..FakeJournalFlash::default()
+        };
+        let mut journal = FeedJournal::default();
+        let c = JournalConfig {
+            binding: 42,
+            mode: BowlMode::Single,
+            max_portions: CONFIG.feed.max_portions,
+        };
+        // SAFETY: `first` stays in place while the journal uses it.
+        let created = unsafe { journal.create(first.io(), c, Direction::D0, true, true) };
+        assert_eq!(created == JournalError::Ok, cut > RECORD_BYTES as i64);
+
+        let (flash, _, ()) = boot_on(first.bytes, false, -1, move |f| {
+            let s = f.status();
+            assert_eq!(s.state, OwnerState::Idle, "cut {cut}");
+            assert!(s.fault == OwnerFault::Ok && s.high_water_id == 0);
+            feed(f);
+            let s = f.status();
+            assert!(s.result.id == 1 && s.result.outcome == OwnerOutcome::Done);
+            assert!(s.result_durable);
+        });
+        let (_, writes, ()) = boot_on(flash, false, -1, |f| {
+            let s = f.status();
+            assert!(s.state == OwnerState::Idle && s.high_water_id == 1);
+            assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectId);
         });
         assert_eq!(writes, 0);
     }

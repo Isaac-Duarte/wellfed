@@ -6,7 +6,8 @@
 //!
 //! The invariant under test: after any cut or failure, reopening yields the
 //! committed state, an unresolved pending intent, or `CORRUPT`, never an idle
-//! journal that has forgotten a reserved request ID. A cut result or
+//! journal that has forgotten a reserved request ID. A cut first `create`
+//! alone reads as empty, as the erased units before it did. A cut result or
 //! resolution always yields the pending intent or the committed result, and
 //! a cut reservation the committed state or a pending intent: no cut ever
 //! faults the journal.
@@ -413,29 +414,224 @@ fn byte_cut_recovery() {
     }
 }
 
+/// The configurations a cut first `create` is tried under, with the
+/// direction and phase each provisions: a cut genesis is recognized by its
+/// own bytes, whatever phase it was written with.
+const GENESES: [(BowlMode, Direction, bool, bool); 3] = [
+    (BowlMode::Single, Direction::D0, true, true),
+    (BowlMode::Double, Direction::D1, false, true),
+    (BowlMode::Double, Direction::D0, true, false),
+];
+
+fn genesis_config(mode: BowlMode) -> JournalConfig {
+    JournalConfig { mode, ..CONFIG }
+}
+
+/// `create` on `f` under genesis `g` of [`GENESES`].
+fn create_genesis(
+    f: &mut FakeJournalFlash,
+    j: &mut FeedJournal<FlashIo>,
+    g: (BowlMode, Direction, bool, bool),
+) -> JournalError {
+    let (mode, direction, credit, phase) = g;
+    // SAFETY: the fixture's callbacks are sound for its context, which outlives the call.
+    unsafe { j.create(f.io(), genesis_config(mode), direction, credit, phase) }
+}
+
+/// The journal a create left, opened as a boot does, then put to use.
+fn assert_genesis(f: &mut FakeJournalFlash, g: (BowlMode, Direction, bool, bool)) {
+    let config = genesis_config(g.0);
+    let mut j = FeedJournal::default();
+    assert_eq!(reopen(f, &mut j, &config), JournalError::Ok);
+    assert!(j.view.sequence == 1 && j.view.recovery.high_water_id == 0);
+    assert_eq!(j.view.recovery.direction, g.1);
+    if !j.view.recovery.phase_known {
+        // A double bowl of unknown phase feeds only once it is homed.
+        assert!(!reserve(&mut j, 1));
+        return;
+    }
+    assert!(reserve(&mut j, 1) && finish(&mut j, true, true));
+    assert_eq!(reopen(f, &mut j, &config), JournalError::Ok);
+    assert_eq!(j.view.recovery.high_water_id, 1);
+}
+
+/// A first `create` cut at any byte reads as empty, as it did before the
+/// write, and the next `create` (a boot finding it empty) succeeds: no cut
+/// of the first boot leaves the feeder unable to feed.
 #[test]
 fn create_cuts() {
-    for (unit, cut) in UNITS
-        .into_iter()
-        .flat_map(|unit| (0..=(RECORD_BYTES + 1) as i64).map(move |cut| (unit, cut)))
-    {
+    for (g, unit, cut) in GENESES.into_iter().flat_map(|g| {
+        UNITS
+            .into_iter()
+            .flat_map(move |unit| (0..=(RECORD_BYTES + 1) as i64).map(move |cut| (g, unit, cut)))
+    }) {
         let mut f = FakeJournalFlash {
             budget: cut,
             ..FakeJournalFlash::with_unit(unit)
         };
         let mut j = FeedJournal::default();
-        // SAFETY: the fixture's callbacks are sound for its context, which outlives the call.
-        let before = unsafe { j.create(f.io(), CONFIG, Direction::D0, true, true) };
-        let after = reopen(&mut f, &mut j, &CONFIG);
+        let before = create_genesis(&mut f, &mut j, g);
+        let after = reopen(&mut f, &mut j, &genesis_config(g.0));
 
-        if after == JournalError::Ok {
-            assert!(j.view.sequence == 1 && j.view.recovery.high_water_id == 0);
+        if before == JournalError::Ok || after == JournalError::Ok {
+            // Cut after the marker, as the write checks it back.
+            assert_eq!(after, JournalError::Ok, "{g:?} unit {unit} cut {cut}");
+            assert!(cut < 0 || cut >= RECORD_BYTES as i64);
         } else {
-            assert!(
-                before != JournalError::Ok
-                    && (after == JournalError::Empty || after == JournalError::Corrupt)
-            );
+            assert_eq!(after, JournalError::Empty, "{g:?} unit {unit} cut {cut}");
+            assert_eq!(create_genesis(&mut f, &mut j, g), JournalError::Ok);
         }
+        assert_genesis(&mut f, g);
+    }
+}
+
+/// The `create` after a cut one erases unit 0 first. A cut in its program
+/// reads as empty again; a cut in its erase reads as empty when the erase
+/// left the unit erased or untouched, and otherwise faults: bits an erase
+/// raised anywhere cannot be told from a record that decayed.
+#[test]
+fn create_cuts_after_a_cut_create() {
+    let g = GENESES[0];
+    let config = genesis_config(g.0);
+    for (unit, first) in UNITS
+        .into_iter()
+        .flat_map(|unit| [1, 4, 8, 13, 47, 123, 125, 127].map(move |first| (unit, first)))
+    {
+        let mut cut_once = FakeJournalFlash {
+            budget: first,
+            ..FakeJournalFlash::with_unit(unit)
+        };
+        let mut j = FeedJournal::default();
+        assert_ne!(create_genesis(&mut cut_once, &mut j, g), JournalError::Ok);
+        assert_eq!(reopen(&mut cut_once, &mut j, &config), JournalError::Empty);
+
+        // Every cut of the program, and cuts through the erase (each
+        // mutation raises eight bits) at a stride that keeps large units
+        // quick.
+        let erase = unit as i64;
+        let stride = (unit / 128).max(1);
+        let cuts = (0..erase)
+            .step_by(stride)
+            .chain([erase - 1])
+            .chain(erase..=erase + RECORD_BYTES as i64 + 1);
+        for cut in cuts {
+            let mut f = cut_once.clone();
+            f.budget = cut;
+            let mut j = FeedJournal::default();
+            let before = create_genesis(&mut f, &mut j, g);
+            let after = reopen(&mut f, &mut j, &config);
+
+            if before == JournalError::Ok || after == JournalError::Ok {
+                assert_eq!(
+                    after,
+                    JournalError::Ok,
+                    "unit {unit} first {first} cut {cut}"
+                );
+            } else if after == JournalError::Corrupt {
+                assert!(
+                    0 < cut && cut < erase,
+                    "unit {unit} first {first} cut {cut}"
+                );
+                continue;
+            } else {
+                assert_eq!(
+                    after,
+                    JournalError::Empty,
+                    "unit {unit} first {first} cut {cut}"
+                );
+                assert_eq!(create_genesis(&mut f, &mut j, g), JournalError::Ok);
+            }
+            assert_genesis(&mut f, g);
+        }
+    }
+}
+
+/// Only a cut genesis of this journal's own reads as empty. A later record
+/// at rest in unit 0 beside an erased unit 1 (a reservation's erase cut
+/// late) whose marker decayed still faults, as does a cut genesis beside
+/// anything but an erased unit, under another binding, or with a stray bit
+/// past its cut.
+#[test]
+fn only_a_cut_first_create_reads_as_empty() {
+    let mut f = FakeJournalFlash::default();
+    let mut j = create(&mut f, false);
+    assert!(reserve(&mut j, 7) && finish(&mut j, true, true));
+    assert!(j.view.sequence == 3 && j.slot == 0);
+    let at_rest = f.bytes[0].clone();
+
+    let decayed: [fn(&mut [u8]); 4] = [
+        |p| p[124] = 0,
+        |p| p[127] = u8::MAX,
+        |p| p[124..128].fill(u8::MAX),
+        |p| p[100..128].fill(u8::MAX),
+    ];
+    for decay in decayed {
+        let mut f = f.clone();
+        f.bytes[0].clone_from(&at_rest);
+        decay(&mut f.bytes[0]);
+        f.bytes[1].fill(u8::MAX);
+        let held = f.bytes.clone();
+        let mut j = FeedJournal::default();
+        assert_eq!(reopen(&mut f, &mut j, &CONFIG), JournalError::Corrupt);
+        // SAFETY: the fixture's callbacks are sound for its context, which outlives the call.
+        let again = unsafe { j.create(f.io(), CONFIG, Direction::D0, true, true) };
+        assert_eq!(again, JournalError::State);
+        assert_eq!(f.bytes, held, "nothing written over it");
+    }
+
+    let cut_genesis = |cut: i64| {
+        let mut f = FakeJournalFlash {
+            budget: cut,
+            ..FakeJournalFlash::default()
+        };
+        let mut j = FeedJournal::default();
+        // SAFETY: as above.
+        let created = unsafe { j.create(f.io(), CONFIG, Direction::D0, true, true) };
+        assert_ne!(created, JournalError::Ok);
+        f
+    };
+    for cut in [3, 20, 60, 126] {
+        let mut j = FeedJournal::default();
+        let mut f = cut_genesis(cut);
+        assert_eq!(reopen(&mut f, &mut j, &CONFIG), JournalError::Empty);
+
+        let other = JournalConfig {
+            binding: CONFIG.binding ^ 1,
+            ..CONFIG
+        };
+        let expected = if cut <= 24 {
+            JournalError::Empty
+        } else {
+            JournalError::Corrupt
+        };
+        assert_eq!(reopen(&mut f, &mut j, &other), expected, "cut {cut}");
+
+        let mut stray = f.clone();
+        stray.bytes[0][cut as usize + 1] &= 0xfe;
+        assert_eq!(reopen(&mut stray, &mut j, &CONFIG), JournalError::Corrupt);
+        let mut tail = f.clone();
+        tail.bytes[0][RECORD_BYTES] = 0;
+        assert_eq!(reopen(&mut tail, &mut j, &CONFIG), JournalError::Corrupt);
+
+        let mut beside = f.clone();
+        beside.bytes[1][..8].copy_from_slice(b"PLFJNL01");
+        assert_eq!(reopen(&mut beside, &mut j, &CONFIG), JournalError::Corrupt);
+        // SAFETY: as above.
+        let again = unsafe { j.create(beside.io(), CONFIG, Direction::D0, true, true) };
+        assert_eq!(again, JournalError::State);
+    }
+
+    // A byte cut part-way through its program, inside the magic or past it.
+    for at in [2, 40] {
+        let mut f = cut_genesis(at);
+        let full = cut_genesis(at + 1);
+        let target = full.bytes[0][at as usize];
+        f.bytes[0][at as usize] = target | 0x80 | 0x01;
+        let mut j = FeedJournal::default();
+        assert_eq!(reopen(&mut f, &mut j, &CONFIG), JournalError::Empty);
+        // SAFETY: as above.
+        let created = unsafe { j.create(f.io(), CONFIG, Direction::D0, true, true) };
+        assert_eq!(created, JournalError::Ok);
     }
 }
 

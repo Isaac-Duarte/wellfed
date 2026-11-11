@@ -94,7 +94,10 @@
 //!   beside a cut write (`Partial`, `Unmarked` or `Torn`): a pending
 //!   reservation is resolved again, and beside a record at rest the cut
 //!   write is the next reservation, resolved as uncertain under the next
-//!   ID. Anything else, including a newer or older major, is corrupt.
+//!   ID. It starts empty when both units are erased, or after its first
+//!   record cut short beside an erased unit, when the cut bytes are that
+//!   record's own. Anything else, including a newer or older major, is
+//!   corrupt.
 //!
 //! The journal and settings read the whole unit ([`Extent::Unit`]): written
 //! bytes after the record make the unit invalid, so unrelated data is never

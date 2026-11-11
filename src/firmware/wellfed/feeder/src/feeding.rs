@@ -1488,8 +1488,8 @@ mod target {
             })
         }
 
-        /// Opens the journal (creating it on erased sectors only), then the
-        /// owner on it.
+        /// Opens the journal (creating it on erased sectors, or over a first
+        /// creation a power cut interrupted), then the owner on it.
         fn open(&mut self) -> Option<Record> {
             // The `owner-fail` variant: a build whose owner cannot open, so
             // its trial must not confirm. The journal is left untouched.
@@ -1503,7 +1503,8 @@ mod target {
             let mut journal = Journal::default();
             let mut error = journal.open(io, JOURNAL);
             if error == JournalError::Empty {
-                // First boot of the feeding owner: both sectors erased.
+                // First boot of the feeding owner: both sectors erased, or
+                // the first boot's creation cut short.
                 self.created = true;
                 error = journal.create(io, JOURNAL, Direction::D0, true, true);
             }
