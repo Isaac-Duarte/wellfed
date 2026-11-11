@@ -517,6 +517,59 @@ fn a_plan_saved_after_its_minute_waits_for_the_next_day() {
     assert!(feeder.missed().is_empty());
 }
 
+/// A meal already fed that local day never runs again across a change of
+/// zone. Breakfast at 07:30 in Berlin (06:30Z), then the zone moves to
+/// Denver, where 07:30 the same date is 13:30Z: passed unreported, and
+/// Denver's 07:30 the next day feeds. A move east runs nothing again
+/// either, and the next day's meal comes at the new zone's minute.
+#[test]
+fn a_meal_fed_today_never_runs_again_across_a_change_of_zone() {
+    const BERLIN: &str = "CET-1CEST,M3.5.0,M10.5.0/3";
+    const DENVER: &str = "MST7MDT,M3.2.0,M11.1.0";
+    let at = |hours: u64, minutes: u64| WEDNESDAY + hours * HOUR_MS + minutes * MINUTE_MS;
+    let schedule = |feed| (feed, 2, FeedOutcome::Done, Source::Schedule(0));
+    // Owner syncs every few hours keep the unlearned clock valid.
+    let advance = |feeder: &mut Feeder, to: u64| {
+        while let Some(wall) = feeder.wall().filter(|&wall| wall + 4 * HOUR_MS < to) {
+            feeder.run_until(wall + 4 * HOUR_MS);
+            feeder.sync(wall + 4 * HOUR_MS);
+        }
+        feeder.run_until(to);
+    };
+
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.zone(BERLIN);
+    feeder.sync(at(6, 0));
+    feeder.put(table(&[(0, plan(7 * 60 + 30, 2))]));
+    feeder.run_until(at(6, 31));
+    assert_eq!(feeder.fed(), [schedule(1)], "07:30 in Berlin");
+
+    feeder.run_until(at(7, 0));
+    feeder.zone(DENVER);
+    advance(&mut feeder, at(13, 45));
+    assert_eq!(feeder.fed(), [schedule(1)], "not again at 07:30 in Denver");
+    assert!(feeder.missed().is_empty());
+    assert_eq!(feeder.plans().mark(0), Some(seconds(at(13, 30))));
+
+    advance(&mut feeder, at(24 + 13, 31));
+    assert_eq!(
+        feeder.fed(),
+        [schedule(1), schedule(2)],
+        "Thursday in Denver"
+    );
+
+    // Denver to Berlin after Thursday's meal: Friday 07:30 in Berlin, 06:30Z.
+    feeder.zone(BERLIN);
+    advance(&mut feeder, at(48 + 6, 31));
+    assert_eq!(
+        feeder.fed(),
+        [schedule(1), schedule(2), schedule(3)],
+        "Friday in Berlin"
+    );
+    assert!(feeder.missed().is_empty());
+}
+
 #[test]
 fn a_skipped_minute_runs_past_the_spring_change_and_a_repeated_one_once() {
     let mut feeder = Feeder::new();
