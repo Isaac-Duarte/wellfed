@@ -3,7 +3,7 @@
 
 use super::feeder::{self, FeederAction, FeederReply};
 use super::handshake::{find, fingerprint, invite};
-use super::memory::{Remembered, recall};
+use super::memory::{Recall, Remembered, recall};
 use super::{Phase, Server, Wait, Waiting, slot_id};
 use crate::access::Access;
 use crate::clients::{Label, Role};
@@ -49,9 +49,12 @@ impl Server {
             record(Record::Retried {
                 slot: slot_id(index),
             });
+            // A write still under way, or one whose outcome is lost, goes
+            // through the pending poll, which waits on the first or ends
+            // this session unanswered.
             return match recall(remembered, device, pairing, now_ms) {
-                Some(reply) => Some(reply),
-                None => self.wait(index, id, action, Waiting::Retry),
+                Recall::Answer(reply) => Some(reply),
+                Recall::Waiting | Recall::Lost => self.wait(index, id, action, Waiting::Retry),
             };
         }
         if !access.allows(proto_role(role)) {

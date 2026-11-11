@@ -342,11 +342,21 @@ impl Device for Fake {
         Some(self.ticket)
     }
 
+    /// `Lost` once the change finished and left the ring, as the device
+    /// tells it.
     fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome> {
-        self.keys_done
-            .iter()
-            .find(|&&(done, _)| done == ticket)
-            .map(|&(_, outcome)| outcome)
+        if self
+            .keys_pending
+            .is_some_and(|(queued, _)| queued == ticket)
+        {
+            return None;
+        }
+        Some(
+            self.keys_done
+                .iter()
+                .find(|&&(done, _)| done == ticket)
+                .map_or(KeyOutcome::Lost, |&(_, outcome)| outcome),
+        )
     }
 
     /// A small fixed answer per section, each told apart by its values.
@@ -480,10 +490,17 @@ impl Device for Fake {
         Ok(self.ticket)
     }
 
+    /// `Lost` once the request finished and a later one's answer replaced
+    /// its own, as the device tells it.
     fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
-        self.update_done
-            .filter(|&(done, _)| done == ticket)
-            .map(|(_, answer)| answer)
+        if self.held.is_some_and(|(queued, _)| queued == ticket) {
+            return None;
+        }
+        Some(
+            self.update_done
+                .filter(|&(done, _)| done == ticket)
+                .map_or(Ok(UpdateAnswer::Lost), |(_, answer)| answer),
+        )
     }
 
     fn update_chunk(&mut self, offset: u32, _data: &[u8]) -> Result<UpdateView, FrozenRefusal> {
@@ -822,6 +839,24 @@ pub(crate) fn send_unwritten(rig: &mut Rig, client: &mut Client_, id: u8, op: Op
     client.outbox.extend(bytes);
     rig.deliver(client.slot, &mut client.outbox);
     rig.pass();
+}
+
+/// Passes with the writer held off, collecting what the session is sent:
+/// whether it heard an answer to `id`.
+pub(crate) fn answered_unwritten(rig: &mut Rig, client: &mut Client_, id: u8) -> bool {
+    let mut answered = false;
+    for _ in 0..5 {
+        rig.deliver(client.slot, &mut client.outbox);
+        rig.pass();
+        let bytes = rig.collect(client.slot);
+        if !bytes.is_empty() {
+            client.session.receive(&bytes).unwrap();
+        }
+        while let Some(incoming) = client.session.next_incoming().unwrap() {
+            answered |= matches!(incoming, Incoming::Answer { id: got, .. } if got == [id; 16]);
+        }
+    }
+    answered
 }
 
 pub(crate) fn fingerprint(secret: [u8; 32]) -> proto::Fingerprint {

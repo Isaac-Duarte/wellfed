@@ -293,6 +293,13 @@ pub fn client_changes_answer_by_ticket(rig: &mut impl Rig) {
     assert_eq!(key_change(rig, enroll(7)), KeyOutcome::Duplicate);
     assert_eq!(key_change(rig, revoke(9)), KeyOutcome::NotFound);
     assert_eq!(key_change(rig, revoke(7)), KeyOutcome::Done);
+
+    // The mailbox keeps the last few results: one that aged out is lost,
+    // never read as still to come.
+    for _ in 0..wellfed_device_api::mailbox::KEYS_FINISHED {
+        assert_eq!(key_change(rig, revoke(9)), KeyOutcome::NotFound);
+    }
+    assert_eq!(keys_outcome(rig, ticket), Some(KeyOutcome::Lost));
 }
 
 /// A client store change records its history event in the writer's turn,

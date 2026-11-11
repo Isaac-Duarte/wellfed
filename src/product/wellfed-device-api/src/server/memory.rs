@@ -28,6 +28,10 @@ pub(super) enum Remembered {
     /// first request did. Remembered from the moment the write is queued,
     /// so a client whose session ended before the answer still gets it.
     Waiting(Wait),
+    /// A write that finished with its outcome gone before anyone read it:
+    /// a retry's session ends unanswered (`Reason::Forgotten`), as the
+    /// first's did, and the entry is free for a later id.
+    Lost,
 }
 
 /// The write ids one client's sessions have asked.
@@ -114,15 +118,24 @@ pub(super) fn remembered(reply: Reply) -> Remembered {
     }
 }
 
-/// What a retry of a write hears from what its id holds; `None` while the
-/// write is still under way, for the retry to wait on.
+/// What a retry of a write hears from what its id holds.
+pub(super) enum Recall {
+    Answer(Reply),
+    /// The write is still under way: the retry waits on it.
+    Waiting,
+    /// Nobody can say what the write did: the retry's session ends
+    /// unanswered.
+    Lost,
+}
+
+/// What a retry of a write hears from what its id holds.
 pub(super) fn recall<D: Device>(
     remembered: Remembered,
     device: &mut D,
     pairing: &mut Pairing,
     now_ms: u32,
-) -> Option<Reply> {
-    Some(match remembered {
+) -> Recall {
+    Recall::Answer(match remembered {
         Remembered::Done(generation) => Reply::Done(generation),
         Remembered::Refused(refusal) => Reply::Refused(refusal),
         Remembered::Invite { id } => pairing
@@ -134,7 +147,8 @@ pub(super) fn recall<D: Device>(
         Remembered::Update => device
             .update_view()
             .map_or(Reply::Refused(Refusal::Unavailable), Reply::Update),
-        Remembered::Waiting(_) => return None,
+        Remembered::Waiting(_) => return Recall::Waiting,
+        Remembered::Lost => return Recall::Lost,
     })
 }
 

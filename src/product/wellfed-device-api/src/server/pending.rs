@@ -7,7 +7,7 @@
 
 use super::feeder::{self, FeederReply};
 use super::handshake::find;
-use super::memory::{Remembered, recall, remembered};
+use super::memory::{Recall, Remembered, recall, remembered};
 use super::request::{Action, Name, Reply};
 use super::{Pending, Phase, Server, Wait, Waiting, slot_id};
 use crate::clients::Role;
@@ -90,9 +90,12 @@ impl Server {
                 if asking {
                     continue;
                 }
-                if let Some(reply) = poll(wait, u8::MAX, device, record) {
-                    self.memories[memory].remember(id, remembered(reply));
-                }
+                let settled = match poll(wait, u8::MAX, device, record) {
+                    Some(Settled::Answer(reply)) => remembered(reply),
+                    Some(Settled::Lost) => Remembered::Lost,
+                    None => continue,
+                };
+                self.memories[memory].remember(id, settled);
             }
         }
     }
@@ -117,20 +120,30 @@ impl Server {
 
         let outcome = match pending.waiting {
             Waiting::Write(wait) => match poll(wait, slot_id(index), device, record) {
-                Some(reply) => reply,
+                Some(Settled::Answer(reply)) => reply,
+                // Nobody can say what the write did: the session ends with
+                // it unanswered, which its client holds as uncertain, and
+                // a retry hears the same.
+                Some(Settled::Lost) => {
+                    self.memories[memory].remember(pending.id, Remembered::Lost);
+                    return Err(Reason::Forgotten);
+                }
                 None => return Ok(None),
             },
             // The write's own session, or the pass once it has gone, settles
             // it; a retry hears what the memory holds then, as any retry
             // does. The memory keeps a write under way for as long as a
             // session of its client is open (`Memory::remember`), so this
-            // session cannot lose it.
+            // session cannot lose it; a write whose outcome the device lost
+            // ends it unanswered.
             Waiting::Retry => {
                 let remembered = self.memories[memory]
                     .find(&pending.id)
                     .ok_or(Reason::Forgotten)?;
-                let Some(reply) = recall(remembered, device, pairing, now_ms) else {
-                    return Ok(None);
+                let reply = match recall(remembered, device, pairing, now_ms) {
+                    Recall::Answer(reply) => reply,
+                    Recall::Waiting => return Ok(None),
+                    Recall::Lost => return Err(Reason::Forgotten),
                 };
                 if let Phase::Open { pending, .. } = &mut self.slots[index].phase {
                     *pending = None;
@@ -179,6 +192,7 @@ impl Server {
                 Some(KeyOutcome::NotFound | KeyOutcome::NotWritable) => {
                     Reply::Refused(Refusal::NotWritable)
                 }
+                Some(KeyOutcome::Lost) => return Err(Reason::Forgotten),
             },
         };
 
@@ -309,6 +323,14 @@ fn signer_landed(slot: u8, key: &[u8; 32], record: &mut impl FnMut(Record)) {
     });
 }
 
+/// What became of a write the device has finished.
+enum Settled {
+    Answer(Reply),
+    /// It finished, and its outcome is gone before anyone read it: a later
+    /// request's replaced it. Nobody can say what it did.
+    Lost,
+}
+
 /// A write's answer once the device has finished it; `None` while it is
 /// still under way. `slot` names the session whose answer it is in the
 /// log, `u8::MAX` for one that has gone.
@@ -317,8 +339,8 @@ fn poll<D: Device>(
     slot: u8,
     device: &mut D,
     record: &mut impl FnMut(Record),
-) -> Option<Reply> {
-    Some(match wait {
+) -> Option<Settled> {
+    Some(Settled::Answer(match wait {
         Wait::Feeder(wait) => match device.feeder() {
             Some(feeder) => feeder::poll(wait, feeder)?,
             None => Reply::Refused(Refusal::Unavailable),
@@ -359,7 +381,10 @@ fn poll<D: Device>(
         Wait::Keys { ticket } => match device.keys_outcome(ticket)? {
             KeyOutcome::Done => Reply::Done(None),
             KeyOutcome::NotFound => Reply::Refused(Refusal::NotFound),
-            _ => Reply::Refused(Refusal::NotWritable),
+            KeyOutcome::Lost => return Some(Settled::Lost),
+            KeyOutcome::Full | KeyOutcome::Duplicate | KeyOutcome::NotWritable => {
+                Reply::Refused(Refusal::NotWritable)
+            }
         },
         Wait::Update { ticket } => match device.update_outcome(ticket)? {
             Ok(UpdateAnswer::View(view)) => Reply::Update(view),
@@ -371,9 +396,10 @@ fn poll<D: Device>(
                 });
                 Reply::Done(None)
             }
+            Ok(UpdateAnswer::Lost) => return Some(Settled::Lost),
             Err(refusal) => Reply::Refused(refusal.into()),
         },
-    })
+    }))
 }
 
 /// The zone's text, copied out of the device's view for the answer to

@@ -201,19 +201,23 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
             .then(|| self.platform.keys_ticket().max(1))
     }
 
+    /// `Lost` once a later change was queued and this one's result is not
+    /// among those the mailbox keeps: changes queue one at a time, so a
+    /// later ticket means this one finished, and its result aged out.
     fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome> {
-        self.platform
-            .keys_outcome(ticket)
-            .map(|result| match result {
-                KeyResult::Done => KeyOutcome::Done,
-                KeyResult::Full => KeyOutcome::Full,
-                KeyResult::Duplicate => KeyOutcome::Duplicate,
-                KeyResult::NotFound => KeyOutcome::NotFound,
-                KeyResult::Unarmed
-                | KeyResult::NoGenerator
-                | KeyResult::NotWritable
-                | KeyResult::Io => KeyOutcome::NotWritable,
-            })
+        let Some(result) = self.platform.keys_outcome(ticket) else {
+            return (self.platform.keys_ticket().max(1) != ticket).then_some(KeyOutcome::Lost);
+        };
+        Some(match result {
+            KeyResult::Done => KeyOutcome::Done,
+            KeyResult::Full => KeyOutcome::Full,
+            KeyResult::Duplicate => KeyOutcome::Duplicate,
+            KeyResult::NotFound => KeyOutcome::NotFound,
+            KeyResult::Unarmed
+            | KeyResult::NoGenerator
+            | KeyResult::NotWritable
+            | KeyResult::Io => KeyOutcome::NotWritable,
+        })
     }
 
     fn record(&mut self, now_ms: u32, body: EventBody) {
@@ -328,20 +332,24 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
     }
 
     fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
-        self.platform
-            .update_outcome(ticket)
-            .map(|answer| match answer {
-                Ok(Answer::Progress(progress)) => Ok(UpdateAnswer::View(wire::view(&progress))),
-                Ok(Answer::Key(KeyStatement::Revoke(id))) => Ok(UpdateAnswer::Key {
-                    change: UpdateKeyChange::Retired,
-                    id,
-                }),
-                Ok(Answer::Key(KeyStatement::Add(key))) => Ok(UpdateAnswer::Key {
-                    change: UpdateKeyChange::Added,
-                    id: key_id(&key),
-                }),
-                Err(refused) => Err(wire::refusal(refused)),
-            })
+        let Some(answer) = self.platform.update_outcome(ticket) else {
+            return self
+                .platform
+                .update_lost(ticket)
+                .then_some(Ok(UpdateAnswer::Lost));
+        };
+        Some(match answer {
+            Ok(Answer::Progress(progress)) => Ok(UpdateAnswer::View(wire::view(&progress))),
+            Ok(Answer::Key(KeyStatement::Revoke(id))) => Ok(UpdateAnswer::Key {
+                change: UpdateKeyChange::Retired,
+                id,
+            }),
+            Ok(Answer::Key(KeyStatement::Add(key))) => Ok(UpdateAnswer::Key {
+                change: UpdateKeyChange::Added,
+                id: key_id(&key),
+            }),
+            Err(refused) => Err(wire::refusal(refused)),
+        })
     }
 
     fn update_chunk(&mut self, offset: u32, data: &[u8]) -> Result<UpdateView, FrozenRefusal> {

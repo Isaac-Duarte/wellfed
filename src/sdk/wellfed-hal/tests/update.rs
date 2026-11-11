@@ -638,6 +638,28 @@ fn every_request_holds_feeds_off_until_it_is_answered() {
     assert_eq!(store().record().state, State::None);
 }
 
+/// One outcome is held: a request's is lost once a later request finished
+/// and replaced it, never before, so the loop can end what waited on it
+/// rather than wait for good.
+#[test]
+fn an_outcome_a_later_request_replaced_is_lost() {
+    let _guard = start(0);
+    let statement = || Request::statement(&[0; 88]).unwrap();
+
+    let first = mailbox::request(statement()).unwrap();
+    assert!(!mailbox::lost(first), "queued");
+    mailbox::finish(Err(Refused::Busy));
+    assert!(mailbox::outcome(first).is_some());
+
+    let second = mailbox::request(statement()).unwrap();
+    assert!(!mailbox::lost(first), "its outcome is still held");
+    assert!(!mailbox::lost(second));
+    mailbox::finish(Err(Refused::Busy));
+    assert!(mailbox::lost(first));
+    assert_eq!(mailbox::outcome(first), None);
+    assert!(!mailbox::lost(second));
+}
+
 #[test]
 fn nothing_is_written_while_a_feed_holds_the_outputs() {
     let _guard = start(0);

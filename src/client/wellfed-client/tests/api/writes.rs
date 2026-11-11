@@ -7,10 +7,9 @@ use wellfed_model as model;
 use wellfed_model::{Answer, FeederSettingsPatch, Generation, Op};
 use wellfed_proto::api::{self as proto, EventBody};
 
-use wellfed_client::api::Incoming;
-
 use crate::support::{
-    Client_, MEMBER, OWNER, Rig, ask, fingerprint, open, poll_answer, send_unwritten,
+    Client_, MEMBER, OWNER, Rig, answered_unwritten, ask, fingerprint, open, poll_answer,
+    send_unwritten,
 };
 
 #[test]
@@ -107,24 +106,6 @@ fn send_store_write(rig: &mut Rig, owner: &mut Client_, wifi: bool) -> EventBody
     }
     assert!(rig.device.settings_pending.is_some(), "queued");
     EventBody::Settings { generation, by }
-}
-
-/// Passes with the writer held off, collecting what the session is sent:
-/// whether it heard an answer to `id`.
-fn answered_unwritten(rig: &mut Rig, client: &mut Client_, id: u8) -> bool {
-    let mut answered = false;
-    for _ in 0..5 {
-        rig.deliver(client.slot, &mut client.outbox);
-        rig.pass();
-        let bytes = rig.collect(client.slot);
-        if !bytes.is_empty() {
-            client.session.receive(&bytes).unwrap();
-        }
-        while let Some(incoming) = client.session.next_incoming().unwrap() {
-            answered |= matches!(incoming, Incoming::Answer { id: got, .. } if got == [id; 16]);
-        }
-    }
-    answered
 }
 
 /// A store write whose session went before its answer still lands, and a

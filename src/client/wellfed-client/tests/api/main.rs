@@ -11,6 +11,7 @@ mod diagnostics;
 mod events_and_cursors;
 mod feeds_and_refusals;
 mod invites_recovery_and_keys;
+mod retries;
 mod revisions_and_leniency;
 mod sessions_and_handshakes;
 mod support;

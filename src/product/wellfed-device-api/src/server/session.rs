@@ -158,6 +158,8 @@ impl Server {
         *ticket = None;
 
         let joined = match outcome {
+            // Unanswered, the client cannot tell whether it joined.
+            KeyOutcome::Lost => return Err(Reason::Forgotten),
             KeyOutcome::Done | KeyOutcome::Duplicate => Joined::Enrolled {
                 role: proto_role(*role),
                 model: device.model(),
