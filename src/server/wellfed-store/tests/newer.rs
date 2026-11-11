@@ -8,10 +8,10 @@
 use jiff::Timestamp;
 use uuid::Uuid;
 use wellfed_api::{
-    Blocked, ClientRole, EventKind, FeedOutcome, FeedReason, FeederId, Home, HomeId, Model, Source,
-    TimeFormat, Units,
+    Blocked, ClientRole, CommandOutcome, EventKind, FeedOutcome, FeedReason, FeederId, Home,
+    HomeId, Model, Source, TimeFormat, Units,
 };
-use wellfed_store::{Error, NewFeeder, Schema, SealedKey, Store};
+use wellfed_store::{CommandFilter, Error, NewFeeder, Schema, SealedKey, Store};
 
 const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
 const FEEDER: FeederId = FeederId(Uuid::from_u128(1));
@@ -124,6 +124,76 @@ async fn codes_a_newer_server_stored_read_as_unknown() {
     )
     .await;
     let damaged = store.feeds(FEEDER, Timestamp::MIN, Timestamp::MAX).await;
+    assert!(matches!(damaged, Err(Error::Corrupt(_))), "{damaged:?}");
+
+    pool.close().await;
+    store.close().await;
+}
+
+/// A plans outcome with weekdays `days`, as the journal stores it.
+fn plans_outcome(days: &str) -> String {
+    let empty = ", null".repeat(9);
+    format!(
+        r#"{{"result":"plans","plans":{{"generation":1,"writable":true,
+            "plans":[{{"minute":480,"portions":2,"days":{days},"enabled":true,"call":0}}{empty}],
+            "skipped":[null{empty}]}}}}"#
+    )
+}
+
+async fn journaled(pool: &sqlx::SqlitePool, key: u8, outcome: &str) {
+    sqlx::query(
+        "INSERT INTO commands (key, user_id, token_id, feeder_id, kind, body_hash, request_id,
+                               boot_count, state, outcome, feed, sent_ms, updated_ms)
+         VALUES (?, ?, NULL, ?, 'plans', ?, ?, NULL, 'answered', ?, NULL, 50, 60)",
+    )
+    .bind(vec![key; 16])
+    .bind(Uuid::from_u128(9))
+    .bind(FEEDER.0)
+    .bind(vec![0_u8; 32])
+    .bind(vec![0_u8; 16])
+    .bind(outcome)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// A device API value nested in a stored outcome can carry a code only a
+/// newer build knows (a weekday, a clip, a refusal): the outcome reads as
+/// unknown, which a client treats as uncertain, and the journal around it
+/// reads as ever.
+#[tokio::test]
+async fn an_outcome_holding_a_code_a_newer_server_stored_reads_as_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("server.db");
+    let store = adopted(&path).await;
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", path.display()))
+        .await
+        .unwrap();
+
+    journaled(&pool, 1, &plans_outcome(r#"["mon"]"#)).await;
+    journaled(&pool, 2, &plans_outcome(r#"["mon", "a_newer_day"]"#)).await;
+    let known = store.command(&[1; 16]).await.unwrap().unwrap();
+    assert!(
+        matches!(known.outcome, Some(CommandOutcome::Plans { .. })),
+        "{known:?}"
+    );
+    let newer = store.command(&[2; 16]).await.unwrap().unwrap();
+    assert_eq!(newer.outcome, Some(CommandOutcome::Unknown));
+    let journal = store
+        .commands(CommandFilter {
+            user: None,
+            feeder: Some(FEEDER),
+            state: None,
+            after: None,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert_eq!(journal.len(), 2);
+
+    // An outcome that isn't JSON at all is still damage.
+    journaled(&pool, 3, "{ not json").await;
+    let damaged = store.command(&[3; 16]).await;
     assert!(matches!(damaged, Err(Error::Corrupt(_))), "{damaged:?}");
 
     pool.close().await;

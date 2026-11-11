@@ -7,8 +7,9 @@
 //! the server owns (a model, role, unit, job or state) adds a migration with
 //! it, even an empty one, so an older build that would refuse the value
 //! opens the database read-only instead (`tests/codes.rs` holds each set to
-//! the newest migration). Codes from the feeder's events grow with the
-//! device API and read as unknown.
+//! the newest migration, the JSON columns' through every type they nest).
+//! Codes from the feeder's events grow with the device API and read as
+//! unknown, and so does a JSON column's value an older build can't read.
 
 use std::path::{Path, PathBuf};
 

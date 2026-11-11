@@ -1,20 +1,23 @@
 //! The server's own stored codes, pinned beside the newest migration.
 //!
-//! A row read back is decoded strictly for every code the server owns
+//! A row read back is decoded strictly for most codes the server owns
 //! (models, roles, units, species, jobs, install, command and revoke
-//! states, and the JSON columns' variants and fields), so an older build
-//! fails on one it doesn't know. The rule that keeps that from reaching an
-//! owner: a build that stores a new code adds a migration with it, so an
-//! older build opens the database read-only instead. The fixture lists
-//! every set under the migration version it shipped with, and this test
-//! fails when a set changes while the newest migration stays the same.
+//! states), so an older build fails on one it doesn't know. The JSON
+//! columns (command outcomes, audit actions, install failures, revoke
+//! attempts) read a value they don't know as unknown, but an older build
+//! would still lose what it said. The rule that keeps either from reaching
+//! an owner: a build that stores a new code adds a migration with it, so
+//! an older build opens the database read-only instead. The fixture lists
+//! every set, the JSON columns' through every type they nest, under the
+//! migration version it shipped with, and this test fails when a set
+//! changes while the newest migration stays the same.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use sqlx::migrate::Migrator;
-use utoipa::PartialSchema;
+use utoipa::ToSchema;
 use wellfed_api::{
     AuditAction, ClientRole, CommandKind, CommandOutcome, CommandState, InstallFailure,
     InstallState, InstallTarget, Job, JobOutcome, Model, RevokeAttempt, RevokeReason, Role,
@@ -27,9 +30,18 @@ static MIGRATOR: Migrator = sqlx::migrate!();
 const PINNED: &str = include_str!("fixtures/codes.txt");
 
 /// Every string a schema names as a value or a field: the variants of a
-/// unit or tagged enum, and a JSON value's fields.
-fn names<T: PartialSchema>() -> BTreeSet<String> {
-    fn walk(value: &Value, names: &mut BTreeSet<String>) {
+/// unit or tagged enum, and a JSON value's fields, through every type it
+/// nests. utoipa names a nested type by reference rather than inline, so
+/// each reference is followed into the schemas `T` collects; a set
+/// inside a stored value (a weekday in a plan, a clip in a call) is part
+/// of what an older build must read.
+fn names<T: ToSchema>() -> BTreeSet<String> {
+    fn walk(
+        value: &Value,
+        nested: &BTreeMap<String, Value>,
+        seen: &mut BTreeSet<String>,
+        names: &mut BTreeSet<String>,
+    ) {
         match value {
             Value::Object(object) => {
                 for (key, inner) in object {
@@ -40,25 +52,48 @@ fn names<T: PartialSchema>() -> BTreeSet<String> {
                         }
                         ("properties", Value::Object(fields)) => {
                             names.extend(fields.keys().cloned());
-                            walk(inner, names);
+                            walk(inner, nested, seen, names);
                         }
-                        _ => walk(inner, names),
+                        ("$ref", Value::String(reference)) => {
+                            let name = reference.trim_start_matches("#/components/schemas/");
+                            let Some(schema) = nested.get(name) else {
+                                panic!("{reference} is not among the schemas collected");
+                            };
+                            if seen.insert(name.to_owned()) {
+                                walk(schema, nested, seen, names);
+                            }
+                        }
+                        _ => walk(inner, nested, seen, names),
                     }
                 }
             }
-            Value::Array(items) => items.iter().for_each(|item| walk(item, names)),
+            Value::Array(items) => items
+                .iter()
+                .for_each(|item| walk(item, nested, seen, names)),
             _ => {}
         }
     }
 
+    let mut collected = Vec::new();
+    T::schemas(&mut collected);
+    let nested: BTreeMap<String, Value> = collected
+        .into_iter()
+        .map(|(name, schema)| (name, serde_json::to_value(schema).unwrap()))
+        .collect();
+
     let mut found = BTreeSet::new();
-    walk(&serde_json::to_value(T::schema()).unwrap(), &mut found);
+    walk(
+        &serde_json::to_value(T::schema()).unwrap(),
+        &nested,
+        &mut BTreeSet::new(),
+        &mut found,
+    );
     found
 }
 
 /// The codes a unit enum is stored as: each variant its schema names, read
 /// back through serde, by `code`.
-fn codes<T: PartialSchema + DeserializeOwned>(code: fn(T) -> &'static str) -> BTreeSet<String> {
+fn codes<T: ToSchema + DeserializeOwned>(code: fn(T) -> &'static str) -> BTreeSet<String> {
     names::<T>()
         .into_iter()
         .map(|name| {
