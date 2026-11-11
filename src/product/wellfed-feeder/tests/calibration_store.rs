@@ -5,7 +5,7 @@
 use wellfed_core::store::slot::{RECORD_BYTES, crc32};
 use wellfed_device_api::mailbox::{Calibration, PORTION_MG_MAX, PORTION_MG_MIN};
 use wellfed_feeder::store::calibration::{CalibrationStatus, CalibrationStore};
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS, UNIT};
 
 fn open(f: &mut FakeJournalFlash) -> CalibrationStore<FlashIo> {
     let mut s = CalibrationStore::default();
@@ -57,9 +57,12 @@ fn a_weight_outside_the_limits_is_never_written() {
 
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
-    for history in 0..3u32 {
+    for (order, history) in ORDERS
+        .into_iter()
+        .flat_map(|o| (0..3u32).map(move |h| (o, h)))
+    {
         let old = |n: u32| weighed(5_000 + n);
-        let mut probe = FakeJournalFlash::with_unit(UNIT);
+        let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
         let mut s = open(&mut probe);
         for n in 0..history {
             assert!(s.save(&old(n)));
@@ -69,7 +72,7 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
         let span = i64::from(probe.mutations - start);
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_unit(UNIT);
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
             let mut s = open(&mut f);
             for n in 0..history {
                 assert!(s.save(&old(n)));
@@ -84,9 +87,13 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
                 .map_or_else(Calibration::default, old);
             assert!(
                 r.calibration == before || r.calibration == weighed(9_000),
-                "history {history} cut {cut}"
+                "{order:?} history {history} cut {cut}"
             );
-            assert!(r.writable(), "history {history} cut {cut}: {:?}", r.status);
+            assert!(
+                r.writable(),
+                "{order:?} history {history} cut {cut}: {:?}",
+                r.status
+            );
             assert!(r.save(&weighed(7_000)));
             assert_eq!(open(&mut f).calibration, weighed(7_000));
         }

@@ -6,6 +6,13 @@
 //! count reaches `LIMIT` and bank 0 holds a valid image, it clears bank 1's
 //! first marker byte and resets, and the loader falls back to bank 0.
 //!
+//! - **A valid bank 0:** its marker and the five core headers after it
+//!   ([`fallback`]). The loader boots a bank only when its KM0 and KM4
+//!   headers check too, and clearing bank 1's marker over a bank 0 whose
+//!   headers do not leaves nothing to boot, so a bank 0 whose headers fail
+//!   counts as no fallback at all: the build is held rather than given
+//!   away.
+//!
 //! - **Running bank:** bank 1 is running exactly when its physical marker is
 //!   intact. If its signatures had failed, the loader would have chosen bank
 //!   0, and clearing an unbootable bank's marker changes nothing.
@@ -73,8 +80,9 @@
 //! registers clear on power loss, so a power cut restarts every count; no
 //! flash record is involved, and none can be torn.
 
+use wellfed_amebad_sys::{BANK0_OFFSET, BANK1_OFFSET};
 use wellfed_core::ota::{self, Trial};
-use wellfed_signed::MARKER;
+use wellfed_signed::{MARKER, image};
 
 /// Unconfirmed boots per power-on before giving way.
 pub const LIMIT: u32 = 3;
@@ -97,6 +105,24 @@ pub fn confirmation(read: &[u8; ota::CONFIRM_LEN]) -> &[u8; ota::CONFIRM_LEN] {
         &BLANK
     }
 }
+
+/// Bank 0's whole region, which its image must fit.
+pub const BANK0_BYTES: u32 = BANK1_OFFSET - BANK0_OFFSET;
+
+/// Bank 0's marker as the trial decides on it, reading 32-byte headers at
+/// bank 0 offsets through `read`: the marker when its five core headers
+/// give an image inside bank 0 ([`image::extent`], the check KM4 makes
+/// before its own give-way), and erased bytes, no marker, otherwise. A
+/// give-way is safe only onto a bank the loader boots, and the loader
+/// rejects one whose KM4 header is damaged even with its marker intact.
+/// At most five header reads, so the boot's delay stays bounded.
+pub fn fallback(read: impl FnMut(u32, &mut [u8; 32]) -> bool) -> [u8; 8] {
+    match image::extent(read, BANK0_BYTES) {
+        Some(_) => MARKER,
+        None => [u8::MAX; 8],
+    }
+}
+
 /// The backup register KM0 counts in; KM4 reads and settles it.
 pub const REGISTER: u32 = 4;
 pub const BOOT_MASK: u32 = 0xffff;
@@ -523,18 +549,20 @@ pub fn identity() -> [u8; 32] {
 mod exported {
     use wellfed_core::ota::CONFIRM_LEN;
 
-    /// Called once by the KM0 main before `km4_boot_on`, with bank 1's and
-    /// bank 0's first 8 physical bytes, the confirmation record, the backup
-    /// register and whether `BOOT_Reason` carries the brownout bit
-    /// (nonzero). Writes the register's new value back to `register` and
-    /// the `PLTRL1` lines for the glue to print to `line` (NUL-terminated,
-    /// empty before a trial's give-way), and returns 1 when the glue must
-    /// clear bank 1's first marker byte and reset. Flash and the register
-    /// are written by the caller.
+    /// Called once by the KM0 main before `km4_boot_on`, with bank 1's first
+    /// 8 physical bytes, bank 0's mapped region (its headers are checked,
+    /// [`super::fallback`]), the confirmation record, the backup register
+    /// and whether `BOOT_Reason` carries the brownout bit (nonzero). Writes
+    /// the register's new value back to `register` and the `PLTRL1` lines
+    /// for the glue to print to `line` (NUL-terminated, empty before a
+    /// trial's give-way), and returns 1 when the glue must clear bank 1's
+    /// first marker byte and reset. Flash and the register are written by
+    /// the caller.
     ///
     /// # Safety
-    /// Each pointer is valid for its length (8, 8, `CONFIRM_LEN`, 4 and
-    /// `line_len` bytes).
+    /// Each pointer is valid for its length (8, [`super::BANK0_BYTES`],
+    /// `CONFIRM_LEN`, 4 and `line_len` bytes), and nothing writes bank 0
+    /// during the call (KM4 is not running yet).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn wellfed_amebad_trial_decide(
         bank1: *const [u8; 8],
@@ -552,13 +580,25 @@ mod exported {
             super::Reset::Other
         };
 
+        // SAFETY: the caller's contract: the glue's mapped bank 0, read
+        // only, and unchanged while this runs.
+        let region =
+            unsafe { core::slice::from_raw_parts(bank0.cast::<u8>(), super::BANK0_BYTES as usize) };
+        let bank0 = super::fallback(|at, header| {
+            let Some(bytes) = region.get(at as usize..).and_then(<[u8]>::first_chunk) else {
+                return false;
+            };
+            *header = *bytes;
+            true
+        });
+
         // SAFETY: the caller's contract.
         let found = unsafe { *register };
         // SAFETY: as above.
         let record = super::confirmation(unsafe { &*record });
         // SAFETY: as above.
         let (decision, value) =
-            unsafe { super::decide_after(&*bank1, &*bank0, record, found, &identity, reset) };
+            unsafe { super::decide_after(&*bank1, &bank0, record, found, &identity, reset) };
         // SAFETY: as above.
         unsafe { *register = value };
 

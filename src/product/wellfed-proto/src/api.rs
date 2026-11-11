@@ -1490,7 +1490,7 @@ pub enum UpdateStop {
     Write,
     /// The whole image's SHA-256 differs from the manifest's.
     Hash,
-    /// The marker did not read back.
+    /// The marker was never programmed.
     Activate,
     /// The update store could not be written.
     Store,

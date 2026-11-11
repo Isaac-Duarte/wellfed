@@ -538,7 +538,11 @@ fn every_cut_point_reopens_at_the_last_or_the_interrupted_save() {
 
 #[test]
 fn unknown_data_in_the_settings_sectors_is_never_written_over() {
+    // Another writer's bytes clear bits the store's magic keeps set. Bytes
+    // that clear none of them could be a first save cut short anywhere in
+    // its page, so the store cannot tell those apart and starts empty.
     let mut storage = blank();
+    storage[2 * 4096] = 0;
     storage[2 * 4096 + 9] = 0x12;
     let boot = platform_boot([0; 8], storage.clone(), false, EXPECTED_ID);
 

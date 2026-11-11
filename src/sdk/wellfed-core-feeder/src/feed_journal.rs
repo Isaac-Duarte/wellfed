@@ -45,6 +45,16 @@
 //! journal reopens at the record at rest, where the ID is reserved again:
 //! harmless for a reservation that never committed; only a decayed
 //! committed one, cut there too, could be forgotten.
+//!
+//! The first record, genesis, is written by `create` alone, onto erased
+//! units. A cut there leaves unit 0 holding some of a genesis's cleared
+//! bits beside an erased unit 1, which `open` reads as empty, as it read
+//! before the write, and the next `create` erases unit 0 and writes it
+//! again, whose program a cut also leaves in that state: a cut first boot
+//! does not leave the feeder unable to feed. A second cut inside that
+//! erase may, unless the erase only raises bits, as the model assumes; and
+//! a later record decayed in a particular way could read as empty
+//! (`cut_genesis`).
 
 use core::ffi::c_uint;
 
@@ -154,6 +164,16 @@ impl<I> Default for FeedJournal<I> {
 
 fn all(p: &[u8], value: u8) -> bool {
     p.iter().all(|&b| b == value)
+}
+
+/// Whether `unit` could be `record` cut short: every bit the record keeps
+/// set is still set, so the unit holds nothing but some of the bits the
+/// record clears. A page program clears its bits in no promised order, so
+/// this state is closed under a cut program toward the record; it is closed
+/// under a cut erase only if the erase only raises bits, which the model
+/// assumes and the part does not promise (`FeedJournal::cut_genesis`).
+fn dominated(unit: &[u8; RECORD_BYTES], record: &[u8; RECORD_BYTES]) -> bool {
+    unit.iter().zip(record).all(|(&u, &r)| u & r == r)
 }
 
 fn phase_valid(c: &JournalConfig, p: &OwnerRecovery) -> bool {
@@ -369,7 +389,8 @@ impl<I: SlotIo> FeedJournal<I> {
         })
     }
 
-    /// Empty/corrupt storage is never automatically initialized. Pending
+    /// Empty/corrupt storage is never automatically initialized; a first
+    /// `create` cut short reads as empty ([`Self::cut_genesis`]). Pending
     /// recovery is readable but cannot be reserved, finished or resumed here.
     pub fn open(&mut self, io: I, config: JournalConfig) -> JournalError {
         if !self.setup(io, config) {
@@ -382,6 +403,11 @@ impl<I: SlotIo> FeedJournal<I> {
 
         if a.is_erased() && b.is_erased() {
             return self.fail(JournalError::Empty);
+        }
+        match self.cut_genesis(&a, &b) {
+            None => return self.fail(JournalError::Io),
+            Some(true) => return self.fail(JournalError::Empty),
+            Some(false) => {}
         }
         let (slot, view) = match (a, b) {
             (Found::Valid(x), Found::Valid(y)) => {
@@ -469,6 +495,70 @@ impl<I: SlotIo> FeedJournal<I> {
         })
     }
 
+    /// Whether units `a` and `b` are a first `create` cut short: unit 1
+    /// erased, and unit 0 no committed record but a genesis record this
+    /// config writes with some of its cleared bits still to come
+    /// ([`dominated`]). `None` when a read fails.
+    ///
+    /// The body is one page program, which promises no byte order, and the
+    /// marker another after it, so a cut leaves any subset of the body's
+    /// cleared bits with the marker erased, or the whole body and part of
+    /// the marker: the slot layer reads either as `Partial` or `Unmarked`,
+    /// never as a committed or torn record. The genesis's direction and
+    /// phase are the caller's, so each one `create` accepts is tried.
+    ///
+    /// The next `create` erases unit 0. That a cut erase only raises bits,
+    /// so the unit still matches, is a model assumption (the fake NOR's):
+    /// a NOR part may program bits to 0 inside an erase before it raises
+    /// them, and a cut then can clear bits genesis keeps set. So a second
+    /// cut, inside that erase, on the boot after a cut first boot, may
+    /// still fault the journal: the residual of a cut first boot.
+    ///
+    /// No reserved ID is forgotten unless a later record matches, which
+    /// needs all of this at once: it sits at rest in unit 0 beside an
+    /// erased unit 1 (a reservation's erase cut late), its marker has
+    /// decayed so that it no longer reads committed yet keeps every bit of
+    /// `CMIT`, and every bit genesis keeps set is still set in it. Outside
+    /// what every record of this config shares (magic, version, binding,
+    /// limits), genesis keeps set only its sequence's low bit, which a
+    /// result's odd sequence keeps too, its phase flags and its checksum,
+    /// so the checksum decides that last part: about 2^-16 for one of 16
+    /// set bits. A committed genesis whose marker decayed can match too; it
+    /// reserved nothing, so writing it again loses nothing.
+    fn cut_genesis(&self, a: &Found<JournalView>, b: &Found<JournalView>) -> Option<bool> {
+        if !b.is_erased() || !matches!(a, Found::Partial | Found::Unmarked) {
+            return Some(false);
+        }
+        let mut unit = [0u8; RECORD_BYTES];
+        if !self.units.io()?.read(0, 0, &mut unit) {
+            return None;
+        }
+
+        let directions = [Direction::D0, Direction::D1];
+        let flags = [(false, false), (false, true), (true, false), (true, true)];
+        Some(directions.into_iter().any(|direction| {
+            flags.into_iter().any(|(credit_next_event, phase_known)| {
+                let genesis = Self::genesis(direction, credit_next_event, phase_known);
+                phase_valid(&self.config, &genesis.recovery)
+                    && dominated(&unit, &self.encode(&genesis))
+            })
+        }))
+    }
+
+    /// The first record of a journal.
+    fn genesis(direction: Direction, credit_next_event: bool, phase_known: bool) -> JournalView {
+        JournalView {
+            sequence: 1,
+            recovery: OwnerRecovery {
+                direction,
+                credit_next_event,
+                phase_known,
+                ..OwnerRecovery::default()
+            },
+            ..JournalView::default()
+        }
+    }
+
     /// Write `next` to unit `slot` by the torn-write rule, which every
     /// torn state `open` reads stands on.
     /// A newer minor's bytes in the record being replaced are kept.
@@ -493,8 +583,10 @@ impl<I: SlotIo> FeedJournal<I> {
     }
 
     /// Explicit first provisioning only: both units must already be entirely
-    /// erased. Does not erase existing data or accept a nonzero/reset ID
-    /// history. Mechanical phase must come from verified board evidence.
+    /// erased, or hold an earlier `create` cut short ([`Self::cut_genesis`]),
+    /// whose unit 0 it erases first. Does not erase any other data or accept
+    /// a nonzero/reset ID history. Mechanical phase must come from verified
+    /// board evidence.
     pub fn create(
         &mut self,
         io: I,
@@ -507,17 +599,7 @@ impl<I: SlotIo> FeedJournal<I> {
             return JournalError::Argument;
         }
 
-        let next = JournalView {
-            sequence: 1,
-            recovery: OwnerRecovery {
-                direction,
-                credit_next_event,
-                phase_known,
-                ..OwnerRecovery::default()
-            },
-            ..JournalView::default()
-        };
-
+        let next = Self::genesis(direction, credit_next_event, phase_known);
         if !phase_valid(&config, &next.recovery) {
             return self.error;
         }
@@ -525,11 +607,17 @@ impl<I: SlotIo> FeedJournal<I> {
         let (Some(a), Some(b)) = (self.scan(0), self.scan(1)) else {
             return self.fail(JournalError::Io);
         };
-        if !a.is_erased() || !b.is_erased() {
-            return self.fail(JournalError::State);
-        }
+        let prepare = if a.is_erased() && b.is_erased() {
+            Prepare::Erased
+        } else {
+            match self.cut_genesis(&a, &b) {
+                None => return self.fail(JournalError::Io),
+                Some(true) => Prepare::Erase,
+                Some(false) => return self.fail(JournalError::State),
+            }
+        };
 
-        self.write_record(0, &next, Prepare::Erased);
+        self.write_record(0, &next, prepare);
         self.error
     }
 

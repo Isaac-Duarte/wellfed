@@ -10,7 +10,7 @@ use wellfed_feeder::stats::{TOTAL_SECTORS, Totals};
 use wellfed_feeder::store::stats::SaveKind::{self, Early, Restart, Settled};
 use wellfed_feeder::store::stats::{Budget, RECORD_BYTES, StatsStatus, StatsStore};
 use wellfed_proto::api::{Counts, ResetCause};
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS};
 
 fn open(f: &mut FakeJournalFlash) -> StatsStore<FlashIo> {
     let mut s = StatsStore::default();
@@ -150,8 +150,11 @@ fn zero_until_saved_then_alternate_and_reload() {
 
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
-    for history in 0..3u32 {
-        let mut probe = FakeJournalFlash::with_unit(512);
+    for (order, history) in ORDERS
+        .into_iter()
+        .flat_map(|o| (0..3u32).map(move |h| (o, h)))
+    {
+        let mut probe = FakeJournalFlash::with_unit(512).ordered(order);
         let mut s = open(&mut probe);
         for n in 0..history {
             assert!(s.save(&totals(n), Settled));
@@ -161,7 +164,7 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
         let span = i64::from(probe.mutations - start);
 
         for cut in 0..=span {
-            let mut f = FakeJournalFlash::with_unit(512);
+            let mut f = FakeJournalFlash::with_unit(512).ordered(order);
             let mut s = open(&mut f);
             for n in 0..history {
                 assert!(s.save(&totals(n), Settled));
@@ -178,9 +181,13 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
             let old = history.checked_sub(1).map_or(Totals::ZERO, totals);
             assert!(
                 r.totals == old || r.totals == totals(9),
-                "history {history} cut {cut}"
+                "{order:?} history {history} cut {cut}"
             );
-            assert!(r.writable(), "history {history} cut {cut}: {:?}", r.status);
+            assert!(
+                r.writable(),
+                "{order:?} history {history} cut {cut}: {:?}",
+                r.status
+            );
             assert!(r.save(&totals(7), Settled));
             assert_eq!(open(&mut f).totals, totals(7));
         }

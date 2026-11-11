@@ -93,16 +93,18 @@ u32 wellfed_amebad_trial_decide(const u8 *bank1, const u8 *bank0, const u8 *reco
 /* Boot trial (wellfed-hal-common/src/trial.rs decides): before KM4 runs,
  * count an unconfirmed bank-1 image's boots in backup register 4 and, at the
  * limit with a valid bank 0, clear bank 1's first marker byte and reset so
- * the loader falls back to bank 0. A confirmed build's reset storm gives way
- * the same way. A brownout boot takes back the previous boot's pending storm
- * count (a supply fault, not the build's). The bit may be stale: the loader
- * leaves BOOT_Reason as it was when it finds no reset flag set, so the Rust
- * side never forgives two boots in a row. Rust also writes the PLTRL1
- * lines this prints, and says whether to give way; the marker write and
- * the reset stay here, beside the flash and watchdog calls they need.
- * KM4 is off, so the SDK flash lock only masks
- * this core's interrupts (wellfed_trial_program).
- * Physical reads go through the direct SPIC window. */
+ * the loader falls back to bank 0. Rust reads bank 0's five core headers
+ * through the mapped bank 0 pointer, not only its marker: a bank 0 whose
+ * KM4 header fails the loader's check is no fallback. A confirmed build's
+ * reset storm gives way the same way. A brownout boot takes back the
+ * previous boot's pending storm count (a supply fault, not the build's).
+ * The bit may be stale: the loader leaves BOOT_Reason as it was when it
+ * finds no reset flag set, so the Rust side never forgives two boots in a
+ * row. Rust also writes the PLTRL1 lines this prints, and says whether to
+ * give way; the marker write and the reset stay here, beside the flash and
+ * watchdog calls they need. KM4 is off, so the SDK flash lock only masks
+ * this core's interrupts (wellfed_trial_program). Physical reads go
+ * through the direct SPIC window. */
 #define WELLFED_BANK0_OFFSET 0x006000U
 #define WELLFED_BANK1_OFFSET 0x186000U
 #define WELLFED_CONFIRM_OFFSET 0x344000U

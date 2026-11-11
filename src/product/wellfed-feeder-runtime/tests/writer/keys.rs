@@ -120,6 +120,54 @@ fn an_unreadable_client_table_never_gets_a_new_identity() {
     assert_eq!(fake::with(sectors), before, "the table untouched");
 }
 
+/// A boot that cannot read one unit of the client table publishes no
+/// clients, whichever unit it is: the other may be the older table, holding
+/// a client revoked since.
+#[test]
+fn a_client_table_read_that_fails_lets_no_revoked_client_back() {
+    use wellfed_device_api::clients::CLIENTS;
+    use wellfed_hal::board::storage;
+
+    let (_guard, mut writer, mut provider) = start();
+    fake::with(|h| h.adc_noise = 0x0bad_cafe);
+    assert_eq!(rng::start().result, Ok(()));
+    for _ in 0..7 {
+        step(&mut writer, &mut provider); // open, net open, time open, keys, events, stats, its save
+    }
+    assert_eq!(
+        change(&mut writer, &mut provider, phone()),
+        changed(KeyChange::Enroll, KeyResult::Done, 1)
+    );
+    assert_eq!(
+        change(&mut writer, &mut provider, revoke([7; 32])),
+        changed(KeyChange::Revoke, KeyResult::Done, 0)
+    );
+
+    for unit in 0..storage::CLIENTS.count {
+        keys::reset();
+        fake::with(|h| h.fail_storage_read = Some(storage::CLIENTS.first + unit));
+        let record = boot_keys();
+        fake::with(|h| h.fail_storage_read = None);
+
+        assert!(
+            matches!(
+                record,
+                Record::Keys {
+                    clients: ClientStatus::Io,
+                    enrolled: 0,
+                    identity: Identity::Missing,
+                    ..
+                }
+            ),
+            "unit {unit}: {record:?}"
+        );
+        let mut table = [None; CLIENTS];
+        assert!(keys::clients_since(0, &mut table).is_some(), "unit {unit}");
+        assert_eq!(table, [None; CLIENTS], "unit {unit}");
+        assert_eq!(keys::identity_since(0), None, "unit {unit}");
+    }
+}
+
 #[test]
 fn key_changes_apply_and_a_reset_publishes_a_new_identity() {
     let (_guard, mut writer, mut provider) = start();

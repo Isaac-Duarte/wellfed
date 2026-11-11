@@ -250,14 +250,19 @@ impl<I: SlotIo> ClientStore<I> {
             self.status = ClientStatus::Io;
             return self.status;
         }
-        let (Some(a), Some(b)) = (self.scan(0), self.scan(1)) else {
+        let scanned = (self.scan(0), self.scan(1));
+
+        // Both scans decode into the table, so it may hold either unit's,
+        // possibly the older one: a client revoked since must not come back
+        // because the newer unit's read failed. It holds the winner's alone,
+        // reloaded below, or nothing.
+        self.table = Table::EMPTY;
+        let (Some(a), Some(b)) = scanned else {
             self.status = ClientStatus::Io;
             return self.status;
         };
         let empty = unwritten(&a, &b);
 
-        // Both scans wrote the table; reload the winner's, or start empty.
-        self.table = Table::EMPTY;
         self.status = match newest(a, b, |&generation| generation) {
             Pick::Future => ClientStatus::ReadOnly,
             Pick::Newest(slot, generation) => {
@@ -280,11 +285,17 @@ impl<I: SlotIo> ClientStore<I> {
         matches!(self.status, ClientStatus::Empty | ClientStatus::Loaded)
     }
 
-    /// The feeder's X25519 secret, once set.
+    /// The feeder's X25519 secret, once set; read it as [`Self::clients`]
+    /// says.
     pub fn identity(&self) -> Option<&[u8; 32]> {
         self.table.identity.as_ref()
     }
 
+    /// The enrolled clients. Like [`Self::identity`], they come from the
+    /// table open loaded or the last save committed: an open that is not
+    /// `Loaded` holds none, and a save that fails keeps the table it was
+    /// opened or saved with. So nothing after an `Io` open means unknown,
+    /// not none enrolled.
     pub fn clients(&self) -> impl Iterator<Item = &Client> {
         self.table.clients.iter().flatten()
     }

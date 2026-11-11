@@ -10,7 +10,7 @@ use std::fmt;
 
 use wellfed_core::ota::SectorStep;
 use wellfed_core::ota::install::{
-    Bank0Check, Bank0Error, Blocked, Refused, RefusedReason, Stop, StopStage,
+    Bank0Check, Bank0Error, Blocked, Marking, Refused, RefusedReason, Stop, StopStage,
 };
 use wellfed_core::record::{Confirm, Event, Record, Tag, Update, Watch};
 use wellfed_hal::ota::{confirm, update};
@@ -73,6 +73,16 @@ fn update_records_decode_to_what_they_say() {
                 version: 33,
                 bytes: 696_320,
                 sectors: 170,
+                marking: Marking::ReadBack,
+            },
+            Event::Update(Update::Activated { version: Some(33) }),
+        ),
+        (
+            update::Record::Activated {
+                version: 33,
+                bytes: 696_320,
+                sectors: 170,
+                marking: Marking::Uncertain,
             },
             Event::Update(Update::Activated { version: Some(33) }),
         ),

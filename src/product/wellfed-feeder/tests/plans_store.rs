@@ -6,7 +6,7 @@
 use wellfed_core::store::slot::crc32;
 use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, Table, Weekdays};
 use wellfed_feeder::store::plans::{Plans, PlansStatus, PlansStore, RECORD_BYTES};
-use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
+use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, ORDERS, UNIT};
 
 fn open(f: &mut FakeJournalFlash) -> PlansStore<FlashIo> {
     let mut s = PlansStore::default();
@@ -77,33 +77,45 @@ fn nothing_until_saved_then_alternate_and_reload() {
 
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
-    let old = breakfast(1_000);
     let new = Plans::default()
         .changed(&PlansChange::Replace {
             table: table(&[(3, ONCE)]),
             at_s: None,
         })
         .unwrap();
-    let mut probe = FakeJournalFlash::with_unit(UNIT);
-    let mut s = open(&mut probe);
-    assert!(s.save(&old));
-    let start = probe.mutations;
-    assert!(s.save(&new));
-    let span = i64::from(probe.mutations - start);
+    // A first save, then a save over one already there.
+    let histories = [None, Some(breakfast(1_000))];
 
-    for cut in 0..=span {
-        let mut f = FakeJournalFlash::with_unit(UNIT);
-        let mut s = open(&mut f);
-        assert!(s.save(&old));
-        f.budget = cut;
-        let _ = s.save(&new);
-        f.budget = -1;
+    for (order, history) in ORDERS.into_iter().flat_map(|o| histories.map(|h| (o, h))) {
+        let old = history.unwrap_or_default();
+        let saved = |f: &mut FakeJournalFlash| {
+            let mut s = open(f);
+            if let Some(plans) = &history {
+                assert!(s.save(plans));
+            }
+            s
+        };
 
-        let mut r = open(&mut f);
-        assert!(r.plans == old || r.plans == new, "cut {cut}");
-        assert!(r.writable(), "cut {cut}: {:?}", r.status);
-        assert!(r.save(&new));
-        assert_eq!(open(&mut f).plans, new);
+        let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
+        let mut s = saved(&mut probe);
+        let start = probe.mutations;
+        assert!(s.save(&new));
+        let span = i64::from(probe.mutations - start);
+
+        for cut in 0..=span {
+            let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
+            let mut s = saved(&mut f);
+            f.budget = cut;
+            let _ = s.save(&new);
+            f.budget = -1;
+
+            let mut r = open(&mut f);
+            let label = format!("{order:?} first {} cut {cut}", history.is_none());
+            assert!(r.plans == old || r.plans == new, "{label}");
+            assert!(r.writable(), "{label}: {:?}", r.status);
+            assert!(r.save(&new));
+            assert_eq!(open(&mut f).plans, new);
+        }
     }
 }
 

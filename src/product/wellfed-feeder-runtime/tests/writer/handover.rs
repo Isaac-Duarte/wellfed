@@ -258,6 +258,55 @@ fn a_handover_that_cannot_finish_waits_for_the_next_boot() {
     );
 }
 
+/// A client store that cannot be read may still hold clients, so the mark
+/// stays for the next boot, which clears them.
+#[test]
+fn a_handover_waits_for_a_client_store_it_can_read() {
+    use wellfed_hal::board::storage;
+
+    for unit in 0..storage::CLIENTS.count {
+        let (_guard, mut provider, identity) = paired_with_wifi();
+        plant_handover();
+        fake::with(|h| h.fail_storage_read = Some(storage::CLIENTS.first + unit));
+
+        let stopped = reset_boot(&mut provider, None);
+
+        assert!(
+            stopped
+                .iter()
+                .any(|record| matches!(record, Record::HandoverStopped { stage }
+                    if u32::from(*stage) == storage::HANDOVER_CLEARED_SECTORS)),
+            "unit {unit}: {stopped:?}"
+        );
+        let at = storage_reset_first();
+        assert_eq!(
+            fake::with(|h| h.storage[at..at + 16].to_vec()),
+            handover::MARKER,
+            "unit {unit}"
+        );
+
+        fake::with(|h| h.fail_storage_read = None);
+        let finished = reset_boot(&mut provider, None);
+
+        assert!(
+            finished.contains(&Record::HandoverDone { cleared: true }),
+            "unit {unit}: {finished:?}"
+        );
+        assert_eq!(keys::identity_since(0).map(|(_, key)| key), Some(identity));
+        assert!(
+            finished.iter().any(|record| matches!(
+                record,
+                Record::Keys {
+                    enrolled: 0,
+                    identity: Identity::Loaded,
+                    ..
+                }
+            )),
+            "unit {unit}: {finished:?}"
+        );
+    }
+}
+
 /// An update store that cannot be read may still hold its floor, so the mark
 /// stays for the next boot, which resets it.
 #[test]
