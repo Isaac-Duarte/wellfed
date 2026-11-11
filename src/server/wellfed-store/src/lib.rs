@@ -108,6 +108,18 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub struct Store {
     writer: SqlitePool,
     reader: SqlitePool,
+    schema: Schema,
+}
+
+/// Whose schema the database has, as [`Store::open`] found it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Schema {
+    /// This build's: its pending migrations ran, and it is read and written.
+    Current,
+    /// A newer build's, which ran migration `applied` where this build's
+    /// newest is `embedded`. Both pools are read-only, so SQLite refuses
+    /// every write and nothing that build stored is written over.
+    Newer { applied: i64, embedded: i64 },
 }
 
 impl Store {
@@ -116,6 +128,10 @@ impl Store {
     /// copied beside itself as `<name>.before-<version>-<unix ms>`, the
     /// time being `now`: a copy per attempt, so one left by a migration
     /// that failed never blocks the next one made at a later time.
+    ///
+    /// A database a newer build migrated is opened read-only instead, with
+    /// nothing run or copied ([`Schema::Newer`]); the caller decides what a
+    /// read-only database is good for.
     pub async fn open(path: &Path, now: Timestamp) -> Result<Self> {
         let options = SqliteConnectOptions::new()
             .filename(path)
@@ -129,6 +145,24 @@ impl Store {
             .synchronous(SqliteSynchronous::Full)
             .foreign_keys(true)
             .busy_timeout(BUSY);
+        let schema = migrate::schema(path).await?;
+        if let Schema::Newer { .. } = schema {
+            let options = migrate::read_only(path);
+            let writer = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(options.clone())
+                .await?;
+            let reader = SqlitePoolOptions::new()
+                .max_connections(READERS)
+                .connect_with(options)
+                .await?;
+            return Ok(Self {
+                writer,
+                reader,
+                schema,
+            });
+        }
+
         let writer = SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(options.clone())
@@ -139,7 +173,16 @@ impl Store {
             .max_connections(READERS)
             .connect_with(options.read_only(true))
             .await?;
-        Ok(Self { writer, reader })
+        Ok(Self {
+            writer,
+            reader,
+            schema,
+        })
+    }
+
+    /// Whose schema the database has: a newer build's is read-only.
+    pub fn schema(&self) -> Schema {
+        self.schema
     }
 
     /// A trivial query on the writer and on a reader, for readiness: the

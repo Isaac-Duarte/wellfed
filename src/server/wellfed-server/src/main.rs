@@ -27,7 +27,7 @@ use wellfed_service::{
     AlertReads, Backups, Clock, Config, Diagnostics, ReleaseFeed, ReleaseKeys, ReleasesConfig,
     Service, StockConfig, StockPins, SystemClock, SystemRandom, Timing,
 };
-use wellfed_store::Store;
+use wellfed_store::{Schema, Store};
 
 #[derive(Parser)]
 #[command(version, about = "The owner's Wellfed server")]
@@ -69,9 +69,7 @@ async fn main() -> Result<()> {
     let (key, _) = wellfed_server::key::sealing_key(&cli.data, &SystemRandom)?;
     let id = wellfed_server::server_id::server_id(&cli.data, &SystemRandom)?;
     let label = settings.label.as_str().to_owned();
-    let store = Store::open(&cli.data.join(DATABASE), SystemClock.now())
-        .await
-        .context("open the database")?;
+    let store = open(&cli.data.join(DATABASE)).await?;
     let config = Config {
         key,
         // Offered at setup only: the household's zone is the feeders'.
@@ -176,9 +174,7 @@ async fn main() -> Result<()> {
 async fn reset_owner(data: &std::path::Path, name: Option<&str>) -> Result<()> {
     let path = data.join(DATABASE);
     anyhow::ensure!(path.exists(), "no database at {}", path.display());
-    let store = Store::open(&path, SystemClock.now())
-        .await
-        .context("open the database")?;
+    let store = open(&path).await?;
 
     let reset = wellfed_service::reset_owner(&store, name, &SystemRandom, SystemClock.now()).await;
     store.close().await;
@@ -186,6 +182,26 @@ async fn reset_owner(data: &std::path::Path, name: Option<&str>) -> Result<()> {
     println!("{}'s temporary password: {password}", owner.name);
     println!("Log in with it, then set your own on your account.");
     Ok(())
+}
+
+/// The database at `path`, opened to be written. One a newer server
+/// migrated is opened read-only, which keeps it as that server left it, and
+/// refused here: a server writes on every start (its journal, its sessions,
+/// each feeder's history), so it does not run on one it may not write.
+async fn open(path: &std::path::Path) -> Result<Store> {
+    let store = Store::open(path, SystemClock.now())
+        .await
+        .context("open the database")?;
+    if let Schema::Newer { applied, embedded } = store.schema() {
+        store.close().await;
+        anyhow::bail!(
+            "{} was migrated by a newer server (migration {applied}; this build's newest is {embedded}). \
+             It was opened read-only and left as it is: run that server's build, or move a \
+             `.before-` copy into its place to go back to the data from before that upgrade",
+            path.display()
+        );
+    }
+    Ok(store)
 }
 
 /// Ctrl-C, or SIGTERM from a service manager: either way the feeder
