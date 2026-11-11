@@ -11,13 +11,13 @@
 use std::time::Duration;
 
 use wellfed_api::{
-    ClientOwner, ClientRole, Connection as Link, FeederId, Hex, LogOut, NewPhoneInvite, NewToken,
-    NewUser, PhoneClaim, Role, User, UserPatch,
+    ClientOwner, ClientRole, Connection as Link, FeederId, Hex, LOGOUT_KEYS_MAX, LogOut,
+    NewPhoneInvite, NewToken, NewUser, PhoneClaim, Role, User, UserPatch,
 };
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::fixed::FixedClock;
 use wellfed_server_testkit::{TestService, ada_setup, local, until};
-use wellfed_service::{AccountError, Caller, Error, Service};
+use wellfed_service::{AccountError, Caller, Error, Invalid, Service};
 
 fn secret(n: u8) -> [u8; 32] {
     [n; 32]
@@ -145,7 +145,8 @@ async fn logged_out_member(
 /// The logout keeps the phone's key and its invitee under the account
 /// with no token; revoking another of the account's tokens leaves them, and
 /// demoting the account revokes them. The token alone cannot ask, nor can
-/// another account's session.
+/// another account's session, and a logout naming too many keys changes
+/// nothing.
 #[test]
 fn a_phone_that_logs_out_keeps_its_keys_under_the_account() {
     local(async {
@@ -172,6 +173,19 @@ fn a_phone_that_logs_out_keeps_its_keys_under_the_account() {
             matches!(by_another, Err(Error::NotFound(_))),
             "{by_another:?}"
         );
+        let login = Caller {
+            user: bob.user.clone(),
+            token: None,
+        };
+        let too_many = LogOut {
+            keys: vec![Hex(key(70)); LOGOUT_KEYS_MAX + 1],
+        };
+        let too_many = service.log_out_token(&login, token, &too_many).await;
+        assert!(
+            matches!(too_many, Err(Error::Invalid(Invalid::LogOutKeys))),
+            "{too_many:?}"
+        );
+        attributed(service, id, &bob, 70).await;
 
         log_out(service, &bob, &[70]).await;
         let other = token_of(service, bob.user.clone()).await;

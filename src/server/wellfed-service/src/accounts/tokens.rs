@@ -32,7 +32,8 @@
 
 use sha2::{Digest, Sha256};
 use wellfed_api::{
-    AuditAction, CreatedToken, LogOut, NewToken, RevokeReason, Token, TokenId, User,
+    AuditAction, CreatedToken, LOGOUT_KEYS_MAX, LogOut, NewToken, RevokeReason, Token, TokenId,
+    User,
 };
 use wellfed_session::hex;
 use wellfed_store::Whose;
@@ -231,6 +232,9 @@ impl Service {
         request: &LogOut,
     ) -> Result<()> {
         session_only(caller)?;
+        if request.keys.len() > LOGOUT_KEYS_MAX {
+            return Err(Invalid::LogOutKeys.into());
+        }
         let token = self.shared.store.token(id).await?;
         let Some(token) = token.filter(|token| token.user == caller.user.id) else {
             return Err(Error::NotFound(Resource::Token));

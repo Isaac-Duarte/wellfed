@@ -32,13 +32,17 @@ impl fmt::Display for TokenId {
     }
 }
 
+/// The most keys a logout names. The app names its one key; the cap keeps
+/// a request's work bounded.
+pub const LOGOUT_KEYS_MAX: usize = 64;
+
 /// A phone logging itself out (`POST /tokens/{id}/logout`): its own public
 /// keys on the feeders, which stay the account's with the keys they
 /// invited. Every other key under the token is revoked with it, so a key
 /// someone else got through the token never outlives it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct LogOut {
-    /// Each a public key, 64 hex digits.
+    /// Each a public key, 64 hex digits; at most [`LOGOUT_KEYS_MAX`].
     #[schema(value_type = Vec<String>)]
     pub keys: Vec<Hex<32>>,
 }

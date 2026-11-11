@@ -90,7 +90,7 @@ pub use stock::{
     StockSource, StockState,
 };
 pub use stream::{FeederSample, StreamEvent, StreamQuery};
-pub use tokens::{BEARER, CreatedToken, LogOut, NewToken, Token, TokenId};
+pub use tokens::{BEARER, CreatedToken, LOGOUT_KEYS_MAX, LogOut, NewToken, Token, TokenId};
 pub use users::{NewUser, UserPatch};
 pub use views::{
     FOOD_VIEW_DAYS, FeedAnomaly, FeedRate, FeederPortions, FoodLeft, INTAKE_DAYS, INTAKE_DAYS_MAX,

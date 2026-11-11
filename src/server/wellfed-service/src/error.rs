@@ -265,6 +265,8 @@ pub enum Invalid {
     TokenName,
     #[error("a token's expiry is in the future")]
     TokenExpiry,
+    #[error("a logout names at most {} keys", wellfed_api::LOGOUT_KEYS_MAX)]
+    LogOutKeys,
     #[error("a page holds 1-1000 items")]
     PageLimit,
     #[error("not a cursor this server gave")]
