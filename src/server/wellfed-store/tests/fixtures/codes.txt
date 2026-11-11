@@ -1,0 +1,25 @@
+# The codes the server owns and the store decodes strictly, under the
+# migration version they shipped with: `version set codes...`. Unit
+# enums list their stored codes; JSON columns list their schema's variant
+# and field names. A set that grows needs a migration with it, so an older
+# build opens that database read-only rather than fail on the new code:
+# append the new set's lines under the new migration's version. From the
+# public beta, a line here is never changed or removed.
+17 model plaf103 plwf106
+17 client_role member owner server unknown update_signer
+17 role member owner unknown viewer
+17 units grams ounces unknown
+17 time_format 12h 24h
+17 species cat dog other
+17 job backup expiry release_check retention rollups unknown
+17 job_outcome failed succeeded unknown
+17 command_kind calibration call_delete call_play call_upload cancel desiccant feed invite lock plans play reboot remove revoke settings skip unknown unskip wifi
+17 command_state answered resolved sent unknown
+17 install_state activated already_running failed running unknown
+17 revoke_reason deleted demoted expiring replaced token_revoked unknown
+17 install_target kind release sha256 stock unknown
+17 command_outcome_json calibration call completed done fed feed feeding invite invited outcome plans reason refusal refused requested result seconds settings superseded unknown unrecorded
+17 audit_action_json account command expires from home home_changed kind login login_failed name password_set reason role setup token token_created token_name token_revoked unknown user_changed user_created user_deleted
+17 install_failure_json interrupted lost offered reason refusal refused server stop stopped unexpected unknown unreachable update_refused
+17 revoke_attempt_json invite_live offline refusal refused result unknown until
+17 call_before_json clip none
