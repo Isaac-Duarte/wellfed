@@ -1,10 +1,12 @@
 //! The sealing key's file, and the move from `config.json`.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use wellfed_server::config::DATABASE;
 use wellfed_server::key::{KEY_DIR, KEY_FILE, KeyError, KeySource, sealing_key};
 use wellfed_server_testkit::fixed::SeededRandom;
+use wellfed_service::{Random, RandomFailed};
 
 fn key_path(data: &Path) -> PathBuf {
     data.join(KEY_DIR).join(KEY_FILE)
@@ -243,5 +245,76 @@ fn racing_first_starts_return_the_key_the_file_holds() {
             0,
             "trial {trial}: nothing is left staged"
         );
+    }
+}
+
+/// A writer's random source whose first staged name is every writer's:
+/// as in two containers, where each server is PID 1. Its key, and every
+/// later name, are its own.
+struct SameFirstName {
+    writer: u8,
+    names: AtomicU8,
+}
+
+impl Random for SameFirstName {
+    fn fill(&self, out: &mut [u8]) -> Result<(), RandomFailed> {
+        if out.len() == 32 {
+            out.fill(self.writer);
+        } else {
+            let name = self.names.fetch_add(1, Ordering::Relaxed);
+            let byte = if name == 0 { 0xaa } else { self.writer };
+            out.fill(byte);
+            out[0] = name;
+        }
+        Ok(())
+    }
+}
+
+/// Writers whose first staged name is the same: neither removes or
+/// rewrites the other's staged key, so each that succeeds returns the key
+/// the file holds.
+#[test]
+fn starts_that_draw_the_same_staged_name_return_the_key_the_file_holds() {
+    const STARTS: u8 = 8;
+
+    for trial in 0..100 {
+        let data = tempfile::tempdir().unwrap();
+        let barrier = std::sync::Barrier::new(usize::from(STARTS));
+
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let starts: Vec<_> = (1..=STARTS)
+                .map(|writer| {
+                    let (data, barrier) = (data.path(), &barrier);
+                    scope.spawn(move || {
+                        let random = SameFirstName {
+                            writer,
+                            names: AtomicU8::new(0),
+                        };
+                        barrier.wait();
+                        sealing_key(data, &random)
+                    })
+                })
+                .collect();
+            starts
+                .into_iter()
+                .map(|start| start.join().unwrap())
+                .collect()
+        });
+
+        let file = std::fs::read(key_path(data.path())).unwrap();
+        let mut made = 0;
+        for result in results {
+            match result {
+                Ok((key, _)) => {
+                    assert_eq!(key.as_slice(), file, "trial {trial}");
+                    made += 1;
+                }
+                Err(error) => assert!(
+                    matches!(error, KeyError::Exists { .. }),
+                    "trial {trial}: {error:?}"
+                ),
+            }
+        }
+        assert!(made >= 1, "trial {trial}: one start makes the key");
     }
 }

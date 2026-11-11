@@ -22,6 +22,7 @@ mod proxy;
 mod request_id;
 mod routes;
 pub mod server_id;
+mod staged;
 
 use std::sync::Arc;
 

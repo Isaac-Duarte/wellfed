@@ -13,11 +13,12 @@
 //! An existing `keys` directory that others could read or enter is
 //! tightened to 0700 when a key is written into it, and the change logged.
 //!
-//! Two first starts on one data directory (a service and a manual run)
-//! may race to make the key. Each stages its key under a name only it uses
-//! and links that name into place, so the one whose link lands returns the
-//! key the file holds, and the other is refused rather than return a key
-//! that seals nothing it could open again.
+//! Two first starts on one data directory (a service and a manual run, or
+//! two containers on one volume) may race to make the key. Each stages its
+//! key under a random name only it uses ([`crate::staged`]) and links that
+//! name into place, so the one whose link lands returns the key the file
+//! holds, and the other is refused rather than return a key that seals
+//! nothing it could open again.
 //!
 //! A database with no key file is refused rather than given a new key,
 //! which could not open its feeder keys: that is a backup restored without
@@ -25,13 +26,13 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Deserialize;
 use wellfed_api::Hex;
 use wellfed_service::Random;
 
 use crate::config::DATABASE;
+use crate::staged::{self, StageError};
 
 /// The key file, under the data directory.
 pub const KEY_DIR: &str = "keys";
@@ -161,7 +162,7 @@ pub fn sealing_key(data: &Path, random: &dyn Random) -> Result<([u8; 32], KeySou
         }
     };
 
-    write_key(data, &dir, &path, &key)?;
+    write_key(data, &dir, &path, &key, random)?;
     if source == KeySource::Moved {
         remove_old(&old_path, data)?;
         tracing::info!(
@@ -217,12 +218,15 @@ fn read_old(path: &Path) -> Result<Option<[u8; 32]>, KeyError> {
 /// Write the key beside its final name and link it into place, so a crash
 /// leaves either no key file or a whole one, never a short one. A link,
 /// unlike a rename, never replaces a key file another start made meanwhile.
-///
-/// The staged name is this writer's own (its process and a count within
-/// it), so no other start removes or rewrites the file between its sync and
-/// the link: what the link puts in place is the key this call returns.
-fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(), KeyError> {
-    let staged = staged_name(dir);
+/// The staged name is this writer's own, so what the link puts in place is
+/// the key this call returns.
+fn write_key(
+    data: &Path,
+    dir: &Path,
+    path: &Path,
+    key: &[u8; 32],
+    random: &dyn Random,
+) -> Result<(), KeyError> {
     let write = |path: &Path| {
         let path = path.to_owned();
         move |source| KeyError::Write { path, source }
@@ -238,15 +242,11 @@ fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(),
     // its key is created.
     sync_dir(data)?;
 
-    // Only a crashed run of an earlier process with this id can have left
-    // this name, perhaps with other permissions: `mode` applies only to a
-    // file this call creates.
-    remove(&staged, Missing::Allowed)?;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options.open(&staged).map_err(write(&staged))?;
+    let (staged, mut file) =
+        staged::create(dir, STAGED_PREFIX, 0o600, random).map_err(|error| match error {
+            StageError::Random(source) => KeyError::Random(source),
+            StageError::Create { path, source } => KeyError::Write { path, source },
+        })?;
     file.write_all(key)
         .and_then(|()| file.sync_all())
         .map_err(write(&staged))?;
@@ -273,20 +273,8 @@ fn write_key(data: &Path, dir: &Path, path: &Path, key: &[u8; 32]) -> Result<(),
     sync_dir(dir)
 }
 
-/// The prefix and suffix of every staged key's name.
+/// The prefix of every staged key's name.
 const STAGED_PREFIX: &str = "server.key.";
-const STAGED_SUFFIX: &str = ".new";
-
-/// A staged name no other writer uses: a live process's id is its own, and
-/// the count tells apart the calls within it.
-fn staged_name(dir: &Path) -> PathBuf {
-    static CALLS: AtomicU64 = AtomicU64::new(0);
-    let call = CALLS.fetch_add(1, Ordering::Relaxed);
-    dir.join(format!(
-        "{STAGED_PREFIX}{}-{call}{STAGED_SUFFIX}",
-        std::process::id()
-    ))
-}
 
 /// Remove every staged copy of the key, from starts stopped before they
 /// removed theirs. A start still writing loses its copy and is refused,
@@ -302,10 +290,10 @@ fn remove_staged(dir: &Path) -> Result<(), KeyError> {
             source,
         })?;
         let name = entry.file_name();
-        let staged = name
+        if name
             .to_str()
-            .is_some_and(|name| name.starts_with(STAGED_PREFIX) && name.ends_with(STAGED_SUFFIX));
-        if staged {
+            .is_some_and(|name| staged::is_staged(name, STAGED_PREFIX))
+        {
             remove(&entry.path(), Missing::Allowed)?;
         }
     }

@@ -8,7 +8,9 @@
 //! announcement is public on the LAN. A file that cannot be read or does
 //! not hold an id (a first start cut short) is replaced by a new one, with
 //! a warning, since nothing but a listener remembering the old one depends
-//! on it.
+//! on it. Two first starts at once (two containers on one volume) each
+//! stage their id under a name of their own ([`crate::staged`]), and the
+//! id linked into place first is the one both return.
 
 use std::fmt;
 use std::io::Write as _;
@@ -20,8 +22,13 @@ use serde::de::value::StrDeserializer;
 use wellfed_api::Hex;
 use wellfed_service::Random;
 
+use crate::staged::{self, StageError};
+
 /// The id file, in the data directory.
 pub const ID_FILE: &str = "server.id";
+
+/// The prefix of the id's staged copies.
+const STAGED_PREFIX: &str = "server.id.";
 
 /// The server's id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,29 +70,57 @@ pub enum IdError {
 /// The id kept in `data`, made with `random` when there is none.
 pub fn server_id(data: &Path, random: &dyn Random) -> Result<ServerId, IdError> {
     let path = data.join(ID_FILE);
-    match std::fs::read_to_string(&path) {
+    let absent = match std::fs::read_to_string(&path) {
         Ok(text) => match ServerId::parse(text.trim_end()) {
             Some(id) => return Ok(id),
-            None => tracing::warn!("{} holds no server id; making a new one", path.display()),
+            None => {
+                tracing::warn!("{} holds no server id; making a new one", path.display());
+                false
+            }
         },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
         Err(error) => {
             tracing::warn!("read {}: {error}; making a new server id", path.display());
+            false
         }
-    }
+    };
 
     let mut bytes = [0; 8];
     random.fill(&mut bytes).map_err(IdError::Random)?;
     let id = ServerId(Hex(bytes));
-    // Staged and renamed, so a cut leaves the old file or the whole new one.
-    let staged = path.with_extension("id.new");
-    let written = std::fs::File::create(&staged)
-        .and_then(|mut file| {
-            writeln!(file, "{id}")?;
-            file.sync_all()
-        })
-        .and_then(|()| std::fs::rename(&staged, &path));
-    written.map_err(|source| IdError::Write { path, source })?;
+    // Staged, then linked into place when there was no file (a link never
+    // replaces another start's), or renamed over one that held no id: a cut
+    // leaves the old file or the whole new one.
+    let (staged, mut file) =
+        staged::create(data, STAGED_PREFIX, 0o666, random).map_err(|error| match error {
+            StageError::Random(source) => IdError::Random(source),
+            StageError::Create { path, source } => IdError::Write { path, source },
+        })?;
+    let placed = writeln!(file, "{id}")
+        .and_then(|()| file.sync_all())
+        .and_then(|()| {
+            if absent {
+                std::fs::hard_link(&staged, &path)
+            } else {
+                std::fs::rename(&staged, &path)
+            }
+        });
+    // Gone already after a rename.
+    let _ = std::fs::remove_file(&staged);
+    match placed {
+        Ok(()) => {}
+        Err(error) if absent && error.kind() == std::io::ErrorKind::AlreadyExists => {
+            // Another start linked its id first: that is the one kept.
+            let kept = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|text| ServerId::parse(text.trim_end()));
+            return kept.ok_or(IdError::Write {
+                path,
+                source: error,
+            });
+        }
+        Err(source) => return Err(IdError::Write { path, source }),
+    }
     tracing::info!("this server's id is {id}");
     Ok(id)
 }
@@ -141,5 +176,64 @@ mod tests {
         let made = server_id(data.path(), &Fixed(0x04));
 
         assert!(matches!(made, Err(IdError::Write { .. })), "{made:?}");
+    }
+
+    /// A start's random source: its id, then a staged name every start
+    /// draws first (as two containers' PID 1 would share one), then its own.
+    struct SameFirstName {
+        start: u8,
+        draws: std::sync::atomic::AtomicU8,
+    }
+
+    impl Random for SameFirstName {
+        fn fill(&self, out: &mut [u8]) -> Result<(), wellfed_service::RandomFailed> {
+            let draw = self
+                .draws
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            out.fill(match draw {
+                0 => self.start,
+                1 => 0xaa,
+                _ => self.start ^ 0x80,
+            });
+            out[0] = draw;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn racing_first_starts_return_the_id_the_file_holds() {
+        const STARTS: u8 = 8;
+
+        for trial in 0..100 {
+            let data = tempfile::tempdir().unwrap();
+            let barrier = std::sync::Barrier::new(usize::from(STARTS));
+
+            let ids: Vec<_> = std::thread::scope(|scope| {
+                let starts: Vec<_> = (1..=STARTS)
+                    .map(|start| {
+                        let (data, barrier) = (data.path(), &barrier);
+                        scope.spawn(move || {
+                            let random = SameFirstName {
+                                start,
+                                draws: std::sync::atomic::AtomicU8::new(0),
+                            };
+                            barrier.wait();
+                            server_id(data, &random).unwrap()
+                        })
+                    })
+                    .collect();
+                starts
+                    .into_iter()
+                    .map(|start| start.join().unwrap())
+                    .collect()
+            });
+
+            let kept = std::fs::read_to_string(data.path().join(ID_FILE)).unwrap();
+            for id in ids {
+                assert_eq!(format!("{id}\n"), kept, "trial {trial}");
+            }
+            let left = std::fs::read_dir(data.path()).unwrap().count();
+            assert_eq!(left, 1, "trial {trial}: nothing left staged");
+        }
     }
 }
