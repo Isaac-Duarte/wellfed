@@ -54,7 +54,11 @@ pub struct Pass<'a, D> {
 /// A write the device is still completing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Waiting {
-    Wifi,
+    /// A Wi-Fi change, which finishes as change `change` of this boot
+    /// (`Saved::next` when it was queued).
+    Wifi {
+        change: u32,
+    },
     /// The digest of the settings asked for: the write succeeded if the
     /// store holds them once nothing is pending.
     Time {

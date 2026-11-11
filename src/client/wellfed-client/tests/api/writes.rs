@@ -372,6 +372,42 @@ fn a_settings_write_answers_what_the_writer_did() {
     );
 }
 
+/// A Wi-Fi write the writer could not save is refused `NotWritable`, never
+/// answered `Done` because the writer finished: the old credentials stay,
+/// with their generation and no event. A later write, from another session,
+/// answers for itself and leaves the first one's answer as it was.
+#[test]
+fn a_wifi_write_answers_what_the_writer_did() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let clear = |base| Op::PutWifi {
+        base: Generation(base),
+        wifi: None,
+    };
+
+    rig.device.wifi_fails = true;
+    let failed = ask(&mut rig, &mut owner, 1, clear(3));
+    assert_eq!(failed, Answer::Refused(model::Refusal::NotWritable));
+    assert_eq!(rig.device.wifi_generation, 3);
+    assert!(
+        !rig.device
+            .events
+            .iter()
+            .any(|e| matches!(e.body, EventBody::Wifi { .. }))
+    );
+
+    let mut other = open(&mut rig, OWNER);
+    let done = ask(&mut rig, &mut other, 2, clear(3));
+    assert_eq!(
+        done,
+        Answer::Done {
+            generation: Some(Generation(4))
+        }
+    );
+    let retried = ask(&mut rig, &mut owner, 1, clear(3));
+    assert_eq!(retried, Answer::Refused(model::Refusal::NotWritable));
+}
+
 /// A time settings write answers `Done` with the new generation once the
 /// store holds it, `Done` too when it changed nothing, and is refused when
 /// the writer could not make it, rather than answered with the old

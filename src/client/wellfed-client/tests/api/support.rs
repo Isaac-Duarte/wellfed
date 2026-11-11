@@ -10,7 +10,7 @@ use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
 use wellfed_core_feeder::desiccant::Count;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
-use wellfed_device_api::mailbox::{Asked, FeederSettings, KEYS_FINISHED, KindSettings as _};
+use wellfed_device_api::mailbox::{Asked, FeederSettings, KEYS_FINISHED, KindSettings as _, Saved};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
     TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult,
@@ -51,6 +51,9 @@ pub(crate) struct Fake {
     pub(crate) today: Option<i32>,
     pub(crate) wifi_generation: u32,
     pub(crate) wifi_pending: Option<Asked<Option<Credentials>>>,
+    pub(crate) wifi_saved: Saved,
+    /// The writer's next Wi-Fi save fails: nothing saved, no event.
+    pub(crate) wifi_fails: bool,
     pub(crate) locked: Option<bool>,
     pub(crate) clients: Vec<Client>,
     pub(crate) keys_pending: Option<(u32, KeyChange)>,
@@ -185,7 +188,12 @@ impl Fake {
             let generation = self.settings.generation;
             self.record(0, EventBody::Settings { generation, by });
         }
+        if let Some(Asked { .. }) = self.wifi_pending.take_if(|_| self.wifi_fails) {
+            self.wifi_fails = false;
+            self.wifi_saved.finish(true);
+        }
         if let Some(Asked { by, .. }) = self.wifi_pending.take() {
+            self.wifi_saved.finish(false);
             self.wifi_generation += 1;
             let generation = self.wifi_generation;
             self.record(0, EventBody::Wifi { generation, by });
@@ -314,6 +322,7 @@ impl Device for Fake {
                 generation: self.wifi_generation,
                 writable: true,
                 source: WifiSource::Stored,
+                saved: self.wifi_saved,
             },
             pending: self.wifi_pending.is_some(),
         }

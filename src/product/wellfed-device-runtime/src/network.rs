@@ -29,6 +29,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
+use wellfed_core::settings::Saved;
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
 use wellfed_device::store::net::NetStore;
@@ -125,6 +126,14 @@ static GENERATION: AtomicU32 = AtomicU32::new(0);
 static RELOAD: AtomicBool = AtomicBool::new(false);
 /// `WifiSource` of this boot's joins, as `WifiSource::code`.
 static SOURCE: AtomicU8 = AtomicU8::new(WifiSource::Build.code());
+/// How the writer finished the changes it took this boot, so a client's
+/// write learns whether its own save landed rather than only that the
+/// writer is done. Written by the writer and read by the loop, each with
+/// the scheduler paused, so the count and its failures are read together.
+static SAVED: TaskCell<Saved> = TaskCell::new(Saved {
+    finished: 0,
+    failed: 0,
+});
 
 pub fn source() -> WifiSource {
     WifiSource::from_code(SOURCE.load(Ordering::Acquire))
@@ -138,6 +147,9 @@ fn view() -> WifiView {
         generation: GENERATION.load(Ordering::Acquire),
         writable: WRITABLE.load(Ordering::Acquire),
         source: source(),
+        // SAFETY: with the scheduler paused the writer is not inside
+        // `finish`, and no interrupt handler reaches it.
+        saved: sdk::unscheduled(|| unsafe { *SAVED.get() }),
     }
 }
 
@@ -192,10 +204,13 @@ fn queue(credentials: Option<Credentials>, asked: Option<Stamp>) -> WifiResult {
         *PENDING.get() = credentials;
         *ASKED.get() = asked;
     }
+    // Read before the writer can take the change: its `saved.next()` is the
+    // number this change finishes as, which a client's write waits on.
+    let view = view();
     STATE.store(Hand::Queued as u8, Ordering::Release);
     wellfed_hal::writer_wake::wake();
     WifiResult::Current {
-        view: view(),
+        view,
         pending: true,
     }
 }
@@ -214,7 +229,16 @@ pub fn asked() -> Option<Stamp> {
         .flatten()
 }
 
-pub fn finish() {
+/// The writer's half: the queued change is done, saved or `failed`
+/// (unarmed, or the store refused the save). Its outcome is published
+/// before the slot frees, so the next change queued finishes as the next
+/// number.
+pub fn finish(failed: bool) {
+    sdk::unscheduled(|| {
+        // SAFETY: with the scheduler paused no loop read of it runs, and
+        // no interrupt handler reaches it.
+        unsafe { (*SAVED.get()).finish(failed) };
+    });
     STATE.store(Hand::Empty as u8, Ordering::Release);
 }
 
@@ -243,7 +267,8 @@ pub fn publish<I: SlotIo>(store: &NetStore<I>, armed: bool) {
 /// Forget everything (host tests).
 ///
 /// # Safety
-/// No Wi-Fi task is running: the join state is the Wi-Fi task's own.
+/// No Wi-Fi task or settings writer is running: the join state is the Wi-Fi
+/// task's own, and the save outcomes the writer's.
 pub unsafe fn reset() {
     for flag in [&LOADED, &WRITABLE, &STORED, &RELOAD, &HANDOVER_PUT_OFF] {
         flag.store(false, Ordering::Release);
@@ -251,6 +276,8 @@ pub unsafe fn reset() {
     GENERATION.store(0, Ordering::Release);
     SOURCE.store(WifiSource::Build.code(), Ordering::Release);
     STATE.store(Hand::Empty as u8, Ordering::Release);
+    // SAFETY: the caller's contract: no writer task is running either.
+    unsafe { *SAVED.get() = Saved::default() };
     // SAFETY: the caller's contract: no Wi-Fi task holds `JOIN`.
     unsafe { *JOIN.get() = Join::default() };
     #[cfg(not(target_os = "none"))]

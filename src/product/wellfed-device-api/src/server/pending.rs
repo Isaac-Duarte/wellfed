@@ -8,7 +8,7 @@ use super::memory::remembered;
 use super::request::{Action, Name, Reply};
 use super::{Pending, Phase, Server, Waiting, slot_id};
 use crate::clients::Role;
-use crate::mailbox::{NtpResult, NtpServer, Origin, TimeSettingsResult, WifiResult};
+use crate::mailbox::{NtpResult, NtpServer, Origin, SaveOutcome, TimeSettingsResult, WifiResult};
 use crate::pairing::{self, Path};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record, UpdateAnswer, UpdateKeyChange};
 use wellfed_proto::api::{
@@ -59,13 +59,17 @@ impl Server {
                 },
                 None => Reply::Refused(Refusal::Unavailable),
             },
-            // The writer recorded the `Wifi` event as it saved the change.
-            Waiting::Wifi => match device.wifi(None) {
-                WifiResult::Current {
-                    view,
-                    pending: false,
-                } => Reply::Done(Some(view.generation)),
-                WifiResult::Current { pending: true, .. } | WifiResult::Busy => return Ok(None),
+            // The writer's outcome for this change decides: a store no
+            // longer pending says only that the writer finished, and a save
+            // it could not make (unarmed, or refused) leaves the old
+            // credentials. It recorded the `Wifi` event as it saved one.
+            Waiting::Wifi { change } => match device.wifi(None) {
+                WifiResult::Current { view, .. } => match view.saved.outcome(change) {
+                    SaveOutcome::Pending => return Ok(None),
+                    SaveOutcome::Done => Reply::Done(Some(view.generation)),
+                    SaveOutcome::Failed => Reply::Refused(Refusal::NotWritable),
+                },
+                WifiResult::Busy => return Ok(None),
                 WifiResult::ReadOnly | WifiResult::Invalid => Reply::Refused(Refusal::NotWritable),
             },
             // No event: the history's settings events carry the settings

@@ -90,7 +90,7 @@ impl Server {
             Action::Alive => Reply::Done(None),
             Action::Status => Reply::Status,
             Action::PutWifi { base, wifi } => match put_wifi(base, wifi, by, device) {
-                Ok(()) => return self.wait(index, id, action, Waiting::Wifi),
+                Ok(change) => return self.wait(index, id, action, Waiting::Wifi { change }),
                 Err(refusal) => Reply::Refused(refusal),
             },
             Action::TimeSync(fields) => match device.time_sync(fields, origin(role)) {
@@ -266,7 +266,7 @@ fn put_wifi<D: Device>(
     credentials: Option<Credentials>,
     by: Source,
     device: &mut D,
-) -> Result<(), Refusal> {
+) -> Result<u32, Refusal> {
     match device.wifi(None) {
         WifiResult::Current { pending: true, .. } | WifiResult::Busy => Err(Refusal::Busy),
         WifiResult::ReadOnly => Err(Refusal::NotWritable),
@@ -278,7 +278,10 @@ fn put_wifi<D: Device>(
             change: credentials,
             by,
         })) {
-            WifiResult::Current { pending: true, .. } => Ok(()),
+            WifiResult::Current {
+                view,
+                pending: true,
+            } => Ok(view.saved.next()),
             WifiResult::Current { .. } | WifiResult::Busy => Err(Refusal::Busy),
             WifiResult::ReadOnly => Err(Refusal::NotWritable),
             WifiResult::Invalid => Err(Refusal::Invalid),
