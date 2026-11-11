@@ -137,6 +137,11 @@ enum Command {
     /// (docs/firmware/calibration.md).
     Calibrate(configure::CalibrateArgs),
     /// Become an owner again through the feeder's recovery window.
+    ///
+    /// Open the window first: on an unlocked panel, hold Lock and Dispense
+    /// together for 5 seconds. Press Lock first, or both within a fifth of
+    /// a second; Dispense pressed alone for longer starts a feed. Then run
+    /// this, and key in the code it shows on the buttons.
     Recover(pairing::RecoverArgs),
     /// The owner's copy of stock: read it from the replacement on bank 0
     /// (bank 1 still holds stock until the promotion), show it, or export

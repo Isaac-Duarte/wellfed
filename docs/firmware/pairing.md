@@ -156,7 +156,7 @@ Every enrollment and revocation that changes the table is in the history as `Enr
 | Setup | The app over BLE in setup mode, which a Lock and Mic hold on an unlocked panel starts | The app's one-time code keyed in on the buttons within 60 s, then proven by the app ([why](bluetooth.md#why-a-code)) | Owner |
 | Signer | An owner over the API | A Dispense press within 60 s | Update signer |
 | Invite | A paired client: an owner invites any role but a signer, a member invites members | The invite's secret as the PSK of a Noise XXpsk3 handshake, within 10 min, once, and the static key the invite names if it names one | As invited |
-| Recovery | Lock and Dispense held together for 5 s on an unlocked panel | Within 2 min, a client offers its key over the device API and proves the code the owner keys in; the first offer closes the window | Owner |
+| Recovery | Lock and Dispense held together for 5 s on an unlocked panel, Lock first or both within 200 ms, so no feed starts | Within 2 min, a client offers its key over the device API and proves the code the owner keys in; the first offer closes the window | Owner |
 
 - **Presses that answer a pairing feed nothing.** A pending signer confirmation takes the next Dispense press. A pending code takes every gesture until complete, even on a locked panel, since someone at the feeder started it. A press counts as its button comes up alone and short; a chord or a hold refuses the offer, and a code of one button is refused, so the owner's other gestures never key in a code a stranger chose ([why](bluetooth.md#why-a-code)). Records count presses (`pair setup keyed=N`, `pair recovery keyed=N`) and never name them.
 - **A locked panel** can't open recovery.

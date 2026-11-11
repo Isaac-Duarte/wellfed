@@ -189,6 +189,52 @@ fn only_an_owner_offers_a_signing_key() {
     );
     assert_eq!(
         p.gesture(5, press(Button::Dispense), Lock::Unlocked),
+        Some(Event::Pressed { path: Path::Signer })
+    );
+    let up = Gesture::Up {
+        chord: Buttons::of(Button::Dispense),
+        level: 0,
+        held_ms: 100,
+    };
+    assert_eq!(
+        p.gesture(105, up, Lock::Unlocked),
+        Some(admit(Path::Signer, Role::UpdateSigner))
+    );
+}
+
+/// An owner whose recovery hold starts with Dispense confirms no update
+/// key: the press grew into the chord, and the hold opens recovery.
+#[test]
+fn a_recovery_hold_started_with_dispense_confirms_no_signer() {
+    let mut p = Pairing::new(Config::DEFAULT);
+    p.signer(0, Role::Owner);
+    let both = Buttons::of(Button::Dispense).with(Button::Lock);
+
+    assert_eq!(
+        p.gesture(10, press(Button::Dispense), Lock::Unlocked),
+        Some(Event::Pressed { path: Path::Signer })
+    );
+    assert_eq!(
+        p.gesture(60, Gesture::Down { chord: both }, Lock::Unlocked),
+        None
+    );
+    assert_eq!(
+        p.gesture(5_010, recovery_hold(), Lock::Unlocked),
+        Some(Event::RecoveryOpened)
+    );
+    let up = Gesture::Up {
+        chord: both,
+        level: 1,
+        held_ms: 5_200,
+    };
+    assert_eq!(
+        p.gesture(5_210, up, Lock::Unlocked),
+        Some(Event::Swallowed { path: Path::Signer })
+    );
+
+    // The offer still waits for a press of its own.
+    assert_eq!(
+        tap(&mut p, 6_000, Button::Dispense, Lock::Unlocked),
         Some(admit(Path::Signer, Role::UpdateSigner))
     );
 }

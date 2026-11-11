@@ -357,11 +357,18 @@ fn ask_within(
     poll_answer(rig, client, id, passes)
 }
 
+/// A press of Dispense alone, down and up: the release's event, which
+/// confirms an update key's offer.
 fn press_dispense(rig: &mut Rig) -> Option<PairingEvent> {
-    let press = Gesture::Down {
-        chord: Buttons::of(Button::Dispense),
+    let dispense = Buttons::of(Button::Dispense);
+    let press = Gesture::Down { chord: dispense };
+    rig.pairing.gesture(rig.now, press, Lock::Unlocked);
+    let release = Gesture::Up {
+        chord: dispense,
+        level: 0,
+        held_ms: 100,
     };
-    rig.pairing.gesture(rig.now, press, Lock::Unlocked)
+    rig.pairing.gesture(rig.now, release, Lock::Unlocked)
 }
 
 /// An update key waits up to a minute for its press. The owner's session stays

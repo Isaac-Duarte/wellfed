@@ -82,8 +82,9 @@ pub(crate) struct RecoverArgs {
 }
 
 /// LAN recovery: with the feeder's recovery window open (Lock and Dispense
-/// held on an unlocked panel), run the setup exchange over the device API
-/// and become an owner once the code is keyed in.
+/// held together for 5 s on an unlocked panel, Lock first or both within
+/// the panel's chord window, so no feed starts), run the setup exchange over
+/// the device API and become an owner once the code is keyed in.
 pub(crate) async fn recover_command(args: RecoverArgs) -> Result<()> {
     let mut key = open_key(args.keys.as_deref(), args.label.as_deref(), args.create_key)?;
     let address = wellfed_connect::parse_address(&args.address).context("--address")?;

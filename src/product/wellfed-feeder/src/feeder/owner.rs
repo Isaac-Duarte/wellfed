@@ -48,6 +48,12 @@ named_enum! {
 /// Between steps; a gesture waits at most this long in the queue.
 pub const POLL_MS: u32 = 20;
 
+/// The panel asking for a feed it allows.
+const FEED: Event = Event::Asked {
+    action: Action::Feed,
+    allowed: true,
+};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record<D> {
     /// The first step: the lock the panel starts with.
@@ -310,14 +316,7 @@ impl Owner {
                 continue;
             };
             panel_event(platform, now, event, &mut record);
-            if event
-                == (Event::Asked {
-                    action: Action::Feed,
-                    allowed: true,
-                })
-            {
-                self.dispense = true;
-            }
+            self.dispense |= event == FEED;
             if event
                 == (Event::Asked {
                     action: Action::Reset,
@@ -337,6 +336,8 @@ impl Owner {
         let remote = remote.and_then(|locked| panel.remote(now, Lock::from_locked(locked)));
         for event in [remote, panel.tick(now)].into_iter().flatten() {
             panel_event(platform, now, event, &mut record);
+            // A press of Dispense alone acts once its chord window is over.
+            self.dispense |= event == FEED;
         }
         while let Some(event) = self.pairing.tick(now) {
             record(Record::Pairing(event));
