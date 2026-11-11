@@ -64,12 +64,13 @@ pub(super) async fn invitation(tx: &mut SqliteConnection, row: &Invitation) -> R
 
 pub(super) async fn dropped_phone(tx: &mut SqliteConnection, row: &DroppedPhone) -> Result<()> {
     sqlx::query!(
-        "INSERT INTO dropped_phones (feeder_id, key, user_id, token_id, dropped_ms)
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO dropped_phones (feeder_id, prefix, user_id, token_id, invited_ms, dropped_ms)
+         VALUES (?, ?, ?, ?, ?, ?)",
         row.feeder_id,
-        row.key,
+        row.prefix,
         row.user_id,
         row.token_id,
+        row.invited_ms,
         row.dropped_ms,
     )
     .execute(tx)

@@ -4,13 +4,18 @@
 //! phone's account and token from the feeder's report of the join, so
 //! deleting the account, revoking the token or revoking the inviting key
 //! revokes it too, and a key it invited in turn. An owner who keeps such a
-//! key detaches it, and then nothing of the inviter's revokes it.
+//! key detaches it, and then nothing of the inviter's revokes it. A join
+//! the server read before it knew the inviting key is not attributed.
+
+use std::sync::Arc;
+use std::time::Duration;
 
 use wellfed_api::{
-    ClientOwner, ClientRole, Connection as Link, FeederId, Hex, NewPhoneInvite, NewToken, NewUser,
-    PhoneClaim, Role, User,
+    ClientOwner, ClientRole, Connection as Link, CoreEvent, EventBody, EventQuery, FeederId, Hex,
+    NewPhoneInvite, NewToken, NewUser, PhoneClaim, Role, User,
 };
 use wellfed_server_testkit::feeder::{self, Running};
+use wellfed_server_testkit::fixed::ManualClock;
 use wellfed_server_testkit::{TestService, ada_setup, local, until};
 use wellfed_service::{Caller, ClientError, Error, Service};
 
@@ -225,6 +230,64 @@ fn a_replaced_keys_invitees_move_to_the_new_key() {
             .await
             .unwrap();
         revoked(service, &sim, &[22, 21]).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// Until the server has read the feeder's report that phone `n` joined.
+async fn join_read(service: &Service, id: FeederId, n: u8) {
+    until("the join is read", || async {
+        let query = EventQuery {
+            epoch: None,
+            after: None,
+            limit: Some(500),
+            kind: None,
+        };
+        let page = service.events(id, query).await.unwrap();
+        page.events.iter().any(|event| {
+            matches!(&event.body, EventBody::Core(CoreEvent::Invited { client, .. })
+                if client.0[..] == key(n)[..7])
+        })
+    })
+    .await;
+}
+
+/// An owner's phone paired before the server knew it, and claimed later,
+/// takes none of the invites it made before the claim: those keys stay
+/// unowned. The invites it makes after the claim are its.
+#[test]
+fn a_claimed_phone_takes_only_the_invites_it_makes_after() {
+    local(async {
+        let sim = feeder::start().await;
+        let clock = ManualClock::new();
+        let server = TestService::start_with_clock(Arc::new(clock.clone())).await;
+        let id = server
+            .adopt_as(&sim, &sim.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let ada: Caller = service.setup(ada_setup()).await.unwrap().0.into();
+
+        let invite = feeder::invite(&sim, ClientRole::Owner).await;
+        feeder::join_phone(&sim, &invite, secret(30)).await;
+        invite_directly(&sim, 30, 31).await;
+        join_read(service, id, 31).await;
+
+        clock.advance(Duration::from_secs(60));
+        let phone = token_of(service, ada.user.clone()).await;
+        let claim = PhoneClaim { key: Hex(key(30)) };
+        service.claim_phone(&phone, id, claim).await.unwrap();
+        invite_directly(&sim, 30, 32).await;
+        attributed(service, id, &phone, 32).await;
+        assert_eq!(owner_of(service, id, 31).await, Some(ClientOwner::Unowned));
+
+        service
+            .revoke_client(&ada, id, key(30), None)
+            .await
+            .unwrap();
+        revoked(service, &sim, &[30, 32]).await;
+        assert!(feeder::client_keys(&sim).await.contains(&key(31)));
         server.shutdown().await;
         sim.stop().await;
     });

@@ -20,13 +20,17 @@ CREATE TABLE invitations (
     PRIMARY KEY (feeder_id, epoch, seq)
 ) STRICT;
 
--- Phone keys the feeder dropped, so a join through one's invite that the
--- server reads only after the key was dropped is still revoked with it.
+-- Phone keys the feeder dropped, by their first 7 bytes, so a join
+-- through one's invite that the server reads only after the key was
+-- dropped is still revoked with it. `invited_ms` is when the server first
+-- recorded the key: a join it reported before then was not its to
+-- attribute.
 CREATE TABLE dropped_phones (
     feeder_id BLOB NOT NULL REFERENCES feeders (id),
-    key BLOB NOT NULL,
+    prefix BLOB NOT NULL,
     user_id BLOB NOT NULL,
     token_id BLOB,
+    invited_ms INTEGER NOT NULL,
     dropped_ms INTEGER NOT NULL,
-    PRIMARY KEY (feeder_id, key)
+    PRIMARY KEY (feeder_id, prefix)
 ) STRICT;

@@ -218,15 +218,17 @@ pub struct Invitation {
     pub settled_ms: Option<i64>,
 }
 
-/// A phone key the feeder dropped, kept so a key it invited still goes.
+/// A phone key the feeder dropped, by its first bytes, kept so a key it
+/// invited still goes, and when the server first recorded it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DroppedPhone {
     pub feeder_id: Uuid,
     #[serde(with = "hex_bytes")]
-    pub key: Vec<u8>,
+    pub prefix: Vec<u8>,
     pub user_id: Uuid,
     pub token_id: Option<Uuid>,
+    pub invited_ms: i64,
     pub dropped_ms: i64,
 }
 

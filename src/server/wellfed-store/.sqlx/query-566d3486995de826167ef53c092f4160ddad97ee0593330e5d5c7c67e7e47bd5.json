@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT epoch, seq, invitee, inviter FROM invitations AS i\n             WHERE feeder_id = ?1 AND settled_ms IS NULL\n               AND (EXISTS (SELECT 1 FROM phone_keys AS p\n                            WHERE p.feeder_id = ?1 AND substr(p.key, 1, 7) = i.inviter)\n                    OR EXISTS (SELECT 1 FROM dropped_phones AS d\n                               WHERE d.feeder_id = ?1 AND substr(d.key, 1, 7) = i.inviter))\n             ORDER BY epoch, seq",
+  "query": "SELECT epoch, seq, invitee, inviter, received_ms FROM invitations AS i\n             WHERE feeder_id = ?1 AND settled_ms IS NULL\n               AND (EXISTS (SELECT 1 FROM phone_keys AS p\n                            WHERE p.feeder_id = ?1 AND substr(p.key, 1, 7) = i.inviter\n                              AND p.invited_ms <= i.received_ms)\n                    OR EXISTS (SELECT 1 FROM dropped_phones AS d\n                               WHERE d.feeder_id = ?1 AND d.prefix = i.inviter\n                                 AND d.invited_ms <= i.received_ms))\n             ORDER BY epoch, seq",
   "describe": {
     "columns": [
       {
@@ -46,6 +46,17 @@
             "name": "inviter"
           }
         }
+      },
+      {
+        "name": "received_ms",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "invitations",
+            "name": "received_ms"
+          }
+        }
       }
     ],
     "parameters": {
@@ -55,8 +66,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "fcb5d1e22a28952560f2b77f6ac740f9574d317160b8dac09becf8967e8f33d0"
+  "hash": "566d3486995de826167ef53c092f4160ddad97ee0593330e5d5c7c67e7e47bd5"
 }

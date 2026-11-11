@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT feeder_id AS \"feeder_id: Uuid\", key, user_id AS \"user_id: Uuid\",\n                              token_id AS \"token_id: Uuid\", dropped_ms\n                       FROM dropped_phones ORDER BY feeder_id, key",
+  "query": "SELECT feeder_id AS \"feeder_id: Uuid\", prefix, user_id AS \"user_id: Uuid\",\n                              token_id AS \"token_id: Uuid\", invited_ms, dropped_ms\n                       FROM dropped_phones ORDER BY feeder_id, prefix",
   "describe": {
     "columns": [
       {
@@ -15,13 +15,13 @@
         }
       },
       {
-        "name": "key",
+        "name": "prefix",
         "ordinal": 1,
         "type_info": "Blob",
         "origin": {
           "Table": {
             "table": "dropped_phones",
-            "name": "key"
+            "name": "prefix"
           }
         }
       },
@@ -48,8 +48,19 @@
         }
       },
       {
-        "name": "dropped_ms",
+        "name": "invited_ms",
         "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "dropped_phones",
+            "name": "invited_ms"
+          }
+        }
+      },
+      {
+        "name": "dropped_ms",
+        "ordinal": 5,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -67,8 +78,9 @@
       false,
       false,
       true,
+      false,
       false
     ]
   },
-  "hash": "8307bf5d5a463e1c61ddf128ecb1d189ad884e1fc103523e97f6188d02b1f47a"
+  "hash": "a1d0835098a70d1a581c26e2f8fa36f54f350cca69a034d2a136748fe6cf8b25"
 }

@@ -9,11 +9,14 @@
 //! `phones::invitees`).
 //!
 //! A join is attributed once the feeder's clients can be read, at the next
-//! pass after its event lands. Only a join a phone key made is read for:
-//! every adoption is a join through an invite too, and a pass that asked
-//! the feeder for its clients each time would load every session. One the feeder's history lost (a ring that
-//! overwrote it while the server was away, a gap) is never reported, and
-//! the key it enrolled shows as unowned until an owner revokes or keeps it.
+//! pass after its event lands. Only a join a phone key made, read after the
+//! server recorded that key, is read for: every adoption is a join through
+//! an invite too, and a pass that asked the feeder for its clients each
+//! time would load every session, while a phone claimed later does not
+//! take the invites it made before. A join the feeder's history lost (a
+//! ring that overwrote it while the server was away, a gap) is never
+//! reported. Either way, the key it enrolled shows as unowned until an
+//! owner revokes or keeps it.
 
 use jiff::Timestamp;
 use tracing::{info, warn};

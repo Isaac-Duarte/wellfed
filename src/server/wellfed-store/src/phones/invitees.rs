@@ -24,7 +24,7 @@ use sqlx::SqliteConnection;
 use uuid::Uuid;
 use wellfed_api::{ClientRole, FeederId};
 
-use crate::convert::millis;
+use crate::convert::{millis, timestamp};
 use crate::projections::Place;
 use crate::{Error, Result, Store};
 
@@ -42,6 +42,8 @@ pub struct Invitation {
     pub invitee: [u8; PREFIX],
     /// The first bytes of the key whose invite it redeemed.
     pub inviter: [u8; PREFIX],
+    /// When the server read the join.
+    pub received: Timestamp,
 }
 
 /// The account and token a joined key is recorded under, and whether the
@@ -111,7 +113,7 @@ pub(crate) async fn dropped(
 ) -> Result<()> {
     let slice = key.as_slice();
     let Some(phone) = sqlx::query!(
-        r#"SELECT user_id AS "user_id: Uuid", token_id AS "token_id: Uuid"
+        r#"SELECT user_id AS "user_id: Uuid", token_id AS "token_id: Uuid", invited_ms
            FROM phone_keys WHERE feeder_id = ? AND key = ?"#,
         feeder.0,
         slice,
@@ -122,22 +124,23 @@ pub(crate) async fn dropped(
         return Ok(());
     };
 
+    let prefix = prefix(key);
+    let prefix = prefix.as_slice();
     sqlx::query!(
-        "INSERT INTO dropped_phones (feeder_id, key, user_id, token_id, dropped_ms)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (feeder_id, key) DO UPDATE SET
+        "INSERT INTO dropped_phones (feeder_id, prefix, user_id, token_id, invited_ms, dropped_ms)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (feeder_id, prefix) DO UPDATE SET
              user_id = excluded.user_id, token_id = excluded.token_id,
-             dropped_ms = excluded.dropped_ms",
+             invited_ms = excluded.invited_ms, dropped_ms = excluded.dropped_ms",
         feeder.0,
-        slice,
+        prefix,
         phone.user_id,
         phone.token_id,
+        phone.invited_ms,
         at,
     )
     .execute(&mut *conn)
     .await?;
-    let prefix = prefix(key);
-    let prefix = prefix.as_slice();
     sqlx::query!(
         "UPDATE phone_keys SET revoke = 'inviter_revoked', revoke_ms = ?
          WHERE feeder_id = ? AND revoke IS NULL AND invited_by = ?",
@@ -159,18 +162,21 @@ fn prefix(key: &[u8; 32]) -> [u8; PREFIX] {
 impl Store {
     /// The joins through an invite a feeder reported that the server has
     /// not attributed yet and can: those whose inviter is a phone key it
-    /// records or saw dropped. Oldest first, so a key's own invitees come
-    /// after it. Any other join (the server's own adoption, a key the
-    /// owner's CLI invited) stays as it is, asking the feeder nothing, until
-    /// its inviter is claimed as a phone key.
+    /// recorded, or saw dropped, before it read the join. Oldest first, so
+    /// a key's own invitees come after it. Any other join (the server's own
+    /// adoption, a key the owner's CLI invited, or one a phone made before
+    /// the server knew it) asks the feeder nothing and is never attributed:
+    /// claiming a phone does not sweep in the invites it made before.
     pub async fn invitations(&self, feeder: FeederId) -> Result<Vec<Invitation>> {
         let rows = sqlx::query!(
-            "SELECT epoch, seq, invitee, inviter FROM invitations AS i
+            "SELECT epoch, seq, invitee, inviter, received_ms FROM invitations AS i
              WHERE feeder_id = ?1 AND settled_ms IS NULL
                AND (EXISTS (SELECT 1 FROM phone_keys AS p
-                            WHERE p.feeder_id = ?1 AND substr(p.key, 1, 7) = i.inviter)
+                            WHERE p.feeder_id = ?1 AND substr(p.key, 1, 7) = i.inviter
+                              AND p.invited_ms <= i.received_ms)
                     OR EXISTS (SELECT 1 FROM dropped_phones AS d
-                               WHERE d.feeder_id = ?1 AND substr(d.key, 1, 7) = i.inviter))
+                               WHERE d.feeder_id = ?1 AND d.prefix = i.inviter
+                                 AND d.invited_ms <= i.received_ms))
              ORDER BY epoch, seq",
             feeder.0,
         )
@@ -191,6 +197,7 @@ impl Store {
                         .inviter
                         .try_into()
                         .map_err(|_| Error::Corrupt("inviter prefix"))?,
+                    received: timestamp(row.received_ms)?,
                 })
             })
             .collect()
@@ -199,10 +206,12 @@ impl Store {
     /// Settle `invitation`. Each of `joined` (the feeder's clients whose
     /// key starts with the invitee's prefix, with the role it lists) is
     /// recorded as a phone key of the account and token behind the
-    /// inviter, a phone key recorded or one the feeder dropped, and marked
-    /// for revocation at once unless that key still stands. A key recorded
-    /// or kept already stays as it is, and a join no phone key invited
-    /// records nothing. Whether a key it recorded is owed a revoke.
+    /// inviter, a phone key recorded or one the feeder dropped before the
+    /// join was read, and marked for revocation at once unless that key
+    /// still stands. It counts as recorded from when the join was read, so
+    /// the joins it made in turn are its. A key recorded or kept already
+    /// stays as it is, and a join no such phone key invited records nothing.
+    /// Whether a key it recorded is owed a revoke.
     pub async fn attribute_invitation(
         &self,
         invitation: &Invitation,
@@ -211,16 +220,19 @@ impl Store {
     ) -> Result<bool> {
         let feeder = invitation.feeder;
         let inviter_prefix = invitation.inviter.as_slice();
+        let received = millis(invitation.received);
         let at = millis(at);
         let mut tx = self.writer.begin().await?;
 
         let recorded = sqlx::query!(
             r#"SELECT user_id AS "user_id: Uuid", token_id AS "token_id: Uuid",
                       revoke IS NOT NULL AS "revoking!: bool"
-               FROM phone_keys WHERE feeder_id = ? AND substr(key, 1, 7) = ?
+               FROM phone_keys
+               WHERE feeder_id = ? AND substr(key, 1, 7) = ? AND invited_ms <= ?
                ORDER BY invited_ms, key LIMIT 1"#,
             feeder.0,
             inviter_prefix,
+            received,
         )
         .fetch_optional(&mut *tx)
         .await?
@@ -233,10 +245,11 @@ impl Store {
             Some(inviter) => Some(inviter),
             None => sqlx::query!(
                 r#"SELECT user_id AS "user_id: Uuid", token_id AS "token_id: Uuid"
-                   FROM dropped_phones WHERE feeder_id = ? AND substr(key, 1, 7) = ?
-                   ORDER BY dropped_ms DESC, key LIMIT 1"#,
+                   FROM dropped_phones
+                   WHERE feeder_id = ? AND prefix = ? AND invited_ms <= ?"#,
                 feeder.0,
                 inviter_prefix,
+                received,
             )
             .fetch_optional(&mut *tx)
             .await?
@@ -265,7 +278,7 @@ impl Store {
                     inviter.user,
                     inviter.token,
                     role,
-                    at,
+                    received,
                     inviter_prefix,
                     revoke,
                     revoke_ms,

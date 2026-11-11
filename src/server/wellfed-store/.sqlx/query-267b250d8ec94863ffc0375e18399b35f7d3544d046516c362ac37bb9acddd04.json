@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\"\n           FROM phone_keys WHERE feeder_id = ? AND key = ?",
+  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\"\n                   FROM dropped_phones\n                   WHERE feeder_id = ? AND prefix = ? AND invited_ms <= ?",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Blob",
         "origin": {
           "Table": {
-            "table": "phone_keys",
+            "table": "dropped_phones",
             "name": "user_id"
           }
         }
@@ -20,19 +20,19 @@
         "type_info": "Blob",
         "origin": {
           "Table": {
-            "table": "phone_keys",
+            "table": "dropped_phones",
             "name": "token_id"
           }
         }
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 3
     },
     "nullable": [
       false,
       true
     ]
   },
-  "hash": "3c7af3c1561468c71da2a7abab3dd5731a85b4670d97e0653c646838acd78941"
+  "hash": "267b250d8ec94863ffc0375e18399b35f7d3544d046516c362ac37bb9acddd04"
 }

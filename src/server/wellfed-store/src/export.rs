@@ -115,9 +115,9 @@ impl Snapshot {
             Table::DroppedPhones => rows(
                 sqlx::query_as!(
                     DroppedPhone,
-                    r#"SELECT feeder_id AS "feeder_id: Uuid", key, user_id AS "user_id: Uuid",
-                              token_id AS "token_id: Uuid", dropped_ms
-                       FROM dropped_phones ORDER BY feeder_id, key"#
+                    r#"SELECT feeder_id AS "feeder_id: Uuid", prefix, user_id AS "user_id: Uuid",
+                              token_id AS "token_id: Uuid", invited_ms, dropped_ms
+                       FROM dropped_phones ORDER BY feeder_id, prefix"#
                 )
                 .fetch(tx),
             ),

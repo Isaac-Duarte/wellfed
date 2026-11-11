@@ -107,8 +107,19 @@ async fn the_reconcile_marks_a_key_whose_account_is_gone() {
 }
 
 /// The feeder reports that key `invitee` joined through key `inviter`'s
-/// invite, as event `seq`.
+/// invite, as event `seq`, read after every key here was recorded.
 async fn joined(store: &Store, feeder: FeederId, seq: u64, invitee: u8, inviter: u8) {
+    joined_at(store, feeder, (seq, 30), invitee, inviter).await;
+}
+
+/// As [`joined`], the event `seq` read at `received`.
+async fn joined_at(
+    store: &Store,
+    feeder: FeederId,
+    (seq, received): (u64, i64),
+    invitee: u8,
+    inviter: u8,
+) {
     let body = EventBody::Core(CoreEvent::Invited {
         client: Hex([invitee; 7]),
         by: Hex([inviter; 7]),
@@ -117,7 +128,7 @@ async fn joined(store: &Store, feeder: FeederId, seq: u64, invitee: u8, inviter:
         epoch: 1,
         seq,
         at: None,
-        received: at(30),
+        received: at(received),
         body: Some(body),
         raw: &[22],
     };
@@ -203,6 +214,36 @@ async fn a_dropped_inviter_takes_its_invitees_however_late_they_are_read() {
     let late = store.phone(feeder, &[5; 32]).await.unwrap();
     assert_eq!(late.as_ref().unwrap().user, UserId(Uuid::from_u128(0x50)));
     assert_eq!(reason(late), Some(RevokeReason::InviterRevoked));
+}
+
+/// A join the server read before it recorded the inviting key is not
+/// that key's: claiming a phone does not sweep in the invites it made
+/// before. Its later joins are.
+#[tokio::test]
+async fn a_join_read_before_its_inviter_was_recorded_is_not_attributed() {
+    let (_dir, store, feeder) = fresh().await;
+    joined_at(&store, feeder, (1, 5), 2, 1).await;
+    store.record_phone(&phone(feeder, 1, 7, 10)).await.unwrap();
+    assert!(store.invitations(feeder).await.unwrap().is_empty());
+
+    joined(&store, feeder, 2, 3, 1).await;
+    assert!(!attribute(&store, feeder, &[1, 2, 3], 40).await);
+    assert_eq!(store.phone(feeder, &[2; 32]).await.unwrap(), None);
+    let later = store.phone(feeder, &[3; 32]).await.unwrap().unwrap();
+    assert_eq!(later.token, Some(TokenId(Uuid::from_u128(7))));
+    assert_eq!(
+        later.invited,
+        at(30),
+        "recorded as of when its join was read"
+    );
+
+    // Nor is it pinned on the key once the key is dropped: only the later
+    // join goes.
+    assert!(store.forget_client(feeder, &[1; 32], at(50)).await.unwrap());
+    let later = store.phone(feeder, &[3; 32]).await.unwrap();
+    assert_eq!(reason(later), Some(RevokeReason::InviterRevoked));
+    assert_eq!(store.phone(feeder, &[2; 32]).await.unwrap(), None);
+    assert!(store.invitations(feeder).await.unwrap().is_empty());
 }
 
 /// A key an owner kept stays theirs, whoever invited it.
