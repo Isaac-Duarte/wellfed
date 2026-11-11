@@ -152,9 +152,11 @@ fn make_way(path: &Path) -> Result<Option<PathBuf>> {
 /// Log in, make a token for this computer, keep it, and end the session.
 pub(super) async fn login(args: LoginArgs, path: &Path, out: Output) -> Result<Settled> {
     make_way(path)?;
+    // The address is checked before the password is asked for: one the
+    // client refuses (plain http off the home network) never takes it.
+    let mut client = Client::new(&args.server)?;
     let password = password()?;
 
-    let mut client = Client::new(&args.server)?;
     let credentials = Credentials {
         name: args.name,
         password,

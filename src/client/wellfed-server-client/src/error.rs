@@ -9,6 +9,14 @@ use reqwest::{StatusCode, Url};
 pub enum Error {
     #[error("the server's address must be an http or https URL with a host, not {0}")]
     Base(Url),
+    /// Plain `http://` to a host off this computer and the home network,
+    /// which would carry the password and a token that can feed across the
+    /// network in the clear. Nothing was sent.
+    #[error(
+        "plain http:// to {host} is off this computer and the home network, so the password \
+         and the token would cross it unencrypted: use the server's https:// address"
+    )]
+    PlainHttp { host: String },
     #[error("could not build the HTTP client")]
     Build(#[source] reqwest::Error),
     /// The request failed on the way, or its answer was cut off. A keyed
@@ -96,9 +104,11 @@ impl Error {
                 _ => Failure::Rejected,
             },
             Self::Stale(_) | Self::StalePlans(_) | Self::StaleCalibration(_) => Failure::Stale,
-            Self::Base(_) | Self::Build(_) | Self::Redirect { .. } | Self::NoSession => {
-                Failure::Rejected
-            }
+            Self::Base(_)
+            | Self::PlainHttp { .. }
+            | Self::Build(_)
+            | Self::Redirect { .. }
+            | Self::NoSession => Failure::Rejected,
         }
     }
 }

@@ -33,6 +33,9 @@ String serverErrorWords(ServerError error) => switch (error.kind) {
   ServerErrorKind.keyReused || ServerErrorKind.refused => 'The server refused: ${error.message}',
   ServerErrorKind.protocol => 'That does not answer as a Wellfed server of this version.',
   ServerErrorKind.closed => 'The server connection is closed.',
+  ServerErrorKind.plainHttp =>
+    'Plain http:// would send your password unencrypted beyond the home network. '
+        "Use the server's https:// address, or its home-network address like 192.168.1.20:8080.",
 };
 
 /// What an account may do, in a word.

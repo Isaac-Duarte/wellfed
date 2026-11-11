@@ -15,7 +15,8 @@
 use uuid::Uuid;
 use wellfed_api::{CommandOutcome, CommandState};
 
-use crate::api::router::{RoutePath, Settlement};
+use crate::api::feeder::{FeederReply, NotAsked};
+use crate::api::router::{NotSentReason, RoutePath, Settlement};
 use crate::api::store::SetAside;
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinnedWrite, RunningFeed};
 
@@ -24,13 +25,34 @@ use crate::route::pins::{LostAdoption, PinRecord, PinState, PinnedWrite, Running
 /// it up sooner.
 pub(crate) const RECHECK_MS: i64 = 30_000;
 
+/// How long ago an adoption attempt was, by two clocks. The wall clock is
+/// all a restart keeps, but it steps (a network time fix, the owner changing it),
+/// and a forward step would end a grace early; the monotonic clock never
+/// steps, but starts with the run. A grace has passed only when both say so:
+/// `steady_ms` counts from when this run first knew of the attempt, never
+/// before it, so it can only fall short of the real time since.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Waited {
+    /// By the wall clock, from the attempt's recorded time.
+    pub(crate) wall_ms: i64,
+    /// By the monotonic clock, from when this run first knew of it.
+    pub(crate) steady_ms: i64,
+}
+
+impl Waited {
+    pub(crate) const fn passed(self, grace_ms: i64) -> bool {
+        self.wall_ms >= grace_ms && self.steady_ms >= grace_ms
+    }
+}
+
 /// How long a pin the owner put away is kept, from the acknowledgement, for
 /// its path to settle it. One still pending holds forever.
 pub(crate) const KEEP_MS: i64 = 7 * 24 * 3_600_000;
 
 /// How long a lost adoption waits before the server's list may permit
 /// another invite. A missing command journal entry never uses this grace:
-/// it cannot prove a write was never sent.
+/// it cannot prove a write was never sent. Both of [`Waited`]'s clocks
+/// must agree that it passed.
 pub(crate) const ADOPTION_GRACE_MS: i64 = 10 * 60_000;
 
 /// What this phone may use to reach a feeder.
@@ -177,6 +199,34 @@ pub(crate) const fn server_ended(failure: ServerFailure) -> Ended {
         | ServerFailure::Unauthorized
         | ServerFailure::Rejected => Ended::Refused,
         ServerFailure::Interrupted | ServerFailure::OutcomeUnknown => Ended::Uncertain,
+    }
+}
+
+/// What the phone's own session's `reply` to a write says of it, and why it
+/// never went if it didn't. Only an answer that names the write's end is
+/// definite; anything else (no answer, one this build can't read, or the
+/// wrong one) may follow a write that ran, so it stays pinned, uncertain.
+pub(crate) const fn direct_ended(reply: &FeederReply) -> (Ended, Option<NotSentReason>) {
+    match reply {
+        FeederReply::Done { .. }
+        | FeederReply::Settings { .. }
+        | FeederReply::Time { .. }
+        | FeederReply::Plans { .. }
+        | FeederReply::Clients { .. }
+        | FeederReply::Invite { .. }
+        | FeederReply::Calibration { .. }
+        | FeederReply::Call { .. }
+        | FeederReply::Stats { .. }
+        | FeederReply::Trace { .. }
+        | FeederReply::Update { .. } => (Ended::Answered, None),
+        FeederReply::NotSent
+        | FeederReply::NotAsked {
+            reason: NotAsked::Held,
+        } => (Ended::Unsent, Some(NotSentReason::Session)),
+        FeederReply::Refused { .. } | FeederReply::NotAsked { .. } => (Ended::Refused, None),
+        FeederReply::Unanswered | FeederReply::Unexpected | FeederReply::Unreadable => {
+            (Ended::Uncertain, None)
+        }
     }
 }
 

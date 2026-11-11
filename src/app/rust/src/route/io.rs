@@ -6,8 +6,10 @@
 //! pass and a write that never got written down never goes.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Instant;
 
 use jiff::Timestamp;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -16,7 +18,7 @@ use wellfed_api::{ErrorCode, FeederId, User};
 use wellfed_model::{Answer, Op};
 
 use crate::api::error::{BridgeError, ErrorKind};
-use crate::api::feeder::{FeederReply, FeederRequest, NotAsked};
+use crate::api::feeder::{FeederReply, FeederRequest};
 use crate::api::keys::random;
 use crate::api::router::{
     NotSentReason, PendingWrite, RetryOutcome, RoutePath, RoutedFeed, RoutedReply, RouterUpdate,
@@ -35,7 +37,7 @@ use crate::link::{DirectLink, LinkNews};
 use crate::requests;
 use crate::route::core::{
     self, Access, Book, Ended, Held, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
-    settled_by_command, settled_by_history,
+    Waited, settled_by_command, settled_by_history,
 };
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
 use crate::route::server as calls;
@@ -71,6 +73,14 @@ struct State {
     listeners: Vec<mpsc::UnboundedSender<RouterUpdate>>,
     /// The path each feeder was last said to take.
     announced: HashMap<String, Option<RoutePath>>,
+    /// When this run first knew of each lost adoption, by the monotonic
+    /// clock: its grace passes only when this clock agrees with the wall
+    /// clock's record. A missing command journal entry has no such grace.
+    adoptions_lost: Steady<String>,
+    /// Which server session the state is for, raised whenever the server is
+    /// configured, connected, refused or removed: what a read of the server
+    /// begun under another session says is never applied to this one.
+    session: u64,
     /// A server the app keeps, before its session is handed over: the keys
     /// its kept account may use, so no feeder goes on the phone's own key
     /// that the account would not allow while the app is still reading its
@@ -111,6 +121,58 @@ pub(crate) fn now_ms() -> i64 {
     Timestamp::now().as_millisecond()
 }
 
+/// When this run first knew of each key's attempt, by its wall-clock time,
+/// on the monotonic clock. Noting an attempt late only makes its wait read
+/// shorter, so one this run did not see (from before a restart) counts from
+/// when the run first looked at it.
+struct Steady<K> {
+    seen: HashMap<K, (i64, Instant)>,
+}
+
+impl<K: Eq + Hash> Steady<K> {
+    fn new() -> Self {
+        Self {
+            seen: HashMap::new(),
+        }
+    }
+
+    /// Hold just `attempts` (each key's attempt by the wall clock), noting
+    /// from now those this run did not know yet, or knew at another time.
+    fn sync(&mut self, attempts: impl IntoIterator<Item = (K, i64)>) {
+        let now = Instant::now();
+        let mut kept = HashMap::new();
+        for (key, at_ms) in attempts {
+            let known = self.seen.remove(&key).filter(|(at, _)| *at == at_ms);
+            kept.insert(key, known.unwrap_or((at_ms, now)));
+        }
+        self.seen = kept;
+    }
+
+    /// How long since `key`'s attempt at `at_ms`, with the wall clock at
+    /// `now_ms`: by the monotonic clock from when this run first knew of it,
+    /// or nothing if it does not know of it at that time.
+    fn waited(&self, key: &K, at_ms: i64, now_ms: i64) -> Waited {
+        let steady_ms = match self.seen.get(key) {
+            Some((at, since)) if *at == at_ms => {
+                i64::try_from(since.elapsed().as_millis()).unwrap_or(i64::MAX)
+            }
+            _ => 0,
+        };
+        Waited {
+            wall_ms: now_ms.saturating_sub(at_ms),
+            steady_ms,
+        }
+    }
+}
+
+/// A read of a server session the router has since let go.
+fn replaced() -> ServerError {
+    ServerError::new(
+        ServerErrorKind::Closed,
+        "the server changed while it was read",
+    )
+}
+
 fn new_key() -> Result<Uuid, BridgeError> {
     Ok(uuid::Builder::from_random_bytes(random()?).into_uuid())
 }
@@ -142,6 +204,17 @@ impl State {
         self.link(feeder).is_some_and(|link| link.is_open())
     }
 
+    /// Whether a write whose attempt on `path` ended `ended` goes once more
+    /// on the phone's own session, by what the phone may use now: while the
+    /// server call was out, the server may have refused the token or
+    /// narrowed the account, or the owner removed it, and an access read
+    /// before the call would still allow the phone's own key.
+    fn falls_back(&self, feeder: &str, path: RoutePath, ended: Ended, fell_back: bool) -> bool {
+        self.access(feeder).is_some_and(|access| {
+            core::fallback(path, ended, access, self.direct_open(feeder), fell_back).is_some()
+        })
+    }
+
     fn link(&self, feeder: &str) -> Option<Arc<DirectLink>> {
         self.feeders.get(feeder)?.direct.clone()
     }
@@ -165,11 +238,36 @@ impl State {
             .map(|server| server.handle.client.clone())
     }
 
-    /// The server's client and its id for `feeder`.
-    fn server_for(&self, feeder: &str) -> Option<(wellfed_server_client::Client, FeederId)> {
+    /// The server's client, and the session it belongs to.
+    fn session_client(&self) -> Option<(wellfed_server_client::Client, u64)> {
+        Some((self.client()?, self.session))
+    }
+
+    /// Another server session from here on.
+    const fn new_session(&mut self) {
+        self.session = self.session.wrapping_add(1);
+    }
+
+    /// Route through `handle`, under `account`.
+    fn connect(&mut self, handle: ServerHandle, account: &ServerAccount) {
+        self.new_session();
+        self.server = Some(Server {
+            handle,
+            keys: keys_of(account),
+            user: Uuid::parse_str(&account.id).ok(),
+            account: Some(account.clone()),
+        });
+        self.reach = ServerReach::Up;
+        self.standing = Standing::Taken;
+        self.announce();
+    }
+
+    /// The server's client and its id for `feeder`, and the session the
+    /// call goes under.
+    fn server_for(&self, feeder: &str) -> Option<(wellfed_server_client::Client, FeederId, u64)> {
         let client = self.client()?;
         let id = self.feeders.get(feeder)?.server?;
-        Some((client, id))
+        Some((client, id, self.session))
     }
 
     fn server_id(&self, feeder: &str) -> Option<Uuid> {
@@ -208,6 +306,17 @@ impl State {
         }
     }
 
+    /// Note every lost adoption this run did not know yet, from now, and
+    /// forget those settled.
+    fn note_attempts(&mut self) {
+        self.adoptions_lost.sync(
+            self.book
+                .adoptions
+                .iter()
+                .map(|lost| (lost.feeder.clone(), lost.at_ms)),
+        );
+    }
+
     fn save(&self) -> Result<(), BridgeError> {
         self.store.save(&self.book)
     }
@@ -236,8 +345,13 @@ impl State {
         }
     }
 
-    /// What a failed call says of the server.
-    fn heard_failure(&mut self, failure: ServerFailure, now: i64) {
+    /// What a failed call made under `session` says of the server: nothing
+    /// once that session was replaced, so a late refusal of an old token
+    /// never closes the phone's own keys under a fresh login.
+    fn heard_failure(&mut self, session: u64, failure: ServerFailure, now: i64) {
+        if session != self.session {
+            return;
+        }
         self.reach = core::reach_after(failure, now);
         self.standing = core::standing_after(self.standing, failure);
     }
@@ -350,7 +464,7 @@ impl Router {
         if book.expire(now_ms()) {
             store.save(&book)?;
         }
-        let state = State {
+        let mut state = State {
             store,
             server: None,
             reach: ServerReach::Up,
@@ -362,7 +476,12 @@ impl Router {
             listeners: Vec::new(),
             announced: HashMap::new(),
             cold: None,
+            adoptions_lost: Steady::new(),
+            session: 0,
         };
+        // What the last run left counts from this run's start, never from
+        // the wall clock's record alone.
+        state.note_attempts();
         Ok(Self {
             inner: Arc::new(Inner {
                 state: Mutex::new(state),
@@ -381,16 +500,7 @@ impl Router {
     }
 
     pub(crate) fn connect_server(&self, handle: ServerHandle, account: &ServerAccount) {
-        let mut state = self.state();
-        state.server = Some(Server {
-            handle,
-            keys: keys_of(account),
-            user: Uuid::parse_str(&account.id).ok(),
-            account: Some(account.clone()),
-        });
-        state.reach = ServerReach::Up;
-        state.standing = Standing::Taken;
-        state.announce();
+        self.state().connect(handle, account);
     }
 
     /// The server the app keeps, before anything else asks the router: its
@@ -399,6 +509,7 @@ impl Router {
     /// nothing.
     pub(crate) fn configure(&self, kept: &KnownServer) {
         let mut state = self.state();
+        state.new_session();
         for listed in &kept.feeders {
             // A kept id that does not parse: the next list replaces it.
             if let Ok(id) = crate::server::ids::feeder(&listed.id) {
@@ -418,6 +529,7 @@ impl Router {
     /// token, until a login or removing the server.
     pub(crate) fn refuse_server(&self) {
         let mut state = self.state();
+        state.new_session();
         state.server = None;
         state.standing = Standing::Refused;
         state.following.clear();
@@ -436,18 +548,26 @@ impl Router {
         handle: ServerHandle,
         cached: Option<ServerAccount>,
     ) -> Result<ServerAccount, ServerError> {
+        let session = self.state().session;
         let read = handle.client.session().await;
 
+        let mut state = self.state();
+        // Another server, or none, since the read began: this one was let
+        // go, and what it says is not applied.
+        if state.session != session {
+            return Err(replaced());
+        }
         let error = match read {
             Ok(user) => {
                 let account = ServerAccount::from(user);
-                self.connect_server(handle, &account);
+                state.connect(handle, &account);
                 return Ok(account);
             }
             Err(error) => error,
         };
         let failure = error.failure();
-        let mut state = self.state();
+        state.heard_failure(session, failure, now_ms());
+        state.new_session();
         let (keys, user) = match (&cached, failure) {
             (_, ServerFailure::Unauthorized) | (None, _) => (Keys::ServerOnly, None),
             (Some(account), _) => (keys_of(account), Uuid::parse_str(&account.id).ok()),
@@ -458,13 +578,13 @@ impl Router {
             user,
             account: cached,
         });
-        state.heard_failure(failure, now_ms());
         state.announce();
         Err(error.into())
     }
 
     pub(crate) fn disconnect_server(&self) {
         let mut state = self.state();
+        state.new_session();
         state.server = None;
         state.cold = None;
         state.reach = ServerReach::Up;
@@ -474,7 +594,7 @@ impl Router {
     }
 
     pub(crate) async fn refresh(&self) -> Result<Vec<ServerFeeder>, ServerError> {
-        let Some(client) = self.state().client() else {
+        let Some((client, session)) = self.state().session_client() else {
             return Err(ServerError::new(
                 ServerErrorKind::Closed,
                 "no server is configured",
@@ -483,12 +603,15 @@ impl Router {
 
         let (account, listed) = tokio::join!(client.session(), client.feeders());
         let mut state = self.state();
+        if state.session != session {
+            return Err(replaced());
+        }
         let now = now_ms();
         let read = account.and_then(|user| listed.map(|feeders| (user, feeders)));
         let (user, feeders) = match read {
             Ok(read) => read,
             Err(error) => {
-                state.heard_failure(error.failure(), now);
+                state.heard_failure(session, error.failure(), now);
                 state.announce();
                 return Err(error.into());
             }
@@ -522,6 +645,16 @@ impl Router {
             .map(|lost| lost.at_ms)
     }
 
+    /// How long since `feeder`'s adoption lost its answer at `at_ms`, by
+    /// both clocks.
+    pub(crate) fn adoption_waited(&self, feeder: &str, at_ms: i64) -> Waited {
+        let mut state = self.state();
+        state.note_attempts();
+        state
+            .adoptions_lost
+            .waited(&feeder.to_owned(), at_ms, now_ms())
+    }
+
     /// `feeder`'s adoption lost its answer at `at`; `None` once settled.
     pub(crate) fn adoption_lost(&self, feeder: &str, at: Option<i64>) {
         let mut state = self.state();
@@ -533,10 +666,31 @@ impl Router {
                 at_ms,
             });
         }
+        state.note_attempts();
         if state.book.adoptions != before {
             // Kept for a restart; one that fails to save still holds this run.
             state.save_or_log();
         }
+    }
+
+    /// `feeder`'s adoption is about to go: kept on disk as one whose answer
+    /// was lost until it settles, so an app that stops while it is out
+    /// never makes a second owner invite at its next start. Refused, with
+    /// nothing kept, if it cannot be written down.
+    pub(crate) fn guard_adoption(&self, feeder: &str) -> Result<(), BridgeError> {
+        let mut state = self.state();
+        let before = state.book.adoptions.clone();
+        state.book.adoptions.retain(|lost| lost.feeder != feeder);
+        state.book.adoptions.push(LostAdoption {
+            feeder: feeder.to_owned(),
+            at_ms: now_ms(),
+        });
+        let saved = state.save();
+        if saved.is_err() {
+            state.book.adoptions = before;
+        }
+        state.note_attempts();
+        saved
     }
 
     /// How long a lost adoption waits before the server's list may permit
@@ -561,17 +715,20 @@ impl Router {
     /// Read the account again, so a demotion or a new expiry routes from
     /// now on.
     async fn reread_account(&self) {
-        let Some(client) = self.state().client() else {
+        let Some((client, session)) = self.state().session_client() else {
             return;
         };
         let read = client.session().await;
         let mut state = self.state();
+        if state.session != session {
+            return;
+        }
         match read {
             Ok(user) => {
                 state.reach = ServerReach::Up;
                 state.account_is(user);
             }
-            Err(error) => state.heard_failure(error.failure(), now_ms()),
+            Err(error) => state.heard_failure(session, error.failure(), now_ms()),
         }
         state.announce();
     }
@@ -651,7 +808,7 @@ impl Router {
         };
         let now = now_ms();
 
-        let (access, mut path) = {
+        let mut path = {
             let mut state = self.state();
             let Some(access) = state.access(feeder) else {
                 return not_sent(NotSentReason::NoPath, None);
@@ -675,7 +832,7 @@ impl Router {
                 state.book.settle(key);
                 return not_sent(NotSentReason::Store, None);
             }
-            (access, path)
+            path
         };
 
         let mut fell_back = false;
@@ -686,8 +843,7 @@ impl Router {
             };
 
             let mut state = self.state();
-            let direct_open = state.direct_open(feeder);
-            if core::fallback(path, tried.ended(), access, direct_open, fell_back).is_some() {
+            if state.falls_back(feeder, path, tried.ended(), fell_back) {
                 let mark = state.link(feeder).and_then(|link| link.newest());
                 if state.book.moved(key, mark, now_ms()) {
                     if state.save().is_ok() {
@@ -715,6 +871,7 @@ impl Router {
         let now = now_ms();
         let held = state.book.get(key).map(PinRecord::view);
         state.book.ended(key, tried.ended(), now);
+        state.note_attempts();
         if let (RoutePath::Direct, FeedTry::Started(feed)) = (path, &tried) {
             // Its end may come late, after a gap in what the session reads:
             // until then it is no other feed's end.
@@ -807,7 +964,7 @@ impl Router {
     }
 
     async fn feed_on_server(&self, feeder: &str, portions: u8, key: Uuid) -> FeedTry {
-        let Some((client, id)) = self.state().server_for(feeder) else {
+        let Some((client, id, session)) = self.state().server_for(feeder) else {
             return FeedTry::Unsent(NotSentReason::NoPath, None);
         };
         let sent = client.feed(id, portions, key).await;
@@ -826,7 +983,7 @@ impl Router {
             }
             Err(error) => {
                 let failure = error.failure();
-                state.heard_failure(failure, now_ms());
+                state.heard_failure(session, failure, now_ms());
                 let refusal = calls::refusal(&error).map(calls::feed_refusal);
                 let error = Some(error.into());
                 match core::server_ended(failure) {
@@ -904,9 +1061,10 @@ impl Router {
         if path == RoutePath::Server {
             let server = self.state().server_for(feeder);
             let read = match &server {
-                Some((client, id)) => calls::read(client, *id, &request).await,
+                Some((client, id, _)) => calls::read(client, *id, &request).await,
                 None => None,
             };
+            let session = server.map(|(_, _, session)| session);
             let mut state = self.state();
             match read {
                 Some(Ok(reply)) => {
@@ -915,9 +1073,14 @@ impl Router {
                 }
                 Some(Err(error)) => {
                     let failure = error.failure();
-                    state.heard_failure(failure, now_ms());
+                    if let Some(session) = session {
+                        state.heard_failure(session, failure, now_ms());
+                    }
                     let elsewhere = core::server_ended(failure) == Ended::Unsent;
-                    if !(elsewhere && access == Access::Both && state.direct_open(feeder)) {
+                    // What the phone may use now, not before the call: the
+                    // server may have narrowed the account meanwhile.
+                    let own = state.access(feeder) == Some(Access::Both);
+                    if !(elsewhere && own && state.direct_open(feeder)) {
                         let reply = calls::refusal(&error)
                             .map_or(FeederReply::NotSent, |refusal| FeederReply::Refused {
                                 refusal,
@@ -952,7 +1115,7 @@ impl Router {
         };
         let now = now_ms();
 
-        let (access, mut path) = {
+        let mut path = {
             let mut state = self.state();
             let Some(access) = state.access(feeder) else {
                 return nowhere(NotSentReason::NoPath, None);
@@ -965,7 +1128,7 @@ impl Router {
                 state.book.settle(key);
                 return nowhere(NotSentReason::Store, None);
             }
-            (access, path)
+            path
         };
 
         let mut call = Some(call);
@@ -987,8 +1150,7 @@ impl Router {
             };
 
             let mut state = self.state();
-            let direct_open = state.direct_open(feeder);
-            if core::fallback(path, tried.ended, access, direct_open, fell_back).is_some()
+            if state.falls_back(feeder, path, tried.ended, fell_back)
                 && state.book.moved(key, None, now_ms())
             {
                 if state.save().is_ok() {
@@ -1005,6 +1167,7 @@ impl Router {
     /// The end of a write's last attempt, on `path`.
     fn wrote(&self, state: &mut State, key: Uuid, path: RoutePath, tried: WriteTry) -> RoutedReply {
         state.book.ended(key, tried.ended, now_ms());
+        state.note_attempts();
         state.save_or_log();
         let early = state.early.remove(&key);
 
@@ -1043,7 +1206,7 @@ impl Router {
         stream: Option<Vec<u8>>,
         key: Uuid,
     ) -> WriteTry {
-        let Some((client, id)) = self.state().server_for(feeder) else {
+        let Some((client, id, session)) = self.state().server_for(feeder) else {
             return WriteTry::unsent(NotSentReason::NoPath, None);
         };
         let Some(sent) = calls::send(&client, id, write, stream, key).await else {
@@ -1064,7 +1227,7 @@ impl Router {
             }
             Err(error) => {
                 let failure = error.failure();
-                state.heard_failure(failure, now_ms());
+                state.heard_failure(session, failure, now_ms());
                 let ended = core::server_ended(failure);
                 let reply = match (ended, calls::refusal(&error)) {
                     (Ended::Uncertain, _) => FeederReply::Unanswered,
@@ -1140,7 +1303,7 @@ impl Router {
 
     /// What the server's journal says of `pin` now: only ever a read.
     async fn read_journal(&self, pin: &PinRecord) -> Option<Settlement> {
-        let client = self.state().client()?;
+        let (client, session) = self.state().session_client()?;
         let read = client.command(pin.key).await;
 
         let mut state = self.state();
@@ -1159,7 +1322,7 @@ impl Router {
                 None
             }
             Err(error) => {
-                state.heard_failure(error.failure(), now_ms());
+                state.heard_failure(session, error.failure(), now_ms());
                 None
             }
         }
@@ -1383,14 +1546,7 @@ const fn not_sent(reason: NotSentReason, error: Option<ServerError>) -> RoutedFe
 /// Run a write on the phone's own session behind `link`.
 async fn direct_write(link: &DirectLink, call: DirectCall) -> WriteTry {
     let reply = direct(link, call).await;
-    let (ended, not_sent) = match reply {
-        FeederReply::Unanswered | FeederReply::Unreadable => (Ended::Uncertain, None),
-        FeederReply::NotSent
-        | FeederReply::NotAsked {
-            reason: NotAsked::Held,
-        } => (Ended::Unsent, Some(NotSentReason::Session)),
-        _ => (Ended::Answered, None),
-    };
+    let (ended, not_sent) = core::direct_ended(&reply);
     WriteTry {
         ended,
         reply,
@@ -1425,7 +1581,10 @@ const fn answered(
     }
 }
 
-const fn nowhere(reason: NotSentReason, server_error: Option<ServerError>) -> RoutedReply {
+pub(crate) const fn nowhere(
+    reason: NotSentReason,
+    server_error: Option<ServerError>,
+) -> RoutedReply {
     RoutedReply {
         path: None,
         reply: FeederReply::NotSent,
@@ -1505,3 +1664,41 @@ fn feed_settlement(routed: &RoutedFeed) -> Option<Settlement> {
 #[cfg(test)]
 #[path = "io_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod timing_tests {
+    use super::*;
+
+    /// A step of the wall clock inside a run moves only the wall clock's
+    /// side of the wait: the monotonic side counts from when the run noted
+    /// the attempt, and a new attempt (another wall-clock time) or one the
+    /// run never noted counts from nothing.
+    #[test]
+    fn the_monotonic_wait_counts_only_from_what_this_run_noted() {
+        let key = Uuid::from_u128(1);
+        let mut steady = Steady::new();
+        steady.sync([(key, 1_000)]);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        // The wall clock stepped ten minutes on.
+        let waited = steady.waited(&key, 1_000, 1_000 + 600_000);
+        assert_eq!(waited.wall_ms, 600_000);
+        assert!((20..600_000).contains(&waited.steady_ms), "{waited:?}");
+        assert!(!waited.passed(600_000));
+
+        assert_eq!(steady.waited(&key, 2_000, 602_000).steady_ms, 0);
+        assert_eq!(
+            steady.waited(&Uuid::from_u128(2), 1_000, 601_000).steady_ms,
+            0
+        );
+
+        // Noted again at the same time, it keeps its start; at a new one,
+        // or gone from the book, it starts over or is forgotten.
+        steady.sync([(key, 1_000)]);
+        assert!(steady.waited(&key, 1_000, 1_000).steady_ms >= 20);
+        steady.sync([(key, 5_000)]);
+        assert!(steady.waited(&key, 5_000, 5_000).steady_ms < 20);
+        steady.sync([]);
+        assert!(steady.seen.is_empty());
+    }
+}

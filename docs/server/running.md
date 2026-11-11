@@ -154,7 +154,9 @@ The server announces itself on the home network over mDNS, so the app can list i
 
 ## Reach it from outside
 
-The server speaks plain HTTP. On your home network, reach it directly: set `listen = "0.0.0.0:8080"` and leave `trusted_proxies` empty. From outside, a VPN into your home network needs nothing more. The other way is a reverse proxy that terminates HTTPS, such as Caddy:
+The app and the CLI speak plain `http://` only to this computer or the home network: a loopback, private or link-local address, `localhost`, or a `.local` name, as the [alert webhook](README.md#alert-webhook) does. Any other name takes the server's `https://` address, since a login sends the password and every later call a token that can feed. An address typed into the app with no scheme is `http://` for a home-network host and `https://` for any other. A name only your router resolves (`nas.lan`) counts as off the home network, so use the server's IP address or its `.local` name. Home Assistant asks you to confirm a plain `http://` address instead.
+
+The server speaks plain HTTP. On your home network, reach it directly: set `listen = "0.0.0.0:8080"` and leave `trusted_proxies` empty. From outside, a VPN works over plain HTTP only when it routes your LAN's own addresses, so the phone still reaches the server at a private address such as `192.168.1.20`. A VPN that gives the server an address of its own instead (Tailscale's `100.x` addresses, which are carrier-grade NAT space, or its `*.ts.net` names) counts as off the home network, and the app and the CLI refuse plain `http://` to it. Use `https://` there: Tailscale's own HTTPS, or a reverse proxy that terminates HTTPS, such as Caddy:
 
 ```caddyfile
 feeder.example.org {

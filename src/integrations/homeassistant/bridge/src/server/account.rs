@@ -13,7 +13,7 @@ use uuid::Uuid;
 use wellfed_server_client::api::{
     self as server, Credentials, ErrorCode, FeederId, Hex, NewToken, TokenId,
 };
-use wellfed_server_client::{Auth, Client, Error as CallError, Timeouts, Url};
+use wellfed_server_client::{Auth, Client, Error as CallError, PlainHttp, Timeouts, Url};
 
 use crate::api::{AccountRole, ServerProblem};
 
@@ -193,7 +193,9 @@ pub fn address(url: &str) -> Result<Url, Refused> {
 }
 
 fn setup_client(url: &str, token: Option<&str>) -> Result<Client, Refused> {
-    let client = Client::with_timeouts(&address(url)?, SETUP)?;
+    // The config flow asks the owner before any plain `http://` address
+    // beyond this host, so every address reaching here was confirmed.
+    let client = Client::with_timeouts(&address(url)?, SETUP, PlainHttp::Allowed)?;
     Ok(client.with_auth(token.map(|token| Auth::Token(token.to_owned()))))
 }
 
@@ -205,6 +207,7 @@ fn problem(error: &CallError) -> ServerProblem {
         }
         CallError::Build(_) => ServerProblem::Unreachable,
         CallError::Base(_)
+        | CallError::PlainHttp { .. }
         | CallError::Http(_)
         | CallError::Decode(_)
         | CallError::Unexpected { .. }

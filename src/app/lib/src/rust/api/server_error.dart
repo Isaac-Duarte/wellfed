@@ -124,4 +124,9 @@ enum ServerErrorKind {
   ///
   /// [`close`]: crate::api::server::ServerSession::close
   closed,
+
+  /// The address is plain `http://` to a host off the home network, which
+  /// would carry the password and the phone's token unencrypted. Nothing
+  /// was sent; the server's `https://` address works.
+  plainHttp,
 }

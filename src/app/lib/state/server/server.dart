@@ -22,6 +22,18 @@ enum ServerProblem {
 
   /// It answered something this app does not read.
   other,
+
+  /// The kept address is plain `http://` beyond the home network, which
+  /// this app no longer uses. The token already crossed the network in the
+  /// clear and never expires, so the owner adds the server again by its
+  /// `https://` address and revokes the old token on the server: removing
+  /// the server here only forgets its secret.
+  plainHttp,
+
+  /// This phone's secure storage failed to read the server's token, which
+  /// is still kept: a new start reads it again. Not signed out, so nothing
+  /// asks for a login that would write over it.
+  storage,
 }
 
 /// The owner's server as this phone knows it.
@@ -240,15 +252,18 @@ class HomeServer extends ChangeNotifier {
   /// Read the server's feeders again.
   Future<void> refresh() async {
     final PathRouter? router = _router;
-    if (router == null || _session == null) return;
+    final ServerSession? session = _session;
+    if (router == null || session == null) return;
     final List<ServerFeeder> feeders;
     try {
       feeders = await router.refresh();
     } on ServerError catch (error) {
+      // A read of a session since replaced says nothing of this one.
+      if (_disposed || _session != session) return;
       _failed(error);
       return;
     }
-    if (_disposed) return;
+    if (_disposed || _session != session) return;
 
     final List<ServerFeeder> current = [
       for (final ServerFeeder feeder in feeders)
@@ -317,7 +332,17 @@ class HomeServer extends ChangeNotifier {
   String get _phone => _book.label.isEmpty ? 'Wellfed phone' : _book.label;
 
   Future<void> _restore(KnownServer kept) async {
-    final String? secret = await _ports.secret();
+    final String? secret;
+    try {
+      secret = await _ports.secret();
+    } on Object catch (error) {
+      // The phone's own keys stay closed, as with any server it cannot use.
+      debugPrint('the server token could not be read: $error');
+      if (_disposed) return;
+      _router?.refuseServer();
+      _set(ServerLinked(link: kept.link, feeders: kept.feeders, problem: ServerProblem.storage));
+      return;
+    }
     if (_disposed) return;
     // With no token the phone has no standing on its server, and with a
     // link that does not open it cannot ask: either way the router keeps
@@ -330,9 +355,12 @@ class HomeServer extends ChangeNotifier {
     final ServerSession session;
     try {
       session = _ports.restore(kept.link, secret);
-    } on ServerError {
+    } on ServerError catch (error) {
       _router?.refuseServer();
-      _set(ServerLinked(link: kept.link, feeders: kept.feeders, problem: ServerProblem.other));
+      final ServerProblem problem = error.kind == ServerErrorKind.plainHttp
+          ? ServerProblem.plainHttp
+          : ServerProblem.other;
+      _set(ServerLinked(link: kept.link, feeders: kept.feeders, problem: problem));
       return;
     }
     _session = session;
@@ -350,6 +378,7 @@ class HomeServer extends ChangeNotifier {
           ? await session.account()
           : await router.resumeServer(session: session, cached: _book.server?.account);
     } on ServerError catch (error) {
+      if (_disposed || _session != session) return;
       _failed(error);
       return;
     }

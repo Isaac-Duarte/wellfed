@@ -181,6 +181,9 @@ class AppState extends ChangeNotifier implements FeederBook {
   /// that does not read is set aside ([notice]); only the storage itself
   /// failing, or a file a newer app wrote, throws.
   static Future<AppState> load() async {
+    // Only a read that finds no entry is a first start. A read that fails
+    // throws (the storage never resets on error), so a key the Keystore
+    // could not open this time is never replaced by a new one.
     final String? saved = await secureStorage.read(key: clientSecretName);
     final ClientKey key;
     if (saved == null) {

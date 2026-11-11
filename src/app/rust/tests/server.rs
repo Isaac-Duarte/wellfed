@@ -19,7 +19,7 @@ use wellfed_app_bridge::api::server::{
     CommandKind, NewRefill, ServerConnection, ServerEvent, ServerSession, ServerUpdate, Species,
 };
 use wellfed_app_bridge::api::server_error::ServerErrorKind;
-use wellfed_app_bridge::api::server_views::ServerRole;
+use wellfed_app_bridge::api::server_views::{ServerLink, ServerRole};
 use wellfed_app_bridge::api::session::HistoryBody;
 use wellfed_app_bridge::api::store::{AppStore, KnownServer, ListedFeeder, load_store, save_store};
 use wellfed_server_client::{Auth, Client, Lock};
@@ -508,6 +508,31 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
                 ServerSession::login(address.into(), "ada".into(), "x".into(), "pixel".into())
                     .await;
             assert_eq!(kind(result), Some(ServerErrorKind::Address), "{address}");
+        }
+
+        // Plain http beyond the home network sends nothing: no password, no
+        // token.
+        let link = |url: &str| ServerLink {
+            url: url.into(),
+            user: "ada".into(),
+            token_id: "t".into(),
+        };
+        for address in ["http://feeder.example", "http://203.0.113.4:8080"] {
+            let result =
+                ServerSession::login(address.into(), "ada".into(), "x".into(), "pixel".into())
+                    .await;
+            assert_eq!(kind(result), Some(ServerErrorKind::PlainHttp), "{address}");
+            assert_eq!(
+                kind(ServerSession::restore(link(address), "secret".into())),
+                Some(ServerErrorKind::PlainHttp),
+                "{address}"
+            );
+        }
+        for address in ["http://192.168.1.20:8080", "https://feeder.example"] {
+            assert!(
+                ServerSession::restore(link(address), "secret".into()).is_ok(),
+                "{address}"
+            );
         }
 
         // A port nothing listens on.

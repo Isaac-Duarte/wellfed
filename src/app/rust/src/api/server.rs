@@ -15,10 +15,10 @@ use flutter_rust_bridge::frb;
 use tokio::sync::watch;
 use wellfed_api::{
     Credentials, EventQuery, FoodPatch, IntakeQuery, NewFood, NewPet, NewToken, NewWeight,
-    PageQuery, PetPatch, StreamQuery, TokenId,
+    PageQuery, PetPatch, StreamQuery, TokenId, at_home,
 };
 pub use wellfed_server_client::Timeouts;
-use wellfed_server_client::{Auth, Client, Url};
+use wellfed_server_client::{Auth, Client, PlainHttp, Url};
 
 pub use crate::api::model::{FeedOutcome, FeedReason};
 use crate::api::server_error::{ServerError, ServerErrorKind};
@@ -165,13 +165,16 @@ pub struct ServerSession {
 impl ServerSession {
     /// Log in to the server at `url` as `name`, mint a token for this phone
     /// named `phone` (the phone's name, as feeders list it), and end the
-    /// login: from here the token alone speaks for the phone.
+    /// login: from here the token alone speaks for the phone. A `url` with
+    /// no scheme is `http://` for a host on the home network and `https://`
+    /// for any other, and is kept so.
     pub async fn login(
         url: String,
         name: String,
         password: String,
         phone: String,
     ) -> Result<Self, ServerError> {
+        let url = with_scheme(&url);
         let mut client = open(&url, TIMEOUTS)?;
 
         let user = client.login(&Credentials { name, password }).await?;
@@ -631,7 +634,6 @@ impl ServerHandle {
     }
 }
 
-/// A client of the server at `url`, with no credentials yet.
 /// A client of the server in `link` under the phone token `secret`, for a
 /// catch-up's one read of a feeder's alerts.
 pub(crate) fn alert_client(link: &ServerLink, secret: &str) -> Result<Client, ServerError> {
@@ -639,8 +641,59 @@ pub(crate) fn alert_client(link: &ServerLink, secret: &str) -> Result<Client, Se
     Ok(client.with_auth(Some(Auth::Token(secret.to_owned()))))
 }
 
+/// A client of the server at `url`. Plain `http://` is taken only on this
+/// phone or the home network: a login carries the password, and every call
+/// a token that never expires and can feed, so an address beyond takes
+/// `https://`, with no way around it here.
 fn open(url: &str, timeouts: Timeouts) -> Result<Client, ServerError> {
     let base = Url::parse(url.trim())
         .map_err(|error| ServerError::new(ServerErrorKind::Address, error))?;
-    Ok(Client::with_timeouts(&base, timeouts)?)
+    Ok(Client::with_timeouts(&base, timeouts, PlainHttp::Refused)?)
+}
+
+/// The server's address as the owner typed it, given a scheme if it names
+/// none: `http://` for a host on the home network (an address there, or a
+/// `.local` name), as a server on the LAN usually is, and `https://` for any
+/// other, so a name typed bare never sends the password in the clear.
+pub(crate) fn with_scheme(typed: &str) -> String {
+    let typed = typed.trim();
+    if typed.contains("://") {
+        return typed.to_owned();
+    }
+
+    let plain = format!("http://{typed}");
+    let home = Url::parse(&plain)
+        .ok()
+        .and_then(|url| url.host_str().map(at_home))
+        .unwrap_or(false);
+    if home {
+        plain
+    } else {
+        format!("https://{typed}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_scheme;
+
+    #[test]
+    fn a_bare_address_is_plain_http_only_at_home() {
+        for (typed, full) in [
+            ("192.168.1.20:8080", "http://192.168.1.20:8080"),
+            (" 10.0.0.4 ", "http://10.0.0.4"),
+            ("wellfed.local:8080", "http://wellfed.local:8080"),
+            ("[fd00::4]:8080", "http://[fd00::4]:8080"),
+            ("feeder.example", "https://feeder.example"),
+            (
+                "203.0.113.4:8443/wellfed",
+                "https://203.0.113.4:8443/wellfed",
+            ),
+            ("nas:8080", "https://nas:8080"),
+            ("http://feeder.example", "http://feeder.example"),
+            ("https://192.168.1.20", "https://192.168.1.20"),
+        ] {
+            assert_eq!(with_scheme(typed), full, "{typed}");
+        }
+    }
 }

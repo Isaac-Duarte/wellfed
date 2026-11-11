@@ -31,6 +31,8 @@ With a server configured, the app reaches a feeder two ways, and one rule keeps 
 
 **The app's half.** The app sends each write once and its retry only reads. The server dedups a key only while its journal holds it. It holds none for a write it never recorded: a lost `feeder_offline` answer, a failure before the insert, or a request that never arrived. Resending such a key after another feed would feed again. So the app reads `GET /api/v1/commands/{key}`. A `404` leaves the write uncertain, however old it is. Restoring a server backup can lose a completed write while keeping the same account and phone token. A new feed stays on hold until you check the bowl and put the uncertain write away.
 
+A lost adoption has its own ten-minute wait. Both its wall-clock age and the monotonic time since this run first knew of the attempt must reach that wait, so a clock step or restart cannot shorten it. That wait never settles a missing command entry.
+
 One answer is certain the other way: `503 feeder_offline` means the server's feeder task never took the write and dropped its journal entry. The write ran nowhere, so the app sends it on the phone's own session.
 
 **Phone keys.** The second path costs a client slot per phone. A feeder has 8: the server, the CLI and up to six phones. A phone that paired before the server existed claims its key on the server, which records it as that account's key, so deleting, demoting or expiring the account revokes it, like an invited key. Claim rules are in [server design](design.md#phone-keys).
