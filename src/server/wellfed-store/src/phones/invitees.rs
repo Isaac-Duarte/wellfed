@@ -7,8 +7,10 @@
 //! `invited` event). The server records such a key under the account and
 //! token of the phone key that invited it, and remembers that key, so
 //! revoking the inviter however it is revoked (the account deleted, demoted
-//! or given an expiry, the token revoked or replaced, or the key revoked by
-//! an owner) revokes the keys it invited, and theirs in turn.
+//! or given an expiry, the token revoked, or the key revoked by an owner)
+//! revokes the keys it invited, and theirs in turn. A token's key replaced
+//! by a new one hands its invitees to the new key instead, and an owner who
+//! keeps an invitee takes it out of all of this.
 //!
 //! The prefixes are long enough that no one can grind a key sharing one,
 //! so a join is never pinned on another phone; were two keys ever to share
@@ -27,7 +29,7 @@ use crate::projections::Place;
 use crate::{Error, Result, Store};
 
 /// How many of a key's first bytes an `invited` event names it by.
-pub(crate) const PREFIX: usize = 7;
+pub(super) const PREFIX: usize = 7;
 
 /// A join through an invite that a feeder reported and the server has not
 /// attributed yet.

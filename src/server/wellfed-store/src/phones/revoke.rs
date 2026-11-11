@@ -12,6 +12,9 @@ use crate::{Error, Result, Store};
 impl Store {
     /// Mark `whose` phone keys for revocation, those not already marked,
     /// and the keys they invited; the feeders that hold any key so marked.
+    /// A replacement is the one exception: the token's new key takes over
+    /// the old keys' invitees, which stay, and only the token's own keys
+    /// (not keys they invited) are marked.
     pub async fn revoke_phones(
         &self,
         whose: Whose,
@@ -30,6 +33,30 @@ impl Store {
             } => (None, Some(token.0), Some(feeder.0), Some(keep.to_vec())),
         };
         let mut tx = self.writer.begin().await?;
+        if let Whose::Replaced {
+            feeder,
+            token,
+            keep,
+        } = whose
+        {
+            let new = &keep[..invitees::PREFIX];
+            let keep = keep.as_slice();
+            sqlx::query!(
+                "UPDATE phone_keys SET invited_by = ?1
+                 WHERE feeder_id = ?2 AND revoke IS NULL AND invited_by IN (
+                     SELECT substr(key, 1, 7) FROM phone_keys
+                     WHERE feeder_id = ?2 AND token_id = ?3 AND key != ?4
+                       AND revoke IS NULL AND invited_by IS NULL)",
+                new,
+                feeder.0,
+                token.0,
+                keep,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+        // A replacement (the one whose `feeder` is set) marks the token's
+        // own keys alone: their invitees moved to the new key above.
         let rows = sqlx::query!(
             r#"UPDATE phone_keys SET revoke = ?1, revoke_ms = ?2
                WHERE revoke IS NULL
@@ -37,6 +64,7 @@ impl Store {
                  AND (?4 IS NULL OR token_id = ?4)
                  AND (?5 IS NULL OR feeder_id = ?5)
                  AND (?6 IS NULL OR key != ?6)
+                 AND (?5 IS NULL OR invited_by IS NULL)
                  AND (?3 IS NOT NULL OR ?4 IS NOT NULL)
                RETURNING feeder_id AS "feeder_id: Uuid""#,
             reason,

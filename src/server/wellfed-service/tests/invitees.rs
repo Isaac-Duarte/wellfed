@@ -202,3 +202,30 @@ fn a_kept_invitee_is_detached_from_its_inviter() {
         sim.stop().await;
     });
 }
+
+/// A member's phone that gets a new key keeps the keys its old one
+/// invited: they move to the new key, so revoking that one takes them.
+#[test]
+fn a_replaced_keys_invitees_move_to_the_new_key() {
+    local(async {
+        let (sim, server, id) = started().await;
+        let service = server.service();
+        let (ada, bob) = ada_and_bob(service).await;
+        join(service, &sim, id, &bob, 20).await;
+        invite_directly(&sim, 20, 21).await;
+        attributed(service, id, &bob, 21).await;
+
+        join(service, &sim, id, &bob, 22).await;
+        revoked(service, &sim, &[20]).await;
+        assert!(feeder::client_keys(&sim).await.contains(&key(21)));
+        attributed(service, id, &bob, 21).await;
+
+        service
+            .revoke_client(&ada, id, key(22), None)
+            .await
+            .unwrap();
+        revoked(service, &sim, &[22, 21]).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}

@@ -48,7 +48,8 @@ impl Service {
     /// `request.key` on the LAN. Only a phone's token gets one, for an
     /// owner's or member's account with no expiry on it or the token; the
     /// phone joins with its account's role. One key per token: once the
-    /// invite is made, the token's other key on the feeder is revoked.
+    /// invite is made, the token's other key on the feeder is revoked, and
+    /// the keys that one invited move to the new key.
     ///
     /// The key is recorded before the invite is asked for. The invite is
     /// never resent: its secret is not kept, so a caller that lost the
