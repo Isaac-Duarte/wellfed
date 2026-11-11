@@ -41,6 +41,10 @@ pub enum HookError {
         caller: String,
         legacy: &'static str,
     },
+    /// A literal word holding a legacy entry's address, which an indirect
+    /// call could reach it through.
+    #[error("SDK code holds a pointer to a legacy hook: {owner} -> {legacy}")]
+    Pointer { owner: String, legacy: &'static str },
     #[error("Missing visible wrapper route to legacy hook")]
     NoRoute,
     #[error("SDK hook function is outside application RAM: {name}")]
@@ -182,11 +186,22 @@ pub fn verify_ipc_table(
 /// Each legacy entry's routes.
 pub type Routes = BTreeMap<&'static str, Vec<Route>>;
 
-/// Every direct transfer to a legacy entry, conditional or not, which must
-/// come from its public wrapper.
-pub fn legacy_routes(disassembly: &str) -> Result<Routes> {
+/// Every direct transfer to a legacy entry, which must come from its public
+/// wrapper: under any condition, width or offset, and through the linker's
+/// `__<entry>_veneer`, which reaches the entry for its caller. A literal
+/// word holding an entry's address (Thumb bit set or not) is a pointer an
+/// indirect call could use, so only the entry's own veneer, whose body is
+/// that word, may hold one. `names` gives the entries' addresses.
+pub fn legacy_routes(disassembly: &str, names: &BTreeMap<String, Symbol>) -> Result<Routes> {
     let expected: BTreeMap<&'static str, &'static str> =
         RENAMES.iter().map(|(p, l)| (*l, *p)).collect();
+    let mut addresses = BTreeMap::new();
+    for legacy in expected.keys() {
+        let symbol = names.get(*legacy).ok_or(HookError::Missing {
+            names: vec![*legacy],
+        })?;
+        addresses.insert(symbol.address & !1, *legacy);
+    }
     let mut routes: Routes = expected.keys().map(|l| (*l, Vec::new())).collect();
     let mut owner: Option<String> = None;
 
@@ -198,17 +213,33 @@ pub fn legacy_routes(disassembly: &str) -> Result<Routes> {
         let Some(m) = INSTRUCTION.captures(line) else {
             continue;
         };
+        let caller = owner.as_deref().unwrap_or("None");
+
+        if &m[2] == ".word" {
+            let value = m[3].trim();
+            let value = parse_hex(value.strip_prefix("0x").unwrap_or(value))?;
+            if let Some(legacy) = addresses.get(&(value & !1)) {
+                require(caller == veneer(legacy), || HookError::Pointer {
+                    owner: caller.into(),
+                    legacy,
+                })?;
+            }
+            continue;
+        }
         if !DIRECT_TRANSFER.is_match(&m[2]) {
             continue;
         }
         let Some(target) = BRANCH_TARGET.captures(&m[3]) else {
             continue;
         };
-        let Some((legacy, public)) = expected.get_key_value(&target[1]) else {
+        let name = target[1]
+            .strip_prefix("__")
+            .and_then(|name| name.strip_suffix("_veneer"))
+            .unwrap_or(&target[1]);
+        let Some((legacy, public)) = expected.get_key_value(name) else {
             continue;
         };
 
-        let caller = owner.as_deref().unwrap_or("None");
         require(caller == *public, || HookError::Bypass {
             caller: caller.into(),
             legacy,
@@ -225,6 +256,12 @@ pub fn legacy_routes(disassembly: &str) -> Result<Routes> {
         HookError::NoRoute
     })?;
     Ok(routes)
+}
+
+/// The linker's veneer for `legacy`: a long branch whose literal is the
+/// entry's address.
+fn veneer(legacy: &str) -> String {
+    format!("__{legacy}_veneer")
 }
 
 /// `objects` maps KM0/KM4 to the linked Rust archive containing this code.
@@ -256,7 +293,7 @@ pub(crate) fn audit(sdk: &Path, binutils: &Binutils, objects: &Archives) -> Resu
             &["-d", "-j", ".ram_image2.text", "-j", ".xip_image2.text"],
             &elf,
         )?;
-        let routes = legacy_routes(&listing)?;
+        let routes = legacy_routes(&listing, &names)?;
 
         let archive = archive_record(core, &elf, objects, sdk)?;
         images.insert(
@@ -278,8 +315,12 @@ pub(crate) fn audit(sdk: &Path, binutils: &Binutils, objects: &Archives) -> Resu
         protocol_installed: false,
         global_exclusion_proven: false,
         scope: "Public SDK hooks and IPC table route through RAM interposer; \
-                legacy entry branches originate only in that interposer. \
-                Indirect callers, provider implementation and global exclusion are unproven."
+                every direct transfer to a legacy entry, under any condition, width or offset \
+                or through its linker veneer, originates only in that interposer, and no \
+                literal word in the scanned text holds a legacy entry's address but its veneer's. \
+                Register-indirect transfers (blx rN, bx rN, ldr pc, mov pc, pop {pc}, tbb, tbh) \
+                and data tables outside the scanned text are beyond a listing scan; \
+                provider implementation and global exclusion are unproven."
             .into(),
     })
 }
@@ -316,6 +357,79 @@ mod tests {
         }
     }
 
+    /// The legacy entries at the addresses the synthetic listings branch to.
+    fn names() -> BTreeMap<String, Symbol> {
+        [
+            ("wellfed_sdk_flash_legacy_lock", 0x1000_0100),
+            ("wellfed_sdk_flash_legacy_unlock", 0x1000_0200),
+            ("wellfed_sdk_flash_legacy_ipc", 0x1000_0300),
+        ]
+        .into_iter()
+        .map(|(name, address)| {
+            let symbol = Symbol {
+                address,
+                bytes: 16,
+                kind: "F".into(),
+                section: ".ram_image2.text".into(),
+            };
+            (name.to_owned(), symbol)
+        })
+        .collect()
+    }
+
+    /// The linker's veneer reaches the entry for its caller, so a transfer
+    /// to it needs the wrapper too; and a literal word holding an entry's
+    /// address is a pointer only the entry's own veneer may hold.
+    #[test]
+    fn a_veneer_or_a_literal_pointer_to_a_legacy_entry_needs_its_wrapper() {
+        let rest = "10000010 <FLASH_Write_Unlock>:\n 10000010:\tf000 f800 \tbl\t10000200 <wellfed_sdk_flash_legacy_unlock>\n\
+                    10000020 <FLASH_Write_IPC_Int>:\n 10000020:\tf000 b800 \tb.w\t10000300 <wellfed_sdk_flash_legacy_ipc>\n";
+        let veneer = "20000000 <__wellfed_sdk_flash_legacy_lock_veneer>:\n \
+                      20000000:\tf85f f000 \tldr.w\tpc, [pc, #-0]\n \
+                      20000004:\t10000101 \t.word\t0x10000101\n";
+        let call = |caller: &str| {
+            format!(
+                "10000000 <{caller}>:\n 10000000:\tf000 f800 \tbl\t20000000 <__wellfed_sdk_flash_legacy_lock_veneer>\n"
+            )
+        };
+
+        let routes = legacy_routes(
+            &format!("{}{rest}{veneer}", call("FLASH_Write_Lock")),
+            &names(),
+        )
+        .unwrap();
+        assert_eq!(
+            routes["wellfed_sdk_flash_legacy_lock"][0].caller,
+            "FLASH_Write_Lock"
+        );
+        let error = legacy_routes(
+            &format!(
+                "{}{}{rest}{veneer}",
+                call("FLASH_Write_Lock"),
+                call("unmediated_sdk_caller")
+            ),
+            &names(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == "unmediated_sdk_caller"),
+            "{error}"
+        );
+
+        for word in ["0x10000101", "0x10000100", "0x10000301"] {
+            let pointer = format!(
+                "{}{rest}30000000 <unmediated_sdk_caller>:\n 30000000:\t4b01 \tldr\tr3, [pc, #4]\n \
+                 30000008:\t10000101 \t.word\t{word}\n",
+                call("FLASH_Write_Lock")
+            );
+            let error = legacy_routes(&format!("{pointer}{veneer}"), &names()).unwrap_err();
+            assert!(
+                matches!(&error, Error::Hooks(HookError::Pointer { owner, .. }) if owner == "unmediated_sdk_caller"),
+                "{word}: {error}"
+            );
+        }
+    }
+
     /// Each direct transfer shape, under every condition and width, from an
     /// unrelated caller is a bypass; from the wrapper it is a route.
     #[test]
@@ -345,14 +459,18 @@ mod tests {
         }
 
         for (mnemonic, operands) in &shapes {
-            let routes = legacy_routes(&wrapped("FLASH_Write_Lock", mnemonic, operands)).unwrap();
+            let routes =
+                legacy_routes(&wrapped("FLASH_Write_Lock", mnemonic, operands), &names()).unwrap();
             assert_eq!(
                 routes["wellfed_sdk_flash_legacy_lock"][0].caller, "FLASH_Write_Lock",
                 "{mnemonic}"
             );
 
-            let error =
-                legacy_routes(&wrapped("unmediated_sdk_caller", mnemonic, operands)).unwrap_err();
+            let error = legacy_routes(
+                &wrapped("unmediated_sdk_caller", mnemonic, operands),
+                &names(),
+            )
+            .unwrap_err();
             assert!(
                 matches!(
                     &error,
@@ -367,16 +485,19 @@ mod tests {
             "10000000 <unmediated_sdk_caller>:\n 10000000:\tf000 f800 \tbl\t10000104 <wellfed_sdk_flash_legacy_lock+0x4>\n{}",
             wrapped("FLASH_Write_Lock", "bl", target)
         );
-        let error = legacy_routes(&inside).unwrap_err();
+        let error = legacy_routes(&inside, &names()).unwrap_err();
         assert!(
             matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == "unmediated_sdk_caller"),
             "{error}"
         );
-        let routes = legacy_routes(&wrapped(
-            "FLASH_Write_Lock",
-            "b.w",
-            "10000108 <wellfed_sdk_flash_legacy_lock+0x8>",
-        ))
+        let routes = legacy_routes(
+            &wrapped(
+                "FLASH_Write_Lock",
+                "b.w",
+                "10000108 <wellfed_sdk_flash_legacy_lock+0x8>",
+            ),
+            &names(),
+        )
         .unwrap();
         assert_eq!(routes["wellfed_sdk_flash_legacy_lock"].len(), 1);
 
@@ -390,7 +511,7 @@ mod tests {
         let wrapped = "10000000 <FLASH_Write_Lock>:\n 10000000:\tf000 f800 \tbl\t10000100 <wellfed_sdk_flash_legacy_lock>\n\
                        10000010 <FLASH_Write_Unlock>:\n 10000010:\tf000 f800 \tbl\t10000200 <wellfed_sdk_flash_legacy_unlock>\n\
                        10000020 <FLASH_Write_IPC_Int>:\n 10000020:\tf000 b800 \tb.w\t10000300 <wellfed_sdk_flash_legacy_ipc>\n";
-        let routes = legacy_routes(wrapped).unwrap();
+        let routes = legacy_routes(wrapped, &names()).unwrap();
         assert_eq!(
             routes["wellfed_sdk_flash_legacy_ipc"][0].caller,
             "FLASH_Write_IPC_Int"
@@ -399,7 +520,7 @@ mod tests {
         let bypass = format!(
             "{wrapped}00000000 <unmediated_sdk_caller>:\n 0:\tf000 f800 \tbl\t10000100 <wellfed_sdk_flash_legacy_lock>\n"
         );
-        let error = legacy_routes(&bypass).unwrap_err();
+        let error = legacy_routes(&bypass, &names()).unwrap_err();
         assert!(
             matches!(
                 &error,
