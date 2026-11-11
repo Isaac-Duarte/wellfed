@@ -137,7 +137,15 @@ Version 1 (`PLOTA1`) is deleted: an offer carrying its magic is refused as the w
 
 The bench key enrolls the same way, so a feeder whose image embeds no key still takes the updates `wellfed-bench ota` signs. An owner's key signs manifests and downgrade statements, which the firmware checks against every trusted key. It never signs a key statement, and no image embeds it: `wellfed-build revoke`, `add-key` and the build itself refuse it. The client side is `wellfed_client::update_key`, which the installer reuses.
 
-A `PLREV1` statement retires any key id for good. Built-in keys and the release slot's key sign key statements, so retiring the bench key leaves rotation to the release key; a retired key signs nothing. The bench key stays in `private/ota-key.json`, for the bench only. The release key is made offline with `wellfed-build release-keygen` and never enters a checkout; consumer images build in its public half ([the release key](../development/firmware-builds.md#the-release-key)).
+A `PLREV1` statement retires any key id for good. Built-in keys and the release slot's key sign key statements, so retiring the bench key leaves rotation to the release key; a retired key signs nothing, and no key signs its own retirement.
+
+**Rotating the release key.** The slot holds one live key, and filling it again is refused while that key is live (`Occupied`). Once the slot's key `R1` is the only one left that signs statements, statements alone can't replace it: `R1` adding `R2` finds the slot taken, and `R1` retiring itself would leave no key to sign the add. The rotation goes through a build:
+
+1. Build the consumer image with `R2`'s public half as its release key, and sign it with `R1`: `wellfed-build sign --key <R1> --hand-over-to <R2's public key>`. The feeder takes it through the slot.
+2. Running it, `R2` is built in. It signs `revoke` for `R1`, then `add-key` for itself, in that order.
+3. Bank 0 still builds in the key it was written with, and now finds `R2` in the slot, so it takes `R2`'s next offer and no longer `R1`'s.
+
+The first rotation, from a built-in key with an empty slot, needs no build: the built-in key adds `R1`, then `R1` retires it. The bench key stays in `private/ota-key.json`, for the bench only. The release key is made offline with `wellfed-build release-keygen` and never enters a checkout; consumer images build in its public half ([the release key](../development/firmware-builds.md#the-release-key)).
 
 **The floor** (`min_version`) is the highest version a build confirmed at.
 

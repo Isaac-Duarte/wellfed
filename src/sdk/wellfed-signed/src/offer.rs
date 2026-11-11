@@ -210,8 +210,11 @@ impl KeyRing<'_> {
 
     /// The key with `id` that may sign key statements: a built-in key, or
     /// the release slot's (which only a built-in key's statement fills), so
-    /// retiring the bench key never freezes rotation. An owner's enrolled
-    /// key signs offers only, and a retired key signs nothing.
+    /// the slot's key can retire the built-in key and still sign. The slot
+    /// holds one live key, so statements alone never replace the last
+    /// signer: a build that builds in its successor does, which then
+    /// retires it and fills the slot with itself. An owner's enrolled key
+    /// signs offers only, and a retired key signs nothing.
     fn statement_signer(&self, id: &KeyId) -> Result<[u8; 32], KeyError> {
         if self.revoked(id) {
             return Err(KeyError::Revoked);

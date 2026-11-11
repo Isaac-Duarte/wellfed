@@ -113,11 +113,12 @@ pub enum FrozenError {
     /// A test variant, which never ships, offered to the release key.
     #[error("The release key signs no variant build ({variant})")]
     ReleaseVariant { variant: String },
-    /// A build that does not keep the release key built in: once installed,
-    /// the feeder would trust another key instead.
-    #[error("The release key {signer} is not the build's built-in key ({built_in:?})")]
-    ReleaseNotBuiltIn {
-        signer: String,
+    /// A build for the release key that builds in another key than the
+    /// one expected: once installed, the feeder would trust that key
+    /// instead.
+    #[error("The build builds in key {built_in:?}, not {expected}")]
+    OtherBuiltIn {
+        expected: String,
         built_in: Option<String>,
     },
     /// The build names a device no model has.

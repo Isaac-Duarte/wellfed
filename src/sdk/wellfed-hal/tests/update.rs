@@ -22,7 +22,9 @@ use wellfed_core::ota::install::{
 };
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
-use wellfed_core::store::update::{Bank0, Candidate, State, UpdateStatus, UpdateStore};
+use wellfed_core::store::update::{
+    Bank0, Candidate, State, UpdateError, UpdateStatus, UpdateStore,
+};
 use wellfed_hal::flash::park::{self, Mmio};
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::{self, Arming, Event, Hooks, Poll, UPDATE_BIT};
@@ -1204,6 +1206,123 @@ fn a_retired_key_signs_nothing_more() {
         rig.offer(&manifest(3, &image(LEN)), None),
         Err(Refused::Offer(OfferError::Key(KeyError::Revoked)))
     );
+}
+
+/// Release-key rotation through the statement path, booting between steps:
+/// `b` is the key bank 0 builds in, and the release slot's key `r1`, which
+/// `b` added, has retired it. A booted stage whose build builds in `key`.
+fn rotation() -> (SigningKey, SigningKey, SigningKey) {
+    let (b, r1, r2) = (
+        bench(),
+        SigningKey::from_bytes(&[0x51; 32]),
+        SigningKey::from_bytes(&[0x52; 32]),
+    );
+    let answer = boot(&b).ask(key_add(&b, &r1));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Add(public(&r1)))));
+    let answer = boot(&b).ask(key_revoke(&r1, &b));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Revoke(id(&b)))));
+    (b, r1, r2)
+}
+
+fn boot(built_in: &SigningKey) -> Rig {
+    mailbox::reset();
+    INTERLOCK.reset();
+    Rig::new(0, Some(public(built_in)))
+}
+
+fn public(key: &SigningKey) -> [u8; 32] {
+    key.verifying_key().to_bytes()
+}
+
+fn id(key: &SigningKey) -> [u8; 8] {
+    key_id(&public(key))
+}
+
+fn statement_by(signer: &SigningKey, body: &[u8]) -> Request {
+    let mut statement = body.to_vec();
+    statement.extend_from_slice(&signer.sign(body).to_bytes());
+    Request::statement(&statement).unwrap()
+}
+
+fn key_add(signer: &SigningKey, added: &SigningKey) -> Request {
+    statement_by(signer, &offer::key_add_body(&id(signer), &public(added)))
+}
+
+fn key_revoke(signer: &SigningKey, retired: &SigningKey) -> Request {
+    statement_by(signer, &offer::revoke_body(&id(signer), &id(retired)))
+}
+
+/// Once the slot's key is the only one left that signs statements, no
+/// order of statements alone replaces it: adding the successor finds the
+/// slot taken, and a key that retires itself leaves no key to sign the
+/// add. The signer writes no such retirement; this pins why.
+#[test]
+fn statements_alone_do_not_replace_the_last_statement_signer() {
+    let _guard = start(0);
+    let (b, r1, r2) = rotation();
+
+    assert_eq!(
+        boot(&b).ask(key_add(&r1, &r2)),
+        Err(Refused::Store(UpdateError::Occupied))
+    );
+
+    let answer = boot(&b).ask(key_revoke(&r1, &r1));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Revoke(id(&r1)))));
+    for signer in [&r1, &b] {
+        assert_eq!(
+            boot(&b).ask(key_add(signer, &r2)),
+            Err(Refused::Statement(StatementError::Key(KeyError::Revoked)))
+        );
+    }
+    assert_eq!(store().record().added_key(), None);
+}
+
+/// The supported rotation: the slot's key signs a build that builds in the
+/// successor. Running that build, the successor retires the old key and
+/// then fills the slot with itself, so bank 0, which builds in the first
+/// key, takes the successor's offers and no longer the old key's.
+#[test]
+fn a_release_key_rotates_through_a_build_that_builds_in_its_successor() {
+    let _guard = start(0);
+    let (b, r1, r2) = rotation();
+    let payload = image(LEN);
+    let handover = manifest_for(&r1, 3, &payload, 0x33, ImageKind::Replacement);
+    let admitted = offer::admit_offer(
+        &handover,
+        None,
+        &offer::Context {
+            ring: offer::KeyRing {
+                built_in: &[public(&b)],
+                added: store().record().added_key(),
+                enrolled: &[],
+                revoked: store().record().revoked(),
+            },
+            floor: 0,
+            device: DEVICE,
+            running: None,
+            model: MODEL,
+        },
+    );
+    assert_eq!(admitted.map(|a| a.trust), Ok(offer::Trust::Added));
+
+    // The handed-over build runs, with the successor built in.
+    let answer = boot(&r2).ask(key_revoke(&r2, &r1));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Revoke(id(&r1)))));
+    let answer = boot(&r2).ask(key_add(&r2, &r2));
+    assert_eq!(answer, Ok(Answer::Key(KeyStatement::Add(public(&r2)))));
+    assert_eq!(store().record().added_key(), Some(public(&r2)));
+
+    // Bank 0 still builds in the first key.
+    let mut bank0 = boot(&b);
+    for retired in [&r1, &b] {
+        let signed = manifest_for(retired, 4, &payload, 0x44, ImageKind::Replacement);
+        assert_eq!(
+            bank0.offer(&signed, None),
+            Err(Refused::Offer(OfferError::Key(KeyError::Revoked)))
+        );
+    }
+    let signed = manifest_for(&r2, 4, &payload, 0x44, ImageKind::Replacement);
+    assert_eq!(progress(bank0.offer(&signed, None)).phase, Phase::Receiving);
 }
 
 #[test]
