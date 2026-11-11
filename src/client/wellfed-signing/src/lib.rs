@@ -23,8 +23,10 @@
 //! ([`KeyScope::Owner`]), which a feeder trusts only once the owner has
 //! enrolled it there with a Dispense press, or the project release key
 //! ([`KeyScope::Release`]), whose public half consumer builds embed from
-//! `private/release-key.pub.json`. All three are the same file and sign the
-//! same manifests. The release key is written once onto offline media by
+//! `private/release-key.pub.json`. All three are the same file, but the
+//! release key signs only a consumer build with no variant that builds it
+//! back in, since every consumer feeder trusts it. The release key is
+//! written once onto offline media by
 //! [`release_keygen`], never into a checkout, and is loaded from there only
 //! to sign.
 //!
@@ -49,7 +51,7 @@ use wellfed_signed::offer::{self, ImageKind as OfferKind, KeyId, Signed};
 use wellfed_formats::bench::VERIFICATION;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::credentials::{KeyScope, OtaKeyFile};
-use wellfed_formats::manifest::BuildManifest;
+use wellfed_formats::manifest::{BuildManifest, Provisioning};
 use wellfed_formats::private::{SYSTEM_RANDOM, random, write_new_whole};
 use wellfed_formats::require;
 use wellfed_formats::review::ImageKind;
@@ -188,6 +190,21 @@ impl Key {
         })
     }
 
+    /// Load a release-scope key from offline media, refusing a file inside
+    /// a Git working tree as `release_keygen` refuses to write one there,
+    /// or any other scope. A bench stand-in made with `keygen` in a
+    /// checkout's `private/` fails both: it is never a release key's
+    /// successor.
+    pub fn load_release(path: &Path) -> Result<Self> {
+        release::require_outside_checkout(path)?;
+        let key = Self::load(path)?;
+        require(key.scope == KeyScope::Release, || KeyError::NotRelease {
+            path: path.to_path_buf(),
+            scope: key.scope,
+        })?;
+        Ok(key)
+    }
+
     /// The public half, as the firmware embeds it or an owner enrolls it.
     pub fn public(&self) -> [u8; 32] {
         self.key.verifying_key().to_bytes()
@@ -223,15 +240,34 @@ impl Key {
     /// A key statement retiring `id` for good. Only a key an image builds
     /// in signs one, the bench or the release key: a feeder refuses an
     /// owner's, so one is never written.
+    ///
+    /// A key never signs its own retirement. Where another key may still
+    /// sign statements, that key signs it; where none may, the feeder would
+    /// be left with no key that can sign one, and on a consumer feeder
+    /// with no key for releases either. The statement names no feeder, so
+    /// its bytes would do the same to every feeder they reach.
     pub fn revoke(&self, id: &KeyId) -> Result<Vec<u8>> {
         self.require_built_in(KeyError::OwnerRevoke)?;
+        require(*id != self.id(), || KeyError::SelfRevoke)?;
         Ok(self.signed(&offer::revoke_body(&self.id(), id)))
     }
 
     /// A key statement filling the release slot with `public`, signed only
     /// by a key an image builds in, as for [`Self::revoke`].
+    ///
+    /// The release key adds only itself. Every consumer feeder trusts it,
+    /// and the statement names no feeder, so adding another key would put
+    /// that key in the empty slot of every consumer feeder the bytes reach.
+    /// A new release key arrives in a build that builds it in, which then
+    /// adds itself ([`Frozen::hand_over`]).
     pub fn add_key(&self, public: &[u8; 32]) -> Result<Vec<u8>> {
         self.require_built_in(KeyError::OwnerAddKey)?;
+        require(
+            self.scope != KeyScope::Release || *public == self.public(),
+            || KeyError::ReleaseAddsOther {
+                added: hex::Lower(&offer::key_id(public)).to_string(),
+            },
+        )?;
         Ok(self.signed(&offer::key_add_body(&self.id(), public)))
     }
 
@@ -304,6 +340,10 @@ impl Frozen {
     /// Refuse a `manifest` an installer could not rely on for this image.
     /// An installer carries its manifest from before the feeder has any
     /// enrolled key to trust, so only the image's built-in key can sign it.
+    /// The firmware's own admission then checks it against that key alone
+    /// (the signature, the model, the bank and the size bound), and it must
+    /// name this image's kind and length: the feeder finds a bad manifest
+    /// only at promotion, after the install's earlier steps ran.
     pub fn require_installable(&self, manifest: &[u8]) -> Result<()> {
         self.require_same_image(manifest)?;
 
@@ -312,8 +352,38 @@ impl Frozen {
             .as_ref()
             .and_then(|manifest| manifest.ota_public_key.as_deref())
             .ok_or(FrozenError::NoBuiltInKey)?;
+        require_built_in_signer(built_in, &self.build_id, manifest)?;
 
-        require_built_in_signer(built_in, &self.build_id, manifest)
+        let keys = [id_bytes(built_in)?];
+        let context = offer::Context {
+            ring: offer::KeyRing {
+                built_in: &keys,
+                added: None,
+                enrolled: &[],
+                revoked: &[],
+            },
+            floor: 0,
+            device: [0; 32],
+            running: None,
+            model: self.model()?.code(),
+        };
+        let admitted = offer::admit_offer(manifest, None, &context)
+            .map_err(|error| FrozenError::NotAdmitted { error })?;
+        let signed = admitted.signed;
+        require(signed.kind == OfferKind::Replacement, || {
+            FrozenError::OtherKind
+        })?;
+        let length = self.payload().len();
+        require(
+            usize::try_from(signed.manifest.image_len).is_ok_and(|bytes| bytes == length),
+            || {
+                FrozenError::OtherLength {
+                    manifest: signed.manifest.image_len,
+                    image: length,
+                }
+                .into()
+            },
+        )
     }
 
     /// Refuse a `manifest` signed over other bytes than this review's image.
@@ -407,13 +477,55 @@ impl Frozen {
     }
 
     /// Sign this image as `version` for the device API: a version 2
-    /// manifest naming `key` and the image's kind.
+    /// manifest naming `key` and the image's kind. The release key signs
+    /// only a consumer build that builds it back in.
     pub fn offer(
         &self,
         key: &Key,
         version: u32,
         motion: Motion,
     ) -> Result<[u8; offer::MANIFEST_LEN]> {
+        if key.scope() == KeyScope::Release {
+            self.require_release_build(&key.public())?;
+        }
+        self.sign(key, version, motion)
+    }
+
+    /// Sign with the release key `key`, as [`Self::offer`] does, the
+    /// consumer build that builds in `successor`, another release key,
+    /// instead: how a feeder moves from one release key to the next. Its
+    /// release slot takes one live key, and a key that signs key statements
+    /// is a built-in key or the slot's, so no order of statements alone
+    /// replaces the last one. Running this build, the successor is built
+    /// in: it retires the old key and then fills the slot with itself, so
+    /// bank 0, which keeps the key it was written with, trusts it too.
+    ///
+    /// The successor is a loaded key, never a typed public key, so the
+    /// build can only hand feeders to a release key someone holds; load it
+    /// with [`Key::load_release`].
+    pub fn hand_over(
+        &self,
+        key: &Key,
+        version: u32,
+        motion: Motion,
+        successor: &Key,
+    ) -> Result<[u8; offer::MANIFEST_LEN]> {
+        require(
+            key.scope == KeyScope::Release && successor.scope == KeyScope::Release,
+            || FrozenError::HandOverScope {
+                signer: key.scope,
+                successor: successor.scope,
+            },
+        )?;
+        require(successor.public() != key.public(), || {
+            FrozenError::HandOverToSelf
+        })?;
+        require(self.manifest.is_some(), || FrozenError::NoBuiltInKey)?;
+        self.require_release_build(&successor.public())?;
+        self.sign(key, version, motion)
+    }
+
+    fn sign(&self, key: &Key, version: u32, motion: Motion) -> Result<[u8; offer::MANIFEST_LEN]> {
         self.attended(motion)?;
         let kind = match self.kind {
             ImageKind::Build => OfferKind::Replacement,
@@ -437,6 +549,46 @@ impl Frozen {
     /// container's header.
     pub fn payload(&self) -> &[u8] {
         self.image.get(CONTAINER_HEADER..).unwrap_or_default()
+    }
+
+    /// Refuse a build the release key should not sign. Each consumer
+    /// feeder trusts the release key, and the image it installs then trusts
+    /// only its own built-in key; so the release key signs only a consumer
+    /// build with no variant (a test build) that builds in `built_in`,
+    /// itself or its named successor. A bench image would hand the feeder
+    /// to the bench key, whose seed lives in checkouts, and carries the
+    /// bench hotspot's credentials. The bench key and an owner's key sign
+    /// any build: a feeder takes those only where it built the bench key
+    /// in or enrolled the key with a Dispense press. Stock has no
+    /// provisioning, and a feeder takes it only with a downgrade statement
+    /// made for that feeder.
+    fn require_release_build(&self, built_in: &[u8; 32]) -> Result<()> {
+        let Some(manifest) = &self.manifest else {
+            return Ok(());
+        };
+
+        require(manifest.provisioning == Provisioning::Consumer, || {
+            FrozenError::ReleaseProvisioning {
+                provisioning: manifest.provisioning,
+            }
+        })?;
+        if let Some(variant) = &manifest.variant {
+            return Err(FrozenError::ReleaseVariant {
+                variant: variant.clone(),
+            }
+            .into());
+        }
+        let builds_in = manifest
+            .ota_public_key
+            .as_deref()
+            .and_then(|text| hex::decode_array_either_case::<32>(text.as_bytes()));
+        require(builds_in == Some(*built_in), || {
+            FrozenError::OtherBuiltIn {
+                expected: hex::Lower(built_in).to_string(),
+                built_in: manifest.ota_public_key.clone(),
+            }
+            .into()
+        })
     }
 
     fn attended(&self, motion: Motion) -> Result<()> {
@@ -545,11 +697,21 @@ mod tests {
     /// A checkout with `private/`, and a frozen build review of `image`
     /// in it.
     fn freeze(image: &[u8], motion: Option<&str>) -> (tempfile::TempDir, std::path::PathBuf) {
+        freeze_with(
+            image,
+            &json!({"startup_identity": BUILD, "startup_motion_policy": motion,
+                    "firmware": "feeder"}),
+        )
+    }
+
+    /// [`freeze`] with the build manifest's `fields`.
+    fn freeze_with(
+        image: &[u8],
+        fields: &serde_json::Value,
+    ) -> (tempfile::TempDir, std::path::PathBuf) {
         let checkout = tempfile::tempdir().unwrap();
         let review = checkout.path().join("private/review");
-        let fields = json!({"startup_identity": BUILD, "startup_motion_policy": motion,
-                            "firmware": "feeder"});
-        wellfed_image::fixtures::freeze_build(checkout.path(), &review, image, &fields).unwrap();
+        wellfed_image::fixtures::freeze_build(checkout.path(), &review, image, fields).unwrap();
         (checkout, review)
     }
 
@@ -791,7 +953,43 @@ mod tests {
         assert_eq!(key.scope(), KeyScope::Release);
         assert_eq!(hex::Lower(&key.public()).to_string(), public);
         assert!(key.revoke(&[7; 8]).is_ok());
-        assert!(key.add_key(&[8; 32]).is_ok());
+        assert!(key.add_key(&key.public()).is_ok());
+    }
+
+    /// The release key fills the slot only with itself: any other key it
+    /// added would land in the empty slot of every consumer feeder. The
+    /// bench key, which only bench builds build in, still adds any key.
+    #[test]
+    fn the_release_key_adds_only_itself() {
+        let release = Key {
+            key: SigningKey::from_bytes(&[4; 32]),
+            scope: KeyScope::Release,
+        };
+        let other = bench_key(5).public();
+        assert!(matches!(
+            release.add_key(&other),
+            Err(Error::Key(KeyError::ReleaseAddsOther { added }))
+                if added == hex::Lower(&offer::key_id(&other)).to_string()
+        ));
+        assert!(release.add_key(&release.public()).is_ok());
+        assert!(bench_key(6).add_key(&other).is_ok());
+    }
+
+    /// No key signs its own retirement, whatever its scope: the statement
+    /// could leave a feeder with no key to sign the next one.
+    #[test]
+    fn a_key_never_signs_its_own_retirement() {
+        for scope in [KeyScope::Bench, KeyScope::Release] {
+            let key = Key {
+                key: SigningKey::from_bytes(&[4; 32]),
+                scope,
+            };
+            assert!(matches!(
+                key.revoke(&key.id()),
+                Err(Error::Key(KeyError::SelfRevoke))
+            ));
+            assert!(key.revoke(&bench_key(5).id()).is_ok());
+        }
     }
 
     /// `keygen` writes bench and owner keys only: the release key comes
@@ -831,6 +1029,64 @@ mod tests {
         assert!(matches!(
             require_built_in_signer(&public, &[0; 32], &signed(&built_in)),
             Err(Error::Frozen(FrozenError::OtherBuild { .. }))
+        ));
+    }
+
+    /// The installer's manifest passes the firmware's own admission with
+    /// the built-in key: a damaged signature, or a correctly signed body
+    /// naming another model, kind, bank or length, is refused.
+    #[test]
+    fn an_installer_manifest_must_pass_the_firmware_s_admission() {
+        let key = bench_key(7);
+        let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
+                            "ota_public_key": hex::Lower(&key.public()).to_string()});
+        let (checkout, review) = freeze_with(&build_image(), &fields);
+        let frozen = Frozen::open(checkout.path(), &review).unwrap();
+        let signed = frozen.offer(&key, 9, Motion::Refused).unwrap();
+        frozen.require_installable(&signed).unwrap();
+
+        let body = offer::MANIFEST_BODY;
+        for at in body..offer::MANIFEST_LEN {
+            let mut damaged = signed;
+            damaged[at] ^= 0x01;
+            assert!(
+                matches!(
+                    frozen.require_installable(&damaged),
+                    Err(Error::Frozen(FrozenError::NotAdmitted {
+                        error: offer::OfferError::Signature
+                    }))
+                ),
+                "signature byte {at}"
+            );
+        }
+
+        let resigned = |edit: &dyn Fn(&mut Signed)| {
+            let mut parsed = offer::parse_manifest(&signed).unwrap();
+            edit(&mut parsed);
+            let body = offer::manifest_body(&parsed);
+            let mut out = body.to_vec();
+            out.extend_from_slice(&key.key.sign(&body).to_bytes());
+            frozen.require_installable(&out).unwrap_err()
+        };
+        assert!(matches!(
+            resigned(&|s| s.model = Model::Plwf106.code()),
+            Error::Frozen(FrozenError::NotAdmitted {
+                error: offer::OfferError::Model
+            })
+        ));
+        assert!(matches!(
+            resigned(&|s| s.manifest.target_bank = 0),
+            Error::Frozen(FrozenError::NotAdmitted {
+                error: offer::OfferError::Bank
+            })
+        ));
+        assert!(matches!(
+            resigned(&|s| s.kind = OfferKind::Stock),
+            Error::Frozen(FrozenError::NotAdmitted { .. } | FrozenError::OtherKind)
+        ));
+        assert!(matches!(
+            resigned(&|s| s.manifest.image_len += 1),
+            Error::Frozen(FrozenError::OtherLength { .. })
         ));
     }
 
@@ -964,6 +1220,166 @@ mod tests {
                 .offer(&key, 1, Motion::Attended("fw16-pulse-v1"))
                 .is_ok()
         );
+    }
+
+    /// The release key signs only a consumer build with no variant that
+    /// keeps the release key built in; the bench key and an owner's key,
+    /// which a consumer feeder takes only once it enrolled them, sign any.
+    #[test]
+    fn a_key_signs_only_the_builds_its_scope_provisions() {
+        let scoped = |seed: u8, scope| Key {
+            key: SigningKey::from_bytes(&[seed; 32]),
+            scope,
+        };
+        let release = scoped(1, KeyScope::Release);
+        let bench = scoped(2, KeyScope::Bench);
+        let owner = scoped(3, KeyScope::Owner);
+        let release_public = hex::Lower(&release.public()).to_string();
+        let bench_public = hex::Lower(&bench.public()).to_string();
+
+        let review = |provisioning: &str, variant: Option<&str>, built_in: &str| {
+            let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
+                                "provisioning": provisioning, "variant": variant,
+                                "ota_public_key": built_in});
+            let (checkout, review) = freeze_with(&build_image(), &fields);
+            let frozen = Frozen::open(checkout.path(), &review).unwrap();
+            (checkout, frozen)
+        };
+        let (_consumer_dir, consumer) = review("consumer", None, &release_public);
+        let (_upper_dir, upper) = review("consumer", None, &release_public.to_uppercase());
+        let (_bench_dir, bench_build) = review("bench", None, &bench_public);
+        let (_variant_dir, variant) = review("consumer", Some("virtual-panel"), &release_public);
+        let (_other_dir, other_key) = review("consumer", None, &bench_public);
+
+        for (frozen, key) in [
+            (&consumer, &release),
+            (&upper, &release),
+            (&bench_build, &bench),
+            (&consumer, &bench),
+            (&variant, &bench),
+            (&consumer, &owner),
+            (&bench_build, &owner),
+        ] {
+            frozen.offer(key, 9, Motion::Refused).unwrap();
+        }
+
+        let refused =
+            |frozen: &Frozen, key: &Key| frozen.offer(key, 9, Motion::Refused).unwrap_err();
+        assert!(matches!(
+            refused(&bench_build, &release),
+            Error::Frozen(FrozenError::ReleaseProvisioning {
+                provisioning: Provisioning::Bench
+            })
+        ));
+        assert!(matches!(
+            refused(&variant, &release),
+            Error::Frozen(FrozenError::ReleaseVariant { variant }) if variant == "virtual-panel"
+        ));
+        assert!(matches!(
+            refused(&other_key, &release),
+            Error::Frozen(FrozenError::OtherBuiltIn { built_in: Some(key), .. })
+                if key == bench_public
+        ));
+
+        // A consumer build that names no key at all is refused too.
+        let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
+                            "provisioning": "consumer"});
+        let (checkout, keyless) = freeze_with(&build_image(), &fields);
+        let keyless = Frozen::open(checkout.path(), &keyless).unwrap();
+        assert!(matches!(
+            refused(&keyless, &release),
+            Error::Frozen(FrozenError::OtherBuiltIn { built_in: None, .. })
+        ));
+    }
+
+    /// The release key hands a consumer build over only to the other
+    /// release key that build builds in; a build that builds the signer
+    /// itself in needs no hand-over.
+    #[test]
+    fn the_release_key_hands_over_only_to_the_successor_the_build_builds_in() {
+        let scoped = |seed: u8, scope| Key {
+            key: SigningKey::from_bytes(&[seed; 32]),
+            scope,
+        };
+        let release = scoped(1, KeyScope::Release);
+        let successor = scoped(6, KeyScope::Release);
+        let builds_in = |key: &Key, provisioning: &str, variant: Option<&str>| {
+            let fields = json!({"startup_identity": BUILD, "firmware": "feeder",
+                                "provisioning": provisioning, "variant": variant,
+                                "ota_public_key": hex::Lower(&key.public()).to_string()});
+            let (checkout, review) = freeze_with(&build_image(), &fields);
+            let frozen = Frozen::open(checkout.path(), &review).unwrap();
+            (checkout, frozen)
+        };
+        let (_dir, frozen) = builds_in(&successor, "consumer", None);
+        let hand_over =
+            |frozen: &Frozen, key: &Key, to: &Key| frozen.hand_over(key, 9, Motion::Refused, to);
+
+        assert!(matches!(
+            frozen.offer(&release, 9, Motion::Refused),
+            Err(Error::Frozen(FrozenError::OtherBuiltIn { .. }))
+        ));
+        let signed = hand_over(&frozen, &release, &successor).unwrap();
+        assert_eq!(offer::parse_manifest(&signed).unwrap().key_id, release.id());
+
+        // Another release key than the one the build builds in.
+        assert!(matches!(
+            hand_over(&frozen, &release, &scoped(7, KeyScope::Release)),
+            Err(Error::Frozen(FrozenError::OtherBuiltIn { .. }))
+        ));
+        // Both keys are release keys: a bench stand-in or an owner's key is
+        // no successor, and only the release key hands over.
+        for (signer, to) in [
+            (&release, &scoped(6, KeyScope::Bench)),
+            (&release, &scoped(6, KeyScope::Owner)),
+            (&scoped(1, KeyScope::Bench), &successor),
+        ] {
+            assert!(matches!(
+                hand_over(&frozen, signer, to),
+                Err(Error::Frozen(FrozenError::HandOverScope { .. }))
+            ));
+        }
+        let (_dir, own) = builds_in(&release, "consumer", None);
+        assert!(matches!(
+            hand_over(&own, &release, &release),
+            Err(Error::Frozen(FrozenError::HandOverToSelf))
+        ));
+
+        // The hand-over is still a release build: no bench build, no variant.
+        for (provisioning, variant) in [("bench", None), ("consumer", Some("virtual-panel"))] {
+            let (_dir, frozen) = builds_in(&successor, provisioning, variant);
+            assert!(hand_over(&frozen, &release, &successor).is_err());
+        }
+    }
+
+    /// A successor loads only as a release key from outside any checkout:
+    /// the bench stand-in `keygen` writes into `private/` is neither.
+    #[test]
+    fn a_successor_loads_only_as_a_release_key_off_any_checkout() {
+        let media = tempfile::tempdir().unwrap();
+        let release = media.path().join("successor.json");
+        let release = release_keygen(&release).unwrap().private;
+        Key::load_release(&release).unwrap();
+
+        let stand_in = media.path().join("stand-in.json");
+        keygen(&stand_in, KeyScope::Bench).unwrap();
+        assert!(matches!(
+            Key::load_release(&stand_in),
+            Err(Error::Key(KeyError::NotRelease {
+                scope: KeyScope::Bench,
+                ..
+            }))
+        ));
+
+        let checkout = tempfile::tempdir().unwrap();
+        fs::create_dir_all(checkout.path().join(".git")).unwrap();
+        fs::create_dir_all(checkout.path().join("private")).unwrap();
+        let inside = checkout.path().join("private/release-standin-key.json");
+        fs::copy(&release, &inside).unwrap();
+        assert!(matches!(
+            Key::load_release(&inside),
+            Err(Error::Key(KeyError::InCheckout { .. }))
+        ));
     }
 
     /// An owner's backup signs as stock only when it is the pinned stock

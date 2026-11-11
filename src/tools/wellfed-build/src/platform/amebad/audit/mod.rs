@@ -47,6 +47,16 @@ pub(crate) static DIRECT_BRANCH: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)?(?:\.[nw])?$")
         .expect("branch pattern")
 });
+/// Every direct transfer of control, a call or a branch, under any
+/// condition and width: `b`, `bl` and `blx` with an immediate target (so
+/// `blne` and `blxeq.w` too), and `cbz`/`cbnz`. A register operand has no
+/// `<symbol>` target, so `blx r3` and `bx lr` never name one.
+pub(crate) static DIRECT_TRANSFER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^(?:(?:b|bl|blx)(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)?|cbn?z)(?:\.[nw])?$",
+    )
+    .expect("transfer pattern")
+});
 /// A function heading in a disassembly: `0e000020 <name>:`.
 pub(crate) static HEADING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([0-9a-f]+) <([^>]+)>:$").expect("heading pattern"));

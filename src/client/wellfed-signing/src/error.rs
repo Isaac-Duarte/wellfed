@@ -4,6 +4,8 @@
 //! A refusal is final: nothing here signs a fallback or retries.
 
 use std::path::PathBuf;
+use wellfed_formats::credentials::KeyScope;
+use wellfed_formats::manifest::Provisioning;
 use wellfed_proto::device::Model;
 
 use wellfed_signed::offer::OfferError;
@@ -44,6 +46,14 @@ pub enum KeyError {
     OwnerRevoke,
     #[error("An owner's update key signs no release-slot key (PLKEY1)")]
     OwnerAddKey,
+    /// The release key adding another key: every consumer feeder would
+    /// take it into its empty slot.
+    #[error("The release key adds only itself to the release slot, not key {added}")]
+    ReleaseAddsOther { added: String },
+    /// A key retiring itself: the key that should still sign statements
+    /// signs this one, and where none would be left, no key may.
+    #[error("A key signs no retirement of itself; another built-in or release-slot key signs it")]
+    SelfRevoke,
     /// The release key is written only by `release-keygen`, which keeps it
     /// out of a checkout.
     #[error("keygen writes bench and owner keys; use release-keygen for the release key")]
@@ -66,6 +76,9 @@ pub enum KeyError {
         checkout.display()
     )]
     InCheckout { path: PathBuf, checkout: PathBuf },
+    /// A key loaded as a release key that its file scopes otherwise.
+    #[error("{} is a {scope:?} key, not a release key", path.display())]
+    NotRelease { path: PathBuf, scope: KeyScope },
     #[error("{} already exists; a key is never replaced", path.display())]
     Exists { path: PathBuf },
 }
@@ -98,9 +111,45 @@ pub enum FrozenError {
     /// handover from stock clears those.
     #[error("The manifest is signed by key {signer}, the image has key {built_in} built in")]
     NotBuiltInSigner { signer: String, built_in: String },
+    /// A manifest the firmware's own admission refuses with the built-in
+    /// key alone.
+    #[error("The firmware would refuse the manifest: {error:?}")]
+    NotAdmitted { error: OfferError },
+    /// A manifest that does not name the image as a replacement build.
+    #[error("The manifest does not offer the image as a replacement build")]
+    OtherKind,
+    /// A manifest naming another length than the image's.
+    #[error("The manifest names {manifest} bytes, the image has {image}")]
+    OtherLength { manifest: u32, image: usize },
     /// A motion policy the caller did not name as the one it attends.
     #[error("Image drives the motor ({policy}); sign it only attending that policy")]
     Unattended { policy: String },
+    /// A build for the bench offered to the release key, which every
+    /// consumer feeder trusts.
+    #[error("The release key signs consumer builds only, not a {} build", provisioning.name())]
+    ReleaseProvisioning { provisioning: Provisioning },
+    /// A test variant, which never ships, offered to the release key.
+    #[error("The release key signs no variant build ({variant})")]
+    ReleaseVariant { variant: String },
+    /// A hand-over signed by, or to, a key that is not a release key.
+    #[error(
+        "A hand-over goes from a release key to a release key, not {signer:?} to {successor:?}"
+    )]
+    HandOverScope {
+        signer: KeyScope,
+        successor: KeyScope,
+    },
+    /// A hand-over to the signing key itself, which needs none.
+    #[error("The successor is the signing key; sign the build without a hand-over")]
+    HandOverToSelf,
+    /// A build for the release key that builds in another key than the
+    /// one expected: once installed, the feeder would trust that key
+    /// instead.
+    #[error("The build builds in key {built_in:?}, not {expected}")]
+    OtherBuiltIn {
+        expected: String,
+        built_in: Option<String>,
+    },
     /// The build names a device no model has.
     #[error("The review's build is for device {device}, which no model is")]
     UnknownDevice { device: String },

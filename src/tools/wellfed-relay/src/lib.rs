@@ -244,6 +244,8 @@ pub struct FakeState {
     /// Every set, in order: (channel, on).
     pub log: Vec<(u8, bool)>,
     pub refuse: bool,
+    /// Refuse this one channel only, as a failed relay would.
+    pub refuse_channel: Option<u8>,
 }
 
 #[cfg(any(test, feature = "fake"))]
@@ -276,7 +278,8 @@ impl Link for FakeBoard {
             .filter(|(channel, value)| {
                 (1..=4).contains(channel) && ["0", "1", "?"].contains(value)
             });
-        let Some((channel, value)) = parsed.filter(|_| !s.refuse) else {
+        let refused = |channel: u8| s.refuse || s.refuse_channel == Some(channel);
+        let Some((channel, value)) = parsed.filter(|(channel, _)| !refused(*channel)) else {
             return Ok(b"Error\r\n\0".to_vec());
         };
 

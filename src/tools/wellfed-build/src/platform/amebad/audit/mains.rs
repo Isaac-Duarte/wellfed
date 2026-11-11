@@ -15,7 +15,7 @@ use wellfed_formats::audit::{Main, MainCalls, MainsAudit};
 use wellfed_proto::device::Model;
 
 use super::hooks::file_offset;
-use super::{ADDRESSED, Binutils, DIRECT_BRANCH, INSTRUCTION, elf, hex, parse_hex, tool};
+use super::{ADDRESSED, Binutils, DIRECT_TRANSFER, INSTRUCTION, elf, hex, parse_hex, tool};
 use crate::Result;
 use crate::platform::amebad::Core;
 use wellfed_formats::require;
@@ -185,7 +185,7 @@ pub fn check_main(
             called(target, &mut registers)?;
             continue;
         }
-        if mnemonic == "bl" || DIRECT_BRANCH.is_match(mnemonic) {
+        if DIRECT_TRANSFER.is_match(mnemonic) {
             let Some(target) = TARGET.captures(operands) else {
                 return Err(MainsError::Branch { location }.into());
             };
