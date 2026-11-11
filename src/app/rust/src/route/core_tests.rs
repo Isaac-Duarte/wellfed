@@ -299,16 +299,24 @@ fn the_journal_settles_a_write_once_it_is_answered_or_resolved() {
     );
 }
 
+/// Both clocks at `ms` since the attempt.
+const fn waited(ms: i64) -> Waited {
+    Waited {
+        wall_ms: ms,
+        steady_ms: ms,
+    }
+}
+
 #[test]
 fn a_server_write_the_journal_lacks_is_unsent_only_from_its_own_journal_once_old() {
     let pin = feed_pin(1, "a", RoutePath::Server);
     let grace = UNFOUND_GRACE_MS;
     assert_eq!(
-        settled_unfound(&pin, Some(MARK), NOW + grace - 1, grace),
+        settled_unfound(&pin, Some(MARK), waited(grace - 1), grace),
         None
     );
     assert_eq!(
-        settled_unfound(&pin, Some(MARK), NOW + grace, grace),
+        settled_unfound(&pin, Some(MARK), waited(grace), grace),
         Some(Settlement::NotSent)
     );
 
@@ -323,13 +331,47 @@ fn a_server_write_the_journal_lacks_is_unsent_only_from_its_own_journal_once_old
         ..MARK
     };
     for other in [Some(other_server), Some(other_user), None] {
-        assert_eq!(settled_unfound(&pin, other, NOW + grace, grace), None);
+        assert_eq!(settled_unfound(&pin, other, waited(grace), grace), None);
     }
     let unmarked = PinRecord {
         server: None,
         ..pin
     };
-    assert_eq!(settled_unfound(&unmarked, None, NOW + grace, grace), None);
+    assert_eq!(settled_unfound(&unmarked, None, waited(grace), grace), None);
+}
+
+/// The wall clock stepping forward (or a restart, which keeps only the wall
+/// clock's record) never ends the grace early: the monotonic clock, which
+/// does not step, has to agree. Nor does the monotonic clock alone, against
+/// a wall clock that says the attempt was just now.
+#[test]
+fn the_grace_passes_only_when_both_clocks_say_so() {
+    let pin = feed_pin(1, "a", RoutePath::Server);
+    let grace = UNFOUND_GRACE_MS;
+
+    for (wall_ms, steady_ms) in [
+        // A forward step of ten minutes, a second after the attempt.
+        (grace + 1_000, 1_000),
+        // A restart a day later, a minute into the new run.
+        (86_400_000, 60_000),
+        // A backward step: the wall clock has the attempt still ahead.
+        (-5_000, grace),
+    ] {
+        let since = Waited { wall_ms, steady_ms };
+        assert_eq!(
+            settled_unfound(&pin, Some(MARK), since, grace),
+            None,
+            "{since:?}"
+        );
+    }
+    let since = Waited {
+        wall_ms: 86_400_000,
+        steady_ms: grace,
+    };
+    assert_eq!(
+        settled_unfound(&pin, Some(MARK), since, grace),
+        Some(Settlement::NotSent)
+    );
 }
 
 #[test]
@@ -716,12 +758,9 @@ impl World {
             RetryPlan::ReadJournal if self.journal.contains(&pin.key) => {
                 ran.then_some(Settlement::Started { feed: 1 })
             }
-            RetryPlan::ReadJournal => settled_unfound(
-                pin,
-                Some(MARK),
-                pin.tried_ms + UNFOUND_GRACE_MS,
-                UNFOUND_GRACE_MS,
-            ),
+            RetryPlan::ReadJournal => {
+                settled_unfound(pin, Some(MARK), waited(UNFOUND_GRACE_MS), UNFOUND_GRACE_MS)
+            }
             RetryPlan::ReadHistory => ran.then_some(Settlement::Started { feed: 1 }),
         }
     }

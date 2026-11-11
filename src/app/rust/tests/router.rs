@@ -148,17 +148,35 @@ impl Phone {
     async fn restarted(self) -> Self {
         self.router.close();
         drop(self.router);
-        let router =
-            eventually(
-                "the last router lets its pins go",
-                async || match PathRouter::open_with(path(&self.pins), UNFOUND) {
-                    Ok(router) => Some(router),
-                    Err(error) if error.kind == ErrorKind::InUse => None,
-                    Err(error) => panic!("{error}"),
-                },
-            )
-            .await;
+        let router = reopened(&self.pins, UNFOUND).await;
         let (router, updates) = heard(router);
+        Self {
+            router,
+            updates,
+            ..self
+        }
+    }
+
+    /// The app again with a grace of `grace_ms`, its wall clock `ms` past
+    /// every attempt the last run wrote down: as a restart a day later
+    /// leaves it, or a forward step of the phone's clock.
+    async fn restarted_later(self, ms: i64, grace_ms: i64) -> Self {
+        self.router.close();
+        drop(self.router);
+        // Once the last run has let go, so it writes nothing after.
+        drop(reopened(&self.pins, grace_ms).await);
+
+        let file = path(&self.pins);
+        let mut kept: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        for pin in kept["data"]["pins"].as_array_mut().expect("the pins") {
+            let tried = pin["tried_ms"].as_i64().expect("an attempt's time");
+            pin["tried_ms"] = (tried - ms).into();
+        }
+        std::fs::write(&file, serde_json::to_vec(&kept).unwrap()).unwrap();
+
+        // The look above changed nothing: its router opens and lets go.
+        let (router, updates) = heard(reopened(&self.pins, grace_ms).await);
         Self {
             router,
             updates,
@@ -300,6 +318,19 @@ const GIVE_UP: Duration = Duration::from_secs(1);
 /// The phone's wait before a server write its journal lacks counts as
 /// never sent, in tests that do not drop one.
 const UNFOUND: i64 = 10 * 60_000;
+
+/// A router on `pins` once the last run's router has let them go.
+async fn reopened(pins: &tempfile::TempDir, grace_ms: i64) -> PathRouter {
+    eventually(
+        "the last router lets its pins go",
+        async || match PathRouter::open_with(path(pins), grace_ms) {
+            Ok(router) => Some(router),
+            Err(error) if error.kind == ErrorKind::InUse => None,
+            Err(error) => panic!("{error}"),
+        },
+    )
+    .await
+}
 
 /// A router on `pins`, its updates heard into a channel.
 fn router(
@@ -813,6 +844,52 @@ fn a_server_failing_before_its_journal_holds_the_write_never_feeds_its_key() {
             .connect_server(&session, session.account().await.unwrap());
         let settlement = fed_again_then_retried(&phone, &flash, &kitchen, &first, 0).await;
         assert_eq!(settlement, Settlement::NotSent);
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// The wall clock alone never ends the grace: after a restart its record
+/// says the attempt was a day ago, as a forward step of the phone's clock
+/// would, and the write stays uncertain until this run's own monotonic
+/// clock has seen the grace pass too.
+#[test]
+fn a_restart_a_day_later_waits_out_the_grace_before_settling_unsent() {
+    const GRACE: i64 = 2_000;
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let (server, owner) = started().await;
+        adopt(&owner, &sim, sim.address).await;
+        let phone = Phone::trusting_after(GRACE);
+        let session = phone.log_in_as_ada(&server).await;
+        let kitchen = identity(&sim);
+
+        let failing = phone
+            .through(&session, format!("http://{}", failing_server()))
+            .await;
+        let first = uncertain(phone.router.feed(kitchen.clone(), 1).await);
+        assert_eq!(first.path, RoutePath::Server);
+        drop(failing);
+
+        let phone = phone.restarted_later(86_400_000, GRACE).await;
+        phone
+            .router
+            .connect_server(&session, session.account().await.unwrap());
+        let RetryOutcome::Uncertain { .. } = phone.router.retry(first.key.clone()).await else {
+            panic!("a day by the wall clock, a moment by this run's");
+        };
+        let pending = phone.router.pending();
+        assert_eq!(
+            pending.len(),
+            1,
+            "still uncertain, so it holds the next feed back"
+        );
+        assert_eq!(pending[0].key, first.key);
+
+        tokio::time::sleep(Duration::from_millis(u64::try_from(GRACE).unwrap())).await;
+        assert_eq!(phone.settled(&first.key).await, Settlement::NotSent);
+        assert_eq!(feeder::feeds(&flash), 0);
         server.stop().await;
         sim.stop().await;
     });

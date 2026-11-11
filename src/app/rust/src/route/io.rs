@@ -6,8 +6,10 @@
 //! pass and a write that never got written down never goes.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Instant;
 
 use jiff::Timestamp;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -35,7 +37,7 @@ use crate::link::{DirectLink, LinkNews};
 use crate::requests;
 use crate::route::core::{
     self, Access, Book, Ended, Held, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
-    settled_by_command, settled_by_history, settled_unfound,
+    Waited, settled_by_command, settled_by_history, settled_unfound,
 };
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
 use crate::route::server as calls;
@@ -74,6 +76,11 @@ struct State {
     listeners: Vec<mpsc::UnboundedSender<RouterUpdate>>,
     /// The path each feeder was last said to take.
     announced: HashMap<String, Option<RoutePath>>,
+    /// When this run first knew of each pin's last attempt, and of each
+    /// lost adoption, by the monotonic clock: a grace from either passes
+    /// only when this clock agrees with the wall clock's record.
+    tried: Steady<Uuid>,
+    adoptions_lost: Steady<String>,
     /// A server the app keeps, before its session is handed over: the keys
     /// its kept account may use, so no feeder goes on the phone's own key
     /// that the account would not allow while the app is still reading its
@@ -112,6 +119,50 @@ struct Entry {
 
 pub(crate) fn now_ms() -> i64 {
     Timestamp::now().as_millisecond()
+}
+
+/// When this run first knew of each key's attempt, by its wall-clock time,
+/// on the monotonic clock. Noting an attempt late only makes its wait read
+/// shorter, so one this run did not see (from before a restart) counts from
+/// when the run first looked at it.
+struct Steady<K> {
+    seen: HashMap<K, (i64, Instant)>,
+}
+
+impl<K: Eq + Hash> Steady<K> {
+    fn new() -> Self {
+        Self {
+            seen: HashMap::new(),
+        }
+    }
+
+    /// Hold just `attempts` (each key's attempt by the wall clock), noting
+    /// from now those this run did not know yet, or knew at another time.
+    fn sync(&mut self, attempts: impl IntoIterator<Item = (K, i64)>) {
+        let now = Instant::now();
+        let mut kept = HashMap::new();
+        for (key, at_ms) in attempts {
+            let known = self.seen.remove(&key).filter(|(at, _)| *at == at_ms);
+            kept.insert(key, known.unwrap_or((at_ms, now)));
+        }
+        self.seen = kept;
+    }
+
+    /// How long since `key`'s attempt at `at_ms`, with the wall clock at
+    /// `now_ms`: by the monotonic clock from when this run first knew of it,
+    /// or nothing if it does not know of it at that time.
+    fn waited(&self, key: &K, at_ms: i64, now_ms: i64) -> Waited {
+        let steady_ms = match self.seen.get(key) {
+            Some((at, since)) if *at == at_ms => {
+                i64::try_from(since.elapsed().as_millis()).unwrap_or(i64::MAX)
+            }
+            _ => 0,
+        };
+        Waited {
+            wall_ms: now_ms.saturating_sub(at_ms),
+            steady_ms,
+        }
+    }
 }
 
 fn new_key() -> Result<Uuid, BridgeError> {
@@ -209,6 +260,19 @@ impl State {
             excluded: Vec::new(),
             acknowledged_ms: None,
         }
+    }
+
+    /// Note every pin's last attempt and every lost adoption this run did
+    /// not know yet, from now, and forget those settled.
+    fn note_attempts(&mut self) {
+        self.tried
+            .sync(self.book.pins.iter().map(|pin| (pin.key, pin.tried_ms)));
+        self.adoptions_lost.sync(
+            self.book
+                .adoptions
+                .iter()
+                .map(|lost| (lost.feeder.clone(), lost.at_ms)),
+        );
     }
 
     fn save(&self) -> Result<(), BridgeError> {
@@ -353,7 +417,7 @@ impl Router {
         if book.expire(now_ms()) {
             store.save(&book)?;
         }
-        let state = State {
+        let mut state = State {
             store,
             server: None,
             reach: ServerReach::Up,
@@ -365,7 +429,12 @@ impl Router {
             listeners: Vec::new(),
             announced: HashMap::new(),
             cold: None,
+            tried: Steady::new(),
+            adoptions_lost: Steady::new(),
         };
+        // What the last run left counts from this run's start, never from
+        // the wall clock's record alone.
+        state.note_attempts();
         Ok(Self {
             inner: Arc::new(Inner {
                 state: Mutex::new(state),
@@ -526,6 +595,16 @@ impl Router {
             .map(|lost| lost.at_ms)
     }
 
+    /// How long since `feeder`'s adoption lost its answer at `at_ms`, by
+    /// both clocks.
+    pub(crate) fn adoption_waited(&self, feeder: &str, at_ms: i64) -> Waited {
+        let mut state = self.state();
+        state.note_attempts();
+        state
+            .adoptions_lost
+            .waited(&feeder.to_owned(), at_ms, now_ms())
+    }
+
     /// `feeder`'s adoption lost its answer at `at`; `None` once settled.
     pub(crate) fn adoption_lost(&self, feeder: &str, at: Option<i64>) {
         let mut state = self.state();
@@ -537,6 +616,7 @@ impl Router {
                 at_ms,
             });
         }
+        state.note_attempts();
         if state.book.adoptions != before {
             // Kept for a restart; one that fails to save still holds this run.
             state.save_or_log();
@@ -719,6 +799,7 @@ impl Router {
         let now = now_ms();
         let held = state.book.get(key).map(PinRecord::view);
         state.book.ended(key, tried.ended(), now);
+        state.note_attempts();
         if let (RoutePath::Direct, FeedTry::Started(feed)) = (path, &tried) {
             // Its end may come late, after a gap in what the session reads:
             // until then it is no other feed's end.
@@ -1009,6 +1090,7 @@ impl Router {
     /// The end of a write's last attempt, on `path`.
     fn wrote(&self, state: &mut State, key: Uuid, path: RoutePath, tried: WriteTry) -> RoutedReply {
         state.book.ended(key, tried.ended, now_ms());
+        state.note_attempts();
         state.save_or_log();
         let early = state.early.remove(&key);
 
@@ -1161,7 +1243,9 @@ impl Router {
                 if problem.code == ErrorCode::NotFound =>
             {
                 state.reach = ServerReach::Up;
-                settled_unfound(pin, mark, now_ms(), self.inner.grace_ms)
+                state.note_attempts();
+                let since = state.tried.waited(&pin.key, pin.tried_ms, now_ms());
+                settled_unfound(pin, mark, since, self.inner.grace_ms)
             }
             Err(error) => {
                 state.heard_failure(error.failure(), now_ms());
@@ -1504,5 +1588,43 @@ fn feed_settlement(routed: &RoutedFeed) -> Option<Settlement> {
         RoutedFeed::NotSent { .. } => Some(Settlement::NotSent),
         RoutedFeed::Settled { settlement, .. } => Some(settlement.clone()),
         RoutedFeed::Uncertain { .. } | RoutedFeed::Held { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A step of the wall clock inside a run moves only the wall clock's
+    /// side of the wait: the monotonic side counts from when the run noted
+    /// the attempt, and a new attempt (another wall-clock time) or one the
+    /// run never noted counts from nothing.
+    #[test]
+    fn the_monotonic_wait_counts_only_from_what_this_run_noted() {
+        let key = Uuid::from_u128(1);
+        let mut steady = Steady::new();
+        steady.sync([(key, 1_000)]);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        // The wall clock stepped ten minutes on.
+        let waited = steady.waited(&key, 1_000, 1_000 + 600_000);
+        assert_eq!(waited.wall_ms, 600_000);
+        assert!((20..600_000).contains(&waited.steady_ms), "{waited:?}");
+        assert!(!waited.passed(600_000));
+
+        assert_eq!(steady.waited(&key, 2_000, 602_000).steady_ms, 0);
+        assert_eq!(
+            steady.waited(&Uuid::from_u128(2), 1_000, 601_000).steady_ms,
+            0
+        );
+
+        // Noted again at the same time, it keeps its start; at a new one,
+        // or gone from the book, it starts over or is forgotten.
+        steady.sync([(key, 1_000)]);
+        assert!(steady.waited(&key, 1_000, 1_000).steady_ms >= 20);
+        steady.sync([(key, 5_000)]);
+        assert!(steady.waited(&key, 5_000, 5_000).steady_ms < 20);
+        steady.sync([]);
+        assert!(steady.seen.is_empty());
     }
 }

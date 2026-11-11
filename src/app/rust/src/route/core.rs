@@ -28,8 +28,29 @@ pub(crate) const RECHECK_MS: i64 = 30_000;
 /// is taken as never sent. The server records a write before it sends it,
 /// so an entry it never made was never sent; the wait covers a request
 /// still on its way to a server that is slow to take it, well past the
-/// phone's own 30 s request timeout.
+/// phone's own 30 s request timeout. It must pass by both of [`Waited`]'s
+/// clocks.
 pub(crate) const UNFOUND_GRACE_MS: i64 = 10 * 60_000;
+
+/// How long ago an attempt was, by two clocks. The wall clock is all a
+/// restart keeps, but it steps (a network time fix, the owner changing it),
+/// and a forward step would end a grace early; the monotonic clock never
+/// steps, but starts with the run. A grace has passed only when both say so:
+/// `steady_ms` counts from when this run first knew of the attempt, never
+/// before it, so it can only fall short of the real time since.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Waited {
+    /// By the wall clock, from the attempt's recorded time.
+    pub(crate) wall_ms: i64,
+    /// By the monotonic clock, from when this run first knew of it.
+    pub(crate) steady_ms: i64,
+}
+
+impl Waited {
+    pub(crate) const fn passed(self, grace_ms: i64) -> bool {
+        self.wall_ms >= grace_ms && self.steady_ms >= grace_ms
+    }
+}
 
 /// How long a pin the owner put away is kept, from the acknowledgement, for
 /// its path to settle it. One still pending holds forever.
@@ -283,17 +304,18 @@ fn settlement_of(outcome: &CommandOutcome) -> Option<Settlement> {
 }
 
 /// A server write the journal does not hold settles as never sent, once its
-/// last attempt is `grace_ms` old, and only when the journal that does not
-/// hold it is the one it went to: the same token, so the same server, and
-/// the same account, since another's entries are not found either.
+/// last attempt is `grace_ms` old by both clocks (`since_tried`), and only
+/// when the journal that does not hold it is the one it went to: the same
+/// token, so the same server, and the same account, since another's entries
+/// are not found either.
 pub(crate) fn settled_unfound(
     pin: &PinRecord,
     asked: Option<ServerMark>,
-    now_ms: i64,
+    since_tried: Waited,
     grace_ms: i64,
 ) -> Option<Settlement> {
     let same = pin.server.is_some() && pin.server == asked;
-    (same && now_ms.saturating_sub(pin.tried_ms) >= grace_ms).then_some(Settlement::NotSent)
+    (same && since_tried.passed(grace_ms)).then_some(Settlement::NotSent)
 }
 
 /// A feed's end this phone's own session read from the feeder's history.
