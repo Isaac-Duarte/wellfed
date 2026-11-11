@@ -197,20 +197,31 @@ pub type Routes = BTreeMap<&'static str, Vec<Route>>;
 pub fn legacy_routes(disassembly: &str, names: &BTreeMap<String, Symbol>) -> Result<Routes> {
     let expected: BTreeMap<&'static str, &'static str> =
         RENAMES.iter().map(|(p, l)| (*l, *p)).collect();
+    let range = |name: &'static str| {
+        let symbol = names
+            .get(name)
+            .ok_or(HookError::Missing { names: vec![name] })?;
+        let start = symbol.address & !1;
+        Ok::<_, crate::Error>(start..start + symbol.bytes)
+    };
     let mut addresses = BTreeMap::new();
     let mut bodies = BTreeMap::new();
-    for legacy in expected.keys() {
-        let symbol = names.get(*legacy).ok_or(HookError::Missing {
-            names: vec![*legacy],
-        })?;
-        let start = symbol.address & !1;
-        addresses.insert(start, *legacy);
-        bodies.insert(*legacy, start..start + symbol.bytes);
+    let mut wrappers = BTreeMap::new();
+    for (legacy, public) in &expected {
+        let body = range(legacy)?;
+        addresses.insert(body.start, *legacy);
+        bodies.insert(*legacy, body);
+        wrappers.insert(*legacy, range(public)?);
     }
     let mut routes: Routes = expected.keys().map(|l| (*l, Vec::new())).collect();
     let mut owner: Option<String> = None;
 
     for line in disassembly.lines() {
+        // A heading names the code after it only within its section.
+        if line.starts_with("Disassembly of section") {
+            owner = None;
+            continue;
+        }
         if let Some(heading) = HEADING.captures(line) {
             owner = Some(heading[2].to_string());
             continue;
@@ -219,6 +230,7 @@ pub fn legacy_routes(disassembly: &str, names: &BTreeMap<String, Symbol>) -> Res
             continue;
         };
         let caller = owner.as_deref().unwrap_or("None");
+        let at = parse_hex(&m[1])?;
 
         if &m[2] == ".word" {
             let value = m[3].trim();
@@ -243,20 +255,25 @@ pub fn legacy_routes(disassembly: &str, names: &BTreeMap<String, Symbol>) -> Res
         let Some((legacy, public)) = expected.get_key_value(veneered.unwrap_or(&target[2])) else {
             continue;
         };
-        let Some(body) = bodies.get(legacy) else {
+        let (Some(body), Some(wrapper)) = (bodies.get(legacy), wrappers.get(legacy)) else {
             continue;
         };
         let address = parse_hex(&target[1])?;
 
-        // An entry's own loops and skips land inside its body and are no
-        // way in. Any other transfer is one, at any offset.
-        if caller == *legacy && veneered.is_none() && body.contains(&address) {
+        // An entry's own loops and skips, from inside its body to inside
+        // it, are no way in. The last heading names the instruction only
+        // if its address lies in that symbol's range, so both ends are
+        // checked. Any other transfer is a way in, at any offset.
+        if caller == *legacy && veneered.is_none() && body.contains(&at) && body.contains(&address)
+        {
             continue;
         }
-        // Only the wrapper goes in, and only at the entry's start (or
-        // through the veneer, which branches there).
+        // Only the wrapper goes in, from inside its own range, and only at
+        // the entry's start (or through the veneer, which branches there).
         require(
-            caller == *public && (veneered.is_some() || address == body.start),
+            caller == *public
+                && wrapper.contains(&at)
+                && (veneered.is_some() || address == body.start),
             || HookError::Bypass {
                 caller: caller.into(),
                 legacy,
@@ -376,9 +393,13 @@ mod tests {
         }
     }
 
-    /// The legacy entries at the addresses the synthetic listings branch to.
+    /// The wrappers and legacy entries, 16 bytes each, where the synthetic
+    /// listings put them.
     fn names() -> BTreeMap<String, Symbol> {
         [
+            ("FLASH_Write_Lock", 0x1000_0000),
+            ("FLASH_Write_Unlock", 0x1000_0010),
+            ("FLASH_Write_IPC_Int", 0x1000_0020),
             ("wellfed_sdk_flash_legacy_lock", 0x1000_0100),
             ("wellfed_sdk_flash_legacy_unlock", 0x1000_0200),
             ("wellfed_sdk_flash_legacy_ipc", 0x1000_0300),
@@ -443,6 +464,47 @@ mod tests {
         assert!(
             matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == "wellfed_sdk_flash_legacy_lock"),
             "{error}"
+        );
+    }
+
+    /// The last heading names an instruction only if the instruction lies
+    /// in that symbol's range: an unsymbolled instruction past an entry's
+    /// body, or past its wrapper's, or one in a new section before any
+    /// heading, is no part of either and is refused.
+    #[test]
+    fn a_branch_from_past_a_symbol_s_range_is_not_its_own() {
+        let rest = "10000010 <FLASH_Write_Unlock>:\n 10000010:\tf000 f800 \tbl\t10000200 <wellfed_sdk_flash_legacy_unlock>\n\
+                    10000020 <FLASH_Write_IPC_Int>:\n 10000020:\tf000 b800 \tb.w\t10000300 <wellfed_sdk_flash_legacy_ipc>\n\
+                    10000000 <FLASH_Write_Lock>:\n 10000000:\tf000 f800 \tbl\t10000100 <wellfed_sdk_flash_legacy_lock>\n";
+        let refused = |listing: String, expected: &str| {
+            let error = legacy_routes(&format!("{listing}{rest}"), &names()).unwrap_err();
+            assert!(
+                matches!(&error, Error::Hooks(HookError::Bypass { caller, .. }) if caller == expected),
+                "{error}"
+            );
+        };
+
+        // Past the entry's 16 bytes, branching back into its body.
+        refused(
+            "10000100 <wellfed_sdk_flash_legacy_lock>:\n 10000100:\tbf00 \tnop\n \
+             10000140:\td0fc \tbeq.n\t1000010a <wellfed_sdk_flash_legacy_lock+0xa>\n"
+                .into(),
+            "wellfed_sdk_flash_legacy_lock",
+        );
+        // Past the wrapper's 16 bytes, branching to the entry's start.
+        refused(
+            "10000000 <FLASH_Write_Lock>:\n 10000000:\tbf00 \tnop\n \
+             10000040:\tf000 f800 \tbl\t10000100 <wellfed_sdk_flash_legacy_lock>\n"
+                .into(),
+            "FLASH_Write_Lock",
+        );
+        // A new section: the heading before it names nothing in it.
+        refused(
+            "10000000 <FLASH_Write_Lock>:\n 10000000:\tbf00 \tnop\n\n\
+             Disassembly of section .xip_image2.text:\n\n \
+             10000004:\tf000 f800 \tbl\t10000100 <wellfed_sdk_flash_legacy_lock>\n"
+                .into(),
+            "None",
         );
     }
 
