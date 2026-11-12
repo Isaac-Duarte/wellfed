@@ -1,12 +1,16 @@
 //! A feeder of a newer build than this one, as a client meets one once the
 //! public beta has shipped: its welcome names a later revision, and it
 //! answers in values this build cannot read. Each feeder write is answered
-//! with an outcome tagged past every one this build knows, every other
-//! request is refused `Unavailable`, and a session that subscribes is sent
-//! a live sample of a metric this build does not know. It records the
-//! feeder writes it was sent, so a test sees what a client sent again.
+//! with an outcome tagged past every one this build knows, and a session
+//! that subscribes is sent a live sample of a metric this build does not
+//! know. Every other request, the reads included, is refused
+//! `Unavailable`, which no real feeder does: it keeps the peer small, and
+//! a client survives it as it would an older build. It records the feeder
+//! writes it was sent and the sessions it took, so a test sees what a
+//! client sent again and whether it reconnected.
 
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use wellfed_proto::api::{
@@ -31,6 +35,7 @@ pub struct Newer {
     pub address: SocketAddr,
     pub identity: [u8; 32],
     writes: Arc<Mutex<Vec<RequestId>>>,
+    sessions: Arc<AtomicUsize>,
 }
 
 impl Newer {
@@ -40,18 +45,25 @@ impl Newer {
             TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a loopback listener binds");
         let address = listener.local_addr().expect("a bound listener's address");
         let writes = Arc::new(Mutex::new(Vec::new()));
-        let served = Arc::clone(&writes);
+        let sessions = Arc::new(AtomicUsize::new(0));
+        let (served, opened) = (Arc::clone(&writes), Arc::clone(&sessions));
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                let served = Arc::clone(&served);
-                std::thread::spawn(move || serve(stream, &served));
+                let (served, opened) = (Arc::clone(&served), Arc::clone(&opened));
+                std::thread::spawn(move || serve(stream, &served, &opened));
             }
         });
         Self {
             address,
             identity: *Keypair::from_secret(SECRET).public(),
             writes,
+            sessions,
         }
+    }
+
+    /// How many sessions clients opened so far.
+    pub fn sessions(&self) -> usize {
+        self.sessions.load(Ordering::SeqCst)
     }
 
     /// The request id of every feeder write clients sent so far, in order:
@@ -65,8 +77,9 @@ impl Newer {
 }
 
 /// One session, until the client closes it.
-fn serve(stream: TcpStream, writes: &Mutex<Vec<RequestId>>) -> Option<()> {
+fn serve(stream: TcpStream, writes: &Mutex<Vec<RequestId>>, sessions: &AtomicUsize) -> Option<()> {
     let mut session = Session::accept(stream, SECRET, "newer", REVISION + 1)?;
+    sessions.fetch_add(1, Ordering::SeqCst);
     let mut plain = [0; FRAME_MAX];
     loop {
         let len = session.receive(&mut plain)?;

@@ -92,7 +92,7 @@ async fn listed_uncertain(server: &TestService, key: IdempotencyKey) -> usize {
 /// key is answered unknown and sends nothing, at once or after the server
 /// restarts, although a lock's rule would resend a write no answer came
 /// for. The newer feeder's live samples, which the server cannot read
-/// either, leave the session up throughout.
+/// either, end no session: each server opens one and keeps it.
 #[test]
 fn an_unreadable_answer_is_unknown_and_never_sent_again() {
     local(async {
@@ -119,6 +119,8 @@ fn an_unreadable_answer_is_unknown_and_never_sent_again() {
         let entry = server.service().command(&ada(), key).await.unwrap();
         assert_eq!((entry.state, entry.outcome), (CommandState::Unknown, None));
         assert_eq!(listed_uncertain(&server, key).await, 1);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(newer.sessions(), 1, "no reconnect");
 
         let store = server.stop().await;
         let server = TestService::reopen(store).await;
@@ -130,9 +132,8 @@ fn an_unreadable_answer_is_unknown_and_never_sent_again() {
         assert!(unknown(&after), "{after:?}");
         assert_eq!(newer.writes().len(), 1, "never sent again");
         assert_eq!(listed_uncertain(&server, key).await, 1);
-
         tokio::time::sleep(Duration::from_millis(300)).await;
-        server.link(NEWER, Link::Online).await;
+        assert_eq!(newer.sessions(), 2, "the restarted server's own, kept");
         server.shutdown().await;
     });
 }
