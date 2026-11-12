@@ -41,7 +41,7 @@
 //! however short; one sample is a sample period long.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 use serde::Serialize;
 use wellfed_bench_formats::transients::{TransientMode, TransientsManifest};
@@ -56,15 +56,18 @@ pub enum TransientsError {
     Schema { version: u32 },
     #[error("Unsupported transients manifest")]
     Samplerate,
-    /// A cycle file must be a plain name inside the capture directory.
-    #[error("Unsupported transients manifest")]
+    /// A cycle file must be a plain name inside the capture directory, and a
+    /// regular file there, not a link to somewhere else.
+    #[error("Cycle file {file:?} must be a regular file named inside the capture")]
     CycleFile { file: String },
     #[error(
         "Manifest needs distinct channels 0-7 for INA, INB, OUTA and OUTB, or for OUTA and OUTB alone"
     )]
     Channels,
-    #[error("{file} changed since capture")]
-    Changed { file: String },
+    /// The manifest records each cycle's length, not its hash, so only a
+    /// change of size is caught.
+    #[error("{file} changed size since capture")]
+    SizeChanged { file: String },
 }
 
 const LINES: [&str; 4] = ["ina", "inb", "outa", "outb"];
@@ -421,13 +424,17 @@ pub fn verify(capture: &Path) -> Result<TransientsReport> {
     let mut cycles = Vec::new();
     for entry in &manifest.cycles {
         let file = entry.file.as_str();
+        let plain = matches!(
+            Path::new(file).components().collect::<Vec<_>>()[..],
+            [Component::Normal(_)]
+        );
         require(
-            Path::new(file).components().count() == 1 && !file.is_empty(),
+            plain && fs::symlink_metadata(capture.join(file)).is_ok_and(|meta| meta.is_file()),
             || TransientsError::CycleFile { file: file.into() },
         )?;
         let data = fs::read(capture.join(file))?;
         require(entry.bytes == data.len() as u64, || {
-            TransientsError::Changed { file: file.into() }
+            TransientsError::SizeChanged { file: file.into() }
         })?;
 
         cycles.push(Cycle {

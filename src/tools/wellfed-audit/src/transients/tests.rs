@@ -187,7 +187,7 @@ fn session_summary_and_integrity() {
     fs::write(d.join("cycle-002.bin"), [&files[1].1[..], b"\0"].concat()).unwrap();
     assert!(matches!(
         verify(d),
-        Err(crate::Error::Transients(TransientsError::Changed { file })) if file == "cycle-002.bin"
+        Err(crate::Error::Transients(TransientsError::SizeChanged { file })) if file == "cycle-002.bin"
     ));
 
     manifest["channels"] = json!({"ina": 0, "inb": 0, "outa": 2, "outb": 3});
@@ -197,13 +197,19 @@ fn session_summary_and_integrity() {
         Err(crate::Error::Transients(TransientsError::Channels))
     ));
 
-    manifest["cycles"][0]["file"] = json!("../outside.bin");
     manifest["channels"] = json!({"ina": 0, "inb": 1, "outa": 2, "outb": 3});
-    fs::write(d.join("manifest.json"), manifest.to_string()).unwrap();
-    assert!(matches!(
-        verify(d),
-        Err(crate::Error::Transients(TransientsError::CycleFile { .. }))
-    ));
+    std::os::unix::fs::symlink(d.join("cycle-001.bin"), d.join("linked.bin")).unwrap();
+    for file in ["../outside.bin", ".", "..", "/", "", "linked.bin"] {
+        manifest["cycles"][0]["file"] = json!(file);
+        fs::write(d.join("manifest.json"), manifest.to_string()).unwrap();
+        assert!(
+            matches!(
+                verify(d),
+                Err(crate::Error::Transients(TransientsError::CycleFile { .. }))
+            ),
+            "{file:?}"
+        );
+    }
 }
 
 #[test]
