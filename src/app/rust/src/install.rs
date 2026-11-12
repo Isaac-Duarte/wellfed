@@ -43,7 +43,7 @@ use crate::api::install::{
 };
 use crate::api::model::SetupRefusal;
 use crate::api::setup::CONTROL_PIECE;
-use crate::api::store::{KnownFeeder, load_store, save_store};
+use crate::api::store::{KnownFeeder, update_store};
 use wellfed_install::StockPlans;
 use wellfed_install::storage::BackupFault;
 
@@ -497,18 +497,19 @@ impl Keys for AppKeys {
             self.feeders.push(*identity);
         }
 
-        let store = self.store.to_string_lossy().into_owned();
-        let mut saved = load_store(&store)?;
         let hex = wellfed_session::hex::Lower(identity).to_string();
-        if !saved.feeders.iter().any(|known| known.identity == hex) {
+        update_store(&self.store, |saved| {
+            if saved.feeders.iter().any(|known| known.identity == hex) {
+                return false;
+            }
             saved.feeders.push(KnownFeeder {
                 identity: hex,
                 name: self.name.clone(),
                 address: None,
                 manual_address: None,
             });
-            save_store(&store, &saved)?;
-        }
+            true
+        })?;
         Ok(())
     }
 }
@@ -1616,7 +1617,7 @@ mod tests {
 
         keys.remember(&[0xab; 32]).unwrap();
         keys.remember(&[0xab; 32]).unwrap();
-        let saved = load_store(store.to_str().unwrap()).unwrap();
+        let saved = crate::api::store::load_store(store.to_str().unwrap()).unwrap();
         assert_eq!(saved.feeders.len(), 1);
         assert_eq!(saved.feeders[0].identity, "ab".repeat(32));
         assert_eq!(saved.feeders[0].name, "Kitchen");
@@ -1627,5 +1628,33 @@ mod tests {
         // Two known: only a prefix names one.
         assert_eq!(keys.feeder(None), None);
         assert_eq!(keys.feeder(Some("cd")), Some([0xcd; 32]));
+    }
+
+    /// Dart reads the file, the run remembers its feeder, and Dart's change
+    /// made from what it read is refused rather than saved over the feeder;
+    /// made again from the file, it keeps both.
+    #[test]
+    fn a_change_dart_made_before_the_run_remembered_never_drops_the_feeder() {
+        use crate::api::store::{load_store, swap_store};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("app.json");
+        let path = store.to_str().unwrap();
+        let mut keys = keys(&store);
+        let renamed = |read: &crate::api::store::AppStore| crate::api::store::AppStore {
+            label: "renamed".into(),
+            ..read.clone()
+        };
+
+        let read = load_store(path).unwrap();
+        keys.remember(&[0xab; 32]).unwrap();
+        assert!(!swap_store(path, &read, &renamed(&read)).unwrap());
+        assert_eq!(load_store(path).unwrap().feeders.len(), 1);
+
+        let read = load_store(path).unwrap();
+        assert!(swap_store(path, &read, &renamed(&read)).unwrap());
+        let saved = load_store(path).unwrap();
+        assert_eq!(saved.label, "renamed");
+        assert_eq!(saved.feeders[0].identity, "ab".repeat(32));
     }
 }

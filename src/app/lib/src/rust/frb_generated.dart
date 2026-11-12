@@ -85,7 +85,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1841059891;
+  int get rustContentHash => -601401705;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -682,6 +682,12 @@ abstract class RustLibApi extends BaseApi {
   String crateApiSetupSetupService();
 
   void crateApiStoreStoreNoticeRead({required String path});
+
+  Future<bool> crateApiStoreSwapStore({
+    required String path,
+    required AppStore read,
+    required AppStore store,
+  });
 
   UnknownEnd crateApiUpdateUnknownEnd({
     String? served,
@@ -5641,6 +5647,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "store_notice_read", argNames: ["path"]);
 
   @override
+  Future<bool> crateApiStoreSwapStore({
+    required String path,
+    required AppStore read,
+    required AppStore store,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          sse_encode_box_autoadd_app_store(read, serializer);
+          sse_encode_box_autoadd_app_store(store, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 145,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateApiStoreSwapStoreConstMeta,
+        argValues: [path, read, store],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiStoreSwapStoreConstMeta => const TaskConstMeta(
+    debugName: "swap_store",
+    argNames: ["path", "read", "store"],
+  );
+
+  @override
   UnknownEnd crateApiUpdateUnknownEnd({
     String? served,
     required int version,
@@ -5660,7 +5702,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 145,
+            funcId: 146,
           )!;
         },
         codec: SseCodec(
@@ -5699,7 +5741,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 146,
+            funcId: 147,
           )!;
         },
         codec: SseCodec(

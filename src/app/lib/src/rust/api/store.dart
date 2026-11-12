@@ -10,7 +10,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'server_views.dart';
 
-// These functions are ignored because they are not marked as `pub`: `carry_set_aside`, `file`
+// These functions are ignored because they are not marked as `pub`: `carry_set_aside`, `file`, `update_store`, `writing`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AppFile`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `carry`, `default`
@@ -45,6 +45,21 @@ Future<AppStore> loadStore({required String path}) =>
 /// Replace the store at `path`, keeping a notice the owner has not read.
 Future<void> saveStore({required String path, required AppStore store}) =>
     RustLib.instance.api.crateApiStoreSaveStore(path: path, store: store);
+
+/// Replace the store at `path` with `store`, a change of `read`, if the file
+/// still holds `read`; whether it did. A file changed since it was read (an
+/// install's run remembers the feeder it enrolled there) is left as it is,
+/// for the caller to read again and make its change anew, so neither writer
+/// saves over the other.
+Future<bool> swapStore({
+  required String path,
+  required AppStore read,
+  required AppStore store,
+}) => RustLib.instance.api.crateApiStoreSwapStore(
+  path: path,
+  read: read,
+  store: store,
+);
 
 /// A key as the store and NSD's `id` spell it: lowercase hex.
 String identityHex({required List<int> identity}) =>

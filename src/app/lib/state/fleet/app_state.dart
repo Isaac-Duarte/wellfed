@@ -361,11 +361,18 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   /// Change the file from what it holds now, not from this copy of it: an
   /// install's run saves a feeder there from Rust, before Dart hears of it.
-  /// One at a time, so two changes do not read the same file.
+  /// One at a time, so two changes do not read the same file, and a save
+  /// lands only on the file it was made from: one the run changed meanwhile
+  /// is read again and the change made anew.
   Future<void> _update(AppStore Function(AppStore) change) => _writing.run(() async {
-    final AppStore store = change(await loadStore(path: _path));
-    await saveStore(path: _path, store: store);
-    _store = store;
-    notifyListeners();
+    while (true) {
+      final AppStore read = await loadStore(path: _path);
+      final AppStore store = change(read);
+      if (await swapStore(path: _path, read: read, store: store)) {
+        _store = store;
+        notifyListeners();
+        return;
+      }
+    }
   });
 }

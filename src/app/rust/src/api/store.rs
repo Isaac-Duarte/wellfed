@@ -7,6 +7,7 @@
 //! refused and left as it is.
 
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -161,6 +162,15 @@ pub fn feeder_address(text: &str) -> Result<String, BridgeError> {
 /// The store's file name in the app's directory.
 pub(crate) const FILE_NAME: &str = "wellfed.json";
 
+/// Every write of the file, Dart's and an install thread's, one at a time,
+/// so a check of what the file holds still holds when the write lands.
+static WRITING: Mutex<()> = Mutex::new(());
+
+fn writing() -> MutexGuard<'static, ()> {
+    // A writer that panicked left the file whole: each write is atomic.
+    WRITING.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// The store at `path` as the app's start reads it: an empty one when the
 /// app has never saved, and an empty one too, with the old file set aside,
 /// when it does not read. The client key in secure storage and the stock
@@ -171,6 +181,7 @@ pub fn open_store(path: &str) -> Result<OpenedStore, BridgeError> {
         store: AppStore::default(),
         set_aside: Some(set_aside.clone()),
     };
+    let _writing = writing();
     let file = match stored::open(Path::new(path), StoreKind::App, fresh)? {
         Opened::Absent => AppFile::default(),
         Opened::Read(file) | Opened::SetAside { value: file, .. } => file,
@@ -185,6 +196,7 @@ pub fn open_store(path: &str) -> Result<OpenedStore, BridgeError> {
 /// says nothing of it.
 #[flutter_rust_bridge::frb(sync)]
 pub fn store_notice_read(path: &str) -> Result<(), BridgeError> {
+    let _writing = writing();
     let path = Path::new(path);
     let mut file = file(path)?;
     if file.set_aside.take().is_some() {
@@ -207,12 +219,49 @@ pub fn load_store(path: &str) -> Result<AppStore, BridgeError> {
 
 /// Replace the store at `path`, keeping a notice the owner has not read.
 pub fn save_store(path: &str, store: &AppStore) -> Result<(), BridgeError> {
+    let _writing = writing();
     let path = Path::new(path);
     let file = AppFile {
         store: store.clone(),
         set_aside: file(path)?.set_aside,
     };
     stored::write(path, &file)
+}
+
+/// Replace the store at `path` with `store`, a change of `read`, if the file
+/// still holds `read`; whether it did. A file changed since it was read (an
+/// install's run remembers the feeder it enrolled there) is left as it is,
+/// for the caller to read again and make its change anew, so neither writer
+/// saves over the other.
+pub fn swap_store(path: &str, read: &AppStore, store: &AppStore) -> Result<bool, BridgeError> {
+    let _writing = writing();
+    let path = Path::new(path);
+    let file = file(path)?;
+    if file.store != *read {
+        return Ok(false);
+    }
+    stored::write(
+        path,
+        &AppFile {
+            store: store.clone(),
+            set_aside: file.set_aside,
+        },
+    )?;
+    Ok(true)
+}
+
+/// Change the store at `path` in place, with no other write between the
+/// read and the save; `change` says whether it changed anything to save.
+pub(crate) fn update_store(
+    path: &Path,
+    change: impl FnOnce(&mut AppStore) -> bool,
+) -> Result<(), BridgeError> {
+    let _writing = writing();
+    let mut file = file(path)?;
+    if change(&mut file.store) {
+        stored::write(path, &file)?;
+    }
+    Ok(())
 }
 
 /// A key as the store and NSD's `id` spell it: lowercase hex.
