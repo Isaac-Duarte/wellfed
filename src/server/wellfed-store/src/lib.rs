@@ -115,6 +115,18 @@ pub enum Error {
     Newer { applied: i64, embedded: i64 },
 }
 
+impl Error {
+    /// Whether the store refused a write for the values it carries, so the
+    /// same write is refused again however often it is tried, rather than
+    /// failing in the database.
+    pub fn refuses_value(&self) -> bool {
+        matches!(
+            self,
+            Self::Unknown(_) | Self::Unreadable(_) | Self::TooLarge(_) | Self::Json(..)
+        )
+    }
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// The database: a writer and a read pool over one file.
