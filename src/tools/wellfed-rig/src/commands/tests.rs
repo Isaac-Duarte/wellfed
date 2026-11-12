@@ -842,6 +842,22 @@ fn a_write_that_exits_short_of_complete_leaves_its_bank_unknown_whatever_its_cod
     }
 }
 
+/// A cancel taken before a write starts keeps it from starting: no flash
+/// client runs, and the ledger keeps what it had, as nothing was written.
+#[test]
+fn a_cancel_before_the_write_starts_runs_nothing() {
+    let mut rig = rig();
+    let execute = prepared_give_way(&mut rig);
+    let ran = rig.tools.0.borrow().flash.len();
+    rig.bench.cancel.cancel();
+
+    let result = rig.bench.give_way_execute(&execute);
+
+    assert!(matches!(result, Err(Error::Interrupted)), "{result:?}");
+    assert_eq!(rig.tools.0.borrow().flash.len(), ran, "no flash client ran");
+    assert!(rig.bench.written.is_empty(), "{:?}", rig.bench.written);
+}
+
 fn stock(name: &str, fallback: Option<&str>) -> StockArgs {
     StockArgs {
         name: name.into(),
