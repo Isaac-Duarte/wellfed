@@ -162,6 +162,29 @@ def _issue(hass: HomeAssistant, issue: str) -> ir.IssueEntry | None:
     return ir.async_get(hass).async_get_issue(DOMAIN, f"{issue}_{fake.IDENTITY.hex()}")
 
 
+async def test_a_plan_table_not_read_removes_no_plan_switch(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder, state=fake.state(plans=[fake.plan(0)]))
+    registry = er.async_get(hass)
+    shown = registry.async_get_entity_id("switch", DOMAIN, f"{fake.IDENTITY.hex()}-plan_0")
+    assert shown is not None
+    registry.async_update_entity(shown, new_entity_id="switch.breakfast")
+
+    # A state with the table unread, as a session shows before it reads it
+    # again: the owner's switch stays, unavailable, under its new id.
+    feeder.push(fake.update(bridge.UpdateKind.State, state=fake.state(plans=None)))
+    session = entry.runtime_data
+    await _until(hass, lambda: session.state is not None and session.state.plans is None)
+    assert registry.async_get("switch.breakfast") is not None
+    breakfast = hass.states.get("switch.breakfast")
+    assert breakfast is not None and breakfast.state == "unavailable"
+
+    feeder.push(fake.update(bridge.UpdateKind.State, state=fake.state(plans=[fake.plan(0)])))
+    await _until(hass, lambda: getattr(hass.states.get("switch.breakfast"), "state", None) == "on")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_a_lost_feed_opens_a_repair_its_settlement_clears(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
