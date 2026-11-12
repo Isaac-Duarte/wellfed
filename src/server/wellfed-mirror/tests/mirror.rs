@@ -1,7 +1,8 @@
 //! The mirror on its own, against the simulated feeder: updates follow the
 //! store, a command that waits past its turn is never sent, a late answer
 //! still reaches its caller, and a stopped feeder is let go (offline last)
-//! once its task has ended.
+//! once its task has ended, and a zone change during a clock sync is synced
+//! too.
 
 mod support;
 
@@ -11,9 +12,10 @@ use jiff::Timestamp;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::TryRecvError;
 use wellfed_api::{Connection as Link, EventBody, EventKind, FeederEvent, HistoryEvent, Source};
-use wellfed_mirror::{AskError, MirrorEvent};
+use wellfed_mirror::{AskError, MirrorEvent, Zone};
 use wellfed_model::{Answer, Op, Skew};
 use wellfed_server_testkit::feeder::{self, Relay};
+use wellfed_server_testkit::fixed::FixedClock;
 use wellfed_server_testkit::{TempStore, WAIT, local, until};
 use wellfed_store::Store;
 
@@ -211,6 +213,47 @@ fn a_stopped_feeder_is_let_go() {
         }
         assert_eq!(last, Some(Link::Offline));
 
+        mirror.shutdown().await;
+        store.close().await;
+        sim.stop().await;
+    });
+}
+
+/// The household's zone changes while the feeder's answer to the clock
+/// sync for the zone before is held back. The server's key may not set the
+/// feeder's zone, so only clock syncs carry it: the change is synced on its
+/// own at once, not left to the next periodic sync.
+#[test]
+fn a_zone_change_during_a_clock_sync_gets_a_sync_of_its_own() {
+    local(async {
+        let temp = TempStore::new();
+        let store = temp.open().await;
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let address = relay.address.to_string();
+        let (mirror, _updates) = mirrored(&store, &sim, &address, WAIT).await;
+        let tokyo = Zone::new("Asia/Tokyo", FixedClock.now()).unwrap();
+        let kolkata = Zone::new("Asia/Kolkata", FixedClock.now()).unwrap();
+
+        relay.hold_answers();
+        let before = relay.passed();
+        mirror.set_zone(tokyo);
+        until("the clock sync reached the feeder", || async {
+            relay.passed() > before
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        mirror.set_zone(kolkata);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        relay.resume();
+
+        let reads = std::cell::Cell::new(0x6000_u128);
+        until("the feeder keeps Kolkata's offset", || async {
+            reads.set(reads.get() + 1);
+            let time = mirror.ask(ID, reads.get().to_be_bytes(), Op::GetTime).await;
+            matches!(time, Ok(Answer::Time(view)) if view.offset_s == Some(5 * 3600 + 1800))
+        })
+        .await;
         mirror.shutdown().await;
         store.close().await;
         sim.stop().await;
