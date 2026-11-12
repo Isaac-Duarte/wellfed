@@ -29,7 +29,7 @@ src/client/wellfed-install   tokio driver of wellfed-client's install from stock
                               pairing, the backup, the promotion; the Android app runs it, the CLI its restore
 src/client/wellfed-server-client  a typed async client of the server's HTTP API over wellfed-api (reqwest with rustls,
                               the SSE stream included): the app, the CLI and the server's own tests
-src/tools/wellfed-feeder-sim the host-simulated feeder: wellfed-feeder's loop pass and stores over real TCP,
+src/sim/wellfed-feeder-sim   the host-simulated feeder: wellfed-feeder's loop pass and stores over real TCP,
                               on wellfed-device-sim, which every simulated device kind shares
 src/server/wellfed-api       HTTP bodies, error codes, OpenAPI schemas; a module per resource. No axum. Builds for Android
 src/server/wellfed-store     sqlx, migrations, typed queries; a module per table group, one Store. Raw rows plus

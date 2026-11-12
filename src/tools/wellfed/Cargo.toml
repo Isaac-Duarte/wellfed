@@ -51,7 +51,7 @@ wellfed-server-testkit.workspace = true
 # `wellfed status` through a stand-in for the bench server's device routes,
 # in front of a simulated feeder.
 axum.workspace = true
-wellfed-feeder-sim = { path = "../wellfed-feeder-sim", features = ["harness"] }
+wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 

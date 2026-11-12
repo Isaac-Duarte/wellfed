@@ -37,7 +37,7 @@ ed25519-dalek = "2"
 # Freezes the pinned stock review for one ignored test.
 wellfed-build = { path = "../wellfed-build" }
 # Device::install's push, faults included, against the simulator over TCP.
-wellfed-feeder-sim = { path = "../wellfed-feeder-sim", features = ["harness"] }
+wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 wellfed-image = { workspace = true, features = ["fixtures"] }
 wellfed-relay = { path = "../wellfed-relay", features = ["fake"] }
 sha2 = "0.10"

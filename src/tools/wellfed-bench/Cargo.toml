@@ -53,7 +53,7 @@ tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sig
 rustix = { version = "1", features = ["pty"] }
 tempfile.workspace = true
 # The feeder session against a simulated feeder over TCP.
-wellfed-feeder-sim = { path = "../wellfed-feeder-sim", features = ["harness"] }
+wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 # The server's tests and the MCP test run a real server on a scripted relay
 # board.
 wellfed-relay = { path = "../wellfed-relay", features = ["fake"] }

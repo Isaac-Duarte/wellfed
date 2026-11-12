@@ -3,6 +3,7 @@ members = [
     "src/sdk/*",
     "src/product/*",
     "src/client/*",
+    "src/sim/*",
     "src/server/*",
     "src/tools/wellfed",
     "src/tools/wellfed-*",
@@ -50,8 +51,8 @@ wellfed-client = { path = "src/client/wellfed-client" }
 wellfed-model = { path = "src/client/wellfed-model" }
 wellfed-connect = { path = "src/client/wellfed-connect" }
 wellfed-install = { path = "src/client/wellfed-install" }
-wellfed-device-sim = { path = "src/tools/wellfed-device-sim" }
-wellfed-feeder-sim = { path = "src/tools/wellfed-feeder-sim" }
+wellfed-device-sim = { path = "src/sim/wellfed-device-sim" }
+wellfed-feeder-sim = { path = "src/sim/wellfed-feeder-sim" }
 wellfed-api = { path = "src/server/wellfed-api" }
 wellfed-store = { path = "src/server/wellfed-store" }
 wellfed-mirror = { path = "src/server/wellfed-mirror" }
@@ -67,7 +68,7 @@ wellfed-emu = { path = "src/tools/wellfed-emu" }
 wellfed-image = { path = "src/client/wellfed-image" }
 wellfed-signing = { path = "src/client/wellfed-signing" }
 wellfed-testkit = { path = "src/sdk/wellfed-testkit" }
-wellfed-sim = { path = "src/tools/wellfed-sim" }
+wellfed-sim = { path = "src/sim/wellfed-sim" }
 # Host tools.
 anyhow = "1.0.104"
 axum = "0.8.9"

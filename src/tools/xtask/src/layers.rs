@@ -16,7 +16,10 @@
 //!   (docs/firmware/device-kinds.md);
 //! - a crate outside `src/tools/` links no host tool's crate, so what the
 //!   app, the server and the firmware build on is a library in its own
-//!   layer, never a tool's internals.
+//!   layer, never a tool's internals;
+//! - the simulators in `src/sim/` are linked by the tools, by test kits and
+//!   by other crates' tests, never by a crate that ships, so no build an
+//!   owner runs carries a simulated feeder.
 //!
 //! The arrows name crates that do not exist yet, so a new crate is checked
 //! from its first manifest. Dev-dependencies are exempt from the arrows (a
@@ -152,10 +155,16 @@ fn is_kind_sdk(name: &str) -> bool {
 /// The host tools' folder: a crate whose manifest is under it is a tool.
 const TOOLS: &str = "src/tools/";
 
-/// The only edges from outside [`TOOLS`] into a tool's crate: the server's
-/// test kit is the harness the server crates' tests start, and the
-/// simulated feeder is the feeder it serves them.
-const INTO_TOOLS: [(&str, &str); 1] = [("wellfed-server-testkit", "wellfed-feeder-sim")];
+/// The simulators' folder: a crate whose manifest is under it is a
+/// simulator.
+const SIM: &str = "src/sim/";
+
+/// A test kit is the harness other crates' tests start (the server's starts
+/// a whole server against the simulated feeder), so it may link a
+/// simulator as the tools do.
+fn is_test_kit(name: &str) -> bool {
+    name.ends_with("-testkit")
+}
 
 /// What `wellfed-api` may depend on: serde types, schemas, ids and times,
 /// all of which build for Android. A new entry needs that check.
@@ -241,23 +250,29 @@ struct Graph {
     members: BTreeSet<String>,
     /// The members whose manifest is under [`TOOLS`].
     tools: BTreeSet<String>,
+    /// The members whose manifest is under [`SIM`].
+    sims: BTreeSet<String>,
     edges: BTreeMap<String, Vec<(String, Use)>>,
 }
 
 impl Graph {
     fn from_metadata(metadata: Metadata) -> Result<Self, Error> {
         let resolve = metadata.resolve.ok_or(Error::NoResolve)?;
-        let tools = metadata
-            .packages
-            .iter()
-            .filter(|package| {
-                package
-                    .manifest_path
-                    .strip_prefix(&metadata.workspace_root)
-                    .is_ok_and(|path| path.starts_with(TOOLS))
-            })
-            .map(|package| package.id.clone())
-            .collect();
+        let under = |folder: &str| -> BTreeSet<String> {
+            metadata
+                .packages
+                .iter()
+                .filter(|package| {
+                    package
+                        .manifest_path
+                        .strip_prefix(&metadata.workspace_root)
+                        .is_ok_and(|path| path.starts_with(folder))
+                })
+                .map(|package| package.id.clone())
+                .collect()
+        };
+        let tools = under(TOOLS);
+        let sims = under(SIM);
         let names: BTreeMap<String, String> = metadata
             .packages
             .into_iter()
@@ -285,6 +300,7 @@ impl Graph {
         Ok(Self {
             names,
             tools: members.intersection(&tools).cloned().collect(),
+            sims: members.intersection(&sims).cloned().collect(),
             members,
             edges,
         })
@@ -386,12 +402,18 @@ fn rules(graph: &Graph) -> Vec<String> {
             if !graph.members.contains(dep) {
                 continue;
             }
-            if !graph.tools.contains(member)
-                && graph.tools.contains(dep)
-                && !INTO_TOOLS.contains(&(from, to))
-            {
+            if !graph.tools.contains(member) && graph.tools.contains(dep) {
                 errors.push(format!(
                     "dependency rule: {from} → {to}: a crate outside {TOOLS} links no host tool's crate"
+                ));
+            }
+            if !graph.tools.contains(member)
+                && !graph.sims.contains(member)
+                && graph.sims.contains(dep)
+                && !is_test_kit(from)
+            {
+                errors.push(format!(
+                    "dependency rule: {from} → {to}: outside {TOOLS} and {SIM}, only a test kit links a simulator; others take one for their tests"
                 ));
             }
             if let Some(allowed) = arrows.get(from) {
@@ -444,6 +466,11 @@ mod tests {
                 .filter(|name| TOOL_MEMBERS.contains(name))
                 .map(ToString::to_string)
                 .collect(),
+            sims: members
+                .iter()
+                .filter(|name| SIM_MEMBERS.contains(name))
+                .map(ToString::to_string)
+                .collect(),
             edges: BTreeMap::new(),
         };
         for (from, to, used) in edges {
@@ -460,13 +487,15 @@ mod tests {
     }
 
     /// The members of [`MEMBERS`] (and the tests' own) under `src/tools/`.
-    const TOOL_MEMBERS: [&str; 5] = [
+    const TOOL_MEMBERS: [&str; 4] = [
         "wellfed",
         "wellfed-bench",
         "wellfed-build",
-        "wellfed-feeder-sim",
         "wellfed-stock-server",
     ];
+
+    /// The members of [`MEMBERS`] (and the tests' own) under `src/sim/`.
+    const SIM_MEMBERS: [&str; 3] = ["wellfed-device-sim", "wellfed-feeder-sim", "wellfed-sim"];
 
     const MEMBERS: [&str; 13] = [
         "wellfed",
@@ -600,29 +629,66 @@ mod tests {
             "wellfed-stock-server",
             "wellfed-build",
             "wellfed-feeder-sim",
-            "wellfed-server-testkit",
-            "wellfed-core",
         ];
         let mut edges = vec![
             ("wellfed-install", "wellfed-stock", Links),
             ("wellfed-stock-server", "wellfed-stock", Links),
             ("wellfed-build", "wellfed-stock", Links),
-            // The server's test kit serves its tests the simulated feeder.
-            ("wellfed-server-testkit", "wellfed-feeder-sim", Links),
             // A test of a crate outside the tools may run one.
-            ("wellfed-install", "wellfed-feeder-sim", TestsOnly),
+            ("wellfed-install", "wellfed-build", TestsOnly),
         ];
         assert!(rules(&graph(&members, &edges)).is_empty());
 
         edges.extend([
-            ("wellfed-core", "wellfed-feeder-sim", Links),
             ("wellfed-install", "wellfed-build", Links),
+            // A simulator is outside the tools too.
+            ("wellfed-feeder-sim", "wellfed-stock-server", Links),
         ]);
         assert_eq!(
             rules(&graph(&members, &edges)),
             [
-                "dependency rule: wellfed-core → wellfed-feeder-sim: a crate outside src/tools/ links no host tool's crate",
+                "dependency rule: wellfed-feeder-sim → wellfed-stock-server: a crate outside src/tools/ links no host tool's crate",
                 "dependency rule: wellfed-install → wellfed-build: a crate outside src/tools/ links no host tool's crate",
+            ]
+        );
+    }
+
+    #[test]
+    fn only_tools_test_kits_and_tests_link_a_simulator() {
+        use Use::{Links, TestsOnly};
+        let members = [
+            "wellfed",
+            "wellfed-core",
+            "wellfed-device-sim",
+            "wellfed-feeder-sim",
+            "wellfed-fw-feeder",
+            "wellfed-install",
+            "wellfed-server-testkit",
+            "wellfed-sim",
+        ];
+        let mut edges = vec![
+            // A simulator builds on another, and on the code it simulates.
+            ("wellfed-feeder-sim", "wellfed-device-sim", Links),
+            ("wellfed-feeder-sim", "wellfed-fw-feeder", Links),
+            ("wellfed-feeder-sim", "wellfed-core", Links),
+            // The server's test kit serves its tests the simulated feeder.
+            ("wellfed-server-testkit", "wellfed-feeder-sim", Links),
+            // The tools run it, and other crates' tests may.
+            ("wellfed", "wellfed-feeder-sim", Links),
+            ("wellfed-install", "wellfed-feeder-sim", TestsOnly),
+            ("wellfed-fw-feeder", "wellfed-sim", TestsOnly),
+        ];
+        assert!(rules(&graph(&members, &edges)).is_empty());
+
+        edges.extend([
+            ("wellfed-core", "wellfed-sim", Links),
+            ("wellfed-fw-feeder", "wellfed-sim", Links),
+        ]);
+        assert_eq!(
+            rules(&graph(&members, &edges)),
+            [
+                "dependency rule: wellfed-core → wellfed-sim: outside src/tools/ and src/sim/, only a test kit links a simulator; others take one for their tests",
+                "dependency rule: wellfed-fw-feeder → wellfed-sim: outside src/tools/ and src/sim/, only a test kit links a simulator; others take one for their tests",
             ]
         );
     }
@@ -702,9 +768,10 @@ mod tests {
                 {"id": "b 0.9.0", "name": "sqlx", "manifest_path": "/r/sqlx/Cargo.toml"},
                 {"id": "c 0.8.0", "name": "axum", "manifest_path": "/r/axum/Cargo.toml"},
                 {"id": "d 1.0.0", "name": "cc", "manifest_path": "/r/cc/Cargo.toml"},
-                {"id": "e 0.1.0", "name": "wellfed-bench", "manifest_path": "/w/src/tools/wellfed-bench/Cargo.toml"}
+                {"id": "e 0.1.0", "name": "wellfed-bench", "manifest_path": "/w/src/tools/wellfed-bench/Cargo.toml"},
+                {"id": "f 0.1.0", "name": "wellfed-feeder-sim", "manifest_path": "/w/src/sim/wellfed-feeder-sim/Cargo.toml"}
             ],
-            "workspace_members": ["a 0.1.0", "e 0.1.0"],
+            "workspace_members": ["a 0.1.0", "e 0.1.0", "f 0.1.0"],
             "workspace_root": "/w",
             "resolve": {"nodes": [
                 {"id": "a 0.1.0", "deps": [
@@ -728,6 +795,7 @@ mod tests {
             ]
         );
         assert_eq!(graph.tools, BTreeSet::from(["e 0.1.0".to_string()]));
+        assert_eq!(graph.sims, BTreeSet::from(["f 0.1.0".to_string()]));
         assert_eq!(
             rules(&graph),
             ["dependency rule: wellfed-service → sqlx: only wellfed-store depends on sqlx"]

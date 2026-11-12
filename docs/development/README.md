@@ -60,7 +60,8 @@ Under `nohup`, macOS doesn't show that SIGHUP is ignored, so `wellfed restore-st
 | `src/product/` | Product policy shared by the firmware and the server: the device protocol and the feeder's stores |
 | `src/client/` | The clients the CLI, the server and the Android app share, and the libraries host programs share: file formats, image checks, signing and stock's protocol ([server design](../server/design.md#crates)) |
 | `src/server/` | The owner's optional server ([the server](../server/README.md)) |
-| `src/tools/` | Host tools, including the `wellfed` CLI and the simulators ([tool list](../../src/tools/README.md)) |
+| `src/sim/` | The simulated devices, which the tools, the server's test kit and other crates' tests run ([simulators](../../src/tools/README.md#simulators)) |
+| `src/tools/` | Host tools, including the `wellfed` CLI ([tool list](../../src/tools/README.md)) |
 | `src/firmware/wellfed/` | One crate per firmware: `feeder`, `qa`, `bringup` and `blink` ([firmware guide](../../src/firmware/wellfed/README.md)) |
 | `src/firmware/vendor/` | The vendor SDK side: C hooks and ports, pinned SDK and toolchain locks, the stock layout, simulator scenarios and the image build (`make -C src/firmware/vendor`) |
 | `src/firmware/devices/` | Per-device descriptions and layouts |
