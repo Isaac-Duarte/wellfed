@@ -1,6 +1,7 @@
 //! The mirror on its own, against the simulated feeder: updates follow the
-//! store, a command whose caller left is never sent, and a stopped feeder
-//! is let go (offline last) once its task has ended.
+//! store, a command that waits past its turn is never sent, a late answer
+//! still reaches its caller, and a stopped feeder is let go (offline last)
+//! once its task has ended.
 
 mod support;
 
@@ -16,7 +17,7 @@ use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::{TempStore, WAIT, local, until};
 use wellfed_store::Store;
 
-use support::{ID, mirrored, next};
+use support::{ID, mirrored, mirrored_timed, next};
 
 /// The next new event the mirror broadcasts.
 async fn next_event(updates: &mut Receiver<MirrorEvent>) -> HistoryEvent {
@@ -80,30 +81,43 @@ fn an_answered_command_and_its_event_are_stored_before_they_are_broadcast() {
     });
 }
 
+/// The mirror's clocks for a stalled feeder: a command waits `queue` for
+/// its turn, and once sent the session waits `answer` for the feeder.
+fn stalling(queue: Duration, answer: Duration) -> wellfed_mirror::Timing {
+    wellfed_mirror::Timing {
+        session: wellfed_connect::Timing {
+            answer,
+            ..wellfed_connect::Timing::DEFAULT
+        },
+        ..support::timing(queue)
+    }
+}
+
 /// The feeder stalls with one write on the wire and a second queued
-/// behind it. The first caller hears `Unknown`; the second gives up
-/// before its turn, so its write is dropped unsent and never applied.
+/// behind it. The first caller hears `Unknown` once the session's window
+/// passes; the second waited past its turn by then, so it is turned away
+/// `Expired`, a write the mirror knows it never sent, and never applied.
 #[test]
-fn a_command_whose_caller_left_is_never_sent() {
+fn a_command_that_waits_past_its_turn_is_never_sent() {
     local(async {
         let temp = TempStore::new();
         let store = temp.open().await;
         let sim = feeder::start().await;
         let relay = Relay::start(sim.address).await;
         let address = relay.address.to_string();
-        let answer = Duration::from_millis(500);
-        let (mirror, mut updates) = mirrored(&store, &sim, &address, answer).await;
+        let timing = stalling(Duration::from_millis(300), Duration::from_millis(600));
+        let (mirror, mut updates) = mirrored_timed(&store, &sim, &address, timing).await;
 
         relay.pause();
         let unlock = mirror.ask(ID, [1; 16], Op::SetLock { locked: false });
         let lock = mirror.ask(ID, [2; 16], Op::SetLock { locked: true });
         let (unlocked, locked) = tokio::join!(unlock, lock);
         assert_eq!(unlocked, Err(AskError::Unknown));
-        assert_eq!(locked, Err(AskError::Unknown));
+        assert_eq!(locked, Err(AskError::Expired));
         relay.resume();
 
         // The task runs its queue in order: once a later command is
-        // answered, the abandoned write has had its turn.
+        // answered, the turned-away write has had its turn.
         let event = loop {
             let event = next_event(&mut updates).await;
             if matches!(event.body, EventBody::Feeder(FeederEvent::Lock { .. })) {
@@ -118,8 +132,46 @@ fn a_command_whose_caller_left_is_never_sent() {
         assert_eq!(
             locks(&store, event.epoch).await,
             [false],
-            "the first write landed once; the abandoned one never did"
+            "the first write landed once; the turned-away one never did"
         );
+
+        mirror.shutdown().await;
+        store.close().await;
+        sim.stop().await;
+    });
+}
+
+/// A write goes out late, after queueing behind a stalled one, and its
+/// answer comes after a caller's turn would have run out but inside the
+/// session's window. The caller hears it: an answer the server took in is
+/// never thrown away as unknown.
+#[test]
+fn a_late_answer_inside_the_sessions_window_reaches_its_caller() {
+    local(async {
+        let temp = TempStore::new();
+        let store = temp.open().await;
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let address = relay.address.to_string();
+        let timing = stalling(Duration::from_secs(1), Duration::from_secs(4));
+        let (mirror, _updates) = mirrored_timed(&store, &sim, &address, timing).await;
+
+        relay.hold_answers();
+        let unlock = mirror.ask(ID, [1; 16], Op::SetLock { locked: false });
+        let lock = mirror.ask(ID, [2; 16], Op::SetLock { locked: true });
+        let stall = async {
+            tokio::time::sleep(Duration::from_millis(600)).await;
+            // The first answer goes back, the second write goes out, and
+            // its answer is held past the second's turn.
+            relay.hold_answers_after(1);
+            relay.resume();
+            tokio::time::sleep(Duration::from_millis(1_400)).await;
+            assert!(relay.holding_answers(), "the second answer is held");
+            relay.resume();
+        };
+        let (unlocked, locked, ()) = tokio::join!(unlock, lock, stall);
+        assert_eq!(unlocked, Ok(Answer::Done { generation: None }));
+        assert_eq!(locked, Ok(Answer::Done { generation: None }));
 
         mirror.shutdown().await;
         store.close().await;

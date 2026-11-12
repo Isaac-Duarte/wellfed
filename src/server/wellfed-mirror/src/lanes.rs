@@ -12,7 +12,8 @@
 //!
 //! One request in flight per lane keeps a cut session's uncertain writes to
 //! two, and keeps a queued command unsent until its turn, so one whose
-//! caller left is dropped rather than sent late. Answers are matched to
+//! caller left is dropped rather than sent late, and one that waited past
+//! its turn is turned away as never sent. Answers are matched to
 //! their request by id; a command whose id is already in flight on the
 //! other lane is held until that one is answered, so one answer never
 //! settles two requests. When the session ends, every request in flight is
@@ -71,7 +72,8 @@ impl Lanes {
     }
 
     /// Send `command` on `lane`, or hold it while its id is in flight on
-    /// the other lane. One whose caller left is dropped unsent.
+    /// the other lane. One whose caller left, or that waited past its turn,
+    /// goes unsent.
     pub(crate) fn dispatch(
         &mut self,
         lane: Lane,
@@ -79,9 +81,9 @@ impl Lanes {
         connection: &mut Connection,
     ) -> Result<(), End> {
         let (slot, other) = self.pick(lane);
-        if command.left() {
+        let Some(command) = command.still_wanted() else {
             return Ok(());
-        }
+        };
         if other.in_flight(command.id) {
             slot.held = Some(command);
             return Ok(());
@@ -111,12 +113,9 @@ impl Lanes {
 
         for lane in [Lane::Short, Lane::Long] {
             let (slot, other) = self.pick(lane);
-            let Some(held) = slot.held.take() else {
+            let Some(held) = slot.held.take().and_then(Command::still_wanted) else {
                 continue;
             };
-            if held.left() {
-                continue;
-            }
             if other.in_flight(held.id) {
                 slot.held = Some(held);
                 continue;

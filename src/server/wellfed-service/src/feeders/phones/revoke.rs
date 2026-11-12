@@ -141,6 +141,7 @@ impl Service {
                 // updated, as an offline one does once it is back.
                 Err(
                     AskError::Offline
+                    | AskError::Expired
                     | AskError::NotRunning
                     | AskError::Legacy
                     | AskError::Unsendable,

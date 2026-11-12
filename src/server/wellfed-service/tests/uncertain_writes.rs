@@ -24,6 +24,7 @@ const SERVER_KEY: [u8; 32] = [0x55; 32];
 
 fn quick() -> Config {
     let mut config = config();
+    config.timing.queue = Duration::from_secs(2);
     config.timing.answer = Duration::from_secs(2);
     config
 }

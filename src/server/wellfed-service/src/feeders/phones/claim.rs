@@ -142,7 +142,7 @@ impl Service {
     async fn listed_role(&self, id: FeederId, key: &[u8; 32]) -> Result<ClientRole> {
         // A session just started, by an adoption or a reconnect, comes up
         // in the background.
-        let within = self.shared.config.timing.answer;
+        let within = self.shared.config.timing.queue;
         if !self.mirror.online(id, within).await {
             warn!("the feeder is not online to confirm a phone's key");
             return Err(ClientError::PhoneKeyUnconfirmed.into());

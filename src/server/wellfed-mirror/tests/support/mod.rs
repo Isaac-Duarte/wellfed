@@ -23,16 +23,16 @@ pub const ID: FeederId = FeederId(Uuid::from_u128(7));
 /// The mirror's key on the feeder.
 pub const SECRET: [u8; 32] = [0x33; 32];
 
-/// The tests' clocks, with callers waiting `answer` for a command. The
+/// The tests' clocks, with a command waiting `queue` for its turn. The
 /// simulator writes a sector within a pass or two, and restarts a second
 /// after it answers a give-way, as the update stage does, where the board
 /// takes seconds more.
-pub fn timing(answer: Duration) -> Timing {
+pub fn timing(queue: Duration) -> Timing {
     Timing {
         retry_min: Duration::from_millis(50),
         retry_max: Duration::from_millis(400),
         time_sync: Duration::from_secs(3600),
-        answer,
+        queue,
         sample_wait: Duration::from_millis(100),
         session: wellfed_connect::Timing::DEFAULT,
         pace: Pace {

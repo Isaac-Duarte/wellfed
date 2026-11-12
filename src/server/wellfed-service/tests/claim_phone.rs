@@ -144,6 +144,7 @@ fn an_expiring_token_or_account_claims_nothing() {
 fn an_unconfirmed_claim_is_settled_by_claiming_again() {
     local(async {
         let mut quick = config();
+        quick.timing.queue = Duration::from_secs(2);
         quick.timing.answer = Duration::from_secs(2);
         let flash = Flash::memory();
         let sim = feeder::start_on(&flash).await;

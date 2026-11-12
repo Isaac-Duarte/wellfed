@@ -241,7 +241,7 @@ impl Service {
                 }
             }
         };
-        let wait = self.shared.config.timing.answer;
+        let wait = self.shared.config.timing.queue;
         tokio::time::timeout(wait, refused).await.unwrap_or(false)
     }
 }

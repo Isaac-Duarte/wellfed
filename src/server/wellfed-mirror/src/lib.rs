@@ -16,9 +16,10 @@
 //!   [`Mirror::ask`]; a long operation holds an [`Operation`] and sends its
 //!   steps one at a time. The task pipelines the lanes over one session, so
 //!   a short command is answered after at most one step. One that is
-//!   not answered in time is [`AskError::Unknown`], never a failure: the
-//!   feeder may have run it, and a retry under the same request id gets its
-//!   first answer. One whose caller stopped waiting is dropped unsent.
+//!   sent and not answered in time is [`AskError::Unknown`], never a
+//!   failure: the feeder may have run it, and a retry under the same
+//!   request id gets its first answer. One that waits too long for its turn
+//!   is [`AskError::Expired`], never sent.
 //!   An install is a long operation: [`Operation::install`] runs the
 //!   update driver the owner's CLI runs, a step at a time on the long lane,
 //!   and so are "Restore stock" ([`Operation::restore`]) and reading the
