@@ -43,3 +43,12 @@ disallowed-methods = [
     { path = "rand::rng", reason = "draw from the injected `Random`", allow-invalid = true },
     { path = "rand::thread_rng", reason = "draw from the injected `Random`", allow-invalid = true },
 ]
+# The system generators themselves, so one cannot be held and drawn from
+# later: rand's thread generator, the system one by its rand 0.10 and
+# getrandom 0.4 name (`SysRng`), and rand_core 0.6's `OsRng`, which other
+# dependencies still build.
+disallowed-types = [
+    { path = "rand::rngs::ThreadRng", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "getrandom::SysRng", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "rand_core::OsRng", reason = "draw from the injected `Random`", allow-invalid = true },
+]
