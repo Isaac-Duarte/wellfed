@@ -11,10 +11,12 @@ use std::time::Duration;
 use jiff::Timestamp;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
-use wellfed_api::{ClientRole, Connection as Link, FeederRefusal, StatsSection};
+use wellfed_api::{
+    ClientRole, Connection as Link, EventBody, FeederEvent, FeederRefusal, StatsSection,
+};
 use wellfed_mirror::{Diagnostics, Feeder, LogError, Mirror, MirrorEvent};
 use wellfed_model::{Answer, LogLines, Op, Refusal, Trace, TraceEntry, TraceMotor};
-use wellfed_server_testkit::feeder::{self, Flash, Relay};
+use wellfed_server_testkit::feeder::{self, Control, Flash, Relay};
 use wellfed_server_testkit::{TempStore, WAIT, local, until};
 use wellfed_store::{Store, TraceFound};
 
@@ -351,6 +353,68 @@ fn a_followers_log_ends_when_its_tail_does() {
         assert!(mirror.stop(ID).await);
         ends(log, "a stopped feeder").await;
         ends(joined, "a joined follower").await;
+
+        mirror.shutdown().await;
+        store.close().await;
+        sim.stop().await;
+    });
+}
+
+/// A feed makes the food section due while another operation holds the
+/// long lane, and the feeder restarts before the read gets its turn. The
+/// reading comes from the new boot, so it is stored under the new boot's
+/// number, never the one the session had when it fell due.
+#[test]
+fn statistics_read_after_a_restart_name_the_new_boot() {
+    local(async {
+        let temp = TempStore::new();
+        let store = temp.open().await;
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let address = relay.address.to_string();
+        let (mirror, mut updates) =
+            mirrored_with(&store, &sim, &address, WAIT, ClientRole::Server, READ).await;
+        let (from, to) = (Timestamp::UNIX_EPOCH, Timestamp::MAX);
+        until("the connect's statistics are stored", || async {
+            store.latest_stats(ID).await.unwrap().len() == 6
+        })
+        .await;
+        let before = store.food_readings(ID, from, to).await.unwrap().len();
+
+        let turn = mirror.operation(ID).await.unwrap();
+        feed(&mirror, 1).await;
+        loop {
+            match updates.recv().await {
+                Ok(MirrorEvent::Event(event))
+                    if matches!(event.body, EventBody::Feeder(FeederEvent::Fed { .. })) =>
+                {
+                    break;
+                }
+                Ok(_) | Err(RecvError::Lagged(_)) => {}
+                Err(RecvError::Closed) => panic!("the mirror stopped"),
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        relay.pause();
+        relay.cut();
+        until("the session ended", || async {
+            mirror.link(ID) != Some(Link::Online)
+        })
+        .await;
+        sim.control(Control::Reboot);
+        relay.resume();
+        until("the restarted feeder is online", || async {
+            mirror.link(ID) == Some(Link::Online)
+        })
+        .await;
+        drop(turn);
+
+        until("the food section is read again", || async {
+            store.food_readings(ID, from, to).await.unwrap().len() > before
+        })
+        .await;
+        let readings = store.food_readings(ID, from, to).await.unwrap();
+        assert_eq!(readings[before].boot_count, Some(2));
 
         mirror.shutdown().await;
         store.close().await;
