@@ -16,13 +16,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use wellfed_homeassistant::api::{
-    AlertKind, NotSent, Pending, ServerProblem, Skew, Update, UpdateKind, WriteResult, Written,
+    AlertKind, EventKind, NotSent, Pending, ServerProblem, Skew, Update, UpdateKind, WriteResult,
+    Written,
 };
 use wellfed_homeassistant::feeder::Feeder;
 use wellfed_homeassistant::server::{self, Clocks, Refused, Target};
+use wellfed_model::{FeederSettingsPatch, Plan, Weekdays};
 use wellfed_server_client::Client;
 use wellfed_server_client::api::{
-    AdoptFeeder, ClientRole, Connection, FeederId, NewUser, Role, TokenId,
+    AdoptFeeder, ClientRole, Connection, FeederId, NewUser, PlansChange, Role, TokenId,
 };
 use wellfed_server_testkit::feeder::{self, Flash, Relay, Running};
 use wellfed_server_testkit::{
@@ -145,6 +147,44 @@ async fn settled_reads(feeder: &Arc<Feeder>) {
             return;
         }
     }
+}
+
+/// Every update within `wait`.
+async fn updates_within(feeder: &Arc<Feeder>, wait: Duration) -> Vec<Update> {
+    let feeder = Arc::clone(feeder);
+    blocking(move || {
+        let deadline = std::time::Instant::now() + wait;
+        let mut heard = Vec::new();
+        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+            heard.extend(feeder.next_update(left));
+        }
+        heard
+    })
+    .await
+}
+
+/// The next event update of `kind`, skipping the other updates.
+async fn next_event(feeder: &Arc<Feeder>, kind: EventKind) {
+    loop {
+        let update = next(feeder, UpdateKind::Event).await;
+        if update.event.is_some_and(|event| event.kind == kind) {
+            return;
+        }
+    }
+}
+
+async fn volume(feeder: &Arc<Feeder>, volume: u8) -> Written {
+    let feeder = Arc::clone(feeder);
+    let changes = FeederSettingsPatch {
+        volume: Some(volume),
+        ..FeederSettingsPatch::default()
+    };
+    blocking(move || feeder.put_settings(changes)).await
+}
+
+async fn plan_enabled(feeder: &Arc<Feeder>, enabled: bool) -> Written {
+    let feeder = Arc::clone(feeder);
+    blocking(move || feeder.set_plan_enabled(0, enabled)).await
 }
 
 async fn feed(feeder: &Arc<Feeder>, portions: u8) -> Written {
@@ -380,6 +420,54 @@ fn alerts_open_before_the_session_are_shown_and_one_after_fires_once() {
                 .iter()
                 .all(|alert| alert.key != news.opened[0].key)
         );
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// Home Assistant's own settings and plans writes through the server, each
+/// followed by the feeder's event of it: the state never shows either
+/// store unread (so no plan switch is removed), and the next write, once
+/// the event is in, goes on the generation the last one made rather than
+/// being refused for want of a read.
+#[test]
+fn a_store_event_after_an_own_write_keeps_the_store_shown_and_writable() {
+    local(async {
+        let sim = feeder::start().await;
+        let (server, owner) = started(TestServer::start().await).await;
+        let kitchen = adopt(&owner, &sim, sim.address.to_string()).await;
+        let held = owner.plans(kitchen.0).await.unwrap();
+        let mut plans = held.plans;
+        plans[0] = Some(Plan {
+            minute: 7 * 60,
+            portions: 1,
+            days: Weekdays::DAILY,
+            enabled: true,
+            call: 0,
+        });
+        let change = PlansChange { plans };
+        let key = uuid::Uuid::new_v4();
+        owner
+            .put_plans(kitchen.0, held.generation, &change, key)
+            .await
+            .unwrap();
+        let login = ada(&server).await;
+        let session = session(&server, &login, kitchen);
+        settled_reads(&session).await;
+
+        assert_eq!(volume(&session, 40).await, Written::done());
+        next_event(&session, EventKind::Settings).await;
+        assert_eq!(volume(&session, 41).await, Written::done());
+        assert_eq!(plan_enabled(&session, false).await, Written::done());
+        next_event(&session, EventKind::Plans).await;
+        assert_eq!(plan_enabled(&session, true).await, Written::done());
+
+        for update in updates_within(&session, Duration::from_secs(2)).await {
+            if let Some(state) = update.state {
+                assert!(state.settings.is_some(), "the settings blanked");
+                assert!(state.plans.is_some(), "the plans blanked");
+            }
+        }
         server.stop().await;
         sim.stop().await;
     });

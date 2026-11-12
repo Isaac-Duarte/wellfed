@@ -9,8 +9,8 @@
 //!   and the feeder, and opens the event stream before reading the facts
 //!   and the history, so nothing that happens meanwhile is missed; what the
 //!   stream repeats of the history is dropped by the event cursor. A first
-//!   connect replays the newest events only ([`BACKLOG`]); a later one
-//!   replays from its cursor, and a history that started over is a gap.
+//!   connect replays the newest 2,000 events only; a later one replays from
+//!   its cursor, and a history that started over is a gap.
 //! - **The feeder's connection** is the server's: while the server cannot
 //!   reach it the session reads as disconnected and every write is refused
 //!   unsent, as the direct session's are between sessions.
@@ -19,13 +19,16 @@
 //!   and settled from the server's journal: by its `Fed` event once the
 //!   journal names its number, as refused, or as unknown when the journal
 //!   says the feeder restarted with no record of it. One unsettled after
-//!   [`SETTLE`] is reported still unknown, never resent, and the journal
-//!   may still settle it until [`KEEP_MS`](crate::feeder::KEEP_MS) has passed, as it may one it
-//!   says has no record. A write that waited longer
-//!   than [`FRESH`](crate::feeder::FRESH) for the session, or arrived while it connects, is
-//!   refused unsent.
+//!   15 minutes is reported still unknown, never resent, and the journal
+//!   may still settle it until a week after it went out, as it may one it
+//!   says has no record. A write that waited longer than 5 seconds for the
+//!   session, or arrived while it connects, is refused unsent.
 //! - **The event stream** is read by a task of its own, so a slow write or
-//!   a long connect never leaves it unread past its read timeout.
+//!   a long connect never leaves it unread past its read timeout. An event
+//!   that changes the settings or the plans has them read again at once.
+//!   When the stream falls behind and says to resync, the session reads
+//!   the feeder anew, replays the history it missed and asks the journal
+//!   about each unsettled feed, as a new session would.
 //! - **Ends.** A token the server no longer takes stops the session until a
 //!   new login. A feeder the server no longer holds (removed, another
 //!   feeder under its id, or its key dropped by the feeder) is reported
@@ -483,21 +486,36 @@ impl<'a> Session<'a> {
     /// meanwhile, or a member reading the calibration) is read again at the
     /// next turn.
     async fn read_facts(&mut self) -> Step {
+        self.read_settings().await?;
+        self.read_plans().await?;
+        let (client, id) = (self.client, self.target.feeder);
+        if self.serves(&Op::GetCalibration)
+            && let Some(view) = read(client.calibration(id).await)?
+        {
+            self.memory.calibration = Some(view);
+        }
+        Ok(())
+    }
+
+    /// Read the settings, if the feeder's kind serves them; ones the
+    /// server could not read stay as they were.
+    async fn read_settings(&mut self) -> Step {
         let (client, id) = (self.client, self.target.feeder);
         if self.serves(&Op::GetSettings)
             && let Some(Settings::Feeder(settings)) = read(client.settings(id).await)?
         {
             self.memory.facts.settings = Some(settings);
         }
+        Ok(())
+    }
+
+    /// Read the plans, as [`Self::read_settings`] reads the settings.
+    async fn read_plans(&mut self) -> Step {
+        let (client, id) = (self.client, self.target.feeder);
         if self.serves(&Op::GetPlans)
             && let Some(plans) = read(client.plans(id).await)?
         {
             self.memory.facts.plans = Some(plans);
-        }
-        if self.serves(&Op::GetCalibration)
-            && let Some(view) = read(client.calibration(id).await)?
-        {
-            self.memory.calibration = Some(view);
         }
         Ok(())
     }
@@ -575,7 +593,9 @@ impl<'a> Session<'a> {
         let ours = self.target.feeder;
         match event {
             StreamEvent::Event { feeder, event } if feeder == ours => {
-                self.event(&event, false)?;
+                if self.event(&event, false)? {
+                    self.news(&event.body).await?;
+                }
                 self.state()
             }
             StreamEvent::Gap { feeder, gap } if feeder == ours => self.gap(&gap),
@@ -587,8 +607,9 @@ impl<'a> Session<'a> {
                 self.state()
             }
             StreamEvent::Alerts { feeder } if feeder == ours => self.read_alerts().await,
-            // The stream could not resume: read what it would have said.
-            StreamEvent::Resync => self.refresh().await,
+            // The stream fell behind and dropped what it held: read what it
+            // would have said.
+            StreamEvent::Resync => self.resync().await,
             _ => Ok(()),
         }
     }
@@ -607,12 +628,13 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// One event of the history: `replayed` when read from the history at
-    /// connect rather than as it happened.
-    fn event(&mut self, event: &HistoryEvent, replayed: bool) -> Step {
+    /// One event of the history: `replayed` when read from the history
+    /// rather than as it happened. Whether it was new: the stream repeats
+    /// what a backlog read.
+    fn event(&mut self, event: &HistoryEvent, replayed: bool) -> Result<bool, Ended> {
         match self.memory.cursor {
             // The stream repeats what the backlog read.
-            Some(held) if held.epoch == event.epoch && event.seq <= held.seq => return Ok(()),
+            Some(held) if held.epoch == event.epoch && event.seq <= held.seq => return Ok(false),
             // A history that started over while the stream was open.
             Some(held) if held.epoch != event.epoch => {
                 self.memory.facts.feeds.clear();
@@ -636,21 +658,34 @@ impl<'a> Session<'a> {
             self.settle(&feed)?;
         }
         self.send(Update::event(&event, replayed))?;
-        if !replayed {
-            self.news(&event.body);
-        }
-        Ok(())
+        Ok(true)
     }
 
-    /// An event as it happened: some change what the facts hold, which the
-    /// next turn reads again.
-    fn news(&mut self, body: &model::EventBody) {
+    /// An event as it happened: one that changes the settings or the plans
+    /// has them read again now, so the state never shows them unread and a
+    /// write is never refused for want of them. A store this session already
+    /// holds at the event's generation (its own write, answered with the
+    /// store) is not read again.
+    async fn news(&mut self, body: &model::EventBody) -> Step {
         use model::{EventBody, FeederEvent};
+        let facts = &self.memory.facts;
         match body {
-            EventBody::Feeder(FeederEvent::Settings { .. }) => self.memory.facts.settings = None,
-            EventBody::Feeder(FeederEvent::Plans { .. }) => self.memory.facts.plans = None,
+            EventBody::Feeder(FeederEvent::Settings { generation, .. }) => {
+                let held = facts.settings.as_ref().and_then(|held| held.generation);
+                if held != Some(*generation) {
+                    self.read_settings().await?;
+                }
+            }
+            EventBody::Feeder(FeederEvent::Plans { generation, .. }) => {
+                let held = facts.plans.as_ref().map(|held| held.generation);
+                if held != Some(*generation) {
+                    self.read_plans().await?;
+                }
+            }
+            body if body.moves_plans() => self.read_plans().await?,
             _ => {}
         }
+        Ok(())
     }
 
     fn gap(&mut self, gap: &server::Gap) -> Step {
@@ -690,8 +725,7 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// Read the feeder anew: at each turn, on the integration's asking,
-    /// and when the stream could not resume.
+    /// Read the feeder anew: at each turn, and on the integration's asking.
     async fn refresh(&mut self) -> Step {
         let detail = self.detail().await?;
         self.took(&detail);
@@ -710,6 +744,28 @@ impl<'a> Session<'a> {
                 self.read_facts().await?;
             }
         }
+        self.state()?;
+        self.read_alerts().await
+    }
+
+    /// The stream fell behind the feeder and dropped what it held: read the
+    /// feeder and its facts anew, replay the history from the cursor, flagged
+    /// as replayed so nothing fires for it, and ask the journal about each
+    /// feed still unsettled, as a new session would, without ending this one.
+    async fn resync(&mut self) -> Step {
+        let detail = self.detail().await?;
+        self.took(&detail);
+        let online = detail.feeder.connection == Connection::Online;
+        if online && !self.online {
+            self.reached(&detail).await?;
+        } else if online {
+            self.read_facts().await?;
+        } else if self.online {
+            self.online = false;
+            self.send(Update::disconnected(OFFLINE))?;
+        }
+        self.backlog(&detail).await?;
+        self.recheck().await?;
         self.state()?;
         self.read_alerts().await
     }
@@ -1217,6 +1273,103 @@ mod tests {
             .map(|uncertain| uncertain.key)
             .collect();
         assert_eq!(open, [fresh, reported]);
+    }
+
+    /// The stream fell behind and dropped what it held: a feed and a
+    /// settings change made meanwhile are read again without a reconnect,
+    /// the feed replayed, so nothing fires for it.
+    #[test]
+    fn a_resync_reads_what_the_stream_dropped() {
+        use wellfed_server_testkit::feeder;
+        use wellfed_server_testkit::{TestServer, ada_login, ada_setup, local, until};
+
+        local(async {
+            let sim = feeder::start().await;
+            let server = TestServer::start().await;
+            let mut owner = server.client();
+            owner.setup(&ada_setup()).await.unwrap();
+            let adopted = owner
+                .adopt(&server::AdoptFeeder {
+                    invite: feeder::invite(&sim, server::ClientRole::Server).await,
+                    name: "kitchen".into(),
+                    address: Some(sim.address.to_string()),
+                    phone_key: None,
+                })
+                .await
+                .unwrap();
+            until("the server reaches the feeder", || async {
+                owner.feeders().await.unwrap()[0].connection == Connection::Online
+            })
+            .await;
+            let url = format!("http://{}", server.address());
+            let ada = ada_login();
+            let login = account::login(&url, &ada.name, &ada.password, "home-assistant")
+                .await
+                .unwrap();
+            let target = Target {
+                url: address(&url).unwrap(),
+                token: login.token,
+                feeder: adopted.id,
+                identity: adopted.identity.0,
+            };
+            let client = client(&target, Clocks::DEFAULT).unwrap();
+            let (updates, heard) = std_mpsc::channel();
+            let mut memory = Memory::default();
+            let mut session = Session::new(&client, &target, &mut memory, &updates);
+            let Ok(_unread) = session.open().await else {
+                panic!("the session opens");
+            };
+            while heard.try_recv().is_ok() {}
+
+            // Meanwhile, with the stream unread: a feed and a settings
+            // change.
+            let fed = owner.feed(adopted.id, 1, Uuid::new_v4()).await.unwrap();
+            let fed = fed.feed.expect("the feed's number");
+            let Settings::Feeder(held) = owner.settings(adopted.id).await.unwrap() else {
+                panic!("a feeder's settings");
+            };
+            let quieter = model::FeederSettingsPatch {
+                volume: Some(held.volume / 2),
+                ..model::FeederSettingsPatch::default()
+            };
+            let base = held.generation.unwrap();
+            owner
+                .put_settings(adopted.id, base, &quieter, Uuid::new_v4())
+                .await
+                .unwrap();
+            until("the server has the feed's end", || async {
+                let page = owner
+                    .events(adopted.id, &EventQuery::default())
+                    .await
+                    .unwrap();
+                page.events.iter().any(|event| {
+                    Feed::from_event(&model::Event {
+                        epoch: event.epoch,
+                        seq: event.seq,
+                        at: event.at,
+                        body: event.body,
+                    })
+                    .is_some_and(|feed| feed.feed == fed)
+                })
+            })
+            .await;
+
+            assert!(session.streamed(StreamEvent::Resync).await.is_ok());
+            drop(session);
+            let settings = memory.facts.settings.expect("the settings");
+            assert_eq!(settings.volume, held.volume / 2);
+            assert!(memory.facts.feeds.iter().any(|feed| feed.feed == fed));
+            let replayed = heard.try_iter().any(|update| {
+                update.replayed
+                    && update
+                        .event
+                        .and_then(|event| event.fed)
+                        .is_some_and(|event| event.feed == fed)
+            });
+            assert!(replayed, "the feed is replayed, not news");
+            server.stop().await;
+            sim.stop().await;
+        });
     }
 
     #[test]
