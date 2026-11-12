@@ -217,3 +217,31 @@ fn only_a_proven_or_absent_owner_lets_a_trial_confirm() {
     }
     assert_eq!(Feeding::from_code(9), Feeding::Failed);
 }
+
+/// The grace starts when it is asked for: not at once over for a late
+/// request, nor for a feeder pass whose uptime was read just before it.
+#[test]
+fn a_restart_grace_runs_its_whole_length_from_when_it_was_asked() {
+    use wellfed_hal::supervision::{
+        RESTART_GRACE_MS, begin_restart_grace, reset, restart_grace, restart_grace_over,
+        restart_requested,
+    };
+
+    reset();
+    let asked = 3_600_000;
+    assert!(!restart_requested() && !restart_grace_over(asked + RESTART_GRACE_MS));
+
+    begin_restart_grace(asked);
+    begin_restart_grace(asked + 1_500);
+    assert!(restart_requested() && restart_grace());
+    assert!(!restart_grace_over(asked));
+    assert!(!restart_grace_over(asked - 5), "a stale read is no time in");
+    assert!(!restart_grace_over(asked + RESTART_GRACE_MS - 1));
+    assert!(
+        restart_grace_over(asked + RESTART_GRACE_MS),
+        "the first start holds"
+    );
+    assert!(!restart_grace_over(asked + RESTART_GRACE_MS), "only once");
+    assert!(restart_requested() && !restart_grace());
+    reset();
+}
