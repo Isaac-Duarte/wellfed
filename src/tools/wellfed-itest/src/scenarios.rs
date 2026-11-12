@@ -312,20 +312,13 @@ pub(super) fn changes_to(settings: &FeederSettings) -> FeederSettingsPatch {
     }
 }
 
-/// Whether `settings` hold every field `change` sets.
+/// Whether `settings` hold every field `change` sets: applying the change,
+/// as the feeder applies a patch, leaves them as they are. Every field the
+/// patch carries is compared, the meal reminder among them.
 fn shows(settings: &FeederSettings, change: FeederSettingsPatch) -> bool {
-    change.lights.is_none_or(|on| settings.lights == on)
-        && change.sound.is_none_or(|on| settings.sound == on)
-        && change.volume.is_none_or(|volume| settings.volume == volume)
-        && change
-            .lights_window
-            .is_none_or(|window| settings.lights_window == window)
-        && change
-            .sound_window
-            .is_none_or(|window| settings.sound_window == window)
-        && change
-            .desiccant_days
-            .is_none_or(|days| settings.desiccant_days == days)
+    let mut changed = *settings;
+    changed.apply(change);
+    changed == *settings
 }
 
 /// Change settings against the generation just read, see the writer save a
@@ -821,4 +814,41 @@ pub(super) fn restore_state(ctx: &mut Ctx, want: &DeviceState, now: &DeviceState
         ));
     }
     changed
+}
+
+#[cfg(test)]
+mod shows_tests {
+    use wellfed_model::{FeederSettings, FeederSettingsPatch, Generation, MealReminder, Window};
+
+    use super::shows;
+
+    /// A settings read that misses a changed meal reminder is not taken as
+    /// showing the change.
+    #[test]
+    fn a_read_must_show_the_meal_reminder_it_was_changed_to() {
+        let settings = FeederSettings {
+            generation: Some(Generation(3)),
+            lights: true,
+            sound: true,
+            volume: 50,
+            lights_window: Window::default(),
+            sound_window: Window::default(),
+            desiccant_days: 30,
+            desiccant_replaced: None,
+            meal_reminder: MealReminder::Off,
+            writable: true,
+        };
+        let change = FeederSettingsPatch {
+            volume: Some(50),
+            meal_reminder: Some(MealReminder::Before { minutes: 10 }),
+            ..FeederSettingsPatch::default()
+        };
+        assert!(!shows(&settings, change));
+
+        let landed = FeederSettings {
+            meal_reminder: MealReminder::Before { minutes: 10 },
+            ..settings
+        };
+        assert!(shows(&landed, change));
+    }
 }
