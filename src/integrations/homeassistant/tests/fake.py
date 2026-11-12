@@ -11,10 +11,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import queue
 import threading
+import time
 from types import SimpleNamespace
 from typing import Any
 
 import wellfed_homeassistant as bridge
+
+# How long a pump held for a stop waits for it.
+STOP_WAIT = 30.0
 
 IDENTITY = bytes(range(32))
 SECRET = bytes([7] * 32)
@@ -172,15 +176,45 @@ class FakeFeeder:
     # The feed numbers it was answered for, as the bridge lists them.
     answered: list[int] = field(default_factory=list)
 
+    # Updates held for a stop (`at_stop`): the pump gets the first only once
+    # `stopping` is set, and the stop's drain the rest.
+    held: list[SimpleNamespace] = field(default_factory=list)
+    stopping: threading.Event | None = None
+
     def push(self, *updates: SimpleNamespace) -> None:
         for item in updates:
             self.updates.put(item)
 
+    def at_stop(self, stopping: threading.Event, *updates: SimpleNamespace) -> None:
+        """Hold `updates` until the session stops: the pump hands the event
+        loop the first of them only once `stopping` is set, so it is still
+        to run when the stop begins, and leaves the rest to the drain."""
+        self.held = list(updates)
+        self.stopping = stopping
+
     def next_update(self, timeout: float) -> SimpleNamespace | None:
-        try:
-            return self.updates.get(timeout=timeout)
-        except queue.Empty:
-            return None
+        if timeout == 0:
+            # The stop's drain, once the pump has ended.
+            if self.held:
+                return self.held.pop(0)
+            try:
+                return self.updates.get_nowait()
+            except queue.Empty:
+                return None
+        deadline = time.monotonic() + timeout
+        while True:
+            if (stopping := self.stopping) is not None:
+                # The pump returns nothing until the stop, so it cannot
+                # miss it between two waits.
+                if not stopping.wait(STOP_WAIT):
+                    raise AssertionError(f"the session did not stop within {STOP_WAIT} s")
+                self.stopping = None
+                return self.held.pop(0)
+            try:
+                return self.updates.get(timeout=min(0.01, max(0.0, deadline - time.monotonic())))
+            except queue.Empty:
+                if time.monotonic() >= deadline:
+                    return None
 
     def _done(self, name: str, *args: Any) -> SimpleNamespace:
         self.calls.append((name, args))

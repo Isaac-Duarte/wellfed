@@ -330,14 +330,19 @@ async def test_a_stop_keeps_a_lost_feed_s_updates_in_their_order(
     entry = await _ready(hass, feeder)
     session = entry.runtime_data
     lost = fake.pending()
-    # The session learns the whole story just as the entry unloads: some
-    # of it the pump has handed the event loop, the rest still waits.
-    feeder.push(
+    # The session learns the whole story just as the entry unloads: the
+    # pump hands the event loop its start once the stop has begun, and the
+    # rest still waits for the drain. Kept the other way round, the
+    # settlement would come before the feed it settles, and the feed would
+    # stay lost.
+    feeder.at_stop(
+        session._stop,
         fake.update(bridge.UpdateKind.Pending, pending=lost),
         fake.update(bridge.UpdateKind.Answered, answered=[4]),
         fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=lost),
     )
     assert await hass.config_entries.async_unload(entry.entry_id)
+    assert not feeder.held, "the pump handed one, and the drain the rest"
     await hass.async_block_till_done()
 
     assert session.kept.pending == [], "settled after it was kept, never before"
