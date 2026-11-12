@@ -742,21 +742,26 @@ pub async fn join(
             Ok(Err(error)) => Err(error.into()),
             Err(_) => Err(Error::Timeout),
         };
+        // Once the join went, the feeder may have enrolled the key whatever
+        // ended the wait, an answer that does not read among them.
         let n = match read {
             Ok(n) => n,
-            // Once the join went, the feeder may have enrolled the key
-            // whatever ended the wait.
             Err(_) if joining => return Err(Error::JoinUnanswered),
             // The feeder drops an unknown or expired invite unanswered.
             Err(error) => return Err(error),
         };
-        match join.receive(&buffer[..n])? {
-            None => {}
-            Some(JoinStep::Send(bytes)) => {
+        match join.receive(&buffer[..n]) {
+            Ok(None) => {}
+            Ok(Some(JoinStep::Send(bytes))) => {
+                // A write cut short may still have left whole.
                 joining = true;
-                write_within(&mut stream, &bytes).await?;
+                if write_within(&mut stream, &bytes).await.is_err() {
+                    return Err(Error::JoinUnanswered);
+                }
             }
-            Some(JoinStep::Done(joined)) => return Ok(joined),
+            Ok(Some(JoinStep::Done(joined))) => return Ok(joined),
+            Err(_) if joining => return Err(Error::JoinUnanswered),
+            Err(error) => return Err(error.into()),
         }
     }
 }
@@ -816,9 +821,10 @@ mod tests {
         assert_eq!(UNAVAILABLE, Answer::Refused(Refusal::Unavailable));
     }
 
-    /// A feeder that takes an invite's join and closes without answering
-    /// may have enrolled the key: the join's end is unknown, not an
-    /// expired invite. One that closes before the join went is.
+    /// A feeder that takes an invite's join and closes without answering,
+    /// or answers bytes that do not read, may have enrolled the key: the
+    /// join's end is unknown, not an expired invite. One that closes before
+    /// the join went is.
     #[test]
     fn a_join_whose_answer_is_lost_may_have_enrolled() {
         use std::io::{Read, Write};
@@ -841,7 +847,18 @@ mod tests {
             id: 7,
             secret: [0x44; 32],
         };
-        for answers in [true, false] {
+        /// What the feeder does with the invite's connection.
+        #[derive(Clone, Copy, PartialEq)]
+        enum Feeder {
+            /// Closes it unanswered, as for an unknown invite.
+            Refuses,
+            /// Takes the join and closes unanswered.
+            Closes,
+            /// Takes the join and answers bytes that do not read.
+            Garbles,
+        }
+
+        for feeder_does in [Feeder::Refuses, Feeder::Closes, Feeder::Garbles] {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let address = listener.local_addr().unwrap();
             let device = Keypair::from_secret([0x10; 32]);
@@ -850,7 +867,7 @@ mod tests {
                 let open: Open = wellfed_proto::decode(&read_frame(&mut stream).unwrap()).unwrap();
                 assert_eq!(open, Open::Invite { id: 7 });
                 let first = read_frame(&mut stream).unwrap();
-                if !answers {
+                if feeder_does == Feeder::Refuses {
                     return;
                 }
                 let mut handshake = Handshake::new(
@@ -871,8 +888,15 @@ mod tests {
                     .write_all(&frame::prefix(written, FRAME_MAX).unwrap())
                     .unwrap();
                 stream.write_all(&out[..written]).unwrap();
-                // The join arrives, and the feeder closes unanswered.
+                // The join arrives, and its answer is lost or unreadable.
                 read_frame(&mut stream).unwrap();
+                if feeder_does == Feeder::Garbles {
+                    let garbled = [0x5a; 48];
+                    stream
+                        .write_all(&frame::prefix(garbled.len(), FRAME_MAX).unwrap())
+                        .unwrap();
+                    stream.write_all(&garbled).unwrap();
+                }
             });
 
             let runtime = tokio::runtime::Builder::new_current_thread()
@@ -883,10 +907,11 @@ mod tests {
             let joined = runtime.block_on(join(&client, invite, "phone", address, [0x33; 32]));
             served.join().unwrap();
 
-            if answers {
-                assert!(matches!(joined, Err(Error::JoinUnanswered)), "{joined:?}");
-            } else {
-                assert!(matches!(joined, Err(Error::Closed)), "{joined:?}");
+            match feeder_does {
+                Feeder::Closes | Feeder::Garbles => {
+                    assert!(matches!(joined, Err(Error::JoinUnanswered)), "{joined:?}");
+                }
+                Feeder::Refuses => assert!(matches!(joined, Err(Error::Closed)), "{joined:?}"),
             }
         }
     }
