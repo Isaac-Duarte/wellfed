@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterator
 import json
 import os
 from pathlib import Path
+import threading
 from typing import Any, cast
 
 from homeassistant.config_entries import (
@@ -256,6 +257,32 @@ async def test_a_lost_feed_settled_by_its_fed_keeps_its_number(
     )
     await _until(hass, lambda: session.kept.pending == [])
     assert session.kept.answered == [4]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_lost_feed_whose_write_ends_after_a_reload_is_still_kept(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    lost = fake.pending()
+    feeder.gate = threading.Event()
+    feeder.feed_result = fake.uncertain(lost)
+    pressed = hass.async_create_task(session.feed(1))
+    await _until(hass, lambda: ("feed", (1,)) in feeder.calls)
+
+    # The entry reloads while the feed is out; its answer is lost after.
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    feeder.gate.set()
+    with pytest.raises(HomeAssistantError):
+        await pressed
+
+    feeder.gate = None
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    made = cast(_Make, bridge.Feeder)
+    assert made.handed[-1] == ([lost.id], [])
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

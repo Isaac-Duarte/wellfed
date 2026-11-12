@@ -222,11 +222,23 @@ class FeederSession:
         self._pump.start()
 
     def stop(self) -> None:
-        """Stop the pump; dropping the bridge's handle ends its session."""
+        """Stop the pump; dropping the bridge's handle ends its session.
+        What the pump left behind of lost feeds is kept first."""
         self._stop.set()
         if self._pump is not None:
             self._pump.join(timeout=PUMP_WAIT * 3)
+        if self._feeder is not None:
+            self._drain(self._feeder)
         self._feeder = None
+
+    @callback
+    def _drain(self, feeder: bridge.Feeder) -> None:
+        """Keep what the updates still waiting on `feeder` say of lost feeds,
+        in order, once no pump will: a lost feed, a number answered or a
+        settlement must reach the store, or the next session never hears
+        of it."""
+        while (update := feeder.next_update(0)) is not None:
+            self._keep(update)
 
     async def ready(self, timeout: float) -> None:
         """Wait for the first state, or a revoked key."""
@@ -307,6 +319,10 @@ class FeederSession:
         if feeder is None:
             raise WriteNotDone("not_sent_stopped")
         written = await self.hass.async_add_executor_job(call, feeder)
+        if self._stop.is_set():
+            # The session stopped while this write was out: the updates it
+            # made (a lost feed, its number) have no pump to take them.
+            self._drain(feeder)
         result = written.result
         if result in (bridge.WriteResult.Feeding, bridge.WriteResult.Done):
             return written
