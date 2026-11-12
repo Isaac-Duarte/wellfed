@@ -187,4 +187,50 @@ fn cargokit_builds_with_the_pinned_toolchain() {
         [channel, channel],
         "cargokit.yaml's debug and release toolchains"
     );
+    let flags: Vec<&str> = cargokit
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("extra_flags: "))
+        .collect();
+    assert_eq!(
+        flags,
+        ["[--locked]", "[--locked]"],
+        "cargokit.yaml builds the bridge from the checked lockfile"
+    );
+}
+
+/// The cargokit build tool's runner is the root package, so pub ignores the
+/// tool's own lockfile there; the runner's overrides must pin every package
+/// that lockfile resolved, at its version, and nothing else.
+#[test]
+fn cargokit_s_runner_pins_the_build_tool_s_lockfile() {
+    let tool = root().join("src/app/rust_builder/cargokit/build_tool");
+    let lock = std::fs::read_to_string(tool.join("pubspec.lock")).unwrap();
+    let mut locked = std::collections::BTreeMap::new();
+    let mut package = None;
+    for line in lock.lines() {
+        if let Some(name) = line
+            .strip_prefix("  ")
+            .filter(|rest| !rest.starts_with(' '))
+            .and_then(|rest| rest.strip_suffix(':'))
+        {
+            package = Some(name);
+        } else if let (Some(name), Some(version)) = (package, line.strip_prefix("    version: ")) {
+            locked.insert(name.to_owned(), version.trim_matches('"').to_owned());
+        } else if !line.starts_with(' ') {
+            package = None;
+        }
+    }
+
+    let overrides = std::fs::read_to_string(tool.join("runner_overrides.yaml")).unwrap();
+    let pinned: std::collections::BTreeMap<String, String> = overrides
+        .lines()
+        .skip_while(|line| *line != "dependency_overrides:")
+        .skip(1)
+        .map(|line| {
+            let (name, version) = line.trim().split_once(": ").unwrap();
+            (name.to_owned(), version.to_owned())
+        })
+        .collect();
+    assert!(!locked.is_empty());
+    assert_eq!(pinned, locked);
 }

@@ -26,7 +26,12 @@ set BUILD_TOOL_PKG_DIR_POSIX=%BUILD_TOOL_PKG_DIR:\=/%
     echo dependencies:
     echo   build_tool:
     echo     path: %BUILD_TOOL_PKG_DIR_POSIX%
+    echo.
 ) >pubspec.yaml
+
+REM Local change: pin every package build_tool's lockfile resolved, which pub
+REM would otherwise ignore here (see build_tool\runner_overrides.yaml).
+type "%BUILD_TOOL_PKG_DIR%\runner_overrides.yaml" >>pubspec.yaml
 
 if not exist bin (
     mkdir bin
