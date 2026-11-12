@@ -103,6 +103,45 @@ fn codes<T: ToSchema + DeserializeOwned>(code: fn(T) -> &'static str) -> BTreeSe
         .collect()
 }
 
+/// Check that every value `T`'s schema names, other than the catch-all a
+/// newer server's value reads as, is stored as its JSON spelling by `code`
+/// and read back as the same variant by `from_code`.
+fn round_trip<T>(code: fn(T) -> &'static str, from_code: fn(&str) -> Option<T>)
+where
+    T: ToSchema + DeserializeOwned + Copy + PartialEq + std::fmt::Debug,
+{
+    for name in names::<T>() {
+        let value: T = serde_json::from_value(Value::String(name.clone())).unwrap();
+        if name == "unknown" && from_code(&name).is_none() {
+            continue;
+        }
+        assert_eq!(
+            code(value),
+            name,
+            "{value:?} is stored as its JSON spelling"
+        );
+        assert_eq!(from_code(&name), Some(value), "{name} reads back");
+    }
+}
+
+/// Every stored code reads back as the variant that wrote it. A variant
+/// left out of the list `from_code` searches would still compile, and each
+/// row it wrote would then read as corrupt, breaking every page over it.
+#[test]
+fn every_stored_code_reads_back_as_the_variant_that_wrote_it() {
+    round_trip(ClientRole::code, ClientRole::from_code);
+    round_trip(Role::code, Role::from_code);
+    round_trip(Units::code, Units::from_code);
+    round_trip(TimeFormat::code, TimeFormat::from_code);
+    round_trip(Species::code, Species::from_code);
+    round_trip(Job::code, Job::from_code);
+    round_trip(JobOutcome::code, JobOutcome::from_code);
+    round_trip(CommandKind::code, CommandKind::from_code);
+    round_trip(CommandState::code, CommandState::from_code);
+    round_trip(InstallState::code, InstallState::from_code);
+    round_trip(RevokeReason::code, RevokeReason::from_code);
+}
+
 /// Every set, as this build has it.
 fn sets() -> Vec<(&'static str, BTreeSet<String>)> {
     vec![
