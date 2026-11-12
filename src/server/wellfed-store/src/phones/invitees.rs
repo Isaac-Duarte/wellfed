@@ -30,7 +30,7 @@ use sqlx::SqliteConnection;
 use uuid::Uuid;
 use wellfed_api::{ClientRole, FeederId};
 
-use crate::convert::{millis, timestamp};
+use crate::convert::{millis, timestamp, to_i64};
 use crate::projections::Place;
 use crate::{Error, Result, Store};
 
@@ -355,7 +355,7 @@ impl Store {
 
         let (epoch, seq) = (
             i64::from(invitation.epoch),
-            i64::try_from(invitation.seq).map_err(|_| Error::Corrupt("invitation seq"))?,
+            to_i64(invitation.seq, "invitation seq")?,
         );
         sqlx::query!(
             "UPDATE invitations SET settled_ms = ? WHERE feeder_id = ? AND epoch = ? AND seq = ?",
