@@ -13,9 +13,10 @@
 //! a downgrade statement bound to the feeder and the floor the server just
 //! read, and handed to the server, which never holds the key. The restore
 //! then runs on the server like an install, followed on the stream to its
-//! end. It is not a keyed write: nothing is sent again, and a feeder that
-//! stopped answering after the offer leaves the result uncertain (exit 1),
-//! since stock serves no device API to ask.
+//! end. It is not a keyed write: nothing is sent again, and an end that may
+//! follow an offer that took (a feeder silent after it, a server stopped
+//! while it ran, an end this build cannot read) leaves the result uncertain
+//! (exit 3), since stock serves no device API to ask.
 //!
 //! [rollback]: ../../../../../docs/firmware/consumer-installation.md#rollback
 
@@ -25,14 +26,13 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use wellfed_client::install::{STOCK_VERSION, StockBackup};
 use wellfed_formats::canonical::sha256;
-use wellfed_server_client::api::{
-    Hex, InstallFailure, InstallState, StockBackupState, StockRestore, StreamQuery,
-};
+use wellfed_server_client::api::{Hex, InstallState, StockBackupState, StockRestore, StreamQuery};
 use wellfed_server_client::{Client, Kept};
 use wellfed_signing::{Frozen, Key, Motion};
 
 use super::feeders::Which;
 use super::install::follow;
+use super::install::{Ended, settled, uncertain_words};
 use super::{Output, Settled, text};
 
 #[derive(Args)]
@@ -181,28 +181,44 @@ async fn restore(
         Some(ended) => ended,
         None => client.stock(feeder).await?.restore.unwrap_or(started),
     };
-    match (ended.state, ended.failure) {
-        (InstallState::AlreadyRunning, _) => {
+    match settled(&started, &ended) {
+        Ended::Done if ended.state == InstallState::AlreadyRunning => {
             eprintln!("The feeder already runs this stock image from bank 1: nothing was sent.");
             Ok(Settled::Known)
         }
-        (InstallState::Activated, _) => {
+        Ended::Done => {
             eprintln!(
                 "Activated: the feeder restarts into stock {STOCK_VERSION} from bank 1, with its \
                  own settings. Stock serves no device API, so the server no longer reaches it."
             );
             Ok(Settled::Known)
         }
-        (_, Some(InstallFailure::Unreachable { offered: true })) => bail!(
-            "uncertain: the feeder stopped answering after the offer went out. It may run \
-             stock already, or still the replacement; nothing is sent again. Look at the \
-             feeder before trying anything else."
-        ),
-        (_, Some(failure)) => bail!(
+        Ended::Failed(failure) => bail!(
             "the restore failed: {}; it is not sent again, and the feeder keeps running the \
              replacement",
             text::word(&failure)
         ),
-        (_, None) => bail!("the stream ended while the restore ran; `stock` reads where it stands"),
+        Ended::Running => {
+            eprintln!(
+                "The stream ended while the restore ran; nothing is sent again. `stock` reads \
+                 where it stands."
+            );
+            Ok(Settled::Unknown)
+        }
+        // As `wellfed restore-stock` words it: Reset on the replacement
+        // erases the identity the backup is filed under.
+        Ended::Uncertain(why) => {
+            eprintln!(
+                "Uncertain: {}. The feeder may run stock already, or still the replacement; \
+                 nothing is sent again. Look for the feeder first: if the server reaches it \
+                 again, the replacement still runs. If it advertises Bluetooth setup, the \
+                 replacement cleared its Wi-Fi, clients and plans: set it up again, and do not \
+                 hold Reset, which on the replacement erases the identity the backup is filed \
+                 under. Only if neither shows after a few minutes is it probably on stock: \
+                 check stock's app, and only then hold Reset to set it up there.",
+                uncertain_words(why)
+            );
+            Ok(Settled::Unknown)
+        }
     }
 }

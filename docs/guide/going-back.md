@@ -114,7 +114,7 @@ Nothing here sends the restore again by itself. If the feeder stops answering on
 | **A feeder nearby is waiting to be set up** | Probably this one, with Wellfed's Wi-Fi, phones and meals already cleared, and the restore unfinished. It could also be another feeder of yours | **Don't hold Reset.** Check the vendor's app first. If it isn't there, tap **Set it up**. Your backup is still good, so you can restore from there |
 | **It's probably on the original firmware** | It answered on neither Wi-Fi nor Bluetooth | Check the vendor's app. If it can't find the feeder and you're sure it isn't on Wellfed, unlock the panel if the lock light is on, hold Reset for about 5 seconds and set it up there |
 
-On the CLI, a stop or an uncertain end prints what it knows. If it's uncertain, look for the feeder first. If a session opens, Wellfed still runs, and `wellfed restore-stock` may go again. If it advertises Bluetooth setup, run `wellfed setup`, and don't hold Reset. Only if neither shows after a few minutes is it probably on stock.
+On the CLI, a stop or an uncertain end prints what it knows. An uncertain end exits with status 3, through the server too. If it's uncertain, look for the feeder first. If a session opens, Wellfed still runs, and `wellfed restore-stock` may go again. If it advertises Bluetooth setup, run `wellfed setup`, and don't hold Reset. Only if neither shows after a few minutes is it probably on stock.
 
 > [!WARNING]
 > The restored firmware doesn't run on trial. If it's valid but won't boot, nothing falls back to Wellfed, and only [UART recovery](../devices/plaf103/recovery.md) could bring the feeder back. Those tools are pinned to our one test feeder, so don't count on them for yours. Nothing here protects against it.
