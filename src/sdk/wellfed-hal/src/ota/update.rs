@@ -748,10 +748,14 @@ impl<I: SlotIo + Clone> Update<I> {
     /// being answered, no install, no check, no restart on its way.
     fn settle_turn(&mut self) {
         let busy = self.install.is_some() || !matches!(self.work, Work::Idle);
-        if self.holding && !busy && mailbox::pending().is_none() {
+        if busy || mailbox::pending().is_some() {
+            return;
+        }
+        if self.holding {
             self.holding = false;
             INTERLOCK.end_write();
         }
+        self.turn.withdraw(&INTERLOCK);
     }
 
     /// One step; `now` is uptime in milliseconds.

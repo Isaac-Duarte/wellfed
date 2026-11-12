@@ -1173,6 +1173,11 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         };
         let mut step = next(delay_ms, record);
         step.rested = !served && !appended && !deferred;
+        if step.rested {
+            // Nothing left that waits for a turn (an event this boot may
+            // not write was dropped): stop counting among the waiters.
+            core.turn.withdraw(&INTERLOCK);
+        }
         step
     }
 

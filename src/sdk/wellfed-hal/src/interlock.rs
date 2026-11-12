@@ -133,6 +133,10 @@ pub enum Turn {
     Feeding = 2,
     /// As `Feeding`, and a join waits for the release.
     FeedingJoinWaits = 3,
+    /// A join went ahead past the claim's bound, and the loop's claim still
+    /// stands: writers keep timing it and start only on outputs read
+    /// stopped. The release leaves the join; the join's end leaves the claim.
+    JoiningOverClaim = 4,
 }
 
 /// Why a feed may not start now.
@@ -187,6 +191,7 @@ impl Turn {
             0 => Self::Free,
             1 => Self::Joining,
             3 => Self::FeedingJoinWaits,
+            4 => Self::JoiningOverClaim,
             _ => Self::Feeding,
         }
     }
@@ -196,7 +201,7 @@ impl Turn {
     pub const fn claim_feed(self) -> Result<Self, Held> {
         match self {
             Self::Free | Self::Feeding => Ok(Self::Feeding),
-            Self::Joining => Err(Held::Joining),
+            Self::Joining | Self::JoiningOverClaim => Err(Held::Joining),
             Self::FeedingJoinWaits => Err(Held::JoinWaiting),
         }
     }
@@ -205,7 +210,7 @@ impl Turn {
     pub const fn release_feed(self) -> Self {
         match self {
             Self::Feeding => Self::Free,
-            Self::FeedingJoinWaits => Self::Joining,
+            Self::FeedingJoinWaits | Self::JoiningOverClaim => Self::Joining,
             other => other,
         }
     }
@@ -215,7 +220,16 @@ impl Turn {
     pub const fn request_join(self) -> (Self, JoinStep) {
         match self {
             Self::Free | Self::Joining => (Self::Joining, JoinStep::Go),
+            Self::JoiningOverClaim => (Self::JoiningOverClaim, JoinStep::Go),
             Self::Feeding | Self::FeedingJoinWaits => (Self::FeedingJoinWaits, JoinStep::Wait),
+        }
+    }
+
+    /// A join past the claim's bound goes ahead, keeping the claim.
+    pub const fn force_join(self) -> Self {
+        match self {
+            Self::Feeding | Self::FeedingJoinWaits => Self::JoiningOverClaim,
+            other => other,
         }
     }
 
@@ -223,8 +237,14 @@ impl Turn {
     pub const fn end_join(self) -> Self {
         match self {
             Self::Joining => Self::Free,
+            Self::JoiningOverClaim => Self::Feeding,
             other => other,
         }
+    }
+
+    /// A join attempt runs, over a claim or not.
+    pub const fn joining(self) -> bool {
+        matches!(self, Self::Joining | Self::JoiningOverClaim)
     }
 }
 
@@ -339,7 +359,10 @@ impl State {
     }
 
     const fn outputs_claimed(self) -> bool {
-        matches!(self.turn, Turn::Feeding | Turn::FeedingJoinWaits)
+        matches!(
+            self.turn,
+            Turn::Feeding | Turn::FeedingJoinWaits | Turn::JoiningOverClaim
+        )
     }
 
     /// A writer asks for the flash; `counted` when it already counts among
@@ -705,9 +728,10 @@ impl Interlock {
                 self.deferred.fetch_add(1, Ordering::Relaxed);
             }
             if ms >= self.bound_ms.load(Ordering::Acquire) {
-                // The claim outlived every feed's bound: join anyway, and
-                // the loop's next claim waits for this join's end.
-                self.transition(|_| (Turn::Joining, ()));
+                // The claim outlived every feed's bound: join anyway. The
+                // claim stands, so writers still start only on stopped
+                // outputs, and the loop's next claim waits for this join.
+                self.transition(|turn| (turn.force_join(), ()));
                 self.forced.fetch_add(1, Ordering::Relaxed);
                 self.waited_max_ms.fetch_max(ms, Ordering::Relaxed);
                 return JoinStart::Forced { ms };
@@ -724,7 +748,7 @@ impl Interlock {
     /// The loop, each pass: count a join that has held its turn past
     /// `LONG_JOIN_MS`, once per join. True when this call counted it.
     pub fn watch_join(&self, now_ms: u32) -> bool {
-        if self.turn() != Turn::Joining
+        if !self.turn().joining()
             || now_ms.wrapping_sub(self.join_began_ms.load(Ordering::Acquire)) < LONG_JOIN_MS
             || self.join_counted.swap(true, Ordering::AcqRel)
         {
@@ -778,6 +802,18 @@ impl WriteTurn {
             since: None,
             claim: 0,
             claim_seen: 0,
+        }
+    }
+
+    /// The writer has nothing more to write: it leaves the waiters' count,
+    /// so the next claim does not hold off for a write that never asks
+    /// again. Harmless when it was not waiting.
+    pub fn withdraw(&mut self, interlock: &Interlock) {
+        if self.since.take().is_some() {
+            interlock.update(|state| {
+                let waiters = state.waiters.saturating_sub(1);
+                (State { waiters, ..state }, ())
+            });
         }
     }
 

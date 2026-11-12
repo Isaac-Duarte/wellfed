@@ -206,6 +206,7 @@ impl Confirm {
     }
 
     fn end(&mut self, record: Record) -> Step {
+        self.turn.withdraw(&INTERLOCK);
         self.stage = Stage::Done;
         next(0, Some(record))
     }
