@@ -27,7 +27,7 @@
 //!
 //! Nothing here writes flash.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use wellfed_core::settings::Saved;
 use wellfed_core::store::handover;
@@ -39,7 +39,7 @@ use wellfed_device_api::wifi::Credentials;
 
 use wellfed_core::wifi_task::Attempt;
 use wellfed_hal::cell::TaskCell;
-use wellfed_hal::handoff::{Handoff, Taken};
+use wellfed_hal::handoff::{Handoff, Published, Taken};
 use wellfed_hal::interlock::INTERLOCK;
 pub use wellfed_hal::sdk::JoinCredentials;
 use wellfed_hal::{link, sdk};
@@ -109,13 +109,25 @@ static PENDING: Handoff<Asked> = Handoff::new(Asked {
     asked: None,
 });
 
-/// What NOR holds, published by the writer.
-static LOADED: AtomicBool = AtomicBool::new(false);
+/// What NOR holds, published by the writer as one view: the stored SSID,
+/// its generation and whether it may change travel together, so a reader
+/// never pairs one generation with another's credentials.
+#[derive(Clone, Copy)]
+struct Stored {
+    ssid_crc: Option<u32>,
+    generation: u32,
+    writable: bool,
+}
+
+static PUBLISHED: Published<Stored> = Published::new(EMPTY);
+
+const EMPTY: Stored = Stored {
+    ssid_crc: None,
+    generation: 0,
+    writable: false,
+};
+
 static HANDOVER_PUT_OFF: AtomicBool = AtomicBool::new(false);
-static WRITABLE: AtomicBool = AtomicBool::new(false);
-static STORED: AtomicBool = AtomicBool::new(false);
-static STORED_CRC: AtomicU32 = AtomicU32::new(0);
-static GENERATION: AtomicU32 = AtomicU32::new(0);
 /// Set by a save after the first load; the join half then reads again.
 static RELOAD: AtomicBool = AtomicBool::new(false);
 /// `WifiSource` of this boot's joins, as `WifiSource::code`.
@@ -133,13 +145,11 @@ pub fn source() -> WifiSource {
     WifiSource::from_code(SOURCE.load(Ordering::Acquire))
 }
 
-fn view() -> WifiView {
+fn view(stored: Stored) -> WifiView {
     WifiView {
-        stored_ssid_crc: STORED
-            .load(Ordering::Acquire)
-            .then(|| STORED_CRC.load(Ordering::Acquire)),
-        generation: GENERATION.load(Ordering::Acquire),
-        writable: WRITABLE.load(Ordering::Acquire),
+        stored_ssid_crc: stored.ssid_crc,
+        generation: stored.generation,
+        writable: stored.writable,
         source: source(),
         // SAFETY: with the scheduler paused the writer is not inside
         // `finish`, and no interrupt handler reaches it.
@@ -149,11 +159,11 @@ fn view() -> WifiView {
 
 /// The store as the writer last published it, and whether a change waits.
 pub fn current() -> WifiResult {
-    if !LOADED.load(Ordering::Acquire) {
+    let Some(stored) = PUBLISHED.get() else {
         return WifiResult::Busy;
-    }
+    };
     WifiResult::Current {
-        view: view(),
+        view: view(stored),
         pending: PENDING.waiting(),
     }
 }
@@ -167,13 +177,13 @@ pub fn save(credentials: Credentials) -> WifiResult {
 /// `None`, for the writer, with who asked (`asked`), whose `Wifi` event the
 /// writer records as it saves them.
 pub fn change(credentials: Option<Credentials>, asked: Option<Stamp>) -> WifiResult {
-    if !LOADED.load(Ordering::Acquire) {
+    let Some(stored) = PUBLISHED.get() else {
         return WifiResult::Busy;
-    }
-    if !WRITABLE.load(Ordering::Acquire) {
+    };
+    if !stored.writable {
         return WifiResult::ReadOnly;
     }
-    queue(credentials, asked)
+    queue(credentials, asked, stored)
 }
 
 /// Whether a queued change still waits for the writer.
@@ -181,14 +191,16 @@ pub fn saving() -> bool {
     PENDING.waiting()
 }
 
-fn queue(credentials: Option<Credentials>, asked: Option<Stamp>) -> WifiResult {
+/// Queue the change; `loaded` is the view the caller found published,
+/// which no publish withdraws.
+fn queue(credentials: Option<Credentials>, asked: Option<Stamp>, loaded: Stored) -> WifiResult {
     // The view is read while the slot is claimed, before the writer can
     // take the change: its `saved.next()` is the number this change
     // finishes as, which a client's write waits on.
     let mut view = None;
     let queued = PENDING.offer(|pending| {
         *pending = Asked { credentials, asked };
-        view = Some(self::view());
+        view = Some(self::view(PUBLISHED.get().unwrap_or(loaded)));
     });
     let Some(view) = view.filter(|_| queued) else {
         return WifiResult::Busy;
@@ -221,22 +233,21 @@ pub fn finish(taken: Taken<'static, Asked>, failed: bool) {
 
 /// The writer publishes what NOR holds; writable only once it is `armed`.
 pub fn publish<I: SlotIo>(store: &NetStore<I>, armed: bool) {
-    STORED_CRC.store(
-        store
-            .credentials
-            .map_or(0, |c| wellfed_core::store::slot::crc32(c.ssid())),
-        Ordering::Release,
-    );
-    STORED.store(store.credentials.is_some(), Ordering::Release);
     // Health reports the low 32 bits; saturate rather than wrap to an old value.
     let generation = u32::try_from(store.generation).unwrap_or(u32::MAX);
-    let previous = GENERATION.swap(generation, Ordering::AcqRel);
-    WRITABLE.store(armed && store.writable(), Ordering::Release);
-    let loaded = LOADED.swap(true, Ordering::AcqRel);
+    // Only the writer publishes, so the view it replaces is its own last.
+    let previous = PUBLISHED.get();
+    PUBLISHED.publish(Stored {
+        ssid_crc: store
+            .credentials
+            .map(|c| wellfed_core::store::slot::crc32(c.ssid())),
+        generation,
+        writable: armed && store.writable(),
+    });
 
     // A save after the first load: the next join reads the new credentials
     // and gives them a fresh run of attempts before any fallback.
-    if loaded && generation != previous {
+    if previous.is_some_and(|previous| previous.generation != generation) {
         RELOAD.store(true, Ordering::Release);
     }
 }
@@ -248,10 +259,10 @@ pub fn publish<I: SlotIo>(store: &NetStore<I>, armed: bool) {
 /// task's own, and the save outcomes the writer's.
 #[cfg(not(target_os = "none"))]
 pub unsafe fn reset() {
-    for flag in [&LOADED, &WRITABLE, &STORED, &RELOAD, &HANDOVER_PUT_OFF] {
+    PUBLISHED.clear(EMPTY);
+    for flag in [&RELOAD, &HANDOVER_PUT_OFF] {
         flag.store(false, Ordering::Release);
     }
-    GENERATION.store(0, Ordering::Release);
     SOURCE.store(WifiSource::Build.code(), Ordering::Release);
     PENDING.clear();
     // SAFETY: the caller's contract: no writer task is running either.
