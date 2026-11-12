@@ -11,6 +11,7 @@ use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use wellfed_proto::api::{
     self as proto, ClientMessage, DeviceMessage, FRAME_MAX, FoodLevel, Hello, Op, Outcome,
@@ -63,6 +64,8 @@ struct State {
     garble: Garble,
     /// Answers still to garble.
     left: usize,
+    /// A chunk the fake never answers.
+    silent: Option<u32>,
     received: Vec<u32>,
     /// Each session's requests, in order.
     sessions: Vec<Vec<Seen>>,
@@ -150,6 +153,7 @@ impl Feeder {
         let state = Arc::new(Mutex::new(State {
             garble,
             left: times,
+            silent: None,
             received: Vec::new(),
             sessions: Vec::new(),
         }));
@@ -169,6 +173,13 @@ impl Feeder {
             identity: *Keypair::from_secret(FEEDER).public(),
             state,
         }
+    }
+
+    /// A feeder that answers everything but the chunk at `offset`.
+    fn silent_to(offset: u32) -> Self {
+        let feeder = Self::start(Garble::Chunk, 0);
+        lock(&feeder.state).silent = Some(offset);
+        feeder
     }
 
     fn sessions(&self) -> Vec<Vec<Seen>> {
@@ -247,6 +258,12 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>) -> std::io::Result<()> {
         let (garbled, result) = {
             let mut state = lock(state);
             let seen = seen(&op);
+            if matches!(seen, Seen::Chunk(offset) if Some(offset) == state.silent) {
+                if let Some(session) = state.sessions.last_mut() {
+                    session.push(seen);
+                }
+                continue;
+            }
             let mut opening = false;
             if let Some(session) = state.sessions.last_mut() {
                 session.push(seen);
@@ -314,19 +331,25 @@ fn status() -> proto::Status<'static> {
 /// `cancel` (a stop set before then ends the push unconnected); the result
 /// and the notes.
 fn push(feeder: &Feeder, cancel: bool) -> (Result<(), DeviceError>, Vec<String>) {
-    let mut device = Device::at(
-        crate::device::Owner::of(OWNER, feeder.identity),
-        feeder.address,
-    );
-    // The scripted feeder is listening the whole time.
-    device.retry = std::time::Duration::from_millis(50);
+    let stop_on = cancel.then_some("Session open on bank");
+    push_with(feeder, Fault::None, stop_on)
+}
+
+/// Push against `feeder` with `fault`, setting the stop once a note starts
+/// with `stop_on`; the result and the notes.
+fn push_with(
+    feeder: &Feeder,
+    fault: Fault,
+    stop_on: Option<&str>,
+) -> (Result<(), DeviceError>, Vec<String>) {
+    let mut device = device(feeder);
     let offer = Offer::new(2, 0x22);
     let stop = AtomicBool::new(false);
     let mut notes = Vec::new();
 
-    let result = device.install(offer.image(), Fault::None, &stop, &mut |note| {
+    let result = device.install(offer.image(), fault, &stop, &mut |note| {
         eprintln!("{note}");
-        if cancel && note.starts_with("Session open on bank") {
+        if stop_on.is_some_and(|start| note.starts_with(start)) {
             stop.store(true, Ordering::Release);
         }
         notes.push(note);
@@ -334,6 +357,19 @@ fn push(feeder: &Feeder, cancel: bool) -> (Result<(), DeviceError>, Vec<String>)
 
     eprintln!("push: {result:?}");
     (result, notes)
+}
+
+/// The owner's device at `feeder`, quick to give up on what does not come.
+fn device(feeder: &Feeder) -> Device {
+    let mut device = Device::at(
+        crate::device::Owner::of(OWNER, feeder.identity),
+        feeder.address,
+    );
+    // The scripted feeder is listening the whole time.
+    device.retry = Duration::from_millis(50);
+    device.answer = Duration::from_millis(500);
+    device.stall = Duration::from_secs(30);
+    device
 }
 
 fn garbled_note(notes: &[String]) -> &str {
@@ -387,7 +423,7 @@ fn a_garbled_cancel_answer_cancels_again() {
 
     let (result, notes) = push(&feeder, true);
 
-    assert!(matches!(result, Err(DeviceError::Stopped)), "{result:?}");
+    assert!(matches!(result, Err(DeviceError::Cancelled)), "{result:?}");
     assert_eq!(
         feeder.sessions(),
         [
@@ -421,4 +457,92 @@ fn a_fourth_garbled_answer_ends_the_install() {
             .iter()
             .all(|session| session == &[Seen::State, Seen::Offer])
     );
+}
+
+/// A stop during a stall drill cancels on the session the stall kept open,
+/// rather than ending the push with the candidate recorded.
+#[test]
+fn a_stop_during_a_stall_cancels_on_the_open_session() {
+    let feeder = Feeder::start(Garble::Chunk, 0);
+
+    let (result, _) = push_with(&feeder, Fault::Stall { at: 600 }, Some("Stalling"));
+
+    assert!(matches!(result, Err(DeviceError::Cancelled)), "{result:?}");
+    let sessions = feeder.sessions();
+    assert_eq!(sessions.len(), 1, "{sessions:?}");
+    assert_eq!(sessions[0].last(), Some(&Seen::Cancel), "{sessions:?}");
+    assert!(!sessions[0].contains(&Seen::Chunk(512)), "{sessions:?}");
+}
+
+/// A stop while the session is lost cancels on the next one, which the
+/// stop does not keep it from reaching.
+#[test]
+fn a_stop_while_the_session_is_lost_cancels_on_the_next() {
+    let feeder = Feeder::start(Garble::Chunk, 0);
+
+    let (result, _) = push_with(&feeder, Fault::Drop { at: 0 }, Some("Dropping"));
+
+    assert!(matches!(result, Err(DeviceError::Cancelled)), "{result:?}");
+    let sessions = feeder.sessions();
+    assert_eq!(sessions.len(), 2, "{sessions:?}");
+    assert_eq!(sessions[1], [Seen::State, Seen::Cancel]);
+}
+
+/// The injected chunk waits for its answer as any request does: a feeder
+/// silent to it loses the session within the answer time, and the install
+/// goes on on a new one rather than waiting on it for good.
+#[test]
+fn a_feeder_silent_to_the_unwanted_chunk_loses_the_session() {
+    let ahead = u32::try_from(2 * wellfed_signed::SECTOR).unwrap();
+    let feeder = Feeder::silent_to(ahead);
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopper = {
+        let stop = Arc::clone(&stop);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(3));
+            stop.store(true, Ordering::Release);
+        })
+    };
+
+    let mut device = device(&feeder);
+    let offer = Offer::new(2, 0x22);
+    let result = device.install(
+        offer.image(),
+        Fault::Unwanted { at: 0 },
+        &stop,
+        &mut |note| {
+            eprintln!("{note}");
+        },
+    );
+    stopper.join().unwrap();
+
+    assert!(matches!(result, Err(DeviceError::Cancelled)), "{result:?}");
+    let sessions = feeder.sessions();
+    assert!(sessions.len() >= 2, "{sessions:?}");
+    assert!(sessions[0].contains(&Seen::Chunk(ahead)), "{sessions:?}");
+}
+
+/// A fault past the image would never fire and the drill would install;
+/// it is refused before anything is sent.
+#[test]
+fn a_fault_past_the_image_is_refused_before_the_push() {
+    let feeder = Feeder::start(Garble::Chunk, 0);
+    let offer = Offer::new(2, 0x22);
+    let len = offer.payload.len();
+    let at = u32::try_from(len).unwrap();
+
+    for fault in [
+        Fault::Corrupt { at },
+        Fault::Corrupt { at: at + 8 },
+        Fault::Stall { at },
+        Fault::Drop { at },
+        Fault::Unwanted { at },
+    ] {
+        let (result, _) = push_with(&feeder, fault, None);
+        assert!(
+            matches!(result, Err(DeviceError::FaultOutside { len: l, .. }) if l == len),
+            "{fault:?}: {result:?}"
+        );
+    }
+    assert!(feeder.sessions().is_empty());
 }

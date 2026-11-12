@@ -13,7 +13,10 @@
 //! a host firewall that drops inbound UDP 5353 means mDNS answers never
 //! arrive. The address and the session are kept between requests; a request
 //! on a kept session that fails is sent once more on a fresh one under the
-//! same id, which the feeder answers without running a write twice.
+//! same id. Within one boot the feeder answers that resend without running a
+//! write twice; it remembers ids in RAM, so after a reboot (the reason a
+//! kept session dies) a write that ran before it runs again against what it
+//! left, and a generation-guarded one is refused as stale though it took.
 //!
 //! A second, held session ([`Device::hold`]) is never reopened: the feeder
 //! admits no handshake while a feed holds its outputs, so only a session
@@ -43,7 +46,7 @@ use wellfed_model::{
     FeederSettingsPatch, Generation, Op, OpenRefusal, Refusal, Settings, Stats, StatsSection,
     Status, TimeView, UpdateView, Wifi, WifiSource,
 };
-use wellfed_proto::api::{PORT, RequestId};
+use wellfed_proto::api::{PORT, RequestId, UPDATE_CHUNK_MAX};
 use wellfed_session::hex;
 use wellfed_session::noise::Keypair;
 
@@ -86,7 +89,7 @@ pub enum DeviceError {
     Connect(SocketAddr, std::io::Error),
     #[error("the feeder closed the connection")]
     Closed,
-    #[error("the feeder did not answer within {} s", .0.as_secs())]
+    #[error("the feeder did not answer within {} s", .0.as_secs_f64())]
     Timeout(Duration),
     #[error("the feeder refused the session: {0:?}")]
     Refused(OpenRefusal),
@@ -102,8 +105,18 @@ pub enum DeviceError {
     Session(#[from] wellfed_client::api::Error),
     #[error(transparent)]
     Install(#[from] InstallError),
-    #[error("the install was stopped")]
+    /// Stopped before the feeder confirmed a cancel: a candidate it
+    /// recorded may still hold bank 0 until `ota --cancel`.
+    #[error("the install was stopped, and no cancel was confirmed")]
     Stopped,
+    /// Stopped, and the feeder confirmed the cancel: bank 0 holds no
+    /// candidate.
+    #[error("the install was cancelled; bank 0 holds no candidate")]
+    Cancelled,
+    /// A fault drill's offset the image does not reach, which would never
+    /// fire and turn the drill into a clean install.
+    #[error("the fault's byte {at} is past the image's {len} bytes")]
+    FaultOutside { at: u32, len: usize },
     #[error("the feeder did not answer again within {} s", .0.as_secs())]
     Gone(Duration),
     /// The bench server's session is paused, closed or not configured; the
@@ -409,6 +422,20 @@ pub enum Fault {
     GiveWayOnly,
 }
 
+impl Fault {
+    /// The image byte the fault is at, for the faults placed in the
+    /// transfer.
+    fn at(self) -> Option<u32> {
+        match self {
+            Self::Corrupt { at }
+            | Self::Unwanted { at }
+            | Self::Stall { at }
+            | Self::Drop { at } => Some(at),
+            Self::None | Self::GiveWayOnly => None,
+        }
+    }
+}
+
 /// How long [`Device::install`] waits for the feeder to answer again after
 /// a restart, a power cut or a drop.
 pub(crate) const REACH: Duration = Duration::from_secs(10 * 60);
@@ -572,6 +599,11 @@ pub struct Device {
     /// again: [`RETRY`], or less for the simulator, which restarts and
     /// listens again sooner than the board.
     retry: Duration,
+    /// How long a request waits for its answer: [`ANSWER`], or less for
+    /// host tests of a feeder that never answers.
+    answer: Duration,
+    /// How long a stall drill stays quiet: [`STALL`], or less in host tests.
+    stall: Duration,
 }
 
 fn random<const N: usize>() -> Result<[u8; N], DeviceError> {
@@ -589,6 +621,8 @@ impl Device {
             connection: None,
             held: None,
             retry: RETRY,
+            answer: ANSWER,
+            stall: STALL,
         })
     }
 
@@ -603,6 +637,8 @@ impl Device {
             connection: None,
             held: None,
             retry: RETRY,
+            answer: ANSWER,
+            stall: STALL,
         }
     }
 
@@ -660,7 +696,7 @@ impl Device {
         let bytes = connection.session.request(id, &op)?;
         connection.stream.write_all(&bytes)?;
 
-        let deadline = Instant::now() + ANSWER;
+        let deadline = Instant::now() + self.answer;
         loop {
             while let Some(incoming) = connection.session.next_incoming()? {
                 if let Incoming::Answer { id: got, answer } = incoming
@@ -669,7 +705,7 @@ impl Device {
                     return Ok(Answer::of(answer));
                 }
             }
-            read(connection, deadline)?;
+            read(connection, deadline, self.answer)?;
         }
     }
 
@@ -702,9 +738,9 @@ impl Device {
         connection.stream.write_all(&hello)?;
         self.address = Some(address);
 
-        let deadline = Instant::now() + ANSWER;
+        let deadline = Instant::now() + self.answer;
         loop {
-            read(&mut connection, deadline)?;
+            read(&mut connection, deadline, self.answer)?;
             let Some(incoming) = connection.session.next_incoming()? else {
                 continue;
             };
@@ -730,9 +766,7 @@ impl Device {
             }
             match self.connect() {
                 Ok(connection) => return Ok(connection),
-                Err(error @ (DeviceError::Refused(_) | DeviceError::Keys { .. })) => {
-                    return Err(error);
-                }
+                Err(error @ DeviceError::Refused(_)) => return Err(error),
                 Err(_) if Instant::now() < deadline => std::thread::sleep(self.retry),
                 Err(_) => return Err(DeviceError::Gone(wait)),
             }
@@ -753,7 +787,9 @@ impl Device {
     /// transfer, until bank 1 is activated (the feeder then restarts into
     /// it; its trial is the caller's to watch) or the install stops. `note`
     /// hears each step. Setting `stop` cancels the install on the feeder
-    /// (so no recorded candidate holds bank 0 to it) and ends the push.
+    /// (so no recorded candidate holds bank 0 to it) and ends the push:
+    /// [`DeviceError::Cancelled`] once the feeder confirmed the cancel,
+    /// [`DeviceError::Stopped`] when it did not within its answer time.
     pub(crate) fn install(
         &mut self,
         image: Image<'_>,
@@ -761,6 +797,20 @@ impl Device {
         stop: &AtomicBool,
         note: &mut dyn FnMut(String),
     ) -> Result<(), DeviceError> {
+        // A fault past the image would never fire, and the drill would
+        // install the image cleanly.
+        if let Some(at) = fault.at()
+            && usize::try_from(at).is_ok_and(|at| at >= image.payload.len())
+        {
+            return Err(DeviceError::FaultOutside {
+                at,
+                len: image.payload.len(),
+            });
+        }
+        let chunk = u32::try_from(UPDATE_CHUNK_MAX).unwrap_or(u32::MAX);
+        // The fault fires on the chunk holding its byte.
+        let holds = |offset: u32, at: u32| offset <= at && at - offset < chunk;
+
         let mut installer = Installer::new(image);
         // One session for the push: a kept one would hold a slot it never uses.
         self.connection = None;
@@ -771,9 +821,10 @@ impl Device {
         let mut out: Vec<(RequestId, Sent, Instant)> = Vec::new();
         let mut written = 0;
         // The unwanted chunk, sent until the stage takes it (a full mailbox
-        // answers Busy), and the request it went under. Until it is taken
-        // no wanted chunk goes, so the install cannot reach its offset.
-        let mut unwanted: Option<(u32, Option<RequestId>)> = None;
+        // answers Busy), and the request it went under and when. Until it
+        // is taken no wanted chunk goes, so the install cannot reach its
+        // offset.
+        let mut unwanted: Option<(u32, Option<(RequestId, Instant)>)> = None;
         let mut cancelling: Option<Instant> = None;
         let mut garbled = 0;
 
@@ -786,24 +837,28 @@ impl Device {
                 // and resent until taken it would go ahead of the cancel.
                 unwanted = None;
             }
-            if cancelling.is_some_and(|since| since.elapsed() > ANSWER) {
+            if cancelling.is_some_and(|since| since.elapsed() > self.answer) {
                 return Err(DeviceError::Stopped);
             }
             let mut lost = false;
             if let Some((ahead, None)) = unwanted {
-                let data = image.payload.get(ahead as usize..ahead as usize + 512);
+                let start = usize::try_from(ahead).unwrap_or(usize::MAX);
+                let data = image
+                    .payload
+                    .get(start..start.saturating_add(UPDATE_CHUNK_MAX))
+                    .map_or_else(|| vec![0; UPDATE_CHUNK_MAX], <[u8]>::to_vec);
                 let id = random()?;
                 let bytes = connection.session.request(
                     id,
                     &Op::UpdateChunk {
                         offset: ahead,
-                        data: data.unwrap_or(&[0; 512]).to_vec(),
+                        data,
                     },
                 )?;
                 if connection.stream.write_all(&bytes).is_err() {
                     lost = true;
                 }
-                unwanted = Some((ahead, Some(id)));
+                unwanted = Some((ahead, Some((id, Instant::now()))));
             }
             while !lost && unwanted.is_none() {
                 let next = installer.poll();
@@ -826,20 +881,22 @@ impl Device {
                     Next::Failed(error) => return Err(error.into()),
                     Next::Cancelled => {
                         note("Cancelled: bank 0 holds no candidate".into());
-                        return Err(DeviceError::Stopped);
+                        return Err(DeviceError::Cancelled);
                     }
                 };
 
                 let op = match (sent, op, fault) {
-                    (Sent::Chunk(offset), _, Fault::Stall { at }) if offset >= at => {
+                    (Sent::Chunk(offset), _, Fault::Stall { at }) if holds(offset, at) => {
                         note(format!(
                             "Stalling at byte {offset} for {} s",
-                            STALL.as_secs()
+                            self.stall.as_secs_f64()
                         ));
                         fault = Fault::None;
-                        wait(STALL, stop)?;
+                        // The chunk never goes. A stop during the stall
+                        // cancels on this session, which is still open.
+                        let stopped = !rest(self.stall, stop);
                         installer.lost();
-                        lost = true;
+                        lost = !stopped;
                         break;
                     }
                     // Every send of the chunk is spoiled, a resend after a
@@ -848,9 +905,16 @@ impl Device {
                         Sent::Chunk(offset),
                         Op::UpdateChunk { mut data, .. },
                         Fault::Corrupt { at },
-                    ) if (offset..offset + wellfed_core::ota::MAX_CHUNK).contains(&at) => {
+                    ) if offset <= at
+                        && usize::try_from(at - offset).is_ok_and(|i| i < data.len()) =>
+                    {
                         note(format!("Corrupting byte {at}"));
-                        data[(at - offset) as usize] ^= 0x10;
+                        if let Some(byte) = usize::try_from(at - offset)
+                            .ok()
+                            .and_then(|i| data.get_mut(i))
+                        {
+                            *byte ^= 0x10;
+                        }
                         Op::UpdateChunk { offset, data }
                     }
                     (_, op, _) => op,
@@ -864,7 +928,7 @@ impl Device {
                 out.push((id, sent, Instant::now()));
 
                 if let (Sent::Chunk(offset), Fault::Unwanted { at }) = (sent, fault)
-                    && offset >= at
+                    && holds(offset, at)
                 {
                     // Two sectors on: the sector this chunk is in may
                     // complete before the stage takes the fault, and then the
@@ -911,7 +975,7 @@ impl Device {
                     let Incoming::Answer { id, answer } = incoming else {
                         continue;
                     };
-                    if let Some((ahead, Some(sent))) = unwanted
+                    if let Some((ahead, Some((sent, _)))) = unwanted
                         && sent == id
                     {
                         if answer == wellfed_model::Answer::Refused(Refusal::Busy) {
@@ -935,7 +999,7 @@ impl Device {
                             note(format!("Written {written} of {} bytes", view.image_len));
                         }
                         if let Fault::Drop { at } = fault
-                            && offset >= at
+                            && holds(offset, at)
                         {
                             note(format!("Dropping the connection at byte {offset}"));
                             fault = Fault::None;
@@ -943,7 +1007,20 @@ impl Device {
                         }
                     }
                 }
-                lost |= out.iter().any(|(.., at)| at.elapsed() > ANSWER);
+                // The injected chunk waits for its answer as any request
+                // does: a feeder silent to it is a lost session too.
+                lost |= out.iter().any(|(.., at)| at.elapsed() > self.answer)
+                    || matches!(unwanted, Some((_, Some((_, at)))) if at.elapsed() > self.answer);
+            }
+
+            if lost && stop.load(Ordering::Acquire) && cancelling.is_none() {
+                // The stop came with the session lost: the cancel goes on
+                // the next one, within its own answer time, so a reconnect
+                // the stop would end still frees bank 0.
+                note("Stopping: cancelling the install on the feeder".into());
+                installer.cancel();
+                cancelling = Some(Instant::now());
+                unwanted = None;
             }
 
             if lost {
@@ -965,7 +1042,7 @@ impl Device {
                     // own deadline, or no candidate is known to be freed.
                     Some(since) => self
                         .reach(
-                            ANSWER.saturating_sub(since.elapsed()),
+                            self.answer.saturating_sub(since.elapsed()),
                             &AtomicBool::new(false),
                         )
                         .map_err(|_| DeviceError::Stopped)?,
@@ -1005,9 +1082,9 @@ impl Device {
         };
         connection.stream.write_all(&hello)?;
 
-        let deadline = Instant::now() + ANSWER;
+        let deadline = Instant::now() + self.answer;
         loop {
-            match read(&mut connection, deadline) {
+            match read(&mut connection, deadline, self.answer) {
                 Ok(()) => {}
                 Err(DeviceError::Closed) => return Ok(Rebuffed::Dropped),
                 Err(DeviceError::Io(error)) if error.kind() == ErrorKind::ConnectionReset => {
@@ -1078,23 +1155,24 @@ fn dial(address: SocketAddr) -> Result<TcpStream, DeviceError> {
     Ok(stream)
 }
 
-/// An interruptible sleep.
-fn wait(time: Duration, stop: &AtomicBool) -> Result<(), DeviceError> {
+/// An interruptible sleep: whether it ran its time, rather than `stop`
+/// ending it.
+fn rest(time: Duration, stop: &AtomicBool) -> bool {
     let deadline = Instant::now() + time;
     while Instant::now() < deadline {
         if stop.load(Ordering::Acquire) {
-            return Err(DeviceError::Stopped);
+            return false;
         }
-        std::thread::sleep(Duration::from_millis(250));
+        std::thread::sleep(Duration::from_millis(50).min(time));
     }
-    Ok(())
+    true
 }
 
 /// The install's requests still unanswered, for a garbled message's note:
 /// which one the garbled answer could have been.
 fn outstanding(
     out: &[(RequestId, Sent, Instant)],
-    unwanted: Option<(u32, Option<RequestId>)>,
+    unwanted: Option<(u32, Option<(RequestId, Instant)>)>,
 ) -> String {
     let mut sent: Vec<String> = out.iter().map(|(_, sent, _)| format!("{sent:?}")).collect();
     if let Some((ahead, Some(_))) = unwanted {
@@ -1109,21 +1187,22 @@ fn outstanding(
 
 /// Read what arrives within `time` into the session.
 fn read_for(connection: &mut Connection, time: Duration) -> Result<(), DeviceError> {
-    read(connection, Instant::now() + time)
+    read(connection, Instant::now() + time, time)
 }
 
-/// Read what arrives before `deadline` into the session.
-fn read(connection: &mut Connection, deadline: Instant) -> Result<(), DeviceError> {
+/// Read what arrives before `deadline` into the session; a timeout names
+/// `wait`, the whole wait that deadline ends.
+fn read(connection: &mut Connection, deadline: Instant, wait: Duration) -> Result<(), DeviceError> {
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() {
-        return Err(DeviceError::Timeout(ANSWER));
+        return Err(DeviceError::Timeout(wait));
     }
     connection.stream.set_read_timeout(Some(left))?;
     let mut buffer = [0u8; 2048];
     let n = match connection.stream.read(&mut buffer) {
         Ok(n) => n,
         Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-            return Err(DeviceError::Timeout(ANSWER));
+            return Err(DeviceError::Timeout(wait));
         }
         Err(error) => return Err(error.into()),
     };
