@@ -570,10 +570,10 @@ class NotSent:
     """
     Held: Final[NotSent]
     """
-    A feed whose answer was lost is not settled yet. A new feed
-    waits until it is (at most 15 minutes, the settle window),
-    so the next `Fed` this client is named in can settle only that
-    one, and a feed refused unseen is never taken for one that ran.
+    Another feed of this client's is still being answered or
+    settled. A new feed waits for it (at most 15 minutes, the settle
+    window), so the next `Fed` this client is named in can settle only
+    that one, and a feed refused unseen is never taken for one that ran.
     """
     Invalid: Final[NotSent]
     """
