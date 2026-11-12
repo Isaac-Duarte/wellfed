@@ -14,8 +14,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use wellfed_app_bridge::api::alerts::{
-    Attempt, CatchUp, CatchUpEnd, NoticeChange, NoticeDetail, PhoneNetwork, catch_up_with,
-    confirm_notices, dismiss_notice, feeder_alerts, forget_alerts,
+    Attempt, CatchUp, CatchUpEnd, NoticeChange, NoticeDetail, PhoneNetwork, PostedNotice,
+    catch_up_with, confirm_notices, dismiss_notice, feeder_alerts, forget_alerts,
 };
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::{FeedOutcome, FeedReason, NoticeKind};
@@ -171,9 +171,14 @@ fn a_failed_meal_posts_once_and_a_dismissal_stays_on_the_phone() {
         assert_eq!(again.end, CatchUpEnd::Unchanged);
         assert_eq!(posts(&again), [NoticeKind::MealFailed]);
 
-        confirm_notices(dir.clone(), identity.clone(), vec![notice.id], vec![])
-            .await
-            .unwrap();
+        confirm_notices(
+            dir.clone(),
+            identity.clone(),
+            vec![PostedNotice::from(notice)],
+            vec![],
+        )
+        .await
+        .unwrap();
         let quiet = catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
         assert_eq!(quiet.end, CatchUpEnd::Unchanged);
         assert_eq!(quiet.changes, [], "posted once");

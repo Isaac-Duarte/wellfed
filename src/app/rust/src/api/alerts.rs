@@ -175,6 +175,29 @@ pub struct NoticeView {
     pub quiet: bool,
 }
 
+/// A notice Dart posted, as [`confirm_notices`] takes it back: its id, and
+/// which posting of it went up (when the phone first saw it, and its kind),
+/// from the [`NoticeView`] it posted. A catch-up in another engine may have
+/// ended the notice and opened it again under the same id, or changed its
+/// kind, while this one was on the way, and confirming that newer posting
+/// would mean it is never posted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PostedNotice {
+    pub id: i32,
+    pub seen_ms: i64,
+    pub kind: NoticeKind,
+}
+
+impl From<&NoticeView> for PostedNotice {
+    fn from(notice: &NoticeView) -> Self {
+        Self {
+            id: notice.id,
+            seen_ms: notice.seen_ms,
+            kind: notice.kind,
+        }
+    }
+}
+
 /// One change to make on the phone, then confirm.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NoticeChange {
@@ -279,14 +302,14 @@ pub async fn catch_up_with(
     })
 }
 
-/// The changes Dart made: each posted notification's id and each removed one's.
-/// A change that went stale meanwhile is left for the next catch-up. The ids
+/// The changes Dart made: each notice posted and each removed one's id. A
+/// change that went stale meanwhile is left for the next catch-up. The ids
 /// to take off again: everything posted for a feeder forgotten while its
 /// changes were on the way.
 pub async fn confirm_notices(
     dir: String,
     identity: String,
-    posted: Vec<i32>,
+    posted: Vec<PostedNotice>,
     removed: Vec<i32>,
 ) -> Result<Vec<i32>, BridgeError> {
     let feeder = identity_of(&identity)?;

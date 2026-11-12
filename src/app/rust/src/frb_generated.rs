@@ -5559,7 +5559,7 @@ fn wire__crate__api__alerts__confirm_notices_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_dir = <String>::sse_decode(&mut deserializer);
             let api_identity = <String>::sse_decode(&mut deserializer);
-            let api_posted = <Vec<i32>>::sse_decode(&mut deserializer);
+            let api_posted = <Vec<crate::api::alerts::PostedNotice>>::sse_decode(&mut deserializer);
             let api_removed = <Vec<i32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
@@ -9573,6 +9573,18 @@ impl SseDecode for Vec<crate::api::router::PendingWrite> {
     }
 }
 
+impl SseDecode for Vec<crate::api::alerts::PostedNotice> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::alerts::PostedNotice>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<i32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -11143,6 +11155,20 @@ impl SseDecode for crate::api::model::Portions {
             outlet_breaks: var_outletBreaks,
             portion_mg: var_portionMg,
             delivered_mg: var_deliveredMg,
+        };
+    }
+}
+
+impl SseDecode for crate::api::alerts::PostedNotice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <i32>::sse_decode(deserializer);
+        let mut var_seenMs = <i64>::sse_decode(deserializer);
+        let mut var_kind = <crate::api::model::NoticeKind>::sse_decode(deserializer);
+        return crate::api::alerts::PostedNotice {
+            id: var_id,
+            seen_ms: var_seenMs,
+            kind: var_kind,
         };
     }
 }
@@ -16738,6 +16764,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::model::Portions>>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::alerts::PostedNotice {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.seen_ms.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::alerts::PostedNotice
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::alerts::PostedNotice>
+    for crate::api::alerts::PostedNotice
+{
+    fn into_into_dart(self) -> crate::api::alerts::PostedNotice {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::PowerStats> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -21339,6 +21387,16 @@ impl SseEncode for Vec<crate::api::router::PendingWrite> {
     }
 }
 
+impl SseEncode for Vec<crate::api::alerts::PostedNotice> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::alerts::PostedNotice>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<i32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -22685,6 +22743,15 @@ impl SseEncode for crate::api::model::Portions {
         <u32>::sse_encode(self.outlet_breaks, serializer);
         <Option<u32>>::sse_encode(self.portion_mg, serializer);
         <Option<u64>>::sse_encode(self.delivered_mg, serializer);
+    }
+}
+
+impl SseEncode for crate::api::alerts::PostedNotice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.id, serializer);
+        <i64>::sse_encode(self.seen_ms, serializer);
+        <crate::api::model::NoticeKind>::sse_encode(self.kind, serializer);
     }
 }
 
