@@ -418,6 +418,8 @@ const LOG_RING_BYTES: usize = 4096;
 static LOG_RING: wellfed_core::log_ring::LogRing<LOG_RING_BYTES> =
     wellfed_core::log_ring::LogRing::new();
 
+#[cfg(any(not(target_os = "none"), feature = "km4"))]
+mod span;
 #[cfg(all(target_os = "none", feature = "km4"))]
 mod target;
 #[cfg(all(target_os = "none", feature = "km4"))]

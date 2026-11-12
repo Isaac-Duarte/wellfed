@@ -28,14 +28,31 @@ use super::{Advertising, BleEvent, BlePoll, BleService, BleStats};
     non_snake_case,
     non_upper_case_globals,
     dead_code,
+    unreachable_pub,
     clippy::all,
-    clippy::undocumented_unsafe_blocks
+    clippy::undocumented_unsafe_blocks,
+    reason = "bindgen's generated declarations, which no one edits"
 )]
 mod raw {
     include!(concat!(env!("OUT_DIR"), "/sdk.rs"));
 }
 
 use raw::wellfed_sdk_constant as k;
+
+/// An SDK constant the ROM takes as a byte, checked to fit at compile time.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "every caller is a const item, so the assert runs in the build"
+)]
+const fn sdk_byte(value: u32) -> u8 {
+    assert!(value <= 0xff, "an SDK byte argument above 255");
+    value as u8
+}
+
+const PUPD_NOPULL: u8 = sdk_byte(k::WELLFED_GPIO_PUPD_NOPULL);
+const L25E_OUT_VOLTAGE: u8 = sdk_byte(k::WELLFED_L25EOUTVOLTAGE);
+const SDK_DISABLE: u8 = sdk_byte(k::WELLFED_DISABLE);
+const SDK_ENABLE: u8 = sdk_byte(k::WELLFED_ENABLE);
 
 pub const GPIO_PORT_A: u32 = k::WELLFED_GPIO_PORT_A;
 pub const PMU_USER_BASE: u32 = k::WELLFED_PMU_DEV_USER_BASE;
@@ -289,8 +306,9 @@ pub fn pad_control(pin: u32) -> u32 {
 /// Remove pad pull resistors explicitly; ROM GPIO_Init skips this for outputs.
 pub fn gpio_no_pull(pin: u32) {
     assert!(pin < 64);
+    let pad = u8::try_from(pin).expect("a pad number, checked below 64 above");
     // SAFETY: the pinned SDK routine, with plain-value arguments.
-    unsafe { raw::PAD_PullCtrl(pin as u8, k::WELLFED_GPIO_PUPD_NOPULL as u8) }
+    unsafe { raw::PAD_PullCtrl(pad, PUPD_NOPULL) }
 }
 
 /// # Safety
@@ -383,13 +401,13 @@ pub fn efuse_read8(address: u32) -> Option<u8> {
     let mut value = 0u8;
     let ok =
         // SAFETY: the pinned SDK routine, writing only through a live local.
-        unsafe { raw::EFUSERead8(0, address, &mut value, k::WELLFED_L25EOUTVOLTAGE as u8) } != 0;
+        unsafe { raw::EFUSERead8(0, address, &mut value, L25E_OUT_VOLTAGE) } != 0;
     ok.then_some(value)
 }
 
 pub fn pad_disable(pin: u8) {
     // SAFETY: the pinned SDK routine, with plain-value arguments.
-    unsafe { raw::PAD_CMD(pin, k::WELLFED_DISABLE as u8) }
+    unsafe { raw::PAD_CMD(pin, SDK_DISABLE) }
 }
 
 /// Initialize the ADC with an empty conversion list (manual channel select).
@@ -467,7 +485,7 @@ pub fn gtimer_clock_enable() {
         raw::RCC_PeriphClockCmd(
             k::WELLFED_APB_GTIMER,
             k::WELLFED_APB_GTIMER_CLOCK,
-            k::WELLFED_ENABLE as u8,
+            SDK_ENABLE,
         )
     }
 }
@@ -544,7 +562,7 @@ pub fn panic_outputs_safe() {
         )
     };
 
-    if PORT_A_HIGH | PORT_A_LOW != 0 {
+    if (PORT_A_HIGH, PORT_A_LOW) != (0, 0) {
         // SAFETY: Port A's data register; interrupts are masked above.
         unsafe { ptr::write_volatile(a, (ptr::read_volatile(a) | PORT_A_HIGH) & !PORT_A_LOW) };
     }
@@ -766,9 +784,7 @@ const _: () = assert!(k::WELLFED_SPI_FLASH_BASE == 0x0800_0000 && k::WELLFED_ERA
 /// if they lie inside it. On a board with no store the range is empty, so
 /// every sector is refused.
 fn storage_span(sector: u32, offset: u32, len: usize) -> Option<u32> {
-    let end = offset.checked_add(u32::try_from(len).ok()?)?;
-    ((0..STORAGE_SECTORS).contains(&sector) && end <= SECTOR_BYTES)
-        .then(|| STORAGE_OFFSET + sector * SECTOR_BYTES + offset)
+    crate::span::storage(sector, offset, len).map(|at| STORAGE_OFFSET + at)
 }
 
 /// Erases this boot, by storage sector, and of bank 1: the statistics'
@@ -818,23 +834,22 @@ pub unsafe fn storage_erase(sector: u32) -> bool {
 /// The HAL's flash hooks are armed, so the SDK routine takes the KM0 lease
 /// around the write, and the caller owns what it writes.
 pub unsafe fn storage_program(sector: u32, offset: u32, data: &[u8]) -> bool {
-    if storage_span(sector, offset, data.len()).is_none()
-        || !offset.is_multiple_of(4)
-        || !data.len().is_multiple_of(4)
-    {
+    let Some(address) = storage_span(sector, offset, data.len()) else {
+        return false;
+    };
+    let Ok(len) = u32::try_from(data.len()) else {
+        return false;
+    };
+    if !crate::span::aligned(offset, data.len()) {
         return false;
     }
 
-    let mut done = 0;
-    while done < data.len() {
-        let at = offset + done as u32;
-        let chunk = (256 - (at % 256) as usize).min(data.len() - done);
-        let mut page = [0u8; 256];
-        page[..chunk].copy_from_slice(&data[done..done + chunk]);
-        let address = STORAGE_OFFSET + sector * SECTOR_BYTES + at;
+    for program in crate::span::programs(address, len) {
+        let mut page = [0u8; crate::span::PROGRAM_PAGE as usize];
+        let bytes = program.from..program.from + program.len as usize;
+        page[..bytes.len()].copy_from_slice(&data[bytes]);
         // SAFETY: the SDK's RAM flash routine, inside the span checked above; the page buffer is live.
-        unsafe { raw::FLASH_TxData256BXIP(address, chunk as u32, page.as_mut_ptr()) };
-        done += chunk;
+        unsafe { raw::FLASH_TxData256BXIP(program.address, program.len, page.as_mut_ptr()) };
     }
 
     true
@@ -843,9 +858,8 @@ pub unsafe fn storage_program(sector: u32, offset: u32, data: &[u8]) -> bool {
 /// A bank-1 address for `sector`/`offset`/`len`, only while running from
 /// bank 0: the updater never writes the bank it executes from.
 fn bank1_span(sector: u32, offset: u32, len: usize) -> Option<u32> {
-    let end = offset.checked_add(u32::try_from(len).ok()?)?;
-    (flash_mmu_entry0().bank() == Some(0) && sector < super::BANK1_SECTORS && end <= SECTOR_BYTES)
-        .then(|| super::BANK1_OFFSET + sector * SECTOR_BYTES + offset)
+    crate::span::bank1(flash_mmu_entry0().bank(), sector, offset, len)
+        .map(|at| super::BANK1_OFFSET + at)
 }
 
 /// Erase one bank-1 sector through the hooked `FLASH_EraseXIP`.
@@ -869,23 +883,22 @@ pub unsafe fn bank1_erase(sector: u32) -> bool {
 /// The HAL's flash hooks are armed, so the SDK routine takes the KM0 lease
 /// around the write, and the caller owns what it writes.
 pub unsafe fn bank1_program(sector: u32, offset: u32, data: &[u8]) -> bool {
-    let Some(base) = bank1_span(sector, offset, data.len()) else {
+    let Some(address) = bank1_span(sector, offset, data.len()) else {
         return false;
     };
-
-    if !offset.is_multiple_of(4) || !data.len().is_multiple_of(4) {
+    let Ok(len) = u32::try_from(data.len()) else {
+        return false;
+    };
+    if !crate::span::aligned(offset, data.len()) {
         return false;
     }
 
-    let mut done = 0;
-    while done < data.len() {
-        let at = base + done as u32;
-        let chunk = (256 - (at % 256) as usize).min(data.len() - done);
-        let mut page = [0u8; 256];
-        page[..chunk].copy_from_slice(&data[done..done + chunk]);
+    for program in crate::span::programs(address, len) {
+        let mut page = [0u8; crate::span::PROGRAM_PAGE as usize];
+        let bytes = program.from..program.from + program.len as usize;
+        page[..bytes.len()].copy_from_slice(&data[bytes]);
         // SAFETY: the SDK's RAM flash routine, inside the span checked above; the page buffer is live.
-        unsafe { raw::FLASH_TxData256BXIP(at, chunk as u32, page.as_mut_ptr()) };
-        done += chunk;
+        unsafe { raw::FLASH_TxData256BXIP(program.address, program.len, page.as_mut_ptr()) };
     }
     true
 }
@@ -941,13 +954,7 @@ pub fn bank1_read_uncached(sector: u32, offset: u32, bytes: &mut [u8]) -> bool {
 /// Read bank 0 through the physical flash window, from either bank: the
 /// update path hashes the image there before giving way to it. Read only.
 pub fn bank0_read(offset: u32, bytes: &mut [u8]) -> bool {
-    let Some(end) = u32::try_from(bytes.len())
-        .ok()
-        .and_then(|len| offset.checked_add(len))
-    else {
-        return false;
-    };
-    if end > super::BANK1_OFFSET - super::BANK0_OFFSET {
+    if crate::span::bank0(offset, bytes.len()).is_none() {
         return false;
     }
     let base = k::WELLFED_SPI_FLASH_BASE + super::BANK0_OFFSET + offset;
@@ -970,8 +977,8 @@ pub fn bank0_read(offset: u32, bytes: &mut [u8]) -> bool {
 pub unsafe fn bank1_give_way() -> bool {
     let read = |offset: u32| {
         let mut out = [0u8; 8];
-        for (i, byte) in out.iter_mut().enumerate() {
-            let at = k::WELLFED_SPI_FLASH_BASE + offset + i as u32;
+        let base = k::WELLFED_SPI_FLASH_BASE + offset;
+        for (byte, at) in out.iter_mut().zip(base..) {
             // SAFETY: inside the memory-mapped flash window, at an offset checked above.
             *byte = unsafe { ptr::read_volatile(at as usize as *const u8) };
         }
@@ -1895,7 +1902,6 @@ pub fn log_flush() {
 /// A line of ours is partly on the wire. The print wraps in `example_entry.c`
 /// read it from RAM, and call [`wellfed_log_settle`] only when it is set, so
 /// a vendor print with XIP unavailable does not reach for flash.
-#[expect(non_upper_case_globals, reason = "a C symbol")]
 #[unsafe(no_mangle)]
 pub static wellfed_log_mid_line: AtomicBool = AtomicBool::new(false);
 

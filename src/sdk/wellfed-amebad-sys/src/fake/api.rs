@@ -84,9 +84,25 @@ pub fn boot_reason() -> u32 {
 }
 
 fn storage_span(sector: u32, offset: u32, len: usize) -> Option<usize> {
-    let end = offset as usize + len;
-    ((0..STORAGE_SECTORS).contains(&sector) && end <= SECTOR_BYTES as usize)
-        .then(|| (sector * SECTOR_BYTES + offset) as usize)
+    crate::span::storage(sector, offset, len).map(|at| at as usize)
+}
+
+/// Program `data` into a modelled region at `at`, as the target does: one
+/// NOR program per page, each only clearing bits.
+fn program(region: &mut [u8], at: usize, data: &[u8]) {
+    let Ok(len) = u32::try_from(data.len()) else {
+        return;
+    };
+    let Ok(start) = u32::try_from(at) else {
+        return;
+    };
+    for program in crate::span::programs(start, len) {
+        let cells = program.address as usize..program.address as usize + program.len as usize;
+        let bytes = &data[program.from..program.from + program.len as usize];
+        for (cell, &byte) in region[cells].iter_mut().zip(bytes) {
+            *cell &= byte;
+        }
+    }
 }
 
 /// # Safety
@@ -110,14 +126,10 @@ pub unsafe fn storage_program(sector: u32, offset: u32, data: &[u8]) -> bool {
     let Some(at) = storage_span(sector, offset, data.len()) else {
         return false;
     };
-    if !offset.is_multiple_of(4) || !data.len().is_multiple_of(4) {
+    if !crate::span::aligned(offset, data.len()) {
         return false;
     }
-    with(|h| {
-        for (cell, &byte) in h.storage[at..at + data.len()].iter_mut().zip(data) {
-            *cell &= byte;
-        }
-    });
+    with(|h| program(&mut h.storage, at, data));
     true
 }
 
@@ -164,11 +176,7 @@ pub fn running_bank() -> Option<u8> {
 }
 
 fn bank1_span(sector: u32, offset: u32, len: usize) -> Option<usize> {
-    let end = offset as usize + len;
-    with(|h| h.running_bank == Some(0))
-        .then_some(())
-        .filter(|_| sector < crate::BANK1_SECTORS && end <= SECTOR_BYTES as usize)
-        .map(|_| (sector * SECTOR_BYTES + offset) as usize)
+    crate::span::bank1(running_bank(), sector, offset, len).map(|at| at as usize)
 }
 
 /// # Safety
@@ -192,14 +200,10 @@ pub unsafe fn bank1_program(sector: u32, offset: u32, data: &[u8]) -> bool {
     let Some(at) = bank1_span(sector, offset, data.len()) else {
         return false;
     };
-    if !offset.is_multiple_of(4) || !data.len().is_multiple_of(4) {
+    if !crate::span::aligned(offset, data.len()) {
         return false;
     }
-    with(|h| {
-        for (cell, &byte) in h.bank1[at..at + data.len()].iter_mut().zip(data) {
-            *cell &= byte;
-        }
-    });
+    with(|h| program(&mut h.bank1, at, data));
     true
 }
 
@@ -218,11 +222,10 @@ pub fn bank1_read_uncached(sector: u32, offset: u32, bytes: &mut [u8]) -> bool {
 
 /// Bank 0's bytes, its first 8 from `bank0_marker`.
 pub fn bank0_read(offset: u32, bytes: &mut [u8]) -> bool {
-    let start = offset as usize;
-    let end = start + bytes.len();
-    if end > (crate::BANK1_OFFSET - crate::BANK0_OFFSET) as usize {
+    let Some(start) = crate::span::bank0(offset, bytes.len()) else {
         return false;
-    }
+    };
+    let start = start as usize;
     with(|h| {
         for (i, byte) in bytes.iter_mut().enumerate() {
             let at = start + i;
