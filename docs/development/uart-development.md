@@ -112,7 +112,7 @@ To bring bank 1 back, run a development update with `--restore-marker`. It accep
 
 - The marker sector is staged, and every other sector is exactly its source, its staged target, or erased.
 - One sector may instead hold the staged target's first one to three 1024-byte program frames followed by erased flash, the only state a program stopped after its erase leaves. That sector is erased and rewritten.
-- A stop between the marker sector's erase and its first program frame: the marker sector wholly erased (every byte `0xFF`), and every other sector in the extent byte-identical to the source review. The plan then stages the marker sector first and commits the marker last, as a fresh update does.
+- A stop inside the marker sector's own step, after its erase: the marker sector holds none to three of its staged 1024-byte program frames followed by erased flash, and every other sector in the extent is byte-identical to the source review. A stopped marker restore, whose only changed sector is the marker's, always leaves this or a staged sector. The plan then stages the marker sector first and commits the marker last, as a fresh update does.
 
 Anything else is refused: a partial erase, a second partial program, stray bytes or foreign frames in the marker sector, or any other content. The other bank's pinned first sector is checked as always, and the update then stages the remaining sectors and commits the marker with a normal update's checks.
 

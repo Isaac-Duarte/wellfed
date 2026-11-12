@@ -2752,7 +2752,7 @@ fn assert_unrecognized(rig: &Rig) {
 }
 
 /// After a marker restore that stopped, the inspections tell the given-way
-/// state (a fresh `--restore-marker`), an erased or staged marker sector
+/// state (a fresh `--restore-marker`), an erased, part-programmed or staged marker sector
 /// (plain `--interrupted`) and a marker already back (boot bank 1) apart.
 #[test]
 fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
@@ -2805,7 +2805,7 @@ fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
 /// flash client's own image checks accept for those states (its test
 /// `a_stopped_marker_restore_resumes_by_one_mode_never_both`, which this
 /// crate cannot link): `--restore-marker` alone from the given-way bytes,
-/// `--interrupted` alone from an erased or staged marker sector.
+/// `--interrupted` alone from an erased, part-programmed or staged marker sector.
 #[test]
 fn each_printed_marker_restore_names_exactly_one_mode() {
     use super::bank0::{At, Next, Resume, restore_args};

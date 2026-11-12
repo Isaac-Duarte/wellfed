@@ -107,7 +107,7 @@ pub(crate) fn seen(boot: &Path) -> Seen {
 }
 
 /// How a marker restore runs: fresh from the given-way state, or finishing
-/// one that stopped after it erased or staged the marker sector. The flash
+/// one that stopped after it erased, part-programmed or staged the marker sector. The flash
 /// client takes `--restore-marker` only for the first and `--interrupted`
 /// only without it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,7 +145,7 @@ pub(crate) enum Bank1 {
     Intact,
     /// Exactly its review with the first marker byte cleared.
     GivenWay,
-    /// The marker sector erased or staged by a stopped restore.
+    /// The marker sector erased, part-programmed or staged by a stopped restore.
     Staged,
     /// Exactly its review, marker and all.
     Restored,
@@ -197,7 +197,7 @@ pub(crate) enum At {
     GivenWay,
     /// Bank 0 recorded itself; bank 1 given way.
     Recorded,
-    /// A stopped restore left the marker sector erased or staged.
+    /// A stopped restore left the marker sector erased, part-programmed or staged.
     RestoreStaged,
     /// The restore may have stopped anywhere.
     RestoreUnknown,
@@ -381,7 +381,7 @@ impl Next<'_> {
             ),
             At::RestoreStaged => (
                 format!(
-                    "the marker restore stopped with bank 1's marker sector erased or staged, \
+                    "the marker restore stopped with bank 1's marker sector erased, part-programmed or staged, \
                      after bank 0 recorded itself; {NOT_BOOTED}"
                 ),
                 self.restore(Resume::Interrupted),
