@@ -349,6 +349,17 @@ pub struct BleStats {
     pub connected: u32,
 }
 
+// The structs the C ports fill or read, each the size its C twin asserts
+// (`example_entry.c`, `wellfed_ble.c`): a field added on one side alone
+// fails the build rather than misreading on the bench. Those holding a
+// pointer have the C's size only on the 32-bit target.
+const _: () = assert!(size_of::<WifiEvent>() == 32);
+const _: () = assert!(size_of::<TaskStack>() == 20);
+const _: () = assert!(size_of::<BleEvent>() == 16);
+const _: () = assert!(size_of::<BleStats>() == 20);
+#[cfg(target_os = "none")]
+const _: () = assert!(size_of::<JoinCredentials>() == 20);
+
 /// What a non-blocking device API receive found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiRecv {

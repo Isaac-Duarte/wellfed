@@ -90,6 +90,13 @@ struct wellfed_ble_stats {
     unsigned int connected;
 };
 
+/* Each layout is the Rust twin's in `wellfed-amebad-sys` (`RawBleConfig`,
+ * `BleEvent`, `BleStats`), which asserts the same sizes: a field added on
+ * one side alone fails the build rather than misreading on the bench. */
+_Static_assert(sizeof(struct wellfed_ble_config) == 40, "sdk RawBleConfig");
+_Static_assert(sizeof(struct wellfed_ble_event) == 16, "sdk::BleEvent");
+_Static_assert(sizeof(struct wellfed_ble_stats) == 20, "sdk::BleStats");
+
 /* A byte ring with one producer and one consumer, each side under a
  * critical section so a connect can clear it. */
 struct wellfed_ring {

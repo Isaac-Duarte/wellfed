@@ -1984,6 +1984,9 @@ struct RawBleConfig {
 }
 
 #[cfg(feature = "bluetooth")]
+const _: () = assert!(size_of::<RawBleConfig>() == 40, "wellfed_ble.c's config");
+
+#[cfg(feature = "bluetooth")]
 unsafe extern "C" {
     fn wellfed_ble_start(config: *const RawBleConfig) -> i32;
     fn wellfed_ble_event_read(seq: u32, out: *mut BleEvent) -> i32;

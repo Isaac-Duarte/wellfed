@@ -380,6 +380,9 @@ struct wellfed_wifi_event {
     unsigned int security;
     unsigned int ms;
 };
+/* The Rust twin asserts the same size: a field added on one side fails the
+ * build rather than misreading on the bench. */
+_Static_assert(sizeof(struct wellfed_wifi_event) == 32, "sdk::WifiEvent");
 
 static struct wellfed_wifi_event wellfed_events[WELLFED_WIFI_EVENTS];
 static unsigned int wellfed_seq;
@@ -405,6 +408,7 @@ struct wellfed_join_credentials {
     unsigned int psk_len;
     unsigned int source; /* 0 build, 1 stored, 2 fallback */
 };
+_Static_assert(sizeof(struct wellfed_join_credentials) == 20, "sdk::JoinCredentials");
 
 /* The header's WELLFED_BUILD_WIFI says whether the image has a build
  * network; Rust learns the same from the builder (wellfed-device-runtime
@@ -605,6 +609,7 @@ struct wellfed_task_stack {
     char name[16];
     unsigned int free_min;
 };
+_Static_assert(sizeof(struct wellfed_task_stack) == 20, "sdk::TaskStack");
 
 #define WELLFED_TASKS 24
 
