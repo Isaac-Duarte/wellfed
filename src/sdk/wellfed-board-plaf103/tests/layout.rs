@@ -148,3 +148,30 @@ fn pins_are_pinned() {
     assert_eq!([pins::MOTOR_A_BIT, pins::MOTOR_B_BIT], [1 << 13, 1 << 14]);
     assert_eq!([pins::IR_PA_BIT, pins::IR_PB_BIT], [1 << 15, 1 << 3]);
 }
+
+/// The flash writers' copy of the stock flash, `layout.json`, and the
+/// region agree: the store lies above a full-size bank 1 and its candidate
+/// cap, and clear of every range the writers preserve.
+#[test]
+fn the_storage_region_is_clear_of_the_flash_writers_layout() {
+    use wellfed_formats::layout::Layout;
+
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../firmware/devices/plaf103/layout.json"
+    );
+    let layout: Layout = wellfed_formats::load(std::path::Path::new(path)).unwrap();
+    let start = u64::from(STORAGE_OFFSET);
+    let end = start + u64::from(STORAGE_SECTORS) * layout.sector_bytes;
+
+    let [bank0, bank1] = [layout.ota_bank_offsets[0].0, layout.ota_bank_offsets[1].0];
+    assert!(start >= bank1 + (bank1 - bank0), "past a full-size bank 1");
+    assert!(start >= bank1 + layout.candidate_payload_cap_bytes);
+    for range in &layout.known_preserve_ranges {
+        assert!(
+            end <= range.start.0 || start >= range.end_exclusive.0,
+            "{} overlaps the store",
+            range.name
+        );
+    }
+}

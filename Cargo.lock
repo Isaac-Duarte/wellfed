@@ -5263,6 +5263,9 @@ dependencies = [
 [[package]]
 name = "wellfed-board-plaf103"
 version = "0.1.0"
+dependencies = [
+ "wellfed-formats",
+]
 
 [[package]]
 name = "wellfed-board-plwf106"
