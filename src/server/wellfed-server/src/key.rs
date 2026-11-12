@@ -11,7 +11,9 @@
 //! one of them opens the stored feeder keys.
 //!
 //! An existing `keys` directory that others could read or enter is
-//! tightened to 0700 when a key is written into it, and the change logged.
+//! tightened to 0700 when a key is written into it or read from it, and a
+//! key file others could read to 0600, and the change logged: a data
+//! directory copied or restored without its modes keeps no secret.
 //!
 //! Two first starts on one data directory (a service and a manual run, or
 //! two containers on one volume) may race to make the key. Each stages its
@@ -139,6 +141,10 @@ pub fn sealing_key(data: &Path, random: &dyn Random) -> Result<([u8; 32], KeySou
         // A start stopped between linking the key into place and removing
         // its staged copy leaves a second copy of the secret.
         remove_staged(&dir)?;
+        // A data directory copied or restored without its modes leaves
+        // the key open to other users: as good as no seal.
+        private_dir(&dir)?;
+        tighten(&path, 0o600)?;
         return Ok((key, KeySource::Read));
     }
 
@@ -294,33 +300,39 @@ fn remove_staged(dir: &Path) -> Result<(), KeyError> {
 /// 0700, rather than refuse it: the server's own user owns it, so this is a
 /// fix the owner would make anyway, and it is logged.
 fn private_dir(dir: &Path) -> Result<(), KeyError> {
+    tighten(dir, 0o700)
+}
+
+/// Take away whatever `path` lets the group and others do, setting it to
+/// `mode`, and log the change.
+fn tighten(path: &Path, mode: u32) -> Result<(), KeyError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
 
-        let mode = std::fs::metadata(dir)
+        let was = std::fs::metadata(path)
             .map_err(|source| KeyError::Read {
-                path: dir.to_owned(),
+                path: path.to_owned(),
                 source,
             })?
             .permissions()
             .mode();
-        if mode & 0o077 != 0 {
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).map_err(
+        if was & 0o077 != 0 {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).map_err(
                 |source| KeyError::Write {
-                    path: dir.to_owned(),
+                    path: path.to_owned(),
                     source,
                 },
             )?;
             tracing::warn!(
-                "{} was mode {:o}; tightened it to 700",
-                dir.display(),
-                mode & 0o777
+                "{} was mode {:o}; tightened it to {mode:o}",
+                path.display(),
+                was & 0o777
             );
         }
     }
     #[cfg(not(unix))]
-    let _ = dir;
+    let _ = (path, mode);
     Ok(())
 }
 
