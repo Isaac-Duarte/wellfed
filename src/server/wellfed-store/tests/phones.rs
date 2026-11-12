@@ -7,10 +7,12 @@ use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
-    ClientRole, CoreEvent, EventBody, FeederId, Hex, Home, HomeId, Model, RevokeReason, TimeFormat,
-    TokenId, Units, UserId,
+    ClientRole, CoreEvent, EventBody, FeederId, Hex, Home, HomeId, Model, RevokeReason, Role,
+    TimeFormat, TokenId, Units, UserId,
 };
-use wellfed_store::{Listed, NewEvent, NewFeeder, NewPhone, Recorded, SealedKey, Store, Whose};
+use wellfed_store::{
+    Listed, NewEvent, NewFeeder, NewPhone, NewToken, NewUser, Recorded, SealedKey, Store, Whose,
+};
 
 fn at(ms: i64) -> Timestamp {
     Timestamp::from_millisecond(ms).unwrap()
@@ -104,6 +106,116 @@ async fn the_reconcile_marks_a_key_whose_account_is_gone() {
         (RevokeReason::Deleted, at(20))
     );
     assert!(store.reconcile_phones(at(30)).await.unwrap().is_empty());
+}
+
+/// Each other change that leaves a key on an account or token that may not
+/// hold one is marked with its own reason: a token gone, an account now a
+/// viewer, a member holding an owner's key, an account or token with an
+/// expiry.
+#[tokio::test]
+async fn the_reconcile_marks_each_change_with_its_reason() {
+    let cases: [(
+        &str,
+        Role,
+        Option<Timestamp>,
+        bool,
+        Option<Timestamp>,
+        ClientRole,
+        RevokeReason,
+    ); 5] = [
+        (
+            "token gone",
+            Role::Member,
+            None,
+            false,
+            None,
+            ClientRole::Member,
+            RevokeReason::TokenRevoked,
+        ),
+        (
+            "a viewer",
+            Role::Viewer,
+            None,
+            true,
+            None,
+            ClientRole::Member,
+            RevokeReason::Demoted,
+        ),
+        (
+            "a member's owner key",
+            Role::Member,
+            None,
+            true,
+            None,
+            ClientRole::Owner,
+            RevokeReason::Demoted,
+        ),
+        (
+            "an account expiring",
+            Role::Member,
+            Some(at(500)),
+            true,
+            None,
+            ClientRole::Member,
+            RevokeReason::Expiring,
+        ),
+        (
+            "a token expiring",
+            Role::Member,
+            None,
+            true,
+            Some(at(500)),
+            ClientRole::Member,
+            RevokeReason::Expiring,
+        ),
+    ];
+    for (what, role, expires, stored, token_expires, key_role, reason) in cases {
+        let (_dir, store, feeder) = fresh().await;
+        let user = UserId(Uuid::from_u128(0x50));
+        let token = TokenId(Uuid::from_u128(7));
+        store
+            .create_user(NewUser {
+                id: user,
+                name: "bob",
+                password_hash: "",
+                role,
+                expires,
+                created: at(0),
+            })
+            .await
+            .unwrap();
+        if stored {
+            store
+                .create_token(NewToken {
+                    id: token,
+                    hash: &[3; 32],
+                    user,
+                    name: "phone",
+                    created: at(0),
+                    expires: token_expires,
+                })
+                .await
+                .unwrap();
+        }
+        let key = NewPhone {
+            role: key_role,
+            ..phone(feeder, 2, 7, 100)
+        };
+        store.record_phone(&key).await.unwrap();
+
+        assert_eq!(
+            store.reconcile_phones(at(20)).await.unwrap(),
+            [feeder],
+            "{what}"
+        );
+        let marked = store.phone(feeder, &[2; 32]).await.unwrap().unwrap();
+        let revoking = marked.revoking.unwrap();
+        assert_eq!(
+            (revoking.reason, revoking.since),
+            (reason, at(20)),
+            "{what}"
+        );
+    }
 }
 
 /// The feeder reports that key `invitee` joined through key `inviter`'s

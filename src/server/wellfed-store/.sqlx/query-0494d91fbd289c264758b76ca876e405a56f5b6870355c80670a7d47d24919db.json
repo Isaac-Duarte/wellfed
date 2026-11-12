@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE phone_keys SET revoke = ?, revoke_ms = ?\n               WHERE revoke IS NULL AND (\n                   EXISTS (SELECT 1 FROM users WHERE users.id = phone_keys.user_id\n                             AND users.expires_ms IS NOT NULL)\n                   OR EXISTS (SELECT 1 FROM tokens WHERE tokens.id = phone_keys.token_id\n                                AND tokens.expires_ms IS NOT NULL))\n               RETURNING feeder_id AS \"feeder_id: Uuid\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "feeder_id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "feeder_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0494d91fbd289c264758b76ca876e405a56f5b6870355c80670a7d47d24919db"
+}

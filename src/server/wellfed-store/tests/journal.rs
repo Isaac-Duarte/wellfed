@@ -321,6 +321,45 @@ async fn feeds_open_to_the_history_and_their_resolution() {
     assert_eq!(open(store.open_feeds(feeder).await.unwrap()), [1, 5]);
 }
 
+/// A feed resolved `unrecorded` is found by its tag, not its whole stored
+/// text: a row stored with other fields beside the tag (a field the kind
+/// gains later, or another order) is still open to the history and still
+/// replaced by its `Fed` event.
+#[tokio::test]
+async fn an_unrecorded_feed_is_found_by_its_tag_alone() {
+    let (dir, store, feeder) = fresh().await;
+    store.journal(&feed(1, feeder)).await.unwrap();
+    assert!(store.command_unknown(&[1; 16], at(11)).await.unwrap());
+    let unrecorded = CommandOutcome::Unrecorded;
+    assert!(
+        store
+            .resolve_command(&[1; 16], &unrecorded, at(12))
+            .await
+            .unwrap()
+    );
+    let raw = sqlx::SqlitePool::connect(&format!(
+        "sqlite://{}",
+        dir.path().join("server.db").display()
+    ))
+    .await
+    .unwrap();
+    sqlx::query("UPDATE commands SET outcome = '{\"later\":1,\"result\":\"unrecorded\"}'")
+        .execute(&raw)
+        .await
+        .unwrap();
+
+    let open = store.open_feeds(feeder).await.unwrap();
+    assert_eq!(open.len(), 1, "still open to the history");
+    let fed = CommandOutcome::Fed {
+        feed: 3,
+        requested: 1,
+        completed: 1,
+        outcome: FeedOutcome::Done,
+        reason: FeedReason::Done,
+    };
+    assert!(store.resolve_command(&[1; 16], &fed, at(13)).await.unwrap());
+}
+
 /// The home every device here belongs to.
 const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
 

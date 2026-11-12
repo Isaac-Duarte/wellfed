@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT seq, key, user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\",\n                      feeder_id AS \"feeder_id: Uuid\", kind, body_hash, request_id, boot_count,\n                      history_epoch, history_seq, state, outcome, feed, sent_ms, updated_ms\n               FROM commands\n               WHERE feeder_id = ?1 AND kind = ?2\n                 AND (state IN (?3, ?5) OR (state = ?4 AND feed IS NOT NULL)\n                      OR (state = ?6 AND outcome = ?7))\n               ORDER BY seq",
+  "query": "SELECT seq, key, user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\",\n                      feeder_id AS \"feeder_id: Uuid\", kind, body_hash, request_id, boot_count,\n                      history_epoch, history_seq, state, outcome, feed, sent_ms, updated_ms\n               FROM commands\n               WHERE feeder_id = ?1 AND kind = ?2\n                 AND (state IN (?3, ?5) OR (state = ?4 AND feed IS NOT NULL)\n                      OR (state = ?6 AND json_extract(outcome, '$.result') = ?7))\n               ORDER BY seq",
   "describe": {
     "columns": [
       {
@@ -202,5 +202,5 @@
       false
     ]
   },
-  "hash": "9640f22abc7ab5b6fded34d057f0d4714a1393d3021b082f81b1d96b7c0267c6"
+  "hash": "48d3b87ee5e2870e8362ecd6d8e4c9dc0d7a66d3aa8af04f343ddc583ca5cf70"
 }
