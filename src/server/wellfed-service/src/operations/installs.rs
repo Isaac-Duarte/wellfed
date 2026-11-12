@@ -156,10 +156,11 @@ impl Service {
                 let _unheard = kept.send(Ok(()));
 
                 // On shutdown the push stops and the row stays `running`
-                // until the next start marks it failed, as after a crash. Cancellation is looked at first: shutting down also
-                // ends the mirror's session, and a push polled after that
-                // would end `unreachable` and store it, though the server
-                // stopped it.
+                // until the next start marks it failed, as after a crash.
+                // Cancellation is looked at first: shutting down also ends
+                // the mirror's session, and a push polled after that would
+                // end `unreachable` and store it, though the server stopped
+                // it.
                 tokio::select! {
                     biased;
                     () = cancel.cancelled() => {}
