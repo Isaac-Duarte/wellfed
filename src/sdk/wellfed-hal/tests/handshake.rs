@@ -113,17 +113,21 @@ fn a_ready_for_another_session_is_foreign_and_waited_past() {
     assert!(answer.accepted().is_some());
 }
 
-/// Each handshake raises the boot count by one and opens its session under
-/// it, so KM0 never sees two hellos from one session.
+/// A handshake counts nothing: each opens its own session under the
+/// boot's count, so KM0 never sees two hellos from one session, and a boot
+/// that arms twice still reads as one boot.
 #[test]
-fn each_start_raises_the_boot_count_by_one() {
+fn each_start_opens_a_new_session_under_the_boots_count() {
     fresh();
     sdk::backup_write(BOOT_COUNT_REGISTER, 41);
 
-    for count in 42..45 {
+    let mut sessions = Vec::new();
+    for _ in 0..3 {
         let handshake = Handshake::start::<Ipc<false>>(0).expect("started");
-        assert_eq!(sdk::backup_read(BOOT_COUNT_REGISTER), count);
-        assert_eq!(handshake.count(), count);
-        assert_eq!(handshake.authority(), park::session(count, 0, false));
+        assert_eq!(sdk::backup_read(BOOT_COUNT_REGISTER), 41);
+        assert_eq!(handshake.count(), 41);
+        assert_eq!(handshake.authority() >> 32, 41);
+        assert!(!sessions.contains(&handshake.authority()));
+        sessions.push(handshake.authority());
     }
 }

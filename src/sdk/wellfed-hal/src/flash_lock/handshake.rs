@@ -2,7 +2,7 @@
 //! binds a flash authority: the arming sequence, the probes that drive the
 //! outputs on their own, and the settings stress.
 //!
-//! A handshake bumps the boot count, opens a session and says hello; then
+//! A handshake opens a session under the boot's count and says hello; then
 //! KM0's reply is awaited for at most [`READY_TIMEOUT_MS`]; and the
 //! authority is bound only with motor STOP and infrared OFF verified by
 //! readback, so a lease never starts with outputs that might move. None of
@@ -11,11 +11,16 @@
 
 use wellfed_core::flash_coord::{FlashCoord, FlashReply};
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use crate::flash::park::{self, Mmio, Reply};
 use crate::flash_lock::provider::{BOOT_COUNT_REGISTER, READY_TIMEOUT_MS};
 use crate::sdk;
 use crate::stopped;
 use crate::supervision::config::FLASH_LIMITS;
+
+/// Handshakes started this boot.
+static ATTEMPTS: AtomicU32 = AtomicU32::new(0);
 
 /// Why a handshake did not start.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,16 +100,20 @@ pub struct Handshake {
 }
 
 impl Handshake {
-    /// Bump the boot count, open a session at raw systimer `ticks` and say
-    /// hello.
+    /// Open a session at raw systimer `ticks` under this boot's count (the
+    /// trail's start counts the boot once, `supervision::trail::take`) and
+    /// say hello. A second handshake in the same boot, after a failed
+    /// arming, opens another session under the same count.
     pub fn start<M: Mmio>(ticks: u32) -> Result<Self, Unstarted> {
         if crate::supervision::writes_held() {
             return Err(Unstarted::Held);
         }
-        let count = sdk::backup_read(BOOT_COUNT_REGISTER).wrapping_add(1);
-        sdk::backup_write(BOOT_COUNT_REGISTER, count);
+        let count = sdk::backup_read(BOOT_COUNT_REGISTER);
+        // Distinct from every earlier session this boot even at one tick;
+        // the session forces its lowest bit, so the attempt starts above it.
+        let attempt = ATTEMPTS.fetch_add(1, Ordering::Relaxed);
 
-        let authority = park::session(count, ticks, false);
+        let authority = park::session(count, ticks.wrapping_add(attempt << 1), false);
         if !park::hello::<M>(authority) {
             return Err(Unstarted::Refused);
         }
@@ -117,7 +126,7 @@ impl Handshake {
         self.authority
     }
 
-    /// The boot count this handshake raised, which its session carries.
+    /// The boot count its session carries.
     pub const fn count(&self) -> u32 {
         self.count
     }

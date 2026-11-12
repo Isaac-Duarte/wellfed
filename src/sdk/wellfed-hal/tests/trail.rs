@@ -338,20 +338,19 @@ fn every_step_round_trips_and_has_its_name() {
 #[test]
 fn the_boot_reads_the_last_trail_in_place_then_starts_its_own() {
     let _guard = start();
-    fake::with(|h| h.backup[BOOT_COUNT_REGISTER as usize] = BOOT);
+    fake::with(|h| h.backup[BOOT_COUNT_REGISTER as usize] = BOOT - 1);
     let mut seen = None;
     trail::take(|trail| seen = trail.err());
     assert_eq!(seen, Some(Refusal::NotStarted), "a power-on has none");
     assert_eq!(fake::with(|h| h.trail_starts), 1);
+    assert_eq!(fake::with(|h| h.backup[BOOT_COUNT_REGISTER as usize]), BOOT);
 
-    // That boot armed its flash hooks, which counted it, then hung.
+    // That boot noted its join, then hung. However often it armed, only
+    // the trail's start counted it.
     let mut ram = Ram::started(BOOT);
     ram.note(Step::Connect, 0, false, 0, 2);
     ram.note(Step::IndicateDisconnect, 0, false, 0x0e03_8b71, 0x1003_5000);
-    fake::with(|h| {
-        h.trail = ram.words;
-        h.backup[BOOT_COUNT_REGISTER as usize] = BOOT + 1;
-    });
+    fake::with(|h| h.trail = ram.words);
 
     let mut lines = Vec::new();
     trail::take(|trail| {
