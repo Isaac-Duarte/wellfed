@@ -349,7 +349,7 @@ class _MealEditorState extends State<MealEditor> {
           Text('How many times it plays', style: muted),
           const SizedBox(height: Space.s2),
           Segments<int>(
-            const [('Off', 0), ('1', 1), ('2', 2), ('3', 3), ('4', 4), ('5', 5)],
+            [('Off', 0), for (int plays = 1; plays <= Limits.callPlaysMost; plays++) ('$plays', plays)],
             selected: (plays) => plays == _call,
             onSelected: (plays) => setState(() => _call = plays),
           ),
