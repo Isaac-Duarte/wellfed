@@ -1,7 +1,9 @@
 //! The relay bench's protocol: its config, the evidence layout of a
-//! session, the lease every tool driving the bench takes, a command's
-//! progress record, the bench server's live state, the bank ledger, the
-//! operator's notes and the integration suite's run records and catalog.
+//! session, a serial capture's events, a flash session's report words, a
+//! transient capture's manifest, the lease every tool driving the bench
+//! takes, a command's progress record, the bench server's live state, the
+//! bank ledger, the operator's notes and the integration suite's run
+//! records and catalog.
 //!
 //! The bench server and the suite write these and the bench's clients
 //! read them. Only host tools take part, so the crate lives among them and
@@ -13,6 +15,7 @@
 
 pub mod banks;
 pub mod cancel;
+pub mod capture;
 pub mod catalog;
 #[cfg(feature = "device")]
 pub mod feeder;
@@ -23,6 +26,8 @@ pub mod notes;
 pub mod progress;
 pub mod rendezvous;
 pub mod run;
+pub mod session;
+pub mod transients;
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};

@@ -14,10 +14,10 @@ use crate::evidence::report::{Status, Streams, Transport};
 use crate::evidence::{self, EvidencePort, Root};
 use crate::link::protocol::{self, HELPER_SHA256, Port, ROM_SHA256, Transfer};
 use crate::link::sector::Baseline;
+use wellfed_bench_formats::session::Mode;
 use wellfed_formats::canonical::{canonical, canonical_of, sha256};
 use wellfed_formats::flash_plan::ToolHashes;
 use wellfed_formats::require;
-use wellfed_formats::session::Mode;
 use wellfed_proto::device::Model;
 
 /// Saved evidence or a reviewed plan that a session refuses to continue

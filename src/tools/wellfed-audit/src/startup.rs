@@ -22,8 +22,8 @@ use std::sync::LazyLock;
 
 use regex::bytes::{Captures, Match, Regex};
 use serde::Serialize;
+use wellfed_bench_formats::session::Mode;
 use wellfed_formats::manifest::BuildManifest;
-use wellfed_formats::session::Mode;
 
 use wellfed_formats::require;
 

@@ -22,8 +22,8 @@ use crate::{Cancel, Error, Result, Waited, wait_child};
 use wellfed_bench_formats::live::{ActivityKind, FlashUse};
 use wellfed_bench_formats::progress::{FlashTool, Status};
 use wellfed_bench_formats::relative;
+use wellfed_bench_formats::session::Status as SessionStatus;
 use wellfed_formats::require;
-use wellfed_formats::session::Status as SessionStatus;
 use wellfed_signing::CONTAINER_HEADER;
 
 mod children;

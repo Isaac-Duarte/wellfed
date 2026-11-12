@@ -5184,6 +5184,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "wellfed-bench-formats",
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",

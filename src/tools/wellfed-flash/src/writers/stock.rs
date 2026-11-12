@@ -25,10 +25,10 @@ use crate::link::protocol::{self, CAPACITY, HELPER_SHA256, Port, Transfer};
 use crate::link::sector::Baseline;
 use crate::writers::recovery::{self, Plan};
 use crate::writers::update::Evidence;
+use wellfed_bench_formats::session::Mode;
 use wellfed_formats::canonical::{canonical, sha256};
 use wellfed_formats::flash_plan::{Kind, ToolHashes};
 use wellfed_formats::require;
-use wellfed_formats::session::Mode;
 use wellfed_proto::device::Model;
 
 /// A stock recovery whose full read or reviewed plan does not bind, or a

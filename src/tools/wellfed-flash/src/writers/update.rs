@@ -27,12 +27,12 @@ use crate::link::status;
 use crate::writers::development::{
     self, Acquired, BANK0, FACTORY, GiveWay, Layout, PinnedGiveWay, Transaction, Update,
 };
+use wellfed_bench_formats::session::Mode as ReportMode;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::flash_plan::{
     DevelopmentPlan, GiveWayBindings, GiveWayPlan, Reviewed, UpdateBindings,
 };
 use wellfed_formats::require;
-use wellfed_formats::session::Mode as ReportMode;
 use wellfed_image::review::{Frozen, frozen};
 use wellfed_proto::device::Model;
 

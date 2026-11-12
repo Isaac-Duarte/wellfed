@@ -17,11 +17,11 @@ use std::time::{Duration, Instant};
 
 use clap::{Args, ValueEnum};
 use serde::Deserialize;
+use wellfed_bench_formats::transients::{self, TransientCycle, TransientsManifest};
 use wellfed_core::buttons::Buttons;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::flash_plan::{DevelopmentPlan, GiveWayPlan, StockRecoveryReviewed};
 use wellfed_formats::manifest::BuildManifest;
-use wellfed_formats::transients::{self, TransientCycle, TransientsManifest};
 
 use crate::tools::{Analyzer, Children, Observation, Observer, Tools};
 use crate::{Cancel, Error, Result};

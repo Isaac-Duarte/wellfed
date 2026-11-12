@@ -19,9 +19,9 @@ use crate::link::protocol::{
     RomInspection, Transfer,
 };
 use crate::link::status::{self, Assessment};
+use wellfed_bench_formats::session::Mode as ReportMode;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::require;
-use wellfed_formats::session::Mode as ReportMode;
 use wellfed_proto::device::Model;
 
 /// The reader's own refusals: missing or unpinned inputs before the port

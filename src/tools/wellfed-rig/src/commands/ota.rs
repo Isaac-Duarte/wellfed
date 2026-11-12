@@ -28,9 +28,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::Args;
+use wellfed_bench_formats::capture::arrival;
 use wellfed_core::ota::install::{Blocked, RefusedReason, StopStage};
 use wellfed_core::record::{self, Confirm, Record, Trial, Update, Watch as Watching};
-use wellfed_formats::capture::arrival;
 use wellfed_formats::manifest::{BuildManifest, Provisioning};
 use wellfed_formats::private::write_new;
 use wellfed_formats::review::ImageKind;
