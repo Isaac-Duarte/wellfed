@@ -12,6 +12,7 @@ use wellfed_service::{Config, StockPins};
 use wellfed_signed::offer::{self, ImageKind, Signed, key_id};
 use wellfed_signed::{MARKER, Manifest};
 
+pub use wellfed_proto::api::UPDATE_CHUNK_MAX;
 pub use wellfed_signed::SECTOR;
 pub use wellfed_signed::offer::MANIFEST_LEN;
 

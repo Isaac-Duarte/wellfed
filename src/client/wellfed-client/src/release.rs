@@ -23,7 +23,7 @@ use wellfed_model::Model;
 use wellfed_signed::offer::{self, Context, ImageKind, KeyError, KeyRing, Trust};
 use wellfed_signed::{BANK1_BYTES, MARKER};
 
-pub use wellfed_signed::offer::{KeyId, OfferError};
+pub use wellfed_signed::offer::{KeyId, OfferError, manifest_digest};
 
 /// The manifest's length, signature included.
 pub const MANIFEST_LEN: usize = offer::MANIFEST_LEN;
