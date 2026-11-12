@@ -657,6 +657,9 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             | InstallError::PromotionUnknown
             | InstallError::Promotion(_)
             | InstallError::WrongPromotion { .. } => (StopCase::PromotionFailed, FromBank0),
+            // The offer may have taken: never offered again, and the run
+            // picks up by reading what bank 1 runs.
+            InstallError::PromotionUncertain => uncertain_write(UncertainWrite::Promotion),
             InstallError::FellBack => (StopCase::FellBack, FromBank0),
             InstallError::FrameNotTaken => (StopCase::FrameNotTaken, FromStart),
             InstallError::WrongReplacement { .. } => (StopCase::Other, Nothing),
@@ -1353,6 +1356,15 @@ mod tests {
         assert_eq!(
             steps(InstallError::RequestUncertain),
             (StopCase::Uncertain, Resume::Nothing)
+        );
+        assert_eq!(
+            steps(InstallError::PromotionUncertain),
+            (
+                StopCase::UncertainWrite {
+                    write: UncertainWrite::Promotion
+                },
+                Resume::FromBank0
+            )
         );
     }
 

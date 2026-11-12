@@ -92,9 +92,8 @@ pub enum Pushed {
     /// The feeder stopped answering the device API, or answered in a way
     /// this build cannot read. With `offered`, the offer went out: bank 1
     /// may be partly written, or activated with its answer lost, and only
-    /// the feeder can tell, so a caller should report it as uncertain. Not
-    /// every caller does yet: the installer's promotion still reads it as
-    /// bank 0 not installing the update.
+    /// the feeder can tell, so every caller reports it as uncertain and
+    /// offers nothing again. Without, nothing reached bank 0.
     Gone { offered: bool },
 }
 
