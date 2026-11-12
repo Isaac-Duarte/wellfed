@@ -119,7 +119,7 @@ pub const PREFIX: &str = "/api/v1";
 /// document to that ([API evolution]).
 ///
 /// [API evolution]: ../../../../docs/server/README.md#api-evolution
-pub const REVISION: u32 = 6;
+pub const REVISION: u32 = 7;
 
 /// The cookie a login sets: an opaque session token, `HttpOnly` and
 /// `SameSite=Strict`. A non-browser client sends it back as it came.

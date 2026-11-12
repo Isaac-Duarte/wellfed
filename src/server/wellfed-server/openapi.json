@@ -66,6 +66,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -87,8 +97,28 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -115,8 +145,28 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -204,6 +254,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -253,6 +313,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -294,6 +364,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -306,6 +386,16 @@
           },
           "409": {
             "description": "export_running: another export is being written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -338,6 +428,16 @@
             }
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -385,6 +485,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only; token_required or direct_key_refused for a phone key, checked first",
             "content": {
@@ -407,6 +517,26 @@
           },
           "410": {
             "description": "invite_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -455,7 +585,27 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -492,6 +642,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -513,6 +673,16 @@
           },
           "409": {
             "description": "feeder_archived: already removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -551,7 +721,27 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -597,6 +787,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
             "content": {
               "application/json": {
@@ -608,6 +808,16 @@
           },
           "409": {
             "description": "feeder_refused: `unavailable` from a build that keeps no calibration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -704,6 +914,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: a viewer",
             "content": {
@@ -739,6 +959,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CalibrationView"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -803,6 +1043,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
             "content": {
               "application/json": {
@@ -814,6 +1064,16 @@
           },
           "409": {
             "description": "feeder_refused: `unavailable` from a build without the meal call, `busy`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -891,6 +1151,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: a viewer",
             "content": {
@@ -922,6 +1192,16 @@
           },
           "413": {
             "description": "too_large: past the feeder's length, refused as it arrives",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -990,6 +1270,26 @@
         ],
         "responses": {
           "204": {},
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: a viewer",
             "content": {
@@ -1011,6 +1311,16 @@
           },
           "409": {
             "description": "feeder_archived; superseded: a retry found another clip than the first send did, and erased nothing; or feeder_refused (`forbidden`: the server's key is not an owner's): final for this key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1071,6 +1381,26 @@
         ],
         "responses": {
           "204": {},
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: a viewer",
             "content": {
@@ -1092,6 +1422,16 @@
           },
           "409": {
             "description": "feeder_archived, or feeder_refused (`muted` while sound is off, `busy` while the speaker plays, `not_found` with no clip): final for this key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1153,6 +1493,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -1174,6 +1524,16 @@
           },
           "409": {
             "description": "feeder_archived, or feeder_refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1252,6 +1612,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -1273,6 +1643,16 @@
           },
           "409": {
             "description": "feeder_archived, or feeder_refused (not_found: no such client)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1331,6 +1711,16 @@
         ],
         "responses": {
           "204": {},
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only; session_required: not from a token",
             "content": {
@@ -1352,6 +1742,16 @@
           },
           "409": {
             "description": "feeder_archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1402,8 +1802,38 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "feeder_refused (no_clock while the feeder's clock is invalid): final for this key; a later attempt needs a new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1503,7 +1933,37 @@
               }
             }
           },
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1572,6 +2032,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: a viewer",
             "content": {
@@ -1593,6 +2063,26 @@
           },
           "409": {
             "description": "feeder_refused: nothing ran; final for this key, so a new feed needs a new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1683,6 +2173,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: a viewer",
             "content": {
@@ -1704,6 +2204,16 @@
           },
           "409": {
             "description": "feeder_refused: not_found once the feed has ended, on a first attempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1783,7 +2293,37 @@
               }
             }
           },
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1839,6 +2379,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -1878,6 +2428,26 @@
               }
             }
           },
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -1890,6 +2460,26 @@
           },
           "404": {
             "description": "not_found: the feeder or the food",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1975,6 +2565,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -2006,8 +2606,28 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
             "description": "not_found: no such feeder, or no install has run on it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2065,6 +2685,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -2087,6 +2717,26 @@
           },
           "409": {
             "description": "install_running: another install is running; feeder_refused (`forbidden`): the server's key is not an owner's on this feeder; stock_backup_needed: the feeder runs from bank 0 with stock in bank 1 and no verified backup is kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2155,6 +2805,26 @@
               }
             }
           },
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden (a viewer), token_required or direct_key_refused",
             "content": {
@@ -2176,6 +2846,26 @@
           },
           "409": {
             "description": "client_key_taken, feeder_archived, or feeder_refused (forbidden: the server's key is not an owner's)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2256,8 +2946,48 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "feeder_refused: final for this key; a later attempt needs a new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2316,6 +3046,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2326,6 +3066,16 @@
             }
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2395,8 +3145,48 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "feeder_refused (invalid, busy, not_found, no_clock): final for this key; a later attempt needs a new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2477,8 +3267,48 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "feeder_refused (invalid, busy, not_found, no_clock): final for this key; a later attempt needs a new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2557,6 +3387,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden (a viewer), token_required, direct_key_refused, phone_claim_owners_only (a member's claim of a key not recorded), phone_key_proof_required (a key a logout left with no token) or phone_key_proof_refused",
             "content": {
@@ -2578,6 +3418,26 @@
           },
           "409": {
             "description": "phone_key_not_listed, phone_key_unconfirmed (claim again), phone_key_kept, phone_key_not_a_phone, client_key_taken or feeder_archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2623,8 +3483,28 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "feeder_refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2721,6 +3601,26 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "feeder_refused: final for this key; a later attempt needs a new key",
             "content": {
@@ -2737,6 +3637,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Plans"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -2813,6 +3733,26 @@
         },
         "responses": {
           "204": {},
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: a viewer",
             "content": {
@@ -2834,6 +3774,26 @@
           },
           "409": {
             "description": "feeder_archived, or feeder_refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2894,6 +3854,26 @@
         ],
         "responses": {
           "204": {},
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -2915,6 +3895,16 @@
           },
           "409": {
             "description": "feeder_archived, or feeder_refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3020,6 +4010,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -3069,6 +4069,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -3090,6 +4100,26 @@
           },
           "409": {
             "description": "no_current_food: a full bag on a feeder with no food set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3128,6 +4158,16 @@
         ],
         "responses": {
           "204": {},
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -3139,6 +4179,16 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3244,7 +4294,27 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3290,8 +4360,28 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "feeder_refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3388,6 +4478,26 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "feeder_refused: final for this key; a later attempt needs a new key",
             "content": {
@@ -3404,6 +4514,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -3468,7 +4598,27 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3507,8 +4657,28 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
             "description": "not_found: no such feeder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3547,6 +4717,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -3559,6 +4739,16 @@
           },
           "404": {
             "description": "not_found: no such feeder; no_stock_backup: none kept, or the kept file no longer verifies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3608,6 +4798,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -3630,6 +4830,16 @@
           },
           "409": {
             "description": "feeder_refused: `forbidden` (the server's key is not an owner's), `unavailable` (the feeder does not serve bank 1: not running from bank 0, or a build without the read), `busy`; install_running: an install runs on this feeder; stock_differs: another copy is kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3719,6 +4929,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -3741,6 +4961,26 @@
           },
           "409": {
             "description": "install_running: an install or restore is running; feeder_refused: `forbidden` (the server's key is not an owner's), `unavailable` (a build that takes no updates)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3820,6 +5060,26 @@
               }
             }
           },
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -3852,6 +5112,16 @@
           },
           "413": {
             "description": "too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -3935,6 +5205,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -3956,6 +5236,26 @@
           },
           "409": {
             "description": "feeder_archived, or feeder_refused (stale: read the status again; forbidden: the server's key is not an owner's)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4025,6 +5325,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -4064,8 +5374,38 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4120,6 +5460,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -4141,6 +5491,16 @@
         ],
         "responses": {
           "204": {},
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -4162,6 +5522,16 @@
           },
           "409": {
             "description": "food_in_use: a feeder's history or a refill names it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4218,6 +5588,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -4229,6 +5609,26 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4258,6 +5658,16 @@
             }
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4304,8 +5714,38 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4354,8 +5794,48 @@
               }
             }
           },
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "import_closed: an account exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4405,6 +5885,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -4444,8 +5934,38 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4500,6 +6020,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -4521,6 +6051,16 @@
         ],
         "responses": {
           "204": {},
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -4532,6 +6072,16 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4588,6 +6138,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -4599,6 +6159,26 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4645,6 +6225,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -4657,6 +6247,16 @@
           },
           "404": {
             "description": "not_found: the pet or the feeder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4701,6 +6301,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -4713,6 +6323,16 @@
           },
           "404": {
             "description": "not_found: the pet, or the feeder does not serve it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4782,6 +6402,16 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4867,6 +6497,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -4916,6 +6556,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -4927,6 +6577,26 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -4965,6 +6635,16 @@
         ],
         "responses": {
           "204": {},
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -4976,6 +6656,16 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5015,6 +6705,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -5047,6 +6747,16 @@
           },
           "403": {
             "description": "forbidden (a viewer), token_required or direct_key_refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5120,8 +6830,28 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5169,6 +6899,26 @@
               }
             }
           },
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -5181,6 +6931,16 @@
           },
           "413": {
             "description": "too_large: longer than any release",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5219,6 +6979,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -5231,6 +7001,16 @@
           },
           "409": {
             "description": "fetch_disabled: `releases.fetch` is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5287,6 +7067,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -5317,6 +7107,16 @@
               }
             }
           },
+          "400": {
+            "description": "A body or parameter that does not read: `invalid`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "401": {
             "description": "bad_credentials",
             "content": {
@@ -5329,6 +7129,26 @@
           },
           "403": {
             "description": "account_disabled: past its expiry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5366,7 +7186,37 @@
         "summary": "Log out.",
         "operationId": "logout",
         "responses": {
-          "204": {}
+          "204": {},
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
         }
       },
       "patch": {
@@ -5417,6 +7267,26 @@
               }
             }
           },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "429": {
             "description": "login_limited: too many wrong current passwords for the account or from the address, counted with failed logins",
             "headers": {
@@ -5453,6 +7323,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SetupState"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -5496,8 +7376,38 @@
               }
             }
           },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "409": {
             "description": "setup_closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5547,6 +7457,16 @@
           },
           "403": {
             "description": "forbidden: owners only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5615,6 +7535,16 @@
                 }
               }
             }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -5640,6 +7570,16 @@
             }
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5712,6 +7652,26 @@
                 }
               }
             }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -5744,7 +7704,27 @@
               }
             }
           },
+          "403": {
+            "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5823,6 +7803,26 @@
                 }
               }
             }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -5847,8 +7847,28 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5895,6 +7915,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only; session_required: not from a token",
             "content": {
@@ -5907,6 +7937,26 @@
           },
           "409": {
             "description": "name_taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -5937,6 +7987,16 @@
         ],
         "responses": {
           "204": {},
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only",
             "content": {
@@ -5958,6 +8018,16 @@
           },
           "409": {
             "description": "last_owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
             "content": {
               "application/json": {
                 "schema": {
@@ -6014,6 +8084,16 @@
               }
             }
           },
+          "401": {
+            "description": "No valid login or token: `unauthenticated`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
             "description": "forbidden: owners only; session_required: a password from a token",
             "content": {
@@ -6042,6 +8122,26 @@
                 }
               }
             }
+          },
+          "413": {
+            "description": "A body past the route's limit: `too_large`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -6059,6 +8159,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -8329,6 +10439,7 @@
           "export_running",
           "phone_key_proof_required",
           "phone_key_proof_refused",
+          "key_retired",
           "internal",
           "unknown"
         ]

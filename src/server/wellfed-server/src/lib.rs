@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod advertise;
+mod answers;
 mod auth;
 pub mod config;
 mod error;
@@ -232,7 +233,9 @@ pub fn app(service: Service, shutdown: CancellationToken, serving: Serving) -> R
         .with_state(state)
 }
 
-/// The API's OpenAPI document.
+/// The API's OpenAPI document, with the answers every route shares.
 pub fn openapi() -> utoipa::openapi::OpenApi {
-    router().split_for_parts().1
+    let mut doc = router().split_for_parts().1;
+    answers::add(&mut doc);
+    doc
 }
