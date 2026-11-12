@@ -4,6 +4,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use tokio::time::{Instant, sleep};
 use tracing::{debug, warn};
 use wellfed_api::FeederId;
 use wellfed_connect::Connection;
@@ -78,37 +79,52 @@ impl Mirror {
 
 impl Mirror {
     /// Whether a join whose answer was lost enrolled `keys`: a session
-    /// with them opens only if it did, and names the role and model the
-    /// answer would have. When the session fails for another reason the
-    /// key may be enrolled all the same, and the log names it to revoke.
+    /// with them opens only once it has, and names the role and model the
+    /// answer would have. A key not known yet may still be: the feeder
+    /// holds a join's enrollment until a running feed ends, and makes it
+    /// with the connection gone. So sessions are tried until the settle
+    /// window closes, and a key still not seen then is uncertain, never
+    /// "not enrolled": the log names it to revoke on the feeder.
     async fn joined_unanswered(
         &self,
         keys: &Keypair,
         identity: [u8; 32],
         address: SocketAddr,
     ) -> Result<Joined, ConnectError> {
-        let ephemeral = self.shared.random()?;
-        let timing = self.shared.config.timing.session;
-        match Connection::open_with(keys, identity, address, ephemeral, timing).await {
-            Ok(session) => Ok(Joined::Enrolled {
-                role: session.role(),
-                model: session.model(),
-            }),
-            // Not enrolled: the invite may be spent, and another is needed.
-            Err(error @ wellfed_connect::Error::UnknownKey) => Err(Unreachable(error).into()),
-            Err(error) => {
+        let timing = self.shared.config.timing;
+        let deadline = Instant::now() + timing.join_settle;
+        loop {
+            let ephemeral = self.shared.random()?;
+            let error =
+                match Connection::open_with(keys, identity, address, ephemeral, timing.session)
+                    .await
+                {
+                    Ok(session) => {
+                        return Ok(Joined::Enrolled {
+                            role: session.role(),
+                            model: session.model(),
+                        });
+                    }
+                    Err(error) => error,
+                };
+            if Instant::now() >= deadline {
                 warn!(
-                    "feeder {} took this server's join and its answer was lost, and a session \
-                     to check failed: {error}; it may hold this server's key ({}), which \
-                     nothing uses: revoke that client on the feeder",
+                    "feeder {} took this server's join and its answer was lost, and no session \
+                     with the key opened in {:?} ({error}); it may hold or yet enroll this \
+                     server's key ({}), which nothing uses: revoke that client on the feeder",
                     Lower(&identity[..4]),
+                    timing.join_settle,
                     Lower(&keys.public()[..4]),
                 );
-                Err(Unreachable(wellfed_connect::Error::JoinUnanswered).into())
+                return Err(Unreachable(wellfed_connect::Error::JoinUnanswered).into());
             }
+            sleep(JOIN_POLL.min(deadline.saturating_duration_since(Instant::now()))).await;
         }
     }
 }
+
+/// How often a key whose join answer was lost is looked for.
+const JOIN_POLL: Duration = Duration::from_millis(500);
 
 /// Open a session at the stored address, or, when that fails and discovery
 /// is on, wherever mDNS finds the feeder now.

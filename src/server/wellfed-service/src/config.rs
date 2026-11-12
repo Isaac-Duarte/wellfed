@@ -59,6 +59,7 @@ impl Config {
             queue: timing.queue,
             sample_wait: timing.sample_wait,
             pace: timing.pace,
+            join_settle: timing.join_settle,
             // The rest of the feeder's own session clocks; nothing the
             // owner sets.
             ..wellfed_mirror::Timing::default()
@@ -98,6 +99,9 @@ pub struct Timing {
     pub transfer_idle: Duration,
     /// How an install or a stock restore waits between its steps.
     pub pace: wellfed_mirror::Pace,
+    /// How long an adoption whose join answer was lost looks for its key
+    /// enrolled, as a running feed holds the enrollment.
+    pub join_settle: Duration,
 }
 
 impl Default for Timing {
@@ -113,6 +117,7 @@ impl Default for Timing {
             session: Duration::from_secs(30 * 24 * 3600),
             transfer_idle: Duration::from_secs(30),
             pace: mirror.pace,
+            join_settle: mirror.join_settle,
         }
     }
 }

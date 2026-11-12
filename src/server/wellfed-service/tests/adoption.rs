@@ -9,7 +9,7 @@ use wellfed_mirror::Invite;
 use wellfed_model::{Answer, Op};
 use wellfed_server_testkit::feeder::{self, Relay, invite, open_owner};
 use wellfed_server_testkit::fixed::NOW_MS;
-use wellfed_server_testkit::{TestService, ada, local, until};
+use wellfed_server_testkit::{TestService, ada, config, local, until};
 use wellfed_service::{Caller, CommandError, Error, FeederError, Invalid};
 
 /// The owner, adopting with no phone key.
@@ -271,6 +271,50 @@ fn an_adoption_whose_join_answer_was_lost_learns_it_joined() {
         };
         let others = clients.iter().filter(|c| c.role != ClientRole::Owner);
         assert_eq!(others.count(), 1, "{clients:?}");
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A join whose answer is lost may yet be enrolled: the feeder makes the
+/// enrollment, a key-store write, whether or not the connection that asked
+/// is still there, and the write waits out a running feed. So a key the
+/// feeder does not know yet is looked for until the settle window closes,
+/// and one still unknown then is uncertain, never reported not enrolled.
+/// A wrong invite secret looks the same to a client: the feeder takes the
+/// handshake and drops the join unanswered, and never enrolls the key.
+#[test]
+fn a_lost_join_never_seen_enrolled_is_uncertain_after_the_window() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = TestService::start().await;
+        server.ensure_home().await;
+        let real = Invite::parse(&invite(&sim, ClientRole::Member).await).unwrap();
+        let wrong = Invite {
+            secret: [0x77; 32],
+            ..real
+        };
+
+        let started = tokio::time::Instant::now();
+        let request = AdoptFeeder {
+            invite: wrong.text(),
+            name: "kitchen".into(),
+            address: Some(sim.address.to_string()),
+            phone_key: None,
+        };
+        let adopted = server.service().adopt(&owner(), request).await;
+        assert!(
+            matches!(
+                &adopted,
+                Err(Error::Feeder(FeederError::Unreachable(unreachable)))
+                    if unreachable.join_uncertain()
+            ),
+            "{adopted:?}"
+        );
+        assert!(
+            started.elapsed() >= config().timing.join_settle,
+            "the key was looked for until the window closed"
+        );
         server.shutdown().await;
         sim.stop().await;
     });

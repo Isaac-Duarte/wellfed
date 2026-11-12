@@ -61,6 +61,11 @@ pub struct Timing {
     /// How an install waits between its steps: while bank 0 writes a
     /// sector, and after bank 1 gives way.
     pub pace: Pace,
+    /// How long an adoption whose join answer was lost looks for its key
+    /// enrolled. The feeder holds a join's enrollment, a key-store write,
+    /// until a running feed ends, and makes it whether or not the
+    /// connection that asked is still there.
+    pub join_settle: Duration,
 }
 
 impl Default for Timing {
@@ -73,6 +78,7 @@ impl Default for Timing {
             sample_wait: Duration::from_secs(10),
             session: wellfed_connect::Timing::DEFAULT,
             pace: Pace::DEFAULT,
+            join_settle: Duration::from_secs(120),
         }
     }
 }

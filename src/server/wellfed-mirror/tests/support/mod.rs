@@ -39,6 +39,7 @@ pub fn timing(queue: Duration) -> Timing {
             settle: Duration::from_millis(20),
             restart: Duration::from_millis(1_500),
         },
+        join_settle: Duration::from_secs(5),
     }
 }
 
