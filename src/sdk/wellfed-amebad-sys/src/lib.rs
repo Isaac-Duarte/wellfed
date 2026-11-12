@@ -30,7 +30,8 @@ pub const ADC_SUPPLY_CHANNEL: u32 = 10;
 pub const SWD_PMUX_BIT: u32 = 1;
 /// The pad-control bits the ROM's `Pinmux_Config` rewrites to select GPIO:
 /// the pad shutdown bit (15) and the function field (bits 0–4, GPIO is 0).
-/// Checked against SDK constants in target builds.
+/// Checked against SDK constants in target builds. Only KM4 drives pads.
+#[cfg(any(not(target_os = "none"), feature = "km4"))]
 pub(crate) const PAD_GPIO_CLEAR: u32 = 1 << 15 | 0x1f;
 
 /// One read of the log UART's receive side.

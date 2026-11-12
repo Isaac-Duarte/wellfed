@@ -87,7 +87,7 @@ The repository is self-contained: SDK and toolchain copies and fixtures resolve 
 | --- | --- |
 | `check-rust` | Formatting, Clippy with warnings denied, workspace host tests under cargo-nextest |
 | `check-deps` | cargo-deny: licenses, advisories, duplicate versions and sources ([deny.toml](../../deny.toml)), then the fuzz crate's and the bench board firmware's lockfiles under their own policies ([fuzz](../../src/fuzz/deny.toml), [bench board](../../src/firmware/bench/wellfed-bench-board/deny.toml)) |
-| `check-cross` | The SDK-independent KM0 and KM4 FFI static libraries, and `check-bench-board`: Clippy and a release build of the [bench board firmware](../../src/firmware/bench/README.md) for the RP2040 |
+| `check-cross` | Clippy with `PRODUCTION_LINTS` and a release build of the KM0 core's library for both boards, for the target, and `check-bench-board`: Clippy and a release build of the [bench board firmware](../../src/firmware/bench/README.md) for the RP2040. The KM4 crates need the SDK's bindings, so only an image build lints and compiles them |
 | `check-virtual-feeder` | [The simulator](#the-simulator). Also part of `check-rust` |
 | `check-docs` | Local Markdown links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](writing.md#what-the-checks-refuse)), portability checks, no Python under `src/`, and the source rules (raw output writers, card ids). It builds only `xtask`, and runs no tool |
 | `check-fixtures` | The optional binary and SDK evidence suite. Missing inputs or skips fail ([fixtures](fixtures.md)) |

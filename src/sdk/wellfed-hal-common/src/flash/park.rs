@@ -453,6 +453,13 @@ pub unsafe fn owner_end<M: Mmio>(
 /// # Safety
 /// As for `wait`.
 #[inline(always)]
+#[cfg_attr(
+    target_os = "none",
+    expect(
+        clippy::extra_unused_type_parameters,
+        reason = "the RAM export is this core's hardware; the host runs `M`"
+    )
+)]
 pub unsafe fn ram_wait<M: Mmio>(t: *const ParkToken, tick_limit: u32, poll_limit: u32) -> bool {
     #[cfg(target_os = "none")]
     {
@@ -472,6 +479,13 @@ pub unsafe fn ram_wait<M: Mmio>(t: *const ParkToken, tick_limit: u32, poll_limit
 /// # Safety
 /// As for `owner_begin`.
 #[inline(always)]
+#[cfg_attr(
+    target_os = "none",
+    expect(
+        clippy::extra_unused_type_parameters,
+        reason = "the RAM export is this core's hardware; the host runs `M`"
+    )
+)]
 pub unsafe fn ram_owner_begin<M: Mmio>(
     t: *const ParkToken,
     channel: u32,
@@ -495,6 +509,13 @@ pub unsafe fn ram_owner_begin<M: Mmio>(
 /// # Safety
 /// As for `owner_end`.
 #[inline(always)]
+#[cfg_attr(
+    target_os = "none",
+    expect(
+        clippy::extra_unused_type_parameters,
+        reason = "the RAM export is this core's hardware; the host runs `M`"
+    )
+)]
 pub unsafe fn ram_owner_end<M: Mmio>(
     t: *const ParkToken,
     channel: u32,

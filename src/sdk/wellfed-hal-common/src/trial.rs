@@ -564,6 +564,7 @@ mod exported {
     /// `CONFIRM_LEN`, 4 and `line_len` bytes; `line` may be uninitialized),
     /// and nothing writes bank 0 during the call (KM4 is not running yet).
     #[unsafe(no_mangle)]
+    #[expect(unreachable_pub, reason = "a C export: the KM0 glue calls it by name")]
     pub unsafe extern "C" fn wellfed_amebad_trial_decide(
         bank1: *const [u8; 8],
         bank0: *const [u8; 8],
@@ -620,6 +621,7 @@ mod exported {
     /// # Safety
     /// `register` is valid for 4 bytes.
     #[unsafe(no_mangle)]
+    #[expect(unreachable_pub, reason = "a C export: the KM0 glue calls it by name")]
     pub unsafe extern "C" fn wellfed_amebad_boot_count(register: *mut u32) -> u32 {
         // SAFETY: the caller's contract.
         let (value, count) = super::boot_counted(unsafe { *register });
