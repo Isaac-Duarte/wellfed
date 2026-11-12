@@ -23,7 +23,7 @@ use wellfed_formats::export::{Item, Reader};
 use wellfed_mirror::{stored_body, stored_sample};
 use wellfed_store::Decoders;
 
-use crate::accounts::sessions::SetupShut;
+use crate::accounts::setup::SetupShut;
 use crate::operations::export::ExportError;
 use crate::{Result, Service};
 

@@ -7,6 +7,7 @@ mod audit;
 mod limits;
 mod permissions;
 pub(crate) mod sessions;
+pub(crate) mod setup;
 pub(crate) mod tokens;
 mod users;
 
