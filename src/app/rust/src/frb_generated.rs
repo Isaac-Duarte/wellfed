@@ -6926,7 +6926,8 @@ fn wire__crate__api__update__update_offer_impl(
             let api_version = <u32>::sse_decode(&mut deserializer);
             let api_running = <Option<String>>::sse_decode(&mut deserializer);
             let api_skew = <crate::api::model::Skew>::sse_decode(&mut deserializer);
-            let api_update = <crate::api::feeder::UpdateInfo>::sse_decode(&mut deserializer);
+            let api_update =
+                <Option<crate::api::feeder::UpdateInfo>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
                 let output_ok = Ok::<_, ()>(crate::api::update::update_offer(
@@ -10938,6 +10939,17 @@ impl SseDecode for Option<u8> {
     }
 }
 
+impl SseDecode for Option<crate::api::feeder::UpdateInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::feeder::UpdateInfo>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::server_views::WeighedIntake> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -13208,6 +13220,9 @@ impl SseDecode for crate::api::update::UpdateOffer {
             3 => {
                 let mut var_reason = <crate::api::model::Bank0Blocked>::sse_decode(deserializer);
                 return crate::api::update::UpdateOffer::Blocked { reason: var_reason };
+            }
+            4 => {
+                return crate::api::update::UpdateOffer::Unread;
             }
             _ => {
                 unimplemented!("");
@@ -19128,6 +19143,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::update::UpdateOffer {
             crate::api::update::UpdateOffer::Blocked { reason } => {
                 [3.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::update::UpdateOffer::Unread => [4.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -22672,6 +22688,16 @@ impl SseEncode for Option<u8> {
     }
 }
 
+impl SseEncode for Option<crate::api::feeder::UpdateInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::feeder::UpdateInfo>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::server_views::WeighedIntake> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -24584,6 +24610,9 @@ impl SseEncode for crate::api::update::UpdateOffer {
             crate::api::update::UpdateOffer::Blocked { reason } => {
                 <i32>::sse_encode(3, serializer);
                 <crate::api::model::Bank0Blocked>::sse_encode(reason, serializer);
+            }
+            crate::api::update::UpdateOffer::Unread => {
+                <i32>::sse_encode(4, serializer);
             }
             _ => {
                 unimplemented!("");

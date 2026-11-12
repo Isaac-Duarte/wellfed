@@ -739,14 +739,15 @@ extension UpdateOfferPatterns on UpdateOffer {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateOffer_Newer value)?  newer,TResult Function( UpdateOffer_Current value)?  current,TResult Function( UpdateOffer_Older value)?  older,TResult Function( UpdateOffer_Blocked value)?  blocked,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateOffer_Newer value)?  newer,TResult Function( UpdateOffer_Current value)?  current,TResult Function( UpdateOffer_Older value)?  older,TResult Function( UpdateOffer_Blocked value)?  blocked,TResult Function( UpdateOffer_Unread value)?  unread,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case UpdateOffer_Newer() when newer != null:
 return newer(_that);case UpdateOffer_Current() when current != null:
 return current(_that);case UpdateOffer_Older() when older != null:
 return older(_that);case UpdateOffer_Blocked() when blocked != null:
-return blocked(_that);case _:
+return blocked(_that);case UpdateOffer_Unread() when unread != null:
+return unread(_that);case _:
   return orElse();
 
 }
@@ -764,14 +765,15 @@ return blocked(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateOffer_Newer value)  newer,required TResult Function( UpdateOffer_Current value)  current,required TResult Function( UpdateOffer_Older value)  older,required TResult Function( UpdateOffer_Blocked value)  blocked,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateOffer_Newer value)  newer,required TResult Function( UpdateOffer_Current value)  current,required TResult Function( UpdateOffer_Older value)  older,required TResult Function( UpdateOffer_Blocked value)  blocked,required TResult Function( UpdateOffer_Unread value)  unread,}){
 final _that = this;
 switch (_that) {
 case UpdateOffer_Newer():
 return newer(_that);case UpdateOffer_Current():
 return current(_that);case UpdateOffer_Older():
 return older(_that);case UpdateOffer_Blocked():
-return blocked(_that);}
+return blocked(_that);case UpdateOffer_Unread():
+return unread(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -785,14 +787,15 @@ return blocked(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateOffer_Newer value)?  newer,TResult? Function( UpdateOffer_Current value)?  current,TResult? Function( UpdateOffer_Older value)?  older,TResult? Function( UpdateOffer_Blocked value)?  blocked,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateOffer_Newer value)?  newer,TResult? Function( UpdateOffer_Current value)?  current,TResult? Function( UpdateOffer_Older value)?  older,TResult? Function( UpdateOffer_Blocked value)?  blocked,TResult? Function( UpdateOffer_Unread value)?  unread,}){
 final _that = this;
 switch (_that) {
 case UpdateOffer_Newer() when newer != null:
 return newer(_that);case UpdateOffer_Current() when current != null:
 return current(_that);case UpdateOffer_Older() when older != null:
 return older(_that);case UpdateOffer_Blocked() when blocked != null:
-return blocked(_that);case _:
+return blocked(_that);case UpdateOffer_Unread() when unread != null:
+return unread(_that);case _:
   return null;
 
 }
@@ -809,13 +812,14 @@ return blocked(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String build,  int version)?  newer,TResult Function()?  current,TResult Function()?  older,TResult Function( Bank0Blocked reason)?  blocked,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String build,  int version)?  newer,TResult Function()?  current,TResult Function()?  older,TResult Function( Bank0Blocked reason)?  blocked,TResult Function()?  unread,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case UpdateOffer_Newer() when newer != null:
 return newer(_that.build,_that.version);case UpdateOffer_Current() when current != null:
 return current();case UpdateOffer_Older() when older != null:
 return older();case UpdateOffer_Blocked() when blocked != null:
-return blocked(_that.reason);case _:
+return blocked(_that.reason);case UpdateOffer_Unread() when unread != null:
+return unread();case _:
   return orElse();
 
 }
@@ -833,13 +837,14 @@ return blocked(_that.reason);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String build,  int version)  newer,required TResult Function()  current,required TResult Function()  older,required TResult Function( Bank0Blocked reason)  blocked,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String build,  int version)  newer,required TResult Function()  current,required TResult Function()  older,required TResult Function( Bank0Blocked reason)  blocked,required TResult Function()  unread,}) {final _that = this;
 switch (_that) {
 case UpdateOffer_Newer():
 return newer(_that.build,_that.version);case UpdateOffer_Current():
 return current();case UpdateOffer_Older():
 return older();case UpdateOffer_Blocked():
-return blocked(_that.reason);}
+return blocked(_that.reason);case UpdateOffer_Unread():
+return unread();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -853,13 +858,14 @@ return blocked(_that.reason);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String build,  int version)?  newer,TResult? Function()?  current,TResult? Function()?  older,TResult? Function( Bank0Blocked reason)?  blocked,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String build,  int version)?  newer,TResult? Function()?  current,TResult? Function()?  older,TResult? Function( Bank0Blocked reason)?  blocked,TResult? Function()?  unread,}) {final _that = this;
 switch (_that) {
 case UpdateOffer_Newer() when newer != null:
 return newer(_that.build,_that.version);case UpdateOffer_Current() when current != null:
 return current();case UpdateOffer_Older() when older != null:
 return older();case UpdateOffer_Blocked() when blocked != null:
-return blocked(_that.reason);case _:
+return blocked(_that.reason);case UpdateOffer_Unread() when unread != null:
+return unread();case _:
   return null;
 
 }
@@ -1068,6 +1074,38 @@ as Bank0Blocked,
 
 
 }
+
+/// @nodoc
+
+
+class UpdateOffer_Unread extends UpdateOffer {
+  const UpdateOffer_Unread(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateOffer_Unread);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateOffer.unread()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 mixin _$UpdateProgress {

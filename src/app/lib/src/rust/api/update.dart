@@ -19,13 +19,14 @@ part 'update.freezed.dart';
 
 /// Whether to offer the image `build` at `version` to a feeder that runs
 /// `running` (`None` before its status is read) at `skew`, with `update`
-/// its update state: the rule every client shares.
+/// its update state (`None` before it is read, or when its read failed):
+/// the rule every client shares.
 UpdateOffer updateOffer({
   required String build,
   required int version,
   String? running,
   required Skew skew,
-  required UpdateInfo update,
+  UpdateInfo? update,
 }) => RustLib.instance.api.crateApiUpdateUpdateOffer(
   build: build,
   version: version,
@@ -151,6 +152,11 @@ sealed class UpdateOffer with _$UpdateOffer {
   /// Bank 1 refuses every update until bank 0 checks itself in.
   const factory UpdateOffer.blocked({required Bank0Blocked reason}) =
       UpdateOffer_Blocked;
+
+  /// The feeder's update state is not read, or its read failed: not this
+  /// build and not ahead of this app, but nothing is offered until the
+  /// state says what it confirmed.
+  const factory UpdateOffer.unread() = UpdateOffer_Unread;
 }
 
 @freezed

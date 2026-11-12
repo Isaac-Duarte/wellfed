@@ -13,10 +13,12 @@ mixin FakeUpdateRules implements FeederPorts {
     required int version,
     String? running,
     required Skew skew,
-    required UpdateInfo update,
+    UpdateInfo? update,
   }) {
     if (running != null && running.toLowerCase() == build.toLowerCase()) return const UpdateOffer.current();
-    if (skew == Skew.feederAhead || version <= update.minVersion) return const UpdateOffer.older();
+    if (skew == Skew.feederAhead) return const UpdateOffer.older();
+    if (update == null) return const UpdateOffer.unread();
+    if (version <= update.minVersion) return const UpdateOffer.older();
     return switch (update.bank0) {
       Bank0Check_Blocked(:final Bank0Blocked field0) => UpdateOffer.blocked(reason: field0),
       Bank0Check_Unknown() => const UpdateOffer.blocked(reason: Bank0Blocked.unknown),

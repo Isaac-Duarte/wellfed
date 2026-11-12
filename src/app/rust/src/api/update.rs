@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use flutter_rust_bridge::frb;
-use wellfed_client::offer::{self, Candidate, Confirmation, Offer, Restarted, confirmation};
+use wellfed_client::offer::{self, Candidate, Confirmation, Gate, Offer, Restarted, confirmation};
 use wellfed_client::update::{Image, InstallError};
 use wellfed_connect::Connection;
 use wellfed_connect::update::Pushed;
@@ -364,34 +364,38 @@ pub enum UpdateOffer {
     Older,
     /// Bank 1 refuses every update until bank 0 checks itself in.
     Blocked { reason: Bank0Blocked },
+    /// The feeder's update state is not read, or its read failed: not this
+    /// build and not ahead of this app, but nothing is offered until the
+    /// state says what it confirmed.
+    Unread,
 }
 
 /// Whether to offer the image `build` at `version` to a feeder that runs
 /// `running` (`None` before its status is read) at `skew`, with `update`
-/// its update state: the rule every client shares.
+/// its update state (`None` before it is read, or when its read failed):
+/// the rule every client shares.
 #[frb(sync)]
 pub fn update_offer(
     build: String,
     version: u32,
     running: Option<String>,
     skew: Skew,
-    update: UpdateInfo,
+    update: Option<UpdateInfo>,
 ) -> UpdateOffer {
     let candidate = Candidate {
         build: &build,
         version,
     };
-    match offer::offer(
-        candidate,
-        running.as_deref(),
-        skew,
-        update.min_version,
-        update.bank0,
-    ) {
+    let gate = update.map(|update| Gate {
+        confirmed: update.min_version,
+        bank0: update.bank0,
+    });
+    match offer::offer(candidate, running.as_deref(), skew, gate) {
         Offer::Newer => UpdateOffer::Newer { build, version },
         Offer::Current => UpdateOffer::Current,
         Offer::Older => UpdateOffer::Older,
         Offer::Blocked(reason) => UpdateOffer::Blocked { reason },
+        Offer::Unread => UpdateOffer::Unread,
     }
 }
 

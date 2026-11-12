@@ -4,10 +4,15 @@
 //! update ends confirmed, fallen back, on the wrong build or still pending,
 //! by what the session after its restart reads.
 
-use wellfed_client::offer::{Candidate, Confirmation, Offer, Restarted, confirmation, offer};
+use wellfed_client::offer::{Candidate, Confirmation, Gate, Offer, Restarted, confirmation, offer};
 use wellfed_model::{Bank0Blocked, Bank0Check, Skew};
 
 const RUNNING: Option<&str> = Some("aa11");
+
+/// An update state read with floor `confirmed` and bank 0's `bank0`.
+fn read(confirmed: u32, bank0: Bank0Check) -> Option<Gate> {
+    Some(Gate { confirmed, bank0 })
+}
 const IMAGE: Candidate<'static> = Candidate {
     build: "BB22",
     version: 5,
@@ -19,7 +24,7 @@ fn an_image_is_offered_only_when_newer_another_build_and_bank0_allows() {
     for skew in skews {
         for bank0 in [Bank0Check::Unchecked, Bank0Check::Match] {
             assert_eq!(
-                offer(IMAGE, RUNNING, skew, 4, bank0),
+                offer(IMAGE, RUNNING, skew, read(4, bank0)),
                 Offer::Newer,
                 "{skew:?}"
             );
@@ -31,40 +36,68 @@ fn an_image_is_offered_only_when_newer_another_build_and_bank0_allows() {
         ..IMAGE
     };
     assert_eq!(
-        offer(same, RUNNING, Skew::Same, 0, Bank0Check::Match),
+        offer(same, RUNNING, Skew::Same, read(0, Bank0Check::Match)),
         Offer::Current,
         "any case"
     );
     // The running build comes first: it is current even at the floor.
     assert_eq!(
-        offer(same, RUNNING, Skew::FeederAhead, 9, Bank0Check::Match),
+        offer(same, RUNNING, Skew::FeederAhead, read(9, Bank0Check::Match)),
         Offer::Current
     );
 
     for floor in [5, 6] {
         assert_eq!(
-            offer(IMAGE, RUNNING, Skew::Same, floor, Bank0Check::Match),
+            offer(IMAGE, RUNNING, Skew::Same, read(floor, Bank0Check::Match)),
             Offer::Older
         );
     }
     assert_eq!(
-        offer(IMAGE, RUNNING, Skew::FeederAhead, 0, Bank0Check::Match),
+        offer(
+            IMAGE,
+            RUNNING,
+            Skew::FeederAhead,
+            read(0, Bank0Check::Match)
+        ),
         Offer::Older,
         "the client is the side to update"
     );
     // Older wins over a blocked bank 0: nothing would be offered anyway.
     let blocked = Bank0Check::Blocked(Bank0Blocked::Unrecorded);
-    assert_eq!(offer(IMAGE, RUNNING, Skew::Same, 5, blocked), Offer::Older);
+    assert_eq!(
+        offer(IMAGE, RUNNING, Skew::Same, read(5, blocked)),
+        Offer::Older
+    );
 
     assert_eq!(
-        offer(IMAGE, RUNNING, Skew::Same, 4, blocked),
+        offer(IMAGE, RUNNING, Skew::Same, read(4, blocked)),
         Offer::Blocked(Bank0Blocked::Unrecorded)
     );
     assert_eq!(
-        offer(IMAGE, RUNNING, Skew::Same, 4, Bank0Check::Unknown),
+        offer(IMAGE, RUNNING, Skew::Same, read(4, Bank0Check::Unknown)),
         Offer::Blocked(Bank0Blocked::Unknown),
         "a state this client cannot name blocks"
     );
+}
+
+/// Before the update state is read, or when its read fails, what runs and
+/// the skew still say a feeder is current or ahead; anything else waits for
+/// the state, and nothing is offered meanwhile.
+#[test]
+fn an_unread_update_state_decides_only_what_runs_and_the_skew_say() {
+    let same = Candidate {
+        build: "AA11",
+        ..IMAGE
+    };
+    assert_eq!(offer(same, RUNNING, Skew::Same, None), Offer::Current);
+    assert_eq!(offer(IMAGE, RUNNING, Skew::FeederAhead, None), Offer::Older);
+
+    let skews = [Skew::Same, Skew::FeederBehind, Skew::Legacy, Skew::Unknown];
+    for skew in skews {
+        for running in [RUNNING, None] {
+            assert_eq!(offer(IMAGE, running, skew, None), Offer::Unread, "{skew:?}");
+        }
+    }
 }
 
 #[test]

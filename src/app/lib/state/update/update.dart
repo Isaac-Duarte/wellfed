@@ -37,8 +37,9 @@ class UpdateFlow extends ChangeNotifier {
   bool _disposed = false;
 
   /// Whether to offer the image `build` at `version`, by the feeder's update
-  /// state `update`: the rule every client shares, decided in Rust.
-  UpdateOffer offer({required String build, required int version, required UpdateInfo update}) {
+  /// state `update` (`null` before it is read, or when its read failed): the
+  /// rule every client shares, decided in Rust.
+  UpdateOffer offer({required String build, required int version, UpdateInfo? update}) {
     final FeederState feeder = _feeder.state;
     return _ports.updateOffer(
       build: build,

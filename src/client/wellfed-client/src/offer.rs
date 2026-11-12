@@ -24,6 +24,16 @@ pub struct Candidate<'a> {
     pub version: u32,
 }
 
+/// What a feeder's update state says that an offer turns on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Gate {
+    /// The highest version it reports confirmed, its floor
+    /// (`wellfed_model::UpdateView::min_version`).
+    pub confirmed: u32,
+    /// Whether bank 0 would take an update.
+    pub bank0: Bank0Check,
+}
+
 /// Whether to offer a [`Candidate`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Offer {
@@ -37,26 +47,36 @@ pub enum Offer {
     Older,
     /// Bank 1 refuses every update until bank 0 checks itself in.
     Blocked(Bank0Blocked),
+    /// The feeder's update state is not read, or its read failed. It does not
+    /// run this build and is not ahead of this client, but nothing says what
+    /// it confirmed, so nothing is offered until the state does.
+    Unread,
 }
 
 /// Whether to offer `candidate` to a feeder that runs `running` (its
-/// status's build; `None` when this client cannot read it) at API `skew`, whose update state reports `confirmed`
-/// (`wellfed_model::UpdateView::min_version`) and `bank0`.
+/// status's build; `None` when this client cannot read it) at API `skew`,
+/// with `gate` what its update state reports (`None` before it is read).
+/// What runs and the skew decide without the state.
 pub fn offer(
     candidate: Candidate<'_>,
     running: Option<&str>,
     skew: Skew,
-    confirmed: u32,
-    bank0: Bank0Check,
+    gate: Option<Gate>,
 ) -> Offer {
     if running.is_some_and(|running| candidate.build.eq_ignore_ascii_case(running)) {
         return Offer::Current;
     }
-    if skew == Skew::FeederAhead || candidate.version <= confirmed {
+    if skew == Skew::FeederAhead {
+        return Offer::Older;
+    }
+    let Some(gate) = gate else {
+        return Offer::Unread;
+    };
+    if candidate.version <= gate.confirmed {
         return Offer::Older;
     }
 
-    match bank0 {
+    match gate.bank0 {
         Bank0Check::Unchecked | Bank0Check::Match => Offer::Newer,
         Bank0Check::Blocked(reason) => Offer::Blocked(reason),
         // A state a newer build added: nothing says bank 0 may take an

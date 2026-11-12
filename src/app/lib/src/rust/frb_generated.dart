@@ -688,7 +688,7 @@ abstract class RustLibApi extends BaseApi {
     required int version,
     String? running,
     required Skew skew,
-    required UpdateInfo update,
+    UpdateInfo? update,
   });
 
   RustArcIncrementStrongCountFnType
@@ -5608,7 +5608,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int version,
     String? running,
     required Skew skew,
-    required UpdateInfo update,
+    UpdateInfo? update,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -5618,7 +5618,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_32(version, serializer);
           sse_encode_opt_String(running, serializer);
           sse_encode_skew(skew, serializer);
-          sse_encode_box_autoadd_update_info(update, serializer);
+          sse_encode_opt_box_autoadd_update_info(update, serializer);
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8729,6 +8729,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UpdateInfo? dco_decode_opt_box_autoadd_update_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_update_info(raw);
+  }
+
+  @protected
   WeighedIntake? dco_decode_opt_box_autoadd_weighed_intake(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_weighed_intake(raw);
@@ -10222,6 +10228,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return UpdateOffer_Older();
       case 3:
         return UpdateOffer_Blocked(reason: dco_decode_bank_0_blocked(raw[1]));
+      case 4:
+        return UpdateOffer_Unread();
       default:
         throw Exception("unreachable");
     }
@@ -14297,6 +14305,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UpdateInfo? sse_decode_opt_box_autoadd_update_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_update_info(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   WeighedIntake? sse_decode_opt_box_autoadd_weighed_intake(
     SseDeserializer deserializer,
   ) {
@@ -16057,6 +16078,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 3:
         var var_reason = sse_decode_bank_0_blocked(deserializer);
         return UpdateOffer_Blocked(reason: var_reason);
+      case 4:
+        return UpdateOffer_Unread();
       default:
         throw UnimplementedError('');
     }
@@ -20059,6 +20082,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_update_info(
+    UpdateInfo? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_update_info(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_weighed_intake(
     WeighedIntake? self,
     SseSerializer serializer,
@@ -21484,6 +21520,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case UpdateOffer_Blocked(reason: final reason):
         sse_encode_i_32(3, serializer);
         sse_encode_bank_0_blocked(reason, serializer);
+      case UpdateOffer_Unread():
+        sse_encode_i_32(4, serializer);
     }
   }
 

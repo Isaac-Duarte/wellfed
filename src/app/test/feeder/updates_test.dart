@@ -20,6 +20,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   int minVersion = 6,
   Skew skew = Skew.same,
   bool card = true,
+  bool stateRead = true,
 }) async {
   final book = FakeBook()..feeders = [kitchen];
   final ports = FakeFeederPorts()..image = image;
@@ -31,17 +32,19 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   if (card) ports.session.status(fakeCard(build: build));
   await tester.pump();
   ports.session.replies.add(
-    FeederReply.update(
-      update: UpdateInfo(
-        phase: UpdatePhase.idle,
-        bank: 1,
-        minVersion: minVersion,
-        version: 0,
-        imageLen: 0,
-        written: 0,
-        bank0: bank0,
-      ),
-    ),
+    stateRead
+        ? FeederReply.update(
+            update: UpdateInfo(
+              phase: UpdatePhase.idle,
+              bank: 1,
+              minVersion: minVersion,
+              version: 0,
+              imageLen: 0,
+              written: 0,
+              bank0: bank0,
+            ),
+          )
+        : const FeederReply.unanswered(),
   );
   await showTab(tester, UpdatesScreen(feeder: feeder));
   ports.session.requests.clear();
@@ -87,6 +90,33 @@ void main() {
     await _show(tester, build: _newBuild);
     expect(find.textContaining('runs the version'), findsOneWidget);
     expect(find.text('Install on Kitchen'), findsNothing);
+  });
+
+  // With no update state, what runs and the skew still say the feeder is
+  // current or ahead; anything else shows the image, and offers it once the
+  // state says what the feeder confirmed.
+  group('before the update state answers', () {
+    testWidgets('the running build is up to date', (tester) async {
+      await _show(tester, build: _newBuild, stateRead: false);
+      expect(find.textContaining('runs the version'), findsOneWidget);
+      expect(find.text('Install on Kitchen'), findsNothing);
+    });
+
+    testWidgets('a feeder on a newer API revision is told to update the app', (tester) async {
+      await _show(tester, skew: Skew.feederAhead, stateRead: false);
+      expect(find.textContaining('newer firmware than this app carries'), findsOneWidget);
+      expect(find.text('Install on Kitchen'), findsNothing);
+    });
+
+    testWidgets('another build shows the image, and offers nothing yet', (tester) async {
+      await _show(tester, stateRead: false);
+      expect(find.text('7'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Install on Kitchen'), 200);
+      final FilledButton install = tester.widget(
+        find.ancestor(of: find.text('Install on Kitchen'), matching: find.byType(FilledButton)),
+      );
+      expect(install.onPressed, isNull, reason: 'nothing says what it confirmed');
+    });
   });
 
   testWidgets('one press sends once and shows its progress', (tester) async {

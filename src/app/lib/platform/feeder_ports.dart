@@ -79,14 +79,15 @@ abstract interface class FeederPorts {
   Future<ImageCheck> updateImage();
 
   /// Whether to offer the image `build` at `version` to a feeder that runs
-  /// `running` at `skew`, with `update` its update state: the rule every
-  /// client shares, decided in Rust.
+  /// `running` at `skew`, with `update` its update state (`null` before it is
+  /// read, or when its read failed): the rule every client shares, decided
+  /// in Rust.
   UpdateOffer updateOffer({
     required String build,
     required int version,
     String? running,
     required Skew skew,
-    required UpdateInfo update,
+    UpdateInfo? update,
   });
 
   /// What a fresh update state and the feeder's current status settle of an
@@ -247,7 +248,7 @@ class AppFeederPorts implements FeederPorts {
     required int version,
     String? running,
     required Skew skew,
-    required UpdateInfo update,
+    UpdateInfo? update,
   }) => update_api.updateOffer(build: build, version: version, running: running, skew: skew, update: update);
 
   @override

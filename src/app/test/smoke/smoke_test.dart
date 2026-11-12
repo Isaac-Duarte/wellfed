@@ -167,7 +167,7 @@ class _Ports implements FeederPorts {
     required int version,
     String? running,
     required Skew skew,
-    required UpdateInfo update,
+    UpdateInfo? update,
   }) => update_rules.updateOffer(build: build, version: version, running: running, skew: skew, update: update);
 
   @override
@@ -275,6 +275,16 @@ void main() {
           ])
             for (final bool idle in [true, false]) state(bank: bank, floor: floor, bank0: bank0, idle: idle),
     ];
+    // An update state not read yet, or whose read failed.
+    for (final String? running in [null, 'BB22', 'aa11']) {
+      for (final Skew skew in Skew.values) {
+        expect(
+          fake.updateOffer(build: 'bb22', version: 5, running: running, skew: skew),
+          real.updateOffer(build: 'bb22', version: 5, running: running, skew: skew),
+          reason: 'unread $running $skew',
+        );
+      }
+    }
     for (final UpdateInfo update in states) {
       for (final String? running in [null, 'BB22', 'aa11']) {
         for (final Skew skew in Skew.values) {

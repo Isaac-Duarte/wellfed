@@ -114,8 +114,10 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                   // What to offer is the rule every client shares, decided in
                   // Rust: never the build it runs, never an image at or below
                   // what it confirmed or to a feeder ahead of this app, and
-                  // nothing while bank 0 blocks updates.
-                  final UpdateOffer? verdict = offered != null && state != null
+                  // nothing while bank 0 blocks updates. Before the update
+                  // state is read, or when its read failed, what runs and the
+                  // skew still decide the first two.
+                  final UpdateOffer? verdict = offered != null
                       ? _flow.offer(build: offered.$1, version: offered.$2, update: state)
                       : null;
                   final bool current = verdict is UpdateOffer_Current;
