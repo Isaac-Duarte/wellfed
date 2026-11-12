@@ -172,6 +172,24 @@ impl Binutils {
     }
 }
 
+/// The code sections of an ELF, from its `objdump -h` listing: a section
+/// whose flags line says `CODE`.
+pub(crate) fn code_sections(headers: &str) -> Vec<String> {
+    let mut sections = Vec::new();
+    let mut name = None;
+    for line in headers.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() >= 7 && fields[0].parse::<u32>().is_ok() {
+            name = Some(fields[1].to_string());
+        } else if let Some(section) = name.take()
+            && line.split(',').any(|flag| flag.trim() == "CODE")
+        {
+            sections.push(section);
+        }
+    }
+    sections
+}
+
 /// A core's linked image in an SDK worktree.
 pub fn elf(sdk: &Path, core: Core) -> PathBuf {
     sdk.join(PROJECT)
@@ -313,6 +331,25 @@ pub(crate) fn archive_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_sections_are_read_from_the_section_flags() {
+        let headers = "\
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .ram_image2.entry 00000020  00083000  00083000  00003000  2**2
+                  CONTENTS, ALLOC, LOAD, DATA
+  1 .ram_image2.text 00002780  00083020  00083020  00003020  2**3
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  4 .ram_image2.nocache.data 00000008  00087ab8  00087ab8  00007ab8  2**0
+                  ALLOC
+  8 .ram_retention.text 0000005c  000c0008  000c0008  00010008  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+";
+        assert_eq!(
+            code_sections(headers),
+            [".ram_image2.text", ".ram_retention.text"]
+        );
+    }
 
     /// The review compares all seven audits: a recorded stack bound or
     /// writes record the rerun does not reproduce is named, not passed.

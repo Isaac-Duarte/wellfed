@@ -2,7 +2,10 @@
 //! every run.
 //!
 //! The archive's digest is pinned in `sdk.lock.json` and every executable
-//! the build and audits invoke in `toolchain.lock.json`. Extraction goes to
+//! the build and audits invoke in `toolchain.lock.json` (the vendor
+//! makefiles' compiler, assembler, linker, archiver, strip and size, and the
+//! audits' objdump, nm, readelf and objcopy). The libraries the link reads
+//! are covered by the archive's digest at extraction only. Extraction goes to
 //! a private staging directory and is renamed into place only once verified,
 //! so an interrupted run never leaves a tree that a later run would accept.
 
@@ -277,6 +280,34 @@ mod tests {
         tar.args(members.iter().map(|(name, _)| name));
         run(&mut tar).unwrap();
         path
+    }
+
+    /// Every tool the audits run and every binutil the vendor makefiles
+    /// call is pinned, so a swapped one fails verification.
+    #[test]
+    fn every_tool_the_build_and_audits_run_is_pinned() {
+        let lock: ToolchainLock = wellfed_formats::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../..")
+                .join(TOOL_LOCK),
+        )
+        .unwrap();
+        let audits = super::super::audit::Binutils {
+            dir: PathBuf::from("bin"),
+        };
+        for tool in [
+            audits.objdump(),
+            audits.objcopy(),
+            audits.readelf(),
+            audits.nm(),
+        ] {
+            let name = tool.display().to_string();
+            assert!(lock.files.contains_key(&name), "{name}");
+        }
+        for tool in ["gcc", "as", "ld", "ar", "strip", "size"] {
+            let name = format!("bin/arm-none-eabi-{tool}");
+            assert!(lock.files.contains_key(&name), "{name}");
+        }
     }
 
     #[test]

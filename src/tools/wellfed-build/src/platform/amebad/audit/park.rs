@@ -43,7 +43,7 @@ pub enum ParkError {
     Unsupported { line: String },
     #[error("Indirect branch in RAM parking code")]
     IndirectBranch { location: u64 },
-    #[error("Flash/XIP address formed by movw/movt in RAM parking code")]
+    #[error("Flash/XIP address {value:#x} formed in a register by RAM parking code")]
     FlashAddress { location: u64, value: u64 },
     #[error("Indirect PC destination in RAM parking code")]
     PcDestination { location: u64 },
@@ -186,10 +186,12 @@ fn unconditional(base: &str) -> &str {
 /// Fail closed on calls, foreign branches, indirect jumps or flash
 /// addresses in one function's listing.
 ///
-/// Flash addresses are refused as literal-pool words and as movw/movt pairs
-/// (a movt high half in the flash map is refused even without a movw).
-/// Bit-mask immediates are not treated as addresses, and values computed by
-/// other arithmetic are not proven.
+/// Flash addresses are refused as literal-pool words, as movw/movt pairs
+/// (a movt high half in the flash map is refused even without a movw) and as
+/// a whole register set by one immediate (`mov.w r3, #0x0e000000`: a
+/// Thumb-2 modified immediate encodes each flash window's base exactly).
+/// An immediate that is a mask operand (`orr`, `bic`, `tst`) is not treated
+/// as an address, and values computed by other arithmetic are not proven.
 pub fn check_leaf(
     disassembly: &str,
     address: u64,
@@ -238,6 +240,16 @@ pub fn check_leaf(
         let code = operands.split(';').next().unwrap_or_default();
         let fields: Vec<&str> = code.split(',').map(str::trim).collect();
         let operand = (fields.len() == 2).then(|| immediate(fields[1])).flatten();
+        let whole = match conditional {
+            "mov" | "movs" => operand,
+            "mvn" | "mvns" => operand.map(|value| !value & 0xffff_ffff),
+            _ => None,
+        };
+        if let Some(value) = whole {
+            require(!FLASH_MAPPING.contains(&value), || {
+                ParkError::FlashAddress { location, value }
+            })?;
+        }
         if let (Some(low), "movw") = (operand, conditional) {
             low_halves.insert(fields[0].into(), low & 0xffff);
         } else if let (Some(high), "movt") = (operand, conditional) {
@@ -428,11 +440,29 @@ mod tests {
             "f6c4 0000 movt r0, #18432 ; 0x4800",
             "f241 0100 movw r1, #4096 ; 0x1000",
             "f2c1 0100 movt r1, #4096 ; 0x1000",
-            "f04f 6300 mov.w r3, #134217728 ; 0x8000000",
+            "f043 6300 orr.w r3, r3, #134217728 ; 0x8000000",
+            "f04f 4380 mov.w r3, #1073741824 ; 0x40000000",
         ])
         .unwrap();
         assert_eq!(result.flash_address_constants, 0);
         assert_eq!(result.barriers, 3);
+    }
+
+    /// A flash window's base set whole in one instruction is an address the
+    /// routine could read through while flash is parked.
+    #[test]
+    fn a_flash_base_set_by_one_immediate_is_rejected() {
+        for (line, value) in [
+            ("f04f 6360 mov.w r3, #234881024 ; 0xe000000", 0x0E00_0000),
+            ("f04f 6300 mov.w r3, #134217728 ; 0x8000000", 0x0800_0000),
+            ("f06f 4374 mvn.w r3, #4093640704 ; 0xf4000000", 0x0BFF_FFFF),
+        ] {
+            let error = rejection(&[line, "6818 ldr r0, [r3, #0]"]);
+            assert!(
+                matches!(error, ParkError::FlashAddress { value: found, .. } if found == value),
+                "{line}: {error:?}"
+            );
+        }
     }
 
     #[test]

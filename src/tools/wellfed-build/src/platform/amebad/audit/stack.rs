@@ -94,6 +94,10 @@ pub enum StackError {
          stack audit can read"
     )]
     StackSize { task: String, size: String },
+    /// Two `const NAME: u16` definitions disagree, so which one a task's
+    /// stack takes depends on configuration the audit does not read.
+    #[error("The stack size constant {name} is defined twice with different values")]
+    Constant { name: String },
     #[error("The flash hooks link, but no provider callback the runtime installs")]
     NoCallback,
     #[error("Provider callbacks link, but no flash-hook site calls them: update HOOK_SITES")]
@@ -457,10 +461,23 @@ static SUB_REGISTER: LazyLock<Regex> =
 /// does not link the task. So is a stack size that is neither a literal nor a
 /// `const NAME: u16` in the same sources.
 fn tasks(source: &str) -> Result<BTreeMap<String, (String, u64)>> {
-    let constants: HashMap<&str, u64> = CONSTANT
-        .captures_iter(source)
-        .filter_map(|c| Some((c.get(1)?.as_str(), c[2].parse().ok()?)))
-        .collect();
+    // Sources are read whole, cfg and all, so two definitions of one name
+    // could each be the one compiled; refuse them unless they agree.
+    let mut constants: HashMap<&str, u64> = HashMap::new();
+    for c in CONSTANT.captures_iter(source) {
+        let (Some(name), Ok(value)) = (c.get(1), c[2].parse::<u64>()) else {
+            continue;
+        };
+        if constants
+            .insert(name.as_str(), value)
+            .is_some_and(|was| was != value)
+        {
+            return Err(StackError::Constant {
+                name: name.as_str().into(),
+            }
+            .into());
+        }
+    }
 
     let (sites, matched) = (
         TASK_SITE.find_iter(source).count(),
@@ -996,6 +1013,31 @@ impl<'a> Graph<'a> {
     }
 }
 
+/// Functions by name. Two static C functions can share a name: the one
+/// entry stands for both, with the larger frame, every call either makes
+/// and an indirect call if either makes one, so a call to the deeper one is
+/// never charged the shallower frame.
+fn merged(functions: Vec<(String, Function)>) -> HashMap<String, Function> {
+    let mut merged: HashMap<String, Function> = HashMap::new();
+    for (name, f) in functions {
+        match merged.entry(name) {
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(f);
+            }
+            std::collections::hash_map::Entry::Occupied(mut slot) => {
+                let kept = slot.get_mut();
+                kept.frame = kept.frame.max(f.frame);
+                kept.calls.extend(f.calls);
+                kept.indirect |= f.indirect;
+                kept.refs.extend(f.refs);
+                kept.undecoded = kept.undecoded.take().or(f.undecoded);
+                kept.variable = kept.variable.take().or(f.variable);
+            }
+        }
+    }
+    merged
+}
+
 /// `functions` with each veneer leading to its target.
 fn link(mut functions: HashMap<String, Function>) -> HashMap<String, Function> {
     for (name, f) in &mut functions {
@@ -1063,8 +1105,7 @@ fn all_decoded(functions: &HashMap<String, Function>) -> Result<()> {
 /// than its share of the slots.
 pub(crate) fn audit(elf: &Path, binutils: &Binutils, sources: &TaskSources) -> Result<StackAudit> {
     let (listed, map) = listing(elf, binutils)?;
-    // A repeated heading starts that function over, as a later definition.
-    let functions = link(frames(&listed, &map).into_iter().collect());
+    let functions = link(merged(frames(&listed, &map)));
     all_decoded(&functions)?;
     if sources.kind == Runtime::Bare {
         let linked = sdk_runtime_in(functions.keys());
@@ -1649,6 +1690,36 @@ mod tests {
         assert!(f.refs.contains(&0x1001_dcc0), "{:x?}", f.refs);
         assert!(f.refs.contains(&0xf800_f000), "{:x?}", f.refs);
         assert_eq!(f.undecoded, None);
+    }
+
+    /// Two static functions with one name are one entry with the deeper
+    /// frame and every call, whichever the listing prints last.
+    #[test]
+    fn functions_sharing_a_name_keep_the_deeper_frame_and_every_call() {
+        let listing = "\
+00001000 <twin>:
+    1000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}
+    1002:\tb090      \tsub\tsp, #64
+    1004:\tf000 f800 \tbl\t3000 <deep>
+00002000 <twin>:
+    2000:\tb500      \tpush\t{lr}
+    2002:\tf000 f800 \tbl\t4000 <shallow>
+";
+        let functions = merged(frames(listing, &code_only()));
+        assert_eq!(functions["twin"].frame, 20 + 64);
+        let calls: Vec<&str> = functions["twin"].calls.iter().map(String::as_str).collect();
+        assert_eq!(calls, ["deep", "shallow"]);
+    }
+
+    #[test]
+    fn stack_constants_that_disagree_are_refused() {
+        let source = "const STACK: u16 = 512;\n#[cfg(x)]\nconst STACK: u16 = 256;\n";
+        let error = tasks(source).unwrap_err();
+        assert!(
+            matches!(&error, Error::Stack(StackError::Constant { name }) if name == "STACK"),
+            "{error:?}"
+        );
+        assert!(tasks("const STACK: u16 = 512;\nconst STACK: u16 = 512;\n").is_ok());
     }
 
     /// A frame of 4 KiB or more is two `sub sp`; GCC spills stacked

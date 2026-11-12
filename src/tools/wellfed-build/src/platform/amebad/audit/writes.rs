@@ -21,7 +21,7 @@ use regex::Regex;
 use wellfed_formats::audit::{CoreWrites, WritesAudit};
 use wellfed_proto::device::Model;
 
-use super::{Binutils, HEADING, elf, index, parse_hex, tool, word};
+use super::{Binutils, HEADING, code_sections, elf, index, parse_hex, tool, word};
 use crate::platform::amebad::Core;
 use crate::{Result, digest};
 use wellfed_formats::require;
@@ -46,6 +46,10 @@ pub enum WritesError {
     Unreviewed {
         references: BTreeMap<String, Vec<String>>,
     },
+    /// A code section the core's rules do not scan, so a reference from it
+    /// would go unseen.
+    #[error("Code section {section} is not one the writes audit scans")]
+    Unscanned { section: String },
     #[error("Pinned flash/eFuse reference changed: {target}: found {found:?}, pinned {pinned:?}")]
     Changed {
         target: String,
@@ -552,6 +556,13 @@ fn audit_core(elf: &Path, objdump: &Path, core: &Rules) -> Result<CoreWrites> {
     let names = table(elf, objdump)?;
     let symbols: BTreeSet<&str> = names.keys().map(String::as_str).collect();
     check_linked(&symbols, core)?;
+    let code = code_sections(&tool(objdump, &["-h"], elf)?);
+    if let Some(section) = code.iter().find(|s| !core.sections.contains(&s.as_str())) {
+        return Err(WritesError::Unscanned {
+            section: section.clone(),
+        }
+        .into());
+    }
 
     let targets = write_targets(&symbols, core);
     let found = references(elf, objdump, &names, &targets, core.sections)?;

@@ -176,11 +176,14 @@ pub(crate) fn lock(repo: &Repo) -> Result<SdkLock> {
     Ok(wellfed_formats::load(&repo.path(SDK_LOCK))?)
 }
 
-/// The pinned toolchain's binutils directory.
+/// The pinned toolchain's binutils directory, once every pinned file in the
+/// toolchain matches: the audits a frozen review reruns run only the pinned
+/// objdump, nm, readelf and objcopy, as the build's do.
 pub fn binutils(repo: &Repo) -> Result<PathBuf> {
-    Ok(toolchains(repo)
-        .join(&lock(repo)?.toolchain.directory)
-        .join("bin"))
+    let lock = lock(repo)?;
+    let toolchain = toolchains(repo).join(&lock.toolchain.directory);
+    verify_toolchain(&toolchain, &toolchain_lock(repo, &lock)?)?;
+    Ok(toolchain.join("bin"))
 }
 
 /// A manifest's archives, by core.
@@ -446,12 +449,10 @@ const ARTIFACTS: [(Core, &str); 4] = [
     (Core::Hp, "OTA_All.bin"),
 ];
 
-/// An audit as the manifest records it: the same serialization
-/// `wellfed-build audit` prints, which the frozen review compares.
-/// One profile's build in its SDK worktree.
 /// The packaged artifacts' bytes, by file name.
 type Packaged = BTreeMap<&'static str, Vec<u8>>;
 
+/// One profile's build in its SDK worktree.
 struct Build<'a> {
     job: &'a Job<'a>,
     /// Present for a profile with the stock-layout stage.
