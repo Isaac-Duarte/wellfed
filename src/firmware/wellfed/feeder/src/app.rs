@@ -264,6 +264,8 @@ mod inject {
         use wellfed_hal_feeder::inject;
         use wellfed_sdk::log;
 
+        use wellfed_feeder::feeder::Feeds;
+
         use crate::faults::Injection;
         use crate::feeding::Feeding;
 
@@ -383,6 +385,7 @@ mod buzzer {
     use wellfed_sdk::hal::buzzer;
     use wellfed_sdk::hal::sdk;
     use wellfed_sdk::hal::supervision::config::SYSTIMER_HZ;
+    use wellfed_feeder::feeder::Feeds;
     use wellfed_sdk::{Slot, log};
 
     use crate::feeding::Feeding;
