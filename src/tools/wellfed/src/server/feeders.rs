@@ -13,9 +13,8 @@ use anyhow::{Result, bail};
 use clap::{Args, ValueEnum};
 use uuid::Uuid;
 use wellfed_server_client::api::{
-    Command, CommandOutcome, CommandQuery, CommandState, CommandStateFilter, EventQuery,
-    FeedOutcome, Feeder, FeederId, FeederSettingsPatch, MealReminder, StreamEvent, StreamQuery,
-    Window,
+    Command, CommandOutcome, CommandQuery, CommandState, CommandStateFilter, EventQuery, Feeder,
+    FeederId, FeederSettingsPatch, MealReminder, StreamEvent, StreamQuery, Window,
 };
 use wellfed_server_client::{Client, Lock, Updates};
 
@@ -453,21 +452,13 @@ fn settled(entry: &Command) -> Result<Settled> {
         Some(CommandOutcome::Refused { refusal }) => {
             bail!("the feeder refused it: {}", text::word(refusal))
         }
-        Some(CommandOutcome::Fed { outcome, .. }) => match outcome {
-            FeedOutcome::Done => Ok(Settled::Known),
-            // An ending a newer feeder build added says no more than
-            // an uncertain one.
-            FeedOutcome::Uncertain | FeedOutcome::Unknown => Ok(Settled::Unknown),
-            FeedOutcome::Cancelled | FeedOutcome::Expired | FeedOutcome::Failed => {
-                bail!("the feed ended {}", text::word(outcome))
-            }
-        },
+        Some(CommandOutcome::Fed { outcome, .. }) => crate::feeding::settled(*outcome),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use wellfed_server_client::api::{CommandKind, FeedReason, UserId};
+    use wellfed_server_client::api::{CommandKind, FeedOutcome, FeedReason, UserId};
 
     use super::*;
 
