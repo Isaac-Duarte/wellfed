@@ -79,3 +79,46 @@ fn a_desiccant_reset_the_writer_failed_is_refused_not_done() {
     let failed = answer(&mut rig, slot, &mut transport, [2; 16]);
     assert!(failed.contains("NotWritable"), "{failed}");
 }
+
+/// A time sync whose frame waited behind a write of its own session was
+/// stamped before that wait: even an owner's is taken as a client's, which
+/// only narrows the clock. One read at once is the owner's.
+#[test]
+fn an_owner_sync_held_behind_a_pending_write_only_narrows_the_clock() {
+    use wellfed_core::clock::wall::Origin;
+    use wellfed_proto::api::TimeSync;
+
+    let sync = |unix_ms| {
+        Op::TimeSync(TimeSync {
+            unix_ms,
+            offset_s: 0,
+            next_change_s: 0,
+            next_offset_s: 0,
+        })
+    };
+    let noon = 1_792_674_000_000;
+    let mut rig = Rig::new();
+    let (slot, mut transport) = rig.open();
+    ask(&mut rig, slot, &mut transport, [1; 16], sync(noon));
+    assert!(answer(&mut rig, slot, &mut transport, [1; 16]).starts_with("Done"));
+    assert_eq!(rig.clock_origin(), Some(Origin::Owner));
+
+    rig.hold_writes(true);
+    let put = Op::Feeder(FeederOp::PutSettings {
+        base: 0,
+        changes: volume(10),
+    });
+    ask(&mut rig, slot, &mut transport, [2; 16], put);
+    ask(&mut rig, slot, &mut transport, [3; 16], sync(noon));
+    for _ in 0..4 {
+        rig.pass();
+    }
+    rig.hold_writes(false);
+    assert!(answer(&mut rig, slot, &mut transport, [2; 16]).starts_with("Done"));
+    assert!(answer(&mut rig, slot, &mut transport, [3; 16]).starts_with("Done"));
+    assert_eq!(rig.clock_origin(), Some(Origin::Client));
+
+    ask(&mut rig, slot, &mut transport, [4; 16], sync(noon));
+    assert!(answer(&mut rig, slot, &mut transport, [4; 16]).starts_with("Done"));
+    assert_eq!(rig.clock_origin(), Some(Origin::Owner));
+}

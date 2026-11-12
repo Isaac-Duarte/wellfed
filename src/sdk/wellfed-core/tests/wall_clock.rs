@@ -1017,3 +1017,39 @@ fn retiring_keeps_an_expired_anchor_bounding_ntp_while_it_can_be_placed() {
     let far = NOON + u64::from(now) + 30 * 24 * u64::from(HOUR_MS);
     assert_eq!(clock.fix(now, ntp(far, 25)), Err(SyncError::Bounded));
 }
+
+/// An owner's sync read late disagrees with the clock: it moves the clock,
+/// but it is no baseline, so the rate later syncs measure carries none of
+/// its error.
+#[test]
+fn a_late_owner_sync_teaches_no_rate() {
+    let mut clock = WallClock::default();
+    clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+
+    // Stamped 30 s before the feeder read it.
+    let late = HOUR_MS;
+    let stale = NOON + u64::from(late) - 30_000;
+    assert!(matches!(
+        clock.sync(late, sync(stale), Origin::Owner),
+        Ok(Jump::Jumped(_))
+    ));
+
+    // A true sync after the clock expired: no rate from the late one.
+    let later = 13 * HOUR_MS;
+    let owner = |now: u32| fix(NOON + u64::from(now), 20, Origin::Owner);
+    clock.fix(later, owner(later)).unwrap();
+    assert!(!clock.state(later).learned);
+
+    // True syncs from there teach the true rate, and the clock stays honest.
+    for i in 1..=7u32 {
+        let now = later + i * 1_024_000;
+        clock.fix(now, owner(now)).unwrap();
+    }
+    let state = clock.state(later + 7 * 1_024_000);
+    assert!(
+        state.learned && state.rate_ppb.unsigned_abs() < 1_000,
+        "{state:?}"
+    );
+    let day = later + 7 * 1_024_000 + 24 * HOUR_MS;
+    honest(clock.read(day).unwrap(), NOON + u64::from(day), "a day on");
+}

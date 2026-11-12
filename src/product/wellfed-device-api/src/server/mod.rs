@@ -186,6 +186,9 @@ pub struct Server {
     /// Subscribers that ended since the last pass, by slot: the device
     /// hears of each on the next.
     readers_left: [bool; SESSIONS],
+    /// Each session's next frame came while a write of its own was
+    /// pending, so it may have waited there for as long as the write did.
+    held: [bool; SESSIONS],
     /// A feed is prepared or driven this pass.
     feeding: bool,
     /// The last step ran a handshake operation.
@@ -231,6 +234,7 @@ impl Server {
             cancel_signer: false,
             prune_invites: false,
             readers_left: [false; SESSIONS],
+            held: [false; SESSIONS],
             feeding: false,
             handshook: false,
             struck: false,
@@ -283,6 +287,7 @@ impl Server {
             });
             return None;
         };
+        self.held[index] = false;
         let slot = &mut self.slots[index];
         *slot = Slot::FREE;
         slot.phase = Phase::Opening;

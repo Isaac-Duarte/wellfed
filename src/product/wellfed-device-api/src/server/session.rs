@@ -216,6 +216,9 @@ impl Server {
             pending: Some(_), ..
         } = self.slots[index].phase
         {
+            if self.slots[index].wire.frame()?.is_some() {
+                self.held[index] = true;
+            }
             return Ok(false);
         }
 
@@ -230,7 +233,9 @@ impl Server {
                 .map_err(|_| Reason::Noise)?;
             slot.wire.consume(len);
             slot.since_ms = now_ms;
-            self.message(index, read, now_ms, device, pairing, record)?;
+            let answered = self.message(index, read, now_ms, device, pairing, record);
+            self.held[index] = false;
+            answered?;
             return Ok(true);
         }
         if deadline_passed(now_ms, slot.since_ms.wrapping_add(IDLE_MS)) {

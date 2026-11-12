@@ -431,9 +431,12 @@ impl WallClock {
                     self.learn(point);
                 } else {
                     // The clock was wrong, so its rate may be: what it was
-                    // measured against says nothing more.
+                    // measured against says nothing more. Nor is this fix a
+                    // baseline: the clock or the fix is wrong, and a fix
+                    // read late would teach every later rate its error, so
+                    // the next owner's fix starts one.
                     self.forget_rate();
-                    self.base = Some(point);
+                    self.base = None;
                 }
                 classify(delta)
             }
