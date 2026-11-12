@@ -114,6 +114,7 @@ impl Service {
         };
         let (unknowns, all) = (numberless(Some(CommandState::Unknown)), numberless(None));
 
+        let mut shared = None;
         let mut silent = Vec::new();
         for entry in open
             .iter()
@@ -128,6 +129,12 @@ impl Service {
                 // Nothing to match it against: it stays unknown.
                 None if since.is_none() => continue,
                 None => {
+                    if shared.is_none() {
+                        shared = Some(self.fingerprint_shared(id, us).await);
+                    }
+                    if shared == Some(true) {
+                        continue;
+                    }
                     let alone = match entry.state {
                         CommandState::Unknown => unknowns == 1,
                         _ => all == 1,
@@ -154,6 +161,27 @@ impl Service {
             self.unrecorded(id, &silent).await?;
         }
         Ok(())
+    }
+
+    /// Whether a feed by the server's fingerprint may be another client's.
+    /// A feeder's event names a client by the first 4 bytes of its key, so
+    /// an enrolled client could choose a key that shares the server's, and
+    /// its feeds would settle the server's lost ones. While another listed
+    /// key shares it, nothing settles by fingerprint, and a list that does
+    /// not read counts as shared: the next event asks again.
+    async fn fingerprint_shared(&self, id: FeederId, us: Option<[u8; 4]>) -> bool {
+        let Some(us) = us else {
+            return false;
+        };
+        let Ok(clients) = self.list_clients(id).await else {
+            return true;
+        };
+        let sharing = clients.iter().filter(|client| client.key.0[..4] == us);
+        let shared = sharing.count() > 1;
+        if shared {
+            warn!(feeder = %id, "another client's key shares this server's fingerprint: its lost feeds stay unknown");
+        }
+        shared
     }
 
     /// The feeds after `since` that can be the server's own and that no
