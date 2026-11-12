@@ -232,7 +232,10 @@ class RecoverFlow extends ChangeNotifier {
     return failed;
   }
 
+  /// One browse at a time: a second would outlive the pick, and its next
+  /// sighting would pull the screen off the code mid-pairing.
   void _browse() {
+    if (_browsing != null) return;
     _set(const RecoverPick());
     _browsing = _ports.browse().listen((feeder) {
       _found[feeder.identity] = feeder;

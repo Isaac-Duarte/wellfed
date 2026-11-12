@@ -55,8 +55,29 @@ DiscoveredDevice feederNearby(String id, {int rssi = -50}) => DiscoveredDevice(
 
 /// Pairing's outside world, with no Rust and no radio.
 class FakePairingPorts implements PairingPorts {
+  /// What the LAN announces, to each browse.
+  // ignore: close_sinks, the test ends with it
+  final announced = StreamController<FoundFeeder>.broadcast();
+
+  /// Browses running now.
+  int browsing = 0;
+
   @override
-  Stream<FoundFeeder> browse() => const Stream.empty();
+  Stream<FoundFeeder> browse() {
+    // ignore: close_sinks, its listener's cancel ends it
+    final browse = StreamController<FoundFeeder>();
+    late final StreamSubscription<FoundFeeder> relay;
+    browse
+      ..onListen = () {
+        browsing++;
+        relay = announced.stream.listen(browse.add);
+      }
+      ..onCancel = () {
+        browsing--;
+        return relay.cancel();
+      };
+    return browse.stream;
+  }
 
   final drivers = <FakeDriver>[];
   final recoveries = <FakeRecovery>[];

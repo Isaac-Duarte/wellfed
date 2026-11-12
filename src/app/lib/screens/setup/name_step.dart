@@ -81,10 +81,19 @@ class _NameStepState extends State<NameStep> {
 
   int get _bytes => utf8.encode(_name.text.trim()).length;
 
+  /// The names are being saved: a second tap would start a second run.
+  bool _busy = false;
+
   Future<void> _done() async {
+    if (_busy) return;
+    setState(() => _busy = true);
     final asksFeeder = widget.feeder != null;
     final String? failed = await widget.onDone(_name.text.trim(), asksFeeder ? _feeder.text.trim() : null);
-    if (failed != null && mounted) setState(() => _failed = failed);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (failed != null) _failed = failed;
+    });
   }
 
   bool get _valid =>
@@ -137,7 +146,9 @@ class _NameStepState extends State<NameStep> {
           Notice(tone: Tone.fault, lead: "This $deviceName couldn't save that.", text: failed),
         ],
       ],
-      actions: [FilledButton(onPressed: _valid ? () => unawaited(_done()) : null, child: Text(widget.action))],
+      actions: [
+        FilledButton(onPressed: _valid && !_busy ? () => unawaited(_done()) : null, child: Text(widget.action)),
+      ],
     );
   }
 }

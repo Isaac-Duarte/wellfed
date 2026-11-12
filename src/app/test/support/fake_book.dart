@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
@@ -27,8 +29,12 @@ class FakeBook extends ChangeNotifier implements FeederBook {
   /// What the next save throws, as a full or read-only disk would.
   Object? saveFails;
 
+  /// While set, a label is saved only once it completes: a slow disk.
+  Completer<void>? labelGate;
+
   @override
   Future<void> setLabel(String label) async {
+    await labelGate?.future;
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (saveFails case final error?) throw error;
     this.label = label;
