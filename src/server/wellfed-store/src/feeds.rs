@@ -23,7 +23,7 @@ impl Store {
             CommandState::Unknown.code(),
             CommandState::Resolved.code(),
         );
-        let unrecorded = outcome_json(&CommandOutcome::Unrecorded)?;
+        let unrecorded = outcome_tag(&CommandOutcome::Unrecorded)?;
         let rows = sqlx::query_as!(
             Raw,
             r#"SELECT seq, key, user_id AS "user_id: Uuid", token_id AS "token_id: Uuid",
@@ -32,7 +32,7 @@ impl Store {
                FROM commands
                WHERE feeder_id = ?1 AND kind = ?2
                  AND (state IN (?3, ?5) OR (state = ?4 AND feed IS NOT NULL)
-                      OR (state = ?6 AND outcome = ?7))
+                      OR (state = ?6 AND json_extract(outcome, '$.result') = ?7))
                ORDER BY seq"#,
             feeder.0,
             kind,
@@ -130,7 +130,7 @@ impl Store {
     ) -> Result<bool> {
         let key = key.as_slice();
         let json = outcome_json(outcome)?;
-        let unrecorded = outcome_json(&CommandOutcome::Unrecorded)?;
+        let unrecorded = outcome_tag(&CommandOutcome::Unrecorded)?;
         let replaces = matches!(outcome, CommandOutcome::Fed { .. });
         let feed = outcome.feed();
         let (answered, unknown, resolved) = (
@@ -143,7 +143,7 @@ impl Store {
             "UPDATE commands SET state = ?1, outcome = ?2, feed = COALESCE(?3, feed), updated_ms = ?4
              WHERE key = ?5
                AND (state = ?7 OR (state = ?6 AND feed IS NOT NULL)
-                    OR (?8 AND state = ?1 AND outcome = ?9))",
+                    OR (?8 AND state = ?1 AND json_extract(outcome, '$.result') = ?9))",
             resolved,
             json,
             feed,
@@ -162,4 +162,15 @@ impl Store {
 
 fn outcome_json(outcome: &CommandOutcome) -> Result<String> {
     serde_json::to_string(outcome).map_err(|e| Error::Json("outcome", e))
+}
+
+/// The tag a stored outcome names its kind by. A query finds a kind by
+/// its tag alone, so a field the kind gains later, or another order of
+/// its fields, still finds the rows stored before.
+fn outcome_tag(outcome: &CommandOutcome) -> Result<String> {
+    let value = serde_json::to_value(outcome).map_err(|e| Error::Json("outcome", e))?;
+    match value.get("result").and_then(serde_json::Value::as_str) {
+        Some(tag) => Ok(tag.to_owned()),
+        None => Err(Error::Unknown("outcome tag")),
+    }
 }

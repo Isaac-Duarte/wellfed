@@ -20,12 +20,29 @@ pub struct Import {
     tx: Transaction<'static, Sqlite>,
     /// What each imported account's password hash is set to.
     password_hash: String,
+    decoders: Decoders,
+}
+
+/// Whether the bytes the store keeps as they came decode, by the mirror's
+/// decoders: the pages that list them decode them outside the store, and
+/// refuse the whole page on one that does not.
+#[derive(Clone, Copy, Debug)]
+pub struct Decoders {
+    /// An event body, for an event of a kind the store knows.
+    pub event: fn(&[u8]) -> bool,
+    /// A sample's value, for a metric the store knows.
+    pub sample: fn(&[u8]) -> bool,
 }
 
 impl Store {
     /// Begin an import, or `None` when any account exists: only a fresh
-    /// server takes one. Each imported account gets `password_hash`.
-    pub async fn begin_import(&self, password_hash: &str) -> Result<Option<Import>> {
+    /// server takes one. Each imported account gets `password_hash`, and
+    /// each event body and sample value is checked by `decoders`.
+    pub async fn begin_import(
+        &self,
+        password_hash: &str,
+        decoders: Decoders,
+    ) -> Result<Option<Import>> {
         let mut tx = self.writer.begin().await?;
         let taken = sqlx::query!(r#"SELECT EXISTS (SELECT 1 FROM users) AS "taken!: bool""#)
             .fetch_one(&mut *tx)
@@ -36,6 +53,7 @@ impl Store {
         Ok(Some(Import {
             tx,
             password_hash: password_hash.to_owned(),
+            decoders,
         }))
     }
 }
@@ -43,7 +61,11 @@ impl Store {
 impl Import {
     /// Insert one row. Rows must come in the archive's table order, so
     /// each row's foreign keys name rows already in.
+    ///
+    /// A row the store's readers would refuse once stored is refused here
+    /// ([`crate::Error::Unreadable`]), before anything of it goes in.
     pub async fn insert(&mut self, row: &Row) -> Result<()> {
+        check::check(row, self.decoders)?;
         let tx = &mut *self.tx;
         match row {
             Row::Users(user) => {
@@ -236,4 +258,5 @@ impl Import {
     }
 }
 
+mod check;
 mod rows;

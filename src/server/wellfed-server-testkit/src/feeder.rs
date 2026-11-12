@@ -48,9 +48,14 @@ pub async fn restart(flash: &Rc<Flash>, address: SocketAddr) -> Running {
 }
 
 /// How many feeds the simulator on `flash` has ever reserved in its feed
-/// journal: the count a test that retries a feed proves is one.
+/// journal: the count a test that retries a feed proves is one. Panics
+/// when the journal does not open, so "no feed reached the feeder" is never
+/// read off a broken journal.
 pub fn feeds(flash: &Rc<Flash>) -> u64 {
-    wellfed_feeder_sim::feeding::reserved(flash).unwrap_or(0)
+    match wellfed_feeder_sim::feeding::reserved(flash) {
+        Ok(reserved) => reserved,
+        Err(error) => panic!("the simulator's feed journal does not open: {error:?}"),
+    }
 }
 
 /// A simulator on fresh flash and `banks` (kept across its restarts, as

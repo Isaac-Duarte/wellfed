@@ -9,6 +9,7 @@ use wellfed_store::{FeederRow, NewFeeder};
 
 use crate::feeders::keys;
 use crate::feeders::phones::Possession;
+use crate::names::bounded;
 use crate::{Caller, Error, FeederError, InternalError, Invalid, Resource, Result, Service};
 
 const PAGE: u32 = 100;
@@ -208,9 +209,5 @@ impl Service {
 }
 
 fn feeder_name(name: &str) -> Result<&str> {
-    let name = name.trim();
-    if name.is_empty() || name.chars().count() > 64 {
-        return Err(Invalid::FeederName.into());
-    }
-    Ok(name)
+    Ok(bounded(name, Invalid::FeederName)?)
 }

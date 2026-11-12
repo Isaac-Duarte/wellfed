@@ -11,6 +11,7 @@ use wellfed_api::{
     WeightPage,
 };
 
+use crate::names::bounded;
 use crate::page::{self, after_weight, weight_cursor};
 use crate::{Error, Invalid, OwnerDataError, Resource, Result, Service};
 
@@ -113,7 +114,7 @@ impl Service {
 
     /// A page of the pet's weight log, oldest reading first.
     pub async fn weights(&self, pet: PetId, query: PageQuery) -> Result<WeightPage> {
-        let limit = page::limit(&query)?;
+        let limit = page::limit(query.limit)?;
         let after = after_weight(&query)?;
         self.pet(pet).await?;
 
@@ -154,11 +155,7 @@ impl Service {
 }
 
 fn pet_name(name: &str) -> Result<&str, Invalid> {
-    let name = name.trim();
-    if name.is_empty() || name.chars().count() > 64 {
-        return Err(Invalid::PetName);
-    }
-    Ok(name)
+    bounded(name, Invalid::PetName)
 }
 
 fn daily_kcal(kcal: u32) -> Result<u32, Invalid> {

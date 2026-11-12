@@ -17,8 +17,7 @@
 //! an offer the feeder refuses, an install it stops, or a feeder that never
 //! comes back ends the install; another is another request.
 
-use std::sync::{Arc, Mutex};
-
+use tokio::sync::oneshot;
 use tracing::{Instrument, info, info_span, warn};
 use wellfed_api::{
     ClientRole, Connection as Link, FeederId, FeederRefusal, Install, InstallFailure, InstallId,
@@ -28,11 +27,15 @@ use wellfed_mirror::{PushError, Pushed, Restore, Update, UpdateError};
 use wellfed_model::{Refusal, UpdateView};
 use wellfed_releases::{STOCK_VERSION, StockBackup};
 
-use crate::{Caller, CommandError, Error, Resource, Result, Service, lock};
+use crate::{Caller, CommandError, Error, InternalError, Resource, Result, Service, lock};
 
+mod claim;
 mod error;
 
+pub(crate) use claim::Slot;
 pub use error::InstallError;
+
+use claim::Claim;
 
 /// Progress reaches the stream each time this many more bytes are written.
 const PROGRESS_STEP: u32 = 32 * 1024;
@@ -48,19 +51,6 @@ pub(crate) enum Offer {
         downgrade: Vec<u8>,
         backup: StockBackup,
     },
-}
-
-/// The server's one install slot, with the ends the store did not take.
-pub(crate) type Slot = Arc<Mutex<Installs>>;
-
-/// What the service keeps of installs in memory.
-#[derive(Debug, Default)]
-pub(crate) struct Installs {
-    /// The running install, as it stands.
-    running: Option<Install>,
-    /// Installs that ended while the store's row still says `running`:
-    /// their end was not stored.
-    unsaved: Vec<Install>,
 }
 
 impl Service {
@@ -141,9 +131,49 @@ impl Service {
 
     /// Take the slot for `install` (refused while another runs), keep it,
     /// and push `offer` in the background.
+    ///
+    /// The row is kept by the install's own task, not the caller: a caller
+    /// dropped while the row is written would otherwise free the slot with
+    /// the row left `running` and nothing to end it. The caller only waits
+    /// for the row to be kept, and an install it stops waiting for runs on.
     pub(crate) async fn begin(&self, install: Install, offer: Offer) -> Result<Install> {
         let claim = Claim::take(&self.operations.installing, install)?;
-        self.shared.store.save_install(&install).await?;
+        let (kept, was_kept) = oneshot::channel::<Result<()>>();
+
+        let service = self.clone();
+        let cancel = self.cancel.child_token();
+        let span = info_span!(parent: None, "install", feeder = %install.feeder);
+        self.tasks.spawn(
+            async move {
+                if let Err(error) = service.shared.store.save_install(&install).await {
+                    drop(claim);
+                    let _unheard = kept.send(Err(error.into()));
+                    return;
+                }
+                service.started(install);
+                let _unheard = kept.send(Ok(()));
+
+                // On shutdown the push stops and the row stays `running`
+                // until the next start marks it interrupted, as after a
+                // crash. Cancellation is looked at first: shutting down also
+                // ends the mirror's session, and a push polled after that
+                // would end `unreachable` and store it, though the server
+                // stopped it.
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => {}
+                    () = service.run_install(claim, offer) => {}
+                }
+            }
+            .instrument(span),
+        );
+
+        was_kept.await.map_err(|_| InternalError::Task)??;
+        Ok(install)
+    }
+
+    /// Say that `install` started: in the log and on the stream.
+    fn started(&self, install: Install) {
         match install.target {
             InstallTarget::Release { release } => info!(
                 feeder = %install.feeder,
@@ -161,27 +191,6 @@ impl Service {
             InstallTarget::Unknown => {}
         }
         self.publish_install(install);
-
-        let service = self.clone();
-        let cancel = self.cancel.child_token();
-        let span = info_span!(parent: None, "install", feeder = %install.feeder);
-        self.tasks.spawn(
-            async move {
-                // On shutdown the push stops and the row stays `running`
-                // until the next start marks it interrupted, as after a
-                // crash. Cancellation is looked at first: shutting down also
-                // ends the mirror's session, and a push polled after that
-                // would end `unreachable` and store it, though the server
-                // stopped it.
-                tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => {}
-                    () = service.run_install(claim, offer) => {}
-                }
-            }
-            .instrument(span),
-        );
-        Ok(install)
     }
 
     /// The running install, if it is the feeder `id`'s.
@@ -350,43 +359,5 @@ fn failure(error: UpdateError) -> InstallFailure {
         // The driver ends a push it cannot settle `Gone`, never with this;
         // read the same way here, it stays uncertain whoever carries it.
         UpdateError::Uncertain(_) => InstallFailure::Unreachable { offered: true },
-    }
-}
-
-/// The slot, held by the one running install; dropping it frees the slot.
-pub(crate) struct Claim {
-    slot: Slot,
-    install: Install,
-}
-
-impl Claim {
-    fn take(slot: &Slot, install: Install) -> Result<Self> {
-        let mut held = lock(slot);
-        if held.running.is_some() {
-            return Err(InstallError::Running.into());
-        }
-        held.running = Some(install);
-        Ok(Self {
-            slot: Arc::clone(slot),
-            install,
-        })
-    }
-
-    /// Change the running install and return it as it now stands.
-    fn update(&mut self, change: impl FnOnce(&mut Install)) -> Install {
-        change(&mut self.install);
-        lock(&self.slot).running = Some(self.install);
-        self.install
-    }
-
-    /// Keep the ended `install`, whose end the store did not take.
-    fn unsaved(&self, install: Install) {
-        lock(&self.slot).unsaved.push(install);
-    }
-}
-
-impl Drop for Claim {
-    fn drop(&mut self) {
-        lock(&self.slot).running = None;
     }
 }

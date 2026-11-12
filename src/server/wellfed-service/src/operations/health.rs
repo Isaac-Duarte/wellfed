@@ -6,7 +6,7 @@ use wellfed_api::{FeederLink, ServerStatus, StoreState};
 use crate::Service;
 
 impl Service {
-    /// The database, each feeder's link and the jobs' last runs. A failing
+    /// The database, each adopted feeder's link and the jobs' last runs. A failing
     /// database is reported here, not refused, so the view still answers;
     /// its error goes to the log. `version` is the server binary's.
     pub async fn status(&self, version: &str) -> ServerStatus {
@@ -28,8 +28,11 @@ impl Service {
             }
         };
 
+        // A removed feeder is no link to check: listed, it would read as a
+        // feeder offline for good.
         let feeders = feeders
             .into_iter()
+            .filter(|row| row.archived.is_none())
             .map(|row| {
                 let feeder = self.view(row);
                 FeederLink {

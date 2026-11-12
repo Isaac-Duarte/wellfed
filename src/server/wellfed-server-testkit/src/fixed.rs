@@ -151,6 +151,92 @@ mod tests {
         out
     }
 
+    /// Run `test` on a current-thread runtime with time, as the kit's
+    /// users do.
+    fn run(test: impl Future<Output = ()>) {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("a test runtime builds")
+            .block_on(test);
+    }
+
+    /// Whether `sleep` is still asleep after a moment of real time.
+    async fn asleep(sleep: &mut Pin<Box<dyn Future<Output = ()> + Send + '_>>) -> bool {
+        tokio::time::timeout(Duration::from_millis(30), sleep.as_mut())
+            .await
+            .is_err()
+    }
+
+    fn later(clock: &ManualClock, ms: i64) -> Timestamp {
+        Timestamp::from_millisecond(clock.now().as_millisecond() + ms).expect("in range")
+    }
+
+    #[test]
+    fn a_sleeper_wakes_once_the_clock_reaches_its_time_and_not_before() {
+        run(async {
+            let clock = ManualClock::new();
+            let mut sleep = clock.sleep_until(later(&clock, 1_000));
+
+            clock.advance(Duration::from_millis(999));
+            assert!(asleep(&mut sleep).await, "a millisecond short");
+            clock.advance(Duration::from_millis(1));
+            assert!(!asleep(&mut sleep).await, "woken at its time");
+        });
+    }
+
+    #[test]
+    fn advancing_to_a_past_time_leaves_the_clock_where_it_is() {
+        let clock = ManualClock::new();
+        let now = clock.now();
+        clock.advance_to(Timestamp::from_millisecond(NOW_MS - 5_000).expect("in range"));
+        assert_eq!(clock.now(), now);
+    }
+
+    #[test]
+    fn a_step_back_wakes_nobody_and_moves_their_time_further_off() {
+        run(async {
+            let clock = ManualClock::new();
+            let mut sleep = clock.sleep_until(later(&clock, 1_000));
+
+            clock.step_back(Duration::from_secs(1));
+            assert!(asleep(&mut sleep).await, "stepped back");
+            clock.advance(Duration::from_secs(1));
+            assert!(asleep(&mut sleep).await, "back where it started");
+            clock.advance(Duration::from_secs(1));
+            assert!(!asleep(&mut sleep).await, "at its time again");
+        });
+    }
+
+    /// A clock moved from another thread while sleepers register never
+    /// strands one: each is woken by the first move past its time.
+    #[test]
+    fn moves_from_another_thread_never_strand_a_sleeper() {
+        let clock = ManualClock::new();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mover = {
+            let (clock, stop) = (clock.clone(), Arc::clone(&stop));
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::SeqCst) {
+                    clock.advance(Duration::from_millis(1));
+                    std::thread::yield_now();
+                }
+            })
+        };
+
+        run(async {
+            for n in 0..500 {
+                let woke = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    clock.sleep_until(later(&clock, 1)),
+                );
+                assert!(woke.await.is_ok(), "sleeper {n} stranded");
+            }
+        });
+        stop.store(true, Ordering::SeqCst);
+        mover.join().expect("the mover ends");
+    }
+
     #[test]
     fn a_seed_repeats_and_draws_differ() {
         let (one, two) = (SeededRandom::new(7), SeededRandom::new(7));

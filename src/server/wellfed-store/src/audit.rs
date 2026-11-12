@@ -188,24 +188,44 @@ impl TryFrom<Joined> for AuditRow {
     type Error = Error;
 
     fn try_from(mut joined: Joined) -> Result<Self> {
+        let (seq, at) = stamp(joined.seq, joined.at_ms)?;
         let command = joined.command()?;
-        let record = match (command, joined.action.as_deref()) {
-            (Some(command), None) => AuditRecord::Command(Box::new(command)),
-            (None, Some(json)) => AuditRecord::Change(Box::new(lenient(
-                json,
-                AuditAction::Unknown,
-                "audit action",
-            )?)),
-            _ => return Err(Error::Corrupt("audit row")),
+        let record = match entry(command, joined.action.as_deref())? {
+            Entry::Command(command) => AuditRecord::Command(Box::new(command)),
+            Entry::Change(action) => AuditRecord::Change(action),
         };
 
         Ok(Self {
-            seq: from_i64(joined.seq, "audit seq")?,
-            at: timestamp(joined.at_ms)?,
+            seq,
+            at,
             user: joined.user_id.map(UserId),
             user_name: joined.user_name,
             token: joined.token_id.map(TokenId),
             record,
         })
     }
+}
+
+/// What an audit row records: a journal entry (`C`, as far as the caller
+/// read it) or an account change, never both or neither.
+pub(crate) enum Entry<C> {
+    Command(C),
+    Change(Box<AuditAction>),
+}
+
+pub(crate) fn entry<C>(command: Option<C>, action: Option<&str>) -> Result<Entry<C>> {
+    match (command, action) {
+        (Some(command), None) => Ok(Entry::Command(command)),
+        (None, Some(json)) => Ok(Entry::Change(Box::new(lenient(
+            json,
+            AuditAction::Unknown,
+            "audit action",
+        )?))),
+        _ => Err(Error::Corrupt("audit row")),
+    }
+}
+
+/// An audit row's place in the log and when it was written.
+pub(crate) fn stamp(seq: i64, at_ms: i64) -> Result<(u64, Timestamp)> {
+    Ok((from_i64(seq, "audit seq")?, timestamp(at_ms)?))
 }

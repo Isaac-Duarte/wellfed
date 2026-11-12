@@ -256,6 +256,35 @@ fn a_removed_feeder_is_archived_its_key_revoked_and_adopted_again_under_its_id()
     });
 }
 
+/// A removal whose caller hangs up part way still runs to its end: the
+/// feeder is archived with its key revoked, rather than left mirrored with
+/// its alerts held, or revoked and never archived.
+#[test]
+fn a_removal_whose_caller_is_dropped_still_finishes() {
+    local(async {
+        let (sim, server, id) = started(ClientRole::Owner).await;
+        let service = server.service();
+        server.caught_up(id).await;
+
+        let caller = owner();
+        let mut removing = Box::pin(service.remove_feeder(&caller, id));
+        let polled = futures_util::poll!(removing.as_mut());
+        assert!(polled.is_pending(), "a removal waits on the feeder");
+        drop(removing);
+
+        until("the dropped removal archives the feeder", || async {
+            let listed = service.feeders().await.unwrap();
+            listed
+                .iter()
+                .any(|feeder| feeder.id == id && feeder.archived.is_some())
+        })
+        .await;
+        assert_eq!(feeder::client_keys(&sim).await.len(), 1, "only the owner's");
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
 /// A `server` key may not revoke, its own included: the feeder is still
 /// removed, and the answer says the key is left for the owner to revoke.
 #[test]

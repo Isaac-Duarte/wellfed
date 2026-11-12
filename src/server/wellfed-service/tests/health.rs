@@ -1,11 +1,11 @@
 //! Readiness from the service: a database that stops answering is reported
-//! as failing, not refused.
+//! as failing, not refused, and a removed feeder is not listed.
 
 use std::sync::Arc;
 
-use wellfed_api::StoreState;
+use wellfed_api::{Connection, StoreState};
 use wellfed_server_testkit::fixed::{FixedClock, SeededRandom};
-use wellfed_server_testkit::{TestService, config, feeder, local};
+use wellfed_server_testkit::{TestService, ada, config, feeder, local};
 use wellfed_service::Service;
 
 #[test]
@@ -54,4 +54,26 @@ async fn a_fresh_store_is_ready_with_no_feeders_and_no_jobs() {
     assert!(ready.feeders.is_empty());
     assert!(ready.jobs.is_empty());
     running.shutdown().await;
+}
+
+#[test]
+fn a_removed_feeder_is_not_listed_as_a_link() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = TestService::start().await;
+        let id = server.adopt(&sim).await;
+        server.link(id, Connection::Online).await;
+        assert_eq!(server.service().status("test").await.feeders.len(), 1);
+
+        server
+            .service()
+            .remove_feeder(&ada().into(), id)
+            .await
+            .unwrap();
+
+        let ready = server.service().status("test").await;
+        assert!(ready.feeders.is_empty(), "{:?}", ready.feeders);
+        server.shutdown().await;
+        sim.stop().await;
+    });
 }

@@ -11,6 +11,7 @@ use std::rc::Rc;
 
 use wellfed_client::setup::{Ask, Credentials, Session, Step};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
+use wellfed_core_feeder::feed_journal::JournalError;
 use wellfed_device::store::events::Read;
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device_api::mailbox::{KeyResult, WifiResult};
@@ -311,7 +312,7 @@ fn a_press_behind_a_write_feeds_when_its_claim_is_taken() {
     feeder.run(30);
     assert!(feeder.sim.feed_outputs_claimed(), "taken on a later pass");
     feeder.run(5_000);
-    assert_eq!(feeding_journal(&feeder), Some(1), "one feed");
+    assert_eq!(feeding_journal(&feeder), Ok(1), "one feed");
 }
 
 /// A press whose claim is refused past the wait is what an immediate refusal
@@ -330,7 +331,7 @@ fn a_press_past_its_claim_s_deadline_is_refused_as_any_press_is() {
         [Ok(1), Err(Refusal::Busy)]
     ));
     assert!(!feeder.sim.feed_outputs_claimed());
-    assert_eq!(feeding_journal(&feeder), Some(0), "it never ran");
+    assert_eq!(feeding_journal(&feeder), Ok(0), "it never ran");
     assert!(
         feeder.refused_events() >= 1,
         "the refused press is recorded"
@@ -344,7 +345,7 @@ fn a_press_past_its_claim_s_deadline_is_refused_as_any_press_is() {
         [Ok(1), Err(Refusal::Busy), Ok(1)]
     ));
     feeder.run(5_000);
-    assert_eq!(feeding_journal(&feeder), Some(1));
+    assert_eq!(feeding_journal(&feeder), Ok(1));
 }
 
 /// A feeder at the boot's first food reading, with Dispense pressed in the
@@ -398,7 +399,7 @@ fn a_refused_claim_leaves_the_first_food_reading_a_baseline() {
         feeder.dispensed()[..],
         [Ok(1), Err(Refusal::Busy)]
     ));
-    assert_eq!(feeding_journal(&feeder), Some(0), "it never ran");
+    assert_eq!(feeding_journal(&feeder), Ok(0), "it never ran");
     feeder.sim.hold_write(false).unwrap();
     feeder.run(1_000);
     let food = harness::events(&mut feeder.sim)
@@ -429,7 +430,7 @@ fn setup_started_while_a_press_waits_stops_its_claim() {
     feeder.sim.hold_write(false).unwrap();
     feeder.run(1_000);
     assert!(!feeder.sim.feed_outputs_claimed());
-    assert_eq!(feeding_journal(&feeder), Some(0), "it never ran");
+    assert_eq!(feeding_journal(&feeder), Ok(0), "it never ran");
 }
 
 #[test]
@@ -470,6 +471,6 @@ fn lock_and_mic_setup_still_refuses_dispense() {
 }
 
 /// How many feeds this feeder's journal has reserved.
-fn feeding_journal(feeder: &Feeder) -> Option<u64> {
+fn feeding_journal(feeder: &Feeder) -> Result<u64, JournalError> {
     wellfed_feeder_sim::feeding::reserved(&feeder.flash)
 }

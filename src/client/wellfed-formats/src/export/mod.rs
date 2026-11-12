@@ -21,7 +21,11 @@
 //!   password until an owner gives it one (`wellfed-server reset-owner`
 //!   for an owner, then a temporary password for each other account).
 //! - **feeders** without the server's sealed key, so an imported feeder is
-//!   archived and must be adopted again, which continues its history.
+//!   archived and must be adopted again, which continues its history; nor
+//!   when it was archived, as every imported feeder is.
+//! - **the command journal** without what a meal-call write found on the
+//!   feeder before it ran: a retry of one under an imported key finds
+//!   none and settles as superseded, sending nothing.
 //! - **sessions** and **tokens** are not exported at all: each is a
 //!   credential, or the hash of one.
 //! - **job runs** are not exported: they are this server's schedule, and an
@@ -29,7 +33,8 @@
 //! - **feeder alerts** are not exported: each is a copy of a feeder's RAM
 //!   and what this server made of it, read again from the feeder.
 //!
-//! Everything else is: the home, each device's cached state, the
+//! Everything else is, which a store test holds against every column the
+//! database has: the home, each device's cached state, the
 //! phone keys the server invited or attributed, the joins it has still to
 //! attribute and the phone keys it saw dropped, the clients an owner kept, raw
 //! events, gaps, samples and their rollups, the projections, the command

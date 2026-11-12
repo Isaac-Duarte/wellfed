@@ -1,5 +1,5 @@
 {
-  "revision": 5,
+  "revision": 6,
   "document": {
     "components": {
       "schemas": {
@@ -12760,6 +12760,24 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "429": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              },
+              "headers": {
+                "Retry-After": {
+                  "schema": {
+                    "format": "int64",
+                    "minimum": 0,
+                    "type": "integer"
                   }
                 }
               }

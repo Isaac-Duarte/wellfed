@@ -93,7 +93,9 @@ impl Store {
     }
 
     /// Feed `feed`'s trace in `epoch`, or in the newest epoch that has one
-    /// when `epoch` is `None`.
+    /// when `epoch` is `None`. An epoch is drawn at random when a ring is
+    /// made, so its value says nothing of its age: the newest is the
+    /// feeder's current epoch, else the one whose trace was fetched last.
     pub async fn trace(
         &self,
         id: FeederId,
@@ -103,32 +105,25 @@ impl Store {
         let row = sqlx::query!(
             r#"SELECT epoch, feed, fetched_ms, summary, stored, body, refusal FROM feed_traces
                WHERE feeder_id = ?1 AND feed = ?2 AND (?3 IS NULL OR epoch = ?3)
-               ORDER BY epoch DESC LIMIT 1"#,
+               ORDER BY epoch IS (SELECT epoch FROM feeders WHERE id = ?1) DESC,
+                        fetched_ms DESC
+               LIMIT 1"#,
             id.0,
             feed,
             epoch,
         )
         .fetch_optional(&self.reader)
         .await?;
-        let Some(row) = row else {
-            return Ok(None);
-        };
-
-        let found = match (row.summary, row.stored, row.body, row.refusal) {
-            (Some(summary), Some(stored), Some(body), None) => TraceFound::Trace(RawTrace {
-                summary: parse(&summary, "trace summary")?,
-                stored: stored != 0,
-                body,
-            }),
-            (None, None, None, Some(refusal)) => TraceFound::Missing(parse(&refusal, "refusal")?),
-            _ => return Err(Error::Corrupt("trace")),
-        };
-        Ok(Some(TraceRow {
-            epoch: u32::try_from(row.epoch).map_err(|_| Error::Corrupt("epoch"))?,
-            feed: u32::try_from(row.feed).map_err(|_| Error::Corrupt("feed number"))?,
-            fetched: timestamp(row.fetched_ms)?,
-            found,
-        }))
+        row.map(|row| {
+            trace(
+                (row.epoch, row.feed, row.fetched_ms),
+                row.summary,
+                row.stored.map(|stored| stored != 0),
+                row.body,
+                row.refusal,
+            )
+        })
+        .transpose()
     }
 
     /// The feeds of `epoch` with no trace fetched yet, newest first, among
@@ -213,13 +208,7 @@ impl Store {
 
         let mut read = rows
             .into_iter()
-            .map(|row| {
-                Ok(StatsRow {
-                    received: timestamp(row.received_ms)?,
-                    boot_count: boot(row.boot_count)?,
-                    stats: parse(&row.stats, "statistics")?,
-                })
-            })
+            .map(|row| stats_row(row.received_ms, row.boot_count, &row.stats))
             .collect::<Result<Vec<_>>>()?;
         read.sort_by_key(|row| {
             StatsSection::ALL
@@ -248,19 +237,13 @@ impl Store {
         .fetch_all(&self.reader)
         .await?;
 
-        let count = |value: i64| u32::try_from(value).map_err(|_| Error::Corrupt("food count"));
         rows.into_iter()
             .map(|row| {
-                Ok(FoodReading {
-                    received: timestamp(row.received_ms)?,
-                    boot_count: boot(row.boot_count)?,
-                    food: FoodStats {
-                        present: row.present.map(|present| present != 0),
-                        ran_low: count(row.ran_low)?,
-                        refilled: count(row.refilled)?,
-                        feeds_since_refill: row.feeds_since_refill.map(count).transpose()?,
-                    },
-                })
+                food_reading(
+                    (row.received_ms, row.boot_count),
+                    row.present.map(|present| present != 0),
+                    (row.ran_low, row.refilled, row.feeds_since_refill),
+                )
             })
             .collect()
     }
@@ -277,6 +260,64 @@ const fn section_code(stats: &Stats) -> &'static str {
         StatsSection::Feeds => "feeds",
         StatsSection::Portions => "portions",
     }
+}
+
+/// A `feed_traces` row as the readers take it: the trace, or the refusal
+/// that stood for it, never both.
+pub(crate) fn trace(
+    (epoch, feed, fetched_ms): (i64, i64, i64),
+    summary: Option<String>,
+    stored: Option<bool>,
+    body: Option<Vec<u8>>,
+    refusal: Option<String>,
+) -> Result<TraceRow> {
+    let found = match (summary, stored, body, refusal) {
+        (Some(summary), Some(stored), Some(body), None) => TraceFound::Trace(RawTrace {
+            summary: parse(&summary, "trace summary")?,
+            stored,
+            body,
+        }),
+        (None, None, None, Some(refusal)) => TraceFound::Missing(parse(&refusal, "refusal")?),
+        _ => return Err(Error::Corrupt("trace")),
+    };
+    Ok(TraceRow {
+        epoch: u32::try_from(epoch).map_err(|_| Error::Corrupt("epoch"))?,
+        feed: u32::try_from(feed).map_err(|_| Error::Corrupt("feed number"))?,
+        fetched: timestamp(fetched_ms)?,
+        found,
+    })
+}
+
+/// A `feeder_stats` row as the readers take it.
+pub(crate) fn stats_row(
+    received_ms: i64,
+    boot_count: Option<i64>,
+    stats: &str,
+) -> Result<StatsRow> {
+    Ok(StatsRow {
+        received: timestamp(received_ms)?,
+        boot_count: boot(boot_count)?,
+        stats: parse(stats, "statistics")?,
+    })
+}
+
+/// A `food_readings` row as the readers take it.
+pub(crate) fn food_reading(
+    (received_ms, boot_count): (i64, Option<i64>),
+    present: Option<bool>,
+    (ran_low, refilled, feeds_since_refill): (i64, i64, Option<i64>),
+) -> Result<FoodReading> {
+    let count = |value: i64| u32::try_from(value).map_err(|_| Error::Corrupt("food count"));
+    Ok(FoodReading {
+        received: timestamp(received_ms)?,
+        boot_count: boot(boot_count)?,
+        food: FoodStats {
+            present,
+            ran_low: count(ran_low)?,
+            refilled: count(refilled)?,
+            feeds_since_refill: feeds_since_refill.map(count).transpose()?,
+        },
+    })
 }
 
 fn boot(value: Option<i64>) -> Result<Option<u32>> {

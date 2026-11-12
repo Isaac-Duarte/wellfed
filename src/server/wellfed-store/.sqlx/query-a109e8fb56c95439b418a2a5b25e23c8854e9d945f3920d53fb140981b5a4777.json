@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT epoch, feed, fetched_ms, summary, stored, body, refusal FROM feed_traces\n               WHERE feeder_id = ?1 AND feed = ?2 AND (?3 IS NULL OR epoch = ?3)\n               ORDER BY epoch DESC LIMIT 1",
+  "query": "SELECT epoch, feed, fetched_ms, summary, stored, body, refusal FROM feed_traces\n               WHERE feeder_id = ?1 AND feed = ?2 AND (?3 IS NULL OR epoch = ?3)\n               ORDER BY epoch IS (SELECT epoch FROM feeders WHERE id = ?1) DESC,\n                        fetched_ms DESC\n               LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -94,5 +94,5 @@
       true
     ]
   },
-  "hash": "af90891233bc8b88dc00ede9fb75ea883a6809d4a799cbab7b07984af080b681"
+  "hash": "a109e8fb56c95439b418a2a5b25e23c8854e9d945f3920d53fb140981b5a4777"
 }

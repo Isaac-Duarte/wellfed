@@ -11,13 +11,13 @@ use wellfed_api::{
     CommandKind, Connection as Link, FeederId, Generation, KeyRemoval, PlayRequest, Removal,
     RevokeAttempt, TuneName, WifiChange,
 };
-use wellfed_mirror::{AlertHold, MirrorEvent, hmac_sha256};
+use wellfed_mirror::{AlertHold, Mirror, MirrorEvent, hmac_sha256};
 use wellfed_model::{Op, Tune, Wifi};
 
 use crate::feeders::commands::done;
 use crate::feeders::journal::Write;
 use crate::feeders::phones::own_revoke;
-use crate::{Caller, IdempotencyKey, Invalid, Result, Service};
+use crate::{Caller, IdempotencyKey, InternalError, Invalid, Result, Service};
 
 /// A Wi-Fi change as it is hashed into the journal. The passphrase goes
 /// in only as an HMAC under a subkey of the server's key, so the journal
@@ -153,19 +153,31 @@ impl Service {
     /// history, samples and journal stay readable, and adopting it again
     /// un-archives it and resumes the owed revokes. Runs beside no
     /// adoption, so a re-adoption cannot interleave with it.
+    ///
+    /// The removal runs to its end on the service's own task, whatever
+    /// becomes of the caller: a client that hangs up part way neither
+    /// leaves the feeder's alerts held nor a revoke that landed without
+    /// its archive.
     pub async fn remove_feeder(&self, caller: &Caller, id: FeederId) -> Result<Removal> {
+        let service = self.clone();
+        let caller = caller.clone();
+        let removing = self
+            .tasks
+            .spawn(async move { service.remove(&caller, id).await });
+        removing.await.map_err(|_| InternalError::Task)?
+    }
+
+    async fn remove(&self, caller: &Caller, id: FeederId) -> Result<Removal> {
         let _one_at_a_time = self.feeders.adopting.lock().await;
         let row = self.live_row(id).await?;
         let own = self.own_key(&row)?;
         // Nothing more is judged of a feeder being removed: the revokes
         // below would read as news its archive then drops, the clear of an
-        // "unreachable" for the server's own key among them.
-        self.mirror.hold_alerts(id, AlertHold::Held);
-        let removed = self.revoke_and_archive(caller, id, own).await;
-        // Removed, its reader is stopped and an adoption starts afresh;
-        // failed, it is judged again.
-        self.mirror.hold_alerts(id, AlertHold::Released);
-        removed
+        // "unreachable" for the server's own key among them. Removed, its
+        // reader is stopped and an adoption starts afresh; failed, or
+        // stopped by a panic or the runtime's end, it is judged again.
+        let _held = Held::new(self.mirror.clone(), id);
+        self.revoke_and_archive(caller, id, own).await
     }
 
     /// The removal's revokes, then stopping the mirror and archiving.
@@ -231,5 +243,24 @@ impl Service {
         };
         let wait = self.shared.config.timing.answer;
         tokio::time::timeout(wait, refused).await.unwrap_or(false)
+    }
+}
+
+/// A feeder's alerts held while it is removed, released when dropped.
+struct Held {
+    mirror: Mirror,
+    id: FeederId,
+}
+
+impl Held {
+    fn new(mirror: Mirror, id: FeederId) -> Self {
+        mirror.hold_alerts(id, AlertHold::Held);
+        Self { mirror, id }
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        self.mirror.hold_alerts(self.id, AlertHold::Released);
     }
 }

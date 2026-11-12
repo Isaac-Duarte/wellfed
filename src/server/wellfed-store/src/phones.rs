@@ -58,17 +58,17 @@ pub enum Whose {
 }
 
 /// One `phone_keys` row as selected.
-struct Raw {
-    feeder_id: Uuid,
-    key: Vec<u8>,
-    user_id: Uuid,
-    token_id: Option<Uuid>,
-    role: String,
-    invited_ms: i64,
-    invite_until_ms: i64,
-    revoke: Option<String>,
-    revoke_ms: Option<i64>,
-    attempt: Option<String>,
+pub(crate) struct Raw {
+    pub(crate) feeder_id: Uuid,
+    pub(crate) key: Vec<u8>,
+    pub(crate) user_id: Uuid,
+    pub(crate) token_id: Option<Uuid>,
+    pub(crate) role: String,
+    pub(crate) invited_ms: i64,
+    pub(crate) invite_until_ms: i64,
+    pub(crate) revoke: Option<String>,
+    pub(crate) revoke_ms: Option<i64>,
+    pub(crate) attempt: Option<String>,
 }
 
 impl TryFrom<Raw> for PhoneKey {
@@ -298,12 +298,41 @@ impl Store {
         )
         .fetch_all(&self.reader)
         .await?;
-        rows.into_iter()
-            .map(|row| {
-                row.key
-                    .try_into()
-                    .map_err(|_| Error::Corrupt("kept client key"))
-            })
-            .collect()
+        rows.into_iter().map(|row| kept_key(row.key)).collect()
     }
+}
+
+/// A kept client's key as stored.
+pub(crate) fn kept_key(key: Vec<u8>) -> Result<[u8; 32]> {
+    key.try_into()
+        .map_err(|_| Error::Corrupt("kept client key"))
+}
+
+/// An invitation's columns as the readers take them.
+pub(crate) struct StoredInvitation {
+    epoch: u32,
+    seq: u64,
+    invitee: [u8; invitees::PREFIX],
+    inviter: [u8; invitees::PREFIX],
+    received: Timestamp,
+}
+
+pub(crate) fn stored_invitation(
+    epoch: i64,
+    seq: i64,
+    invitee: Vec<u8>,
+    inviter: Vec<u8>,
+    received_ms: i64,
+) -> Result<StoredInvitation> {
+    Ok(StoredInvitation {
+        epoch: u32::try_from(epoch).map_err(|_| Error::Corrupt("invitation epoch"))?,
+        seq: u64::try_from(seq).map_err(|_| Error::Corrupt("invitation seq"))?,
+        invitee: invitee
+            .try_into()
+            .map_err(|_| Error::Corrupt("invitee prefix"))?,
+        inviter: inviter
+            .try_into()
+            .map_err(|_| Error::Corrupt("inviter prefix"))?,
+        received: timestamp(received_ms)?,
+    })
 }

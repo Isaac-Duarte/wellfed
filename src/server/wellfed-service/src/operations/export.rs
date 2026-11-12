@@ -8,13 +8,18 @@
 //! so they see the same rows, and the second checks that it wrote what the
 //! first counted. The second pass runs in a task that hands the caller
 //! chunks of at most [`CHUNK`] bytes through a queue of [`QUEUE`], so at
-//! most those and one row are held however large the database is; a caller
-//! that stops reading stops the task.
+//! most those and one row are held however large the database is. A caller
+//! that drops the stream stops the task, and so does one that holds it
+//! without taking a chunk for the transfer's idle time (a paused download
+//! on a connection kept open): the stream then ends in
+//! [`ExportError::Stalled`] after what was queued, so a reader that comes
+//! back never takes the cut archive for a whole one.
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use futures_util::{Stream, TryStreamExt};
-use tokio::sync::mpsc;
+use futures_util::{Stream, StreamExt, TryStreamExt};
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use wellfed_api::{ErrorCode, ExportFormat};
@@ -55,6 +60,8 @@ pub enum ExportError {
     Running,
     #[error("the server stopped before the export ended")]
     Stopped,
+    #[error("the download took nothing for the transfer's idle time, so the export ended")]
+    Stalled,
 }
 
 impl ExportError {
@@ -69,7 +76,7 @@ impl ExportError {
             // The client stopped sending; it reads no answer.
             Self::Upload(_) => Reply::Code(ErrorCode::Invalid),
             // Only ever the end of an export body, never an answer.
-            Self::Manifest(_) | Self::Changed(_) | Self::Stopped => Reply::Internal,
+            Self::Manifest(_) | Self::Changed(_) | Self::Stopped | Self::Stalled => Reply::Internal,
         }
     }
 }
@@ -80,7 +87,8 @@ impl Service {
     /// returns; their bytes follow as the caller reads.
     ///
     /// One export is written at a time: another while it runs is
-    /// [`ExportError::Running`]. A caller that stops reading frees it.
+    /// [`ExportError::Running`]. A caller that stops reading frees it, at
+    /// the latest once the transfer's idle time passes.
     pub async fn export(
         &self,
         format: ExportFormat,
@@ -107,31 +115,56 @@ impl Service {
         };
 
         let (sender, receiver) = mpsc::channel(QUEUE);
+        // How the archive ended, which the stream adds after the queue: an
+        // error never waits in the queue behind a reader that stopped taking
+        // chunks, and a clean end means a whole archive.
+        let (end, ended) = oneshot::channel::<Result<()>>();
         let mut out = Out {
             sender,
             buffer: Vec::with_capacity(CHUNK),
             cancel: self.cancel.child_token(),
+            idle: self.shared.config.timing.transfer_idle,
         };
         self.tasks.spawn(async move {
             let _slot = slot;
             let written = write_archive(&mut snapshot, &manifest, &mut out).await;
-            match written {
-                Ok(()) | Err(Stop::Gone) => {}
+            let ending = match written {
+                Ok(()) => Ok(()),
+                // A caller gone reads nothing more; a server stopping is told.
+                Err(Stop::Gone) => Err(ExportError::Stopped.into()),
+                Err(Stop::Idle) => {
+                    tracing::warn!(
+                        "export: the download took nothing for {:?}; ended",
+                        out.idle
+                    );
+                    Err(ExportError::Stalled.into())
+                }
                 Err(Stop::Failed(error)) => {
                     // The caller sees the stream end in it; the tar is cut.
                     tracing::error!("export: {error}");
-                    let _gone = out.sender.send(Err(error)).await;
+                    Err(error)
                 }
+            };
+            let _gone = end.send(ending);
+        });
+        let cut = futures_util::stream::once(ended).filter_map(|ending| async move {
+            match ending {
+                Ok(Ok(())) => None,
+                Ok(Err(error)) => Some(Err(error)),
+                // The writer never said: it did not end whole.
+                Err(_dropped) => Some(Err(ExportError::Stopped.into())),
             }
         });
-        Ok(ReceiverStream::new(receiver))
+        Ok(ReceiverStream::new(receiver).chain(cut))
     }
 }
 
 /// Why writing stopped.
 enum Stop {
-    /// The caller stopped reading, or the server is stopping.
+    /// The caller dropped the stream, or the server is stopping.
     Gone,
+    /// The caller held the stream without reading.
+    Idle,
     Failed(crate::Error),
 }
 
@@ -164,6 +197,8 @@ struct Out {
     sender: mpsc::Sender<Result<Vec<u8>>>,
     buffer: Vec<u8>,
     cancel: CancellationToken,
+    /// The longest a full queue may wait for the caller.
+    idle: Duration,
 }
 
 impl Out {
@@ -178,11 +213,14 @@ impl Out {
     /// Hand the caller what is buffered, in chunks of at most [`CHUNK`].
     async fn flush(&mut self) -> Result<(), Stop> {
         for chunk in self.buffer.chunks(CHUNK) {
+            let send = self.sender.send(Ok(chunk.to_vec()));
             let sent = self
                 .cancel
-                .run_until_cancelled(self.sender.send(Ok(chunk.to_vec())));
-            if !matches!(sent.await, Some(Ok(()))) {
-                return Err(Stop::Gone);
+                .run_until_cancelled(tokio::time::timeout(self.idle, send));
+            match sent.await {
+                Some(Ok(Ok(()))) => {}
+                Some(Err(_elapsed)) => return Err(Stop::Idle),
+                None | Some(Ok(Err(_))) => return Err(Stop::Gone),
             }
         }
         self.buffer.clear();

@@ -68,7 +68,7 @@ pub use export::Snapshot;
 pub use feeders::{FeederRow, FeederState, NewFeeder, SealedKey, Synced};
 pub use foods::FoodSet;
 pub use history::{EventRow, NewEvent};
-pub use import::Import;
+pub use import::{Decoders, Import};
 pub use pets::WeightCursor;
 pub use phones::{Invitation, Listed, NewPhone, Recorded, Whose};
 pub use projections::{Boot, ClockSync, Feed, LockChange, PROJECTION_VERSION, Projected, Refresh};
@@ -88,6 +88,12 @@ pub enum Error {
     Migrate(#[from] sqlx::migrate::MigrateError),
     #[error("a stored {0} is out of range")]
     Corrupt(&'static str),
+    /// A value to be written that the store's readers would refuse.
+    #[error("{0} names a value this server does not know")]
+    Unknown(&'static str),
+    /// An imported row that the store's readers would refuse once stored.
+    #[error("its {0} is one this server cannot read")]
+    Unreadable(&'static str),
     #[error("{0} does not fit the database")]
     TooLarge(&'static str),
     #[error("that {0} already exists")]

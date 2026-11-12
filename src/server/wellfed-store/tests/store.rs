@@ -12,7 +12,9 @@ use wellfed_api::{
     MealReminder, Model, Readiness, Role, Settings, Source, Status, TimeFormat, Units, UserId,
     WifiSource, Window,
 };
-use wellfed_store::{Error, FeederRow, NewEvent, NewFeeder, NewUser, SealedKey, Store, Synced};
+use wellfed_store::{
+    Error, Expect, FeederRow, NewEvent, NewFeeder, NewUser, SealedKey, Store, Synced,
+};
 
 async fn fresh() -> (TempDir, Store) {
     let dir = tempfile::tempdir().unwrap();
@@ -461,4 +463,65 @@ fn migrations() -> i64 {
         .unwrap()
         .count();
     i64::try_from(count).unwrap()
+}
+
+/// A feeder's kept alerts have two writers, each naming the version it
+/// read: a write that finds another came first is refused and changes
+/// nothing, so neither writer overwrites the other unseen.
+#[tokio::test]
+async fn a_kept_alerts_write_is_refused_when_another_came_first() {
+    let (_dir, store) = fresh().await;
+    let id = adopt(&store, 1).await;
+
+    assert!(
+        store
+            .put_feeder_alerts(id, Expect::Absent, 1, "a", at(1))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .put_feeder_alerts(id, Expect::Absent, 1, "b", at(2))
+            .await
+            .unwrap(),
+        "a row is there already"
+    );
+    let first = store.feeder_alerts(id).await.unwrap().unwrap();
+    assert_eq!(first.state, "a");
+
+    assert!(
+        store
+            .put_feeder_alerts(id, Expect::At(first.version), 2, "c", at(3))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .put_feeder_alerts(id, Expect::At(first.version), 2, "d", at(4))
+            .await
+            .unwrap(),
+        "the version moved on"
+    );
+    let second = store.feeder_alerts(id).await.unwrap().unwrap();
+    assert_eq!(
+        (second.format, second.state.as_str(), second.updated),
+        (2, "c", at(3))
+    );
+    assert_ne!(second.version, first.version);
+
+    store.delete_feeder_alerts(id).await.unwrap();
+    assert_eq!(store.feeder_alerts(id).await.unwrap(), None);
+    assert!(
+        !store
+            .put_feeder_alerts(id, Expect::At(second.version), 3, "e", at(5))
+            .await
+            .unwrap(),
+        "nothing to update"
+    );
+    assert!(
+        store
+            .put_feeder_alerts(id, Expect::Absent, 3, "f", at(6))
+            .await
+            .unwrap()
+    );
 }

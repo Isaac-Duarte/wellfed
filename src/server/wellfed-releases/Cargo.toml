@@ -26,7 +26,7 @@ ed25519-dalek.workspace = true
 wellfed-signed.workspace = true
 sha2-0-10.workspace = true
 tempfile.workspace = true
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "time"] }
 
 [lints]
 workspace = true

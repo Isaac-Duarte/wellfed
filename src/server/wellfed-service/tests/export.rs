@@ -12,7 +12,7 @@ use uuid::Uuid;
 use wellfed_api::{ClientRole, ExportFormat, FeederId, Model, SampleValue};
 use wellfed_formats::export::{Manifest, Table};
 use wellfed_server_testkit::fixed::FixedClock;
-use wellfed_server_testkit::{TestService, config};
+use wellfed_server_testkit::{TestService, config, until};
 use wellfed_service::{EXPORT_CHUNK, Error, ExportError};
 use wellfed_store::{NewFeeder, NewSample, SealedKey, Store};
 
@@ -133,10 +133,55 @@ async fn an_export_left_unread_ends_with_the_service() {
         .expect("the shutdown does not wait for the reader");
 }
 
+/// A caller that holds the stream without reading (a paused download on a
+/// connection kept open) frees the export slot and its snapshot once the
+/// transfer's idle time passes, and its stream ends cut.
+#[tokio::test]
+async fn an_export_held_unread_ends_and_frees_the_slot() {
+    let mut config = config();
+    config.timing.transfer_idle = Duration::from_millis(200);
+    let server = TestService::start_with(config).await;
+    let store = server.store().open().await;
+    let id = feeder(&store).await;
+    let samples: Vec<_> = (0..20_000).map(sample).collect();
+    store.record_samples(id, &samples).await.unwrap();
+
+    let chunks = server
+        .service()
+        .export(ExportFormat::Csv, "test")
+        .await
+        .unwrap();
+    let mut chunks = pin!(chunks);
+    chunks.try_next().await.unwrap().unwrap();
+
+    until("the held export frees the slot", || async {
+        let second = server.service().export(ExportFormat::Json, "test").await;
+        !matches!(second, Err(Error::Export(ExportError::Running)))
+    })
+    .await;
+    // What was queued, then an error rather than a clean end: a reader
+    // back from its pause never takes the cut archive for a whole one.
+    let mut read = 0;
+    let ended = loop {
+        match chunks.next().await {
+            Some(Ok(chunk)) => read += chunk.len(),
+            other => break other,
+        }
+    };
+    assert!(read <= 4 * EXPORT_CHUNK, "only what was queued");
+    assert!(
+        matches!(ended, Some(Err(Error::Export(ExportError::Stalled)))),
+        "{ended:?}"
+    );
+
+    store.close().await;
+    server.shutdown().await;
+}
+
 #[tokio::test]
 async fn an_upload_gone_quiet_ends_the_import_and_frees_the_writer() {
     let mut config = config();
-    config.timing.upload_idle = Duration::from_millis(200);
+    config.timing.transfer_idle = Duration::from_millis(200);
     let server = TestService::start_with(config).await;
     let service = server.service();
 

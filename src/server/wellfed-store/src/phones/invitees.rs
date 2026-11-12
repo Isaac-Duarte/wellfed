@@ -30,9 +30,10 @@ use sqlx::SqliteConnection;
 use uuid::Uuid;
 use wellfed_api::{ClientRole, FeederId};
 
-use crate::convert::{millis, timestamp};
+use super::{StoredInvitation, stored_invitation};
+use crate::convert::{millis, to_i64};
 use crate::projections::Place;
-use crate::{Error, Result, Store};
+use crate::{Result, Store};
 
 /// How many of a key's first bytes an `invited` event names it by.
 pub(super) const PREFIX: usize = 7;
@@ -213,20 +214,26 @@ impl Store {
         .await?;
         rows.into_iter()
             .map(|row| {
+                let StoredInvitation {
+                    epoch,
+                    seq,
+                    invitee,
+                    inviter,
+                    received,
+                } = stored_invitation(
+                    row.epoch,
+                    row.seq,
+                    row.invitee,
+                    row.inviter,
+                    row.received_ms,
+                )?;
                 Ok(Invitation {
                     feeder,
-                    epoch: u32::try_from(row.epoch)
-                        .map_err(|_| Error::Corrupt("invitation epoch"))?,
-                    seq: u64::try_from(row.seq).map_err(|_| Error::Corrupt("invitation seq"))?,
-                    invitee: row
-                        .invitee
-                        .try_into()
-                        .map_err(|_| Error::Corrupt("invitee prefix"))?,
-                    inviter: row
-                        .inviter
-                        .try_into()
-                        .map_err(|_| Error::Corrupt("inviter prefix"))?,
-                    received: timestamp(row.received_ms)?,
+                    epoch,
+                    seq,
+                    invitee,
+                    inviter,
+                    received,
                     id: row.id,
                 })
             })
@@ -349,7 +356,7 @@ impl Store {
 
         let (epoch, seq) = (
             i64::from(invitation.epoch),
-            i64::try_from(invitation.seq).map_err(|_| Error::Corrupt("invitation seq"))?,
+            to_i64(invitation.seq, "invitation seq")?,
         );
         sqlx::query!(
             "UPDATE invitations SET settled_ms = ? WHERE feeder_id = ? AND epoch = ? AND seq = ?",

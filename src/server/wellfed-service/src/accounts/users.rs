@@ -127,10 +127,10 @@ impl Service {
             sessions,
         };
         changed(self.shared.store.update_user(id, update).await?)?;
-        if let Some(reason) = revocation(&current, &updated) {
-            self.revoke_phones(Whose::User(id), reason).await?;
-        }
 
+        // The change landed: its audit is written before the revokes that
+        // follow it, so a database failure there cannot leave it unsaid.
+        // Revokes a failure leaves owed are taken up at the next start.
         let (account, name) = (updated.id, updated.name.clone());
         if (updated.role, updated.expires) != (current.role, current.expires) {
             let action = AuditAction::UserChanged {
@@ -144,6 +144,9 @@ impl Service {
         if reset {
             self.record(caller, AuditAction::PasswordSet { account, name })
                 .await;
+        }
+        if let Some(reason) = revocation(&current, &updated) {
+            self.revoke_phones(Whose::User(id), reason).await?;
         }
         Ok(updated)
     }

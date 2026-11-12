@@ -617,10 +617,35 @@ impl FeedOwner for SimOwner {
 }
 
 /// How many feeds the journal on `flash` has ever reserved: its high
-/// water, which only a reservation moves. `None` before the journal
-/// exists or when it does not open.
-pub fn reserved(flash: &Rc<Flash>) -> Option<u64> {
+/// water, which only a reservation moves, and 0 before the journal exists.
+/// A journal that does not open is its error, never 0: a test that counts
+/// the feeds that reached the feeder must not read a broken journal as
+/// none.
+pub fn reserved(flash: &Rc<Flash>) -> Result<u64, JournalError> {
     let mut journal = FeedJournal::default();
-    let opened = journal.open(Region::new(flash, storage::JOURNAL), JOURNAL);
-    (opened == JournalError::Ok).then_some(journal.view.recovery.high_water_id)
+    match journal.open(Region::new(flash, storage::JOURNAL), JOURNAL) {
+        JournalError::Ok => Ok(journal.view.recovery.high_water_id),
+        JournalError::Empty => Ok(0),
+        error => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_core::store::slot::SlotIo as _;
+
+    use super::*;
+
+    #[test]
+    fn a_journal_that_does_not_open_is_no_count_of_feeds() {
+        let flash = Flash::memory();
+        assert_eq!(reserved(&flash), Ok(0), "no journal yet");
+
+        let journal = Region::new(&flash, storage::JOURNAL);
+        assert!(journal.program(0, 0, &[0x5a; 64]));
+        assert!(journal.program(1, 0, &[0xa5; 64]));
+
+        let opened = reserved(&flash);
+        assert!(opened.is_err(), "{opened:?}");
+    }
 }

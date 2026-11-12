@@ -84,9 +84,11 @@ pub struct Timing {
     pub sample_wait: Duration,
     /// How long a login lasts after its last use.
     pub session: Duration,
-    /// The longest an import's upload may go without a byte: the import
-    /// holds the one writer meanwhile.
-    pub upload_idle: Duration,
+    /// The longest an import's upload may go without a byte, or an
+    /// export's download without taking one: the import holds the one
+    /// writer meanwhile, and the export the one export slot and a read
+    /// snapshot that keeps the database's log from being checkpointed.
+    pub transfer_idle: Duration,
     /// How an install or a stock restore waits between its steps.
     pub pace: wellfed_mirror::Pace,
 }
@@ -101,7 +103,7 @@ impl Default for Timing {
             answer: mirror.answer,
             sample_wait: mirror.sample_wait,
             session: Duration::from_secs(30 * 24 * 3600),
-            upload_idle: Duration::from_secs(30),
+            transfer_idle: Duration::from_secs(30),
             pace: mirror.pace,
         }
     }

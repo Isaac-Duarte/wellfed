@@ -88,19 +88,19 @@ impl Store {
 }
 
 /// A refill as SQLite holds it.
-struct Raw {
-    seq: i64,
-    id: Uuid,
-    feeder_id: Uuid,
-    at_ms: i64,
-    grams: i64,
-    full_bag: bool,
-    food_id: Option<Uuid>,
-    user_id: Uuid,
+pub(crate) struct Raw {
+    pub(crate) seq: i64,
+    pub(crate) id: Uuid,
+    pub(crate) feeder_id: Uuid,
+    pub(crate) at_ms: i64,
+    pub(crate) grams: i64,
+    pub(crate) full_bag: bool,
+    pub(crate) food_id: Option<Uuid>,
+    pub(crate) user_id: Uuid,
 }
 
 impl Raw {
-    fn refill(self) -> Result<(u64, Refill)> {
+    pub(crate) fn refill(self) -> Result<(u64, Refill)> {
         let refill = Refill {
             id: RefillId(self.id),
             feeder: FeederId(self.feeder_id),

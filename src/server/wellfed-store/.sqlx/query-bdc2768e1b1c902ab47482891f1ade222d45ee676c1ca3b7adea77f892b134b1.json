@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "UPDATE phone_keys SET revoke = 'token_revoked', revoke_ms = ?\n               WHERE revoke IS NULL AND token_id IS NOT NULL\n                 AND token_id NOT IN (SELECT id FROM tokens)\n               RETURNING feeder_id AS \"feeder_id: Uuid\"",
+  "query": "UPDATE phone_keys SET revoke = ?, revoke_ms = ?\n               WHERE revoke IS NULL AND token_id IS NOT NULL\n                 AND token_id NOT IN (SELECT id FROM tokens)\n               RETURNING feeder_id AS \"feeder_id: Uuid\"",
   "describe": {
     "columns": [
       {
@@ -16,11 +16,11 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false
     ]
   },
-  "hash": "8b242ba41a1468d06e3154351787e985a372f3c791b9198e8d5a4a929205b1bd"
+  "hash": "bdc2768e1b1c902ab47482891f1ade222d45ee676c1ca3b7adea77f892b134b1"
 }

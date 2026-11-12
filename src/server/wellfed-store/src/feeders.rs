@@ -268,32 +268,45 @@ impl Store {
         let Some(row) = row else {
             return Ok(FeederState::default());
         };
-        Ok(FeederState {
-            status: cached(row.status, row.status_ms, "status")?,
-            settings: cached(row.settings, row.settings_ms, "settings")?,
-            plans: cached(row.plans, row.plans_ms, "plans")?,
-        })
+        state(
+            (row.status, row.status_ms),
+            (row.settings, row.settings_ms),
+            (row.plans, row.plans_ms),
+        )
     }
 }
 
-/// A device's columns, as both reads select them.
-struct Selected {
-    id: Uuid,
-    home_id: Uuid,
-    kind: String,
-    model: String,
-    identity: Vec<u8>,
-    name: String,
-    role: String,
-    address: Option<String>,
-    key_nonce: Vec<u8>,
-    key_sealed: Vec<u8>,
-    synced: Option<i64>,
-    epoch: Option<i64>,
-    archived_ms: Option<i64>,
+/// A device's cached state: each value's JSON and when it was read.
+pub(crate) fn state(
+    (status, status_ms): (Option<String>, Option<i64>),
+    (settings, settings_ms): (Option<String>, Option<i64>),
+    (plans, plans_ms): (Option<String>, Option<i64>),
+) -> Result<FeederState> {
+    Ok(FeederState {
+        status: cached(status, status_ms, "status")?,
+        settings: cached(settings, settings_ms, "settings")?,
+        plans: cached(plans, plans_ms, "plans")?,
+    })
 }
 
-fn feeder_row(row: Selected) -> Result<FeederRow> {
+/// A device's columns, as every read selects them.
+pub(crate) struct Selected {
+    pub(crate) id: Uuid,
+    pub(crate) home_id: Uuid,
+    pub(crate) kind: String,
+    pub(crate) model: String,
+    pub(crate) identity: Vec<u8>,
+    pub(crate) name: String,
+    pub(crate) role: String,
+    pub(crate) address: Option<String>,
+    pub(crate) key_nonce: Vec<u8>,
+    pub(crate) key_sealed: Vec<u8>,
+    pub(crate) synced: Option<i64>,
+    pub(crate) epoch: Option<i64>,
+    pub(crate) archived_ms: Option<i64>,
+}
+
+pub(crate) fn feeder_row(row: Selected) -> Result<FeederRow> {
     let model = model(&row.model)?;
     // The kind is the model's, kept beside it for queries.
     if row.kind != model.kind().name() {

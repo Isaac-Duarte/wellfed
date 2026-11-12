@@ -155,6 +155,38 @@ async fn a_file_damaged_on_disk_is_neither_exported_nor_restored_until_kept_agai
     assert!(stock.backup(FEEDER).await.is_ok());
 }
 
+/// A record that no longer parses is written again by the next verified
+/// copy: the pins fix the only copy it can be, so it never blocks the
+/// feeder's backups for good.
+#[tokio::test]
+async fn a_garbled_record_is_written_again_by_the_next_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let releases = open(&dir, None).await;
+    let stock = releases.stock();
+    stock
+        .keep(FEEDER, Taken::Bank(given_way()), now())
+        .await
+        .unwrap();
+    let record = dir
+        .path()
+        .join("stock")
+        .join("ab".repeat(32))
+        .join("stock-1.1.15.json");
+    std::fs::write(&record, b"{").unwrap();
+    assert!(matches!(
+        stock.backup(FEEDER).await,
+        Err(Error::Entry { .. })
+    ));
+
+    let (kept, _) = stock
+        .keep(FEEDER, Taken::Bank(given_way()), now())
+        .await
+        .unwrap();
+
+    assert_eq!(kept.state, StockBackupState::Verified);
+    assert!(stock.backup(FEEDER).await.is_ok());
+}
+
 /// The pins every test cache uses are a synthetic stock's, which the real
 /// pins refuse: no test can keep or restore anything a real server would
 /// not.

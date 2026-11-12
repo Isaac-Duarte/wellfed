@@ -294,9 +294,9 @@ The server keeps each feeder's own stock firmware, the copy promotion would othe
 
 - **The archive** (`wellfed_formats::export`, format version 4) is a POSIX tar: `manifest.json` first, in canonical JSON with each table's row count, size and SHA-256, then a file per table, `<table>.jsonl` from `GET /export` or `<table>.csv` with `?format=csv`. A quiet server exports the same bytes each time.
 - **No secrets.** Accounts go without their password hashes and feeders without the server's sealed key; sessions and tokens aren't exported.
-- **Streaming.** The export reads one snapshot twice, once to count and hash each table and once to write it, so memory stays flat however large the tables. One export runs at a time (`409 export_running`).
+- **Streaming.** The export reads one snapshot twice, once to count and hash each table and once to write it, so memory stays flat however large the tables. One export runs at a time (`409 export_running`). A download that takes nothing for the transfer's idle time, or a server stopping, ends the body in an error, never a clean end, so a cut archive is never taken for a whole one.
 - **Same build.** Until the first server release the archive changes with the tables, in place: an archive imports only into a server of the build that wrote it, and its version is not raised ([upgrade it](running.md#upgrade-it)).
-- **`POST /import`** takes a JSON archive onto a fresh server in one transaction. Like `/setup`, it needs no login and works only while no account exists (`409 import_closed`); anything wrong rolls it all back (`422 archive_invalid`).
+- **`POST /import`** takes a JSON archive onto a fresh server in one transaction. Like `/setup`, it needs no login and works only while no account exists (`409 import_closed`); anything wrong rolls it all back (`422 archive_invalid`). Each row is read by the store's own readers before it goes in, so a value the server could not read back (an unknown code, a number too wide, columns that contradict each other) refuses the archive rather than committing a server that cannot start.
 - **After an import** no account has a password, so `wellfed-server reset-owner` gives an owner a temporary one, and every feeder is archived until adopted again, which continues its history under its id.
 
 ## Traces, statistics and the debug log

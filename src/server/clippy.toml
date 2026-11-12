@@ -19,6 +19,12 @@ avoid-breaking-exported-api = false
 # that, so it is refused too. `SystemClock` carries an `#[expect]` for this
 # lint, so the build fails if the rule stops applying. `allow-invalid` keeps a
 # uuid path quiet in a crate that builds uuid without the feature defining it.
+#
+# One random source, for the same reason: the server draws keys, tokens,
+# request ids and challenges only through `wellfed_mirror::Random`, whose
+# `SystemRandom` is the single exception and carries the `#[expect]`, so a
+# test's `SeededRandom` repeats every draw. `allow-invalid` keeps a path
+# quiet in a crate that does not build that library.
 disallowed-methods = [
     { path = "jiff::Timestamp::now", reason = "read the time from the injected `Clock`" },
     { path = "jiff::Zoned::now", reason = "read the time from the injected `Clock` and the configured zone" },
@@ -28,4 +34,21 @@ disallowed-methods = [
     { path = "std::time::Instant::elapsed", reason = "time timeouts with `tokio::time::Instant`, which a paused test runtime controls" },
     { path = "uuid::Uuid::now_v7", reason = "build the id from the injected `Clock`'s time", allow-invalid = true },
     { path = "uuid::Timestamp::now", reason = "build the id from the injected `Clock`'s time", allow-invalid = true },
+    { path = "getrandom::fill", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "getrandom::fill_uninit", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "getrandom::u32", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "getrandom::u64", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "uuid::Uuid::new_v4", reason = "build the id from the injected `Random`", allow-invalid = true },
+    { path = "rand::random", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "rand::rng", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "rand::thread_rng", reason = "draw from the injected `Random`", allow-invalid = true },
+]
+# The system generators themselves, so one cannot be held and drawn from
+# later: rand's thread generator, the system one by its rand 0.10 and
+# getrandom 0.4 name (`SysRng`), and rand_core 0.6's `OsRng`, which other
+# dependencies still build.
+disallowed-types = [
+    { path = "rand::rngs::ThreadRng", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "getrandom::SysRng", reason = "draw from the injected `Random`", allow-invalid = true },
+    { path = "rand_core::OsRng", reason = "draw from the injected `Random`", allow-invalid = true },
 ]

@@ -20,7 +20,7 @@ impl Store {
         let name = install
             .target
             .name()
-            .ok_or(Error::Corrupt("install target"))?;
+            .ok_or(Error::Unknown("install target"))?;
         let name = name.0.as_slice();
         let user = install.by.0;
         let started = millis(install.started);
@@ -118,19 +118,19 @@ impl Store {
 }
 
 /// A row as SQLite holds it.
-struct Raw {
-    id: Uuid,
-    feeder_id: Uuid,
-    target: String,
-    release_id: Vec<u8>,
-    version: i64,
-    user_id: Uuid,
-    started_ms: i64,
-    state: String,
-    written: i64,
-    image_len: i64,
-    failure: Option<String>,
-    finished_ms: Option<i64>,
+pub(crate) struct Raw {
+    pub(crate) id: Uuid,
+    pub(crate) feeder_id: Uuid,
+    pub(crate) target: String,
+    pub(crate) release_id: Vec<u8>,
+    pub(crate) version: i64,
+    pub(crate) user_id: Uuid,
+    pub(crate) started_ms: i64,
+    pub(crate) state: String,
+    pub(crate) written: i64,
+    pub(crate) image_len: i64,
+    pub(crate) failure: Option<String>,
+    pub(crate) finished_ms: Option<i64>,
 }
 
 impl TryFrom<Raw> for Install {

@@ -60,6 +60,10 @@ pub trait Random: Send + Sync + 'static {
 pub struct SystemRandom;
 
 impl Random for SystemRandom {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one place the server draws from the system's randomness"
+    )]
     fn fill(&self, out: &mut [u8]) -> Result<(), RandomFailed> {
         getrandom::fill(out).map_err(|_| RandomFailed)
     }

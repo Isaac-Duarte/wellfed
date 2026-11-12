@@ -49,11 +49,14 @@ pub const WAIT: Duration = Duration::from_secs(10);
 
 /// An event's body as the mirror stores it, the feeder's own encoding,
 /// for a test that writes history into the store with no feeder behind it.
+/// Only a body the feeder's ring could hold encodes: the mirror reads a
+/// stored body back padded to that size, and any longer one as undecodable.
 pub fn stored_body(body: EventBody) -> Vec<u8> {
-    let mut raw = [0; 64];
+    let mut raw = [0; wellfed_proto::api::EVENT_BODY_MAX];
     let body = wellfed_proto::api::EventBody::try_from(body)
         .expect("a test's body names only what this build knows");
-    let len = wellfed_proto::encode(&body, &mut raw).expect("an event body fits 64 bytes");
+    let len = wellfed_proto::encode(&body, &mut raw)
+        .expect("an event body fits the feeder's ring, as every real one does");
     raw[..len].to_vec()
 }
 

@@ -13,7 +13,7 @@
 //! no decoder of its own (the bodies are the feeder's encoding, which the
 //! mirror owns), so the caller passes one.
 
-mod read;
+pub(crate) mod read;
 mod reread;
 
 pub(crate) use read::FeedRow;

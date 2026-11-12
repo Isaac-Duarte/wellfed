@@ -36,7 +36,7 @@ pub fn config() -> Config {
             answer: Duration::from_secs(12),
             sample_wait: Duration::from_millis(100),
             session: Duration::from_secs(3600),
-            upload_idle: Duration::from_secs(30),
+            transfer_idle: Duration::from_secs(30),
             // The simulator writes a sector within a pass or two, and
             // restarts a second after it answers a give-way, as the update
             // stage does, where the board takes seconds more.
@@ -256,7 +256,11 @@ impl TestService {
         .await;
     }
 
-    /// Wait until the server holds the feeder's events through `seq`.
+    /// Wait until the server holds the feeder's events through `seq`, in
+    /// whichever history epoch it holds. A test that wipes the feeder's
+    /// flash between two waits crosses into a new epoch, whose numbers start
+    /// again, and this would find the old epoch's `seq` at once: it must
+    /// wait on what it expects of the new history instead.
     pub async fn synced(&self, id: FeederId, seq: u64) {
         until(
             &format!("the server holds events through {seq}"),
@@ -271,7 +275,8 @@ impl TestService {
     /// Wait until the server holds every event the feeder had when its
     /// status was read live. Online alone is not enough: the history is
     /// subscribed during the connect sequence, but its backlog is stored
-    /// one event at a time after the feeder shows online.
+    /// one event at a time after the feeder shows online. The status names
+    /// no epoch, so this holds only within one, as [`Self::synced`] does.
     pub async fn caught_up(&self, id: FeederId) {
         let newest = std::cell::Cell::new(None);
         until("the feeder's status is read live", || async {

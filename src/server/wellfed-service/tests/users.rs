@@ -226,7 +226,7 @@ fn a_user_changes_their_own_password() {
         };
         assert!(matches!(
             service
-                .change_password(&vic.clone().into(), Some(&here), wrong)
+                .change_password(&vic.clone().into(), Some(&here), wrong, HERE)
                 .await,
             Err(Error::Account(AccountError::BadCredentials))
         ));
@@ -236,7 +236,7 @@ fn a_user_changes_their_own_password() {
         };
         assert!(matches!(
             service
-                .change_password(&vic.clone().into(), Some(&here), short)
+                .change_password(&vic.clone().into(), Some(&here), short, HERE)
                 .await,
             Err(Error::Invalid(Invalid::Password))
         ));
@@ -247,7 +247,7 @@ fn a_user_changes_their_own_password() {
             password: "my own secret".into(),
         };
         service
-            .change_password(&vic.clone().into(), Some(&here), change)
+            .change_password(&vic.clone().into(), Some(&here), change, HERE)
             .await
             .unwrap();
         assert!(service.authenticate(&here).await.unwrap().is_some());
@@ -548,7 +548,7 @@ fn a_password_change_checked_before_a_reset_does_not_undo_it() {
             current: ada_login().password,
             password: "a password of mine".into(),
         };
-        let changed = service.change_password(&ada, None, change).await;
+        let changed = service.change_password(&ada, None, change, HERE).await;
         assert!(
             matches!(changed, Err(Error::Account(AccountError::BadCredentials))),
             "{changed:?}"

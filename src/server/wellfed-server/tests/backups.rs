@@ -61,6 +61,7 @@ fn an_owner_takes_backups_and_the_oldest_past_the_count_go() {
         assert_eq!(files, ["README.txt", &taken[1], &taken[2]]);
         let readme = std::fs::read_to_string(dir.join("README.txt")).unwrap();
         assert!(readme.contains("keys/server.key"), "{readme}");
+        assert!(readme.contains("stock/"), "{readme}");
         let mode = |path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(dir.clone()), 0o700);
         assert_eq!(mode(dir.join(&taken[2])), 0o600);

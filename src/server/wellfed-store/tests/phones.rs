@@ -7,10 +7,12 @@ use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
-    ClientRole, CoreEvent, EventBody, FeederId, Hex, Home, HomeId, Model, RevokeReason, TimeFormat,
-    TokenId, Units, UserId,
+    ClientRole, CoreEvent, EventBody, FeederId, Hex, Home, HomeId, Model, RevokeReason, Role,
+    TimeFormat, TokenId, Units, UserId,
 };
-use wellfed_store::{Listed, NewEvent, NewFeeder, NewPhone, Recorded, SealedKey, Store, Whose};
+use wellfed_store::{
+    Listed, NewEvent, NewFeeder, NewPhone, NewToken, NewUser, Recorded, SealedKey, Store, Whose,
+};
 
 fn at(ms: i64) -> Timestamp {
     Timestamp::from_millisecond(ms).unwrap()
@@ -104,6 +106,120 @@ async fn the_reconcile_marks_a_key_whose_account_is_gone() {
         (RevokeReason::Deleted, at(20))
     );
     assert!(store.reconcile_phones(at(30)).await.unwrap().is_empty());
+}
+
+/// Each other change that leaves a key on an account or token that may not
+/// hold one is marked with its own reason: a token gone, an account now a
+/// viewer, a member holding an owner's key, an account or token with an
+/// expiry.
+#[tokio::test]
+async fn the_reconcile_marks_each_change_with_its_reason() {
+    /// An account and token as a change left them, and the key it holds.
+    struct Case {
+        what: &'static str,
+        role: Role,
+        expires: Option<Timestamp>,
+        /// Whether the token is still stored.
+        stored: bool,
+        token_expires: Option<Timestamp>,
+        key_role: ClientRole,
+        reason: RevokeReason,
+    }
+    let member = Case {
+        what: "",
+        role: Role::Member,
+        expires: None,
+        stored: true,
+        token_expires: None,
+        key_role: ClientRole::Member,
+        reason: RevokeReason::Demoted,
+    };
+    let cases = [
+        Case {
+            what: "token gone",
+            stored: false,
+            reason: RevokeReason::TokenRevoked,
+            ..member
+        },
+        Case {
+            what: "a viewer",
+            role: Role::Viewer,
+            ..member
+        },
+        Case {
+            what: "a member's owner key",
+            key_role: ClientRole::Owner,
+            ..member
+        },
+        Case {
+            what: "an account expiring",
+            expires: Some(at(500)),
+            reason: RevokeReason::Expiring,
+            ..member
+        },
+        Case {
+            what: "a token expiring",
+            token_expires: Some(at(500)),
+            reason: RevokeReason::Expiring,
+            ..member
+        },
+    ];
+    for case in cases {
+        let Case {
+            what,
+            role,
+            expires,
+            stored,
+            token_expires,
+            key_role,
+            reason,
+        } = case;
+        let (_dir, store, feeder) = fresh().await;
+        let user = UserId(Uuid::from_u128(0x50));
+        let token = TokenId(Uuid::from_u128(7));
+        store
+            .create_user(NewUser {
+                id: user,
+                name: "bob",
+                password_hash: "",
+                role,
+                expires,
+                created: at(0),
+            })
+            .await
+            .unwrap();
+        if stored {
+            store
+                .create_token(NewToken {
+                    id: token,
+                    hash: &[3; 32],
+                    user,
+                    name: "phone",
+                    created: at(0),
+                    expires: token_expires,
+                })
+                .await
+                .unwrap();
+        }
+        let key = NewPhone {
+            role: key_role,
+            ..phone(feeder, 2, 7, 100)
+        };
+        store.record_phone(&key).await.unwrap();
+
+        assert_eq!(
+            store.reconcile_phones(at(20)).await.unwrap(),
+            [feeder],
+            "{what}"
+        );
+        let marked = store.phone(feeder, &[2; 32]).await.unwrap().unwrap();
+        let revoking = marked.revoking.unwrap();
+        assert_eq!(
+            (revoking.reason, revoking.since),
+            (reason, at(20)),
+            "{what}"
+        );
+    }
 }
 
 /// The feeder reports that key `invitee` joined through key `inviter`'s
