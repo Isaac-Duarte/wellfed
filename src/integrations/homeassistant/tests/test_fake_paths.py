@@ -255,8 +255,10 @@ async def test_a_lost_feed_settled_by_its_fed_keeps_its_number(
         fake.update(bridge.UpdateKind.Answered, answered=4),
         fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=lost),
     )
+    # In order: the lost feed is kept, its number comes, then it settles.
+    await _until(hass, lambda: session.kept.answered == [4])
     await _until(hass, lambda: session.kept.pending == [])
-    assert session.kept.answered == [4]
+    assert _issue(hass, "uncertain_feed") is None
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
