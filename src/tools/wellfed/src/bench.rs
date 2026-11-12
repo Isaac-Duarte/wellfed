@@ -208,11 +208,13 @@ impl Bench {
         .into())
     }
 
-    async fn send(&self, method: Method, path: &str, body: Vec<u8>) -> Result<(StatusCode, Bytes)> {
+    /// A connection to the server and the request for it, built. Nothing
+    /// has gone yet, so a failure here leaves the feeder untouched.
+    async fn prepare(&self, method: Method, path: &str, body: Vec<u8>) -> Result<Prepared> {
         let stream = UnixStream::connect(&self.socket)
             .await
             .with_context(|| format!("reach the bench server on {}", self.socket.display()))?;
-        let (mut sender, connection) =
+        let (sender, connection) =
             hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
         tokio::spawn(connection);
 
@@ -222,10 +224,11 @@ impl Bench {
             .header(hyper::header::HOST, "bench")
             .header(hyper::header::CONTENT_TYPE, "application/json")
             .body(Full::new(Bytes::from(body)))?;
-        let response = sender.send_request(request).await?;
-        let status = response.status();
-        let body = response.into_body().collect().await?.to_bytes();
-        Ok((status, body))
+        Ok(Prepared { sender, request })
+    }
+
+    async fn send(&self, method: Method, path: &str, body: Vec<u8>) -> Result<(StatusCode, Bytes)> {
+        self.prepare(method, path, body).await?.exchange().await
     }
 
     /// The answer's body when it is `OK`; the session's reason when it
@@ -239,14 +242,7 @@ impl Bench {
         let (status, body) = self.send(method, path, body).await?;
         match status {
             StatusCode::OK => Ok(serde_json::from_slice(&body)?),
-            StatusCode::SERVICE_UNAVAILABLE | StatusCode::CONFLICT => {
-                let refused: DeviceUnavailable = serde_json::from_slice(&body)?;
-                Err(refused.into())
-            }
-            status => bail!(
-                "the bench server answered {status}: {}",
-                String::from_utf8_lossy(&body)
-            ),
+            status => Err(not_carried(status, &body)),
         }
     }
 
@@ -500,13 +496,78 @@ impl Lent {
             id: crate::device::random()?,
             op: op.clone(),
         })?;
-        match self.bench.call(Method::POST, "/device/ask", body).await? {
-            Asked::Answered { answer } => Ok(answer),
-            Asked::Uncertain if crate::device::writes(op) => {
-                Err(crate::uncertain("no answer came through the bench server"))
+        let prepared = self
+            .bench
+            .prepare(Method::POST, "/device/ask", body)
+            .await?;
+        asked(op, prepared.exchange().await)
+    }
+}
+
+/// A request to the bench server, ready to go.
+struct Prepared {
+    sender: hyper::client::conn::http1::SendRequest<Full<Bytes>>,
+    request: Request<Full<Bytes>>,
+}
+
+impl Prepared {
+    /// Hand the request to the server and read its whole answer. From the
+    /// hand-over on, a failure says nothing of whether the server acted on
+    /// it.
+    async fn exchange(mut self) -> Result<(StatusCode, Bytes)> {
+        let response = self.sender.send_request(self.request).await?;
+        let status = response.status();
+        let body = response.into_body().collect().await?.to_bytes();
+        Ok((status, body))
+    }
+}
+
+/// An answer other than `OK`: the session's reason when it cannot carry
+/// the request, or the server's own status.
+fn not_carried(status: StatusCode, body: &[u8]) -> anyhow::Error {
+    match status {
+        StatusCode::SERVICE_UNAVAILABLE | StatusCode::CONFLICT => {
+            match serde_json::from_slice::<DeviceUnavailable>(body) {
+                Ok(refused) => refused.into(),
+                Err(error) => error.into(),
             }
-            Asked::Uncertain => bail!("no answer came through the bench server"),
         }
+        status => anyhow::anyhow!(
+            "the bench server answered {status}: {}",
+            String::from_utf8_lossy(body)
+        ),
+    }
+}
+
+/// What `op`, handed to the bench server, came to: `exchanged` is the
+/// exchange's own result. Only the session's refusal to carry it says it
+/// never reached the feeder; a write whose answer was lost on the way, or
+/// came in a form this build cannot read, may have run.
+fn asked(op: &Op, exchanged: Result<(StatusCode, Bytes)>) -> Result<Answer> {
+    let writes = crate::device::writes(op);
+    let lost = |error: anyhow::Error| {
+        if writes {
+            crate::uncertain(format!(
+                "the bench server's answer was lost or unreadable ({error:#})"
+            ))
+        } else {
+            error
+        }
+    };
+
+    let (status, body) = exchanged.map_err(lost)?;
+    if status != StatusCode::OK {
+        let error = not_carried(status, &body);
+        // A server that failed while it held the request may have sent it.
+        let held = status.is_server_error() && status != StatusCode::SERVICE_UNAVAILABLE;
+        return Err(if held { lost(error) } else { error });
+    }
+    match serde_json::from_slice(&body).map_err(|error| lost(error.into()))? {
+        Asked::Answered { answer } => Ok(answer),
+        Asked::Uncertain if writes => {
+            Err(crate::uncertain("no answer came through the bench server"))
+        }
+        Asked::Uncertain => bail!("no answer came through the bench server"),
     }
 }
 
@@ -548,6 +609,61 @@ mod tests {
     use wellfed_model::{CoreEvent, Event, EventBody, FeederEvent};
 
     use super::*;
+
+    /// Once the server holds a write, an answer lost on the way, one this
+    /// build cannot read, or the server's own failure may follow a write
+    /// that ran: uncertain. The session's refusal to carry it, and a read,
+    /// are plain failures.
+    #[test]
+    fn a_write_whose_bench_answer_is_lost_is_uncertain() {
+        let feed = Op::Feed { portions: 1 };
+        let uncertain = |result: Result<Answer>| {
+            let error = result.unwrap_err();
+            error.downcast_ref::<crate::Uncertain>().is_some()
+        };
+        let answered = |status, body: Vec<u8>| Ok((status, Bytes::from(body)));
+        fn json(value: &impl serde::Serialize) -> Vec<u8> {
+            serde_json::to_vec(value).unwrap()
+        }
+
+        assert!(uncertain(asked(
+            &feed,
+            Err(anyhow::anyhow!("connection reset"))
+        )));
+        assert!(uncertain(asked(
+            &feed,
+            answered(StatusCode::OK, b"{\"newer\":1}".to_vec())
+        )));
+        assert!(uncertain(asked(
+            &feed,
+            answered(StatusCode::OK, json(&Asked::Uncertain))
+        )));
+        assert!(uncertain(asked(
+            &feed,
+            answered(StatusCode::INTERNAL_SERVER_ERROR, Vec::new())
+        )));
+
+        let paused = DeviceUnavailable {
+            reason: Unavailable::Paused {
+                pause: Pause::PowerOff,
+            },
+        };
+        let refused = asked(
+            &feed,
+            answered(StatusCode::SERVICE_UNAVAILABLE, json(&paused)),
+        );
+        assert!(!uncertain(refused));
+        assert!(!uncertain(asked(
+            &Op::Status,
+            Err(anyhow::anyhow!("connection reset"))
+        )));
+
+        let feeding = Asked::Answered {
+            answer: Answer::Feeding { feed: 7 },
+        };
+        let started = asked(&feed, answered(StatusCode::OK, json(&feeding)));
+        assert_eq!(started.unwrap(), Answer::Feeding { feed: 7 });
+    }
     use crate::device::Connection;
     use crate::{Target, connect_via};
 
