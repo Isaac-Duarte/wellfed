@@ -97,6 +97,26 @@ class FakeServerSession with FakeOpaque implements ServerSession {
       });
 
   @override
+  Future<ServerPet> updatePet({
+    required String id,
+    required String name,
+    required Species species,
+    String? birthDate,
+    int? dailyKcal,
+  }) => home.write('update pet $id $name', () {
+    final pet = ServerPet(
+      id: id,
+      name: name,
+      species: species,
+      birthDate: birthDate,
+      dailyKcal: dailyKcal,
+      feeders: const [],
+    );
+    home.pets = home.pets.map((each) => each.id == id ? pet : each).toList();
+    return pet;
+  });
+
+  @override
   Future<void> deletePet({required String id}) =>
       home.write('delete pet $id', () => home.pets = [...home.pets.where((pet) => pet.id != id)]);
 
@@ -257,6 +277,9 @@ class FakeHome {
   /// What every read and change throws while set.
   ServerError? fails;
 
+  /// What the next change throws after it ran, its answer lost on the way.
+  ServerError? lost;
+
   /// Every change asked, in order.
   final changes = <String>[];
 
@@ -273,7 +296,12 @@ class FakeHome {
     changes.add(change);
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (fails case final error?) throw error;
-    return made();
+    final T result = made();
+    final ServerError? gone = lost;
+    lost = null;
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
+    if (gone != null) throw gone;
+    return result;
   }
 }
 

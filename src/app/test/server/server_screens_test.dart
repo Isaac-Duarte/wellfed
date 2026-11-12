@@ -130,7 +130,91 @@ void main() {
 
     session.home.fails = serverError(ServerErrorKind.foodInUse);
     expect(await flow.deleteFood('f1'), isFalse);
-    expect(flow.state.error?.kind, ServerErrorKind.foodInUse);
+    expect(flow.state.problem?.error.kind, ServerErrorKind.foodInUse);
+    expect(flow.state.problem?.mayHaveRun, isFalse);
+  });
+
+  test('a new pet whose answer was lost is read back and said to be unsure, never added again', () async {
+    final session = FakeServerSession();
+    final flow = HouseholdFlow(session);
+    addTearDown(flow.dispose);
+    await flow.load();
+
+    session.home.lost = serverError(ServerErrorKind.interrupted);
+    expect(await flow.addPet(name: 'Tom', species: Species.cat), isFalse);
+    expect(flow.state.pets.map((pet) => pet.name), ['Tom'], reason: 'the read after it shows it took');
+    expect(flow.state.problem?.mayHaveRun, isTrue);
+    expect(flow.state.busy, isFalse);
+    expect(session.home.changes, ['create pet Tom']);
+
+    // A server that said it failed partway reads the same way.
+    session.home.lost = serverError(ServerErrorKind.serverFailed);
+    expect(await flow.saveFood(brand: 'Acme', name: 'Fish', kcalPerKg: 3500, bagGrams: 2000), isFalse);
+    expect(flow.state.foods.map((food) => food.name), ['Fish']);
+    expect(flow.state.problem?.mayHaveRun, isTrue);
+  });
+
+  testWidgets('a pet edit shows the new pet, and a refused one says why', (tester) async {
+    _phone(tester);
+    final session = FakeServerSession();
+    session.home.pets = const [_cat];
+    await tester.pumpWidget(themed(PetScreen(flow: PetFlow(session, _cat), feeders: const [])));
+    await settle(tester);
+
+    session.home.fails = serverError(ServerErrorKind.invalid);
+    await tester.tap(find.text('Edit'));
+    await settle(tester);
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(find.textContaining('The server did not take that'), findsOneWidget);
+
+    session.home.fails = null;
+    await tester.tap(find.text('Edit'));
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, 'Miso'), 'Tom');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(find.text('Tom'), findsOneWidget);
+    expect(find.textContaining('The server did not take that'), findsNothing);
+  });
+
+  testWidgets('removing a pet closes its screen, and a refused removal stays and says why', (tester) async {
+    _phone(tester);
+    final session = FakeServerSession();
+    session.home.pets = const [_cat];
+    await tester.pumpWidget(
+      themed(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => PetScreen(flow: PetFlow(session, _cat), feeders: const []),
+              ),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await settle(tester);
+
+    Future<void> remove() async {
+      await tester.tap(find.text('Remove'));
+      await settle(tester);
+      await tester.tap(find.widgetWithText(TextButton, 'Remove').last);
+      await settle(tester);
+    }
+
+    session.home.fails = serverError(ServerErrorKind.forbidden);
+    await remove();
+    expect(find.text('Your account may not do that.'), findsOneWidget);
+
+    session.home.fails = null;
+    await remove();
+    expect(find.text('Open'), findsOneWidget);
+    expect(session.home.pets, isEmpty);
   });
 
   testWidgets('an uncalibrated feeder counts portions: no grams and no food left', (tester) async {
@@ -185,13 +269,10 @@ void main() {
         unweighed: [ServerFeederPortions(feeder: 'id-k', portions: 3, uncertainPortions: 0)],
       ),
     ];
-    final household = HouseholdFlow(session);
-    addTearDown(household.dispose);
     await tester.pumpWidget(
       themed(
         PetScreen(
           flow: PetFlow(session, _cat),
-          household: household,
           feeders: const [ListedFeeder(id: 'id-k', identity: 'aa', name: 'Kitchen')],
         ),
       ),

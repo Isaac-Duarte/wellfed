@@ -73,13 +73,10 @@ void main() {
 
       testWidgets('a pet', (tester) async {
         final FakeServerSession session = _home();
-        final household = HouseholdFlow(session);
-        addTearDown(household.dispose);
         await _show(
           tester,
           PetScreen(
             flow: PetFlow(session, _cat),
-            household: household,
             feeders: const [ListedFeeder(id: 'id-k', identity: 'aa', name: 'Kitchen')],
           ),
           brightness,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
+import 'package:wellfed/state/server/records.dart';
 import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/desktop.dart';
@@ -39,6 +40,12 @@ String serverErrorWords(ServerError error) => switch (error.kind) {
     'Plain http:// would send your password unencrypted beyond the home network. '
         "Use the server's https:// address, or its home-network address like 192.168.1.20:8080.",
 };
+
+/// What a records screen's last read or change ran into, in a sentence. A
+/// change that may have run says so: the list shows what the server holds.
+String recordProblemWords(RecordProblem problem) => problem.mayHaveRun
+    ? 'The server may or may not have taken that. What it holds now is shown here; check it before you try again.'
+    : serverErrorWords(problem.error);
 
 /// What an account may do, in a word.
 String roleWords(ServerRole role) => switch (role) {

@@ -88,11 +88,11 @@ class _FeederFoodScreenState extends State<FeederFoodScreen> {
       return ServerPage(
         title: '${widget.name}: food',
         children: [
-          if (state.error case final error?) ...[
-            Notice(tone: Tone.fault, text: serverErrorWords(error)),
+          if (state.problem case final problem?) ...[
+            Notice(tone: Tone.fault, text: recordProblemWords(problem)),
             const SizedBox(height: Space.s3),
           ],
-          if (food == null && state.error == null) const Muted('Reading…'),
+          if (food == null && state.problem == null) const Muted('Reading…'),
           if (food != null) ...[
             const SectionLabel('Holds'),
             Text(switch (food.current) {

@@ -22088,8 +22088,9 @@ class ServerSessionImpl extends RustOpaque implements ServerSession {
       RustLib.instance.api.crateApiServerServerSessionAccount(that: this);
 
   /// Record a refill of `feeder` made now. The server takes a refill once
-  /// per call and keys none, so a call whose answer was lost is read back
-  /// from [`Self::refills`] before it is made again.
+  /// per call and keys none, so one whose answer was lost may be recorded
+  /// all the same: the screen reads [`Self::refills`] again and shows it,
+  /// and never makes it again by itself.
   Future<ServerRefill> addRefill({
     required String feeder,
     required NewRefill refill,
@@ -22100,8 +22101,8 @@ class ServerSessionImpl extends RustOpaque implements ServerSession {
   );
 
   /// Log `grams` (1-200000), weighed at `at_ms`, or now. As with a
-  /// refill, a call whose answer was lost is read back before it is made
-  /// again.
+  /// refill, one whose answer was lost is read back, never made again by
+  /// itself.
   Future<ServerWeight> addWeight({
     required String pet,
     required int grams,

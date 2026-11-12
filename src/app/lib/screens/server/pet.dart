@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:wellfed/screens/server/household.dart';
 import 'package:wellfed/screens/server/server_words.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
-import 'package:wellfed/state/server/household.dart';
 import 'package:wellfed/state/server/pet.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
@@ -16,10 +15,9 @@ import 'package:wellfed/widgets/when.dart';
 /// from. Grams and calories show only for feeders whose portion size is set;
 /// until then the days count portions.
 class PetScreen extends StatefulWidget {
-  const PetScreen({super.key, required this.flow, required this.household, required this.feeders});
+  const PetScreen({super.key, required this.flow, required this.feeders});
 
   final PetFlow flow;
-  final HouseholdFlow household;
 
   /// The server's feeders, to choose which the pet eats from.
   final List<ListedFeeder> feeders;
@@ -32,21 +30,34 @@ class _PetScreenState extends State<PetScreen> {
   @override
   void initState() {
     super.initState();
+    widget.flow.addListener(_changed);
     unawaited(widget.flow.load());
   }
 
   @override
   void dispose() {
-    widget.flow.dispose();
+    widget.flow
+      ..removeListener(_changed)
+      ..dispose();
     super.dispose();
+  }
+
+  bool _left = false;
+
+  /// The server removed the pet: nothing is left to show. The screen stays
+  /// mounted while it slides away, and later changes must not pop what lies
+  /// beneath it.
+  void _changed() {
+    if (_left || !widget.flow.state.removed || !mounted) return;
+    _left = true;
+    Navigator.pop(context);
   }
 
   Future<void> _edit() async {
     final ServerPet pet = widget.flow.state.pet;
     final PetFields? fields = await askPet(context, pet);
     if (fields == null) return;
-    await widget.household.savePet(
-      id: pet.id,
+    await widget.flow.save(
       name: fields.name,
       species: fields.species,
       birthDate: fields.birthDate,
@@ -70,7 +81,7 @@ class _PetScreenState extends State<PetScreen> {
         ) ??
         false;
     if (!sure) return;
-    if (await widget.household.deletePet(pet.id) && mounted) Navigator.pop(context);
+    await widget.flow.remove();
   }
 
   Future<void> _weigh() async {
@@ -97,8 +108,8 @@ class _PetScreenState extends State<PetScreen> {
       return ServerPage(
         title: pet.name,
         children: [
-          if (state.error case final error?) ...[
-            Notice(tone: Tone.fault, text: serverErrorWords(error)),
+          if (state.problem case final problem?) ...[
+            Notice(tone: Tone.fault, text: recordProblemWords(problem)),
             const SizedBox(height: Space.s3),
           ],
           Muted(
