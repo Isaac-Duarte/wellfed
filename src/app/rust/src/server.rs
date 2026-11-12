@@ -86,53 +86,10 @@ fn ms(at: Timestamp) -> i64 {
 
 impl From<Error> for ServerError {
     fn from(error: Error) -> Self {
-        use wellfed_api::ErrorCode;
-
         let retry_after_seconds = error
             .retry_after()
             .map(|wait| u32::try_from(wait.as_secs()).unwrap_or(u32::MAX));
-        let kind = match &error {
-            Error::Base(_) => ServerErrorKind::Address,
-            Error::PlainHttp { .. } => ServerErrorKind::PlainHttp,
-            Error::Redirect { .. } => ServerErrorKind::Redirected,
-            Error::Http(http) if http.is_connect() => ServerErrorKind::Unreachable,
-            Error::Http(_) => ServerErrorKind::Interrupted,
-            Error::Problem { problem, .. } => match problem.code {
-                ErrorCode::BadCredentials => ServerErrorKind::BadCredentials,
-                ErrorCode::LoginLimited => ServerErrorKind::RateLimited,
-                ErrorCode::Unauthenticated => ServerErrorKind::TokenRevoked,
-                ErrorCode::AccountDisabled => ServerErrorKind::AccountDisabled,
-                ErrorCode::Forbidden => ServerErrorKind::Forbidden,
-                ErrorCode::NotFound => ServerErrorKind::NotFound,
-                ErrorCode::Invalid => ServerErrorKind::Invalid,
-                ErrorCode::FoodInUse => ServerErrorKind::FoodInUse,
-                ErrorCode::NoCurrentFood => ServerErrorKind::NoCurrentFood,
-                ErrorCode::AlreadyAdopted => ServerErrorKind::AlreadyAdopted,
-                ErrorCode::InviteExpired => ServerErrorKind::InviteExpired,
-                // A proof whose challenge ran out is settled by claiming
-                // again with a new one, as an unconfirmed key is.
-                ErrorCode::PhoneKeyUnconfirmed | ErrorCode::PhoneKeyProofRefused => {
-                    ServerErrorKind::PhoneKeyUnconfirmed
-                }
-                ErrorCode::PhoneKeyNotListed
-                | ErrorCode::PhoneKeyProofRequired
-                | ErrorCode::PhoneKeyKept
-                | ErrorCode::PhoneKeyNotAPhone
-                | ErrorCode::PhoneClaimOwnersOnly
-                | ErrorCode::ClientKeyTaken => ServerErrorKind::PhoneKeyRefused,
-                ErrorCode::FeederOffline | ErrorCode::Unreachable => ServerErrorKind::FeederOffline,
-                ErrorCode::OutcomeUnknown => ServerErrorKind::OutcomeUnknown,
-                ErrorCode::KeyReused => ServerErrorKind::KeyReused,
-                // The rest a screen shows by the server's own title.
-                _ => ServerErrorKind::Refused,
-            },
-            Error::Stale(_) | Error::StalePlans(_) | Error::StaleCalibration(_) => {
-                ServerErrorKind::Refused
-            }
-            Error::Build(_) | Error::Unexpected { .. } | Error::Decode(_) | Error::NoSession => {
-                ServerErrorKind::Protocol
-            }
-        };
+        let kind = kind(&error);
 
         let message = match &error {
             Error::Problem { problem, .. } => match &problem.detail {
@@ -146,6 +103,66 @@ impl From<Error> for ServerError {
             message,
             retry_after_seconds,
         }
+    }
+}
+
+/// What a failed call is, as a screen names it. Whether the call can have
+/// run is the server client's [`Error::failure`], the one reading every
+/// client shares, so a kind never calls definite what that reads as
+/// possibly run; only the failures it leaves definite get their own words.
+fn kind(error: &Error) -> ServerErrorKind {
+    use wellfed_api::ErrorCode;
+    use wellfed_server_client::Failure;
+
+    match error.failure() {
+        Failure::Connect => return ServerErrorKind::Unreachable,
+        Failure::Interrupted => return ServerErrorKind::Interrupted,
+        Failure::OutcomeUnknown => return ServerErrorKind::OutcomeUnknown,
+        Failure::FeederOffline => return ServerErrorKind::FeederOffline,
+        Failure::KeyReused => return ServerErrorKind::KeyReused,
+        Failure::FeederRefused | Failure::Stale | Failure::Unauthorized | Failure::Rejected => {}
+    }
+
+    match error {
+        Error::Base(_) => ServerErrorKind::Address,
+        Error::PlainHttp { .. } => ServerErrorKind::PlainHttp,
+        Error::Redirect { .. } => ServerErrorKind::Redirected,
+        Error::Problem { problem, .. } => match problem.code {
+            ErrorCode::BadCredentials => ServerErrorKind::BadCredentials,
+            ErrorCode::LoginLimited => ServerErrorKind::RateLimited,
+            ErrorCode::Unauthenticated => ServerErrorKind::TokenRevoked,
+            ErrorCode::AccountDisabled => ServerErrorKind::AccountDisabled,
+            ErrorCode::Forbidden => ServerErrorKind::Forbidden,
+            ErrorCode::NotFound => ServerErrorKind::NotFound,
+            ErrorCode::Invalid => ServerErrorKind::Invalid,
+            ErrorCode::FoodInUse => ServerErrorKind::FoodInUse,
+            ErrorCode::NoCurrentFood => ServerErrorKind::NoCurrentFood,
+            ErrorCode::AlreadyAdopted => ServerErrorKind::AlreadyAdopted,
+            ErrorCode::InviteExpired => ServerErrorKind::InviteExpired,
+            // A proof whose challenge ran out is settled by claiming
+            // again with a new one, as an unconfirmed key is.
+            ErrorCode::PhoneKeyUnconfirmed | ErrorCode::PhoneKeyProofRefused => {
+                ServerErrorKind::PhoneKeyUnconfirmed
+            }
+            ErrorCode::PhoneKeyNotListed
+            | ErrorCode::PhoneKeyProofRequired
+            | ErrorCode::PhoneKeyKept
+            | ErrorCode::PhoneKeyNotAPhone
+            | ErrorCode::PhoneClaimOwnersOnly
+            | ErrorCode::ClientKeyTaken => ServerErrorKind::PhoneKeyRefused,
+            // The rest a screen shows by the server's own title.
+            _ => ServerErrorKind::Refused,
+        },
+        Error::Stale(_) | Error::StalePlans(_) | Error::StaleCalibration(_) => {
+            ServerErrorKind::Refused
+        }
+        // Of these, the failure rule leaves only a request that could not
+        // be built, or a login with no session: nothing was sent.
+        Error::Http(_)
+        | Error::Build(_)
+        | Error::Unexpected { .. }
+        | Error::Decode(_)
+        | Error::NoSession => ServerErrorKind::Protocol,
     }
 }
 
