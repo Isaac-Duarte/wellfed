@@ -577,12 +577,14 @@ impl<'a> Session<'a> {
         for key in keys {
             match self.client.command(key).await {
                 Ok(command) => self.journalled(&command)?,
-                // No journal entry under the key (a 404): the request may
-                // not have reached the server yet, so it may still run, or
-                // the server may have let an old key go. Neither says
-                // whether the feed ran, so it stays open to a later answer
-                // from the journal, and is reported unknown and later
-                // forgotten by its age, never by this answer. Unauthorized
+                // No journal entry under the key (a 404). A server that
+                // retires a key a read found no write under (API revision
+                // 7 on) refuses any later write under it, so there the
+                // feed never ran; an older server may still journal and
+                // send a request held up in front of it. This session takes
+                // both alike and keeps the feed open to a later answer from
+                // the journal: it is reported unknown and later forgotten
+                // by its age, never settled by this answer. Unauthorized
                 // ends the session; anything else is asked again at the
                 // next connect or resync.
                 Err(error) if error.failure() == Failure::Unauthorized => {
