@@ -116,7 +116,24 @@ class FakePairingPorts implements PairingPorts {
   }
 
   @override
-  Future<String?> locate(String identity, Duration wait) async => located;
+  Future<String?> locate(String identity, Duration wait) async {
+    await locateGate?.future;
+    return located;
+  }
+
+  /// While set, a look on the LAN ends only once it completes.
+  Completer<void>? locateGate;
+
+  /// What a session on the LAN says of an unsettled setup, and the feeders
+  /// and addresses it was opened with.
+  SetupSettled settles = SetupSettled.enrolled;
+  final settled = <(String, String)>[];
+
+  @override
+  Future<SetupSettled> settle(List<int> feeder, String address) async {
+    settled.add((hexOf(feeder), address));
+    return settles;
+  }
 
   @override
   String hexOf(List<int> identity) => identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();

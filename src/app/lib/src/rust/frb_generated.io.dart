@@ -1375,6 +1375,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SetupRefusal dco_decode_setup_refusal(dynamic raw);
 
   @protected
+  SetupSettled dco_decode_setup_settled(dynamic raw);
+
+  @protected
   SetupStep dco_decode_setup_step(dynamic raw);
 
   @protected
@@ -2946,6 +2949,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SetupRefusal sse_decode_setup_refusal(SseDeserializer deserializer);
+
+  @protected
+  SetupSettled sse_decode_setup_settled(SseDeserializer deserializer);
 
   @protected
   SetupStep sse_decode_setup_step(SseDeserializer deserializer);
@@ -4924,6 +4930,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_setup_refusal(SetupRefusal self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_setup_settled(SetupSettled self, SseSerializer serializer);
 
   @protected
   void sse_encode_setup_step(SetupStep self, SseSerializer serializer);

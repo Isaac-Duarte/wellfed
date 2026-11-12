@@ -56,14 +56,15 @@ extension SetupStepPatterns on SetupStep {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SetupStep_Write value)?  write,TResult Function( SetupStep_EnterCode value)?  enterCode,TResult Function( SetupStep_Done value)?  done,TResult Function( SetupStep_Refused value)?  refused,TResult Function( SetupStep_Failed value)?  failed,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SetupStep_Write value)?  write,TResult Function( SetupStep_EnterCode value)?  enterCode,TResult Function( SetupStep_Done value)?  done,TResult Function( SetupStep_Refused value)?  refused,TResult Function( SetupStep_Unsettled value)?  unsettled,TResult Function( SetupStep_Failed value)?  failed,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case SetupStep_Write() when write != null:
 return write(_that);case SetupStep_EnterCode() when enterCode != null:
 return enterCode(_that);case SetupStep_Done() when done != null:
 return done(_that);case SetupStep_Refused() when refused != null:
-return refused(_that);case SetupStep_Failed() when failed != null:
+return refused(_that);case SetupStep_Unsettled() when unsettled != null:
+return unsettled(_that);case SetupStep_Failed() when failed != null:
 return failed(_that);case _:
   return orElse();
 
@@ -82,14 +83,15 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SetupStep_Write value)  write,required TResult Function( SetupStep_EnterCode value)  enterCode,required TResult Function( SetupStep_Done value)  done,required TResult Function( SetupStep_Refused value)  refused,required TResult Function( SetupStep_Failed value)  failed,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SetupStep_Write value)  write,required TResult Function( SetupStep_EnterCode value)  enterCode,required TResult Function( SetupStep_Done value)  done,required TResult Function( SetupStep_Refused value)  refused,required TResult Function( SetupStep_Unsettled value)  unsettled,required TResult Function( SetupStep_Failed value)  failed,}){
 final _that = this;
 switch (_that) {
 case SetupStep_Write():
 return write(_that);case SetupStep_EnterCode():
 return enterCode(_that);case SetupStep_Done():
 return done(_that);case SetupStep_Refused():
-return refused(_that);case SetupStep_Failed():
+return refused(_that);case SetupStep_Unsettled():
+return unsettled(_that);case SetupStep_Failed():
 return failed(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -104,14 +106,15 @@ return failed(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SetupStep_Write value)?  write,TResult? Function( SetupStep_EnterCode value)?  enterCode,TResult? Function( SetupStep_Done value)?  done,TResult? Function( SetupStep_Refused value)?  refused,TResult? Function( SetupStep_Failed value)?  failed,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SetupStep_Write value)?  write,TResult? Function( SetupStep_EnterCode value)?  enterCode,TResult? Function( SetupStep_Done value)?  done,TResult? Function( SetupStep_Refused value)?  refused,TResult? Function( SetupStep_Unsettled value)?  unsettled,TResult? Function( SetupStep_Failed value)?  failed,}){
 final _that = this;
 switch (_that) {
 case SetupStep_Write() when write != null:
 return write(_that);case SetupStep_EnterCode() when enterCode != null:
 return enterCode(_that);case SetupStep_Done() when done != null:
 return done(_that);case SetupStep_Refused() when refused != null:
-return refused(_that);case SetupStep_Failed() when failed != null:
+return refused(_that);case SetupStep_Unsettled() when unsettled != null:
+return unsettled(_that);case SetupStep_Failed() when failed != null:
 return failed(_that);case _:
   return null;
 
@@ -129,13 +132,14 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<Uint8List> pieces)?  write,TResult Function( int seconds)?  enterCode,TResult Function( Enrolled enrolled,  WifiSaved wifi,  Uint8List feeder)?  done,TResult Function( SetupRefusal refusal)?  refused,TResult Function( BridgeError error)?  failed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( List<Uint8List> pieces)?  write,TResult Function( int seconds)?  enterCode,TResult Function( Enrolled enrolled,  WifiSaved wifi,  Uint8List feeder)?  done,TResult Function( SetupRefusal refusal)?  refused,TResult Function( Uint8List feeder)?  unsettled,TResult Function( BridgeError error)?  failed,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case SetupStep_Write() when write != null:
 return write(_that.pieces);case SetupStep_EnterCode() when enterCode != null:
 return enterCode(_that.seconds);case SetupStep_Done() when done != null:
 return done(_that.enrolled,_that.wifi,_that.feeder);case SetupStep_Refused() when refused != null:
-return refused(_that.refusal);case SetupStep_Failed() when failed != null:
+return refused(_that.refusal);case SetupStep_Unsettled() when unsettled != null:
+return unsettled(_that.feeder);case SetupStep_Failed() when failed != null:
 return failed(_that.error);case _:
   return orElse();
 
@@ -154,13 +158,14 @@ return failed(_that.error);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<Uint8List> pieces)  write,required TResult Function( int seconds)  enterCode,required TResult Function( Enrolled enrolled,  WifiSaved wifi,  Uint8List feeder)  done,required TResult Function( SetupRefusal refusal)  refused,required TResult Function( BridgeError error)  failed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( List<Uint8List> pieces)  write,required TResult Function( int seconds)  enterCode,required TResult Function( Enrolled enrolled,  WifiSaved wifi,  Uint8List feeder)  done,required TResult Function( SetupRefusal refusal)  refused,required TResult Function( Uint8List feeder)  unsettled,required TResult Function( BridgeError error)  failed,}) {final _that = this;
 switch (_that) {
 case SetupStep_Write():
 return write(_that.pieces);case SetupStep_EnterCode():
 return enterCode(_that.seconds);case SetupStep_Done():
 return done(_that.enrolled,_that.wifi,_that.feeder);case SetupStep_Refused():
-return refused(_that.refusal);case SetupStep_Failed():
+return refused(_that.refusal);case SetupStep_Unsettled():
+return unsettled(_that.feeder);case SetupStep_Failed():
 return failed(_that.error);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -175,13 +180,14 @@ return failed(_that.error);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<Uint8List> pieces)?  write,TResult? Function( int seconds)?  enterCode,TResult? Function( Enrolled enrolled,  WifiSaved wifi,  Uint8List feeder)?  done,TResult? Function( SetupRefusal refusal)?  refused,TResult? Function( BridgeError error)?  failed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( List<Uint8List> pieces)?  write,TResult? Function( int seconds)?  enterCode,TResult? Function( Enrolled enrolled,  WifiSaved wifi,  Uint8List feeder)?  done,TResult? Function( SetupRefusal refusal)?  refused,TResult? Function( Uint8List feeder)?  unsettled,TResult? Function( BridgeError error)?  failed,}) {final _that = this;
 switch (_that) {
 case SetupStep_Write() when write != null:
 return write(_that.pieces);case SetupStep_EnterCode() when enterCode != null:
 return enterCode(_that.seconds);case SetupStep_Done() when done != null:
 return done(_that.enrolled,_that.wifi,_that.feeder);case SetupStep_Refused() when refused != null:
-return refused(_that.refusal);case SetupStep_Failed() when failed != null:
+return refused(_that.refusal);case SetupStep_Unsettled() when unsettled != null:
+return unsettled(_that.feeder);case SetupStep_Failed() when failed != null:
 return failed(_that.error);case _:
   return null;
 
@@ -466,6 +472,74 @@ class _$SetupStep_RefusedCopyWithImpl<$Res>
   return _then(SetupStep_Refused(
 refusal: null == refusal ? _self.refusal : refusal // ignore: cast_nullable_to_non_nullable
 as SetupRefusal,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class SetupStep_Unsettled extends SetupStep {
+  const SetupStep_Unsettled({required this.feeder}): super._();
+  
+
+ final  Uint8List feeder;
+
+/// Create a copy of SetupStep
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SetupStep_UnsettledCopyWith<SetupStep_Unsettled> get copyWith => _$SetupStep_UnsettledCopyWithImpl<SetupStep_Unsettled>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is SetupStep_Unsettled&&const DeepCollectionEquality().equals(other.feeder, feeder));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,const DeepCollectionEquality().hash(feeder));
+}
+
+@override
+String toString() {
+    return 'SetupStep.unsettled(feeder: $feeder)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SetupStep_UnsettledCopyWith<$Res> implements $SetupStepCopyWith<$Res> {
+  factory $SetupStep_UnsettledCopyWith(SetupStep_Unsettled value, $Res Function(SetupStep_Unsettled) _then) = _$SetupStep_UnsettledCopyWithImpl;
+@useResult
+$Res call({
+ Uint8List feeder
+});
+
+
+
+
+}
+/// @nodoc
+class _$SetupStep_UnsettledCopyWithImpl<$Res>
+    implements $SetupStep_UnsettledCopyWith<$Res> {
+  _$SetupStep_UnsettledCopyWithImpl(this._self, this._then);
+
+  final SetupStep_Unsettled _self;
+  final $Res Function(SetupStep_Unsettled) _then;
+
+/// Create a copy of SetupStep
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? feeder = null,}) {
+  return _then(SetupStep_Unsettled(
+feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
+as Uint8List,
   ));
 }
 

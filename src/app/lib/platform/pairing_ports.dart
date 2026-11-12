@@ -29,6 +29,10 @@ abstract interface class PairingPorts {
   /// A key as the store and NSD's `id` spell it.
   String hexOf(List<int> identity);
 
+  /// Whether the feeder `feeder` at `address` took this phone, by opening a
+  /// session with it, which sends it nothing.
+  Future<SetupSettled> settle(List<int> feeder, String address);
+
   /// Each feeder answering on this network, until cancelled.
   Stream<FoundFeeder> browse();
 }
@@ -48,6 +52,10 @@ class AppPairingPorts implements PairingPorts {
 
   @override
   Stream<DiscoveredDevice> scan() => SetupLink.scan();
+
+  @override
+  Future<SetupSettled> settle(List<int> feeder, String address) =>
+      settleSetup(key: _key, feeder: feeder, address: address);
 
   @override
   Future<BleLink> open(DiscoveredDevice device) => SetupLink.open(device);

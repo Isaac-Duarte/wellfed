@@ -724,6 +724,9 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             (StopCase::Other, FromBank0)
         }
         Error::NotAnswering { .. } | Error::NoAddress => (StopCase::NotAnswering, FromBank0),
+        // The feeder had the last step of a recovery and no session opened
+        // with it since: a new run from bank 0 reads whether it took.
+        Error::Unsettled { .. } => (StopCase::NotAnswering, FromBank0),
         // A pick-up whose record no longer leads anywhere goes through setup
         // again, which takes the Wi-Fi.
         Error::NoHomeNetwork => (StopCase::NoWifiGiven, FromBank0),
@@ -1480,6 +1483,16 @@ mod tests {
         );
         assert_eq!(
             stop_of(&Error::NoAddress, true),
+            (StopCase::NotAnswering, Resume::FromBank0)
+        );
+        // A recovery the feeder may have taken is read from bank 0, never
+        // called failed.
+        let unsettled = Error::Unsettled {
+            identity: [0xab; 32],
+            source: Box::new(Error::RecoveryTimeout),
+        };
+        assert_eq!(
+            stop_of(&unsettled, true),
             (StopCase::NotAnswering, Resume::FromBank0)
         );
     }

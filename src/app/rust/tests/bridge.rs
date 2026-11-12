@@ -104,6 +104,7 @@ fn the_setup_driver_proves_its_code_and_enrolls_as_owner() {
                         done @ SetupStep::Done { .. } => break 'exchange done,
                         SetupStep::Refused { refusal } => panic!("refused: {refusal:?}"),
                         SetupStep::Failed { error } => panic!("failed: {error}"),
+                        SetupStep::Unsettled { .. } => panic!("the link held"),
                     }
                 }
             }

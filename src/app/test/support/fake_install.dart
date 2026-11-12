@@ -261,4 +261,10 @@ class FakeDriver with FakeOpaque implements SetupDriver {
 
   @override
   List<SetupStep> notified({required List<int> bytes}) => script;
+
+  /// The feeder that proved the code, once the last step went.
+  Uint8List? provenFeeder;
+
+  @override
+  Uint8List? proven() => provenFeeder;
 }

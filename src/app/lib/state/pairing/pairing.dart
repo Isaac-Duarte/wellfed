@@ -130,17 +130,24 @@ class PairingFlow extends ChangeNotifier {
       _arm(handshakeWait);
       await link.write(driver.start());
       end = await ended.future;
-    } on TimeoutException {
-      _stop(PairingFailure.timeout, null);
-      return;
-    } on _Failed catch (failed) {
-      _stop(failed.why, failed.detail);
-      return;
-    } on BridgeError catch (error) {
-      _stop(_failureOf(error), error.message);
-      return;
     } on Object catch (error) {
-      _stop(PairingFailure.link, '$error');
+      await _closeLink();
+      // Once the feeder proved the code and has the last step, it goes on
+      // without the link: a drop or a wait that ends says nothing of it.
+      if (driver.proven() case final Uint8List feeder?) {
+        await _finish(SetupStep.unsettled(feeder: feeder), knownAddress: null);
+        return;
+      }
+      switch (error) {
+        case TimeoutException():
+          _stop(PairingFailure.timeout, null);
+        case _Failed(:final why, :final detail):
+          _stop(why, detail);
+        case BridgeError():
+          _stop(_failureOf(error), error.message);
+        default:
+          _stop(PairingFailure.link, '$error');
+      }
       return;
     } finally {
       await _closeLink();
@@ -201,8 +208,10 @@ class PairingFlow extends ChangeNotifier {
       _timer?.cancel();
       _recovering = null;
     }
-    if (_disposed) return;
     final ended = end;
+    // The feeder took this phone, or may have, whatever the screen does:
+    // it is saved even when the screen went meanwhile.
+    if (_disposed && ended is! SetupStep_Done && ended is! SetupStep_Unsettled) return;
     if (ended == null) {
       _stop(PairingFailure.other, 'the feeder ended without an answer');
       return;
@@ -263,7 +272,7 @@ class PairingFlow extends ChangeNotifier {
             }
           case SetupStep_EnterCode(:final seconds):
             _showCode(seconds);
-          case SetupStep_Done() || SetupStep_Refused():
+          case SetupStep_Done() || SetupStep_Refused() || SetupStep_Unsettled():
             _timer?.cancel();
             ended.complete(step);
           case SetupStep_Failed(:final error):
@@ -296,30 +305,59 @@ class PairingFlow extends ChangeNotifier {
         _stop(PairingFailure.refused, null, refusal: why);
         return;
       case SetupStep_Done(enrolled: final how, :final wifi, feeder: final identity):
-        final String hex = _ports.hexOf(identity);
         _set(PairingJoining(wifiSaved: wifi, feederName: _feederName, network: _network));
-
-        // After BLE setup the feeder restarts onto its new Wi-Fi first.
-        final String? address = knownAddress ?? await _ports.locate(hex, rejoinWait);
-        final known = KnownFeeder(identity: hex, name: _feederName, address: address);
-        // The feeder enrolled this phone whatever happens here; a failed
-        // save is said so, not left on "joining".
-        try {
-          await _app.remember(known, paired: true);
-        } on BridgeError catch (error) {
-          _stop(PairingFailure.other, 'paired, but not saved: ${error.message}');
-          return;
-        }
-        if (address == null) {
-          _stop(PairingFailure.notOnLan, null);
-          return;
-        }
+        final KnownFeeder? known = await _save(identity, knownAddress);
+        if (known == null) return;
         _set(PairingDone(enrolled: how, feeder: known, feederName: _feederName, network: _network));
+      case SetupStep_Unsettled(feeder: final identity):
+        _set(PairingSettling(feederName: _feederName, network: _network));
+        final String hex = _ports.hexOf(identity);
+        final bool wasKnown = _app.feeders.any((feeder) => feeder.identity == hex);
+        final KnownFeeder? known = await _save(identity, knownAddress, settling: true);
+        if (known == null) return;
+        final String? address = known.address;
+        final SetupSettled settled = address == null ? SetupSettled.unknown : await _ports.settle(identity, address);
+        switch (settled) {
+          case SetupSettled.enrolled:
+            _set(PairingDone(enrolled: null, feeder: known, feederName: _feederName, network: _network));
+          case SetupSettled.notEnrolled:
+            // It never took this phone, so it is no feeder of this phone's.
+            if (!wasKnown) await _app.forget(hex);
+            _stop(PairingFailure.notTaken, null);
+          case SetupSettled.unknown:
+            _stop(PairingFailure.unsettled, null);
+        }
       case SetupStep_Failed(:final error):
         _stop(_failureOf(error), error.message);
       case SetupStep_Write() || SetupStep_EnterCode():
         _stop(PairingFailure.other, 'the session ended mid-exchange');
     }
+  }
+
+  /// Save the feeder proved by `identity` before anything else (the proof
+  /// is the only way back to it without another setup), then find it on
+  /// the LAN, where it is after BLE setup's restart, and save where. `null`
+  /// once the screen says it could not be saved.
+  Future<KnownFeeder?> _save(List<int> identity, String? knownAddress, {bool settling = false}) async {
+    final String hex = _ports.hexOf(identity);
+    KnownFeeder known = KnownFeeder(identity: hex, name: _feederName, address: knownAddress);
+    try {
+      await _app.remember(known, paired: true);
+      if (_disposed) return known;
+      final String? address = knownAddress ?? await _ports.locate(hex, rejoinWait);
+      if (address == null) {
+        if (!settling) _stop(PairingFailure.notOnLan, null);
+        return settling ? known : null;
+      }
+      known = KnownFeeder(identity: hex, name: _feederName, address: address);
+      if (knownAddress == null) await _app.remember(known, paired: true);
+    } on BridgeError catch (error) {
+      // The feeder took this phone, or may have; a failed save is said so,
+      // not left on "joining".
+      _stop(PairingFailure.other, 'paired, but not saved: ${error.message}');
+      return null;
+    }
+    return known;
   }
 
   /// Fail after `wait` with no message from the feeder.

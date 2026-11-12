@@ -5668,6 +5668,7 @@ dependencies = [
  "uuid",
  "wellfed-client",
  "wellfed-connect",
+ "wellfed-device-api",
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-model",

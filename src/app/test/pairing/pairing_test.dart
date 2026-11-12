@@ -270,7 +270,8 @@ void main() {
       await settle(tester);
 
       expect(book.feeders.single.name, 'Kitchen');
-      expect(book.remembered.single.$2, isTrue, reason: 'its clock is due');
+      expect(book.remembered.map((saved) => saved.$2), everyElement(isTrue), reason: 'its clock is due');
+      expect(book.remembered.first.$1.address, isNull, reason: 'saved before it looks on the LAN');
       expect(find.text('Kitchen is ready.'), findsOneWidget);
       expect(find.textContaining('on Maple St'), findsOneWidget);
 

@@ -939,6 +939,16 @@ where
                 .await
                 .map_err(Error::Platform)?;
             let paired = pairing::recover(&mut self.io.keys, address, &mut self.io.prompter).await;
+            if let Err(Error::Unsettled { identity, .. }) = &paired
+                && self.opens_at(*identity, address).await
+            {
+                // The feeder took this key after all: a session opened.
+                let identity = *identity;
+                self.io.report.event(Event::KeyKnown);
+                self.paired_at(identity, address)?;
+                install.paired();
+                return Ok(());
+            }
             if !go_again(&mut self.io.prompter, PairRoute::Recovery, &paired).await? {
                 break paired?;
             }
@@ -1020,7 +1030,13 @@ where
             )
             .await;
             if !go_again(&mut self.io.prompter, PairRoute::Setup, &paired).await? {
-                break paired.map_err(|error| Error::Setup(Box::new(error)))?;
+                break match paired {
+                    Ok((identity, outcome)) => (identity, Some(outcome)),
+                    // The feeder had the last step and goes on without the
+                    // link: its joining the owner's network settles it.
+                    Err(Error::Unsettled { identity, .. }) => (identity, None),
+                    Err(error) => return Err(Error::Setup(Box::new(error))),
+                };
             }
         };
         // Whichever feeder advertises first takes setup, and the code only proves
@@ -1036,7 +1052,10 @@ where
                 found: identity,
             });
         }
-        self.io.report.event(Event::SetUp { identity, outcome });
+        self.io.report.event(match outcome {
+            Some(outcome) => Event::SetUp { identity, outcome },
+            None => Event::Rejoining { identity },
+        });
         self.identity = Some(identity);
         self.record_paired(identity, None)?;
         install.set_up();

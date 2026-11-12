@@ -13,6 +13,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'setup.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `pieces`, `positions`, `reply_step`, `session`, `uuid`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `eq`, `fmt`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `recover`
 
 /// The setup service a feeder in setup mode advertises.
@@ -20,6 +21,18 @@ String setupService() => RustLib.instance.api.crateApiSetupSetupService();
 
 /// The control characteristic every setup message travels on.
 String setupControl() => RustLib.instance.api.crateApiSetupSetupControl();
+
+/// Settle an [`SetupStep::Unsettled`] setup by opening a session with
+/// `feeder` at `address` as `key`. Opening one sends the feeder nothing.
+Future<SetupSettled> settleSetup({
+  required ClientKey key,
+  required List<int> feeder,
+  required String address,
+}) => RustLib.instance.api.crateApiSetupSettleSetup(
+  key: key,
+  feeder: feeder,
+  address: address,
+);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Recovery>>
 abstract class Recovery implements RustOpaqueInterface {
@@ -58,9 +71,28 @@ abstract class SetupDriver implements RustOpaqueInterface {
   /// (none while a frame is still split).
   List<SetupStep> notified({required List<int> bytes});
 
+  /// The feeder's identity once it proved the code and this phone wrote
+  /// its last step; `None` before. From then on the feeder goes on without
+  /// the link, so a link or a wait that ends says nothing of the outcome:
+  /// the setup is [`SetupStep::Unsettled`], not failed.
+  Uint8List? proven();
+
   /// The first handshake message, as pieces to write once notifications
   /// are on.
   List<Uint8List> start();
+}
+
+/// What a session opened on the LAN says of a setup whose end the phone
+/// never heard.
+enum SetupSettled {
+  /// A session opened: the feeder enrolled this phone.
+  enrolled,
+
+  /// The feeder does not know this phone's key: the setup never finished.
+  notEnrolled,
+
+  /// No plain answer, or none in time: still not known.
+  unknown,
 }
 
 @freezed
@@ -88,6 +120,14 @@ sealed class SetupStep with _$SetupStep {
   /// The feeder said no; the link closes and setup mode stays on.
   const factory SetupStep.refused({required SetupRefusal refusal}) =
       SetupStep_Refused;
+
+  /// The feeder proved the code and had this phone's last step, and then
+  /// the connection or the wait ended before its answer. It goes on
+  /// without the phone: it most likely enrolled it and, after BLE setup,
+  /// restarts onto its Wi-Fi. `feeder` is the identity it proved; a
+  /// session opening with it ([`settle_setup`]) says whether it took.
+  const factory SetupStep.unsettled({required Uint8List feeder}) =
+      SetupStep_Unsettled;
 
   /// A recovery failed. On the stream as a value, since
   /// flutter_rust_bridge decodes a stream's errors as `AnyhowException`

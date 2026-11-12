@@ -127,6 +127,29 @@ fn the_owners_code_proves_both_sides_and_then_carries_the_wifi() {
     assert!(matches!(session.receive(&[0; 40]), Err(Error::Unexpected)));
 }
 
+/// The feeder goes on once it has the client's last step, whatever the link
+/// does then; the proven key stays for the caller to settle it with.
+#[test]
+fn a_link_lost_after_the_last_step_keeps_the_proven_key() {
+    let (identity, client) = (keypair(1), keypair(2));
+    let mut session = new_session(&client, ask());
+    let (mut responder, _) = handshake(&mut session, &identity);
+    reply(
+        &mut responder,
+        &mut session,
+        Reply::EnterCode { seconds: 60 },
+    )
+    .unwrap();
+    let code = session.code();
+    let Ok(Received::Proven { .. }) = prove(&mut responder, &mut session, code) else {
+        panic!("the same code proves")
+    };
+
+    // No `Done` ever arrives.
+    drop(responder);
+    assert_eq!(session.feeder_key(), Some(*identity.public()));
+}
+
 #[test]
 fn a_mistyped_code_stops_the_client_before_the_wifi() {
     let mut session = new_session(&keypair(2), ask());

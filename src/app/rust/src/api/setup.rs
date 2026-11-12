@@ -77,6 +77,12 @@ pub enum SetupStep {
     },
     /// The feeder said no; the link closes and setup mode stays on.
     Refused { refusal: SetupRefusal },
+    /// The feeder proved the code and had this phone's last step, and then
+    /// the connection or the wait ended before its answer. It goes on
+    /// without the phone: it most likely enrolled it and, after BLE setup,
+    /// restarts onto its Wi-Fi. `feeder` is the identity it proved; a
+    /// session opening with it ([`settle_setup`]) says whether it took.
+    Unsettled { feeder: Vec<u8> },
     /// A recovery failed. On the stream as a value, since
     /// flutter_rust_bridge decodes a stream's errors as `AnyhowException`
     /// whatever Rust encoded, and a typed one would reach Dart as garbage.
@@ -135,6 +141,35 @@ fn reply_step(session: &Session, reply: Reply) -> Result<SetupStep, BridgeError>
     }
 }
 
+/// What a session opened on the LAN says of a setup whose end the phone
+/// never heard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupSettled {
+    /// A session opened: the feeder enrolled this phone.
+    Enrolled,
+    /// The feeder does not know this phone's key: the setup never finished.
+    NotEnrolled,
+    /// No plain answer, or none in time: still not known.
+    Unknown,
+}
+
+/// Settle an [`SetupStep::Unsettled`] setup by opening a session with
+/// `feeder` at `address` as `key`. Opening one sends the feeder nothing.
+pub async fn settle_setup(key: &ClientKey, feeder: Vec<u8>, address: String) -> SetupSettled {
+    let (Ok(identity), Ok(address), Ok(ephemeral)) = (
+        <[u8; 32]>::try_from(feeder),
+        wellfed_connect::parse_address(&address),
+        random(),
+    ) else {
+        return SetupSettled::Unknown;
+    };
+    match wellfed_connect::Connection::open(key.keypair(), identity, address, ephemeral).await {
+        Ok(_) => SetupSettled::Enrolled,
+        Err(wellfed_connect::Error::UnknownKey) => SetupSettled::NotEnrolled,
+        Err(_) => SetupSettled::Unknown,
+    }
+}
+
 /// One BLE setup session.
 #[frb(opaque)]
 pub struct SetupDriver {
@@ -160,6 +195,15 @@ impl SetupDriver {
     #[frb(sync)]
     pub fn code(&self) -> Vec<u8> {
         positions(&self.session)
+    }
+
+    /// The feeder's identity once it proved the code and this phone wrote
+    /// its last step; `None` before. From then on the feeder goes on without
+    /// the link, so a link or a wait that ends says nothing of the outcome:
+    /// the setup is [`SetupStep::Unsettled`], not failed.
+    #[frb(sync)]
+    pub fn proven(&self) -> Option<Vec<u8>> {
+        self.session.feeder_key().map(|key| key.to_vec())
     }
 
     /// The first handshake message, as pieces to write once notifications
@@ -272,8 +316,19 @@ pub async fn recover(
     let mut wait = HANDSHAKE_WAIT;
     loop {
         let reply = tokio::select! {
-            reply = recovery.reply(wait) => reply?,
+            reply = recovery.reply(wait) => reply,
             () = closed.notified() => return Ok(()),
+        };
+        let reply = match (reply, recovery.session().feeder_key()) {
+            (Ok(reply), _) => reply,
+            // The feeder had the last step and goes on without the phone.
+            (Err(_), Some(feeder)) => {
+                step(SetupStep::Unsettled {
+                    feeder: feeder.to_vec(),
+                });
+                return Ok(());
+            }
+            (Err(error), None) => return Err(error.into()),
         };
         let next = reply_step(recovery.session(), reply)?;
         let last = !matches!(next, SetupStep::EnterCode { .. });
