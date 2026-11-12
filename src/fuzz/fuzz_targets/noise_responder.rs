@@ -10,7 +10,7 @@ libfuzzer_sys::fuzz_target!(|data: &[u8]| {
     let Some((&pick, message)) = data.split_first() else {
         return;
     };
-    let pattern = PATTERNS[usize::from(pick & 3) % PATTERNS.len()];
+    let pattern = PATTERNS[usize::from(pick) % PATTERNS.len()];
     let identity = Keypair::from_secret([0x22; 32]);
     let Ok(mut responder) = Handshake::new(
         pattern,
