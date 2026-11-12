@@ -133,9 +133,9 @@ fn a_feed_or_status_during_a_long_operation_is_answered_before_its_next_step() {
             };
             let (unlocked, fed, status) = tokio::join!(unlock, feed, status);
             assert_eq!(unlocked, Ok(Answer::Done { generation: None }));
-            // The simulator has no feeding owner, so it refuses the feed
-            // (`unavailable`): an answer all the same, in its place.
-            assert!(fed.is_ok(), "{fed:?}");
+            // The simulator's feeding owner runs the feed: its answer comes
+            // in its place, after the unlock that let it run.
+            assert!(matches!(fed, Ok(Answer::Feeding { .. })), "{fed:?}");
             assert!(matches!(status, Ok(Answer::Status(_))), "{status:?}");
             order.borrow_mut().push("short");
         };
