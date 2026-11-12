@@ -5,6 +5,7 @@
 
 use std::cell::Cell;
 use std::fmt;
+use std::sync::{Mutex, MutexGuard};
 
 use wellfed_core::settings::{SettingsFields, SettingsResult};
 use wellfed_core::store::update::UpdateStatus;
@@ -146,11 +147,26 @@ fn step(writer: &mut Writer<Armed, Bare>, provider: &mut Provider) -> Option<Rec
     unsafe { writer.step::<Unreached, Armed>(provider) }.record
 }
 
+/// The fake hardware, the runtime's mailboxes and the interlock are
+/// process-wide, so each test holds this for its whole run: under plain
+/// `cargo test`, which runs a file's tests on threads of one process, two
+/// would reset each other's state.
+static SERIAL: Mutex<()> = Mutex::new(());
+
+/// Each test's own hold on the process-wide state.
+fn serial() -> MutexGuard<'static, ()> {
+    SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// The fake hardware and the runtime's mailboxes at boot, and a writer.
+/// The caller holds [`serial`].
 fn boot() -> (Writer<Armed, Bare>, Provider) {
     fake::reset_hardware();
     SETTINGS.reset();
-    // SAFETY: this test runs alone in its process and no Wi-Fi task runs.
+    // SAFETY: the caller holds `SERIAL`, so no other test touches the
+    // network state, and no Wi-Fi task runs.
     unsafe { network::reset() };
     keys::reset();
     events::reset();
@@ -162,6 +178,7 @@ fn boot() -> (Writer<Armed, Bare>, Provider) {
 
 #[test]
 fn a_product_without_stores_keeps_the_devices() {
+    let _serial = serial();
     let (mut writer, mut provider) = boot();
 
     assert!(matches!(
@@ -218,6 +235,7 @@ fn a_product_without_stores_keeps_the_devices() {
 #[test]
 fn a_factory_reset_with_nothing_kept_erases_the_marker_after_the_cleared_sectors_and_the_update_step()
  {
+    let _serial = serial();
     let (mut writer, mut provider) = boot();
     assert!(reset::mark(&Region::<Armed, RESET_BASE, 1>::new()));
 
@@ -250,6 +268,7 @@ fn a_factory_reset_with_nothing_kept_erases_the_marker_after_the_cleared_sectors
 /// again, and it serves the empty store without waiting for a restart.
 #[test]
 fn a_reset_by_hand_over_a_corrupt_update_store_reopens_the_update_stage_empty() {
+    let _serial = serial();
     let (mut writer, mut provider) = boot();
     let mut junk = [0u8; 384];
     junk[..8].copy_from_slice(b"PLFUPD01");
@@ -285,6 +304,7 @@ fn a_reset_by_hand_over_a_corrupt_update_store_reopens_the_update_stage_empty() 
 /// which the factory reset keeps as it erases the ring.
 #[test]
 fn every_new_ring_takes_an_epoch_past_the_last() {
+    let _serial = serial();
     use wellfed_hal::board::storage::EVENTS;
     use wellfed_hal::rng;
 
