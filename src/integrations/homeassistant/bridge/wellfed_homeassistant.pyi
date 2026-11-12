@@ -568,6 +568,13 @@ class NotSent:
     """
     This client's role may not do that.
     """
+    Held: Final[NotSent]
+    """
+    Another feed of this client's is still being answered or
+    settled. A new feed waits for it (at most 15 minutes, the settle
+    window), so the next `Fed` this client is named in can settle only
+    that one, and a feed refused unseen is never taken for one that ran.
+    """
     Invalid: Final[NotSent]
     """
     A value outside what the feeder accepts.
@@ -1090,6 +1097,11 @@ class Update:
         For [`UpdateKind::Alerts`].
         """
     @property
+    def answered(self, /) -> int | None:
+        """
+        For [`UpdateKind::Answered`]: the feed number to keep.
+        """
+    @property
     def build(self, /) -> str | None:
         """
         For [`UpdateKind::Connected`]: the build that answered, this
@@ -1161,6 +1173,12 @@ class UpdateKind:
     """
     The feeder's alerts moved: what is open, and what opened and
     cleared since.
+    """
+    Answered: Final[UpdateKind]
+    """
+    A feed number this client has the end of, in `answered`: its
+    write was answered, or its `Fed` settled a lost feed. Keep it
+    for the next session, where a `Fed` for it settles nothing.
     """
     Connected: Final[UpdateKind]
     """

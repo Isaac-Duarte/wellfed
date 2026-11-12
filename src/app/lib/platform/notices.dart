@@ -88,7 +88,7 @@ class Notices {
     required List<NoticeChange> changes,
   }) async {
     if (changes.isEmpty) return;
-    final posted = <int>[];
+    final posted = <PostedNotice>[];
     final removed = <int>[];
     for (final NoticeChange change in changes) {
       switch (change) {
@@ -100,7 +100,9 @@ class Notices {
           // off leaves one unconfirmed, for when they are back on.
           if (!await allowed()) continue;
           await _show(identity, name, notice);
-          posted.add(notice.id);
+          // Which posting went up, so a newer one a catch-up made meanwhile
+          // under the same id is not taken for it.
+          posted.add(PostedNotice(id: notice.id, seenMs: notice.seenMs, kind: notice.kind));
       }
     }
     // A feeder forgotten while these were on the way: what went up comes off.

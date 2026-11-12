@@ -15,8 +15,8 @@ import 'server_views.dart';
 import 'store.dart';
 part 'alerts.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `detail`, `fingerprint`, `identity_of`, `server_route`, `toggle`, `view`, `views`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `partial_cmp`
+// These functions are ignored because they are not marked as `pub`: `detail`, `fingerprint`, `identity_of`, `posts`, `server_route`, `toggle`, `view`, `views`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `partial_cmp`
 
 /// Keep catch-ups off while `run` goes (`held`), or let go. A hold lapses by
 /// itself after two hours unrenewed.
@@ -47,14 +47,14 @@ Future<CatchUp> catchUpWith({
   server: server,
 );
 
-/// The changes Dart made: each posted notification's id and each removed one's.
-/// A change that went stale meanwhile is left for the next catch-up. The ids
+/// The changes Dart made: each notice posted and each removed one's id. A
+/// change that went stale meanwhile is left for the next catch-up. The ids
 /// to take off again: everything posted for a feeder forgotten while its
 /// changes were on the way.
 Future<Int32List> confirmNotices({
   required String dir,
   required String identity,
-  required List<int> posted,
+  required List<PostedNotice> posted,
   required List<int> removed,
 }) => RustLib.instance.api.crateApiAlertsConfirmNotices(
   dir: dir,
@@ -504,4 +504,34 @@ sealed class PhoneNetwork with _$PhoneNetwork {
   /// Off Wi-Fi, or Android keeps this app off the network for now: a
   /// catch-up that fails here says nothing about the feeder.
   const factory PhoneNetwork.elsewhere() = PhoneNetwork_Elsewhere;
+}
+
+/// A notice Dart posted, as [`confirm_notices`] takes it back: its id, and
+/// which posting of it went up (when the phone first saw it, and its kind),
+/// from the [`NoticeView`] it posted. A catch-up in another engine may have
+/// ended the notice and opened it again under the same id, or changed its
+/// kind, while this one was on the way, and confirming that newer posting
+/// would mean it is never posted.
+class PostedNotice {
+  final int id;
+  final PlatformInt64 seenMs;
+  final NoticeKind kind;
+
+  const PostedNotice({
+    required this.id,
+    required this.seenMs,
+    required this.kind,
+  });
+
+  @override
+  int get hashCode => id.hashCode ^ seenMs.hashCode ^ kind.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PostedNotice &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          seenMs == other.seenMs &&
+          kind == other.kind;
 }

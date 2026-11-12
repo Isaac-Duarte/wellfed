@@ -677,15 +677,17 @@ impl Watch {
     }
 
     /// The caller made `change`: it is not handed over again. A change made
-    /// stale meanwhile (the notice ended or was posted anew) is left as it is.
+    /// stale meanwhile is left as it is: a post confirms only the posting it
+    /// carried ([`Tracked::same_posting`]), so one the notice ended, opened
+    /// again or changed kind past while it was on the way leaves the newer
+    /// posting due. Delivery may take a while (a webhook's receiver, a
+    /// phone's notification), and a catch-up can change the watch meanwhile.
     pub fn confirm(&mut self, change: &Change) {
         match change {
             Change::Post(posted) => {
-                if let Some(tracked) = self
-                    .open
-                    .iter_mut()
-                    .find(|tracked| tracked.key == posted.key && tracked.delivery == Delivery::Due)
-                {
+                if let Some(tracked) = self.open.iter_mut().find(|tracked| {
+                    tracked.delivery == Delivery::Due && tracked.same_posting(posted)
+                }) {
                     tracked.delivery = Delivery::Posted;
                 }
             }
@@ -784,7 +786,34 @@ impl Watch {
     }
 }
 
+/// Which posting of a notice a post handed over: its key, when the watch
+/// first saw it (to the millisecond, as a webhook's delivery id and the app's
+/// notice views carry it) and its kind. A notice comes due again only as a
+/// new posting: one that ended and opened again is tracked anew, seen at
+/// that catch-up's time, and one whose kind changed takes the new kind. New
+/// words in the same kind are no new posting, as they post nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Posting {
+    pub key: NoticeKey,
+    pub seen_ms: i64,
+    pub kind: NoticeKind,
+}
+
 impl Tracked {
+    /// This notice's posting as it stands.
+    pub fn posting(&self) -> Posting {
+        Posting {
+            key: self.key,
+            seen_ms: self.seen.as_millisecond(),
+            kind: self.notice.kind(),
+        }
+    }
+
+    /// Whether `self` and `other` are one posting of one notice.
+    pub fn same_posting(&self, other: &Tracked) -> bool {
+        self.posting() == other.posting()
+    }
+
     /// Since when this alert, absent from the table now, has counted as
     /// absent, or `None` while its hold doesn't run: one that waits for the
     /// clock (`clock`), while the feeder lacks what it needs, starts its

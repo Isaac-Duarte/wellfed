@@ -552,7 +552,7 @@ abstract class RustLibApi extends BaseApi {
   Future<Int32List> crateApiAlertsConfirmNotices({
     required String dir,
     required String identity,
-    required List<int> posted,
+    required List<PostedNotice> posted,
     required List<int> removed,
   });
 
@@ -4381,7 +4381,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<Int32List> crateApiAlertsConfirmNotices({
     required String dir,
     required String identity,
-    required List<int> posted,
+    required List<PostedNotice> posted,
     required List<int> removed,
   }) {
     return handler.executeNormal(
@@ -4390,7 +4390,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dir, serializer);
           sse_encode_String(identity, serializer);
-          sse_encode_list_prim_i_32_loose(posted, serializer);
+          sse_encode_list_posted_notice(posted, serializer);
           sse_encode_list_prim_i_32_loose(removed, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -7909,6 +7909,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PostedNotice> dco_decode_list_posted_notice(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_posted_notice).toList();
+  }
+
+  @protected
   List<int> dco_decode_list_prim_i_32_loose(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as List<int>;
@@ -8815,6 +8821,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       outletBreaks: dco_decode_u_32(arr[2]),
       portionMg: dco_decode_opt_box_autoadd_u_32(arr[3]),
       deliveredMg: dco_decode_opt_box_autoadd_u_64(arr[4]),
+    );
+  }
+
+  @protected
+  PostedNotice dco_decode_posted_notice(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return PostedNotice(
+      id: dco_decode_i_32(arr[0]),
+      seenMs: dco_decode_i_64(arr[1]),
+      kind: dco_decode_notice_kind(arr[2]),
     );
   }
 
@@ -12974,6 +12993,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PostedNotice> sse_decode_list_posted_notice(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PostedNotice>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_posted_notice(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<int> sse_decode_list_prim_i_32_loose(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -14400,6 +14433,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       portionMg: var_portionMg,
       deliveredMg: var_deliveredMg,
     );
+  }
+
+  @protected
+  PostedNotice sse_decode_posted_notice(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_i_32(deserializer);
+    var var_seenMs = sse_decode_i_64(deserializer);
+    var var_kind = sse_decode_notice_kind(deserializer);
+    return PostedNotice(id: var_id, seenMs: var_seenMs, kind: var_kind);
   }
 
   @protected
@@ -18745,6 +18787,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_posted_notice(
+    List<PostedNotice> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_posted_notice(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_i_32_loose(
     List<int> self,
     SseSerializer serializer,
@@ -20075,6 +20129,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.outletBreaks, serializer);
     sse_encode_opt_box_autoadd_u_32(self.portionMg, serializer);
     sse_encode_opt_box_autoadd_u_64(self.deliveredMg, serializer);
+  }
+
+  @protected
+  void sse_encode_posted_notice(PostedNotice self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.id, serializer);
+    sse_encode_i_64(self.seenMs, serializer);
+    sse_encode_notice_kind(self.kind, serializer);
   }
 
   @protected

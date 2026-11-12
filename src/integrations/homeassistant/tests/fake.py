@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import queue
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -81,6 +82,7 @@ def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
         "gap_to": None,
         "reason": None,
         "alerts": None,
+        "answered": None,
     }
     values.update(fields)
     return SimpleNamespace(**values)
@@ -165,6 +167,8 @@ class FakeFeeder:
         default_factory=lambda: written(bridge.WriteResult.Feeding, feed=1)
     )
     calls: list[tuple[str, tuple[Any, ...]]] = field(default_factory=list)
+    # When set, a feed waits for it: a write still out when the test acts.
+    gate: threading.Event | None = None
 
     def push(self, *updates: SimpleNamespace) -> None:
         for item in updates:
@@ -182,9 +186,14 @@ class FakeFeeder:
 
     def feed(self, portions: int) -> SimpleNamespace:
         self.calls.append(("feed", (portions,)))
-        # As the bridge does: a lost feed is announced before its answer.
+        if self.gate is not None:
+            self.gate.wait()
+        # As the bridge does: a lost feed, or an answered feed's number, is
+        # announced before its answer.
         if self.feed_result.pending is not None:
             self.push(update(bridge.UpdateKind.Pending, pending=self.feed_result.pending))
+        if self.feed_result.feed is not None:
+            self.push(update(bridge.UpdateKind.Answered, answered=self.feed_result.feed))
         return self.feed_result
 
     def cancel_feed(self, number: int) -> SimpleNamespace:

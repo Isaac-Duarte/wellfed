@@ -375,6 +375,9 @@
     "not_sent_invalid": {
       "message": "Not sent: that value is outside what the feeder accepts."
     },
+    "not_sent_held": {
+      "message": "Not sent: another feed is still being answered or settled, so this one waits. Home Assistant settles it within 15 minutes; check the bowl before feeding again."
+    },
     "refused_forbidden": {
       "message": "The feeder refused: this client's role may not do that."
     },

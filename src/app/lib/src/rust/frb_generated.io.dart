@@ -889,6 +889,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<PendingWrite> dco_decode_list_pending_write(dynamic raw);
 
   @protected
+  List<PostedNotice> dco_decode_list_posted_notice(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_i_32_loose(dynamic raw);
 
   @protected
@@ -1208,6 +1211,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Portions dco_decode_portions(dynamic raw);
+
+  @protected
+  PostedNotice dco_decode_posted_notice(dynamic raw);
 
   @protected
   PowerStats dco_decode_power_stats(dynamic raw);
@@ -2372,6 +2378,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PostedNotice> sse_decode_list_posted_notice(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<int> sse_decode_list_prim_i_32_loose(SseDeserializer deserializer);
 
   @protected
@@ -2767,6 +2778,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Portions sse_decode_portions(SseDeserializer deserializer);
+
+  @protected
+  PostedNotice sse_decode_posted_notice(SseDeserializer deserializer);
 
   @protected
   PowerStats sse_decode_power_stats(SseDeserializer deserializer);
@@ -4187,6 +4201,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_posted_notice(
+    List<PostedNotice> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_i_32_loose(
     List<int> self,
     SseSerializer serializer,
@@ -4695,6 +4715,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_portions(Portions self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_posted_notice(PostedNotice self, SseSerializer serializer);
 
   @protected
   void sse_encode_power_stats(PowerStats self, SseSerializer serializer);

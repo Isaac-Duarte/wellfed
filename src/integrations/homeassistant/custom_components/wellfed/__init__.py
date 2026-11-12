@@ -154,7 +154,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> b
     # decide the entities.
     await session.ready(READY_WAIT)
     if session.revoked or session.state is None:
-        await hass.async_add_executor_job(session.stop)
+        await session.stop()
         if session.revoked:
             key = "token_refused" if session.token_refused else "revoked"
             raise ConfigEntryAuthFailed(translation_domain=DOMAIN, translation_key=key)
@@ -168,7 +168,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> b
 async def async_unload_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
-        await hass.async_add_executor_job(entry.runtime_data.stop)
+        await entry.runtime_data.stop()
     return unloaded
 
 

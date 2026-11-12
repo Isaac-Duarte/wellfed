@@ -29,9 +29,12 @@ fn only_an_open_the_receiver_took_is_kept_for_its_clear() {
     hook(&mut hooked, &Change::Post(tracked(Shown::Due)), Told::Took);
     assert_eq!(hooked.len(), 1, "an alert posted again replaces itself");
     hook(&mut hooked, &Change::Post(tracked(Shown::Due)), Told::Not);
-    assert!(hooked.is_empty(), "its new kind was not taken: no clear");
+    assert_eq!(
+        hooked.len(),
+        1,
+        "its new kind was not taken: the opening taken before still gets its clear"
+    );
 
-    hook(&mut hooked, &Change::Post(tracked(Shown::Due)), Told::Took);
     hook(
         &mut hooked,
         &Change::Remove(NoticeKey::Unreachable),

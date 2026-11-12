@@ -47,6 +47,11 @@ _LOGGER = logging.getLogger(__name__)
 # How long the pump waits on the bridge before it looks for a stop.
 PUMP_WAIT = 1.0
 
+# How long a stop waits for writes still out: past the longest a write
+# waits on its answer before it is judged uncertain (30 s through the server,
+# 10 s directly), after up to 5 s waiting to be sent.
+WRITES_WAIT = 40.0
+
 # Events kept for diagnostics.
 RECENT_EVENTS = 20
 
@@ -166,6 +171,10 @@ class FeederSession:
         self._feeder: bridge.Feeder | None = feeder
         self._stop = threading.Event()
         self._pump: threading.Thread | None = None
+        # Writes still out, and whether the stop has drained the updates:
+        # one that outlives the stop drains its own.
+        self._writes: set[asyncio.Future[bridge.Written]] = set()
+        self._drained = False
         self._listeners: list[Callable[[], None]] = []
 
         self.connected = False
@@ -221,12 +230,32 @@ class FeederSession:
         self._pump = threading.Thread(target=self._run, name="wellfed-pump", daemon=True)
         self._pump.start()
 
-    def stop(self) -> None:
-        """Stop the pump; dropping the bridge's handle ends its session."""
+    async def stop(self) -> None:
+        """Stop the session; dropping the bridge's handle ends it. Before the
+        next session is handed the store, every lost feed, number answered
+        and settlement this one learned is kept, in order: a write still
+        out gets up to `WRITES_WAIT` to end, and the updates the pump handed
+        the event loop run before what it left behind is drained."""
         self._stop.set()
         if self._pump is not None:
-            self._pump.join(timeout=PUMP_WAIT * 3)
+            await self.hass.async_add_executor_job(self._pump.join, PUMP_WAIT * 3)
+        if self._writes:
+            await asyncio.wait(self._writes, timeout=WRITES_WAIT)
+        # The pump's last updates, handed over before it ended, go first.
+        await asyncio.sleep(0)
+        if self._feeder is not None:
+            self._drain(self._feeder)
+        self._drained = True
         self._feeder = None
+
+    @callback
+    def _drain(self, feeder: bridge.Feeder) -> None:
+        """Keep what the updates still waiting on `feeder` say of lost feeds,
+        in order, once no pump will: a lost feed, a number answered or a
+        settlement must reach the store, or the next session never hears
+        of it."""
+        while (update := feeder.next_update(0)) is not None:
+            self._keep(update)
 
     async def ready(self, timeout: float) -> None:
         """Wait for the first state, or a revoked key."""
@@ -258,7 +287,7 @@ class FeederSession:
         written = await self._write(lambda feeder: feeder.feed(portions))
         if written.feed is None:
             raise WriteNotDone("write_uncertain")
-        self.kept.answered_feed(written.feed)
+        # The bridge announced its number for the store already.
         self.running_feed = written.feed
         self._changed()
         return written.feed
@@ -304,9 +333,16 @@ class FeederSession:
 
     async def _write(self, call: Callable[[bridge.Feeder], bridge.Written]) -> bridge.Written:
         feeder = self._feeder
-        if feeder is None:
+        if feeder is None or self._stop.is_set():
             raise WriteNotDone("not_sent_stopped")
-        written = await self.hass.async_add_executor_job(call, feeder)
+        out = self.hass.async_add_executor_job(call, feeder)
+        self._writes.add(out)
+        out.add_done_callback(self._writes.discard)
+        written = await out
+        if self._drained:
+            # It outlived the stop's wait: the updates it made (a lost feed,
+            # its number) have no pump and no stop left to take them.
+            self._drain(feeder)
         result = written.result
         if result in (bridge.WriteResult.Feeding, bridge.WriteResult.Done):
             return written
@@ -360,29 +396,8 @@ class FeederSession:
             _LOGGER.info(
                 "Some feeder events were not received: %s to %s", update.gap_from, update.gap_to
             )
-        elif kind == bridge.UpdateKind.Pending and update.pending is not None:
-            self.kept.add_pending(update.pending)
-            self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
-        elif kind == bridge.UpdateKind.Settled:
-            if update.feed is not None:
-                _LOGGER.info(
-                    "The feed whose answer was lost ran: feed %s, %s of %s portions",
-                    update.feed.feed,
-                    update.feed.completed,
-                    update.feed.requested,
-                )
-            self._settled(update.pending)
-        elif kind == bridge.UpdateKind.SettledUnfed:
-            _LOGGER.info("The feed whose answer was lost was refused after all: nothing ran")
-            self._settled(update.pending)
-        elif kind == bridge.UpdateKind.StillUnknown:
-            _LOGGER.warning(
-                "A feed of %s portions whose answer was lost left no record: whether it "
-                "ran is not known",
-                update.portions,
-            )
-            self._settled(update.pending)
-            self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
+        elif self._keep(update):
+            pass
         elif kind in (bridge.UpdateKind.Revoked, bridge.UpdateKind.TokenRefused):
             if kind == bridge.UpdateKind.Revoked:
                 _LOGGER.error("The feeder no longer knows this Home Assistant: pair it again")
@@ -408,6 +423,40 @@ class FeederSession:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)
             self.connected = False
         self._changed()
+
+    @callback
+    def _keep(self, update: bridge.Update) -> bool:
+        """Keep what `update` says of lost feeds in the store, with their
+        repairs: whether it said anything of them."""
+        kind = update.kind
+        if kind == bridge.UpdateKind.Pending and update.pending is not None:
+            self.kept.add_pending(update.pending)
+            self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
+        elif kind == bridge.UpdateKind.Answered and update.answered is not None:
+            self.kept.answered_feed(update.answered)
+        elif kind == bridge.UpdateKind.Settled:
+            if update.feed is not None:
+                _LOGGER.info(
+                    "The feed whose answer was lost ran: feed %s, %s of %s portions",
+                    update.feed.feed,
+                    update.feed.completed,
+                    update.feed.requested,
+                )
+            self._settled(update.pending)
+        elif kind == bridge.UpdateKind.SettledUnfed:
+            _LOGGER.info("The feed whose answer was lost was refused after all: nothing ran")
+            self._settled(update.pending)
+        elif kind == bridge.UpdateKind.StillUnknown:
+            _LOGGER.warning(
+                "A feed of %s portions whose answer was lost left no record: whether it "
+                "ran is not known",
+                update.portions,
+            )
+            self._settled(update.pending)
+            self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
+        else:
+            return False
+        return True
 
     @callback
     def _settled(self, pending: bridge.Pending | None) -> None:

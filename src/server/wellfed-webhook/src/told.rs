@@ -18,12 +18,15 @@ pub(crate) enum Told {
     Not,
 }
 
-/// Keep `hooked` to the alerts the receiver took the opening of.
+/// Keep `hooked` to the alerts the receiver took the opening of. A post
+/// it did not take changes nothing: an opening it took before under the
+/// same key (the alert in its earlier kind) is still open there, so its
+/// clear must still go.
 pub(crate) fn hook(hooked: &mut Vec<Tracked>, change: &Change, told: Told) {
     match change {
         Change::Post(tracked) => {
-            hooked.retain(|each| each.key != tracked.key);
             if told == Told::Took {
+                hooked.retain(|each| each.key != tracked.key);
                 hooked.push(*tracked);
             }
         }

@@ -25,7 +25,14 @@
 //!   session keeps it, and settles it when a later `Fed` event names this
 //!   client as its source and is not a feed it was already answered for;
 //!   it reports [`UpdateKind::StillUnknown`](crate::api::UpdateKind) when
-//!   the history holds no such feed, never a guessed count.
+//!   the history holds no such feed, never a guessed count. A `Fed` names
+//!   the client, not the request, so while one feed is uncertain (or a
+//!   feed's answer is still awaited) a new feed is not sent
+//!   ([`NotSent::Held`]): the next `Fed` this client is named in can then
+//!   settle only that one. Every number this client has the end of goes to
+//!   the integration ([`UpdateKind::Answered`](crate::api::UpdateKind)),
+//!   which hands them to the next session, so a replayed `Fed` of a feed
+//!   settled before a restart settles nothing either.
 //! - **Revocation.** A key the feeder no longer knows ends the session for
 //!   good: it is reported once and the thread stops reconnecting.
 
@@ -351,6 +358,12 @@ impl Memory {
 
     fn fed(&mut self, feed: Feed) {
         fed(&mut self.facts, feed);
+    }
+
+    /// Whether a lost feed is still unsettled, one carried from the last
+    /// run included: a new feed waits for it.
+    fn holds_feeds(&self) -> bool {
+        !self.uncertain.is_empty()
     }
 }
 
@@ -695,6 +708,8 @@ impl<'a> Session<'a> {
                 writes::served(&op, self.connection.kind())?;
                 let busy = matches!(kind, Kind::Store { store, .. } if self.store_busy(store));
                 wellfed_formats::require(!busy, || NotSent::Busy)?;
+                let held = matches!(kind, Kind::Feed { .. }) && self.feed_unsettled();
+                wellfed_formats::require(!held, || NotSent::Held)?;
                 Ok((op, kind))
             });
         let (op, kind) = match built {
@@ -714,6 +729,21 @@ impl<'a> Session<'a> {
         self.pending
             .insert(id, Outstanding::Write { reply, kind, op });
         Ok(())
+    }
+
+    /// Whether a feed this client sent has no end yet: uncertain, or
+    /// still waiting on its answer, which may yet be lost.
+    fn feed_unsettled(&self) -> bool {
+        self.memory.holds_feeds()
+            || self.pending.values().any(|pending| {
+                matches!(
+                    pending,
+                    Outstanding::Write {
+                        kind: Kind::Feed { .. },
+                        ..
+                    }
+                )
+            })
     }
 
     fn store_busy(&self, store: Store) -> bool {
@@ -742,7 +772,7 @@ impl<'a> Session<'a> {
         match kind {
             Kind::Once | Kind::Feed { .. } => {
                 if let Answer::Feeding { feed } = answer {
-                    self.memory.answered(*feed);
+                    self.answer(*feed);
                 }
                 Ok(once(answer))
             }
@@ -989,8 +1019,18 @@ impl<'a> Session<'a> {
         };
 
         let uncertain = self.memory.uncertain.remove(found);
-        self.memory.answered(feed.feed);
+        self.answer(feed.feed);
         self.send(Update::settled(api::Feed::from(feed), uncertain.pending))
+    }
+
+    /// This client has the end of the feed numbered `feed`: a `Fed` for it
+    /// settles nothing, in this session or, through the integration's
+    /// store, the next. Announced before the write's reply or the
+    /// settlement, so the integration has it first; a handle gone has no
+    /// one to tell.
+    fn answer(&mut self, feed: u32) {
+        self.memory.answered(feed);
+        let _ = self.updates.send(Update::answered(feed));
     }
 
     /// Uncertain feeds past [`SETTLE`] with no `Fed`: still unknown.
@@ -1069,6 +1109,25 @@ mod tests {
             .enable_all()
             .build()
             .unwrap()
+    }
+
+    /// A lost feed handed over from the last run holds a new feed as one
+    /// lost in this run does, until the session settles it.
+    #[test]
+    fn a_lost_feed_carried_from_the_last_run_holds_new_feeds() {
+        assert!(!Memory::carried(Carried::default()).holds_feeds());
+
+        let lost = Pending {
+            id: "a-lost-feed".into(),
+            portions: 1,
+            sent_ms: now_ms(),
+            after: Some(4),
+        };
+        let carried = Carried {
+            pending: vec![lost],
+            answered: Vec::new(),
+        };
+        assert!(Memory::carried(carried).holds_feeds());
     }
 
     /// A write that waited past [`FRESH`] is answered unsent; a fresh one

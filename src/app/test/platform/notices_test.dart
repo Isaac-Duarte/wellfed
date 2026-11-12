@@ -2,6 +2,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/alert_ports.dart';
 import 'package:wellfed/platform/notices.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/alerts/alert_words.dart';
 
 void main() {
@@ -21,6 +22,27 @@ void main() {
     expect(notificationAskFor(sdkAtLeast33: true, refusedBefore: true), NotificationAsk.openSettings);
     expect(notificationAskFor(sdkAtLeast33: false, refusedBefore: false), NotificationAsk.openSettings);
     expect(notificationAskFor(sdkAtLeast33: false, refusedBefore: true), NotificationAsk.openSettings);
+  });
+
+  group('a round', () {
+    const feeders = [KnownFeeder(identity: 'aa', name: 'Kitchen'), KnownFeeder(identity: 'bb', name: 'Hall')];
+
+    Future<void> round(RoundFailures failures, List<String> reached) => feederRound(feeders, failures, (feeder) async {
+      if (feeder.identity == 'aa') throw StateError('the verifier was never started');
+      reached.add(feeder.identity);
+    });
+
+    test('in the background, a feeder whose catch-up throws leaves the next its turn', () async {
+      final reached = <String>[];
+      await round(RoundFailures.logged, reached);
+      expect(reached, ['bb']);
+    });
+
+    test('asked for, it gives every feeder its turn, then throws the failure', () async {
+      final reached = <String>[];
+      await expectLater(round(RoundFailures.thrown, reached), throwsStateError);
+      expect(reached, ['bb'], reason: 'the round finished first');
+    });
   });
 
   test('a sweep takes only alert notifications', () {

@@ -660,6 +660,61 @@ fn a_missed_meal_replaces_its_report_of_no_record() {
     assert_eq!(watch.open.len(), 1);
 }
 
+/// The one change a watch hands over now, a post.
+fn the_post(watch: &Watch) -> Change {
+    let changes = watch.changes();
+    assert!(matches!(changes[..], [Change::Post(_)]), "{changes:?}");
+    changes[0]
+}
+
+#[test]
+fn a_late_confirmation_leaves_the_alert_opened_again_meanwhile_due() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let food = condition(Alert::FoodLow);
+    watch.apply(cursor(1, 1, 1), &view(1, &[food]), &context(at(10), &mutes));
+    let on_the_way = the_post(&watch);
+
+    // While that post is delivered, the alert ends and opens again.
+    watch.apply(cursor(1, 1, 2), &view(1, &[]), &context(at(20), &mutes));
+    watch.apply(cursor(1, 1, 3), &view(1, &[food]), &context(at(30), &mutes));
+    watch.confirm(&on_the_way);
+
+    let changes = watch.changes();
+    assert!(matches!(changes[0], Change::Remove(_)), "{changes:?}");
+    let Change::Post(again) = changes[1] else {
+        panic!("the new opening is still due: {changes:?}");
+    };
+    assert_eq!(again.seen, at(30));
+    assert_eq!(watch.open[0].delivery, Delivery::Due);
+}
+
+#[test]
+fn a_late_confirmation_leaves_the_alert_s_new_kind_due() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let now = context(at(10), &mutes);
+    let due = at(-3600);
+    let no_record = condition(Alert::MealNoRecord { plan: 1, due });
+    let missed = condition(Alert::MealMissed {
+        plan: 1,
+        due,
+        reason: MissedReason::Late,
+    });
+    watch.apply(cursor(1, 1, 1), &view(1, &[no_record]), &now);
+    let on_the_way = the_post(&watch);
+
+    // While that post is delivered, the meal is found missed.
+    watch.apply(cursor(1, 1, 2), &view(1, &[missed]), &now);
+    watch.confirm(&on_the_way);
+    assert_eq!(posts(&watch), [NoticeKind::MealMissed]);
+
+    // Confirming the post of the missed meal itself does take it.
+    let missed_post = the_post(&watch);
+    watch.confirm(&missed_post);
+    assert!(watch.changes().is_empty());
+}
+
 #[test]
 fn unreachable_opens_only_on_the_home_network_after_three_failures_and_ten_minutes() {
     let mutes = Mutes::default();

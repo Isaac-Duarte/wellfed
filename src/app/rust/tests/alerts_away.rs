@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use wellfed_api::{AdoptFeeder, Alert, ClientRole, Connection, Hex};
 use wellfed_app_bridge::api::alerts::{
-    AlertServer, Attempt, CatchUp, CatchUpEnd, NoticeChange, PhoneNetwork, catch_up_with,
-    confirm_notices,
+    AlertServer, Attempt, CatchUp, CatchUpEnd, NoticeChange, PhoneNetwork, PostedNotice,
+    catch_up_with, confirm_notices,
 };
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::NoticeKind;
@@ -69,7 +69,7 @@ async fn post(dir: &str, sim: &Running, done: &CatchUp) -> Vec<NoticeKind> {
     for change in &done.changes {
         if let NoticeChange::Post { notice } = change {
             posted.push(notice.kind);
-            ids.push(notice.id);
+            ids.push(PostedNotice::from(notice));
         }
     }
     confirm_notices(dir.into(), hex(&sim.identity), ids, Vec::new())

@@ -140,6 +140,8 @@ pub struct Update {
     pub reason: Option<String>,
     /// For [`UpdateKind::Alerts`].
     pub alerts: Option<Alerts>,
+    /// For [`UpdateKind::Answered`]: the feed number to keep.
+    pub answered: Option<u32>,
 }
 
 impl Update {
@@ -160,6 +162,7 @@ impl Update {
             gap_to: None,
             reason: None,
             alerts: None,
+            answered: None,
         }
     }
 
@@ -219,6 +222,14 @@ impl Update {
             portions: Some(pending.portions),
             pending: Some(pending),
             ..Self::kind(UpdateKind::Pending)
+        }
+    }
+
+    /// A feed number this client now has the end of.
+    pub fn answered(feed: u32) -> Self {
+        Self {
+            answered: Some(feed),
+            ..Self::kind(UpdateKind::Answered)
         }
     }
 

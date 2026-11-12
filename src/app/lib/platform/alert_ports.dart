@@ -96,20 +96,32 @@ Future<AlertServer?> alertServer(String dir) async {
   return secret == null ? null : AlertServer(server: server, secret: secret);
 }
 
+/// What a round does with a feeder's failed catch-up, once every other
+/// feeder has had its turn.
+enum RoundFailures {
+  /// Logged only: a background round has nobody to tell.
+  logged,
+
+  /// The first is thrown at the end, for the owner who asked for the check.
+  thrown,
+}
+
 /// One round of catch-ups with `feeders`, as `key`, with the app's files in
 /// `dir`, on the network `network` says the phone is on. Away from home, a
 /// feeder `server` holds is read through it. Each feeder's changes are
-/// posted and confirmed before the next.
+/// posted and confirmed before the next, and one that fails leaves the
+/// others their turn ([feederRound]).
 Future<void> catchUpRound({
   required ClientKey key,
   required String dir,
   required List<KnownFeeder> feeders,
   required Future<PhoneNetwork> Function() network,
+  required RoundFailures failures,
   AlertServer? server,
 }) async {
   await Notices.sweep(dir);
   final PhoneNetwork here = await network();
-  for (final KnownFeeder feeder in feeders) {
+  await feederRound(feeders, failures, (feeder) async {
     Future<CatchUp> attempt(Attempt attempt) => catchUpWith(
       dir: dir,
       key: key,
@@ -129,6 +141,31 @@ Future<void> catchUpRound({
       done = await attempt(Attempt.last(located: located));
     }
     await Notices.deliver(dir: dir, identity: feeder.identity, name: feeder.name, changes: done.changes);
+  });
+}
+
+/// Run `one` for each of `feeders` in turn. One that throws (the bridge's
+/// error, or its panic) is logged and the round goes on: another feeder's
+/// alerts must not wait on it. Its changes stay unconfirmed, so the next
+/// round hands them over again. With [RoundFailures.thrown], the first
+/// failure is thrown once every feeder has had its turn, so a check the
+/// owner asked for never reads as a success.
+Future<void> feederRound(
+  List<KnownFeeder> feeders,
+  RoundFailures failures,
+  Future<void> Function(KnownFeeder feeder) one,
+) async {
+  (Object, StackTrace)? first;
+  for (final KnownFeeder feeder in feeders) {
+    try {
+      await one(feeder);
+    } on Object catch (error, stack) {
+      debugPrint('the catch-up with ${feeder.name} failed this round: $error');
+      first ??= (error, stack);
+    }
+  }
+  if (failures == RoundFailures.thrown) {
+    if (first case (final Object error, final StackTrace stack)) Error.throwWithStackTrace(error, stack);
   }
 }
 
@@ -155,6 +192,7 @@ class AppAlertPorts implements AlertPorts {
       dir: dir,
       feeders: feeders,
       network: () async => phoneNetwork(await alertsChannel.invokeMapMethod<Object?, Object?>('network')),
+      failures: RoundFailures.thrown,
       server: await alertServer(dir),
     );
   }

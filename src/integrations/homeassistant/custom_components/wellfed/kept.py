@@ -4,10 +4,12 @@
   settles it. The next session is handed them, so a feed lost just before a
   restart is still settled (or found unknown) rather than forgotten, and
   the repair that names them stays in step.
-- **Answered feeds:** the last feed numbers this Home Assistant was
-  answered for, pending or not. Directly, a `Fed` event of one of them
+- **Answered feeds:** the last feed numbers this Home Assistant has the end
+  of, as the bridge announces them: each feed it was answered for, and each
+  lost feed a `Fed` event settled. Directly, a `Fed` event of one of them
   settles nothing, so the next session must know them too: a feed answered
-  just before a lost one went out may end after it.
+  just before a lost one went out may end after it, and the replay of a
+  `Fed` that settled one lost feed must not settle another.
 - **A leftover key:** the client key an entry held directly before it moved
   to the server route, while the feeder may still list it.
 

@@ -24,7 +24,7 @@ use tokio::sync::Mutex;
 use wellfed_client::alerts::{Change, Mutes, Watch};
 use wellfed_formats::kept;
 
-use crate::api::alerts::AlertHold;
+use crate::api::alerts::{AlertHold, PostedNotice};
 use crate::api::error::BridgeError;
 use crate::api::store::{self, SetAside, StoreKind};
 use crate::stored::{self, Opened, Versioned};
@@ -174,29 +174,32 @@ impl AlertState {
             .retain(|held| now.duration_since(held.since) <= SWEEP_HOLD);
     }
 
-    /// The changes Dart made for the feeder `identity`: each posted
-    /// notification's id and each removed one's. The ids to take off again:
-    /// everything posted for a feeder forgotten while its changes were on the
-    /// way. A post a sweep is taking down stays unconfirmed.
+    /// The changes Dart made for the feeder `identity`: each notice posted
+    /// and each removed one's id. The ids to take off again: everything
+    /// posted for a feeder forgotten while its changes were on the way. A
+    /// post a sweep is taking down stays unconfirmed, and so does one that
+    /// is not the posting Dart made: the notice opened again, or changed
+    /// kind, after the catch-up handed it over.
     pub(crate) fn confirm(
         &mut self,
         identity: &str,
         feeder: &[u8; 32],
-        made: (&[i32], &[i32]),
+        made: (&[PostedNotice], &[i32]),
         now: Timestamp,
     ) -> Vec<i32> {
         let (posted, removed) = made;
         self.lapse_sweeps(now);
         let sweeping: Vec<i32> = self.sweeping.iter().map(|held| held.id).collect();
         let Some(watched) = self.watched_mut(identity) else {
-            return posted.to_vec();
+            return posted.iter().map(|notice| notice.id).collect();
         };
         let watch = &mut watched.watch;
         for change in watch.changes() {
             let done = match &change {
                 Change::Post(tracked) => {
                     let id = tracked.key.notification_id(feeder);
-                    posted.contains(&id) && !sweeping.contains(&id)
+                    let made = posted.iter().any(|notice| notice.posts(feeder, tracked));
+                    made && !sweeping.contains(&id)
                 }
                 Change::Remove(key) => removed.contains(&key.notification_id(feeder)),
             };
@@ -409,13 +412,14 @@ mod tests {
     use jiff::Timestamp;
     use std::collections::BTreeSet;
     use wellfed_client::alerts::{
-        Absence, Cursor, Delivery, Notice, NoticeKey, NoticeKind, Reach, Tracked,
+        Absence, Context, Cursor, Delivery, FeederClock, Notice, NoticeKey, NoticeKind, Reach,
+        Tracked,
     };
 
     use serde::Serialize;
     use wellfed_model::{
-        Alert, AlertKey, AlertKind, AlertLevel, Blocked, ClientRole, EnrollPath, FeedOutcome,
-        FeedReason, Generation, Hex, MissedReason, OpenAlert, Source, UpdateStop,
+        Alert, AlertKey, AlertKind, AlertLevel, AlertsView, Blocked, ClientRole, EnrollPath,
+        FeedOutcome, FeedReason, Generation, Hex, MissedReason, OpenAlert, Source, UpdateStop,
     };
 
     use super::*;
@@ -578,6 +582,84 @@ mod tests {
 
     /// Every field of the file, with a value in each, and every value of
     /// each enum it holds.
+    static MUTES: Mutes = Mutes {
+        kinds: Vec::new(),
+        levels: Vec::new(),
+    };
+
+    /// The posting Dart hands back for `tracked`, as its notice view says.
+    fn posting(feeder: &[u8; 32], tracked: &Tracked) -> PostedNotice {
+        PostedNotice {
+            id: tracked.key.notification_id(feeder),
+            seen_ms: tracked.seen.as_millisecond(),
+            kind: tracked.notice.kind(),
+        }
+    }
+
+    fn watch(state: &mut AlertState) -> &mut Watch {
+        &mut state.feeders[0].watch
+    }
+
+    /// Dart posts a notice while another engine's catch-up finds it ended
+    /// and open again: the late confirmation is of the old posting, and the
+    /// new one is still posted.
+    #[test]
+    fn a_late_confirmation_leaves_a_notice_opened_again_meanwhile_due() {
+        let feeder =
+            wellfed_session::hex::decode_array_either_case::<32>(KITCHEN.as_bytes()).unwrap();
+        let context = |now| Context {
+            now,
+            mutes: &MUTES,
+            own: Hex([0; 4]),
+            clock: FeederClock::Known,
+        };
+        let table = |generation, alerts: &[OpenAlert]| {
+            let cursor = Cursor {
+                epoch: 3,
+                boot: 1,
+                generation: Generation(generation),
+            };
+            let view = AlertsView {
+                epoch: 3,
+                generation: Generation(generation),
+                more: false,
+                settling: false,
+                alerts: alerts.to_vec(),
+                unread: 0,
+            };
+            (cursor, view)
+        };
+        let food = OpenAlert {
+            at: None,
+            alert: Alert::FoodLow,
+        };
+        let mut state = AlertState::default();
+        state.feeders.push(Watched {
+            identity: KITCHEN.into(),
+            address: None,
+            watch: Watch::default(),
+        });
+
+        let (cursor, view) = table(1, &[food]);
+        watch(&mut state).apply(cursor, &view, &context(at(10)));
+        let Change::Post(on_the_way) = watch(&mut state).changes()[0] else {
+            panic!("a post");
+        };
+        let posted = [posting(&feeder, &on_the_way)];
+
+        let (cursor, view) = table(2, &[]);
+        watch(&mut state).apply(cursor, &view, &context(at(20)));
+        let (cursor, view) = table(3, &[food]);
+        watch(&mut state).apply(cursor, &view, &context(at(30)));
+        state.confirm(KITCHEN, &feeder, (&posted, &[]), at(40));
+
+        let changes = watch(&mut state).changes();
+        assert!(
+            matches!(changes[..], [Change::Remove(_), Change::Post(again)] if again.seen == at(30)),
+            "the new opening is still to post: {changes:?}"
+        );
+    }
+
     fn every_field() -> AlertState {
         let deliveries = [
             Delivery::Due,
@@ -820,7 +902,11 @@ mod tests {
             let again = crate::api::alerts::confirm_notices(
                 dir_name.clone(),
                 KITCHEN.into(),
-                vec![0x4000_0001],
+                vec![PostedNotice {
+                    id: 0x4000_0001,
+                    seen_ms: 0,
+                    kind: NoticeKind::FoodLow,
+                }],
                 vec![0x4000_0002],
             )
             .await
@@ -906,14 +992,15 @@ mod tests {
         state.sweeping.clear();
         let feeder =
             wellfed_session::hex::decode_array_either_case::<32>(KITCHEN.as_bytes()).unwrap();
-        let due = state.feeders[0]
+        let due = *state.feeders[0]
             .watch
             .open
             .iter()
             .find(|tracked| tracked.delivery == Delivery::Due)
-            .unwrap()
-            .key;
-        let id = due.notification_id(&feeder);
+            .unwrap();
+        let posted = [posting(&feeder, &due)];
+        let id = posted[0].id;
+        let due = due.key;
         let delivery = |state: &AlertState| {
             state.feeders[0]
                 .watch
@@ -926,7 +1013,7 @@ mod tests {
 
         // Chosen, then the engine dies: no `alerts_swept`.
         state.hold_sweep(&[id], at(0));
-        state.confirm(KITCHEN, &feeder, (&[id], &[]), at(30));
+        state.confirm(KITCHEN, &feeder, (&posted, &[]), at(30));
         assert_eq!(
             delivery(&state),
             Delivery::Due,
@@ -936,7 +1023,7 @@ mod tests {
         state.confirm(
             KITCHEN,
             &feeder,
-            (&[id], &[]),
+            (&posted, &[]),
             at(0) + SWEEP_HOLD + SignedDuration::from_secs(1),
         );
         assert_eq!(delivery(&state), Delivery::Posted);
@@ -954,13 +1041,14 @@ mod tests {
             let feeder =
                 wellfed_session::hex::decode_array_either_case::<32>(KITCHEN.as_bytes()).unwrap();
             let watch = &mut state.feeders[0].watch;
-            let due = watch
+            let due = *watch
                 .open
                 .iter()
                 .find(|tracked| tracked.delivery == Delivery::Due)
-                .unwrap()
-                .key;
-            let id = due.notification_id(&feeder);
+                .unwrap();
+            let posted = posting(&feeder, &due);
+            let id = posted.id;
+            let due = due.key;
             // Chosen while the file did not know it yet.
             state.sweeping = vec![SweepHold {
                 id,
@@ -968,9 +1056,14 @@ mod tests {
             }];
             change(dir.path(), |stored| *stored = state).await.unwrap();
 
-            crate::api::alerts::confirm_notices(dir_name.clone(), KITCHEN.into(), vec![id], vec![])
-                .await
-                .unwrap();
+            crate::api::alerts::confirm_notices(
+                dir_name.clone(),
+                KITCHEN.into(),
+                vec![posted],
+                vec![],
+            )
+            .await
+            .unwrap();
             let still = read(dir.path()).await.unwrap();
             let tracked = still.feeders[0]
                 .watch
@@ -987,7 +1080,7 @@ mod tests {
             crate::api::alerts::alerts_swept(dir_name.clone(), vec![id])
                 .await
                 .unwrap();
-            crate::api::alerts::confirm_notices(dir_name, KITCHEN.into(), vec![id], vec![])
+            crate::api::alerts::confirm_notices(dir_name, KITCHEN.into(), vec![posted], vec![])
                 .await
                 .unwrap();
             let after = read(dir.path()).await.unwrap();
