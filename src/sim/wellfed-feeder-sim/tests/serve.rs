@@ -7,6 +7,7 @@ use common::paused;
 use std::assert_matches;
 use std::rc::Rc;
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use wellfed_client::api::Invite;
 use wellfed_connect::{Connection, Cursor, Error as ConnectError, join};
@@ -153,7 +154,7 @@ async fn settings(sim: &mut Running, connection: &mut Connection) -> FeederSetti
 
 /// Every event the subscription replays, until it is quiet.
 async fn backlog(connection: &mut Connection) -> Vec<EventBody> {
-    connection.subscribe(None, false).await.unwrap();
+    connection.subscribe(None, Samples::Off).await.unwrap();
     let mut events = Vec::new();
     while let Ok(message) = connection.next(Duration::from_millis(500)).await {
         if let Pushed::Event(event) = message {
@@ -702,7 +703,7 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
         for op in [&settings, &wifi, &time, &plan, &weight] {
             assert_eq!(sim.ask(&mut owner, op).await, first, "{op:?}");
         }
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         let fed = sim.ask(&mut owner, &Op::Feed { portions: 1 }).await;
         let Answer::Feeding { feed: before } = fed else {
             panic!("{fed:?}");
@@ -881,7 +882,7 @@ fn events_that_arrive_while_a_request_waits_are_kept_for_next() {
     local(async {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         // Let the backlog (the boot and the update store's record) arrive
         // unread, so the ask reads it ahead of its own answer.
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -910,7 +911,7 @@ fn the_cursor_follows_what_was_handed_out() {
     local(async {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         tokio::time::sleep(Duration::from_millis(300)).await;
         let answer = sim.ask(&mut owner, &Op::Status).await;
         assert!(matches!(answer, Answer::Status(_)));
@@ -931,7 +932,7 @@ fn the_cursor_follows_what_was_handed_out() {
         drop(owner);
 
         let mut again = sim.open(OWNER).await.unwrap();
-        again.subscribe(kept, false).await.unwrap();
+        again.subscribe(kept, Samples::Off).await.unwrap();
         let Pushed::Event(second) = again.next(WAIT).await.unwrap() else {
             panic!("the backlog goes on with an event");
         };
@@ -946,7 +947,7 @@ fn the_keepalive_holds_a_quiet_session_past_the_idle_limit() {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut quiet = sim.open(OWNER).await.unwrap();
         let mut follower = sim.open(OWNER).await.unwrap();
-        follower.subscribe(None, false).await.unwrap();
+        follower.subscribe(None, Samples::Off).await.unwrap();
 
         // The follower waits through the idle limit, keeping itself alive;
         // the quiet session sends nothing and is dropped.
@@ -983,7 +984,7 @@ fn a_feeder_that_goes_silent_without_a_reset_is_noticed() {
         let mut owner = Connection::open(&keys(OWNER), sim.identity, relay.address, ephemeral)
             .await
             .unwrap();
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         while owner.next(Duration::from_millis(200)).await.is_ok() {}
 
         // Power lost: nothing comes back, and no reset says so. Silence
@@ -1012,7 +1013,7 @@ fn a_session_polled_with_dropped_next_futures_stays_alive() {
     paused(async {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut follower = sim.open(OWNER).await.unwrap();
-        follower.subscribe(None, false).await.unwrap();
+        follower.subscribe(None, Samples::Off).await.unwrap();
 
         let limit = Duration::from_millis(wellfed_device_api::IDLE_MS.into());
         let until = tokio::time::Instant::now() + 2 * limit;
@@ -1186,7 +1187,7 @@ fn an_owner_reads_the_statistics_and_their_live_metrics() {
             }
         }
 
-        owner.subscribe(None, true).await.unwrap();
+        owner.subscribe(None, Samples::On).await.unwrap();
         let mut kinds = Vec::new();
         while kinds.len() < MetricKind::ALL.len() {
             match owner.next(Duration::from_secs(60)).await.unwrap() {

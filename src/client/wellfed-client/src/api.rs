@@ -29,9 +29,10 @@ use wellfed_model::{
     Answer, ClientRole, DeviceKind, Gap, Hello, Joined, Model, Op, OpenRefusal, Pushed, Refusal,
     convert,
 };
+pub use wellfed_proto::api::Samples;
 use wellfed_proto::api::{
     ClientMessage, DEVICE_MESSAGES, DeviceMessage, FRAME_MAX, Join as JoinRequest, MESSAGE_MAX,
-    Op as WireOp, Open, PROLOGUE, REVISION, RequestId, Samples, Welcome,
+    Op as WireOp, Open, PROLOGUE, REVISION, RequestId, Welcome,
 };
 use wellfed_session::frame;
 
@@ -430,15 +431,14 @@ impl Session {
     }
 
     /// Ask for every event after `after` and then each new one, and the
-    /// live samples if `samples`. A newer feeder's bodies this client does
-    /// not know come out as [`Pushed::Unknown`].
-    pub fn subscribe(&mut self, after: Option<u64>, samples: bool) -> Result<Vec<u8>, Error> {
+    /// live samples if `samples` is on. A newer feeder's bodies this client
+    /// does not know come out as [`Pushed::Unknown`].
+    pub fn subscribe(&mut self, after: Option<u64>, samples: Samples) -> Result<Vec<u8>, Error> {
         // A pre-revision build frames its events without lengths: they
         // would read as junk.
         if self.legacy {
             return Err(Error::Legacy);
         }
-        let samples = if samples { Samples::On } else { Samples::Off };
         self.send(&ClientMessage::Subscribe { after, samples })
     }
 

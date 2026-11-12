@@ -2,6 +2,7 @@
 //! event read as unknown, and every event body reaching every subscriber.
 
 use wellfed_client::api::Error;
+use wellfed_client::api::Samples;
 use wellfed_client::connection::{Cursor, Event};
 use wellfed_device_api::Device;
 use wellfed_model as model;
@@ -40,7 +41,7 @@ fn a_newer_build_s_event_comes_out_unknown_and_moves_the_cursor() {
 
     let mut owner = live(&mut rig, OWNER);
     let now = owner.now(&rig);
-    owner.connection.subscribe(now, None, false).unwrap();
+    owner.connection.subscribe(now, None, Samples::Off).unwrap();
     drive(&mut rig, &mut owner, |live| live.events.len() >= 3).unwrap();
 
     let seqs: Vec<(u64, bool)> = owner
@@ -71,7 +72,10 @@ fn a_newer_build_s_event_comes_out_unknown_and_moves_the_cursor() {
         epoch: EPOCH,
         seq: 2,
     };
-    mirror.connection.subscribe(now, Some(from), false).unwrap();
+    mirror
+        .connection
+        .subscribe(now, Some(from), Samples::Off)
+        .unwrap();
     drive(&mut rig, &mut mirror, |live| !live.events.is_empty()).unwrap();
     assert_eq!(mirror.connection.cursor(), Some(newest));
 }
@@ -209,7 +213,10 @@ fn every_subscriber_receives_every_body() {
 
     let mut member = live(&mut rig, MEMBER);
     let now = member.now(&rig);
-    member.connection.subscribe(now, None, false).unwrap();
+    member
+        .connection
+        .subscribe(now, None, Samples::Off)
+        .unwrap();
     drive(&mut rig, &mut member, |live| {
         pushed(live).last().map(|e| EventBody::try_from(e.body))
             == Some(Ok(EventBody::Lost { count: 9 }))

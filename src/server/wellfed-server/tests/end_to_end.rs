@@ -12,6 +12,7 @@ use wellfed_server_client::reqwest::header::ETAG;
 use wellfed_server_client::{
     Error, Lock, Method, StatusCode, Update, Updates, decode, expect_status,
 };
+use wellfed_server_testkit::feeder::Samples;
 use wellfed_server_testkit::{TestServer, WAIT, ada_setup, feeder, local, refused, until};
 
 /// The next update, failing the test when the stream ends or breaks.
@@ -316,8 +317,8 @@ fn the_server_and_two_direct_sessions_each_see_the_same_feed() {
         );
         let mut phone = feeder::open_phone(&sim, PHONE).await;
         let mut owner = feeder::open_owner(&sim).await;
-        phone.subscribe(None, false).await.unwrap();
-        owner.subscribe(None, false).await.unwrap();
+        phone.subscribe(None, Samples::Off).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
 
         let answer = phone
             .ask([0x51; 16], &wellfed_model::Op::Feed { portions: 1 })

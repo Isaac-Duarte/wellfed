@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+use wellfed_connect::Samples;
 
 use wellfed_feeder_sim::console;
 use wellfed_feeder_sim::harness::Threaded;
@@ -197,7 +198,10 @@ fn fed(feeder: &Threaded) -> Vec<(u32, FeedOutcome)> {
             }
         }
         let mut session = session.expect("a session after the restart");
-        session.subscribe(None, false).await.expect("the history");
+        session
+            .subscribe(None, Samples::Off)
+            .await
+            .expect("the history");
 
         let mut feeds = Vec::new();
         while let Ok(pushed) = session.next(Duration::from_millis(500)).await {

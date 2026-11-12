@@ -29,6 +29,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use wellfed_connect::Samples;
 
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
@@ -393,8 +394,8 @@ impl Lent {
     /// history the server does not reach back to is refused here, before
     /// the command sends anything else: a feed must never go out ahead of
     /// a refusal of its own events.
-    pub(crate) async fn subscribe(&mut self, after: Option<u64>, samples: bool) -> Result<()> {
-        if samples {
+    pub(crate) async fn subscribe(&mut self, after: Option<u64>, samples: Samples) -> Result<()> {
+        if samples == Samples::On {
             bail!("the bench server's session is subscribed without samples");
         }
         let page = self.bench.pushed(Stream::Events, 0, Duration::ZERO).await?;
@@ -1203,7 +1204,11 @@ mod tests {
 
         // Refused at the subscription: a feed sent after it never runs
         // ahead of a refusal of its own events.
-        let refused = connection.subscribe(None, false).await.err().unwrap();
+        let refused = connection
+            .subscribe(None, Samples::Off)
+            .await
+            .err()
+            .unwrap();
         assert!(
             matches!(
                 refused.downcast_ref::<BenchRefusal>(),
@@ -1212,7 +1217,7 @@ mod tests {
             "{refused}"
         );
         // From the floor on, the server's history is whole.
-        connection.subscribe(Some(40), false).await.unwrap();
+        connection.subscribe(Some(40), Samples::Off).await.unwrap();
         assert!(connection.next(Duration::ZERO).await.unwrap().is_none());
     }
 
@@ -1232,7 +1237,7 @@ mod tests {
         let (_, _, mut connection) = connect_via(&target(&standing.keys), &standing.pointers)
             .await
             .unwrap();
-        connection.subscribe(Some(7), false).await.unwrap();
+        connection.subscribe(Some(7), Samples::Off).await.unwrap();
 
         let next = connection.next(Duration::ZERO).await.unwrap().unwrap();
         assert_eq!(seqs(&[next]), [(2, 8)]);
@@ -1265,7 +1270,7 @@ mod tests {
         let (_, _, mut connection) = connect_via(&target(&standing.keys), &standing.pointers)
             .await
             .unwrap();
-        connection.subscribe(None, false).await.unwrap();
+        connection.subscribe(None, Samples::Off).await.unwrap();
         assert!(connection.next(Duration::ZERO).await.unwrap().is_some());
 
         // The ring drops what was pushed after it before this follower
@@ -1293,7 +1298,7 @@ mod tests {
         let (_, _, mut connection) = connect_via(&target(&standing.keys), &standing.pointers)
             .await
             .unwrap();
-        connection.subscribe(Some(53), false).await.unwrap();
+        connection.subscribe(Some(53), Samples::Off).await.unwrap();
 
         // The new event evicts the ring's oldest, which the command never
         // had to read.

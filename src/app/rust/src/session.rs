@@ -32,6 +32,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+use wellfed_connect::Samples;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -388,7 +389,7 @@ async fn serve(
     serving.request(&Op::GetSettings, Asked::Settings)?;
     serving.request(&Op::GetPlans, Asked::Plans)?;
     serving.request(&Op::GetTime, Asked::Time)?;
-    serving.connection.subscribe(None, false).await?;
+    serving.connection.subscribe(None, Samples::Off).await?;
     serving.facts.status = Some(status);
     if !serving.card() {
         return Ok(());

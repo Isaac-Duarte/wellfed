@@ -6,6 +6,7 @@ use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::rc::Rc;
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use tokio::task::LocalSet;
 use wellfed_connect::Connection;
@@ -68,7 +69,7 @@ async fn sync_clock(connection: &mut Connection, id: &mut u8, unix_ms: u64) {
 }
 
 async fn history(connection: &mut Connection) -> Vec<EventBody> {
-    connection.subscribe(None, false).await.unwrap();
+    connection.subscribe(None, Samples::Off).await.unwrap();
     let mut events = Vec::new();
     while let Ok(message) = connection.next(Duration::from_millis(500)).await {
         if let Pushed::Event(event) = message {
@@ -123,7 +124,7 @@ async fn run(rules: bool) -> (Vec<Meal>, Vec<EventBody>) {
 
     // Back at once, following the history while the feeder reads it too.
     let mut connection = connect(&sim).await;
-    connection.subscribe(None, false).await.unwrap();
+    connection.subscribe(None, Samples::Off).await.unwrap();
     sync_clock(&mut connection, &mut id, wall(started)).await;
     tokio::time::sleep(Duration::from_secs(4 * 60)).await;
     drop(connection);

@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 use std::time::Duration;
+use wellfed_server_testkit::feeder::Samples;
 
 use jiff::Timestamp;
 use wellfed_api::{
@@ -372,7 +373,7 @@ fn meals_keep_their_local_time_across_a_dst_change_with_the_server_down() {
         // The owner's client moves the clock, at UTC; nothing else speaks
         // to the feeder.
         let mut owner = open_owner(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         set_clock(&mut owner, BEFORE_FALL).await;
         let fed = fed_from(&mut owner, BEFORE_FALL - 2).await;
         assert_eq!(fed.as_second() / 60, BEFORE_FALL / 60, "07:30 MDT");

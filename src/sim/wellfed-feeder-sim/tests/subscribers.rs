@@ -4,6 +4,7 @@
 //! nobody.
 
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use wellfed_client::api::Invite;
 use wellfed_connect::{Connection, Cursor, join};
@@ -164,7 +165,7 @@ fn three_sessions_following_at_once_each_get_every_event_of_a_feed() {
 
         let before = rig.status(&mut owner).await.last_event;
         for session in [&mut owner, &mut member, &mut third] {
-            session.subscribe(None, false).await.unwrap();
+            session.subscribe(None, Samples::Off).await.unwrap();
         }
         rig.feed(&mut member).await;
 
@@ -192,10 +193,10 @@ fn a_session_still_reading_the_backlog_and_two_caught_up_each_get_the_feed() {
         // ring, more than two batches of it, as the feed goes out.
         let newest = rig.status(&mut owner).await.last_event;
         let cursor = at_newest(&owner, newest);
-        owner.subscribe(cursor, false).await.unwrap();
-        member.subscribe(cursor, false).await.unwrap();
+        owner.subscribe(cursor, Samples::Off).await.unwrap();
+        member.subscribe(cursor, Samples::Off).await.unwrap();
         let mut third = rig.owner(0xa2).await;
-        third.subscribe(None, false).await.unwrap();
+        third.subscribe(None, Samples::Off).await.unwrap();
         // New events keep coming meanwhile, so the two caught up ask after
         // each one, as a server following a busy feeder does.
         rig.fill_backlog(&mut owner).await;
@@ -235,7 +236,7 @@ fn a_session_that_leaves_mid_read_stalls_nobody() {
         // One starts replaying the ring and leaves after its first event,
         // with the rest of its batch and its turn still held.
         let mut leaving = rig.owner(0xa2).await;
-        leaving.subscribe(None, false).await.unwrap();
+        leaving.subscribe(None, Samples::Off).await.unwrap();
         let Pushed::Event(first) = leaving.next(WAIT).await.unwrap() else {
             panic!("an event first");
         };
@@ -243,9 +244,9 @@ fn a_session_that_leaves_mid_read_stalls_nobody() {
         drop(leaving);
 
         let mut replaying = rig.owner(0xa3).await;
-        replaying.subscribe(None, false).await.unwrap();
+        replaying.subscribe(None, Samples::Off).await.unwrap();
         let cursor = at_newest(&owner, newest);
-        owner.subscribe(cursor, false).await.unwrap();
+        owner.subscribe(cursor, Samples::Off).await.unwrap();
         rig.feed(&mut owner).await;
 
         let owner_saw = until_fed(&mut owner, newest).await;

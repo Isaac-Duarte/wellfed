@@ -9,6 +9,7 @@
 
 use std::future::Future;
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Notify, mpsc};
@@ -679,7 +680,7 @@ fn a_feed_whose_answer_never_comes_is_reported_once_and_not_resent() {
         let mut reader = Connection::open(&keys, sim.identity, sim.address, [0xa2; 32])
             .await
             .unwrap();
-        reader.subscribe(None, false).await.unwrap();
+        reader.subscribe(None, Samples::Off).await.unwrap();
         let mut fed = 0;
         while let Ok(pushed) = reader.next(Duration::from_secs(3)).await {
             if let wellfed_model::Pushed::Event(event) = pushed

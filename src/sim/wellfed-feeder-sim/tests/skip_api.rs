@@ -8,6 +8,7 @@
 mod common;
 
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use common::paused;
 use jiff::Timestamp;
@@ -90,7 +91,11 @@ impl Owner {
     /// feeder recorded them, read from a fresh subscription.
     async fn history(sim: &Running) -> Vec<EventBody> {
         let mut reader = Self::open(sim).await;
-        reader.connection.subscribe(None, false).await.unwrap();
+        reader
+            .connection
+            .subscribe(None, Samples::Off)
+            .await
+            .unwrap();
         let mut events = Vec::new();
         while let Ok(message) = reader.connection.next(Duration::from_millis(500)).await {
             if let Pushed::Event(event) = message

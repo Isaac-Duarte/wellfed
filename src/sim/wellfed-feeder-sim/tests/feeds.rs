@@ -11,6 +11,7 @@ use common::paused;
 use std::assert_matches;
 use std::rc::Rc;
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use tokio::time::sleep;
 use wellfed_client::history::{Delivered, Entry};
@@ -34,7 +35,7 @@ async fn subscribed() -> (Rc<Flash>, Running, Connection) {
     let flash = Flash::memory();
     let sim = start(&flash).await;
     let mut owner = open(&sim).await;
-    owner.subscribe(None, false).await.unwrap();
+    owner.subscribe(None, Samples::Off).await.unwrap();
     (flash, sim, owner)
 }
 
@@ -123,7 +124,7 @@ fn a_feed_outside_one_to_48_portions_is_refused_by_name() {
         let sim = start(&flash).await;
         sim.control(Control::StallFeeds(true));
         let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
 
         for (id, asked) in [(1, 0), (2, 49), (3, u8::MAX)] {
             let answer = owner.ask([id; 16], &Op::Feed { portions: asked }).await;
@@ -238,7 +239,7 @@ fn a_cancel_ends_the_feed_and_finds_nothing_once_it_has_ended() {
         let sim = start(&flash).await;
         sim.control(Control::StallFeeds(true));
         let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
 
         let answer = owner.ask([1; 16], &Op::Feed { portions: 3 }).await.unwrap();
         assert_eq!(answer, Answer::Feeding { feed: 1 });
@@ -277,7 +278,7 @@ fn a_restart_mid_feed_resolves_it_as_uncertain_under_its_own_number() {
         drop(owner);
         tokio::time::sleep(Duration::from_millis(200)).await;
         let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         let fed = next_fed(&mut owner).await;
         assert_eq!(
             fed,
@@ -329,7 +330,7 @@ fn the_food_beam_reads_at_rest_after_a_boot_and_a_refill() {
         let sim = start(&flash).await;
         sim.type_line("empty").unwrap();
         let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         assert_eq!(food(&mut owner, 1).await, FoodLevel::Unread, "just booted");
 
         sleep(Duration::from_millis(u64::from(FOOD_READ_FIRST_MS) + 100)).await;
@@ -469,7 +470,7 @@ fn the_feeding_history_reads_every_feed_after_a_restart() {
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         let mut feeds = Vec::new();
         while let Ok(pushed) = owner.next(Duration::from_millis(500)).await {
             match Entry::from_pushed(&pushed) {
@@ -517,7 +518,7 @@ fn a_feed_behind_a_write_is_answered_once_it_runs_and_the_loop_serves_meanwhile(
         let sim = start(&flash).await;
         let mut owner = open(&sim).await;
         let mut other = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         sim.control(Control::HoldWrite(true));
 
         let feed = owner.ask([1; 16], &Op::Feed { portions: 1 });
@@ -655,7 +656,7 @@ fn a_cancel_of_a_feed_waiting_for_its_claim_is_not_found_and_the_feed_runs() {
         let sim = start(&flash).await;
         let mut owner = open(&sim).await;
         let mut other = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, Samples::Off).await.unwrap();
         sim.control(Control::HoldWrite(true));
 
         let feed = owner.ask([1; 16], &Op::Feed { portions: 2 });

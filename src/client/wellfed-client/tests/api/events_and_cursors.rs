@@ -2,6 +2,7 @@
 //! many events, with gaps and epochs.
 
 use wellfed_client::api::Incoming;
+use wellfed_client::api::Samples;
 use wellfed_client::connection::{Cursor, Resume};
 use wellfed_device_api::Device;
 use wellfed_model as model;
@@ -26,7 +27,7 @@ fn a_subscriber_reads_every_event_after_its_cursor_and_learns_of_a_gap() {
     rig.device.oldest = 3;
 
     let mut owner = open(&mut rig, OWNER);
-    let bytes = owner.session.subscribe(Some(0), false).unwrap();
+    let bytes = owner.session.subscribe(Some(0), Samples::Off).unwrap();
     owner.outbox.extend(bytes);
     let mut seen = Vec::new();
     run(&mut rig, &mut owner, |session| {
@@ -89,7 +90,7 @@ fn a_catch_up_arrives_in_frames_of_many_events() {
     }
 
     let mut owner = open(&mut rig, OWNER);
-    let bytes = owner.session.subscribe(None, false).unwrap();
+    let bytes = owner.session.subscribe(None, Samples::Off).unwrap();
     owner.outbox.extend(bytes);
     let frames = frames(&mut rig, &mut owner, 200);
 
@@ -125,7 +126,7 @@ fn the_largest_events_fill_a_frame_and_the_rest_follow() {
     }
 
     let mut owner = open(&mut rig, OWNER);
-    let bytes = owner.session.subscribe(None, false).unwrap();
+    let bytes = owner.session.subscribe(None, Samples::Off).unwrap();
     owner.outbox.extend(bytes);
     let frames = frames(&mut rig, &mut owner, 70);
 
@@ -149,7 +150,7 @@ fn a_gap_ends_a_batch_and_arrives_next() {
     rig.device.lost = Some((4, 6));
 
     let mut owner = open(&mut rig, OWNER);
-    let bytes = owner.session.subscribe(None, false).unwrap();
+    let bytes = owner.session.subscribe(None, Samples::Off).unwrap();
     owner.outbox.extend(bytes);
     let frames = frames(&mut rig, &mut owner, 8);
 
@@ -198,7 +199,10 @@ fn a_cursor_resumes_in_its_epoch_and_restarts_from_another() {
         seq: 2,
     };
     let now = owner.now(&rig);
-    let resume = owner.connection.subscribe(now, Some(same), false).unwrap();
+    let resume = owner
+        .connection
+        .subscribe(now, Some(same), Samples::Off)
+        .unwrap();
     assert_eq!(resume, Resume::Continued);
     drive(&mut rig, &mut owner, |live| pushed(live).len() == 1).unwrap();
     assert_eq!(pushed(&owner)[0].seq, 3);
@@ -217,7 +221,7 @@ fn a_cursor_resumes_in_its_epoch_and_restarts_from_another() {
     let now = mirror.now(&rig);
     let resume = mirror
         .connection
-        .subscribe(now, Some(stale), false)
+        .subscribe(now, Some(stale), Samples::Off)
         .unwrap();
     assert_eq!(resume, Resume::Restarted);
     drive(&mut rig, &mut mirror, |live| pushed(live).len() == 3).unwrap();

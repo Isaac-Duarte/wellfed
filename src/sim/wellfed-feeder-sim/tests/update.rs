@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::rc::Rc;
 use std::time::Duration;
+use wellfed_connect::Samples;
 
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
@@ -890,7 +891,7 @@ async fn give_way_and_leave(rig: &mut Rig, offer: &Offer) {
 /// The `UpdateStop` events naming `stop` in the feeder's whole history.
 async fn stops(rig: &mut Rig, stop: UpdateStop) -> usize {
     let mut connection = rig.open().await;
-    connection.subscribe(None, false).await.unwrap();
+    connection.subscribe(None, Samples::Off).await.unwrap();
     let mut count = 0;
     while let Ok(message) = connection.next(Duration::from_millis(500)).await {
         if let Pushed::Event(event) = message
