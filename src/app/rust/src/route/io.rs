@@ -445,21 +445,7 @@ impl State {
             self.save_or_log();
         }
 
-        let settled: Vec<(Uuid, Settlement)> = {
-            let others: Vec<&PinRecord> = self.book.pins.iter().collect();
-            self.book
-                .pins
-                .iter()
-                .filter(|pin| {
-                    pin.feeder == feeder
-                        && pin.path == RoutePath::Direct
-                        && pin.state == PinState::Uncertain
-                })
-                .filter_map(|pin| {
-                    settled_by_history(pin, &others, &seen).map(|settled| (pin.key, settled))
-                })
-                .collect()
-        };
+        let settled = settled_by_history(&self.book.pins, feeder, &seen, link.phone());
         for (key, settlement) in &settled {
             self.settle(*key, settlement.clone());
         }

@@ -1,15 +1,18 @@
 """What an entry keeps across restarts and reloads, in a store of its own.
 
-- **Pending feeds:** each feed whose answer was lost, until an update
-  settles it. The next session is handed them, so a feed lost just before a
-  restart is still settled (or found unknown) rather than forgotten, and
-  the repair that names them stays in step.
-- **Answered feeds:** the last feed numbers this Home Assistant has the end
-  of, as the bridge announces them: each feed it was answered for, and each
-  lost feed a `Fed` event settled. Directly, a `Fed` event of one of them
-  settles nothing, so the next session must know them too: a feed answered
-  just before a lost one went out may end after it, and the replay of a
-  `Fed` that settled one lost feed must not settle another.
+- **Pending feeds:** each direct feed from just before it goes out, and
+  each feed whose answer was lost, until its answer clears it, an update
+  settles it, or the bridge stops waiting on it; with whether it was
+  reported still unknown. The next session is handed them, so a feed lost
+  before a restart, or out when Home Assistant stopped, is still settled
+  rather than forgotten, and one already reported is not reported again.
+- **Answered feeds:** the feed numbers this Home Assistant has the end of,
+  as the bridge last listed them: each feed it was answered for, and each
+  lost feed a `Fed` event settled, as many as the bridge needs kept.
+  Directly, a `Fed` event of one of them settles nothing, so the next
+  session must know them too: a feed answered just before a lost one went
+  out may end after it, and the replay of a `Fed` that settled one lost
+  feed must not settle another.
 - **A leftover key:** the client key an entry held directly before it moved
   to the server route, while the feeder may still list it.
 
@@ -54,15 +57,13 @@ ASIDE_MOST = 1000
 
 STORES: HassKey[dict[str, Kept]] = HassKey(f"{DOMAIN}_kept")
 
-# Answered feed numbers kept: far more than a settle window holds.
-ANSWERED_KEPT = 64
-
 
 class PendingData(TypedDict):
     id: str
     portions: int
     sent_ms: int
     after: int | None
+    reported: bool
 
 
 class KeptData(TypedDict):
@@ -86,6 +87,7 @@ def _pending(item: Any) -> bool:
         and _int(item.get("portions"))
         and _int(item.get("sent_ms"))
         and (item.get("after") is None or _int(item.get("after")))
+        and isinstance(item.get("reported"), bool)
     )
 
 
@@ -190,7 +192,9 @@ class Kept:
     @property
     def pending(self) -> list[bridge.Pending]:
         return [
-            bridge.Pending(item["id"], item["portions"], item["sent_ms"], item["after"])
+            bridge.Pending(
+                item["id"], item["portions"], item["sent_ms"], item["after"], item["reported"]
+            )
             for item in self._data["pending"]
         ]
 
@@ -212,8 +216,16 @@ class Kept:
                 "portions": pending.portions,
                 "sent_ms": pending.sent_ms,
                 "after": pending.after,
+                "reported": pending.reported,
             }
         )
+        self._save()
+
+    def mark_reported(self, pending: bridge.Pending) -> None:
+        """`pending` was reported still unknown."""
+        for item in self._data["pending"]:
+            if item["id"] == pending.id:
+                item["reported"] = True
         self._save()
 
     def settle(self, pending: bridge.Pending) -> None:
@@ -221,9 +233,9 @@ class Kept:
         self._data["pending"] = [p for p in self._data["pending"] if p["id"] != pending.id]
         self._save()
 
-    def answered_feed(self, feed: int) -> None:
-        """A feed this Home Assistant was answered for: the last ones are kept."""
-        self._data["answered"] = [*self._data["answered"], feed][-ANSWERED_KEPT:]
+    def set_answered(self, feeds: list[int]) -> None:
+        """The feed numbers to keep, as the bridge listed them."""
+        self._data["answered"] = list(feeds)
         self._save()
 
     def set_leftover_key(self, key: bytes | None) -> None:

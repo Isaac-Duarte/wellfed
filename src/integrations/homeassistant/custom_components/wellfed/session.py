@@ -198,6 +198,9 @@ class FeederSession:
         self._event_listeners: list[Callable[[bridge.Event], None]] = []
         # The feeder's open alerts, and who hears each that opens or clears.
         self.alerts: bridge.Alerts | None = None
+        # The lost feeds that hold new feeds back, by id: announced pending
+        # and not yet reported still unknown, settled or forgotten.
+        self._holding: set[str] = set()
         self._alert_listeners: list[Callable[[bridge.Alerts], None]] = []
         self._ready = asyncio.Event()
         # The last events as they happened, for diagnostics.
@@ -222,11 +225,9 @@ class FeederSession:
 
     def start(self) -> None:
         """Start pumping updates into the event loop."""
-        # Feeds a run before this one left unsettled still need their repair.
-        if self.kept.pending:
-            self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
-        else:
-            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
+        # The bridge announces again each lost feed a run before this one
+        # left that still holds feeds back, and the repair follows those.
+        ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
         self._pump = threading.Thread(target=self._run, name="wellfed-pump", daemon=True)
         self._pump.start()
 
@@ -431,9 +432,15 @@ class FeederSession:
         kind = update.kind
         if kind == bridge.UpdateKind.Pending and update.pending is not None:
             self.kept.add_pending(update.pending)
-            self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
-        elif kind == bridge.UpdateKind.Answered and update.answered is not None:
-            self.kept.answered_feed(update.answered)
+            self._holding.add(update.pending.id)
+            self._uncertain_issue()
+        elif kind == bridge.UpdateKind.Sending and update.pending is not None:
+            # Kept with no repair: only a lost answer says it may have run.
+            self.kept.add_pending(update.pending)
+        elif kind == bridge.UpdateKind.Cleared:
+            self._cleared(update.pending)
+        elif kind == bridge.UpdateKind.Answered:
+            self.kept.set_answered(update.answered)
         elif kind == bridge.UpdateKind.Settled:
             if update.feed is not None:
                 _LOGGER.info(
@@ -448,22 +455,49 @@ class FeederSession:
             self._settled(update.pending)
         elif kind == bridge.UpdateKind.StillUnknown:
             _LOGGER.warning(
-                "A feed of %s portions whose answer was lost left no record: whether it "
+                "A feed of %s portions whose answer was lost left no record yet: whether it "
                 "ran is not known",
                 update.portions,
             )
-            self._settled(update.pending)
+            if update.pending is not None:
+                self.kept.mark_reported(update.pending)
+                self._holding.discard(update.pending.id)
+            self._uncertain_issue()
             self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
+        elif kind == bridge.UpdateKind.Forgotten:
+            _LOGGER.info(
+                "A feed of %s portions whose answer was lost is no longer watched for",
+                update.portions,
+            )
+            self._cleared(update.pending)
         else:
             return False
         return True
 
     @callback
     def _settled(self, pending: bridge.Pending | None) -> None:
-        """One lost feed is accounted for; the issue clears with the last."""
+        """One lost feed is accounted for: the issues clear with the last."""
         if pending is not None:
             self.kept.settle(pending)
+            self._holding.discard(pending.id)
+        self._uncertain_issue()
         if not self.kept.pending:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
+
+    @callback
+    def _cleared(self, pending: bridge.Pending | None) -> None:
+        """`pending` is no longer kept, with nothing learned of it."""
+        if pending is not None:
+            self.kept.settle(pending)
+            self._holding.discard(pending.id)
+        self._uncertain_issue()
+
+    @callback
+    def _uncertain_issue(self) -> None:
+        """The repair for lost feeds that hold new feeds back, while any do."""
+        if self._holding:
+            self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
+        else:
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
 
     @callback

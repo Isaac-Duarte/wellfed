@@ -19,7 +19,9 @@
 //!   and settled from the server's journal: by its `Fed` event once the
 //!   journal names its number, as refused, or as unknown when the journal
 //!   says the feeder restarted with no record of it. One unsettled after
-//!   [`SETTLE`] is still unknown, never resent. A write that waited longer
+//!   [`SETTLE`] is reported still unknown, never resent, and the journal
+//!   may still settle it until [`KEEP_MS`](crate::feeder::KEEP_MS) has passed, as it may one it
+//!   says has no record. A write that waited longer
 //!   than [`FRESH`](crate::feeder::FRESH) for the session, or arrived while it connects, is
 //!   refused unsent.
 //! - **The event stream** is read by a task of its own, so a slow write or
@@ -45,7 +47,9 @@ use wellfed_server_client::api::{
     self as server, CommandOutcome, Connection, ErrorCode, EventQuery, FeederDetail, FeederId,
     HistoryEvent, PlansChange, ServerSkew, StreamEvent, StreamQuery,
 };
-use wellfed_server_client::{Auth, Client, Failure, Lock, PlainHttp, Timeouts, Updates, Url};
+use wellfed_server_client::{
+    Auth, Client, Failure, Lock, PlainHttp, Settled, Timeouts, Updates, Url,
+};
 
 pub use account::{
     Login, Refused, ServerFeeder, address, client_listed, feeder, feeders, login, revoke_client,
@@ -128,6 +132,9 @@ struct Uncertain {
     pending: Pending,
     /// Its number, once the server's journal names it.
     feed: Option<u32>,
+    /// When it went out. Once reported still unknown
+    /// (`pending.reported`), the journal still settles it until
+    /// [`KEEP_MS`](crate::feeder::KEEP_MS).
     sent: Instant,
 }
 
@@ -214,14 +221,24 @@ pub(crate) async fn run(
     for pending in pending {
         // Only a key this integration drew names a command on the server.
         match Uuid::parse_str(&pending.id) {
-            Ok(key) => memory.uncertain.push(Uncertain {
-                key,
-                sent: sent_at(pending.sent_ms),
-                pending,
-                feed: None,
-            }),
+            Ok(key) => {
+                // One that has not been reported is announced again, so the
+                // integration's repair says it is still waited on.
+                if !pending.reported && updates.send(Update::pending(pending.clone())).is_err() {
+                    return;
+                }
+                memory.uncertain.push(Uncertain {
+                    key,
+                    sent: sent_at(pending.sent_ms),
+                    pending,
+                    feed: None,
+                });
+            }
+            // Nothing on the server answers for it: still unknown, and
+            // nothing will settle it.
             Err(_) => {
-                if updates.send(Update::still_unknown(pending)).is_err() {
+                let unknown = updates.send(Update::still_unknown(pending.clone()));
+                if unknown.is_err() || updates.send(Update::forgotten(pending)).is_err() {
                     return;
                 }
             }
@@ -804,6 +821,7 @@ impl<'a> Session<'a> {
             portions,
             sent_ms: now_ms(),
             after: None,
+            reported: false,
         };
         // Announced on the updates before anything can settle it, so the
         // integration keeps it first; a handle gone has no one to tell.
@@ -884,18 +902,17 @@ impl<'a> Session<'a> {
             return Ok(());
         };
 
-        match command.outcome {
-            Some(CommandOutcome::Refused { .. }) => {
+        match wellfed_server_client::settled(command.state, command.outcome.as_ref()) {
+            Some(Settled::Refused(_)) => {
                 let uncertain = self.memory.uncertain.remove(index);
                 self.send(Update::settled_unfed(uncertain.pending))
             }
-            Some(CommandOutcome::Unrecorded) => {
-                let uncertain = self.memory.uncertain.remove(index);
-                self.send(Update::still_unknown(uncertain.pending))
-            }
+            // Whether it ran is not known; a `Fed` the server finds later
+            // replaces the journal's answer, so it is still waited on.
+            Some(Settled::Unrecorded) => self.report(|uncertain| uncertain.key == command.key),
             // The journal has the feed's end: settled now, whether or not
             // its event has come.
-            Some(CommandOutcome::Fed {
+            Some(Settled::Fed {
                 feed,
                 requested,
                 completed,
@@ -913,7 +930,9 @@ impl<'a> Session<'a> {
                 );
                 self.send(Update::settled(fed, uncertain.pending))
             }
-            _ => {
+            // Started, or not yet answered: its `Fed` settles it once the
+            // journal names its number.
+            Some(Settled::Started { .. } | Settled::Done | Settled::Superseded) | None => {
                 let feed = command
                     .feed
                     .or_else(|| command.outcome.as_ref().and_then(CommandOutcome::feed));
@@ -953,16 +972,36 @@ impl<'a> Session<'a> {
         self.send(Update::settled(api::Feed::from(feed), uncertain.pending))
     }
 
-    /// Uncertain feeds past [`SETTLE`] the journal has not settled: still
-    /// unknown.
+    /// Uncertain feeds past [`SETTLE`] the journal has not settled are
+    /// still unknown; those past [`KEEP_MS`](crate::feeder::KEEP_MS) are forgotten.
     fn expire(&mut self) -> Step {
-        let now = Instant::now();
-        let (expired, kept) = std::mem::take(&mut self.memory.uncertain)
+        let (gone, open) = std::mem::take(&mut self.memory.uncertain)
             .into_iter()
-            .partition(|uncertain| now.duration_since(uncertain.sent) >= SETTLE);
-        self.memory.uncertain = kept;
-        for uncertain in expired {
-            self.send(Update::still_unknown(uncertain.pending))?;
+            .partition(|uncertain| direct::forgotten(uncertain.pending.sent_ms));
+        self.memory.uncertain = open;
+        for uncertain in gone {
+            if !uncertain.pending.reported {
+                self.send(Update::still_unknown(uncertain.pending.clone()))?;
+            }
+            self.send(Update::forgotten(uncertain.pending))?;
+        }
+
+        let now = Instant::now();
+        self.report(|uncertain| now.duration_since(uncertain.sent) >= SETTLE)
+    }
+
+    /// Report each uncertain feed `due` picks, not yet reported, as still
+    /// unknown; it stays open to the journal.
+    fn report(&mut self, due: impl Fn(&Uncertain) -> bool) -> Step {
+        let mut reported = Vec::new();
+        for uncertain in &mut self.memory.uncertain {
+            if !uncertain.pending.reported && due(uncertain) {
+                uncertain.pending.reported = true;
+                reported.push(uncertain.pending.clone());
+            }
+        }
+        for pending in reported {
+            self.send(Update::still_unknown(pending))?;
         }
         Ok(())
     }
@@ -1044,7 +1083,138 @@ fn rejected(error: &wellfed_server_client::Error) -> (Written, Step) {
 
 #[cfg(test)]
 mod tests {
+    use wellfed_server_client::api::{CommandKind, CommandState, FeedOutcome, FeedReason, UserId};
+
+    use crate::api::UpdateKind;
+
     use super::*;
+
+    /// A session that reaches no server: the journal's answers are handed
+    /// to it as the stream would.
+    fn offline(memory: &mut Memory, test: impl FnOnce(&mut Session<'_>)) -> Vec<Update> {
+        let target = Target {
+            url: Url::parse("http://127.0.0.1:9").unwrap(),
+            token: "token".into(),
+            feeder: FeederId(Uuid::from_u128(1)),
+            identity: [0; 32],
+        };
+        let client =
+            Client::with_timeouts(&target.url, Clocks::DEFAULT.timeouts, PlainHttp::Allowed)
+                .unwrap();
+        let (updates, heard) = std_mpsc::channel();
+        let mut session = Session::new(&client, &target, memory, &updates);
+        test(&mut session);
+        drop(session);
+        drop(updates);
+        heard.into_iter().collect()
+    }
+
+    fn lost(key: Uuid, sent_ms: i64) -> Uncertain {
+        Uncertain {
+            key,
+            pending: Pending {
+                id: key.to_string(),
+                portions: 2,
+                sent_ms,
+                after: None,
+                reported: false,
+            },
+            feed: None,
+            sent: sent_at(sent_ms),
+        }
+    }
+
+    fn journal(key: Uuid, state: CommandState, outcome: CommandOutcome) -> server::Command {
+        server::Command {
+            key,
+            user: UserId(Uuid::from_u128(2)),
+            token: None,
+            feeder: FeederId(Uuid::from_u128(1)),
+            kind: CommandKind::Feed,
+            state,
+            outcome: Some(outcome),
+            feed: None,
+            boot_count: None,
+            sent: jiff::Timestamp::UNIX_EPOCH,
+            updated: jiff::Timestamp::UNIX_EPOCH,
+        }
+    }
+
+    fn kinds(updates: &[Update]) -> Vec<UpdateKind> {
+        updates.iter().map(|update| update.kind).collect()
+    }
+
+    /// The journal says the feeder restarted with no record of the feed:
+    /// still unknown, and still waited on, so the `Fed` the server finds
+    /// later settles it.
+    #[test]
+    fn a_feed_the_journal_found_unrecorded_is_settled_by_a_later_fed() {
+        let key = Uuid::from_u128(7);
+        let mut memory = Memory::default();
+        memory.uncertain.push(lost(key, now_ms()));
+
+        let unrecorded = journal(key, CommandState::Resolved, CommandOutcome::Unrecorded);
+        let heard = offline(&mut memory, |session| {
+            assert!(session.journalled(&unrecorded).is_ok());
+        });
+        assert_eq!(kinds(&heard), [UpdateKind::StillUnknown]);
+        assert_eq!(memory.uncertain.len(), 1, "still waited on");
+        assert!(memory.uncertain[0].pending.reported);
+
+        let fed = CommandOutcome::Fed {
+            feed: 9,
+            requested: 2,
+            completed: 2,
+            outcome: FeedOutcome::Done,
+            reason: FeedReason::Done,
+        };
+        let fed = journal(key, CommandState::Resolved, fed);
+        let heard = offline(&mut memory, |session| {
+            assert!(session.journalled(&fed).is_ok());
+        });
+        assert_eq!(kinds(&heard), [UpdateKind::Settled]);
+        assert_eq!(heard[0].feed.as_ref().map(|fed| fed.feed), Some(9));
+        assert!(memory.uncertain.is_empty());
+    }
+
+    /// A feed the journal has not settled is reported still unknown once
+    /// its settle window has passed, and forgotten after the keep window,
+    /// by the time it went out.
+    #[test]
+    fn a_lost_feed_is_reported_and_then_forgotten() {
+        let mut memory = Memory::default();
+        let fresh = Uuid::from_u128(1);
+        let settle = i64::try_from(SETTLE.as_millis()).unwrap();
+        let reported = Uuid::from_u128(2);
+        let old = Uuid::from_u128(3);
+        memory.uncertain.push(lost(fresh, now_ms()));
+        memory
+            .uncertain
+            .push(lost(reported, now_ms() - settle - 1000));
+        memory
+            .uncertain
+            .push(lost(old, now_ms() - direct::KEEP_MS - 1000));
+
+        let heard = offline(&mut memory, |session| assert!(session.expire().is_ok()));
+        let what: Vec<(UpdateKind, String)> = heard
+            .iter()
+            .map(|update| (update.kind, update.pending.as_ref().unwrap().id.clone()))
+            .collect();
+        assert_eq!(
+            what,
+            [
+                (UpdateKind::StillUnknown, old.to_string()),
+                (UpdateKind::Forgotten, old.to_string()),
+                (UpdateKind::StillUnknown, reported.to_string()),
+            ]
+        );
+        let open: Vec<Uuid> = memory
+            .uncertain
+            .iter()
+            .map(|uncertain| uncertain.key)
+            .collect();
+        assert_eq!(open, [fresh, reported]);
+    }
 
     #[test]
     fn the_side_to_update_comes_first_by_what_it_blocks() {

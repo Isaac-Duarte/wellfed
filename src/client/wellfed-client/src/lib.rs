@@ -20,7 +20,9 @@
 //! The consumer installer's steps from stock to a confirmed replacement,
 //! stock's setup frame and the backup gate before promotion are
 //! [`install`]. How a write ended, by its answer, is [`write`], the one
-//! reading those paths and every client share.
+//! reading those paths and every client share, and which `Fed` settles a
+//! feed whose answer was lost is [`settle`], the one rule the app and Home
+//! Assistant share.
 //!
 //! Every public type is `wellfed-model`'s owned values or plain bytes (an
 //! `Op` in; answers, pushed events, gaps and samples, welcomes, refusals and
@@ -42,6 +44,7 @@ pub mod install;
 pub mod offer;
 pub mod plans;
 pub mod release;
+pub mod settle;
 pub mod setup;
 pub mod time;
 pub mod today;

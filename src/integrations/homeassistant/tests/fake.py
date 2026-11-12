@@ -82,7 +82,7 @@ def update(kind: bridge.UpdateKind, **fields: Any) -> SimpleNamespace:
         "gap_to": None,
         "reason": None,
         "alerts": None,
-        "answered": None,
+        "answered": [],
     }
     values.update(fields)
     return SimpleNamespace(**values)
@@ -134,7 +134,7 @@ def written(result: bridge.WriteResult, **fields: Any) -> SimpleNamespace:
 
 def pending(id: str = "a-lost-feed", portions: int = 1) -> bridge.Pending:
     """A feed whose answer was lost, as the bridge hands it out."""
-    return bridge.Pending(id, portions, 1_793_793_600_000, None)
+    return bridge.Pending(id, portions, 1_793_793_600_000, None, False)
 
 
 def uncertain(lost: bridge.Pending) -> SimpleNamespace:
@@ -169,6 +169,8 @@ class FakeFeeder:
     calls: list[tuple[str, tuple[Any, ...]]] = field(default_factory=list)
     # When set, a feed waits for it: a write still out when the test acts.
     gate: threading.Event | None = None
+    # The feed numbers it was answered for, as the bridge lists them.
+    answered: list[int] = field(default_factory=list)
 
     def push(self, *updates: SimpleNamespace) -> None:
         for item in updates:
@@ -193,7 +195,8 @@ class FakeFeeder:
         if self.feed_result.pending is not None:
             self.push(update(bridge.UpdateKind.Pending, pending=self.feed_result.pending))
         if self.feed_result.feed is not None:
-            self.push(update(bridge.UpdateKind.Answered, answered=self.feed_result.feed))
+            self.answered.append(self.feed_result.feed)
+            self.push(update(bridge.UpdateKind.Answered, answered=list(self.answered)))
         return self.feed_result
 
     def cancel_feed(self, number: int) -> SimpleNamespace:

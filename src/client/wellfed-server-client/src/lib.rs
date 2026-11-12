@@ -59,6 +59,7 @@ use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use wellfed_api::{PREFIX, Problem, SESSION_COOKIE, at_home};
 
+pub use commands::{Settled, settled};
 pub use diagnostics::LogBatches;
 pub use error::{Error, Failure};
 pub use feeders::Lock;

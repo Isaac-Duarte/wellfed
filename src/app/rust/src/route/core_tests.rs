@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use proptest::prelude::*;
 use wellfed_api::FeederRefusal;
-use wellfed_model::{FeedOutcome, FeedReason};
+use wellfed_client::history::Delivered;
+use wellfed_model::{FeedOutcome, FeedReason, FoodLevel, Hex, Source};
 
 use super::*;
 use crate::api::router::WriteKind;
@@ -40,15 +41,50 @@ fn feed_pin(key: u128, feeder: &str, path: RoutePath) -> PinRecord {
     }
 }
 
-fn seen(seq: u64, feed: u32) -> Seen {
-    Seen {
+/// This phone's key's first 4 bytes, as events name it.
+const PHONE: [u8; 4] = [5, 6, 7, 8];
+
+/// This phone's one-portion feed numbered `feed`, ended at event `seq`.
+fn seen(seq: u64, feed: u32) -> Feed {
+    Feed {
+        epoch: 1,
         seq,
         feed,
+        at: None,
+        by: Some(Source::Client { client: Hex(PHONE) }),
         requested: 1,
-        completed: 1,
+        delivered: Delivered::Counted(1),
         outcome: FeedOutcome::Done,
         reason: FeedReason::Done,
+        hopper: FoodLevel::Present,
     }
+}
+
+/// An uncertain direct feed's pin.
+fn lost_pin(key: u128, feeder: &str) -> PinRecord {
+    PinRecord {
+        state: PinState::Uncertain,
+        ..feed_pin(key, feeder, RoutePath::Direct)
+    }
+}
+
+/// What `seen` settles of `pins` on feeder "a", by key.
+fn by_history(pins: &[PinRecord], seen: &[Feed]) -> Vec<(u128, Settlement)> {
+    settled_by_history(pins, "a", seen, PHONE)
+        .into_iter()
+        .map(|(key, settlement)| (key.as_u128(), settlement))
+        .collect()
+}
+
+/// The feed numbers `seen` settles `pins` with, by key.
+fn numbers(pins: &[PinRecord], seen: &[Feed]) -> Vec<(u128, u32)> {
+    by_history(pins, seen)
+        .into_iter()
+        .filter_map(|(key, settlement)| match settlement {
+            Settlement::Fed { feed, .. } => Some((key, feed)),
+            _ => None,
+        })
+        .collect()
 }
 
 #[test]
@@ -376,72 +412,146 @@ fn the_grace_passes_only_when_both_clocks_say_so() {
 
 #[test]
 fn a_direct_feed_settles_by_this_phone_s_one_fed_after_its_mark() {
-    let pin = feed_pin(1, "a", RoutePath::Direct);
+    let pin = lost_pin(1, "a");
     // Only events after the mark count.
-    assert_eq!(settled_by_history(&pin, &[], &[seen(9, 1)]), None);
+    assert_eq!(by_history(std::slice::from_ref(&pin), &[seen(9, 1)]), []);
     assert_eq!(
-        settled_by_history(&pin, &[], &[seen(9, 1), seen(12, 2)]),
-        Some(Settlement::Fed {
-            feed: 2,
-            requested: 1,
-            completed: 1,
-            outcome: FeedOutcome::Done,
-            reason: FeedReason::Done,
-        })
+        by_history(std::slice::from_ref(&pin), &[seen(9, 1), seen(12, 2)]),
+        [(
+            1,
+            Settlement::Fed {
+                feed: 2,
+                requested: 1,
+                completed: 1,
+                outcome: FeedOutcome::Done,
+                reason: FeedReason::Done,
+            }
+        )]
     );
     // Two candidates: neither is taken for it.
     assert_eq!(
-        settled_by_history(&pin, &[], &[seen(12, 2), seen(14, 3)]),
-        None
+        numbers(std::slice::from_ref(&pin), &[seen(12, 2), seen(14, 3)]),
+        []
     );
     // Another feed's portions are another feed's end.
-    let two = Seen {
+    let two = Feed {
         requested: 2,
         ..seen(12, 2)
     };
-    assert_eq!(settled_by_history(&pin, &[], &[two]), None);
+    assert_eq!(numbers(std::slice::from_ref(&pin), &[two]), []);
+    // Another client's feed is not this phone's.
+    let theirs = Feed {
+        by: Some(Source::Client {
+            client: Hex([1; 4]),
+        }),
+        ..seen(12, 2)
+    };
+    assert_eq!(numbers(std::slice::from_ref(&pin), &[theirs]), []);
     // One this phone saw started is another feed's end.
     let excluded = PinRecord {
         excluded: vec![3],
         ..pin.clone()
     };
-    assert!(settled_by_history(&excluded, &[], &[seen(12, 2), seen(14, 3)]).is_some());
+    assert_eq!(numbers(&[excluded], &[seen(12, 2), seen(14, 3)]), [(1, 2)]);
     // No mark: the session knew nothing when it went, so nothing settles it.
     let unmarked = PinRecord {
         mark: None,
         ..pin.clone()
     };
-    assert_eq!(settled_by_history(&unmarked, &[], &[seen(12, 2)]), None);
+    assert_eq!(numbers(&[unmarked], &[seen(12, 2)]), []);
     // Only a feed is the feeder history's to settle.
     let lock = PinRecord {
         write: PinnedWrite::Other {
             kind: WriteKind::Lock,
         },
+        ..pin.clone()
+    };
+    assert_eq!(numbers(&[lock], &[seen(12, 2)]), []);
+    // A pin still sending is not settled here: its answer settles it.
+    let sending = PinRecord {
+        state: PinState::Sending,
         ..pin
     };
-    assert_eq!(settled_by_history(&lock, &[], &[seen(12, 2)]), None);
+    assert_eq!(numbers(&[sending], &[seen(12, 2)]), []);
+}
+
+/// An uncertain feed's end given as a range keeps only the portions it
+/// confirmed as its count.
+#[test]
+fn an_uncertain_end_settles_with_the_portions_it_confirmed() {
+    let uncertain = Feed {
+        requested: 1,
+        delivered: Delivered::Uncertain {
+            confirmed: 0,
+            requested: 1,
+        },
+        outcome: FeedOutcome::Uncertain,
+        reason: FeedReason::Interrupted,
+        ..seen(12, 2)
+    };
+    assert_eq!(
+        by_history(&[lost_pin(1, "a")], &[uncertain]),
+        [(
+            1,
+            Settlement::Fed {
+                feed: 2,
+                requested: 1,
+                completed: 0,
+                outcome: FeedOutcome::Uncertain,
+                reason: FeedReason::Interrupted,
+            }
+        )]
+    );
 }
 
 #[test]
-fn an_end_another_uncertain_direct_feed_could_claim_settles_neither() {
-    let first = feed_pin(1, "a", RoutePath::Direct);
+fn an_end_another_direct_feed_could_claim_settles_neither() {
+    let first = lost_pin(1, "a");
     let second = PinRecord {
         mark: Some(13),
-        ..feed_pin(2, "a", RoutePath::Direct)
+        ..lost_pin(2, "a")
     };
-    let others = [&first, &second];
+    let both = [first.clone(), second.clone()];
 
     // Between the two marks: only the first's.
-    assert!(settled_by_history(&first, &others, &[seen(12, 2)]).is_some());
+    assert_eq!(numbers(&both, &[seen(12, 2)]), [(1, 2)]);
     // After both: either's.
-    assert_eq!(settled_by_history(&first, &others, &[seen(15, 2)]), None);
-    assert_eq!(settled_by_history(&second, &others, &[seen(15, 2)]), None);
-    // Another feeder's pin claims nothing here.
+    assert_eq!(numbers(&both, &[seen(15, 2)]), []);
+    // A feed still waiting on its answer may yet be lost: it claims too.
+    let sending = PinRecord {
+        state: PinState::Sending,
+        ..second.clone()
+    };
+    assert_eq!(numbers(&[first.clone(), sending], &[seen(15, 2)]), []);
+    // Another feeder's pin, or one the server sent, claims nothing here.
     let elsewhere = PinRecord {
         mark: Some(13),
-        ..feed_pin(3, "b", RoutePath::Direct)
+        ..lost_pin(3, "b")
     };
-    assert!(settled_by_history(&first, &[&first, &elsewhere], &[seen(15, 2)]).is_some());
+    let on_server = PinRecord {
+        mark: Some(13),
+        state: PinState::Uncertain,
+        ..feed_pin(4, "a", RoutePath::Server)
+    };
+    assert_eq!(
+        numbers(&[first, elsewhere, on_server], &[seen(15, 2)]),
+        [(1, 2)]
+    );
+}
+
+/// Two uncertain direct feeds of 2 and 1 portions; only the second ran. Its
+/// `Fed` settles the feed of its portions, never the older one.
+#[test]
+fn of_two_uncertain_feeds_a_fed_settles_the_one_of_its_portions() {
+    let two = PinRecord {
+        write: PinnedWrite::Feed { portions: 2 },
+        ..lost_pin(1, "a")
+    };
+    let one = PinRecord {
+        mark: Some(12),
+        ..lost_pin(2, "a")
+    };
+    assert_eq!(numbers(&[two, one], &[seen(15, 7)]), [(2, 7)]);
 }
 
 #[test]

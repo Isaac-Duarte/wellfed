@@ -9,10 +9,9 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::mpsc;
-use wellfed_client::history::{Delivered, Feed};
+use wellfed_client::history::Feed;
 use wellfed_model::Source;
 
-use crate::route::core::Seen;
 use crate::session::Command;
 
 /// How many of this phone's feed ends a link keeps for a router that
@@ -46,7 +45,7 @@ pub(crate) struct DirectLink {
 struct LinkState {
     open: bool,
     newest: Option<u64>,
-    seen: Vec<Seen>,
+    seen: Vec<Feed>,
     listener: Option<Listener>,
 }
 
@@ -82,8 +81,13 @@ impl DirectLink {
     }
 
     /// This phone's feed ends the session has read.
-    pub(crate) fn seen(&self) -> Vec<Seen> {
+    pub(crate) fn seen(&self) -> Vec<Feed> {
         self.state().seen.clone()
+    }
+
+    /// This phone's key's first 4 bytes, as events name a client.
+    pub(crate) const fn phone(&self) -> [u8; 4] {
+        self.phone
     }
 
     /// Hear every change from now on, as the session's router.
@@ -122,27 +126,15 @@ impl DirectLink {
         if !mine {
             return;
         }
-        let completed = match feed.delivered {
-            Delivered::Counted(portions) => portions,
-            Delivered::Uncertain { confirmed, .. } => confirmed,
-        };
-        let seen = Seen {
-            seq: feed.seq,
-            feed: feed.feed,
-            requested: feed.requested,
-            completed,
-            outcome: feed.outcome,
-            reason: feed.reason,
-        };
         {
             let mut state = self.state();
-            if state.seen.iter().any(|kept| kept.seq == seen.seq) {
+            if state.seen.iter().any(|kept| kept.seq == feed.seq) {
                 return;
             }
             if state.seen.len() >= SEEN_KEPT {
                 state.seen.remove(0);
             }
-            state.seen.push(seen);
+            state.seen.push(*feed);
         }
         self.tell(LinkNews::Fed);
     }
