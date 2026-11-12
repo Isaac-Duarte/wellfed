@@ -12,7 +12,10 @@ from homeassistant.config_entries import SOURCE_USER, ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant, State
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.storage import Store
+from homeassistant.util.file import WriteError
 from homeassistant.util.yaml import load_yaml_dict
 import pytest
 
@@ -145,6 +148,39 @@ async def test_the_lock_switch_follows_the_feeder(
     await _until(hass, lambda: _state(hass, lock).state == STATE_ON)
     await hass.services.async_call("switch", "turn_off", {ATTR_ENTITY_ID: lock}, blocking=True)
     await _until(hass, lambda: _state(hass, lock).state == STATE_OFF)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_feed_whose_record_the_store_cannot_save_is_never_sent(
+    hass: HomeAssistant, simulator: Simulator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bridge sends a feed only once the store says its record landed:
+    one that did not is refused in words that say why, and never reaches the
+    feeder."""
+    entry = await _pair(hass, simulator)
+    device = _device(hass, entry)
+
+    async def full(_store: Store[Any], _data: dict[str, Any]) -> None:
+        raise WriteError("the disk is full")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(Store, "_async_write_data", full)
+        with pytest.raises(HomeAssistantError) as refused:
+            await hass.services.async_call(
+                DOMAIN, "feed", {"device_id": device.id, "portions": 1}, blocking=True
+            )
+    assert refused.value.translation_key == "not_sent_not_saved"
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        "feed",
+        {"device_id": device.id, "portions": 1},
+        blocking=True,
+        return_response=True,
+    )
+    assert response is not None
+    assert response["feed"] == 1, "the first feed the feeder ran"
 
     assert await hass.config_entries.async_unload(entry.entry_id)
 

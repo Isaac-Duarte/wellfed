@@ -394,7 +394,9 @@ impl Feeder {
         py.detach(|| self.0.next_update(wait))
     }
 
-    /// Start a feed; how it ended. Never retry an uncertain one.
+    /// Start a feed; how it ended. Never retry an uncertain one. It goes
+    /// out only once `saved` confirms the `Sending` update's record is in
+    /// the store.
     fn feed(&self, py: Python<'_>, portions: u8) -> Written {
         py.detach(|| self.0.feed(portions))
     }
@@ -468,6 +470,19 @@ impl Feeder {
     /// confirms it.
     fn bowls_checked(&self) {
         self.0.bowls_checked();
+    }
+
+    /// The integration's store saved the record of the feed `id` names, as
+    /// a `Sending` update asked: the feed goes out. Called from the event
+    /// loop while `feed` blocks an executor thread.
+    fn saved(&self, id: &str) {
+        self.0.saved(id);
+    }
+
+    /// The integration's store could not save the record of the feed `id`
+    /// names: it never goes out, and `feed` answers it not sent.
+    fn unsaved(&self, id: &str) {
+        self.0.unsaved(id);
     }
 }
 

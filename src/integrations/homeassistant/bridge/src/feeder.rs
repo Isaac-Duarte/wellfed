@@ -20,8 +20,9 @@
 //!   never sent; one while no session is open is not sent either, so the
 //!   owner may simply press again. A change to a store goes on the
 //!   generation last read, one at a time per store.
-//! - **Uncertain feeds.** A direct feed is kept from just before it goes
-//!   out, in the integration's store too, so a feed out when Home Assistant
+//! - **Uncertain feeds.** A feed is kept from just before it goes out, in
+//!   the integration's store too, and goes only once the store says it
+//!   saved the record ([`crate::hold`]), so a feed out when Home Assistant
 //!   stops is lost after the restart rather than forgotten. A feed whose
 //!   answer never came may have run. The
 //!   session keeps it, and settles it by the one `Fed` the rule the app
@@ -80,7 +81,7 @@ use wellfed_model::{
 use crate::Error;
 use crate::alerts::Tracker;
 use crate::api::{self, Capabilities, NotSent, Pending, State, Tune, Update, WriteResult, Written};
-use crate::hold::{Holds, Release, Releases, releases};
+use crate::hold::{self, Holds, Release, Saved, Shared, releases};
 use crate::key::{ClientKey, locate, random};
 use crate::writes::{self, Kind, Landed, Store, Write};
 
@@ -133,7 +134,7 @@ pub(crate) enum Command {
     },
     Refresh,
     /// The owner released something that holds feeds back: what waits in
-    /// the [`Releases`] it shares.
+    /// the releases it shares ([`Shared`]).
     Release,
 }
 
@@ -239,8 +240,9 @@ pub struct Target {
 pub struct Feeder {
     commands: mpsc::UnboundedSender<Command>,
     updates: Mutex<std_mpsc::Receiver<Update>>,
-    /// The owner's releases, shared with the session thread.
-    releases: Releases,
+    /// The owner's releases and the store's word on feeds' records,
+    /// shared with the session thread.
+    shared: Shared,
 }
 
 impl Feeder {
@@ -254,10 +256,10 @@ impl Feeder {
         clocks: Clocks,
         carried: Carried,
     ) -> Result<Self, Error> {
-        let releases = Releases::default();
-        let shared = Arc::clone(&releases);
-        Self::spawn(releases, move |inbox, outbox| {
-            run(key, target, clocks, carried, shared, inbox, outbox)
+        let shared = Shared::default();
+        let session = Arc::clone(&shared);
+        Self::spawn(shared, move |inbox, outbox| {
+            run(key, target, clocks, carried, session, inbox, outbox)
         })
     }
 
@@ -273,16 +275,16 @@ impl Feeder {
         carried: Carried,
     ) -> Result<Self, Error> {
         let client = crate::server::client(&target, clocks)?;
-        let releases = Releases::default();
-        let shared = Arc::clone(&releases);
-        Self::spawn(releases, move |inbox, outbox| {
-            crate::server::run(client, target, clocks, carried, shared, inbox, outbox)
+        let shared = Shared::default();
+        let session = Arc::clone(&shared);
+        Self::spawn(shared, move |inbox, outbox| {
+            crate::server::run(client, target, clocks, carried, session, inbox, outbox)
         })
     }
 
     /// Run the session `serve` makes on a thread of its own, on a
     /// current-thread runtime.
-    fn spawn<F, S>(releases: Releases, serve: S) -> Result<Self, Error>
+    fn spawn<F, S>(shared: Shared, serve: S) -> Result<Self, Error>
     where
         S: FnOnce(mpsc::UnboundedReceiver<Command>, std_mpsc::Sender<Update>) -> F + Send + 'static,
         F: Future<Output = ()>,
@@ -301,7 +303,7 @@ impl Feeder {
         Ok(Self {
             commands,
             updates: Mutex::new(updates),
-            releases,
+            shared,
         })
     }
 
@@ -313,7 +315,10 @@ impl Feeder {
     }
 
     /// Start a feed of `portions`; blocks until the feeder answers, or it is
-    /// known that no answer will come.
+    /// known that no answer will come. It goes out only once the store has
+    /// said it saved the feed's record: the [`UpdateKind::Sending`](crate::api::UpdateKind)
+    /// update asks for that word, which [`Self::saved`] or [`Self::unsaved`]
+    /// gives, from a thread other than this call's.
     pub fn feed(&self, portions: u8) -> Written {
         self.write(Write::Feed { portions })
     }
@@ -373,8 +378,22 @@ impl Feeder {
         self.released(Release::BowlsChecked);
     }
 
+    /// The integration's store saved the record of the feed `id` names, as
+    /// a [`UpdateKind::Sending`](crate::api::UpdateKind) update asked: it
+    /// goes out.
+    pub fn saved(&self, id: &str) {
+        hold::saved(&self.shared, id, Saved::Kept);
+    }
+
+    /// The integration's store could not save the record of the feed `id`
+    /// names: it never goes out, and its write ends
+    /// [`NotSent::NotSaved`].
+    pub fn unsaved(&self, id: &str) {
+        hold::saved(&self.shared, id, Saved::Failed);
+    }
+
     fn released(&self, release: Release) {
-        releases(&self.releases).push(release);
+        releases(&self.shared).push(release);
         let _ = self.commands.send(Command::Release);
     }
 
@@ -462,7 +481,7 @@ impl Memory {
     /// feed is not kept, so every one stays while any of its feeds is open.
     /// A feed that went through the server is the other route's: held
     /// until the owner releases it, never settled here.
-    fn carried(carried: Carried, releases: Releases) -> Self {
+    fn carried(carried: Carried, shared: Shared) -> Self {
         let (direct, elsewhere): (Vec<_>, Vec<_>) = carried
             .pending
             .into_iter()
@@ -481,7 +500,7 @@ impl Memory {
             answered_total: carried.answered.len(),
             answered: carried.answered.into(),
             uncertain,
-            holds: Holds::new(releases, elsewhere, carried.unread),
+            holds: Holds::new(shared, elsewhere, carried.unread),
             ..Self::default()
         }
     }
@@ -673,13 +692,13 @@ async fn run(
     target: Target,
     clocks: Clocks,
     carried: Carried,
-    releases: Releases,
+    shared: Shared,
     mut commands: mpsc::UnboundedReceiver<Command>,
     updates: std_mpsc::Sender<Update>,
 ) {
     let mut fingerprint = [0; 4];
     fingerprint.copy_from_slice(&key.public()[..4]);
-    let mut memory = Memory::carried(carried, releases);
+    let mut memory = Memory::carried(carried, shared);
     memory.alerts = Some(Tracker::new(fingerprint));
     // A lost feed carried from the last run that still holds feeds back is
     // announced again, so the integration's repairs say so: one not yet
@@ -972,7 +991,7 @@ impl<'a> Session<'a> {
                 command = commands.recv() => match command {
                     None => return Ended::Dropped,
                     Some(Command::Write { write, reply, queued }) => match stale(queued, reply) {
-                        Some(reply) => self.write(write, reply),
+                        Some(reply) => self.write(write, reply).await,
                         None => Ok(()),
                     },
                     Some(Command::Refresh) => self.turn(),
@@ -1069,7 +1088,7 @@ impl<'a> Session<'a> {
         op.kind().is_none_or(|kind| kind == self.connection.kind()) && op.allowed(self.role)
     }
 
-    fn write(&mut self, write: Write, reply: oneshot::Sender<Written>) -> Step {
+    async fn write(&mut self, write: Write, reply: oneshot::Sender<Written>) -> Step {
         let facts = &self.memory.facts;
         let read = writes::Read {
             // A view with no generation (read-only while the feeder
@@ -1100,7 +1119,13 @@ impl<'a> Session<'a> {
 
         let id = random().map_err(lost)?;
         let feed = match kind {
-            Kind::Feed { portions } => Some(self.sending(portions)),
+            Kind::Feed { portions } => match self.sending(portions).await {
+                Some(feed) => Some(feed),
+                None => {
+                    let _ = reply.send(Written::not_sent(NotSent::NotSaved));
+                    return Ok(());
+                }
+            },
             Kind::Once | Kind::Store { .. } => None,
         };
         match self.connection.request(id, &op) {
@@ -1141,10 +1166,11 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// Keep a feed of `portions` about to go out, and announce it before
-    /// it goes, so the integration's store holds it if Home Assistant stops
-    /// before its answer. Its pending's id.
-    fn sending(&mut self, portions: u8) -> String {
+    /// Keep a feed of `portions` about to go out, once the integration's
+    /// store says it saved its record, so the store holds it if Home
+    /// Assistant stops before its answer: its pending's id, or `None` when
+    /// the record did not land and the feed must not go.
+    async fn sending(&mut self, portions: u8) -> Option<String> {
         let pending = Pending {
             id: uuid::Uuid::new_v4().to_string(),
             portions,
@@ -1155,8 +1181,12 @@ impl<'a> Session<'a> {
             token_id: None,
         };
         let id = pending.id.clone();
-        // A handle gone has no one to tell.
-        let _ = self.updates.send(Update::sending(pending.clone()));
+        if self.memory.holds.kept_first(self.updates, &pending).await == Saved::Failed {
+            // The store may have it in memory, and save it later: it is
+            // dropped there too, since it never went.
+            let _ = self.updates.send(Update::cleared(pending));
+            return None;
+        }
         self.memory.uncertain.push(Uncertain {
             pending,
             sent: Instant::now(),
@@ -1164,7 +1194,7 @@ impl<'a> Session<'a> {
             answered_at: self.memory.answered_total,
             lost_at: None,
         });
-        id
+        Some(id)
     }
 
     /// The feed kept as `feed` has its answer, or never went: no longer
@@ -1639,13 +1669,13 @@ mod tests {
     /// lost in this run does, until the session settles it.
     #[test]
     fn a_lost_feed_carried_from_the_last_run_holds_new_feeds() {
-        assert!(!Memory::carried(Carried::default(), Releases::default()).holds_feeds());
+        assert!(!Memory::carried(Carried::default(), Shared::default()).holds_feeds());
 
         let carried = Carried {
             pending: vec![lost("a-lost-feed", now_ms())],
             ..Carried::default()
         };
-        assert!(Memory::carried(carried, Releases::default()).holds_feeds());
+        assert!(Memory::carried(carried, Shared::default()).holds_feeds());
     }
 
     /// A write that waited past [`FRESH`] is answered unsent; a fresh one
@@ -1718,7 +1748,7 @@ mod tests {
             pending: vec![reported],
             ..Carried::default()
         };
-        let shared = Releases::default();
+        let shared = Shared::default();
         let mut memory = Memory::carried(carried, Arc::clone(&shared));
         assert!(memory.holds_feeds());
         assert!(memory.past_keep().is_empty(), "never forgotten while held");
@@ -1748,7 +1778,7 @@ mod tests {
     /// moment away, says how it ended.
     #[test]
     fn a_feed_awaiting_its_answer_is_not_released() {
-        let shared = Releases::default();
+        let shared = Shared::default();
         let mut memory = Memory::carried(Carried::default(), Arc::clone(&shared));
         memory
             .uncertain
@@ -1835,7 +1865,7 @@ mod tests {
             pending: vec![older, lost("sending", now_ms())],
             ..Carried::default()
         };
-        let mut memory = Memory::carried(carried, Releases::default());
+        let mut memory = Memory::carried(carried, Shared::default());
         memory.fed(ours(10, 7));
         assert!(memory.settlements(US).is_empty());
         assert!(memory.holds_feeds());
@@ -1881,7 +1911,7 @@ mod tests {
             answered: (0..200).collect(),
             ..Carried::default()
         };
-        let mut memory = Memory::carried(carried, Releases::default());
+        let mut memory = Memory::carried(carried, Shared::default());
         assert!(memory.answered(200).is_empty());
         assert_eq!(memory.answered.len(), 201);
         assert_eq!(memory.answered.front(), Some(&0));
@@ -1899,7 +1929,7 @@ mod tests {
             pending: vec![released],
             ..Carried::default()
         };
-        let mut memory = Memory::carried(carried, Releases::default());
+        let mut memory = Memory::carried(carried, Shared::default());
         for feed in 0..u32::try_from(ANSWERED_MOST).unwrap() {
             assert!(memory.answered(feed).is_empty());
         }
@@ -1918,7 +1948,7 @@ mod tests {
             pending: vec![lost("held", now_ms())],
             ..Carried::default()
         };
-        let mut memory = Memory::carried(carried, Releases::default());
+        let mut memory = Memory::carried(carried, Shared::default());
         for feed in 0..=u32::try_from(ANSWERED_MOST).unwrap() {
             assert!(memory.answered(feed).is_empty());
         }
@@ -1938,7 +1968,7 @@ mod tests {
             pending: vec![server],
             ..Carried::default()
         };
-        let shared = Releases::default();
+        let shared = Shared::default();
         let mut memory = Memory::carried(carried, Arc::clone(&shared));
         assert!(memory.uncertain.is_empty(), "not this route's to settle");
         assert!(memory.holds_feeds());
@@ -1956,7 +1986,7 @@ mod tests {
             unread: true,
             ..Carried::default()
         };
-        let shared = Releases::default();
+        let shared = Shared::default();
         let mut memory = Memory::carried(carried, Arc::clone(&shared));
         assert!(memory.holds_feeds());
         releases(&shared).push(Release::BowlsChecked);
@@ -2101,7 +2131,7 @@ mod tests {
                 volume: Some(3),
                 ..FeederSettingsPatch::default()
             };
-            session.write(Write::Settings(louder), reply).unwrap();
+            session.write(Write::Settings(louder), reply).await.unwrap();
             let (id, answer) = loop {
                 let received = session.connection.receive(Duration::from_secs(10));
                 if let Received::Answer { id, answer } = received.await.unwrap() {

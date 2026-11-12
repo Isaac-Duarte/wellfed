@@ -10,9 +10,9 @@ use super::views::{Event, Feed};
 
 /// A feed whose end is not known, until it is settled: what the
 /// integration keeps across a restart, and hands back to the next session
-/// so it is settled then. A direct feed is kept from just before it goes
-/// out ([`UpdateKind::Sending`]), so a restart before its answer finds it
-/// lost rather than forgotten.
+/// so it is settled then. A feed is kept from just before it goes out
+/// ([`UpdateKind::Sending`]), and goes only once the store says it saved
+/// it, so a restart before its answer finds it lost rather than forgotten.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
@@ -279,8 +279,8 @@ impl Update {
         }
     }
 
-    /// A direct feed about to go out: kept, so a restart before its answer
-    /// finds it lost.
+    /// A feed about to go out: kept, so a restart before its answer finds it
+    /// lost. It goes once the store says it saved the record.
     pub(crate) fn sending(pending: Pending) -> Self {
         Self {
             portions: Some(pending.portions),
@@ -289,8 +289,8 @@ impl Update {
         }
     }
 
-    /// A direct feed kept while it went out has its answer: no longer
-    /// kept.
+    /// A feed kept while it went out has its answer, or never went: no
+    /// longer kept.
     pub(crate) fn cleared(pending: Pending) -> Self {
         Self {
             portions: Some(pending.portions),

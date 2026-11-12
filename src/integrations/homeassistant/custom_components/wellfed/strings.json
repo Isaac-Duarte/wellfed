@@ -435,6 +435,9 @@
     "bad_entry": {
       "message": "This entry's settings are not valid. Remove it and add the feeder again."
     },
+    "not_sent_not_saved": {
+      "message": "Not sent: Home Assistant could not save the feed's record first, so it could not hold the next feed on it if it stopped before the answer. Check the log for why the store could not be written."
+    },
     "not_sent_legacy": {
       "message": "Not sent: the feeder runs firmware from before this integration's device API. Update it from the Wellfed app."
     }

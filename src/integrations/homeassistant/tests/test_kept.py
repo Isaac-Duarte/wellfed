@@ -12,6 +12,8 @@ import sys
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
+from homeassistant.util.file import WriteError
 import pytest
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
@@ -102,6 +104,7 @@ async def test_a_newer_major_is_read_as_nothing_and_never_written(
     store.add_pending(_a_pending())
     store.set_answered([7])
     await _flushed(hass)
+    assert not await store.save_now(), "a feed's record is never kept here"
 
     assert hass_storage[KEY] == newer, "left as it was"
 
@@ -182,6 +185,26 @@ async def test_a_store_set_aside_is_saved_unread_at_once(
     store.bowls_checked()
     await _flushed(hass)
     assert hass_storage[KEY]["data"]["unread"] is False
+
+
+async def test_a_save_now_says_whether_the_record_landed(
+    hass: HomeAssistant, hass_storage: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = kept(hass, ENTRY)
+    await store.load()
+    store.add_pending(_a_pending())
+    assert await store.save_now()
+    assert hass_storage[KEY]["data"]["pending"][0]["id"] == _a_pending().id
+
+    # Home Assistant's store logs a failed write and goes on.
+    async def full(_store: Store[Any], _data: dict[str, Any]) -> None:
+        raise WriteError("the disk is full")
+
+    # Undone before Home Assistant's storage mock is, which it replaced.
+    with monkeypatch.context() as patched:
+        patched.setattr(Store, "_async_write_data", full)
+        store.set_answered([7])
+        assert not await store.save_now()
 
 
 def test_set_aside_copies_to_the_next_free_name_and_never_replaces(tmp_path: Path) -> None:

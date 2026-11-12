@@ -389,10 +389,16 @@ view_enum! {
         /// server sends nothing but an update: update the feeder.
         Legacy => "legacy",
         /// Another feed of this client's is still being answered or
-        /// settled. A new feed waits for it (at most 15 minutes, the settle
-        /// window), so the next `Fed` this client is named in can settle only
-        /// that one, and a feed refused unseen is never taken for one that ran.
+        /// settled, a lost one is not yet released, or the integration's
+        /// store did not read. A new feed waits until that settles or the
+        /// owner releases it, so the next `Fed` this client is named in can
+        /// settle only that one, and a feed refused unseen is never taken
+        /// for one that ran.
         Held => "held",
+        /// The integration's store did not say it saved the feed's record,
+        /// so the feed could outlive its hold across a restart: it never
+        /// went.
+        NotSaved => "not_saved",
     }
 }
 
@@ -475,11 +481,14 @@ view_enum! {
         /// as long as one is kept with no end found: no longer pending, and
         /// nothing settles it now.
         Forgotten => "forgotten",
-        /// A direct feed about to go out, in `pending`: keep it as pending,
-        /// with no repair yet. A restart before its answer finds it lost.
+        /// A feed about to go out, in `pending`: keep it as pending, with no
+        /// repair yet, and say whether the store saved it (`Feeder.saved` or
+        /// `Feeder.unsaved`): it goes only once saved. A restart before its
+        /// answer finds it lost.
         Sending => "sending",
-        /// A direct feed kept while it went out has its answer: no longer
-        /// kept. A feed it ran comes as [`UpdateKind::Answered`] first.
+        /// A feed kept while it went out has its answer, or never went: no
+        /// longer kept. A feed it ran comes as [`UpdateKind::Answered`]
+        /// first.
         Cleared => "cleared",
         /// The owner released a lost feed, in `pending` with when: it holds
         /// new feeds back no longer, and stays pending, so a later update

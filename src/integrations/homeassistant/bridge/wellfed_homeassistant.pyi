@@ -450,7 +450,9 @@ class Feeder:
         """
     def feed(self, /, portions: SupportsIndex) -> Written:
         """
-        Start a feed; how it ended. Never retry an uncertain one.
+        Start a feed; how it ended. Never retry an uncertain one. It goes
+        out only once `saved` confirms the `Sending` update's record is in
+        the store.
         """
     def next_update(self, /, timeout: SupportsFloat | SupportsIndex) -> Update | None:
         """
@@ -477,6 +479,12 @@ class Feeder:
         """
         Record a fresh desiccant pack today.
         """
+    def saved(self, /, id: str) -> None:
+        """
+        The integration's store saved the record of the feed `id` names, as
+        a `Sending` update asked: the feed goes out. Called from the event
+        loop while `feed` blocks an executor thread.
+        """
     @staticmethod
     def server(url: str, token: str, token_id: str, feeder_id: str, identity: bytes, pending: SupportsGetItem[int, Pending] = ..., unread: bool = False) -> Feeder:
         """
@@ -498,6 +506,11 @@ class Feeder:
     def set_portion_weight(self, /, mg: SupportsIndex) -> Written:
         """
         Store the weight of one portion in milligrams, 1,000-50,000.
+        """
+    def unsaved(self, /, id: str) -> None:
+        """
+        The integration's store could not save the record of the feed `id`
+        names: it never goes out, and `feed` answers it not sent.
         """
 
 @final
@@ -671,9 +684,11 @@ class NotSent:
     Held: Final[NotSent]
     """
     Another feed of this client's is still being answered or
-    settled. A new feed waits for it (at most 15 minutes, the settle
-    window), so the next `Fed` this client is named in can settle only
-    that one, and a feed refused unseen is never taken for one that ran.
+    settled, a lost one is not yet released, or the integration's
+    store did not read. A new feed waits until that settles or the
+    owner releases it, so the next `Fed` this client is named in can
+    settle only that one, and a feed refused unseen is never taken
+    for one that ran.
     """
     Invalid: Final[NotSent]
     """
@@ -687,6 +702,12 @@ class NotSent:
     NotRead: Final[NotSent]
     """
     What the change is based on has not been read yet.
+    """
+    NotSaved: Final[NotSent]
+    """
+    The integration's store did not say it saved the feed's record,
+    so the feed could outlive its hold across a restart: it never
+    went.
     """
     Stopped: Final[NotSent]
     """
@@ -713,9 +734,9 @@ class Pending:
     """
     A feed whose end is not known, until it is settled: what the
     integration keeps across a restart, and hands back to the next session
-    so it is settled then. A direct feed is kept from just before it goes
-    out ([`UpdateKind::Sending`]), so a restart before its answer finds it
-    lost rather than forgotten.
+    so it is settled then. A feed is kept from just before it goes out
+    ([`UpdateKind::Sending`]), and goes only once the store says it saved
+    it, so a restart before its answer finds it lost rather than forgotten.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
@@ -1332,8 +1353,9 @@ class UpdateKind:
     """
     Cleared: Final[UpdateKind]
     """
-    A direct feed kept while it went out has its answer: no longer
-    kept. A feed it ran comes as [`UpdateKind::Answered`] first.
+    A feed kept while it went out has its answer, or never went: no
+    longer kept. A feed it ran comes as [`UpdateKind::Answered`]
+    first.
     """
     Connected: Final[UpdateKind]
     """
@@ -1374,8 +1396,10 @@ class UpdateKind:
     """
     Sending: Final[UpdateKind]
     """
-    A direct feed about to go out, in `pending`: keep it as pending,
-    with no repair yet. A restart before its answer finds it lost.
+    A feed about to go out, in `pending`: keep it as pending, with no
+    repair yet, and say whether the store saved it (`Feeder.saved` or
+    `Feeder.unsaved`): it goes only once saved. A restart before its
+    answer finds it lost.
     """
     ServerLostFeeder: Final[UpdateKind]
     """

@@ -1,6 +1,7 @@
 """What an entry keeps across restarts and reloads, in a store of its own.
 
-- **Pending feeds:** each direct feed from just before it goes out, and
+- **Pending feeds:** each feed from just before it goes out (saved at
+  once, since the bridge sends it only once the record landed), and
   each feed whose answer was lost, until its answer clears it, an update
   settles it, or the bridge stops waiting on it; with whether it was
   reported still unknown, when the owner released it, and through the
@@ -44,8 +45,8 @@ import os
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import UnsupportedStorageVersionError
+from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, UnsupportedStorageVersionError
 from homeassistant.helpers.storage import Store
 from homeassistant.util.hass_dict import HassKey
 
@@ -160,7 +161,17 @@ def set_aside(path: str) -> str:
 
 
 class _Store(Store[KeptData]):
-    """The entry's store, reading any minor of its major as it is."""
+    """The entry's store, reading any minor of its major as it is, and
+    telling whether its last write landed: Home Assistant's store logs a
+    failed write and goes on, and a feed must not go out on a record that
+    did not land."""
+
+    wrote = False
+
+    async def _async_write_data(self, data: dict[str, Any]) -> None:
+        self.wrote = False
+        await super()._async_write_data(data)
+        self.wrote = True
 
     async def _async_migrate_func(
         self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
@@ -182,11 +193,13 @@ class Kept:
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         self._hass = hass
-        self._store: Store[KeptData] = _Store(
+        self._store = _Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}", minor_version=STORAGE_MINOR_VERSION
         )
         self._data: KeptData = _empty()
         self._loaded = False
+        # Left as it is on disk: nothing this entry keeps is saved.
+        self._read_only = False
 
     async def load(self) -> None:
         """Read the store once; later calls keep what is in memory."""
@@ -195,12 +208,12 @@ class Kept:
         try:
             data: Any = await self._store.async_load()
         except UnsupportedStorageVersionError as error:
+            self._read_only = True
             self._store.make_read_only()
             _LOGGER.warning(
                 "Wellfed's store for this entry is from a newer version of the integration "
-                "and is left as it is (%s); until the integration is updated, the entry keeps "
-                "no lost feeds across restarts, and feeds wait at each start until the "
-                "bowls are checked",
+                "and is left as it is (%s); until the integration is updated, no feed is "
+                "sent, since none could be kept across a restart",
                 error,
             )
             self._data = _empty(unread=True)
@@ -214,11 +227,12 @@ class Kept:
             try:
                 aside = await self._hass.async_add_executor_job(set_aside, self._store.path)
             except OSError as error:
+                self._read_only = True
                 self._store.make_read_only()
                 _LOGGER.warning(
                     "Wellfed's store for this entry is not in the shape it writes and could "
                     "not be set aside (%s); it is left as it is, nothing is saved over it, "
-                    "and feeds wait at each start until the bowls are checked",
+                    "and no feed is sent, since none could be kept across a restart",
                     error,
                 )
                 self._data = _empty(unread=True)
@@ -316,6 +330,22 @@ class Kept:
         """The owner checked the bowls, as the bridge confirmed: feeds go again."""
         self._data["unread"] = False
         self._save()
+
+    async def save_now(self) -> bool:
+        """Write the store at once: whether it landed. A feed goes out only
+        once its record has, so a restart before its answer still finds it
+        and holds the next feed on it. A store left read-only, or Home
+        Assistant stopping, which writes only at its final write, keeps
+        nothing now."""
+        if self._read_only or self._hass.state is CoreState.stopping:
+            return False
+        try:
+            await self._store.async_save(self._data)
+        except (OSError, HomeAssistantError):
+            # Home Assistant's store catches only its own write errors; the
+            # folder it makes first can fail too.
+            return False
+        return self._store.wrote
 
     def _save(self) -> None:
         self._store.async_delay_save(lambda: self._data, 0)

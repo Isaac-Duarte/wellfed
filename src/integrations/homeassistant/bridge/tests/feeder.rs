@@ -1,6 +1,8 @@
 //! The bridge against the simulated feeder, which runs the real feeder's
 //! pairing, stores and feeding owner, in real time on a thread of its own:
 //! - an owner's member invite enrolls the integration's new key;
+//! - a feed goes only once the store says it saved its record, which the
+//!   handle here gives as Home Assistant does;
 //! - the session reads the backlog into its state, runs a feed to its
 //!   `Fed` event, cancels one, and changes the lock;
 //! - a store change goes on the generation read, one at a time: a second
@@ -11,6 +13,8 @@
 //!   revoked key stops the session;
 //! - a write refused before it went leaves the session, and a feed still
 //!   out on it, as they were.
+
+mod support;
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -33,6 +37,8 @@ use wellfed_model::{
     Weekdays,
 };
 use wellfed_session::noise::Keypair;
+
+use support::{Saving, Store};
 
 const OWNER: [u8; 32] = [0x21; 32];
 const WAIT: Duration = Duration::from_secs(60);
@@ -114,16 +120,16 @@ fn session(
     key: ClientKey,
     address: std::net::SocketAddr,
     clocks: Clocks,
-) -> Feeder {
+) -> Saving {
     let target = Target {
         identity: sim.identity,
         address: Some(address.to_string()),
     };
-    Feeder::start(key, target, clocks, Carried::default()).unwrap()
+    Saving::new(Feeder::start(key, target, clocks, Carried::default()).unwrap())
 }
 
 /// Updates until one `want` accepts, failing past [`WAIT`].
-fn until<T>(feeder: &Feeder, mut want: impl FnMut(&Update) -> Option<T>) -> T {
+fn until<T>(feeder: &Saving, mut want: impl FnMut(&Update) -> Option<T>) -> T {
     let deadline = Instant::now() + WAIT;
     while Instant::now() < deadline {
         if let Some(update) = feeder.next_update(Duration::from_secs(1))
@@ -138,7 +144,7 @@ fn until<T>(feeder: &Feeder, mut want: impl FnMut(&Update) -> Option<T>) -> T {
 /// The first state that `want` accepts.
 /// The owner releases the lost feed `pending` names, through its repair:
 /// it as the session confirms it.
-fn release(feeder: &Feeder, pending: &Pending) -> Pending {
+fn release(feeder: &Saving, pending: &Pending) -> Pending {
     feeder.release(pending.id.clone());
     let released = until(feeder, |update| {
         (update.kind == UpdateKind::Released).then(|| update.pending.clone())
@@ -149,7 +155,7 @@ fn release(feeder: &Feeder, pending: &Pending) -> Pending {
     released
 }
 
-fn state_where(feeder: &Feeder, want: impl Fn(&State) -> bool) -> State {
+fn state_where(feeder: &Saving, want: impl Fn(&State) -> bool) -> State {
     until(feeder, |update| {
         update.state.clone().filter(|state| want(state))
     })
@@ -162,6 +168,20 @@ fn relays() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .unwrap()
+}
+
+/// What `relay` passed, once nothing more has gone through it for a
+/// while: a request queued as a write is answered has gone by then.
+fn quiet(relay: &Relay) -> usize {
+    let mut passed = relay.passed();
+    loop {
+        std::thread::sleep(Duration::from_millis(300));
+        let now = relay.passed();
+        if now == passed {
+            return now;
+        }
+        passed = now;
+    }
 }
 
 /// Wait until `done` holds, failing past [`WAIT`].
@@ -207,6 +227,35 @@ fn the_session_feeds_to_its_fed_event_and_sets_the_lock() {
 
     assert_eq!(feeder.set_lock(true), Written::done());
     state_where(&feeder, |state| state.status.locked == Some(true));
+}
+
+/// A feed goes out only once the store says it saved its record: one the
+/// store could not save, or gave no word on, never reaches the feeder,
+/// holds nothing back, and its record is dropped.
+#[test]
+fn a_feed_goes_only_once_the_store_saved_its_record() {
+    let (sim, key) = joined();
+    let feeder = session(&sim, key, sim.address, Clocks::DEFAULT);
+    state_where(&feeder, |state| state.settings.is_some());
+
+    for store in [Store::Refuses, Store::Silent] {
+        feeder.store(store);
+        let written = feeder.feed(1);
+        assert_eq!(written, Written::not_sent(NotSent::NotSaved), "{store:?}");
+        let kept = until(&feeder, |update| {
+            (update.kind == UpdateKind::Sending).then(|| update.pending.clone())
+        });
+        let dropped = until(&feeder, |update| {
+            (update.kind == UpdateKind::Cleared).then(|| update.pending.clone())
+        });
+        assert!(kept.is_some());
+        assert_eq!(dropped, kept, "{store:?}");
+    }
+
+    feeder.store(Store::Saves);
+    let written = feeder.feed(1);
+    assert_eq!(written.result, WriteResult::Feeding, "{written:?}");
+    assert_eq!(written.feed, Some(1), "the first feed the feeder ran");
 }
 
 #[test]
@@ -694,8 +743,9 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
         answered: Vec::new(),
         unread: false,
     };
-    let restarted =
-        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let restarted = Saving::new(
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap(),
+    );
     let (mut fed, mut lost) = (false, Vec::new());
     let quiet = Instant::now() + Duration::from_secs(5);
     while Instant::now() < quiet {
@@ -751,7 +801,7 @@ fn a_lost_feed_a_week_old_is_forgotten() {
         answered: Vec::new(),
         unread: false,
     };
-    let feeder = Feeder::start(key, target, SHORT, carried).unwrap();
+    let feeder = Saving::new(Feeder::start(key, target, SHORT, carried).unwrap());
     let which = until(&feeder, |update| {
         assert_ne!(update.kind, UpdateKind::StillUnknown, "reported before");
         (update.kind == UpdateKind::Forgotten).then(|| update.pending.clone())
@@ -785,8 +835,9 @@ fn a_lost_feed_carried_across_a_restart_settles_in_the_next_session() {
         answered: Vec::new(),
         unread: false,
     };
-    let restarted =
-        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let restarted = Saving::new(
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap(),
+    );
     let (fed, which) = until(&restarted, |update| {
         assert_ne!(
             update.kind,
@@ -832,8 +883,9 @@ fn an_answered_feeds_fed_does_not_settle_a_lost_one_after_a_restart() {
         answered: vec![b],
         unread: false,
     };
-    let restarted =
-        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let restarted = Saving::new(
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap(),
+    );
     let mut b_after = false;
     let which = until(&restarted, |update| {
         if let Some(event) = &update.event
@@ -864,7 +916,9 @@ fn a_feed_is_held_while_another_is_uncertain() {
     relay.hold_answers();
     let lost = feeder.feed(1);
     assert_eq!(lost.result, WriteResult::Uncertain);
-    let passed = relay.passed();
+    // The status read the loss asks for follows the write's answer: counted
+    // once it has gone.
+    let passed = quiet(&relay);
     assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
     assert_eq!(relay.passed(), passed, "nothing went out");
 
@@ -925,8 +979,9 @@ fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
         answered,
         unread: false,
     };
-    let restarted =
-        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let restarted = Saving::new(
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap(),
+    );
     let which = until(&restarted, |update| {
         assert_ne!(
             update.kind,
@@ -1014,7 +1069,7 @@ fn a_lost_feed_holds_feeds_past_the_report_window_until_released() {
         answered: Vec::new(),
         unread: false,
     };
-    let feeder = Feeder::start(key, target, Clocks::DEFAULT, carried).unwrap();
+    let feeder = Saving::new(Feeder::start(key, target, Clocks::DEFAULT, carried).unwrap());
     let again = until(&feeder, |update| {
         (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
     });

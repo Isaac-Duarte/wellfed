@@ -503,7 +503,13 @@ class FeederSession:
             self._uncertain_issue()
         elif kind == bridge.UpdateKind.Sending and update.pending is not None:
             # Kept with no repair: only a lost answer says it may have run.
+            # The bridge sends the feed only once the store says this record
+            # landed, so a restart before its answer still holds on it.
             self.kept.add_pending(update.pending)
+            if (feeder := self._feeder) is not None:
+                self.hass.async_create_task(
+                    self._confirm_kept(feeder, update.pending.id), eager_start=True
+                )
         elif kind == bridge.UpdateKind.Cleared:
             self._cleared(update.pending)
         elif kind == bridge.UpdateKind.Answered:
@@ -560,6 +566,18 @@ class FeederSession:
         else:
             return False
         return True
+
+    async def _confirm_kept(self, feeder: bridge.Feeder, pending_id: str) -> None:
+        """Tell the bridge whether the store saved the record of the feed
+        `pending_id` names: the feed goes out only if it did."""
+        if await self.kept.save_now():
+            feeder.saved(pending_id)
+            return
+        _LOGGER.error(
+            "Home Assistant could not save a feed's record before sending it, so the feed "
+            "was not sent: it would not be held on if Home Assistant stopped before its answer"
+        )
+        feeder.unsaved(pending_id)
 
     @callback
     def _settled(self, pending: bridge.Pending | None) -> None:

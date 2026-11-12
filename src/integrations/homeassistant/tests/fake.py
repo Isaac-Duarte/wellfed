@@ -181,6 +181,11 @@ class FakeFeeder:
     held: list[SimpleNamespace] = field(default_factory=list)
     stopping: threading.Event | None = None
 
+    # The store's word on each feed's record, by its id, as the session gave
+    # it: whether it saved it.
+    words: dict[str, bool] = field(default_factory=dict)
+    said: threading.Condition = field(default_factory=threading.Condition)
+
     def push(self, *updates: SimpleNamespace) -> None:
         for item in updates:
             self.updates.put(item)
@@ -224,10 +229,24 @@ class FakeFeeder:
         self.calls.append(("feed", (portions,)))
         if self.gate is not None:
             self.gate.wait()
-        # As the bridge does: a lost feed, or an answered feed's number, is
-        # announced before its answer.
+        # As the bridge does: the feed's record first, and the feed only once
+        # the store says it landed; dropped again if it did not.
+        out = self.feed_result.pending or bridge.Pending(
+            f"sending-{len(self.calls)}", portions, 0, None, False, None, None
+        )
+        self.push(update(bridge.UpdateKind.Sending, pending=out))
+        with self.said:
+            self.said.wait_for(lambda: out.id in self.words, timeout=STOP_WAIT)
+            kept = self.words.get(out.id, False)
+        if not kept:
+            self.push(update(bridge.UpdateKind.Cleared, pending=out))
+            return written(bridge.WriteResult.NotSent, not_sent=bridge.NotSent.NotSaved)
+        # A lost feed, or an answered feed's number, is announced before its
+        # answer; an answered feed's record goes.
         if self.feed_result.pending is not None:
             self.push(update(bridge.UpdateKind.Pending, pending=self.feed_result.pending))
+        else:
+            self.push(update(bridge.UpdateKind.Cleared, pending=out))
         if self.feed_result.feed is not None:
             self.answered.append(self.feed_result.feed)
             self.push(update(bridge.UpdateKind.Answered, answered=list(self.answered)))
@@ -243,6 +262,16 @@ class FakeFeeder:
         """The owner released a lost feed: the test confirms it, as the
         bridge does, with a `Released` update."""
         self.calls.append(("release", (pending_id,)))
+
+    def saved(self, pending_id: str) -> None:
+        with self.said:
+            self.words[pending_id] = True
+            self.said.notify_all()
+
+    def unsaved(self, pending_id: str) -> None:
+        with self.said:
+            self.words[pending_id] = False
+            self.said.notify_all()
 
     def bowls_checked(self) -> None:
         """The owner checked the bowls: the test confirms it, as the bridge

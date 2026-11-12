@@ -76,7 +76,7 @@ use crate::api::{
 use crate::feeder::{
     self as direct, Carried, Command, SETTLE, TURN, now_ms, refusing, sent_at, stale,
 };
-use crate::hold::{Holds, Releases};
+use crate::hold::{Holds, Saved, Shared};
 use crate::writes::{self, Kind, Write};
 
 /// The newest events a first connect replays, of a history the server may
@@ -300,7 +300,7 @@ pub(crate) async fn run(
     target: Target,
     clocks: Clocks,
     carried: Carried,
-    releases: Releases,
+    shared: Shared,
     mut commands: mpsc::UnboundedReceiver<Command>,
     updates: std_mpsc::Sender<Update>,
 ) {
@@ -317,7 +317,7 @@ pub(crate) async fn run(
             None => elsewhere.push(pending),
         }
     }
-    memory.holds = Holds::new(releases, elsewhere, carried.unread);
+    memory.holds = Holds::new(shared, elsewhere, carried.unread);
 
     // Each lost feed that still holds feeds back is announced again, so the
     // integration's repairs say so.
@@ -958,11 +958,65 @@ impl<'a> Session<'a> {
         let (client, id) = (self.client, self.target.feeder);
         let key = Uuid::new_v4();
 
-        let called = match op {
-            Op::Feed { portions } => match client.feed(id, portions, key).await {
-                Ok(command) => Ok(self.feeding(&command, portions)),
-                Err(error) => Err(error),
-            },
+        // A feed is in the integration's store before it leaves, and stays
+        // there through the call, which may take as long as the server
+        // waits on the feeder: a restart meanwhile finds it lost, and the
+        // journal settles it then.
+        let sending = match kind {
+            Kind::Feed { portions } => {
+                let pending = self.pending(key, portions);
+                if self.memory.holds.kept_first(self.updates, &pending).await == Saved::Failed {
+                    // The store may have it in memory, and save it later:
+                    // it is dropped there too, since it never went.
+                    let _ = self.updates.send(Update::cleared(pending));
+                    return (Written::not_sent(NotSent::NotSaved), Ok(()));
+                }
+                Some(pending)
+            }
+            Kind::Once | Kind::Store { .. } => None,
+        };
+
+        let called = match (op, &sending) {
+            (Op::Feed { .. }, Some(pending)) => {
+                match client.feed(id, pending.portions, key).await {
+                    Ok(command) => Ok(self.feeding(&command, pending)),
+                    Err(error) => Err(error),
+                }
+            }
+            // A feed's kind always comes with its op.
+            (Op::Feed { .. }, None) => {
+                return (Written::not_sent(NotSent::Unsupported), Ok(()));
+            }
+            (op, _) => self.other(op, id, key).await,
+        };
+
+        let ended = match called {
+            Ok(written) => (written, self.state()),
+            Err(error) => self.failed(&error, key, sending.as_ref()),
+        };
+        // A feed answered, refused or never taken is kept no longer; one
+        // that may have run stays kept until the journal settles it.
+        if let Some(pending) = sending
+            && !self
+                .memory
+                .uncertain
+                .iter()
+                .any(|uncertain| uncertain.key == key)
+        {
+            let _ = self.updates.send(Update::cleared(pending));
+        }
+        ended
+    }
+
+    /// Send a write other than a feed, under `key`: its answer.
+    async fn other(
+        &mut self,
+        op: Op,
+        id: FeederId,
+        key: Uuid,
+    ) -> Result<Written, wellfed_server_client::Error> {
+        let client = self.client;
+        match op {
             Op::CancelFeed { feed } => client.cancel_feed(id, feed, key).await.map(done),
             Op::SetLock { locked } => {
                 let lock = if locked { Lock::Locked } else { Lock::Unlocked };
@@ -1002,31 +1056,26 @@ impl<'a> Session<'a> {
             }
             // Every write Home Assistant builds has its route; another
             // never leaves.
-            _ => return (Written::not_sent(NotSent::Unsupported), Ok(())),
-        };
-
-        match called {
-            Ok(written) => (written, self.state()),
-            Err(error) => self.failed(&error, kind, key),
+            _ => Ok(Written::not_sent(NotSent::Unsupported)),
         }
     }
 
     /// How a feed the server answered ended.
-    fn feeding(&mut self, command: &server::Command, portions: u8) -> Written {
+    fn feeding(&mut self, command: &server::Command, pending: &Pending) -> Written {
         match command.outcome {
             Some(CommandOutcome::Feeding { feed } | CommandOutcome::Fed { feed, .. }) => {
                 Written::feeding(feed)
             }
             Some(CommandOutcome::Refused { refusal }) => Written::refused_for(refusal.into()),
             // Taken, with no answer yet: the journal settles it.
-            _ => self.unanswered(command.key, portions, command.feed),
+            _ => self.unanswered(command.key, pending.clone(), command.feed),
         }
     }
 
-    /// A feed under `key` went out and its answer never came: uncertain,
-    /// and kept until the journal settles it.
-    fn unanswered(&mut self, key: Uuid, portions: u8, feed: Option<u32>) -> Written {
-        let pending = Pending {
+    /// The record of a feed of `portions` about to go out under `key`,
+    /// kept until it settles.
+    fn pending(&self, key: Uuid, portions: u8) -> Pending {
+        Pending {
             id: key.to_string(),
             portions,
             sent_ms: now_ms(),
@@ -1034,9 +1083,14 @@ impl<'a> Session<'a> {
             reported: false,
             released_ms: None,
             token_id: Some(self.target.token_id.clone()),
-        };
-        // Announced on the updates before anything can settle it, so the
-        // integration keeps it first; a handle gone has no one to tell.
+        }
+    }
+
+    /// A feed under `key`, kept as `pending` since before it went out, had
+    /// no answer: uncertain, and kept until the journal settles it.
+    fn unanswered(&mut self, key: Uuid, pending: Pending, feed: Option<u32>) -> Written {
+        // Announced as lost before anything can settle it, so the
+        // integration's repair says so; a handle gone has no one to tell.
         let _ = self.updates.send(Update::pending(pending.clone()));
         self.memory
             .uncertain
@@ -1044,13 +1098,14 @@ impl<'a> Session<'a> {
         Written::uncertain_feed(pending)
     }
 
-    /// How a write of `kind` under `key` that failed with `error` ended,
-    /// and whether the session goes on.
+    /// How a write under `key` that failed with `error` ended, and whether
+    /// the session goes on; `sending` is a feed's record, kept since before
+    /// it went out.
     fn failed(
         &mut self,
         error: &wellfed_server_client::Error,
-        kind: Kind,
         key: Uuid,
+        sending: Option<&Pending>,
     ) -> (Written, Step) {
         match error.failure() {
             // Nothing left this host: the server is gone for now.
@@ -1062,9 +1117,9 @@ impl<'a> Session<'a> {
             Failure::FeederOffline => (Written::not_sent(NotSent::Disconnected), Ok(())),
             // It may have run: never sent again.
             Failure::Interrupted | Failure::OutcomeUnknown => {
-                let written = match kind {
-                    Kind::Feed { portions } => self.unanswered(key, portions, None),
-                    _ => Written::uncertain(),
+                let written = match sending {
+                    Some(pending) => self.unanswered(key, pending.clone(), None),
+                    None => Written::uncertain(),
                 };
                 (written, Ok(()))
             }
@@ -1481,7 +1536,7 @@ mod tests {
     /// releases it, the direct route's ones carried here among them.
     #[test]
     fn a_lost_feed_from_either_route_holds_until_released() {
-        let shared = Releases::default();
+        let shared = Shared::default();
         let direct = Pending {
             token_id: None,
             ..lost(Uuid::from_u128(2), now_ms()).pending
