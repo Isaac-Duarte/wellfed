@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:wellfed/screens/server/server_words.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -33,9 +34,16 @@ class AdoptPrompt extends StatelessWidget {
           Tone.warning,
           '$name is on the server, but this $deviceName is not yours there yet. ${serverErrorWords(error)}',
         ),
-        AdoptUnsettled() => (
+        AdoptUnsettled(:final error) => (
           Tone.warning,
-          "The server's answer was lost. Check reads the server's list and sends nothing new.",
+          switch (error.kind) {
+            ServerErrorKind.outcomeUnknown =>
+              "The server didn't hear back from $name in time, and $name may still appear on it. "
+                  "Don't put it on again: Check reads the server's list and sends nothing new.",
+            ServerErrorKind.feederBusy =>
+              '$name is still being put on the server. Check reads the feeder list and sends nothing new.',
+            _ => "The server's answer was lost. Check reads the server's list and sends nothing new.",
+          },
         ),
         AdoptNoInvite() => (Tone.warning, "$name didn't answer the invite. Check it is online, then try again."),
         AdoptFailed(:final error) => (Tone.fault, serverErrorWords(error)),

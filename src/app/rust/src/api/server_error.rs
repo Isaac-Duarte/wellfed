@@ -82,6 +82,11 @@ pub enum ServerErrorKind {
     /// would carry the password and the phone's token unencrypted. Nothing
     /// was sent; the server's `https://` address works.
     PlainHttp,
+    /// Another adoption or a removal of the feeder is running on the server
+    /// (`409 feeder_busy`), such as an adoption whose join answer was lost,
+    /// which the server looks for up to twelve minutes: nothing was done.
+    /// The server's feeder list shows the feeder once it is found.
+    FeederBusy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

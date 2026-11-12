@@ -11954,6 +11954,7 @@ impl SseDecode for crate::api::server_error::ServerErrorKind {
             22 => crate::api::server_error::ServerErrorKind::Protocol,
             23 => crate::api::server_error::ServerErrorKind::Closed,
             24 => crate::api::server_error::ServerErrorKind::PlainHttp,
+            25 => crate::api::server_error::ServerErrorKind::FeederBusy,
             _ => unreachable!("Invalid variant for ServerErrorKind: {}", inner),
         };
     }
@@ -17755,6 +17756,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_error::ServerErrorKind
             Self::Protocol => 22.into_dart(),
             Self::Closed => 23.into_dart(),
             Self::PlainHttp => 24.into_dart(),
+            Self::FeederBusy => 25.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -23587,6 +23589,7 @@ impl SseEncode for crate::api::server_error::ServerErrorKind {
                 crate::api::server_error::ServerErrorKind::Protocol => 22,
                 crate::api::server_error::ServerErrorKind::Closed => 23,
                 crate::api::server_error::ServerErrorKind::PlainHttp => 24,
+                crate::api::server_error::ServerErrorKind::FeederBusy => 25,
                 _ => {
                     unimplemented!("");
                 }

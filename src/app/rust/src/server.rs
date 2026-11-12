@@ -154,6 +154,7 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
             ErrorCode::NoCurrentFood => ServerErrorKind::NoCurrentFood,
             ErrorCode::AlreadyAdopted => ServerErrorKind::AlreadyAdopted,
             ErrorCode::InviteExpired => ServerErrorKind::InviteExpired,
+            ErrorCode::FeederBusy => ServerErrorKind::FeederBusy,
             // A proof whose challenge ran out is settled by claiming
             // again with a new one, as an unconfirmed key is.
             ErrorCode::PhoneKeyUnconfirmed | ErrorCode::PhoneKeyProofRefused => {
@@ -716,6 +717,33 @@ mod tests {
             let error = ServerError::from(error);
             assert!(!error.may_have_run, "{error}");
         }
+    }
+
+    /// A server busy with another adoption of the feeder did nothing, and
+    /// gets its own words: check the list rather than adopt again.
+    #[test]
+    fn a_feeder_busy_with_another_adoption_is_its_own_kind_and_did_not_run() {
+        use wellfed_api::{ErrorCode, Problem};
+        use wellfed_server_client::StatusCode;
+
+        let busy = Error::Problem {
+            status: StatusCode::CONFLICT,
+            problem: Box::new(Problem {
+                kind: "about:blank".into(),
+                title: "Busy".into(),
+                status: StatusCode::CONFLICT.as_u16(),
+                code: ErrorCode::FeederBusy,
+                detail: None,
+                refusal: None,
+                release: None,
+            }),
+            retry_after: None,
+        };
+
+        let error = ServerError::from(busy);
+
+        assert_eq!(error.kind, ServerErrorKind::FeederBusy);
+        assert!(!error.may_have_run, "{error}");
     }
 
     #[test]

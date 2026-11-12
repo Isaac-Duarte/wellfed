@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/screens/home/adopt_prompt.dart';
 import 'package:wellfed/screens/server/account.dart';
 import 'package:wellfed/screens/server/add_server.dart';
 import 'package:wellfed/screens/server/feeder_food.dart';
@@ -375,5 +376,35 @@ void main() {
     expect(flow.state['aa'], isA<AdoptUnsettled>());
     await flow.adopt(_kitchen);
     expect(ports.adoptSteps, ['adopt aa', 'check aa']);
+  });
+
+  testWidgets('a server still looking for the feeder, or busy adopting it, says to check rather than adopt again', (
+    tester,
+  ) async {
+    _phone(tester);
+    final Map<ServerErrorKind, String> cases = {
+      ServerErrorKind.outcomeUnknown: 'Kitchen may still appear on it',
+      ServerErrorKind.feederBusy: 'Kitchen is still being put on the server.',
+    };
+    for (final MapEntry(key: ServerErrorKind kind, value: String words) in cases.entries) {
+      final (HomeServer server, _, _) = _server();
+      final ports = FakeFeederPorts()..adoptAnswer = Adoption.unsettled(error: serverError(kind));
+      final flow = AdoptFlow(ports, server);
+      addTearDown(flow.dispose);
+      await tester.pumpWidget(
+        themed(
+          Scaffold(
+            body: AdoptPrompt(feeder: _kitchen, flow: flow),
+          ),
+        ),
+      );
+
+      await flow.adopt(_kitchen);
+      await settle(tester);
+
+      expect(find.textContaining(words), findsOneWidget, reason: '$kind');
+      expect(find.text('Check'), findsOneWidget, reason: '$kind');
+      expect(find.text('Put on the server'), findsNothing, reason: '$kind');
+    }
   });
 }
