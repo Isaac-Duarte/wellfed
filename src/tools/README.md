@@ -38,7 +38,7 @@ The libraries the tools share with the app, the server and the installer live in
 
 ## Simulators
 
-The simulated devices live in `src/sim/`, a layer of their own: the tools run them, and so do the server's test kit and other crates' tests, but no crate that ships links one (`cargo xtask check-repository` refuses it). None touches hardware.
+The simulated devices live in `src/sim/`, a layer of their own: the tools run them, and so do the server's test kit and other crates' tests, but no crate that ships links one (`cargo xtask check-repository` refuses it). None touches hardware; `wellfed-feeder-sim` uses the network, opening the device API's sockets and announcing itself over mDNS when asked to.
 
 | Simulator | What it does |
 | --- | --- |
