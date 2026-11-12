@@ -216,8 +216,21 @@ async fn update(
 ) -> UpdateEnd {
     match try_update(keys, feeder, address, image_dir, asks, report).await {
         Ok(end) => end,
-        Err(detail) => UpdateEnd::Failed { detail },
+        Err(failure) => UpdateEnd::Failed {
+            detail: crate::install::text(&failure),
+        },
     }
+}
+
+/// What of this phone's stopped an update before any offer.
+#[derive(Debug, thiserror::Error)]
+enum NotOffered {
+    #[error("this app's image did not pass its check")]
+    ImageUnchecked,
+    #[error("read the image's review")]
+    Review(#[source] wellfed_install::Error),
+    #[error("read the image's update manifest")]
+    Manifest(#[source] std::io::Error),
 }
 
 async fn try_update(
@@ -227,18 +240,18 @@ async fn try_update(
     image_dir: &str,
     asks: Arc<Asks>,
     report: &impl Fn(UpdateProgress),
-) -> Result<UpdateEnd, String> {
+) -> Result<UpdateEnd, NotOffered> {
     // The image is the one this build pinned, or nothing goes out.
     let ImageCheck::Ready { version, .. } = check_image(Path::new(image_dir), pin().as_ref())
     else {
-        return Err("this app's image did not pass its check".to_string());
+        return Err(NotOffered::ImageUnchecked);
     };
     let last = Cell::new(address.and_then(|address| wellfed_connect::parse_address(address).ok()));
     let discovery = AppDiscovery(asks);
-    let review = Review::open(Path::new(image_dir)).map_err(|error| error.to_string())?;
-    let manifest = std::fs::read(Path::new(image_dir).join(UPDATE_MANIFEST))
-        .map_err(|error| error.to_string())?;
-    let payload = review.payload().map_err(|error| error.to_string())?;
+    let review = Review::open(Path::new(image_dir)).map_err(NotOffered::Review)?;
+    let manifest =
+        std::fs::read(Path::new(image_dir).join(UPDATE_MANIFEST)).map_err(NotOffered::Manifest)?;
+    let payload = review.payload().map_err(NotOffered::Review)?;
     let served = review.build().to_owned();
 
     // Where it last answered, then where NSD says: a restart can move it.

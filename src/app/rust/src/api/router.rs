@@ -1,8 +1,8 @@
 //! Every request to a feeder, through the owner's server or the phone's own
 //! session. With no server configured the router passes everything to the
 //! phone's own session, but it still pins every write, so Dart makes every
-//! request through it once the app has one, and never around it: a session
-//! the router holds refuses [`FeederSession::feed`]. A pins file that does
+//! request through it once the app has one, and never around it: a
+//! [`FeederSession`] has no request of its own. A pins file that does
 //! not read is set aside, never deleted, and the router opens on a new one
 //! that holds every feed back until the owner has looked at the bowls
 //! ([`PathRouter::set_aside`], [`PathRouter::bowls_checked`]). One that

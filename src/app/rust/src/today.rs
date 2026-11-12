@@ -122,6 +122,9 @@ pub(crate) fn card(facts: &Facts) -> Option<Card> {
         wifi_generation: status.wifi_generation.0,
     })
 }
+
+/// A feed as the screens show it: what it asked, what surely dropped and
+/// at most, and its words.
 pub(crate) fn result(fed: &Feed) -> FeedResult {
     let (confirmed, at_most) = fed.delivered.bounds();
     FeedResult {

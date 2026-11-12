@@ -15,7 +15,8 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'update.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `after_restart`, `confirm`, `first_run`, `reading`, `try_update`, `update`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Reading`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `NotOffered`, `Reading`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`, `source`
 
 /// Whether to offer the image `build` at `version` to a feeder that runs
 /// `running` (`None` before its status is read) at `skew`, with `update`

@@ -693,7 +693,8 @@ class UpdateInfo {
   /// The bank it answers from.
   final int bank;
 
-  /// The lowest version it will install.
+  /// The highest confirmed version: an offer at or below it needs a
+  /// downgrade statement.
   final int minVersion;
 
   /// The version being installed.

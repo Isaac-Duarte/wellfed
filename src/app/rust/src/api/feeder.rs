@@ -295,7 +295,8 @@ pub struct UpdateInfo {
     pub phase: UpdatePhase,
     /// The bank it answers from.
     pub bank: u8,
-    /// The lowest version it will install.
+    /// The highest confirmed version: an offer at or below it needs a
+    /// downgrade statement.
     pub min_version: u32,
     /// The version being installed.
     pub version: u32,
