@@ -43,83 +43,122 @@ impl Mirror {
     }
 
     /// Redeem `invite` at `address` with the key `secret`, listed on the
-    /// feeder as `label`.
+    /// feeder as `label`. A join whose answer was lost is
+    /// [`Redeemed::Unanswered`], logged at once with both fingerprints, so
+    /// the record outlives whatever then waits for the key.
     pub async fn enroll(
         &self,
         invite: Invite,
         label: &str,
         address: SocketAddr,
         secret: [u8; 32],
-    ) -> Result<Enrolled, ConnectError> {
+    ) -> Result<Redeemed, ConnectError> {
         let keys = Keypair::from_secret(secret);
         let ephemeral = self.shared.random()?;
         let joined = match wellfed_connect::join(&keys, invite, label, address, ephemeral).await {
             Ok(joined) => joined,
             // The feeder drops an unknown or expired invite unanswered.
             Err(wellfed_connect::Error::Closed) => return Err(ConnectError::InviteExpired),
-            // The join went and its answer was lost: the key may be
-            // enrolled, holding a client slot with nothing to use it unless
-            // it is kept. A session with it says.
             Err(wellfed_connect::Error::JoinUnanswered) => {
-                self.joined_unanswered(&keys, invite.feeder, address)
-                    .await?
+                warn!(
+                    "feeder {} took this server's join and its answer was lost: it may have \
+                     enrolled this server's key ({}), or enroll it once a running feed ends; \
+                     the server looks for it, and if it appears unadopted, revoke it",
+                    Lower(&invite.feeder[..4]),
+                    Lower(&keys.public()[..4]),
+                );
+                return Ok(Redeemed::Unanswered(LostJoin {
+                    secret,
+                    identity: invite.feeder,
+                    address,
+                }));
             }
             Err(other) => return Err(Unreachable(other).into()),
         };
         match joined {
-            Joined::Enrolled { role, model } => Ok(Enrolled {
+            Joined::Enrolled { role, model } => Ok(Redeemed::Enrolled(Enrolled {
                 role,
                 model,
                 public: *keys.public(),
-            }),
+            })),
             Joined::Refused(refusal) => Err(ConnectError::Refused(refusal)),
         }
     }
-}
 
-impl Mirror {
-    /// Whether a join whose answer was lost enrolled `keys`: a session
-    /// with them opens only once it has, and names the role and model the
-    /// answer would have. A key not known yet may still be: the feeder
-    /// holds a join's enrollment until a running feed ends, and makes it
-    /// with the connection gone. So sessions are tried until the settle
-    /// window closes, and a key still not seen then is uncertain, never
-    /// "not enrolled": the log names it to revoke on the feeder.
-    async fn joined_unanswered(
-        &self,
-        keys: &Keypair,
-        identity: [u8; 32],
-        address: SocketAddr,
-    ) -> Result<Joined, ConnectError> {
+    /// Look for the key of a join whose answer was lost: a session with it
+    /// opens only once the feeder has enrolled it, and names the role and
+    /// model the answer would have. The feeder holds a join's enrollment
+    /// until a running feed ends, the longest some ten minutes, and makes
+    /// it with the connection gone, so sessions are tried until the settle
+    /// window closes; `None` then, with the key logged again to revoke.
+    pub async fn find_joined(&self, lost: &LostJoin) -> Result<Option<Enrolled>, ConnectError> {
+        let keys = Keypair::from_secret(lost.secret);
         let timing = self.shared.config.timing;
         let deadline = Instant::now() + timing.join_settle;
         loop {
             let ephemeral = self.shared.random()?;
-            let error =
-                match Connection::open_with(keys, identity, address, ephemeral, timing.session)
-                    .await
-                {
-                    Ok(session) => {
-                        return Ok(Joined::Enrolled {
-                            role: session.role(),
-                            model: session.model(),
-                        });
-                    }
-                    Err(error) => error,
-                };
+            let opened = Connection::open_with(
+                &keys,
+                lost.identity,
+                lost.address,
+                ephemeral,
+                timing.session,
+            )
+            .await;
+            let error = match opened {
+                Ok(session) => {
+                    return Ok(Some(Enrolled {
+                        role: session.role(),
+                        model: session.model(),
+                        public: *keys.public(),
+                    }));
+                }
+                Err(error) => error,
+            };
             if Instant::now() >= deadline {
                 warn!(
-                    "feeder {} took this server's join and its answer was lost, and no session \
-                     with the key opened in {:?} ({error}); it may hold or yet enroll this \
-                     server's key ({}), which nothing uses: revoke that client on the feeder",
-                    Lower(&identity[..4]),
-                    timing.join_settle,
+                    "no session with this server's key ({}) opened on feeder {} in {:?} \
+                     ({error}): if the feeder lists it, revoke it",
                     Lower(&keys.public()[..4]),
+                    Lower(&lost.identity[..4]),
+                    timing.join_settle,
                 );
-                return Err(Unreachable(wellfed_connect::Error::JoinUnanswered).into());
+                return Ok(None);
             }
             sleep(JOIN_POLL.min(deadline.saturating_duration_since(Instant::now()))).await;
         }
+    }
+}
+
+/// What redeeming an invite came to.
+#[derive(Debug)]
+pub enum Redeemed {
+    Enrolled(Enrolled),
+    /// The join went and its answer was lost: the feeder may have enrolled
+    /// the key, or yet enroll it. [`Mirror::find_joined`] looks for it.
+    Unanswered(LostJoin),
+}
+
+/// A join whose answer was lost: what looking for its key needs.
+pub struct LostJoin {
+    secret: [u8; 32],
+    identity: [u8; 32],
+    address: SocketAddr,
+}
+
+impl LostJoin {
+    /// The key's secret, which the server seals once it finds the key.
+    pub const fn secret(&self) -> [u8; 32] {
+        self.secret
+    }
+}
+
+impl std::fmt::Debug for LostJoin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LostJoin")
+            .field("feeder", &Lower(&self.identity[..4]).to_string())
+            .field("address", &self.address)
+            .finish_non_exhaustive()
     }
 }
 

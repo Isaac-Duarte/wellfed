@@ -1,14 +1,18 @@
 //! Adopting feeders, and reading them and their history as the server
 //! holds it.
 
-use tracing::warn;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use tokio::sync::{OwnedMutexGuard, oneshot};
+use tracing::{info, warn};
 use wellfed_api::{AdoptFeeder, Connection as Link, EventPage, EventQuery, Feeder, FeederId, Hex};
-use wellfed_mirror::Invite;
+use wellfed_mirror::{Enrolled, Invite, Redeemed};
 use wellfed_session::hex;
 use wellfed_store::{FeederRow, NewFeeder};
 
 use crate::feeders::keys;
-use crate::feeders::phones::Possession;
+use crate::feeders::phones::{Holder, Possession};
 use crate::names::bounded;
 use crate::{Caller, Error, FeederError, InternalError, Invalid, Resource, Result, Service};
 
@@ -28,43 +32,150 @@ impl Service {
     /// after enrolling leaves the adoption standing, and the phone settles
     /// it by claiming the key again.
     ///
-    /// Adoptions run one at a time: two racing for one feeder would both
-    /// enroll a key, and the loser's would hold a client slot on the feeder
-    /// with nothing on the server to use it.
+    /// The redemption and the storing run as the service's own task, not
+    /// the caller's: a caller that gives up never leaves a key enrolled
+    /// with its secret dropped. A join whose answer was lost is answered
+    /// [`FeederError::JoinUncertain`] at once, and the task goes on looking
+    /// for the key ([`wellfed_mirror::Mirror::find_joined`]); found, the
+    /// feeder is adopted as if the answer had come.
     pub async fn adopt(&self, caller: &Caller, request: AdoptFeeder) -> Result<Feeder> {
-        let name = feeder_name(&request.name)?;
+        let name = feeder_name(&request.name)?.to_owned();
         let invite = Invite::parse(&request.invite).map_err(FeederError::from)?;
         let phone = match request.phone_key {
             Some(key) => Some((self.direct_key_holder(caller).await?, key.0)),
             None => None,
         };
-        let one_at_a_time = self.feeders.adopting.lock().await;
+
+        let (answer, answered) = oneshot::channel();
+        let adoption = Adoption {
+            caller: caller.clone(),
+            name,
+            phone,
+            answer,
+        };
+        let service = self.clone();
+        let cancel = self.cancel.child_token();
+        self.tasks.spawn(async move {
+            // A stop ends a search for a lost join's key too; its warning
+            // was logged when the answer was lost.
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => {}
+                () = service.adopting(invite, request.address, adoption) => {}
+            }
+        });
+        answered.await.map_err(|_| InternalError::Task)?
+    }
+
+    /// The adoption's task: redeem, then store, answering the caller as
+    /// soon as the outcome is known or uncertain.
+    ///
+    /// Adoptions run one at a time: two racing for one feeder would both
+    /// enroll a key, and the loser's would hold a client slot on the feeder
+    /// with nothing on the server to use it. A search for a lost join's key
+    /// holds the turn too, at most its window.
+    async fn adopting(&self, invite: Invite, address: Option<String>, adoption: Adoption) {
+        let one_at_a_time = Arc::clone(&self.feeders.adopting).lock_owned().await;
+        let redeemed = self.redeem(invite, address.as_deref()).await;
+        let (place, redeemed) = match redeemed {
+            Ok(redeemed) => redeemed,
+            Err(error) => {
+                let _gone = adoption.answer.send(Err(error));
+                return;
+            }
+        };
+
+        match redeemed {
+            Redeemed::Enrolled(enrolled) => {
+                let Adoption {
+                    caller,
+                    name,
+                    phone,
+                    answer,
+                } = adoption;
+                let adopted = self
+                    .store_adopted(&caller, place, &name, enrolled, phone, one_at_a_time)
+                    .await;
+                let _gone = answer.send(adopted);
+            }
+            Redeemed::Unanswered(lost) => {
+                let Adoption {
+                    caller,
+                    name,
+                    phone,
+                    answer,
+                } = adoption;
+                let _gone = answer.send(Err(FeederError::JoinUncertain.into()));
+                let place = Place {
+                    secret: lost.secret(),
+                    ..place
+                };
+                match self.mirror.find_joined(&lost).await {
+                    Ok(Some(enrolled)) => {
+                        let adopted = self
+                            .store_adopted(&caller, place, &name, enrolled, phone, one_at_a_time)
+                            .await;
+                        match adopted {
+                            Ok(feeder) => {
+                                info!(feeder = %feeder.id, "the lost join's key was enrolled: adopted")
+                            }
+                            Err(error) => warn!(
+                                "the lost join's key was enrolled, but the adoption ended: {error}"
+                            ),
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => warn!("the search for a lost join's key stopped: {error}"),
+                }
+            }
+        }
+    }
+
+    /// Find the feeder and redeem its invite with a new key.
+    async fn redeem(&self, invite: Invite, address: Option<&str>) -> Result<(Place, Redeemed)> {
         let archived = match self.shared.store.feeder_by_identity(&invite.feeder).await? {
             Some(id) if self.row(id).await?.archived.is_some() => Some(id),
             Some(_) => return Err(FeederError::AlreadyAdopted.into()),
             None => None,
         };
         let identity = invite.feeder;
-        let address = self
-            .mirror
-            .locate(identity, request.address.as_deref())
-            .await?;
+        let address = self.mirror.locate(identity, address).await?;
 
-        // Every device belongs to the home, which setup made.
-        let home = self.home().await?.id;
         let secret = self.shared.random::<32>()?;
         let label = &self.shared.config.label;
         // The redemption's answer names the model, so no second session
         // stands between the key's enrollment and its storing.
-        let enrolled = self.mirror.enroll(invite, label, address, secret).await?;
+        let redeemed = self.mirror.enroll(invite, label, address, secret).await?;
+        let place = Place {
+            archived,
+            identity,
+            address,
+            secret,
+        };
+        Ok((place, redeemed))
+    }
 
-        let id = match archived {
+    /// Store the feeder `place` names under the key it `enrolled`, start
+    /// mirroring it, and claim the phone's key.
+    async fn store_adopted(
+        &self,
+        caller: &Caller,
+        place: Place,
+        name: &str,
+        enrolled: Enrolled,
+        phone: Option<(Holder, [u8; 32])>,
+        one_at_a_time: OwnedMutexGuard<()>,
+    ) -> Result<Feeder> {
+        // Every device belongs to the home, which setup made.
+        let home = self.home().await?.id;
+        let id = match place.archived {
             Some(id) => id,
             None => FeederId(self.shared.new_id()?),
         };
+        let identity = place.identity;
         let nonce = self.shared.random()?;
-        let sealed = keys::seal(&self.shared.config.key, id, &identity, &secret, nonce)?;
-        let address = address.to_string();
+        let sealed = keys::seal(&self.shared.config.key, id, &identity, &place.secret, nonce)?;
+        let address = place.address.to_string();
         let feeder = NewFeeder {
             id,
             home,
@@ -76,7 +187,7 @@ impl Service {
             key: sealed,
             created: self.shared.clock.now(),
         };
-        let inserted = match archived {
+        let inserted = match place.archived {
             Some(_) => match self.shared.store.readopt_feeder(feeder).await {
                 Ok(true) => Ok(()),
                 Ok(false) => Err(wellfed_store::Error::Duplicate("feeder")),
@@ -210,4 +321,21 @@ impl Service {
 
 fn feeder_name(name: &str) -> Result<&str> {
     Ok(bounded(name, Invalid::FeederName)?)
+}
+
+/// Who asked for an adoption, and how they are answered.
+struct Adoption {
+    caller: Caller,
+    name: String,
+    phone: Option<(Holder, [u8; 32])>,
+    answer: oneshot::Sender<Result<Feeder>>,
+}
+
+/// Where a redeemed invite's feeder is, and the key it was redeemed with.
+struct Place {
+    /// The feeder's id, when it was adopted before and removed.
+    archived: Option<FeederId>,
+    identity: [u8; 32],
+    address: SocketAddr,
+    secret: [u8; 32],
 }

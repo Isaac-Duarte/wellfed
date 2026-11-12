@@ -74,6 +74,11 @@ pub enum FeederError {
     InviteExpired,
     #[error(transparent)]
     Unreachable(#[from] Unreachable),
+    /// The feeder took the join and its answer was lost: it may have
+    /// enrolled the key, or enroll it once a running feed ends. The server
+    /// goes on looking for the key, and lists the feeder if it finds it.
+    #[error("the feeder took the join and its answer was lost; the server is looking for its key")]
+    JoinUncertain,
     #[error("the feeder did not answer the log request in time")]
     LogUnanswered,
     /// The op is one kind's and the device is another's: nothing was
@@ -93,6 +98,7 @@ impl FeederError {
             Self::Invite(_) => ErrorCode::Invalid,
             Self::InviteExpired => ErrorCode::InviteExpired,
             Self::Unreachable(_) | Self::LogUnanswered => ErrorCode::Unreachable,
+            Self::JoinUncertain => ErrorCode::OutcomeUnknown,
             Self::OtherKind { .. } => ErrorCode::OtherKind,
         }
     }

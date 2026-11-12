@@ -78,7 +78,8 @@ impl Default for Timing {
             sample_wait: Duration::from_secs(10),
             session: wellfed_connect::Timing::DEFAULT,
             pace: Pace::DEFAULT,
-            join_settle: Duration::from_secs(120),
+            // The longest feed (48 portions at up to 12 s each), and margin.
+            join_settle: Duration::from_secs(12 * 60),
         }
     }
 }

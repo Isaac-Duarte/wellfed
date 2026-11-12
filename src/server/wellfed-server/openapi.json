@@ -554,6 +554,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "outcome_unknown: the feeder took the join and its answer was lost. The server goes on looking for its key for up to twelve minutes, the longest a running feed holds a join, and the feeder appears in `GET /feeders` if it joined; the invite is spent either way",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }

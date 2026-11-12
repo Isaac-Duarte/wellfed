@@ -12,7 +12,8 @@ use wellfed_api::{
     ClientRole, Connection as Link, FeederId, Home, HomeId, Model, TimeFormat, Units,
 };
 use wellfed_mirror::{
-    AlertReads, Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Pace, Timing,
+    AlertReads, Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Pace,
+    Redeemed, Timing,
 };
 use wellfed_server_testkit::WAIT;
 use wellfed_server_testkit::feeder::{self, Running};
@@ -137,7 +138,10 @@ async fn start(
     let identity = invite.feeder;
     let at = mirror.locate(identity, Some(address)).await.unwrap();
     let secret = SECRET;
-    let enrolled = mirror.enroll(invite, "test", at, secret).await.unwrap();
+    let Redeemed::Enrolled(enrolled) = mirror.enroll(invite, "test", at, secret).await.unwrap()
+    else {
+        panic!("the join's answer came");
+    };
     assert_eq!(enrolled.role, role);
 
     // The mirror reads the cursor from the feeder's row; the key it uses

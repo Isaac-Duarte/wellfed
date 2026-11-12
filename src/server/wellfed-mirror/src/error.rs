@@ -36,14 +36,6 @@ pub enum AskError {
 #[error("reach the feeder: {0}")]
 pub struct Unreachable(pub(crate) wellfed_connect::Error);
 
-impl Unreachable {
-    /// Whether an invite's join went and no answer or session has told
-    /// whether the feeder enrolled the key: it may yet hold it.
-    pub const fn join_uncertain(&self) -> bool {
-        matches!(self.0, wellfed_connect::Error::JoinUnanswered)
-    }
-}
-
 /// Why a feeder's debug log could not be followed. Nothing it asks for
 /// changes the feeder, so none of these leaves anything uncertain.
 #[derive(Debug, thiserror::Error)]

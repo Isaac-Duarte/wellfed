@@ -86,7 +86,7 @@ pub use alerts::AlertReads;
 pub use call::{CallError, CallStart, Clip, StreamError, UploadError, UploadFailed};
 pub use command::Operation;
 pub use config::{Config, Diagnostics, Discovery, Timing};
-pub use connect::Enrolled;
+pub use connect::{Enrolled, LostJoin, Redeemed};
 pub use desk::AlertHold;
 pub use error::{AskError, ConnectError, LogError, Unreachable};
 pub use ingest::{stored_body, stored_event, stored_sample};

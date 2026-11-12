@@ -5,11 +5,10 @@ use wellfed_api::{
     AdoptFeeder, ClientRole, Connection as Link, CoreEvent, DeviceKind, EventBody, EventQuery,
     Model,
 };
-use wellfed_mirror::Invite;
 use wellfed_model::{Answer, Op};
-use wellfed_server_testkit::feeder::{self, Relay, invite, open_owner};
+use wellfed_server_testkit::feeder::{self, invite, open_owner};
 use wellfed_server_testkit::fixed::NOW_MS;
-use wellfed_server_testkit::{TestService, ada, config, local, until};
+use wellfed_server_testkit::{TestService, ada, local};
 use wellfed_service::{Caller, CommandError, Error, FeederError, Invalid};
 
 /// The owner, adopting with no phone key.
@@ -207,115 +206,6 @@ fn an_invite_for_a_member_is_adopted_with_that_role_and_bad_input_is_refused() {
         ));
         server.shutdown().await;
         other.stop().await;
-        sim.stop().await;
-    });
-}
-
-/// A join the feeder took whose answer was lost may have enrolled the
-/// server's key. The server opens a session with the key to learn that it
-/// did, and the adoption stands, holding the one key the feeder enrolled.
-#[test]
-fn an_adoption_whose_join_answer_was_lost_learns_it_joined() {
-    local(async {
-        let sim = feeder::start().await;
-        let server = TestService::start().await;
-        server.ensure_home().await;
-        let relay = Relay::start(sim.address).await;
-        let adopt = |invite: String| AdoptFeeder {
-            invite,
-            name: "kitchen".into(),
-            address: Some(relay.address.to_string()),
-            phone_key: None,
-        };
-
-        // An invite the feeder does not know is dropped once its opening
-        // arrives: that opening's size lets the real one through whole and
-        // holds the answer to the join that follows it.
-        let real = invite(&sim, ClientRole::Member).await;
-        let parsed = Invite::parse(&real).unwrap();
-        let unknown = Invite {
-            id: parsed.id ^ 1,
-            ..parsed
-        };
-        let before = relay.passed();
-        let dropped = server
-            .service()
-            .adopt(&owner(), adopt(unknown.text()))
-            .await;
-        assert!(
-            matches!(dropped, Err(Error::Feeder(FeederError::InviteExpired))),
-            "{dropped:?}"
-        );
-        let opening = relay.passed() - before;
-        relay.hold_answers_after(opening + 1);
-
-        let lose = async {
-            until("the join's answer is held", || async {
-                relay.holding_answers()
-            })
-            .await;
-            relay.cut();
-            relay.resume();
-        };
-        let caller = owner();
-        let adopting = server.service().adopt(&caller, adopt(real));
-        let (adopted, ()) = tokio::join!(adopting, lose);
-        let feeder = adopted.unwrap();
-        assert_eq!(feeder.role, ClientRole::Member);
-        assert_eq!(feeder.model, Model::Plaf103.into());
-        server.link(feeder.id, Link::Online).await;
-
-        let mut owner = open_owner(&sim).await;
-        let Answer::Clients(clients) = owner.ask([1; 16], &Op::ListClients).await.unwrap() else {
-            panic!("the clients were not listed");
-        };
-        let others = clients.iter().filter(|c| c.role != ClientRole::Owner);
-        assert_eq!(others.count(), 1, "{clients:?}");
-        server.shutdown().await;
-        sim.stop().await;
-    });
-}
-
-/// A join whose answer is lost may yet be enrolled: the feeder makes the
-/// enrollment, a key-store write, whether or not the connection that asked
-/// is still there, and the write waits out a running feed. So a key the
-/// feeder does not know yet is looked for until the settle window closes,
-/// and one still unknown then is uncertain, never reported not enrolled.
-/// A wrong invite secret looks the same to a client: the feeder takes the
-/// handshake and drops the join unanswered, and never enrolls the key.
-#[test]
-fn a_lost_join_never_seen_enrolled_is_uncertain_after_the_window() {
-    local(async {
-        let sim = feeder::start().await;
-        let server = TestService::start().await;
-        server.ensure_home().await;
-        let real = Invite::parse(&invite(&sim, ClientRole::Member).await).unwrap();
-        let wrong = Invite {
-            secret: [0x77; 32],
-            ..real
-        };
-
-        let started = tokio::time::Instant::now();
-        let request = AdoptFeeder {
-            invite: wrong.text(),
-            name: "kitchen".into(),
-            address: Some(sim.address.to_string()),
-            phone_key: None,
-        };
-        let adopted = server.service().adopt(&owner(), request).await;
-        assert!(
-            matches!(
-                &adopted,
-                Err(Error::Feeder(FeederError::Unreachable(unreachable)))
-                    if unreachable.join_uncertain()
-            ),
-            "{adopted:?}"
-        );
-        assert!(
-            started.elapsed() >= config().timing.join_settle,
-            "the key was looked for until the window closed"
-        );
-        server.shutdown().await;
         sim.stop().await;
     });
 }
