@@ -20,7 +20,7 @@ impl Store {
         let name = install
             .target
             .name()
-            .ok_or(Error::Corrupt("install target"))?;
+            .ok_or(Error::Unknown("install target"))?;
         let name = name.0.as_slice();
         let user = install.by.0;
         let started = millis(install.started);
