@@ -302,6 +302,10 @@ impl BleEvent {
     pub const DISCONNECT: u32 = 4;
     pub const MTU: u32 = 5;
     pub const NOTIFY: u32 = 8;
+    /// The stack refused a notification, so a reply lost its tail: the C
+    /// side dropped the rest, refuses more on this link and disconnects.
+    /// `value` is the bytes dropped.
+    pub const REFUSED: u32 = 9;
 
     /// Ready failures: the radio never came up, then the stack's own steps.
     pub const READY_WIFI: i32 = -1;
