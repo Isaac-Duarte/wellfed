@@ -8,7 +8,7 @@
 //! feeding owner: a weight changes what a portion is reported to weigh,
 //! never how far the motor turns.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use wellfed_core::store::slot::SlotIo;
 use wellfed_device_api::mailbox::{Calibration, CalibrationResult, CalibrationView};
@@ -33,24 +33,23 @@ enum Hand {
 static PENDING: TaskCell<Calibration> = TaskCell::new(Calibration { portion_mg: None });
 static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
 
-/// What NOR holds, published by the writer, copied in and out with
-/// interrupts masked.
-static PUBLISHED: TaskCell<Calibration> = TaskCell::new(Calibration { portion_mg: None });
+/// What NOR holds, published by the writer as one view, copied in and out
+/// with interrupts masked: the weight, its generation and whether it may
+/// change travel together, so a reader never pairs one generation with
+/// another's weight.
+static PUBLISHED: TaskCell<CalibrationView> = TaskCell::new(EMPTY);
 static LOADED: AtomicBool = AtomicBool::new(false);
-static WRITABLE: AtomicBool = AtomicBool::new(false);
-static GENERATION: AtomicU32 = AtomicU32::new(0);
+
+const EMPTY: CalibrationView = CalibrationView {
+    calibration: Calibration { portion_mg: None },
+    generation: 0,
+    writable: false,
+};
 
 fn view() -> CalibrationView {
-    let calibration = {
-        let _guard = IrqGuard::lock();
-        // SAFETY: interrupts are masked, so this is the only reference.
-        unsafe { *PUBLISHED.get() }
-    };
-    CalibrationView {
-        calibration,
-        generation: GENERATION.load(Ordering::Acquire),
-        writable: WRITABLE.load(Ordering::Acquire),
-    }
+    let _guard = IrqGuard::lock();
+    // SAFETY: interrupts are masked, so this is the only reference.
+    unsafe { *PUBLISHED.get() }
 }
 
 /// The calibration as the writer last published it, and whether a change
@@ -70,7 +69,7 @@ pub fn change(calibration: Calibration) -> CalibrationResult {
     if !LOADED.load(Ordering::Acquire) {
         return CalibrationResult::Busy;
     }
-    if !WRITABLE.load(Ordering::Acquire) {
+    if !view().writable {
         return CalibrationResult::ReadOnly;
     }
     if STATE
@@ -106,15 +105,17 @@ pub fn finish() {
 
 /// The writer publishes what NOR holds; writable only once it is `armed`.
 pub fn publish<I: SlotIo>(store: &CalibrationStore<I>, armed: bool) {
+    let view = CalibrationView {
+        calibration: store.calibration,
+        // Reported as 32 bits; saturate rather than wrap to an old value.
+        generation: u32::try_from(store.generation).unwrap_or(u32::MAX),
+        writable: armed && store.writable(),
+    };
     {
         let _guard = IrqGuard::lock();
         // SAFETY: interrupts are masked, so this is the only reference.
-        unsafe { *PUBLISHED.get() = store.calibration };
+        unsafe { *PUBLISHED.get() = view };
     }
-    // Reported as 32 bits; saturate rather than wrap to an old value.
-    let generation = u32::try_from(store.generation).unwrap_or(u32::MAX);
-    GENERATION.store(generation, Ordering::Release);
-    WRITABLE.store(armed && store.writable(), Ordering::Release);
     LOADED.store(true, Ordering::Release);
 }
 
@@ -123,10 +124,8 @@ pub fn reset() {
     {
         let _guard = IrqGuard::lock();
         // SAFETY: interrupts are masked, so this is the only reference.
-        unsafe { *PUBLISHED.get() = Calibration::default() };
+        unsafe { *PUBLISHED.get() = EMPTY };
     }
     LOADED.store(false, Ordering::Release);
-    WRITABLE.store(false, Ordering::Release);
-    GENERATION.store(0, Ordering::Release);
     STATE.store(Hand::Empty as u8, Ordering::Release);
 }

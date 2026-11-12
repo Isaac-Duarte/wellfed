@@ -50,6 +50,11 @@ fn a_calibration_is_saved_inside_a_marked_attempt_and_published() {
     assert_eq!(step(&mut writer, &mut provider), Some(saved));
     assert!(ATTEMPT_SEEN.with(Cell::get));
     assert_eq!(sdk::backup_read(MARKER_REGISTER), 0);
+    // The view is published whole: each generation reads with its weight.
+    let CalibrationResult::Current { view, .. } = calibration::current() else {
+        panic!("the store is published");
+    };
+    assert_eq!((view.calibration, view.generation), (measured, 1));
 
     // The same value again writes nothing.
     assert!(matches!(
