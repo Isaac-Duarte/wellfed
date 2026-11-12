@@ -12,12 +12,12 @@
 //! the key, the feeder does not list it, only an owner may claim it) holds
 //! for the session. A claim the server could not settle (the server
 //! unreachable, the feeder offline) is logged and tried again on the next
-//! round, which the app starts on every connect and list. The claims go
-//! out together, so a slow or failing feeder holds up neither the others
-//! nor the login. Each claim proves the phone holds the key
-//! ([`claim_with_proof`]), which the server asks of a key with no token.
+//! round, which the app starts on every connect and list. A few claims go
+//! out at once ([`CLAIMS_AT_ONCE`]), so a slow or failing feeder holds up
+//! neither the others nor the login. Each claim proves the phone holds the
+//! key ([`claim_with_proof`]), which the server asks of a key with no token.
 
-use futures_util::future::join_all;
+use futures_util::{StreamExt, stream};
 use uuid::Uuid;
 use wellfed_api::{FeederId, Hex, KeyProof, PhoneClaim, PhoneKey};
 use wellfed_server_client::Client;
@@ -26,6 +26,14 @@ use wellfed_session::proof;
 
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::route::io::{ClaimsDue, Router};
+
+/// How many claims a round has out at once. Each asks for a challenge of
+/// its own, and the server holds at most 8 unanswered per token
+/// (`PER_TOKEN` in `wellfed-service`'s phone proofs), dropping the oldest
+/// for a new one: a round with every feeder's claim out at once would have
+/// its earliest proofs refused past 8 feeders. Half that leaves room for a
+/// claim the owner starts meanwhile (an adoption's).
+const CLAIMS_AT_ONCE: usize = 4;
 
 impl Router {
     /// Claim `phone`, this phone's own key, on every feeder the server
@@ -46,7 +54,11 @@ impl Router {
             let claimed = claim_with_proof(client, token, id, phone).await;
             (id, claimed.err())
         });
-        for (id, error) in join_all(claims).await {
+        let answered: Vec<_> = stream::iter(claims)
+            .buffer_unordered(CLAIMS_AT_ONCE)
+            .collect()
+            .await;
+        for (id, error) in answered {
             let Some(error) = error else {
                 continue;
             };
