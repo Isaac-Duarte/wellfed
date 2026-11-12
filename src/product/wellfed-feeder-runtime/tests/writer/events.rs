@@ -415,10 +415,11 @@ fn a_feeds_outcome_has_a_slot_however_many_events_pile_up() {
 }
 
 /// A queued event the ring refused (a failed program) is counted lost, so a
-/// `Lost` follows it into the history; a refused `Lost` is not counted
-/// again, or a store whose programs keep failing would queue one a pass.
+/// `Lost` follows it into the history. A refused `Lost` keeps its count
+/// until a record lands, then hands it back: not at once, or a store whose
+/// programs keep failing would queue one a pass, each costing a slot.
 #[test]
-fn an_event_the_ring_refused_is_counted_lost_once() {
+fn an_event_the_ring_refused_is_counted_lost_and_a_refused_lost_waits() {
     let (_guard, mut writer, mut provider) = start();
     for _ in 0..7 {
         step(&mut writer, &mut provider); // open, net open, time open, keys, events, stats, its save
@@ -430,9 +431,17 @@ fn an_event_the_ring_refused_is_counted_lost_once() {
     assert_eq!(events::take_lost(), 1, "the refused event");
 
     let mut lost = [0; 16];
-    wellfed_proto::encode(&EventBody::Lost { count: 1 }, &mut lost).unwrap();
+    wellfed_proto::encode(&EventBody::Lost { count: 3 }, &mut lost).unwrap();
     assert!(events::record(None, lost));
     assert_eq!(step(&mut writer, &mut provider), Some(Record::EventError));
-    assert_eq!(events::take_lost(), 0, "the refused Lost");
+    assert_eq!(events::take_lost(), 0, "held while the ring refuses");
+
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
+    assert!(events::record(None, [2; 16]));
+    step(&mut writer, &mut provider);
+    assert_eq!(
+        events::take_lost(),
+        3,
+        "the refused Lost's count, once one lands"
+    );
 }
