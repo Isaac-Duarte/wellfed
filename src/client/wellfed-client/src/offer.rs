@@ -11,9 +11,9 @@
 //! refuses every update until bank 0 checks itself in, none is offered.
 //!
 //! **An update ends on what a fresh session reads after its restart.** The
-//! bank comes from the update state and the build from the welcome, both
-//! frozen, so a trial that fell back to bank 0, and a bank 1 that runs some
-//! other build than the one activated, read as what they are.
+//! bank comes from the update state, which is frozen, and the build from the
+//! welcome or the status, so a trial that fell back to bank 0, and a bank 1
+//! that runs some other build than the one activated, read as what they are.
 
 use wellfed_model::{Bank0Blocked, Bank0Check, Skew};
 
@@ -88,7 +88,8 @@ pub fn offer(
 /// What a session opened after an update's restart reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Restarted<'a> {
-    /// The build its welcome names.
+    /// The build it runs, as its welcome or its status names it: the two
+    /// agree, and a client after an unknown end has only the status.
     pub build: &'a str,
     /// The bank its update state answers from.
     pub bank: u8,
