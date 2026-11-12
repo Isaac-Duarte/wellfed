@@ -8,41 +8,35 @@
 //! the loop reads to decide what runs. Nothing here writes flash or
 //! reaches the feeding owner.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-
 use wellfed_core::store::slot::SlotIo;
 use wellfed_device_api::mailbox::{PlansChange, PlansResult, PlansView, Stamp};
 use wellfed_feeder::store::plans::PlansStore;
-use wellfed_hal::cell::TaskCell;
-use wellfed_hal::sdk::IrqGuard;
+use wellfed_hal::handoff::{Handoff, Published, Taken};
 
 /// The plans' slots within the storage region.
 pub const PLANS_BASE: u32 = wellfed_hal::board::storage::PLANS.first;
 
-/// Who holds `PENDING`, as `STATE` stores it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Hand {
-    Empty = 0,
-    Filling = 1,
-    Queued = 2,
+/// One queued change, and who asked for it (a client's table, skip or
+/// undo), for the event the writer records as it saves it; `None` for the
+/// schedule's own.
+#[derive(Clone, Copy)]
+pub struct Asked {
+    pub change: PlansChange,
+    pub asked: Option<Stamp>,
 }
 
-/// The queued change; written only by the claimant of `STATE` (`Empty` to
-/// `Filling`), read only by the writer after `Queued`.
-static PENDING: TaskCell<PlansChange> = TaskCell::new(PlansChange::Replace {
-    table: [None; wellfed_device_api::mailbox::PLANS],
-    at_s: None,
+static PENDING: Handoff<Asked> = Handoff::new(Asked {
+    change: PlansChange::Replace {
+        table: [None; wellfed_device_api::mailbox::PLANS],
+        at_s: None,
+    },
+    asked: None,
 });
-/// Who asked for the queued change (a client's table, skip or undo), for
-/// the event the writer records as it saves it; `None` for the schedule's
-/// own. Written and read as `PENDING` is.
-static ASKED: TaskCell<Option<Stamp>> = TaskCell::new(None);
-static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
 
-/// What NOR holds, published by the writer, copied in and out with
-/// interrupts masked.
-static PUBLISHED: TaskCell<PlansView> = TaskCell::new(PlansView {
+/// What NOR holds, published by the writer.
+static PUBLISHED: Published<PlansView> = Published::new(EMPTY);
+
+const EMPTY: PlansView = PlansView {
     table: [None; wellfed_device_api::mailbox::PLANS],
     marks: [0; wellfed_device_api::mailbox::PLANS],
     skips: 0,
@@ -51,54 +45,32 @@ static PUBLISHED: TaskCell<PlansView> = TaskCell::new(PlansView {
     revision: 0,
     replaced: 0,
     writable: false,
-});
-static LOADED: AtomicBool = AtomicBool::new(false);
-
-fn view() -> PlansView {
-    let _guard = IrqGuard::lock();
-    // SAFETY: interrupts are masked, so this is the only reference.
-    unsafe { *PUBLISHED.get() }
-}
+};
 
 /// The plans as the writer last published them, and whether a change
 /// waits; `Busy` until the writer has opened the store.
 pub fn current() -> PlansResult {
-    if !LOADED.load(Ordering::Acquire) {
+    let Some(view) = PUBLISHED.get() else {
         return PlansResult::Busy;
-    }
+    };
     PlansResult::Current {
-        view: view(),
-        pending: STATE.load(Ordering::Acquire) != Hand::Empty as u8,
+        view,
+        pending: PENDING.waiting(),
     }
 }
 
 /// Queue one change for the writer, with who asked for it (`None`: the
 /// schedule's own).
 pub fn change(change: PlansChange, asked: Option<Stamp>) -> PlansResult {
-    if !LOADED.load(Ordering::Acquire) {
+    let Some(view) = PUBLISHED.get() else {
         return PlansResult::Busy;
-    }
-    let view = view();
+    };
     if !view.writable {
         return PlansResult::ReadOnly;
     }
-    if STATE
-        .compare_exchange(
-            Hand::Empty as u8,
-            Hand::Filling as u8,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-        .is_err()
-    {
+    if !PENDING.offer(|pending| *pending = Asked { change, asked }) {
         return PlansResult::Busy;
     }
-    // SAFETY: `Filling` makes this the only accessor until `Queued`.
-    unsafe {
-        *PENDING.get() = change;
-        *ASKED.get() = asked;
-    }
-    STATE.store(Hand::Queued as u8, Ordering::Release);
     wellfed_hal::writer_wake::wake();
     PlansResult::Current {
         view,
@@ -106,41 +78,18 @@ pub fn change(change: PlansChange, asked: Option<Stamp>) -> PlansResult {
     }
 }
 
-/// The writer's half: the queued change, if any.
-pub fn pending() -> Option<PlansChange> {
-    // SAFETY: `Queued` hands the value to the writer until `finish`.
-    (STATE.load(Ordering::Acquire) == Hand::Queued as u8).then(|| unsafe { *PENDING.get() })
-}
-
-/// The writer's half: who asked for the queued change, if anyone.
-pub fn asked() -> Option<Stamp> {
-    // SAFETY: as in `pending`.
-    (STATE.load(Ordering::Acquire) == Hand::Queued as u8)
-        .then(|| unsafe { *ASKED.get() })
-        .flatten()
-}
-
-pub fn finish() {
-    STATE.store(Hand::Empty as u8, Ordering::Release);
+/// The writer's half: the queued change, held until the guard is finished.
+pub fn take() -> Option<Taken<'static, Asked>> {
+    PENDING.take()
 }
 
 /// The writer publishes what NOR holds; writable only once it is `armed`.
 pub fn publish<I: SlotIo>(store: &PlansStore<I>, armed: bool) {
-    {
-        let _guard = IrqGuard::lock();
-        // SAFETY: interrupts are masked, so this is the only reference.
-        unsafe { *PUBLISHED.get() = store.view(armed) };
-    }
-    LOADED.store(true, Ordering::Release);
+    PUBLISHED.publish(store.view(armed));
 }
 
 /// Forget everything (host tests).
 pub fn reset() {
-    {
-        let _guard = IrqGuard::lock();
-        // SAFETY: interrupts are masked, so this is the only reference.
-        unsafe { *PUBLISHED.get() = PlansView::default() };
-    }
-    LOADED.store(false, Ordering::Release);
-    STATE.store(Hand::Empty as u8, Ordering::Release);
+    PUBLISHED.clear(EMPTY);
+    PENDING.clear();
 }

@@ -37,7 +37,7 @@ use core::fmt;
 use wellfed_device::store::events::EventsFill;
 use wellfed_device::store::settings::{SettingsStatus, Stored};
 use wellfed_device::store::traces::TraceRing;
-use wellfed_device_api::mailbox::{CallChange, CallClip, FeederSettings, PlansChange};
+use wellfed_device_api::mailbox::{CallChange, CallClip, FeederSettings, PlansChange, Stamp};
 use wellfed_device_runtime::events;
 use wellfed_device_runtime::writer::{
     self as device, Core, Describe, EVENTS_POLL_MS, ErrorStage, POLL_MS, Product,
@@ -381,6 +381,7 @@ impl<F: FlashOps> FeederStores<F> {
         &mut self,
         core: &mut Core<F>,
         change: &PlansChange,
+        asked: Option<Stamp>,
     ) -> Option<FeederRecord> {
         if core.unarmed::<H>() {
             return Some(FeederRecord::PlansError {
@@ -398,7 +399,7 @@ impl<F: FlashOps> FeederStores<F> {
         arming::clear_attempt();
         // A client's change records its event in the turn that saved it
         // ([`Core::append_written`]); the schedule's own carry no stamp.
-        let event = match plans::asked() {
+        let event = match asked {
             Some(asked) if ok => match self.plans.event(change, asked.by) {
                 Some(body) => core.append_written::<Self>(asked.at, &body),
                 None => WriteEvent::None,
@@ -703,28 +704,32 @@ impl<F: FlashOps> Product<F> for FeederStores<F> {
     }
 
     fn mailboxes<H: Hooks>(&mut self, core: &mut Core<F>) -> Option<Step> {
-        if let Some(change) = calibration::pending() {
-            let Some(record) = self.save_calibration::<H>(core, &change) else {
+        // A change left unsaved (its guard dropped) waits for the next pass.
+        if let Some(taken) = calibration::take() {
+            let Some(record) = self.save_calibration::<H>(core, taken.get()) else {
                 return Some(core.waiting());
             };
             core.publish(self);
-            calibration::finish();
+            taken.finish();
             return Some(next(POLL_MS, Some(Record::Product(record))));
         }
-        if let Some(change) = plans::pending() {
-            let Some(record) = self.save_plans::<H>(core, &change) else {
+        if let Some(taken) = plans::take() {
+            let plans::Asked { change, asked } = *taken.get();
+            let Some(record) = self.save_plans::<H>(core, &change, asked) else {
                 return Some(core.waiting());
             };
             core.publish(self);
-            plans::finish();
+            taken.finish();
             return Some(next(POLL_MS, Some(Record::Product(record))));
         }
-        // The chunk's bytes are copied out of the mailbox only as the
-        // flash takes them.
-        match call::with_pending(|queued, data| self.save_call::<H>(core, queued, data)) {
-            Some(CallSave::Done { record, delay_ms }) => {
+        // The chunk's bytes are copied out of the slot only as the flash
+        // takes them.
+        let taken = call::take()?;
+        let work = taken.get();
+        match self.save_call::<H>(core, work.queued, work.bytes()) {
+            CallSave::Done { record, delay_ms } => {
                 core.publish(self);
-                call::finish();
+                taken.finish();
                 core.linger(if matches!(self.call.clip, CallClip::Receiving { .. }) {
                     RECEIVE_LINGER_POLLS
                 } else {
@@ -732,10 +737,10 @@ impl<F: FlashOps> Product<F> for FeederStores<F> {
                 });
                 Some(next(delay_ms, record.map(Record::Product)))
             }
-            Some(CallSave::Turn) => Some(core.waiting()),
+            CallSave::Turn => Some(core.waiting()),
             // A call plays from the clip for seconds: the work below
             // goes on meanwhile, and the change is tried each step.
-            Some(CallSave::Held) | None => None,
+            CallSave::Held => None,
         }
     }
 
