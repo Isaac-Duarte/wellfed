@@ -47,6 +47,11 @@ _LOGGER = logging.getLogger(__name__)
 # How long the pump waits on the bridge before it looks for a stop.
 PUMP_WAIT = 1.0
 
+# How long a stop waits for writes still out: past the longest a write
+# waits on its answer before it is judged uncertain (30 s through the server,
+# 10 s directly), after up to 5 s waiting to be sent.
+WRITES_WAIT = 40.0
+
 # Events kept for diagnostics.
 RECENT_EVENTS = 20
 
@@ -166,6 +171,10 @@ class FeederSession:
         self._feeder: bridge.Feeder | None = feeder
         self._stop = threading.Event()
         self._pump: threading.Thread | None = None
+        # Writes still out, and whether the stop has drained the updates:
+        # one that outlives the stop drains its own.
+        self._writes: set[asyncio.Future[bridge.Written]] = set()
+        self._drained = False
         self._listeners: list[Callable[[], None]] = []
 
         self.connected = False
@@ -221,14 +230,22 @@ class FeederSession:
         self._pump = threading.Thread(target=self._run, name="wellfed-pump", daemon=True)
         self._pump.start()
 
-    def stop(self) -> None:
-        """Stop the pump; dropping the bridge's handle ends its session.
-        What the pump left behind of lost feeds is kept first."""
+    async def stop(self) -> None:
+        """Stop the session; dropping the bridge's handle ends it. Before the
+        next session is handed the store, every lost feed, number answered
+        and settlement this one learned is kept, in order: a write still
+        out gets up to `WRITES_WAIT` to end, and the updates the pump handed
+        the event loop run before what it left behind is drained."""
         self._stop.set()
         if self._pump is not None:
-            self._pump.join(timeout=PUMP_WAIT * 3)
+            await self.hass.async_add_executor_job(self._pump.join, PUMP_WAIT * 3)
+        if self._writes:
+            await asyncio.wait(self._writes, timeout=WRITES_WAIT)
+        # The pump's last updates, handed over before it ended, go first.
+        await asyncio.sleep(0)
         if self._feeder is not None:
             self._drain(self._feeder)
+        self._drained = True
         self._feeder = None
 
     @callback
@@ -316,12 +333,15 @@ class FeederSession:
 
     async def _write(self, call: Callable[[bridge.Feeder], bridge.Written]) -> bridge.Written:
         feeder = self._feeder
-        if feeder is None:
+        if feeder is None or self._stop.is_set():
             raise WriteNotDone("not_sent_stopped")
-        written = await self.hass.async_add_executor_job(call, feeder)
-        if self._stop.is_set():
-            # The session stopped while this write was out: the updates it
-            # made (a lost feed, its number) have no pump to take them.
+        out = self.hass.async_add_executor_job(call, feeder)
+        self._writes.add(out)
+        out.add_done_callback(self._writes.discard)
+        written = await out
+        if self._drained:
+            # It outlived the stop's wait: the updates it made (a lost feed,
+            # its number) have no pump and no stop left to take them.
             self._drain(feeder)
         result = written.result
         if result in (bridge.WriteResult.Feeding, bridge.WriteResult.Done):

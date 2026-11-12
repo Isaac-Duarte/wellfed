@@ -262,7 +262,7 @@ async def test_a_lost_feed_settled_by_its_fed_keeps_its_number(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_a_lost_feed_whose_write_ends_after_a_reload_is_still_kept(
+async def test_a_reload_waits_for_a_feed_still_out_and_hands_its_loss_on(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
     entry = await _ready(hass, feeder)
@@ -277,20 +277,46 @@ async def test_a_lost_feed_whose_write_ends_after_a_reload_is_still_kept(
             while ("feed", (1,)) not in feeder.calls:
                 await asyncio.sleep(0.05)
 
-        # The entry reloads while the feed is out; its answer is lost after.
-        assert await hass.config_entries.async_unload(entry.entry_id)
+        # The reload starts while the feed is out, and waits for it: its
+        # answer is lost only after.
+        made = cast(_Make, bridge.Feeder)
+        sessions = len(made.handed)
+        reload = hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
+        await asyncio.sleep(0.2)
+        assert not reload.done(), "the reload waits for the write"
     finally:
         feeder.gate.set()
     with pytest.raises(HomeAssistantError):
         await pressed
 
-    feeder.gate = None
-    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    made = cast(_Make, bridge.Feeder)
+    # The next session is handed the lost feed, which holds its new feeds.
+    async with asyncio.timeout(WAIT):
+        while len(made.handed) == sessions:
+            await asyncio.sleep(0.05)
     assert made.handed[-1] == ([lost.id], [])
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await reload
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_stop_keeps_a_lost_feed_s_updates_in_their_order(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    lost = fake.pending()
+    # The session learns the whole story just as the entry unloads: some
+    # of it the pump has handed the event loop, the rest still waits.
+    feeder.push(
+        fake.update(bridge.UpdateKind.Pending, pending=lost),
+        fake.update(bridge.UpdateKind.Answered, answered=4),
+        fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=lost),
+    )
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert session.kept.pending == [], "settled after it was kept, never before"
+    assert session.kept.answered == [4]
 
 
 async def test_a_store_in_another_shape_is_set_aside_and_setup_goes_on(

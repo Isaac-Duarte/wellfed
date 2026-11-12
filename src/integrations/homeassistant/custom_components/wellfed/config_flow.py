@@ -487,7 +487,7 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         if entry.state is ConfigEntryState.LOADED:
             session = entry.runtime_data
             session.on_revoked = None
-            await self.hass.async_add_executor_job(session.stop)
+            await session.stop()
 
     # Shared steps.
 
