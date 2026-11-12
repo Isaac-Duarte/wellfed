@@ -41,11 +41,6 @@ pub enum RecoveryError {
     NotBaseline,
     #[error("Target marker is still valid; refuse an in-place rewrite of a bootable bank")]
     MarkerStillValid,
-    #[error(
-        "Bank 1's marker sector already matches the backup while the sector at {offset:#x} differs; a recovery commits the marker sector last, so this one cannot run"
-    )]
-    MarkerSectorUnchanged { offset: usize },
-
     #[error("Reviewed plan required")]
     ReviewedPlanMissing,
     #[error("Plan differs from recomputed exact baseline/current plan")]
@@ -165,13 +160,22 @@ pub fn plan(pinned: &Baseline, current: &[u8]) -> Result<Plan> {
 
     let mut sectors = Vec::new();
     let mut proposed = current.to_vec();
+    // The run restores every sector, then commits the marker sector's
+    // withheld bytes last, so a recovery always includes that sector: the
+    // fountain's stock marker is not bootable, so its first sector can
+    // already match the backup while a later one differs. Staged again,
+    // with its marker withheld, it is erased and written like the others
+    // and its marker committed last.
+    let restoring = (START..end)
+        .step_by(SECTOR)
+        .any(|offset| current[offset..offset + SECTOR] != baseline[offset..offset + SECTOR]);
 
     for offset in (START..end).step_by(SECTOR) {
         let (before, after) = (
             &current[offset..offset + SECTOR],
             &baseline[offset..offset + SECTOR],
         );
-        if before == after {
+        if before == after && !(offset == START && restoring) {
             continue;
         }
 
@@ -204,18 +208,6 @@ pub fn plan(pinned: &Baseline, current: &[u8]) -> Result<Plan> {
         sectors.is_empty() || !pinned.bootable(&current[START..START + 8]),
         || RecoveryError::MarkerStillValid,
     )?;
-    // The run restores every sector, then commits the marker sector's
-    // withheld bytes last. A plan without that sector (the fountain's stock
-    // marker is not bootable, so its first sector can already match) would
-    // erase and write the others and only then refuse, unverified; refuse
-    // it here, before anything is written.
-    if let Some(first) = sectors.first() {
-        require(sectors.iter().any(|entry| entry.offset == START), || {
-            RecoveryError::MarkerSectorUnchanged {
-                offset: first.offset,
-            }
-        })?;
-    }
     for entry in &sectors {
         pinned
             .pins()

@@ -555,44 +555,59 @@ fn stock_recovery_refuses_a_wiped_ftl() {
 }
 
 /// The fountain's stock marker is not bootable, so a read whose first bank-1
-/// sector already matches the backup while a later one differs would plan
-/// a recovery without the marker sector, which the run commits last. The
-/// plan refuses it, so the run refuses before its first erase.
+/// sector already matches the backup while a later one differs plans the
+/// marker sector too, staged with its marker withheld: the run restores the
+/// later sector, stages the marker sector, commits the marker last and
+/// verifies stock.
 #[test]
-fn a_recovery_without_the_marker_sector_is_refused_before_any_write() {
+fn a_recovery_whose_marker_sector_matches_stages_it_and_commits_the_marker_last() {
     let (_checkout, root) = private_root();
     let unit = fountain();
     let mut current = unit.flash.clone();
     current[START + SECTOR + 17] ^= 1;
-    assert!(matches!(
-        recovery::plan(&unit.baseline, &current),
-        Err(crate::Error::Recovery(RecoveryError::MarkerSectorUnchanged {
-            offset
-        })) if offset == START + SECTOR
-    ));
 
-    // A plan written before this refusal is refused at the run, before the
-    // journal and with the flash untouched.
-    let mut changed = current.clone();
-    changed[START] ^= 1;
-    let mut plan = serde_json::to_value(recovery::plan(&unit.baseline, &changed).unwrap()).unwrap();
-    plan["current_snapshot_sha256"] = serde_json::json!(sha256(&current));
+    let plan = recovery::plan(&unit.baseline, &current).unwrap();
+    let offsets: Vec<usize> = plan
+        .ordered_sector_payloads
+        .iter()
+        .map(|entry| entry.offset)
+        .collect();
+    assert_eq!(offsets, [START + SECTOR, START]);
+    let marker = &plan.ordered_sector_payloads[1];
+    assert!(marker.marker_withheld && marker.stage_required);
+    assert_eq!(marker.before_sha256, marker.after_sha256);
+    assert!(plan.activation.is_some());
+
     let mut port = Fake::new(current.clone());
     let mut snapshot = |port: &mut dyn Port| protocol::read_region(port, 0, CAPACITY);
+    recovery::run_transaction(
+        &mut port,
+        &root,
+        &unit.baseline,
+        &current,
+        &serde_json::to_value(&plan).unwrap(),
+        &mut snapshot,
+        &root.join("private/recovery"),
+    )
+    .unwrap();
     assert!(
-        recovery::run_transaction(
-            &mut port,
-            &root,
-            &unit.baseline,
-            &current,
-            &plan,
-            &mut snapshot,
-            &root.join("private/recovery"),
-        )
-        .is_err()
+        port.0.borrow().flash == unit.flash,
+        "stock again, drift kept"
     );
-    assert!(port.0.borrow().flash == current);
-    assert!(!root.join("private/recovery").exists());
+    assert_eq!(
+        port.0.borrow().erased.last(),
+        Some(&START),
+        "the marker sector is erased last"
+    );
+    assert!(receipt(&root, "recovery").verified_terminal);
+
+    // A bank 1 already the backup's plans nothing, as before.
+    assert!(
+        recovery::plan(&unit.baseline, &unit.flash)
+            .unwrap()
+            .ordered_sector_payloads
+            .is_empty()
+    );
 }
 
 /// A status read assesses the bank 1 of the model it reads, not the
