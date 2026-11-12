@@ -120,6 +120,48 @@ pub fn refused(command: Command, relays: Relays) -> bool {
     relays == Relays::Held && command.switches()
 }
 
+/// A RECOVER press, as the panel classifies it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Press {
+    /// Released after at least [`DEBOUNCE_TICKS`] and before
+    /// [`LONG_PRESS_TICKS`]: a plain power cycle.
+    Short,
+    /// Held [`LONG_PRESS_TICKS`]: into the ROM loader, reported once, as it
+    /// is reached, with no short press on its release.
+    Long,
+}
+
+/// Panel ticks (10 ms) a press needs before it counts.
+pub const DEBOUNCE_TICKS: u32 = 3;
+/// Panel ticks (10 ms) to a long press.
+pub const LONG_PRESS_TICKS: u32 = 100;
+
+/// The RECOVER button's press classifier, stepped once per panel tick.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PressClassifier {
+    held: u32,
+    long_sent: bool,
+}
+
+impl PressClassifier {
+    /// One tick with the button down (`pressed`) or up; the press it
+    /// completes, if any.
+    pub fn tick(&mut self, pressed: bool) -> Option<Press> {
+        if pressed {
+            self.held = self.held.saturating_add(1);
+            if self.held == LONG_PRESS_TICKS {
+                self.long_sent = true;
+                return Some(Press::Long);
+            }
+            return None;
+        }
+
+        let press = (self.held >= DEBOUNCE_TICKS && !self.long_sent).then_some(Press::Short);
+        *self = Self::default();
+        press
+    }
+}
+
 /// Parses one line without its terminator. Case-insensitive, surrounding
 /// whitespace and NULs ignored.
 pub fn parse(line: &[u8]) -> Option<Command> {
@@ -341,6 +383,33 @@ mod tests {
         for command in queries {
             assert!(!refused(command, Relays::Held), "{command:?}");
         }
+    }
+
+    fn presses(down: u32) -> Vec<Press> {
+        let mut classifier = PressClassifier::default();
+        let mut out: Vec<Press> = (0..down).filter_map(|_| classifier.tick(true)).collect();
+        out.extend(classifier.tick(false));
+        out
+    }
+
+    #[test]
+    fn a_bounce_is_no_press_and_a_long_hold_is_one_long_press() {
+        assert_eq!(presses(DEBOUNCE_TICKS - 1), []);
+        assert_eq!(presses(DEBOUNCE_TICKS), [Press::Short]);
+        assert_eq!(presses(LONG_PRESS_TICKS - 1), [Press::Short]);
+        assert_eq!(presses(LONG_PRESS_TICKS), [Press::Long]);
+        assert_eq!(
+            presses(LONG_PRESS_TICKS * 3),
+            [Press::Long],
+            "no short on release"
+        );
+
+        // The next press starts afresh.
+        let mut classifier = PressClassifier::default();
+        (0..LONG_PRESS_TICKS).for_each(|_| _ = classifier.tick(true));
+        assert_eq!(classifier.tick(false), None);
+        (0..DEBOUNCE_TICKS).for_each(|_| _ = classifier.tick(true));
+        assert_eq!(classifier.tick(false), Some(Press::Short));
     }
 
     fn lines(input: &[u8]) -> Vec<Line> {

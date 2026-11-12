@@ -15,7 +15,7 @@ use embassy_rp::watchdog::Watchdog;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Instant, Ticker, Timer};
-use wellfed_bench_at::Channel;
+use wellfed_bench_at::{Channel, Press, PressClassifier};
 
 use crate::{bridge, outputs, telemetry, usb};
 
@@ -29,20 +29,13 @@ pub(crate) struct Panel {
     pub(crate) watchdog: Watchdog,
 }
 
-#[derive(Clone, Copy)]
-enum Press {
-    Short,
-    Long,
-}
-
 static PRESS: Signal<CriticalSectionRawMutex, Press> = Signal::new();
 
 /// Ticks left of the "refused" blink pattern.
 static REFUSED_TICKS: AtomicU32 = AtomicU32::new(0);
 
+/// The panel's tick, which `PressClassifier`'s thresholds count.
 const TICK: Duration = Duration::from_millis(10);
-const LONG_PRESS_TICKS: u32 = 100;
-const DEBOUNCE_TICKS: u32 = 3;
 const UART_FLASH_TICKS: u32 = 3;
 const REFUSED_BLINK_TICKS: u32 = 300;
 /// Longer than any blocking stretch: the bridge and relay tasks only await.
@@ -52,25 +45,14 @@ const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) async fn run(mut panel: Panel) -> ! {
     panel.watchdog.start(WATCHDOG_TIMEOUT);
     let mut ticker = Ticker::every(TICK);
-    let mut held = 0u32;
-    let mut long_sent = false;
+    let mut classifier = PressClassifier::default();
     let mut uart_flash = 0u32;
 
     loop {
         panel.watchdog.feed(WATCHDOG_TIMEOUT);
 
-        if panel.recover_n.is_low() {
-            held = held.saturating_add(1);
-            if held == LONG_PRESS_TICKS {
-                long_sent = true;
-                PRESS.signal(Press::Long);
-            }
-        } else {
-            if held >= DEBOUNCE_TICKS && !long_sent {
-                PRESS.signal(Press::Short);
-            }
-            held = 0;
-            long_sent = false;
+        if let Some(press) = classifier.tick(panel.recover_n.is_low()) {
+            PRESS.signal(press);
         }
 
         if bridge::TRAFFIC.swap(false, Ordering::Relaxed) {
