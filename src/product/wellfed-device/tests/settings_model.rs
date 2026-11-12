@@ -10,9 +10,11 @@
 //! over the whole sequence: no generation a view reports (and so no event,
 //! which names a save's generation) ever names two different settings.
 //!
-//! The suite runs depth 5 (about 4 500 states, 5 s unoptimized). The
-//! ignored `deep` test runs depth 7 by default (131 000 states, about 3
-//! minutes unoptimized), and `WELLFED_SETTINGS_MODEL_DEPTH` sets another:
+//! The suite runs depth 6 (about 30 s unoptimized), the shallowest that
+//! fails for a store counting a record that fell back from a torn slot as
+//! clean, so `make check` catches that regression. The ignored `deep` test
+//! runs depth 7 by default (131 000 states, about 3 minutes unoptimized),
+//! and `WELLFED_SETTINGS_MODEL_DEPTH` sets another:
 //! in release, depth 8 takes about 35 s, 9 about 2.5 minutes and 10 (12.5
 //! million states) about 10 minutes.
 
@@ -680,18 +682,17 @@ fn check(depth: usize) {
 }
 
 /// Deep enough for repairing at one past the larger (two lost slots, then
-/// a boot) to fail here.
+/// a boot) to fail here, and for a store that counts a record which fell
+/// back from a torn slot as clean.
 #[test]
 fn no_generation_names_two_settings() {
-    check(5);
+    check(6);
 }
 
-/// Deeper, for the gate: `WELLFED_SETTINGS_MODEL_DEPTH` (7 by default,
-/// about 3 minutes unoptimized).
-/// Depth 6 already fails for a store that counts a record which fell back
-/// from a torn slot as clean.
+/// Deeper, by hand: `WELLFED_SETTINGS_MODEL_DEPTH` (7 by default, about 3
+/// minutes unoptimized).
 #[test]
-#[ignore = "minutes; run for the gate"]
+#[ignore = "minutes; run by hand after changing the settings store"]
 fn no_generation_names_two_settings_deep() {
     let depth = std::env::var("WELLFED_SETTINGS_MODEL_DEPTH")
         .ok()

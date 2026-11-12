@@ -28,10 +28,12 @@ test-group = 'app-install-broker'
 #   page a pass of the simulator, which paces itself as the firmware does;
 # - an update key's enrollment is held past the session's real 10 s answer
 #   window, the window the test is about;
-# - two power samples come 5 s apart, as the simulator samples its supply.
+# - two power samples come 5 s apart, as the simulator samples its supply;
+# - the settings model walks every sequence to depth 6, about 30 s unoptimized.
 [[profile.default.overrides]]
 filter = '''
-    (package(wellfed-server) & test(=bank_1_read_from_bank_0_is_kept_exported_and_restored_after_promotion))
+    (package(wellfed-device) & test(=no_generation_names_two_settings))
+    | (package(wellfed-server) & test(=bank_1_read_from_bank_0_is_kept_exported_and_restored_after_promotion))
     | (package(wellfed-server) & test(=samples_read_raw_in_pages_and_by_the_hour))
     | (package(wellfed-bench) & test(/an_enrollment_answered_by_a_late_press_comes_back_through_the_server/))
 '''
