@@ -139,7 +139,9 @@ pub fn take() -> Option<Taken<'static, Work>> {
 /// The writer publishes what NOR holds, writable only once it is `armed`,
 /// and the clip the speaker may play.
 pub fn publish<I: SlotIo>(store: &CallStore<I>, armed: bool) {
-    // The speaker learns the clip before a reader sees the view, as before.
+    // The speaker learns the clip before a reader sees the view that names
+    // it, at every publish: a client never reads a clip the speaker would
+    // not yet play.
     wellfed_hal::audio::publish_call(store.stored());
     PUBLISHED.publish(store.view(armed));
 }
