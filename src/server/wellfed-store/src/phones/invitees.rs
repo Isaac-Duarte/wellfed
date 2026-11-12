@@ -213,20 +213,26 @@ impl Store {
         .await?;
         rows.into_iter()
             .map(|row| {
+                let Stored {
+                    epoch,
+                    seq,
+                    invitee,
+                    inviter,
+                    received,
+                } = stored(
+                    row.epoch,
+                    row.seq,
+                    row.invitee,
+                    row.inviter,
+                    row.received_ms,
+                )?;
                 Ok(Invitation {
                     feeder,
-                    epoch: u32::try_from(row.epoch)
-                        .map_err(|_| Error::Corrupt("invitation epoch"))?,
-                    seq: u64::try_from(row.seq).map_err(|_| Error::Corrupt("invitation seq"))?,
-                    invitee: row
-                        .invitee
-                        .try_into()
-                        .map_err(|_| Error::Corrupt("invitee prefix"))?,
-                    inviter: row
-                        .inviter
-                        .try_into()
-                        .map_err(|_| Error::Corrupt("inviter prefix"))?,
-                    received: timestamp(row.received_ms)?,
+                    epoch,
+                    seq,
+                    invitee,
+                    inviter,
+                    received,
                     id: row.id,
                 })
             })
@@ -363,4 +369,33 @@ impl Store {
         tx.commit().await?;
         Ok(owed)
     }
+}
+
+/// An invitation's columns as the readers take them.
+pub(crate) struct Stored {
+    epoch: u32,
+    seq: u64,
+    invitee: [u8; PREFIX],
+    inviter: [u8; PREFIX],
+    received: Timestamp,
+}
+
+pub(crate) fn stored(
+    epoch: i64,
+    seq: i64,
+    invitee: Vec<u8>,
+    inviter: Vec<u8>,
+    received_ms: i64,
+) -> Result<Stored> {
+    Ok(Stored {
+        epoch: u32::try_from(epoch).map_err(|_| Error::Corrupt("invitation epoch"))?,
+        seq: u64::try_from(seq).map_err(|_| Error::Corrupt("invitation seq"))?,
+        invitee: invitee
+            .try_into()
+            .map_err(|_| Error::Corrupt("invitee prefix"))?,
+        inviter: inviter
+            .try_into()
+            .map_err(|_| Error::Corrupt("inviter prefix"))?,
+        received: timestamp(received_ms)?,
+    })
 }

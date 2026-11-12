@@ -161,15 +161,7 @@ impl Store {
         .await?;
 
         rows.into_iter()
-            .map(|row| {
-                Ok(HourRow {
-                    hour: timestamp(row.hour_ms)?,
-                    count: u32::try_from(row.count).map_err(|_| Error::Corrupt("rollup count"))?,
-                    min: row.min,
-                    max: row.max,
-                    sum: row.sum,
-                })
-            })
+            .map(|row| hour(row.hour_ms, row.count, row.min, row.max, row.sum))
             .collect()
     }
 }
@@ -182,4 +174,15 @@ fn ceil_hour(ms: i64) -> i64 {
     } else {
         floor.saturating_add(HOUR_MS)
     }
+}
+
+/// An hour's rollup as the readers take it.
+pub(crate) fn hour(hour_ms: i64, count: i64, min: i64, max: i64, sum: i64) -> Result<HourRow> {
+    Ok(HourRow {
+        hour: timestamp(hour_ms)?,
+        count: u32::try_from(count).map_err(|_| Error::Corrupt("rollup count"))?,
+        min,
+        max,
+        sum,
+    })
 }

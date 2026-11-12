@@ -11,7 +11,7 @@ use wellfed_api::{
 use crate::convert::{lenient, millis, timestamp};
 use crate::{Error, Result, Store};
 
-mod invitees;
+pub(crate) mod invitees;
 mod logout;
 mod reconcile;
 mod revoke;
@@ -58,17 +58,17 @@ pub enum Whose {
 }
 
 /// One `phone_keys` row as selected.
-struct Raw {
-    feeder_id: Uuid,
-    key: Vec<u8>,
-    user_id: Uuid,
-    token_id: Option<Uuid>,
-    role: String,
-    invited_ms: i64,
-    invite_until_ms: i64,
-    revoke: Option<String>,
-    revoke_ms: Option<i64>,
-    attempt: Option<String>,
+pub(crate) struct Raw {
+    pub(crate) feeder_id: Uuid,
+    pub(crate) key: Vec<u8>,
+    pub(crate) user_id: Uuid,
+    pub(crate) token_id: Option<Uuid>,
+    pub(crate) role: String,
+    pub(crate) invited_ms: i64,
+    pub(crate) invite_until_ms: i64,
+    pub(crate) revoke: Option<String>,
+    pub(crate) revoke_ms: Option<i64>,
+    pub(crate) attempt: Option<String>,
 }
 
 impl TryFrom<Raw> for PhoneKey {
@@ -298,12 +298,12 @@ impl Store {
         )
         .fetch_all(&self.reader)
         .await?;
-        rows.into_iter()
-            .map(|row| {
-                row.key
-                    .try_into()
-                    .map_err(|_| Error::Corrupt("kept client key"))
-            })
-            .collect()
+        rows.into_iter().map(|row| kept_key(row.key)).collect()
     }
+}
+
+/// A kept client's key as stored.
+pub(crate) fn kept_key(key: Vec<u8>) -> Result<[u8; 32]> {
+    key.try_into()
+        .map_err(|_| Error::Corrupt("kept client key"))
 }

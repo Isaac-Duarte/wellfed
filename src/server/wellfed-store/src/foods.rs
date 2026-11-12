@@ -206,12 +206,12 @@ impl Store {
 }
 
 /// A food as SQLite holds it.
-struct Raw {
-    id: Uuid,
-    brand: String,
-    name: String,
-    kcal_per_kg: i64,
-    bag_grams: i64,
+pub(crate) struct Raw {
+    pub(crate) id: Uuid,
+    pub(crate) brand: String,
+    pub(crate) name: String,
+    pub(crate) kcal_per_kg: i64,
+    pub(crate) bag_grams: i64,
 }
 
 impl TryFrom<Raw> for Food {
@@ -243,8 +243,7 @@ struct Period {
 
 impl Period {
     fn period(self) -> Result<(u64, FoodPeriod)> {
-        let seq = from_i64(self.seq, "food history")?;
-        let from = timestamp(self.from_ms)?;
+        let (seq, from) = period_start(self.seq, self.from_ms)?;
         let to = self.to_ms.map(timestamp).transpose()?;
         let food = Food::try_from(Raw {
             id: self.id,
@@ -255,4 +254,10 @@ impl Period {
         })?;
         Ok((seq, FoodPeriod { food, from, to }))
     }
+}
+
+/// Where a `feeder_foods` row stands in the food history, and when it
+/// began.
+pub(crate) fn period_start(seq: i64, from_ms: i64) -> Result<(u64, Timestamp)> {
+    Ok((from_i64(seq, "food history")?, timestamp(from_ms)?))
 }

@@ -192,11 +192,12 @@ impl Store {
 
         rows.into_iter()
             .map(|row| {
+                let (from, to) = link_span(row.from_ms, row.to_ms)?;
                 Ok(PetLink {
                     pet: PetId(row.pet_id),
                     feeder,
-                    from: timestamp(row.from_ms)?,
-                    to: row.to_ms.map(timestamp).transpose()?,
+                    from,
+                    to,
                 })
             })
             .collect()
@@ -225,11 +226,12 @@ impl Store {
 
         rows.into_iter()
             .map(|row| {
+                let (from, to) = link_span(row.from_ms, row.to_ms)?;
                 Ok(PetLink {
                     pet,
                     feeder: FeederId(row.feeder_id),
-                    from: timestamp(row.from_ms)?,
-                    to: row.to_ms.map(timestamp).transpose()?,
+                    from,
+                    to,
                 })
             })
             .collect()
@@ -273,13 +275,7 @@ impl Store {
         .await?;
 
         rows.into_iter()
-            .map(|row| {
-                Ok(Weight {
-                    id: WeightId(row.id),
-                    at: timestamp(row.at_ms)?,
-                    grams: u32::try_from(row.grams).map_err(|_| Error::Corrupt("weight"))?,
-                })
-            })
+            .map(|row| weight(row.id, row.at_ms, row.grams))
             .collect()
     }
 
@@ -300,7 +296,7 @@ fn date(pet: &Pet) -> Option<String> {
     pet.birth_date.map(|date| date.to_string())
 }
 
-fn pet(
+pub(crate) fn pet(
     id: Uuid,
     name: String,
     species: &str,
@@ -325,5 +321,22 @@ fn pet(
         birth_date,
         daily_kcal,
         feeders,
+    })
+}
+
+/// A `pet_feeders` row's span as the readers take it.
+pub(crate) fn link_span(
+    from_ms: i64,
+    to_ms: Option<i64>,
+) -> Result<(Timestamp, Option<Timestamp>)> {
+    Ok((timestamp(from_ms)?, to_ms.map(timestamp).transpose()?))
+}
+
+/// A `pet_weights` row as the readers take it.
+pub(crate) fn weight(id: Uuid, at_ms: i64, grams: i64) -> Result<Weight> {
+    Ok(Weight {
+        id: WeightId(id),
+        at: timestamp(at_ms)?,
+        grams: u32::try_from(grams).map_err(|_| Error::Corrupt("weight"))?,
     })
 }

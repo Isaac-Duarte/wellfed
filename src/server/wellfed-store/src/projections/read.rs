@@ -56,10 +56,7 @@ impl Store {
 
         rows.into_iter()
             .map(|row| {
-                let value = LockChange {
-                    locked: row.locked != 0,
-                    by: source(&row.source, row.client)?,
-                };
+                let value = lock_change(row.locked != 0, &row.source, row.client)?;
                 projected(row.epoch, row.seq, row.at_s, row.received_ms, value)
             })
             .collect()
@@ -86,11 +83,7 @@ impl Store {
 
         rows.into_iter()
             .map(|row| {
-                let value = Boot {
-                    bank: u8::try_from(row.bank).map_err(|_| Error::Corrupt("boot bank"))?,
-                    reset_flags: u32::try_from(row.reset_flags)
-                        .map_err(|_| Error::Corrupt("reset flags"))?,
-                };
+                let value = boot(row.bank, row.reset_flags)?;
                 projected(row.epoch, row.seq, row.at_s, row.received_ms, value)
             })
             .collect()
@@ -117,14 +110,7 @@ impl Store {
 
         rows.into_iter()
             .map(|row| {
-                let jump_ms = row
-                    .jump_ms
-                    .map(|jump| i32::try_from(jump).map_err(|_| Error::Corrupt("clock jump")))
-                    .transpose()?;
-                let value = ClockSync {
-                    by: source(&row.source, row.client)?,
-                    jump_ms,
-                };
+                let value = clock_sync(&row.source, row.client, row.jump_ms)?;
                 projected(row.epoch, row.seq, row.at_s, row.received_ms, value)
             })
             .collect()
@@ -152,9 +138,7 @@ impl Store {
 
         rows.into_iter()
             .map(|row| {
-                let value = row
-                    .reason
-                    .map(|reason| Blocked::from_code(&reason).unwrap_or(Blocked::Unknown));
+                let value = row.reason.as_deref().map(blocked);
                 projected(row.epoch, row.seq, row.at_s, row.received_ms, value)
             })
             .collect()
@@ -196,7 +180,7 @@ impl TryFrom<FeedRow> for Projected<Feed> {
     }
 }
 
-fn projected<T>(
+pub(crate) fn projected<T>(
     epoch: i64,
     seq: i64,
     at_s: Option<i64>,
@@ -210,4 +194,42 @@ fn projected<T>(
         received: timestamp(received_ms)?,
         value,
     })
+}
+
+pub(crate) fn lock_change(
+    locked: bool,
+    source_kind: &str,
+    client: Option<Vec<u8>>,
+) -> Result<LockChange> {
+    Ok(LockChange {
+        locked,
+        by: source(source_kind, client)?,
+    })
+}
+
+pub(crate) fn boot(bank: i64, reset_flags: i64) -> Result<Boot> {
+    Ok(Boot {
+        bank: u8::try_from(bank).map_err(|_| Error::Corrupt("boot bank"))?,
+        reset_flags: u32::try_from(reset_flags).map_err(|_| Error::Corrupt("reset flags"))?,
+    })
+}
+
+pub(crate) fn clock_sync(
+    source_kind: &str,
+    client: Option<Vec<u8>>,
+    jump_ms: Option<i64>,
+) -> Result<ClockSync> {
+    let jump_ms = jump_ms
+        .map(|jump| i32::try_from(jump).map_err(|_| Error::Corrupt("clock jump")))
+        .transpose()?;
+    Ok(ClockSync {
+        by: source(source_kind, client)?,
+        jump_ms,
+    })
+}
+
+/// A blocked reason as stored. A code a newer server stored reads as
+/// unknown, so it is never refused.
+pub(crate) fn blocked(reason: &str) -> Blocked {
+    Blocked::from_code(reason).unwrap_or(Blocked::Unknown)
 }

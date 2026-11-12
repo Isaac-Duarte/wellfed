@@ -8,7 +8,7 @@
 //! [`Store::refresh_samples`] decodes every stored sample again at the
 //! next start.
 
-mod rollups;
+pub(crate) mod rollups;
 
 use jiff::Timestamp;
 use wellfed_api::{FeederId, MetricKind, SAMPLE_NUMBER_VERSION, SampleValue, sample_number};
@@ -137,14 +137,14 @@ impl Store {
 
         rows.into_iter()
             .map(|row| {
+                let (received, uptime_ms) = times(row.received_ms, row.uptime_ms)?;
                 Ok(SampleRow {
                     key: SampleKey {
                         received_ms: row.received_ms,
                         id: row.id,
                     },
-                    received: timestamp(row.received_ms)?,
-                    uptime_ms: u32::try_from(row.uptime_ms)
-                        .map_err(|_| Error::Corrupt("uptime"))?,
+                    received,
+                    uptime_ms,
                     metric,
                     number: row.number,
                     value: row.value,
@@ -217,4 +217,11 @@ impl Store {
         tx.commit().await?;
         Ok(SampleRefresh::Decoded { samples, undecoded })
     }
+}
+
+/// A sample's times as the readers take them: when the server received
+/// it, and the feeder's uptime then.
+pub(crate) fn times(received_ms: i64, uptime_ms: i64) -> Result<(Timestamp, u32)> {
+    let uptime = u32::try_from(uptime_ms).map_err(|_| Error::Corrupt("uptime"))?;
+    Ok((timestamp(received_ms)?, uptime))
 }

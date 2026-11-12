@@ -146,15 +146,7 @@ impl Store {
         .await?;
 
         rows.into_iter()
-            .map(|row| {
-                Ok(EventRow {
-                    seq: from_i64(row.seq, "event sequence")?,
-                    at: seconds(row.at_s)?,
-                    received: timestamp(row.received_ms)?,
-                    kind: stored_kind(&row.kind),
-                    body: row.body,
-                })
-            })
+            .map(|row| event(row.seq, row.at_s, row.received_ms, &row.kind, row.body))
             .collect()
     }
 
@@ -185,14 +177,8 @@ impl Store {
 
         rows.into_iter()
             .map(|row| {
-                let epoch = u32::try_from(row.epoch).map_err(|_| Error::Corrupt("event epoch"))?;
-                let event = EventRow {
-                    seq: from_i64(row.seq, "event sequence")?,
-                    at: seconds(row.at_s)?,
-                    received: timestamp(row.received_ms)?,
-                    kind: stored_kind(&row.kind),
-                    body: row.body,
-                };
+                let epoch = event_epoch(row.epoch)?;
+                let event = event(row.seq, row.at_s, row.received_ms, &row.kind, row.body)?;
                 Ok((epoch, event))
             })
             .collect()
@@ -221,14 +207,7 @@ impl Store {
         .await?;
 
         rows.into_iter()
-            .map(|row| {
-                Ok(Gap {
-                    epoch,
-                    from: from_i64(row.from_seq, "gap start")?,
-                    to: from_i64(row.to_seq, "gap end")?,
-                    received: timestamp(row.received_ms)?,
-                })
-            })
+            .map(|row| gap(epoch, row.from_seq, row.to_seq, row.received_ms))
             .collect()
     }
 }
@@ -253,4 +232,36 @@ async fn advance(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+/// A stored epoch: the feeder's, which is 32 bits.
+pub(crate) fn event_epoch(epoch: i64) -> Result<u32> {
+    u32::try_from(epoch).map_err(|_| Error::Corrupt("event epoch"))
+}
+
+/// An `events` row as the readers take it.
+pub(crate) fn event(
+    seq: i64,
+    at_s: Option<i64>,
+    received_ms: i64,
+    kind: &str,
+    body: Vec<u8>,
+) -> Result<EventRow> {
+    Ok(EventRow {
+        seq: from_i64(seq, "event sequence")?,
+        at: seconds(at_s)?,
+        received: timestamp(received_ms)?,
+        kind: stored_kind(kind),
+        body,
+    })
+}
+
+/// A `gaps` row of `epoch` as the readers take it.
+pub(crate) fn gap(epoch: u32, from_seq: i64, to_seq: i64, received_ms: i64) -> Result<Gap> {
+    Ok(Gap {
+        epoch,
+        from: from_i64(from_seq, "gap start")?,
+        to: from_i64(to_seq, "gap end")?,
+        received: timestamp(received_ms)?,
+    })
 }

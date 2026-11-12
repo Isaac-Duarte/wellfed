@@ -57,17 +57,8 @@ impl Store {
         .fetch_optional(&self.reader)
         .await?;
 
-        row.map(|row| {
-            Ok(Home {
-                id: HomeId(row.id),
-                name: row.name,
-                units: Units::from_code(&row.units).ok_or(Error::Corrupt("units"))?,
-                time_format: TimeFormat::from_code(&row.time_format)
-                    .ok_or(Error::Corrupt("time format"))?,
-                zone: row.zone,
-            })
-        })
-        .transpose()
+        row.map(|row| home(row.id, row.name, &row.units, &row.time_format, row.zone))
+            .transpose()
     }
 
     /// Store a change to `home`, by its id: [`Error::Missing`] when no
@@ -86,4 +77,21 @@ impl Store {
         .await?;
         wellfed_formats::require(done.rows_affected() == 1, || Error::Missing("home"))
     }
+}
+
+/// A `homes` row as the home it stores.
+pub(crate) fn home(
+    id: Uuid,
+    name: String,
+    units: &str,
+    time_format: &str,
+    zone: String,
+) -> Result<Home> {
+    Ok(Home {
+        id: HomeId(id),
+        name,
+        units: Units::from_code(units).ok_or(Error::Corrupt("units"))?,
+        time_format: TimeFormat::from_code(time_format).ok_or(Error::Corrupt("time format"))?,
+        zone,
+    })
 }
