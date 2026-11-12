@@ -184,8 +184,9 @@ impl Shared {
 pub struct Mirror {
     shared: Arc<Shared>,
     feeders: Arc<Mutex<HashMap<FeederId, task::Handle>>>,
-    /// Held by a start or a stop across the wait for a task to end.
-    turns: Arc<tokio::sync::Mutex<()>>,
+    /// Each feeder's turn, held by a start or a stop across the wait for
+    /// its task to end. One entry per feeder ever started, a few bytes.
+    turns: Arc<Mutex<HashMap<FeederId, Arc<tokio::sync::Mutex<()>>>>>,
     cancel: CancellationToken,
     tasks: TaskTracker,
 }
@@ -217,7 +218,7 @@ impl Mirror {
                 desk: desk::Desk::default(),
             }),
             feeders: Arc::new(Mutex::new(HashMap::new())),
-            turns: Arc::new(tokio::sync::Mutex::new(())),
+            turns: Arc::new(Mutex::new(HashMap::new())),
             cancel,
             tasks: TaskTracker::new(),
         }
@@ -229,8 +230,9 @@ impl Mirror {
     /// starts and stops take turns, so none runs while another waits for
     /// a task to end.
     pub async fn start(&self, feeder: Feeder) -> broadcast::Receiver<MirrorEvent> {
-        let _turn = self.turns.lock().await;
         let id = feeder.id;
+        let turn = self.turn(id);
+        let _turn = turn.lock().await;
         let running = self.handles().remove(&id);
         if let Some(old) = running {
             old.stop().await;
@@ -253,7 +255,8 @@ impl Mirror {
     /// it was running. Its last update is `Link::Offline`, then its
     /// broadcast closes.
     pub async fn stop(&self, id: FeederId) -> bool {
-        let _turn = self.turns.lock().await;
+        let turn = self.turn(id);
+        let _turn = turn.lock().await;
         let handle = self.handles().remove(&id);
         let Some(handle) = handle else {
             return false;
@@ -261,6 +264,13 @@ impl Mirror {
         handle.stop().await;
         self.shared.desk.forget(id);
         true
+    }
+
+    /// `id`'s turn to start or stop: one feeder's waits for its own task
+    /// to end, never another's.
+    fn turn(&self, id: FeederId) -> Arc<tokio::sync::Mutex<()>> {
+        let mut turns = self.turns.lock().unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(turns.entry(id).or_default())
     }
 
     /// Set every feeder's clock in `zone` from now on, and give each the
