@@ -34,8 +34,8 @@ use crate::api::store::SetAside;
 use crate::link::{DirectLink, LinkNews};
 use crate::requests;
 use crate::route::core::{
-    self, Access, Book, Ended, Held, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
-    Waited, settled_by_command, settled_by_history, settled_unfound,
+    self, Access, Book, Ended, Graces, Held, Keys, Reach, RetryPlan, ServerFailure, ServerReach,
+    Standing, Waited, settled_by_command, settled_by_history, settled_unfound,
 };
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
 use crate::route::server as calls;
@@ -51,9 +51,7 @@ pub(crate) struct Router {
 struct Inner {
     state: Mutex<State>,
     closed: watch::Sender<bool>,
-    /// How long after its attempt a server write its journal lacks is
-    /// taken as never sent.
-    grace_ms: i64,
+    graces: Graces,
 }
 
 struct State {
@@ -464,7 +462,7 @@ impl State {
 }
 
 impl Router {
-    pub(crate) fn open(pins_path: &Path, grace_ms: i64) -> Result<Self, BridgeError> {
+    pub(crate) fn open(pins_path: &Path, graces: Graces) -> Result<Self, BridgeError> {
         let (store, mut book) = PinStore::open(pins_path)?;
         if book.expire(now_ms()) {
             store.save(&book)?;
@@ -493,7 +491,7 @@ impl Router {
             inner: Arc::new(Inner {
                 state: Mutex::new(state),
                 closed: watch::Sender::new(false),
-                grace_ms,
+                graces,
             }),
         })
     }
@@ -701,10 +699,10 @@ impl Router {
         saved
     }
 
-    /// How long after a lost attempt the server's silence counts as never
-    /// sent.
-    pub(crate) fn grace_ms(&self) -> i64 {
-        self.inner.grace_ms
+    /// How long after a lost adoption the server's list lacking the feeder
+    /// counts as never adopted.
+    pub(crate) fn adoption_grace_ms(&self) -> i64 {
+        self.inner.graces.adoption_ms
     }
 
     /// The server's client, when one is configured.
@@ -1375,7 +1373,7 @@ impl Router {
                 state.reach = ServerReach::Up;
                 state.note_attempts();
                 let since = state.tried.waited(&pin.key, pin.tried_ms, now_ms());
-                settled_unfound(pin, mark, since, self.inner.grace_ms)
+                settled_unfound(pin, mark, since, self.inner.graces.unfound_ms)
             }
             Err(error) => {
                 state.heard_failure(session, error.failure(), now_ms());

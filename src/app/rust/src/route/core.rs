@@ -36,6 +36,32 @@ pub(crate) const RECHECK_MS: i64 = 30_000;
 /// clocks.
 pub(crate) const UNFOUND_GRACE_MS: i64 = 10 * 60_000;
 
+/// How long after an adoption's answer was lost a server list still
+/// lacking the feeder reads as never adopted, so a new owner invite may be
+/// made: past the server's own search for its key on the feeder
+/// ([`wellfed_api::LOST_JOIN_SEARCH`]), that search's last session attempt,
+/// and the phone's request that lost the answer. Before it passes the
+/// adoption may still land, and a second invite would be made for nothing.
+pub(crate) const ADOPTION_GRACE_MS: i64 = 15 * 60_000;
+
+/// How long a router waits on what the server's silence leaves open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Graces {
+    /// After its attempt, a server write its journal lacks is taken as
+    /// never sent ([`UNFOUND_GRACE_MS`]).
+    pub(crate) unfound_ms: i64,
+    /// After an adoption's answer was lost, a feeder the server's list
+    /// lacks is taken as never adopted ([`ADOPTION_GRACE_MS`]).
+    pub(crate) adoption_ms: i64,
+}
+
+impl Graces {
+    pub(crate) const APP: Self = Self {
+        unfound_ms: UNFOUND_GRACE_MS,
+        adoption_ms: ADOPTION_GRACE_MS,
+    };
+}
+
 /// How long ago an attempt was, by two clocks. The wall clock is all a
 /// restart keeps, but it steps (a network time fix, the owner changing it),
 /// and a forward step would end a grace early; the monotonic clock never

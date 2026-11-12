@@ -79,7 +79,7 @@ impl Default for Timing {
             session: wellfed_connect::Timing::DEFAULT,
             pace: Pace::DEFAULT,
             // The longest feed (48 portions at up to 12 s each), and margin.
-            join_settle: Duration::from_secs(12 * 60),
+            join_settle: wellfed_api::LOST_JOIN_SEARCH,
         }
     }
 }

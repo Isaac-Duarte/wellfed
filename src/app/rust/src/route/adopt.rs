@@ -166,7 +166,11 @@ impl Router {
             Err(error) => return Adoption::Failed { error },
         }
         match lost_at {
-            Some(at) if !self.adoption_waited(feeder, at).passed(self.grace_ms()) => {
+            Some(at)
+                if !self
+                    .adoption_waited(feeder, at)
+                    .passed(self.adoption_grace_ms()) =>
+            {
                 Adoption::Unsettled { error: unsettled() }
             }
             _ => {

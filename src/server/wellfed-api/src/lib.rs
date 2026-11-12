@@ -121,6 +121,14 @@ pub const PREFIX: &str = "/api/v1";
 /// [API evolution]: ../../../../docs/server/README.md#api-evolution
 pub const REVISION: u32 = 7;
 
+/// How long the server looks for its key enrolled on a feeder after an
+/// adoption's join answer was lost (`504 outcome_unknown`): the feeder
+/// holds a join's enrollment until a running feed ends, the longest some
+/// ten minutes. A client that lost an adoption's answer reads a feeder
+/// missing from the list as never adopted only once this, the search's
+/// last session attempt and the request itself have passed.
+pub const LOST_JOIN_SEARCH: std::time::Duration = std::time::Duration::from_secs(12 * 60);
+
 /// The cookie a login sets: an opaque session token, `HttpOnly` and
 /// `SameSite=Strict`. A non-browser client sends it back as it came.
 pub const SESSION_COOKIE: &str = "wellfed_session";

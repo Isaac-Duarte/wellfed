@@ -37,7 +37,7 @@ use crate::server::{date, event_page, ids, stream_event, timestamp};
 /// connection ends in an error instead of a screen that waits for good.
 /// A stream hears a keep-alive every 15 s, so three missed is a dead link;
 /// a plain call outlasts the server's own 15 s wait for a feeder's answer.
-const TIMEOUTS: Timeouts = Timeouts {
+pub(crate) const TIMEOUTS: Timeouts = Timeouts {
     read: Some(Duration::from_secs(45)),
     request: Some(Duration::from_secs(30)),
 };
