@@ -477,6 +477,19 @@ impl Memory {
             .collect()
     }
 
+    /// Take out the lost feeds past [`KEEP_MS`]. One still waiting on its
+    /// answer is never forgotten, whatever the clock says: a wall clock
+    /// that jumps ahead must not let go of a feed that may yet run.
+    fn past_keep(&mut self) -> Vec<Uncertain> {
+        let (gone, open) = std::mem::take(&mut self.uncertain)
+            .into_iter()
+            .partition(|uncertain| {
+                uncertain.stage == Stage::Lost && forgotten(uncertain.pending.sent_ms)
+            });
+        self.uncertain = open;
+        gone
+    }
+
     /// The uncertain feed whose pending has `id`.
     fn position(&self, id: &str) -> Option<usize> {
         self.uncertain
@@ -1312,11 +1325,7 @@ impl<'a> Session<'a> {
     /// Lost feeds past [`Clocks::settle`] with no `Fed` are still unknown;
     /// those past [`KEEP_MS`] are forgotten.
     fn expire(&mut self) -> Step {
-        let (gone, open) = std::mem::take(&mut self.memory.uncertain)
-            .into_iter()
-            .partition(|uncertain| forgotten(uncertain.pending.sent_ms));
-        self.memory.uncertain = open;
-        for uncertain in gone {
+        for uncertain in self.memory.past_keep() {
             self.forget(uncertain.pending);
         }
 
@@ -1628,6 +1637,26 @@ mod tests {
         assert_eq!(forgotten[0].pending.id, "open");
         assert!(memory.uncertain.is_empty());
         assert_eq!(memory.answered.len(), ANSWERED_TAIL);
+    }
+
+    /// After a wall clock jump a week ahead, a lost feed is forgotten, but
+    /// a feed still waiting on its answer stays.
+    #[test]
+    fn a_clock_jump_forgets_no_feed_still_sending() {
+        let long_ago = now_ms() - KEEP_MS - 1000;
+        let mut memory = Memory::default();
+        memory
+            .uncertain
+            .push(kept(lost("sending", long_ago), Stage::Sending));
+        memory
+            .uncertain
+            .push(kept(lost("lost", long_ago), Stage::Lost));
+
+        let gone = memory.past_keep();
+        assert_eq!(gone.len(), 1);
+        assert_eq!(gone[0].pending.id, "lost");
+        assert_eq!(memory.uncertain.len(), 1);
+        assert_eq!(memory.uncertain[0].pending.id, "sending");
     }
 
     /// A lost feed is forgotten after the keep window, by the time it
