@@ -22,7 +22,7 @@ use wellfed_api::{StockBackup as StockView, StockBackupState, StockSource};
 use wellfed_client::install::{STOCK_VERSION, StockBackup, StockPins};
 use wellfed_model::Hex;
 
-use crate::cache::{blocking, cache, sync_dir, write_whole};
+use crate::cache::{Writer, blocking, cache, sync_dir, write_whole};
 use crate::{Added, Error};
 
 /// Where the backups are kept, and what a copy must match.
@@ -60,7 +60,7 @@ pub struct Stock {
     pins: StockPins,
     /// One writer at a time, so two copies for one feeder cannot both find
     /// none kept.
-    writing: tokio::sync::Mutex<()>,
+    writing: Writer,
 }
 
 impl Stock {
@@ -70,7 +70,7 @@ impl Stock {
         Ok(Self {
             dir: config.dir,
             pins: config.pins,
-            writing: tokio::sync::Mutex::new(()),
+            writing: Writer::default(),
         })
     }
 
@@ -117,52 +117,68 @@ impl Stock {
         taken: Taken,
         now: Timestamp,
     ) -> Result<(StockView, Added), Error> {
-        let _writing = self.writing.lock().await;
         let (dir, pins) = (self.dir.clone(), self.pins);
 
-        blocking(move || {
-            let (backup, source) = match taken {
-                Taken::Bank(bank) => (
-                    StockBackup::from_bank_pinned(bank, &pins)?,
-                    StockSource::Feeder,
-                ),
-                Taken::Upload(image) => {
-                    (StockBackup::open_pinned(image, &pins)?, StockSource::Upload)
+        self.writing
+            .run(move || {
+                let (backup, source) = match taken {
+                    Taken::Bank(bank) => (
+                        StockBackup::from_bank_pinned(bank, &pins)?,
+                        StockSource::Feeder,
+                    ),
+                    Taken::Upload(image) => {
+                        (StockBackup::open_pinned(image, &pins)?, StockSource::Upload)
+                    }
+                };
+                let sha256 = Hex(backup.sha256());
+                let paths = Paths::new(&dir, &identity);
+                // The pins fix the only copy a backup can be, so a record that
+                // no longer parses is written again over this one rather than
+                // blocking the feeder's backups for good.
+                let kept = match read(&paths) {
+                    Err(error @ Error::Entry { .. }) => {
+                        tracing::warn!("{error}; keeping the verified copy again");
+                        None
+                    }
+                    kept => kept?,
+                };
+                if let Some((record, file)) = kept {
+                    if record.sha256 != sha256 {
+                        return Err(Error::StockDiffers);
+                    }
+                    // The record's own copy again: a kept file damaged on disk
+                    // since is written back whole.
+                    if file != backup.bytes() {
+                        tracing::warn!("{} was damaged; writing it back", paths.file.display());
+                        write_whole(&paths.file, backup.bytes())?;
+                        sync_dir(&paths.feeder)?;
+                    }
+                    return Ok((view(&record, StockBackupState::Verified), Added::Known));
                 }
-            };
-            let sha256 = Hex(backup.sha256());
-            let paths = Paths::new(&dir, &identity);
-            if let Some((record, file)) = read(&paths)? {
-                if record.sha256 != sha256 {
-                    return Err(Error::StockDiffers);
-                }
-                // The record's own copy again: a kept file damaged on disk
-                // since is written back whole.
-                if file != backup.bytes() {
-                    tracing::warn!("{} was damaged; writing it back", paths.file.display());
-                    write_whole(&paths.file, backup.bytes())?;
-                    sync_dir(&paths.feeder)?;
-                }
-                return Ok((view(&record, StockBackupState::Verified), Added::Known));
-            }
 
-            let record = Record {
-                sha256,
-                bytes: u64::try_from(backup.bytes().len()).unwrap_or(u64::MAX),
-                source,
-                kept: now,
-            };
-            fs::create_dir_all(&paths.feeder).map_err(cache(&paths.feeder))?;
-            let text = serde_json::to_vec_pretty(&record).map_err(|source| Error::Entry {
-                path: paths.record.clone(),
-                source,
-            })?;
-            write_whole(&paths.file, backup.bytes())?;
-            write_whole(&paths.record, &text)?;
-            sync_dir(&paths.feeder)?;
-            Ok((view(&record, StockBackupState::Verified), Added::New))
-        })
-        .await
+                let record = Record {
+                    sha256,
+                    bytes: u64::try_from(backup.bytes().len()).unwrap_or(u64::MAX),
+                    source,
+                    kept: now,
+                };
+                let new_dir = !paths.feeder.exists();
+                fs::create_dir_all(&paths.feeder).map_err(cache(&paths.feeder))?;
+                let text = serde_json::to_vec_pretty(&record).map_err(|source| Error::Entry {
+                    path: paths.record.clone(),
+                    source,
+                })?;
+                write_whole(&paths.file, backup.bytes())?;
+                write_whole(&paths.record, &text)?;
+                sync_dir(&paths.feeder)?;
+                // A new directory's own entry lasts only once its parent is
+                // synced; until then a power cut could lose the only copy.
+                if new_dir {
+                    sync_dir(&dir)?;
+                }
+                Ok((view(&record, StockBackupState::Verified), Added::New))
+            })
+            .await
     }
 }
 

@@ -11,7 +11,7 @@ use support::{now, open, project, release, versions as ids};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use wellfed_api::{ReleaseRefusal, ReleaseSource};
-use wellfed_releases::{Error, Source};
+use wellfed_releases::{Error, MANIFEST_LEN, Source};
 
 #[tokio::test]
 async fn a_check_with_fetching_off_is_refused() {
@@ -253,4 +253,39 @@ async fn an_asset_that_fails_to_download_is_tried_again() {
         [LIST, "/download/gone.plota"],
         "only the failed asset is fetched again"
     );
+}
+
+/// A fetched release whose file was damaged on disk is no longer held: the
+/// next check fetches it again, and the download writes it back whole.
+#[tokio::test]
+async fn a_check_fetches_a_damaged_release_again_and_repairs_it() {
+    let good = release(&project(), 12);
+    let good_len = good.len();
+    let kept = good.clone();
+    let stub = Stub::start(|base| {
+        let list = serde_json::json!([{
+            "tag_name": "v0.12.0",
+            "assets": [asset(base, 1, "wellfed-12.plota", good_len)],
+        }]);
+        HashMap::from([
+            (LIST.to_owned(), (200, serde_json::to_vec(&list).unwrap())),
+            ("/download/wellfed-12.plota".to_owned(), (200, good)),
+        ])
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let releases = open(&dir, Some(stub.source())).await;
+    let release = releases.check(now()).await.unwrap().added.remove(0);
+
+    let path = dir.path().join(format!("releases/{}.plota", release.id));
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[MANIFEST_LEN + 100] ^= 0x01;
+    std::fs::write(&path, bytes).unwrap();
+    assert!(releases.file(release.id).await.is_err());
+
+    let again = releases.check(now()).await.unwrap();
+
+    assert!(again.added.is_empty() && again.refused.is_empty());
+    assert_eq!(stub.asked()[2..], [LIST, "/download/wellfed-12.plota"]);
+    assert_eq!(releases.file(release.id).await.unwrap(), (release, kept));
 }

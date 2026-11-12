@@ -104,45 +104,110 @@ async fn a_corrupted_upload_is_refused() {
     assert!(ids(&releases).await.is_empty());
 }
 
-/// A record that names another model than the verified manifest is not the
-/// release an install would offer: it is refused, never believed.
+/// The record beside a file is the server's own note: what an install acts
+/// on (the build it waits for, the version and length it records) is what
+/// the verified manifest says, whatever the record was changed to.
 #[tokio::test]
-async fn a_record_naming_another_model_is_refused_when_read() {
-    let dir = tempfile::tempdir().unwrap();
-    let releases = open(&dir, None).await;
-    let (release, _) = releases
-        .upload(release(&project(), 7), now())
-        .await
-        .unwrap();
+async fn a_record_is_never_believed_over_the_verified_manifest() {
+    let edits = [
+        ("version", serde_json::json!(99)),
+        ("build_id", serde_json::json!("09".repeat(32))),
+        ("model", serde_json::json!("plwf106")),
+        ("image_len", serde_json::json!(4096)),
+        ("image_sha256", serde_json::json!("00".repeat(32))),
+        ("key_id", serde_json::json!("ff".repeat(8))),
+        ("signer", serde_json::json!("owner")),
+    ];
+    for (field, value) in edits {
+        let dir = tempfile::tempdir().unwrap();
+        let releases = open(&dir, None).await;
+        let file = release(&project(), 7);
+        let (kept, _) = releases.upload(file.clone(), now()).await.unwrap();
 
-    let path = dir.path().join(format!("releases/{}.json", release.id));
-    let record = std::fs::read_to_string(&path).unwrap();
-    assert!(record.contains("\"plaf103\""), "{record}");
-    std::fs::write(&path, record.replace("\"plaf103\"", "\"plwf106\"")).unwrap();
+        let path = dir.path().join(format!("releases/{}.json", kept.id));
+        let record = std::fs::read_to_string(&path).unwrap();
+        let mut edited: serde_json::Value = serde_json::from_str(&record).unwrap();
+        let old = std::mem::replace(&mut edited["release"][field], value);
+        assert!(!old.is_null(), "{field} in {record}");
+        std::fs::write(&path, serde_json::to_vec_pretty(&edited).unwrap()).unwrap();
 
-    let error = releases.file(release.id).await.unwrap_err();
-    assert!(
-        matches!(error, wellfed_releases::Error::Changed),
-        "{error:?}"
-    );
+        let (read, _) = releases.file(kept.id).await.unwrap();
+        assert_eq!(read, kept, "after {field} was changed");
+
+        // Uploading it again writes the record back as the manifest says.
+        let (again, added) = releases.upload(file, now()).await.unwrap();
+        assert_eq!((again, added), (kept, Added::Known));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), record);
+    }
 }
 
 #[tokio::test]
-async fn a_cached_file_changed_on_disk_is_refused_when_read() {
+async fn a_record_naming_another_release_is_refused_when_read() {
     let dir = tempfile::tempdir().unwrap();
     let releases = open(&dir, None).await;
-    let (release, _) = releases
+    let (seven, _) = releases
         .upload(release(&project(), 7), now())
         .await
         .unwrap();
+    let (eight, _) = releases
+        .upload(release(&project(), 8), now())
+        .await
+        .unwrap();
 
-    let path = dir.path().join(format!("releases/{}.plota", release.id));
-    let mut bytes = std::fs::read(&path).unwrap();
-    *bytes.last_mut().unwrap() ^= 0x01;
-    std::fs::write(&path, bytes).unwrap();
+    let cache = dir.path().join("releases");
+    std::fs::copy(
+        cache.join(format!("{}.plota", eight.id)),
+        cache.join(format!("{}.plota", seven.id)),
+    )
+    .unwrap();
 
-    let error = releases.file(release.id).await.unwrap_err();
-    assert_eq!(error.refusal(), Some(ReleaseRefusal::Image));
+    let error = releases.file(seven.id).await.unwrap_err();
+    assert!(matches!(error, Error::Changed), "{error:?}");
+}
+
+/// A cached file damaged on disk is refused when read, as the server's own
+/// fault rather than the owner's upload, and the same release uploaded
+/// again writes it back whole: flipped, cut short or gone.
+#[tokio::test]
+async fn a_cached_file_changed_on_disk_is_refused_until_uploaded_again() {
+    type Damage = fn(&mut Vec<u8>);
+    let damages: [(&str, Damage); 3] = [
+        ("flipped", |bytes| *bytes.last_mut().unwrap() ^= 0x01),
+        ("cut short", |bytes| bytes.truncate(bytes.len() - 1)),
+        ("emptied", Vec::clear),
+    ];
+    for (name, damage) in damages {
+        let dir = tempfile::tempdir().unwrap();
+        let releases = open(&dir, None).await;
+        let file = release(&project(), 7);
+        let (release, _) = releases.upload(file.clone(), now()).await.unwrap();
+
+        let path = dir.path().join(format!("releases/{}.plota", release.id));
+        let mut bytes = std::fs::read(&path).unwrap();
+        damage(&mut bytes);
+        std::fs::write(&path, bytes).unwrap();
+
+        let error = releases.file(release.id).await.unwrap_err();
+        assert!(matches!(error, Error::Changed), "{name}: {error:?}");
+
+        let (again, added) = releases.upload(file.clone(), now()).await.unwrap();
+        assert_eq!((again, added), (release.clone(), Added::Known), "{name}");
+        assert_eq!(
+            releases.file(release.id).await.unwrap(),
+            (release, file),
+            "{name}"
+        );
+    }
+
+    // A file that is gone takes the record with it, and is kept anew.
+    let dir = tempfile::tempdir().unwrap();
+    let releases = open(&dir, None).await;
+    let file = release(&project(), 7);
+    let (release, _) = releases.upload(file.clone(), now()).await.unwrap();
+    std::fs::remove_file(dir.path().join(format!("releases/{}.plota", release.id))).unwrap();
+    let (_, added) = releases.upload(file.clone(), now()).await.unwrap();
+    assert_eq!(added, Added::New);
+    assert_eq!(releases.file(release.id).await.unwrap().1, file);
 }
 
 #[tokio::test]

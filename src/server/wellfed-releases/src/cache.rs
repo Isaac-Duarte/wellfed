@@ -20,8 +20,8 @@ use jiff::Timestamp;
 use serde::de::IntoDeserializer as _;
 use serde::de::value::StrDeserializer;
 use serde::{Deserialize, Serialize};
-use wellfed_api::{Release, ReleaseSigner};
-use wellfed_client::release::{self, KeyId, Signer};
+use wellfed_api::{Release, ReleaseSigner, ReleaseSource};
+use wellfed_client::release::{self, KeyId, ReleaseError, Signer};
 use wellfed_model::Hex;
 
 use crate::{Added, Error, Keys};
@@ -52,7 +52,7 @@ pub(crate) struct Cache {
     keys: Arc<Keys>,
     /// One writer at a time, so two uploads of one release cannot both
     /// find it missing and race on its files.
-    writing: tokio::sync::Mutex<()>,
+    writing: Writer,
 }
 
 impl Cache {
@@ -67,7 +67,7 @@ impl Cache {
         Ok(Self {
             dir,
             keys: Arc::new(keys),
-            writing: tokio::sync::Mutex::new(()),
+            writing: Writer::default(),
         })
     }
 
@@ -104,70 +104,111 @@ impl Cache {
         Ok(releases)
     }
 
-    /// The GitHub assets the cache holds.
+    /// The GitHub assets the cache holds intact. One whose file was
+    /// damaged on disk is not held, so the next check fetches it again and
+    /// [`Self::put`] writes it back.
     pub(crate) async fn assets(&self) -> Result<HashSet<u64>, Error> {
         let dir = self.dir.clone();
-        let entries = blocking(move || entries(&dir)).await?;
-        Ok(entries
-            .into_iter()
-            .filter_map(|entry| entry.asset)
-            .collect())
+        let keys = Arc::clone(&self.keys);
+        blocking(move || {
+            let mut held = HashSet::new();
+            for entry in entries(&dir)? {
+                let Some(asset) = entry.asset else { continue };
+                let id = entry.release.id;
+                let file_path = path(&dir, id, FILE);
+                let intact = match fs::read(&file_path) {
+                    Ok(file) => !damaged(&file, id, &keys),
+                    Err(error) => {
+                        tracing::warn!("reading {}: {error}", file_path.display());
+                        false
+                    }
+                };
+                if intact {
+                    held.insert(asset);
+                } else {
+                    tracing::warn!(
+                        "{} is damaged; the next check fetches it again",
+                        file_path.display()
+                    );
+                }
+            }
+            Ok(held)
+        })
+        .await
     }
 
-    /// Verify `file` and keep it, unless the cache holds it already.
+    /// Verify `file` and keep it, unless the cache holds it already. A
+    /// held release whose file was damaged on disk is written back from
+    /// `file`, and a record that no longer says what the manifest does is
+    /// written again, keeping where and when the release first came.
     pub(crate) async fn put(
         &self,
         file: Vec<u8>,
         origin: Origin,
         now: Timestamp,
     ) -> Result<(Release, Added), Error> {
-        let _writing = self.writing.lock().await;
         let dir = self.dir.clone();
         let keys = Arc::clone(&self.keys);
 
-        blocking(move || {
-            let verified = verify(&file, &keys)?;
-            let id = Hex(verified.digest);
-            let record = path(&dir, id, RECORD);
-            if let Some(entry) = readable(&record, &path(&dir, id, FILE)) {
-                return Ok((entry.release, Added::Known));
-            }
+        self.writing
+            .run(move || {
+                let verified = verify(&file, &keys)?;
+                let id = Hex(verified.digest);
+                let record = path(&dir, id, RECORD);
+                let file_path = path(&dir, id, FILE);
 
-            let release = Release {
-                id,
-                version: verified.version,
-                build_id: Hex(verified.build_id),
-                image_len: verified.image_len,
-                image_sha256: Hex(verified.image_sha256),
-                key_id: Hex(verified.key_id),
-                model: verified.model.into(),
-                signer: match verified.signer {
-                    Signer::Project => ReleaseSigner::Project,
-                    Signer::Owner => ReleaseSigner::Owner,
-                },
-                source: (&origin).into(),
-                added: now,
-            };
-            let entry = Entry {
-                release,
-                asset: match origin {
-                    Origin::Github { id, .. } => Some(id),
-                    Origin::Upload => None,
-                },
-            };
-            let text = serde_json::to_vec_pretty(&entry).map_err(|source| Error::Entry {
-                path: record.clone(),
-                source,
-            })?;
-            write_whole(&path(&dir, id, FILE), &file)?;
-            write_whole(&record, &text)?;
-            sync_dir(&dir)?;
-            Ok((entry.release, Added::New))
-        })
-        .await
+                // A manifest's digest covers its signature and names the
+                // image's length and SHA-256, so every intact copy of a
+                // release is these same bytes.
+                if let Some(entry) = readable(&record, &file_path) {
+                    let release = verified_release(
+                        &verified,
+                        entry.release.source.clone(),
+                        entry.release.added,
+                    );
+                    let kept = fs::read(&file_path).map_err(cache(&file_path))?;
+                    if kept != file {
+                        tracing::warn!("{} was damaged; writing it back", file_path.display());
+                        write_whole(&file_path, &file)?;
+                    }
+                    if release != entry.release {
+                        tracing::warn!(
+                            "{} disagreed with its manifest; writing it again",
+                            record.display()
+                        );
+                        write_entry(
+                            &record,
+                            &Entry {
+                                release: release.clone(),
+                                asset: entry.asset,
+                            },
+                        )?;
+                    }
+                    sync_dir(&dir)?;
+                    return Ok((release, Added::Known));
+                }
+
+                let entry = Entry {
+                    release: verified_release(&verified, (&origin).into(), now),
+                    asset: match origin {
+                        Origin::Github { id, .. } => Some(id),
+                        Origin::Upload => None,
+                    },
+                };
+                write_whole(&file_path, &file)?;
+                write_entry(&record, &entry)?;
+                sync_dir(&dir)?;
+                Ok((entry.release, Added::New))
+            })
+            .await
     }
 
-    /// Release `id` and its file, verified again.
+    /// Release `id` and its file, verified again. What an install acts on
+    /// is what the verified manifest says: the record beside the file is
+    /// the server's own note, and only where and when the release came
+    /// from is read from it. A file that no longer verifies as the release
+    /// its name says is [`Error::Changed`]; one whose key the owner has
+    /// since removed is refused as the upload would be.
     pub(crate) async fn file(&self, id: Hex<32>) -> Result<(Release, Vec<u8>), Error> {
         let dir = self.dir.clone();
         let keys = Arc::clone(&self.keys);
@@ -177,16 +218,58 @@ impl Cache {
             let entry = readable(&path(&dir, id, RECORD), &file_path).ok_or(Error::NotFound)?;
             let file = fs::read(&file_path).map_err(cache(&file_path))?;
 
-            let verified = verify(&file, &keys)?;
-            // The record beside the file is the server's own note: what an
-            // install acts on is what the verified manifest says.
-            if verified.digest != id.0 || entry.release.model != verified.model.into() {
-                return Err(Error::Changed);
-            }
-            Ok((entry.release, file))
+            let verified = match verify_release(&file, &keys) {
+                Ok(verified) if verified.digest == id.0 => verified,
+                Err(ReleaseError::UnknownKey) => return Err(ReleaseError::UnknownKey.into()),
+                Ok(_) | Err(_) => return Err(Error::Changed),
+            };
+            let release = verified_release(&verified, entry.release.source, entry.release.added);
+            Ok((release, file))
         })
         .await
     }
+}
+
+/// The release `verified` names, its signer as today's keys say, with
+/// where and when it came from.
+fn verified_release(
+    verified: &release::Verified,
+    source: ReleaseSource,
+    added: Timestamp,
+) -> Release {
+    Release {
+        id: Hex(verified.digest),
+        version: verified.version,
+        build_id: Hex(verified.build_id),
+        image_len: verified.image_len,
+        image_sha256: Hex(verified.image_sha256),
+        key_id: Hex(verified.key_id),
+        model: verified.model.into(),
+        signer: match verified.signer {
+            Signer::Project => ReleaseSigner::Project,
+            Signer::Owner => ReleaseSigner::Owner,
+        },
+        source,
+        added,
+    }
+}
+
+/// Whether the cached `file` named `id` is damaged: it no longer verifies
+/// as that release. A key the owner has since removed is not damage; the
+/// release is only hidden.
+fn damaged(file: &[u8], id: Hex<32>, keys: &Keys) -> bool {
+    match verify_release(file, keys) {
+        Ok(verified) => verified.digest != id.0,
+        Err(error) => error != ReleaseError::UnknownKey,
+    }
+}
+
+fn write_entry(record: &Path, entry: &Entry) -> Result<(), Error> {
+    let text = serde_json::to_vec_pretty(entry).map_err(|source| Error::Entry {
+        path: record.to_owned(),
+        source,
+    })?;
+    write_whole(record, &text)
 }
 
 /// A page cursor: a release id in hex.
@@ -196,11 +279,15 @@ pub(crate) fn id(text: &str) -> Result<Hex<32>, Error> {
 }
 
 fn verify(file: &[u8], keys: &Keys) -> Result<release::Verified, Error> {
+    Ok(verify_release(file, keys)?)
+}
+
+fn verify_release(file: &[u8], keys: &Keys) -> Result<release::Verified, ReleaseError> {
     let keys = release::Keys {
         project: &keys.project,
         owner: &keys.owner,
     };
-    Ok(release::verify(file, &keys)?)
+    release::verify(file, &keys)
 }
 
 /// Run `work` on the blocking pool: reading, hashing and syncing a
@@ -211,6 +298,28 @@ pub(crate) async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|_| Error::Task)?
+}
+
+/// One writer at a time over a store's files, which use fixed `.part`
+/// names. The lock is held by the blocking work itself, not the future
+/// awaiting it: a caller that is dropped (a client that hung up) leaves
+/// its write running on the blocking pool, and the next writer waits for
+/// that write to end rather than for the caller.
+#[derive(Debug, Default)]
+pub(crate) struct Writer(Arc<tokio::sync::Mutex<()>>);
+
+impl Writer {
+    pub(crate) async fn run<T: Send + 'static>(
+        &self,
+        work: impl FnOnce() -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error> {
+        let writing = Arc::clone(&self.0).lock_owned().await;
+        blocking(move || {
+            let _writing = writing;
+            work()
+        })
+        .await
+    }
 }
 
 fn path(dir: &Path, id: Hex<32>, extension: &str) -> PathBuf {
@@ -305,4 +414,60 @@ pub(crate) fn sync_dir(dir: &Path) -> Result<(), Error> {
     File::open(dir)
         .and_then(|dir| dir.sync_all())
         .map_err(cache(dir))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use super::*;
+
+    /// A writer whose caller is dropped mid-write keeps the lock until its
+    /// write ends, so the next writer never opens the same `.part` beside
+    /// it.
+    #[tokio::test]
+    async fn a_dropped_caller_holds_the_writer_until_its_write_ends() {
+        let writer = Arc::new(Writer::default());
+        let (started, has_started) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        let order = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let first = {
+            let (writer, order) = (Arc::clone(&writer), Arc::clone(&order));
+            tokio::spawn(async move {
+                writer
+                    .run(move || {
+                        started.send(()).unwrap();
+                        released.recv().unwrap();
+                        order.lock().unwrap().push("first");
+                        Ok(())
+                    })
+                    .await
+            })
+        };
+        tokio::task::spawn_blocking(move || has_started.recv().unwrap())
+            .await
+            .unwrap();
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+
+        let second = {
+            let (writer, order) = (Arc::clone(&writer), Arc::clone(&order));
+            tokio::spawn(async move {
+                writer
+                    .run(move || {
+                        order.lock().unwrap().push("second");
+                        Ok(())
+                    })
+                    .await
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(order.lock().unwrap().is_empty(), "the second write waits");
+
+        release.send(()).unwrap();
+        second.await.unwrap().unwrap();
+        assert_eq!(*order.lock().unwrap(), ["first", "second"]);
+    }
 }
