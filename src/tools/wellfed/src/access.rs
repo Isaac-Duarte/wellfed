@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use clap::{Args, ValueEnum};
 use wellfed_client::api::Invite;
+use wellfed_connect::Connection;
 use wellfed_model::{Answer, ClientRole, Joined, Op};
 
 use crate::keys::fingerprint;
@@ -92,13 +93,33 @@ pub(crate) async fn join_command(args: JoinArgs) -> Result<()> {
         address,
         device::random()?,
     )
-    .await
-    .map_err(|error| match error {
-        wellfed_connect::Error::Closed => {
-            anyhow::anyhow!("the feeder closed the connection (an unknown or expired invite)")
+    .await;
+    let joined = match joined {
+        Ok(joined) => joined,
+        Err(wellfed_connect::Error::Closed) => {
+            bail!("the feeder closed the connection (an unknown or expired invite)")
         }
-        other => other.into(),
-    })?;
+        // The join went and its answer was lost: a session says whether
+        // the key was enrolled.
+        Err(wellfed_connect::Error::JoinUnanswered) => {
+            match Connection::open(key.keypair(), invite.feeder, address, device::random()?).await {
+                Ok(session) => Joined::Enrolled {
+                    role: session.role(),
+                    model: session.model(),
+                },
+                Err(wellfed_connect::Error::UnknownKey) => bail!(
+                    "the feeder took the invite and its answer was lost, and it does not know                      this key yet; it may still enroll it after a feed: run `wellfed join`                      again with a new invite if `wellfed status` keeps refusing this key"
+                ),
+                Err(error) => {
+                    key.remember(&invite.feeder)?;
+                    bail!(
+                        "the feeder took the invite and its answer was lost, and a session to                          check failed ({error}): the key may be enrolled; `wellfed status`                          tells"
+                    )
+                }
+            }
+        }
+        Err(error) => return Err(error.into()),
+    };
     match joined {
         Joined::Enrolled { role, .. } => {
             key.remember(&invite.feeder)?;

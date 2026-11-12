@@ -86,6 +86,10 @@ pub enum Error {
     Unanswered,
     #[error("the feeder closed the connection")]
     Closed,
+    /// An invite's join went, and its answer never came: the feeder may
+    /// have enrolled the key, so only a session with it can tell.
+    #[error("the feeder took the join and its answer never came: the key may be enrolled")]
+    JoinUnanswered,
     #[error("the feeder stopped answering")]
     Silent,
     #[error(transparent)]
@@ -729,17 +733,28 @@ pub async fn join(
     write_within(&mut stream, &hello).await?;
 
     let mut buffer = [0u8; 2048];
+    let mut joining = false;
     loop {
-        let n = timeout(ANSWER, stream.read(&mut buffer))
-            .await
-            .map_err(|_| Error::Timeout)??;
-        if n == 0 {
+        let read = match timeout(ANSWER, stream.read(&mut buffer)).await {
+            Ok(Ok(0)) => Err(Error::Closed),
+            Ok(Ok(n)) => Ok(n),
+            Ok(Err(error)) => Err(error.into()),
+            Err(_) => Err(Error::Timeout),
+        };
+        let n = match read {
+            Ok(n) => n,
+            // Once the join went, the feeder may have enrolled the key
+            // whatever ended the wait.
+            Err(_) if joining => return Err(Error::JoinUnanswered),
             // The feeder drops an unknown or expired invite unanswered.
-            return Err(Error::Closed);
-        }
+            Err(error) => return Err(error),
+        };
         match join.receive(&buffer[..n])? {
             None => {}
-            Some(JoinStep::Send(bytes)) => write_within(&mut stream, &bytes).await?,
+            Some(JoinStep::Send(bytes)) => {
+                joining = true;
+                write_within(&mut stream, &bytes).await?;
+            }
             Some(JoinStep::Done(joined)) => return Ok(joined),
         }
     }
@@ -798,6 +813,81 @@ mod tests {
             assert!(serves(DeviceKind::Fountain, op), "{op:?}");
         }
         assert_eq!(UNAVAILABLE, Answer::Refused(Refusal::Unavailable));
+    }
+
+    /// A feeder that takes an invite's join and closes without answering
+    /// may have enrolled the key: the join's end is unknown, not an
+    /// expired invite. One that closes before the join went is.
+    #[test]
+    fn a_join_whose_answer_is_lost_may_have_enrolled() {
+        use std::io::{Read, Write};
+        use wellfed_proto::api::{FRAME_MAX, Open, PROLOGUE};
+        use wellfed_session::frame::{self, PREFIX};
+        use wellfed_session::noise::{Handshake, Pattern, Role};
+
+        fn read_frame(stream: &mut std::net::TcpStream) -> Option<Vec<u8>> {
+            let mut prefix = [0; PREFIX];
+            stream.read_exact(&mut prefix).ok()?;
+            let len = frame::parse_prefix(prefix, FRAME_MAX).unwrap();
+            let mut message = vec![0; len];
+            stream.read_exact(&mut message).ok()?;
+            Some(message)
+        }
+
+        let feeder = Keypair::from_secret([0x10; 32]);
+        let invite = Invite {
+            feeder: *feeder.public(),
+            id: 7,
+            secret: [0x44; 32],
+        };
+        for answers in [true, false] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let device = Keypair::from_secret([0x10; 32]);
+            let served = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let open: Open = wellfed_proto::decode(&read_frame(&mut stream).unwrap()).unwrap();
+                assert_eq!(open, Open::Invite { id: 7 });
+                let first = read_frame(&mut stream).unwrap();
+                if !answers {
+                    return;
+                }
+                let mut handshake = Handshake::new(
+                    Pattern::XxPsk3,
+                    Role::Responder,
+                    PROLOGUE,
+                    &device,
+                    None,
+                    [7; 32],
+                )
+                .unwrap();
+                handshake.set_psk([0x44; 32]);
+                let mut plain = [0; FRAME_MAX];
+                handshake.read_message(&first, &mut plain).unwrap();
+                let mut out = [0; FRAME_MAX];
+                let written = handshake.write_message(&[], &mut out).unwrap();
+                stream
+                    .write_all(&frame::prefix(written, FRAME_MAX).unwrap())
+                    .unwrap();
+                stream.write_all(&out[..written]).unwrap();
+                // The join arrives, and the feeder closes unanswered.
+                read_frame(&mut stream).unwrap();
+            });
+
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let client = Keypair::from_secret([0x20; 32]);
+            let joined = runtime.block_on(join(&client, invite, "phone", address, [0x33; 32]));
+            served.join().unwrap();
+
+            if answers {
+                assert!(matches!(joined, Err(Error::JoinUnanswered)), "{joined:?}");
+            } else {
+                assert!(matches!(joined, Err(Error::Closed)), "{joined:?}");
+            }
+        }
     }
 
     /// A fountain's side of one session: the handshake, welcoming the
