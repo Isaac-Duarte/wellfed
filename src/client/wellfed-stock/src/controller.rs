@@ -30,7 +30,7 @@ use crate::{
         report::{self, REPORT_LIMIT},
         trial::{ORIGINAL_VERSION, Phase as TrialPhase, REPLACEMENT_VERSION},
     },
-    protocol::{Channel, Message, Reply},
+    protocol::{Message, Reply},
     storage,
 };
 
@@ -665,7 +665,8 @@ impl Controller {
 
         let phase = match reported_version(status) {
             _ if !evidence => return Err(Rejection::ResolutionEvidence),
-            Some(REPLACEMENT_VERSION) => TrialPhase::VersionReported,
+            // Only stock's own version resolves a trial: the replacement
+            // speaks no MQTT, so a report of its version is no device's word.
             Some(ORIGINAL_VERSION) => TrialPhase::NotInstalled,
             _ => return Err(Rejection::ResolutionEvidence),
         };
@@ -683,10 +684,10 @@ impl Controller {
         Ok(result)
     }
 
-    pub fn observe(&mut self, channel: Channel, message: &Message, now: DateTime<Utc>) {
+    pub fn observe(&mut self, message: &Message, now: DateTime<Utc>) {
         self.observe_telemetry(message, now);
 
-        if self.observe_trial(channel, message, now) {
+        if self.observe_trial(message, now) {
             self.save_observed();
         }
         self.refresh(now);
@@ -746,7 +747,7 @@ impl Controller {
     }
 
     /// The latest trial's download, precheck-error and startup reports.
-    fn observe_trial(&mut self, channel: Channel, message: &Message, now: DateTime<Utc>) -> bool {
+    fn observe_trial(&mut self, message: &Message, now: DateTime<Utc>) -> bool {
         let Some(trial) = self
             .ledger
             .ota_trials
@@ -776,10 +777,7 @@ impl Controller {
             trial.updated_at = now;
             return true;
         }
-        if matches!(
-            trial.phase,
-            TrialPhase::VersionReported | TrialPhase::ReplacementHealthy
-        ) {
+        if trial.phase == TrialPhase::ReplacementHealthy {
             return false;
         }
 
@@ -816,19 +814,6 @@ impl Controller {
             // from fresh version evidence before another can be submitted.
             tracing::info!(error, "install trial reported an error");
             trial.phase = TrialPhase::ReportedError;
-            trial.updated_at = now;
-            changed = true;
-        }
-
-        if channel == Channel::Event
-            && message.cmd == "DEVICE_START_EVENT"
-            && message.report.software_version.as_deref() == Some(REPLACEMENT_VERSION)
-            && message.ts.is_some_and(|ts| {
-                ts >= trial.created_at.timestamp_millis()
-                    && ts <= now.timestamp_millis().saturating_add(10_000)
-            })
-        {
-            trial.phase = TrialPhase::VersionReported;
             trial.updated_at = now;
             changed = true;
         }

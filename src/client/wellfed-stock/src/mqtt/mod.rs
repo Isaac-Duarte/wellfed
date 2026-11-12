@@ -131,7 +131,7 @@ impl Actor {
 
         let now = Utc::now();
         let first_seen = self.controller.status.last_seen.is_none();
-        self.controller.observe(channel, &message, now);
+        self.controller.observe(&message, now);
         if let Some(reply) = plaf103::reply(&self.config, channel, &message, now, self.stock_plans)
         {
             best_effort(publish(client, reply), "reply");

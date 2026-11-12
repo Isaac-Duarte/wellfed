@@ -227,7 +227,6 @@ pub struct TrialInput {
 #[serde(rename_all = "snake_case")]
 pub enum TrialPhase {
     Submitted,
-    VersionReported,
     ReportedError,
     Uncertain,
     /// Operator-resolved after a quiet period with the source version still

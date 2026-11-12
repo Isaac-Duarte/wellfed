@@ -663,7 +663,6 @@ mod tests {
         use wellfed_stock::controller::{Controller, Rejection};
         use wellfed_stock::ota::image::Lease;
         use wellfed_stock::ota::trial::Input;
-        use wellfed_stock::protocol::Channel;
 
         const BUILD: Build = Build {
             commit: "unknown",
@@ -689,11 +688,7 @@ mod tests {
             controller.status.broker_connected = true;
             let report = json!({"cmd": "ATTR_PUSH_EVENT", "softwareVersion": "1.1.15",
                                 "powerType": 1});
-            controller.observe(
-                Channel::Event,
-                &serde_json::from_value(report).unwrap(),
-                now,
-            );
+            controller.observe(&serde_json::from_value(report).unwrap(), now);
             controller.enable_ota_trial();
             let token = uuid::Uuid::new_v4();
             let lease = Lease {
