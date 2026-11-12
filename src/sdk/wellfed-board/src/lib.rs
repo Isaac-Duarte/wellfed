@@ -32,7 +32,9 @@
 //! - [`CONFIRM_SECTOR`]: the boot confirmation record's sector, if any.
 //! - [`safe`]: the outputs' safe state a fault or a flash lease writes
 //!   straight to the data registers.
-//! - [`pins`]: the GPIO and ADC channels the drivers take. Each name is one
+//! - [`pins`]: the GPIO and ADC channels the drivers take, with
+//!   `ADC_PADS`, the pads the ADC's opening shuts down, on every board
+//!   (empty for none). Each other name is one
 //!   a driver of this firmware reads; a board without that hardware leaves
 //!   it out, and so does the firmware that cannot drive it.
 #![no_std]
@@ -56,12 +58,14 @@ pub const CONFIRM_SECTOR: Option<u32> = None;
 /// compile time: a board crate missing an item, or giving it another type,
 /// does not build.
 mod contract {
-    use super::{MODEL_CODE, STORAGE_OFFSET, STORAGE_SECTORS, safe};
+    use super::{MODEL_CODE, STORAGE_OFFSET, STORAGE_SECTORS, pins, safe};
 
     const _: u8 = MODEL_CODE;
     const _: u32 = STORAGE_OFFSET;
     const _: u32 = STORAGE_SECTORS;
     const _: [u32; 3] = [safe::PORT_A_HIGH, safe::PORT_A_LOW, safe::PORT_B_LOW];
+    // Every board opens the ADC (the entropy source reads the supply).
+    const _: &[u32] = pins::ADC_PADS;
 
     // A storage map exactly when the build script says the board has one.
     #[cfg(wellfed_board_store)]

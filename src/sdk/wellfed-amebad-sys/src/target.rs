@@ -420,9 +420,13 @@ pub fn efuse_read8(address: u32) -> Option<u8> {
     ok.then_some(value)
 }
 
-pub fn pad_disable(pin: u8) {
-    // SAFETY: the pinned SDK routine, with plain-value arguments.
-    unsafe { raw::PAD_CMD(pin, SDK_DISABLE) }
+/// Shut `pin`'s digital pad path down, for an analog input. A pin past
+/// the chip's 64 is no pad, and nothing is written.
+pub fn pad_disable(pin: u32) {
+    if let Ok(pad @ 0..64) = u8::try_from(pin) {
+        // SAFETY: the pinned SDK routine, with plain-value arguments.
+        unsafe { raw::PAD_CMD(pad, SDK_DISABLE) }
+    }
 }
 
 /// Initialize the ADC with an empty conversion list (manual channel select).

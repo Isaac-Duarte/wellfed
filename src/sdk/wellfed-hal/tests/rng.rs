@@ -82,3 +82,16 @@ fn the_same_noise_on_two_boots_still_differs_after_the_stored_seed() {
     rng::mix(&[2; 32]);
     assert_ne!(rng::bytes(), first);
 }
+
+/// Opening the ADC for the generator shuts down the board's analog pads
+/// and no others: none on a board that lists none.
+#[test]
+fn starting_shuts_down_only_the_boards_adc_pads() {
+    noisy();
+    assert_eq!(rng::start().result, Ok(()));
+
+    let listed = wellfed_hal::board::pins::ADC_PADS
+        .iter()
+        .fold(0u64, |pads, &pad| pads | 1 << pad);
+    assert_eq!(fake::with(|h| h.pads_disabled), listed);
+}

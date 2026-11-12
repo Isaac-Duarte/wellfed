@@ -461,8 +461,9 @@ pub fn efuse_read8(address: u32) -> Option<u8> {
     with(|h| (!h.efuse_fail).then_some(255))
 }
 
-pub fn pad_disable(pin: u8) {
-    assert!(pin == 33 || pin == 34);
+pub fn pad_disable(pin: u32) {
+    assert!(pin < 64);
+    with(|h| h.pads_disabled |= 1 << pin);
 }
 
 pub fn adc_init_manual() {}

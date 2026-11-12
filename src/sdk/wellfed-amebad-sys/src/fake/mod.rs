@@ -166,6 +166,8 @@ pub struct Hardware {
     /// Pads whose input path reads LOW regardless of the driven level.
     pub dead_input: [u32; 2],
     pub pad_control: [u32; 64],
+    /// Pads `pad_disable` shut down, a bit each.
+    pub pads_disabled: u64,
 
     pub adc_enabled: bool,
     pub trigger: bool,
@@ -401,6 +403,7 @@ impl Default for Hardware {
             // Physical observation on the research unit: PA0-PA7 read LOW.
             dead_input: [0xff, 0],
             pad_control: [0; 64],
+            pads_disabled: 0,
 
             adc_enabled: false,
             trigger: false,

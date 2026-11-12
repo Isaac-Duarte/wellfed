@@ -59,6 +59,9 @@ pub mod pins {
     /// (`wellfed_amebad_sys::ADC_SUPPLY_CHANNEL`).
     pub const ADC_CURRENT: u32 = 4;
     pub const ADC_BATTERY: u32 = 5;
+    /// PB1 and PB2, the pads behind those two channels: the ADC's opening
+    /// shuts their digital path down so the converter reads the pin.
+    pub const ADC_PADS: &[u32] = &[32 + 1, 32 + 2];
 
     /// The pin's bit in its port register.
     pub const fn bit(pin: u32) -> u32 {
