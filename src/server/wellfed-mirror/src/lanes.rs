@@ -156,14 +156,14 @@ fn send(slot: &mut Slot, command: Command, connection: &mut Connection) -> Resul
             slot.flight = Some(command);
             Ok(())
         }
-        Err(wellfed_connect::Error::ReservedId | wellfed_connect::Error::Encode) => {
-            command.reply(Err(AskError::Unsendable));
-            Ok(())
-        }
-        // A pre-revision build takes the frozen update path alone; the
-        // session refused this op before a byte went.
-        Err(wellfed_connect::Error::Legacy) => {
-            command.reply(Err(AskError::Legacy));
+        Err(error) if error.keeps_session() => {
+            // A pre-revision build takes the frozen update path alone;
+            // any other request refused here has no wire form.
+            let why = match error {
+                wellfed_connect::Error::Legacy => AskError::Legacy,
+                _ => AskError::Unsendable,
+            };
+            command.reply(Err(why));
             Ok(())
         }
         Err(error) => {

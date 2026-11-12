@@ -50,8 +50,9 @@ enum ServerErrorKind {
   /// Nothing answered at the address, or not in time to connect.
   unreachable,
 
-  /// The request broke after it was sent, its answer was cut off, or the
-  /// server went quiet past the phone's timeouts: it may have run.
+  /// The request broke after it was sent, its answer was cut off, the
+  /// server went quiet past the phone's timeouts, or it failed inside (a
+  /// `5xx` problem): it may have run.
   interrupted,
 
   /// The name or the password is wrong.
@@ -102,8 +103,10 @@ enum ServerErrorKind {
   /// did not give. `message` says which.
   phoneKeyRefused,
 
-  /// The server has no session with the feeder right now, or could not
-  /// reach it.
+  /// The server has no session with the feeder right now
+  /// (`503 feeder_offline`): its feeder task never took the request, so
+  /// nothing ran. A server that lost the feeder part way
+  /// (`unreachable`) may have sent it, and reads as [`Self::Interrupted`].
   feederOffline,
 
   /// No answer from the feeder in time (`504 outcome_unknown`): the

@@ -92,7 +92,7 @@ fn run_to(phase: Phase) -> Install {
                 install.floor(FLOOR);
                 assert_eq!(install.step(), Step::Promote);
             }
-            _ => install.promoted(Ok(())),
+            _ => install.promoted(Promoted::Activated),
         }
     }
     assert_eq!(install.phase(), phase);
@@ -227,7 +227,7 @@ fn a_whole_run_goes_from_the_frame_to_a_confirmed_replacement() {
     assert_eq!(install.step(), Step::ReadFloor);
     install.floor(FLOOR);
     assert_eq!(install.step(), Step::Promote);
-    install.promoted(Ok(()));
+    install.promoted(Promoted::Activated);
     assert_eq!(install.step(), Step::AwaitConfirm);
 
     // The trial boot answers before it has confirmed: wait.
@@ -446,7 +446,7 @@ fn promotion_is_refused_without_a_verified_backup() {
     // However often the caller asks, without a backup the step stays.
     for _ in 0..3 {
         assert_eq!(install.step(), Step::Backup);
-        install.promoted(Ok(()));
+        install.promoted(Promoted::Activated);
         assert_eq!(install.phase(), Phase::Backup);
     }
 
@@ -487,11 +487,28 @@ fn only_the_pinned_stock_payload_is_a_backup() {
     );
 }
 
+/// A promotion nothing settled is never read as bank 0's refusal: the run
+/// ends uncertain, whether the push said so or its driver met an answer it
+/// cannot read.
+#[test]
+fn an_unsettled_promotion_ends_the_run_uncertain() {
+    let unreadable = UpdateError::Uncertain(crate::write::Uncertain::Unreadable);
+    for outcome in [Promoted::Uncertain, Promoted::Failed(unreadable)] {
+        let mut install = run_to(Phase::Promote);
+        install.promoted(outcome);
+        assert_eq!(
+            install.step(),
+            Step::Failed(InstallError::PromotionUncertain),
+            "{outcome:?}"
+        );
+    }
+}
+
 #[test]
 fn a_failed_promotion_or_a_fallback_ends_the_run() {
     let mut install = run_to(Phase::Promote);
     let error = UpdateError::Lost;
-    install.promoted(Err(error));
+    install.promoted(Promoted::Failed(error));
     assert_eq!(install.step(), Step::Failed(InstallError::Promotion(error)));
 
     let mut install = run_to(Phase::AwaitConfirm);
@@ -689,7 +706,7 @@ fn a_refused_enrollment_ends_the_run_before_any_promotion() {
         install.backup(VerifiedBackup::for_tests());
         install.floor(0);
         install.signed();
-        install.promoted(Ok(()));
+        install.promoted(Promoted::Activated);
         assert_eq!(install.step(), failed, "{error:?}");
     }
 }
@@ -784,11 +801,11 @@ fn a_resumed_consumer_run_enrolls_signs_and_promotes() {
     assert_eq!(install.step(), Step::Sign { version: 12 });
     assert_eq!(install.version(), Some(12));
     assert_eq!(install.phase(), Phase::Sign);
-    install.promoted(Ok(()));
+    install.promoted(Promoted::Activated);
     assert_eq!(install.step(), Step::Sign { version: 12 });
     install.signed();
     assert_eq!(install.step(), Step::Promote);
-    install.promoted(Ok(()));
+    install.promoted(Promoted::Activated);
 
     let running = Replacement {
         build: BUILD,
@@ -844,7 +861,7 @@ fn a_version_at_or_below_the_floor_is_refused() {
             floor,
         });
         assert_eq!(install.step(), refused);
-        install.promoted(Ok(()));
+        install.promoted(Promoted::Activated);
         assert_eq!(install.step(), refused);
     }
 

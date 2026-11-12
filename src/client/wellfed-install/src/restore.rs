@@ -46,7 +46,7 @@ use tokio::time::Instant;
 use wellfed_client::install::{InstallError, StockBackup};
 use wellfed_client::update::{Image, InstallError as UpdateError};
 use wellfed_client::update_key::{EnrollError, Enrolled};
-use wellfed_connect::Connection;
+use wellfed_connect::{AskError, Connection};
 use wellfed_formats::credentials::KeyScope;
 use wellfed_model::{Answer, ClientRole, Op, UpdatePhase, UpdateView};
 use wellfed_session::noise::Keypair;
@@ -300,23 +300,33 @@ async fn drive(
     )
     .await?;
 
+    let Some(restored) = ended(pushed) else {
+        offering.set(false);
+        return Err(Error::NotAnswering {
+            feeder: target.identity,
+        });
+    };
+    if restored == Restored::Activated {
+        // Stock is going back, so nothing else will say what became of a
+        // trial this feeder's build already answered for, and its next
+        // report must not read as a request that never left stock. A
+        // failure leaves that trial to its version evidence.
+        let _ = crate::stock::feeder_restored(&target.backups, &target.identity);
+    }
+    Ok(restored)
+}
+
+/// How a restore whose push ended `pushed` ended; `None` when nothing was
+/// offered. Only bank 0's own word is a refusal: an answer nothing settled
+/// is uncertain, whichever way the push carries it.
+fn ended(pushed: Pushed) -> Option<Restored> {
     match pushed {
-        Pushed::Activated | Pushed::AlreadyRunning => {
-            // Stock is going back, so nothing else will say what became of a
-            // trial this feeder's build already answered for, and its next
-            // report must not read as a request that never left stock. A
-            // failure leaves that trial to its version evidence.
-            let _ = crate::stock::feeder_restored(&target.backups, &target.identity);
-            Ok(Restored::Activated)
+        Pushed::Activated | Pushed::AlreadyRunning => Some(Restored::Activated),
+        Pushed::Failed(UpdateError::Uncertain(_)) | Pushed::Gone { offered: true } => {
+            Some(Restored::Uncertain(Uncertainty::Gone))
         }
-        Pushed::Failed(error) => Ok(Restored::Refused(error)),
-        Pushed::Gone { offered: true } => Ok(Restored::Uncertain(Uncertainty::Gone)),
-        Pushed::Gone { offered: false } => {
-            offering.set(false);
-            Err(Error::NotAnswering {
-                feeder: target.identity,
-            })
-        }
+        Pushed::Failed(error) => Some(Restored::Refused(error)),
+        Pushed::Gone { offered: false } => None,
     }
 }
 
@@ -468,7 +478,11 @@ async fn signed_up<D: Discovery>(
 }
 
 async fn state(session: &mut Connection) -> Result<UpdateView, Error> {
-    match session.ask(random()?, &Op::UpdateState).await? {
+    match session
+        .ask(random()?, &Op::UpdateState)
+        .await
+        .map_err(AskError::into_error)?
+    {
         Answer::Update(view) => Ok(view),
         other => Err(Error::Answered {
             request: "update state",
@@ -900,6 +914,30 @@ mod tests {
             assert_eq!(rig.bank().await, 1, "the feeder never gave way");
             rig.sim.stop().await;
         });
+    }
+
+    /// A push the feeder left unsettled is uncertain, never a refusal, even
+    /// carried as the install's error; only bank 0's own word refuses.
+    #[test]
+    fn an_unsettled_push_is_never_a_refusal() {
+        use wellfed_client::write::Uncertain;
+
+        for unsettled in [
+            Uncertain::Unanswered,
+            Uncertain::Unreadable,
+            Uncertain::OtherKind,
+        ] {
+            assert_eq!(
+                ended(Pushed::Failed(UpdateError::Uncertain(unsettled))),
+                Some(Restored::Uncertain(Uncertainty::Gone)),
+                "{unsettled:?}"
+            );
+        }
+        assert_eq!(
+            ended(Pushed::Failed(UpdateError::Lost)),
+            Some(Restored::Refused(UpdateError::Lost))
+        );
+        assert_eq!(ended(Pushed::Gone { offered: false }), None);
     }
 
     /// The feeder gone once bank 0 has taken the offer: uncertain, with the

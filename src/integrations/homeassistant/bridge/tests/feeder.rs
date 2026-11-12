@@ -8,7 +8,9 @@
 //! - a feed whose answer is lost is uncertain, sent once, and settled by
 //!   its `Fed` event;
 //! - a write while the feeder is gone is refused unsent, never held, and a
-//!   revoked key stops the session.
+//!   revoked key stops the session;
+//! - a write refused before it went leaves the session, and a feed still
+//!   out on it, as they were.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -24,7 +26,8 @@ use wellfed_homeassistant::api::{
 use wellfed_homeassistant::feeder::{Carried, Clocks, Feeder, Target};
 use wellfed_homeassistant::key::{ClientKey, invite_feeder, join, join_member};
 use wellfed_model::{
-    Answer, ClientRole, FeederSettingsPatch, Generation, Op, PLANS, Plan, Pushed, Weekdays,
+    Answer, ClientRole, FeederSettingsPatch, Generation, MealReminder, Op, PLANS, Plan, Pushed,
+    Weekdays,
 };
 use wellfed_session::noise::Keypair;
 
@@ -347,6 +350,47 @@ fn a_write_while_the_feeder_is_gone_is_not_sent() {
         (update.kind == UpdateKind::Disconnected).then_some(())
     });
     assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Disconnected));
+}
+
+/// A write refused before a byte went (a settings change naming a value
+/// this build cannot put on the wire) is not sent, and the session goes
+/// on: a feed still out beside it keeps its answer, never made uncertain.
+#[test]
+fn an_unsendable_write_is_not_sent_and_leaves_the_feed_beside_it() {
+    let (sim, key) = joined();
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let feeder = std::sync::Arc::new(session(&sim, key, relay.address, Clocks::DEFAULT));
+    state_where(&feeder, |state| state.settings.is_some());
+
+    let before = relay.passed();
+    relay.hold_answers();
+    let feed = {
+        let feeder = std::sync::Arc::clone(&feeder);
+        std::thread::spawn(move || feeder.feed(2))
+    };
+    wait_for("the feed to go out", || relay.passed() > before);
+
+    let passed = relay.passed();
+    let unsendable = FeederSettingsPatch {
+        meal_reminder: Some(MealReminder::Unknown),
+        ..FeederSettingsPatch::default()
+    };
+    assert_eq!(
+        feeder.put_settings(unsendable),
+        Written::not_sent(NotSent::Invalid)
+    );
+    assert_eq!(relay.passed(), passed, "nothing went out");
+
+    relay.resume();
+    let written = feed.join().unwrap();
+    assert_eq!(written.result, WriteResult::Feeding, "{written:?}");
+    let number = written.feed;
+    let outcome = until(&feeder, |update| {
+        let fed = update.event.as_ref()?.fed.as_ref()?;
+        (Some(fed.feed) == number).then_some(fed.outcome)
+    });
+    assert_eq!(outcome, FeedOutcome::Done);
 }
 
 #[test]

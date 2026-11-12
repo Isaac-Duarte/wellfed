@@ -347,7 +347,9 @@ fn failure(error: UpdateError) -> InstallFailure {
         },
         UpdateError::Stopped(stop) => InstallFailure::Stopped { stop },
         UpdateError::Lost => InstallFailure::Lost,
-        UpdateError::Unexpected => InstallFailure::Unexpected,
+        // The driver ends a push it cannot settle `Gone`, never with this;
+        // read the same way here, it stays uncertain whoever carries it.
+        UpdateError::Uncertain(_) => InstallFailure::Unreachable { offered: true },
     }
 }
 

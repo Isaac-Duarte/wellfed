@@ -330,7 +330,10 @@ async fn read(
 
 async fn ask(connection: &mut Connection, read: Read) -> Result<Answer, Error> {
     let id = random().map_err(|_| Error::Timeout)?;
-    connection.ask(id, &read.op()).await
+    connection
+        .ask(id, &read.op())
+        .await
+        .map_err(wellfed_connect::AskError::into_error)
 }
 
 #[cfg(test)]

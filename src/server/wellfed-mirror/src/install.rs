@@ -100,7 +100,7 @@ impl Operation {
             build: update.build,
             progress,
         };
-        wellfed_connect::update::push(image, &mut steps, pace).await
+        Ok(wellfed_connect::update::push(image, &mut steps, pace).await?)
     }
 
     /// Restore stock: push `restore` until bank 1 is activated, the
@@ -124,12 +124,7 @@ impl Operation {
             build: restore.build,
             progress,
         };
-        match wellfed_connect::update::push(image, &mut steps, pace).await {
-            Ok(pushed) => Ok(pushed),
-            Err(PushError::Random(failed)) => Err(failed),
-            // Only a release file is split; a restore's parts come whole.
-            Err(PushError::Short) => Ok(Pushed::Failed(UpdateError::Unexpected)),
-        }
+        wellfed_connect::update::push(image, &mut steps, pace).await
     }
 
     /// Read bank 1 whole from the bank-0 role, a page per step, calling
@@ -167,16 +162,16 @@ struct Lane<'a, P> {
 }
 
 impl<P: FnMut(&UpdateView)> Steps for Lane<'_, P> {
-    type Error = PushError;
+    type Error = RandomFailed;
 
-    async fn step(&mut self, op: Op) -> Result<Option<Answer>, PushError> {
+    async fn step(&mut self, op: Op) -> Result<Option<Answer>, RandomFailed> {
         let id = self.operation.request_id()?;
         // Offline, unknown, or the feeder let go: the request may have run,
         // and the driver reopens and reads where the install stands.
         Ok(self.operation.step(id, op).await.ok())
     }
 
-    async fn reopen(&mut self) -> Result<Option<Opened>, PushError> {
+    async fn reopen(&mut self) -> Result<Option<Opened>, RandomFailed> {
         let deadline = Instant::now() + REOPEN_WAIT;
         loop {
             let online = self.operation.link.wait_for(|link| *link == Link::Online);

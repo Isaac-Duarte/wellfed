@@ -27,6 +27,8 @@
 //!    was not enrolled.
 
 use wellfed_model::{Answer, Client, ClientRole, Op, Refusal, UpdateRefusal};
+
+use crate::write::{WriteEnd, write_end};
 pub use wellfed_proto::setup::LABEL_MAX;
 
 /// What [`Enroll::listed`] found.
@@ -194,15 +196,16 @@ impl Enroll {
                     Ok(Listed::Absent) => Stage::Absent,
                     Err(error) => Stage::Ended(Err(error)),
                 },
-                answer => Stage::Ended(Err(refusal(answer))),
+                Answer::Refused(refusal) => Stage::Ended(Err(refused(*refusal))),
+                _ => Stage::Ended(Err(EnrollError::Unexpected)),
             },
             // Only a refusal says nothing was enrolled: an answer this
             // build cannot read (a newer build's), or of another kind, may
             // follow an enrollment the press confirmed.
-            Stage::Enrolling => Stage::Ended(match answer {
-                Answer::Done { .. } => Ok(Enrolled::Now),
-                Answer::Refused(_) => Err(refusal(answer)),
-                _ => Err(EnrollError::Uncertain),
+            Stage::Enrolling => Stage::Ended(match write_end(Some(answer), enrolled) {
+                WriteEnd::Done(()) => Ok(Enrolled::Now),
+                WriteEnd::Refused(refusal) => Err(refused(refusal)),
+                WriteEnd::Uncertain(_) => Err(EnrollError::Uncertain),
             }),
             Stage::Start | Stage::Absent | Stage::Ended(_) => {
                 Stage::Ended(Err(EnrollError::Unexpected))
@@ -231,18 +234,20 @@ impl Enroll {
     }
 }
 
+/// What an enrollment brings when it ran.
+fn enrolled(answer: &Answer) -> Option<()> {
+    matches!(answer, Answer::Done { .. }).then_some(())
+}
+
 /// What a refusal of the list or the enrollment means.
-fn refusal(answer: &Answer) -> EnrollError {
-    match answer {
-        Answer::Refused(Refusal::Update(UpdateRefusal::Unconfirmed)) => EnrollError::Unconfirmed,
-        Answer::Refused(Refusal::Update(UpdateRefusal::HeldAsSessionKey)) => {
-            EnrollError::HeldAsSessionKey
-        }
-        Answer::Refused(Refusal::Forbidden) => EnrollError::Forbidden,
-        Answer::Refused(Refusal::Busy) => EnrollError::Busy,
-        Answer::Refused(Refusal::Full) => EnrollError::Full,
-        Answer::Refused(refusal) => EnrollError::Refused(*refusal),
-        _ => EnrollError::Unexpected,
+fn refused(refusal: Refusal) -> EnrollError {
+    match refusal {
+        Refusal::Update(UpdateRefusal::Unconfirmed) => EnrollError::Unconfirmed,
+        Refusal::Update(UpdateRefusal::HeldAsSessionKey) => EnrollError::HeldAsSessionKey,
+        Refusal::Forbidden => EnrollError::Forbidden,
+        Refusal::Busy => EnrollError::Busy,
+        Refusal::Full => EnrollError::Full,
+        refusal => EnrollError::Refused(refusal),
     }
 }
 

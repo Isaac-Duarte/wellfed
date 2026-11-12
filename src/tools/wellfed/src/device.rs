@@ -5,7 +5,7 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
-use wellfed_connect::{Cursor, DISCOVERY};
+use wellfed_connect::{AskError, Cursor, DISCOVERY};
 use wellfed_formats::private;
 use wellfed_model::{Answer, ClientRole, DeviceKind, Op, Pushed};
 use wellfed_proto::api::RequestId;
@@ -137,20 +137,14 @@ fn check(op: &Op) -> &'static str {
 }
 
 /// `error`, which ended `op`'s wait for its answer, as the command reports
-/// it. Only a request refused before a byte went is sure not to have run;
-/// once one is queued, a session that ends or an answer that never comes
-/// says nothing of whether a write ran.
-fn unanswered(op: &Op, error: wellfed_connect::Error) -> anyhow::Error {
-    use wellfed_connect::Error as Connect;
-
-    let unsent = matches!(
-        error,
-        Connect::Encode | Connect::ReservedId | Connect::Legacy
-    );
-    if unsent || !writes(op) {
-        return error.into();
+/// it: a write the connection says may have run is uncertain.
+fn unanswered(op: &Op, error: AskError) -> anyhow::Error {
+    match error {
+        AskError::MayHaveRun(error) if writes(op) => {
+            crate::uncertain(format!("no answer came ({error}); {}", check(op)))
+        }
+        error => error.into_error().into(),
     }
-    crate::uncertain(format!("no answer came ({error}); {}", check(op)))
 }
 
 /// The shared steps (the backup's read, the update key's enrollment) run
@@ -186,8 +180,8 @@ mod tests {
     #[test]
     fn a_write_with_no_answer_is_uncertain() {
         let feed = Op::Feed { portions: 1 };
-        for ended in [Connect::Timeout, Connect::Closed, Connect::Silent] {
-            let error = unanswered(&feed, ended);
+        for ended in [Connect::Unanswered, Connect::Closed, Connect::Silent] {
+            let error = unanswered(&feed, AskError::MayHaveRun(ended));
             assert!(error.downcast_ref::<Uncertain>().is_some(), "{error:#}");
             let words = format!("{error:#}");
             assert!(words.contains("may have run"), "{words}");
@@ -195,10 +189,10 @@ mod tests {
         }
 
         for unsent in [Connect::Encode, Connect::ReservedId, Connect::Legacy] {
-            let error = unanswered(&feed, unsent);
+            let error = unanswered(&feed, AskError::Unsent(unsent));
             assert!(error.downcast_ref::<Uncertain>().is_none(), "{error:#}");
         }
-        let read = unanswered(&Op::Status, Connect::Timeout);
+        let read = unanswered(&Op::Status, AskError::MayHaveRun(Connect::Unanswered));
         assert!(read.downcast_ref::<Uncertain>().is_none(), "{read:#}");
     }
 }

@@ -721,14 +721,27 @@ impl<'a> Session<'a> {
         };
 
         let id = random().map_err(lost)?;
-        if let Err(error) = self.connection.request(id, &op) {
-            // Refused before any byte went out.
-            let _ = reply.send(Written::not_sent(NotSent::Disconnected));
-            return Err(lost(error));
+        match self.connection.request(id, &op) {
+            Ok(()) => {
+                self.pending
+                    .insert(id, Outstanding::Write { reply, kind, op });
+                Ok(())
+            }
+            // Refused before any byte went out, on a session that goes on:
+            // the writes still out stay out.
+            Err(error) if error.keeps_session() => {
+                let why = match error {
+                    wellfed_connect::Error::Legacy => NotSent::Unsupported,
+                    _ => NotSent::Invalid,
+                };
+                let _ = reply.send(Written::not_sent(why));
+                Ok(())
+            }
+            Err(error) => {
+                let _ = reply.send(Written::not_sent(NotSent::Disconnected));
+                Err(lost(error))
+            }
         }
-        self.pending
-            .insert(id, Outstanding::Write { reply, kind, op });
-        Ok(())
     }
 
     /// Whether a feed this client sent has no end yet: uncertain, or

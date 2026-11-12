@@ -40,8 +40,8 @@ use anyhow::{Result, anyhow};
 use clap::{Args, Subcommand};
 use serde::Serialize;
 use uuid::Uuid;
-use wellfed_server_client::Error;
-use wellfed_server_client::api::{ErrorCode, Problem};
+use wellfed_server_client::api::Problem;
+use wellfed_server_client::{Error, Failure};
 
 #[derive(Args)]
 pub(crate) struct ServerArgs {
@@ -291,79 +291,16 @@ async fn write<T>(
 ) -> Result<Written<T>> {
     match request.await {
         Ok(answer) => Ok(Written::Answered(answer)),
-        Err(error) if uncertain(&error) => {
+        // The server client's reading, which every client shares.
+        Err(error)
+            if matches!(
+                error.failure(),
+                Failure::Interrupted | Failure::OutcomeUnknown
+            ) =>
+        {
             out.unknown(key, Some(&error))?;
             Ok(Written::Unknown)
         }
         Err(error) => Err(error.into()),
-    }
-}
-
-/// Whether a write that failed this way may have run. Only a refusal the
-/// server answered, or a connection never made, says it did not; a lost
-/// or garbled answer may follow a write that ran.
-fn uncertain(error: &Error) -> bool {
-    match error {
-        Error::Problem { problem, .. } => {
-            matches!(
-                problem.code,
-                ErrorCode::OutcomeUnknown | ErrorCode::Internal
-            )
-        }
-        Error::Http(error) => !error.is_connect() && !error.is_builder(),
-        Error::Unexpected { .. } | Error::Decode(_) => true,
-        // A redirect is the address's answer before any write: it is never
-        // followed, so the write reached no server.
-        Error::Base(_)
-        | Error::PlainHttp { .. }
-        | Error::Build(_)
-        | Error::Redirect { .. }
-        | Error::Stale(_)
-        | Error::StalePlans(_)
-        | Error::StaleCalibration(_)
-        | Error::NoSession => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use wellfed_server_client::StatusCode;
-
-    use super::*;
-
-    fn problem(code: ErrorCode) -> Error {
-        Error::Problem {
-            status: StatusCode::GATEWAY_TIMEOUT,
-            problem: Box::new(Problem {
-                kind: "about:blank".into(),
-                title: "t".into(),
-                status: 504,
-                code,
-                detail: None,
-                refusal: None,
-                release: None,
-            }),
-            retry_after: None,
-        }
-    }
-
-    #[test]
-    fn only_an_answered_refusal_says_a_write_did_not_run() {
-        assert!(uncertain(&problem(ErrorCode::OutcomeUnknown)));
-        assert!(uncertain(&problem(ErrorCode::Internal)));
-        assert!(uncertain(&Error::Unexpected {
-            status: StatusCode::BAD_GATEWAY,
-            expected: StatusCode::ACCEPTED,
-        }));
-
-        for refused in [
-            ErrorCode::FeederOffline,
-            ErrorCode::FeederRefused,
-            ErrorCode::KeyReused,
-            ErrorCode::Forbidden,
-        ] {
-            assert!(!uncertain(&problem(refused)), "{refused:?}");
-        }
-        assert!(!uncertain(&Error::NoSession));
     }
 }

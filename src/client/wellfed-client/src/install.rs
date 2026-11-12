@@ -111,6 +111,20 @@ pub enum Promotion {
     Sign { above: u32 },
 }
 
+/// How the promotion's push ended, as the run reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Promoted {
+    /// Bank 1 is activated, or already ran the build.
+    Activated,
+    /// The update's own error, which bank 0's state or refusal settled.
+    Failed(UpdateError),
+    /// The offer went out and nothing this build reads settled it: no
+    /// answer came in time, or one it cannot read. Bank 1 may be partly
+    /// written, or activated with its answer lost, and the offer is never
+    /// sent again.
+    Uncertain,
+}
+
 /// What a run installs with, beside the build.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Options {
@@ -329,6 +343,10 @@ pub enum InstallError {
         "the promotion stopped: {0}; the feeder keeps running bank 0, but bank 1 may be partly overwritten: the verified backup is now the copy of stock"
     )]
     Promotion(UpdateError),
+    #[error(
+        "the promotion's offer went out and its outcome is unknown: bank 1 may be partly written, or activated with its answer lost; it is not offered again, so read what the feeder runs before a new run, and keep the verified backup as the copy of stock"
+    )]
+    PromotionUncertain,
     #[error("bank 1's trial boot fell back to bank 0")]
     FellBack,
     #[error("build {reported} answers on bank 1 after the promotion, not the promoted build")]
@@ -828,15 +846,18 @@ impl Install {
         }
     }
 
-    /// The promotion's outcome: bank 1 activated, or the update's own
-    /// error.
-    pub fn promoted(&mut self, outcome: Result<(), UpdateError>) {
+    /// The promotion's outcome. Only bank 0's own word is a failure: an
+    /// outcome nothing settled ends the run uncertain.
+    pub fn promoted(&mut self, outcome: Promoted) {
         if self.stage != Stage::Promote {
             return;
         }
         self.stage = match outcome {
-            Ok(()) => Stage::AwaitConfirm,
-            Err(error) => Stage::Failed(InstallError::Promotion(error)),
+            Promoted::Activated => Stage::AwaitConfirm,
+            Promoted::Failed(UpdateError::Uncertain(_)) | Promoted::Uncertain => {
+                Stage::Failed(InstallError::PromotionUncertain)
+            }
+            Promoted::Failed(error) => Stage::Failed(InstallError::Promotion(error)),
         };
     }
 

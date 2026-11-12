@@ -78,6 +78,9 @@ pub enum Error {
     },
     #[error("the feeder did not answer in time")]
     Timeout,
+    /// The request went, and the session gave up on its answer.
+    #[error("the feeder did not answer the request")]
+    Unanswered,
     #[error("the feeder closed the connection")]
     Closed,
     #[error("the feeder stopped answering")]
@@ -121,6 +124,42 @@ impl From<wellfed_client::api::Error> for Error {
             Session::Legacy => Self::Legacy,
             Session::TooLarge | Session::NoWireForm(_) => Self::Encode,
             other => Self::Session(other),
+        }
+    }
+}
+
+impl Error {
+    /// For an error [`Connection::request`] returned: whether the session
+    /// is as it was. Nothing of that request went either way; a request
+    /// with no wire form, under the keepalive's id, or of a kind a
+    /// pre-revision build does not take is that request's alone, while any
+    /// other error is the session's end, and each request still
+    /// outstanding on it may have run.
+    pub const fn keeps_session(&self) -> bool {
+        matches!(self, Self::Encode | Self::ReservedId | Self::Legacy)
+    }
+}
+
+/// Why [`Connection::ask`] has no answer, by what it says of the request:
+/// the one place a client learns whether a write may have run.
+#[derive(Debug, thiserror::Error)]
+pub enum AskError {
+    /// Refused before a byte went: the request did not run.
+    /// [`Error::keeps_session`] says whether the session is as it was.
+    #[error(transparent)]
+    Unsent(Error),
+    /// The request was queued, and its answer never came: the session gave
+    /// up on it, or ended. A write may have run, and is never sent again.
+    #[error("{0}; the request may have run")]
+    MayHaveRun(Error),
+}
+
+impl AskError {
+    /// The session's error, for a caller to whom an unanswered read and an
+    /// unsent one are alike.
+    pub fn into_error(self) -> Error {
+        match self {
+            Self::Unsent(error) | Self::MayHaveRun(error) => error,
         }
     }
 }
@@ -536,19 +575,24 @@ impl Connection {
 
     /// One request under `id` and its answer. Other messages that arrive
     /// meanwhile stay queued for [`Self::next`]. `id` may not be
-    /// [`KEEPALIVE_ID`].
-    pub async fn ask(&mut self, id: RequestId, op: &Op) -> Result<Answer> {
+    /// [`KEEPALIVE_ID`]. Once the request is queued, a session that ends
+    /// or an answer that never comes says nothing of whether it ran: the
+    /// error says which side of that line it fell.
+    pub async fn ask(&mut self, id: RequestId, op: &Op) -> Result<Answer, AskError> {
         if !self.serves(op) {
             return Ok(UNAVAILABLE);
         }
-        self.session.request(now(), id, op)?;
+        self.session
+            .request(now(), id, op)
+            .map_err(|error| AskError::Unsent(error.into()))?;
+
         loop {
             while let Some((answered, answer)) = self.answers.pop_front() {
                 if answered == id {
-                    return answer.ok_or(Error::Timeout);
+                    return answer.ok_or(AskError::MayHaveRun(Error::Unanswered));
                 }
             }
-            self.turn(None).await?;
+            self.turn(None).await.map_err(AskError::MayHaveRun)?;
         }
     }
 }

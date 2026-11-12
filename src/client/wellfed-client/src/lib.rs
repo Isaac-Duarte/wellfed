@@ -19,7 +19,8 @@
 //! app and Home Assistant agree.
 //! The consumer installer's steps from stock to a confirmed replacement,
 //! stock's setup frame and the backup gate before promotion are
-//! [`install`].
+//! [`install`]. How a write ended, by its answer, is [`write`], the one
+//! reading those paths and every client share.
 //!
 //! Every public type is `wellfed-model`'s owned values or plain bytes (an
 //! `Op` in; answers, pushed events, gaps and samples, welcomes, refusals and
@@ -46,3 +47,4 @@ pub mod today;
 pub mod trace;
 pub mod update;
 pub mod update_key;
+pub mod write;

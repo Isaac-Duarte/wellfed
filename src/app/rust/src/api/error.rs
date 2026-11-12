@@ -94,7 +94,7 @@ impl From<wellfed_connect::Error> for BridgeError {
             | Error::Connect { .. }
             | Error::Mdns(_)
             | Error::NotFound(_) => ErrorKind::Connect,
-            Error::Timeout | Error::Silent => ErrorKind::Timeout,
+            Error::Timeout | Error::Unanswered | Error::Silent => ErrorKind::Timeout,
             Error::Closed | Error::Io(_) => ErrorKind::Closed,
             Error::UnknownKey => ErrorKind::UnknownKey,
             Error::Version(_) => ErrorKind::Version,

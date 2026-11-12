@@ -79,15 +79,18 @@ impl Error {
         }
     }
 
-    /// What the failure says of the write the call carried. Only a failure
-    /// to connect counts as nothing sent: reqwest's connect errors are the
-    /// resolver, the TCP connect and the TLS handshake, all before a byte
-    /// of the request is written; a connection that breaks after is a
-    /// request error, which may have run. Of the server's answers, only
+    /// What the failure says of the write the call carried, the one
+    /// reading every client of the server shares. Of reqwest's errors, only
+    /// a failure to connect or to build the request counts as nothing
+    /// sent: its connect errors are the resolver, the TCP connect and the
+    /// TLS handshake, all before a byte of the request is written; a
+    /// connection that breaks after is a request error, which may have run. Of the server's answers, only
     /// `feeder_offline` says its feeder task never took the write.
     pub fn failure(&self) -> Failure {
         match self {
             Self::Http(http) if http.is_connect() => Failure::Connect,
+            // A request reqwest could not build never left this client.
+            Self::Http(http) if http.is_builder() => Failure::Rejected,
             Self::Http(_) | Self::Decode(_) | Self::Unexpected { .. } => Failure::Interrupted,
             Self::Problem {
                 status, problem, ..
@@ -141,4 +144,118 @@ pub enum Failure {
     /// The server refused before sending anything: forbidden, invalid, a
     /// redirect.
     Rejected,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn problem(status: StatusCode, code: ErrorCode) -> Error {
+        Error::Problem {
+            status,
+            problem: Box::new(Problem {
+                kind: "about:blank".into(),
+                title: "t".into(),
+                status: status.as_u16(),
+                code,
+                detail: None,
+                refusal: None,
+                release: None,
+            }),
+            retry_after: None,
+        }
+    }
+
+    /// Every client decides a write's fate from this table, so each row is
+    /// pinned: only a refusal the server answered with a code that says so,
+    /// or a request that never left, is sure not to have run.
+    #[test]
+    fn a_failure_reads_one_way_for_every_client() {
+        let rows = [
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                ErrorCode::OutcomeUnknown,
+                Failure::OutcomeUnknown,
+            ),
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorCode::FeederOffline,
+                Failure::FeederOffline,
+            ),
+            (
+                StatusCode::CONFLICT,
+                ErrorCode::FeederRefused,
+                Failure::FeederRefused,
+            ),
+            (
+                StatusCode::CONFLICT,
+                ErrorCode::KeyReused,
+                Failure::KeyReused,
+            ),
+            (
+                StatusCode::UNAUTHORIZED,
+                ErrorCode::Unauthenticated,
+                Failure::Unauthorized,
+            ),
+            (
+                StatusCode::FORBIDDEN,
+                ErrorCode::AccountDisabled,
+                Failure::Unauthorized,
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorCode::Internal,
+                Failure::Interrupted,
+            ),
+            (
+                StatusCode::BAD_GATEWAY,
+                ErrorCode::Unreachable,
+                Failure::Interrupted,
+            ),
+            // A code a newer server added reads by its status.
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ErrorCode::Unknown,
+                Failure::Interrupted,
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                ErrorCode::Unknown,
+                Failure::Rejected,
+            ),
+            (
+                StatusCode::FORBIDDEN,
+                ErrorCode::Forbidden,
+                Failure::Rejected,
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                ErrorCode::Invalid,
+                Failure::Rejected,
+            ),
+        ];
+        for (status, code, failure) in rows {
+            assert_eq!(
+                problem(status, code).failure(),
+                failure,
+                "{status} {code:?}"
+            );
+        }
+
+        let unexpected = Error::Unexpected {
+            status: StatusCode::BAD_GATEWAY,
+            expected: StatusCode::ACCEPTED,
+        };
+        assert_eq!(unexpected.failure(), Failure::Interrupted);
+        let garbled = serde_json::from_str::<u8>("x").unwrap_err();
+        assert_eq!(Error::Decode(garbled).failure(), Failure::Interrupted);
+        assert_eq!(Error::NoSession.failure(), Failure::Rejected);
+
+        let unbuilt = reqwest::Client::new()
+            .get("http://[::1")
+            .build()
+            .unwrap_err();
+        assert!(unbuilt.is_builder(), "{unbuilt}");
+        assert_eq!(Error::Http(unbuilt).failure(), Failure::Rejected);
+    }
 }

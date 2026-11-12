@@ -15,12 +15,13 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use wellfed_client::install::{
-    FeederTrust, Install, InstallError, Options, PairRoute, Promotion, Provision, Replacement,
-    Requested, Step, StockBackup, StockNotReady, UpdateKey,
+    FeederTrust, Install, InstallError, Options, PairRoute, Promoted, Promotion, Provision,
+    Replacement, Requested, Step, StockBackup, StockNotReady, UpdateKey,
 };
 use wellfed_client::setup::Credentials;
 use wellfed_client::update::{Image, InstallError as UpdateError};
 use wellfed_client::update_key::{EnrollError, Enrolled};
+use wellfed_connect::AskError;
 use wellfed_formats::bench::prompt::Prompt;
 use wellfed_formats::manifest::Provisioning;
 use wellfed_formats::stock::TrialPhase;
@@ -356,6 +357,19 @@ fn failure(error: InstallError, refused: Option<Refusal>) -> Error {
     match (error, refused) {
         (InstallError::RequestRefused, Some(refusal)) => Error::RequestRefused(refusal),
         (error, _) => Error::Steps(error),
+    }
+}
+
+/// How the promotion's push ended, as the install's steps read it. A feeder
+/// gone after the offer went may have taken it: that is uncertain, never
+/// bank 0 not installing the update.
+fn promoted(pushed: Pushed) -> Promoted {
+    match pushed {
+        Pushed::Activated | Pushed::AlreadyRunning => Promoted::Activated,
+        Pushed::Failed(error) => Promoted::Failed(error),
+        Pushed::Gone { offered: true } => Promoted::Uncertain,
+        // Nothing was offered, so bank 0 is not installing it.
+        Pushed::Gone { offered: false } => Promoted::Failed(UpdateError::Lost),
     }
 }
 
@@ -1209,7 +1223,11 @@ where
         loop {
             let read = async {
                 let mut connection = self.connect().await?;
-                match connection.ask(random()?, &Op::UpdateState).await? {
+                match connection
+                    .ask(random()?, &Op::UpdateState)
+                    .await
+                    .map_err(AskError::into_error)?
+                {
                     Answer::Update(view) => Ok(view.min_version),
                     other => Err(Error::Answered {
                         request: "update state",
@@ -1336,7 +1354,11 @@ where
     async fn status(&self) -> Result<(String, u8), Error> {
         let mut connection = self.connect().await?;
         let build = connection.build().to_owned();
-        match connection.ask(random()?, &Op::UpdateState).await? {
+        match connection
+            .ask(random()?, &Op::UpdateState)
+            .await
+            .map_err(AskError::into_error)?
+        {
             Answer::Update(view) => Ok((build, view.bank)),
             other => Err(Error::Answered {
                 request: "update state",
@@ -1407,7 +1429,7 @@ where
     /// feeder already restarted into its trial boot: offering the manifest
     /// there would interrupt the trial, so the promotion counts as
     /// activated instead.
-    async fn promote(&mut self, served: &str) -> Result<Result<(), UpdateError>, Error> {
+    async fn promote(&mut self, served: &str) -> Result<Promoted, Error> {
         let payload = self.review.payload()?;
         let manifest = self.manifest.as_deref().ok_or(Error::NoManifest)?;
         let image = Image {
@@ -1425,11 +1447,7 @@ where
             &self.io.report,
         )
         .await?;
-        Ok(match pushed {
-            Pushed::Activated | Pushed::AlreadyRunning => Ok(()),
-            Pushed::Failed(error) => Err(error),
-            Pushed::Gone { .. } => Err(UpdateError::Lost),
-        })
+        Ok(promoted(pushed))
     }
 
     /// Until bank 1 runs the build and reports its version confirmed.
@@ -1499,6 +1517,22 @@ mod tests {
     use crate::tests::Scripted;
     use wellfed_client::update::{Installer, Next};
     use wellfed_stock::controller::Rejection;
+
+    /// A push that went silent, or answered unreadably, after its offer went
+    /// out ends the promotion uncertain; one gone before the offer is a
+    /// definite failure, since nothing reached bank 0.
+    #[test]
+    fn a_push_gone_after_its_offer_is_an_uncertain_promotion() {
+        assert_eq!(
+            promoted(Pushed::Gone { offered: true }),
+            Promoted::Uncertain
+        );
+        assert_eq!(
+            promoted(Pushed::Gone { offered: false }),
+            Promoted::Failed(UpdateError::Lost)
+        );
+        assert_eq!(promoted(Pushed::AlreadyRunning), Promoted::Activated);
+    }
 
     /// A session lost after the last chunk, reopened once the feeder
     /// restarted into its trial boot, is the activation: the manifest is not

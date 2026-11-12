@@ -311,6 +311,62 @@ fn a_session_shows_the_card_and_runs_a_feed_to_its_end() {
     });
 }
 
+/// A request with no frame to fit in never went: it alone is answered
+/// unsent, and the feed out beside it is still answered on a session that
+/// goes on.
+#[test]
+fn an_unsendable_request_is_not_sent_and_leaves_the_feed_beside_it() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, mut heard) = start_session(sim.identity, sim.address, false);
+        next(&mut heard, |update| match update {
+            SessionUpdate::Status { card } => Some(card),
+            _ => None,
+        })
+        .await;
+
+        commands
+            .send(Command::Feed {
+                portions: 2,
+                reply: None,
+            })
+            .unwrap();
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        let oversized = wellfed_model::Op::EnrollUpdateKey {
+            key: [7; 32],
+            label: "x".repeat(10_000),
+        };
+        commands
+            .send(Command::Ask {
+                op: oversized,
+                reply,
+            })
+            .unwrap();
+        assert!(
+            matches!(answer.await.unwrap(), session::Heard::NotSent),
+            "an unsendable request reads as not sent"
+        );
+
+        let result = next(&mut heard, |update| match update {
+            SessionUpdate::FeedEnded { result } => Some(result),
+            _ => None,
+        })
+        .await;
+        assert_eq!(result.outcome, FeedOutcome::Done);
+        assert!(!result.uncertain);
+
+        commands.send(Command::Close).unwrap();
+        let error = next(&mut heard, |update| match update {
+            SessionUpdate::Closed { error } => Some(error),
+            _ => None,
+        })
+        .await;
+        assert_eq!(error, None);
+        sim.stop().await;
+    });
+}
+
 /// A stalled feed's session on a runtime whose clock moves only when idle.
 fn paused(test: impl Future<Output = ()>) {
     let runtime = tokio::runtime::Builder::new_current_thread()
