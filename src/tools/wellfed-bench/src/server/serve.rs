@@ -805,8 +805,9 @@ impl Shared {
     /// would have.
     /// A job that writes flash over UART is cancelled only with
     /// [`DuringWrite::Cancel`]. The check covers a write already under way:
-    /// a writer the job spawns between the check and the signals still gets
-    /// SIGINT, at its very start.
+    /// a writer the job spawns after the check gets SIGINT at its very
+    /// start, as the registry keeps the cancel, and a step not yet spawned
+    /// never starts.
     pub(crate) fn cancel(&self, id: JobId, during_write: DuringWrite) -> Result<(), Refusal> {
         let jobs = self.jobs();
         let Some(running) = jobs.running.as_ref().filter(|running| running.id == id) else {
@@ -829,12 +830,9 @@ impl Shared {
     }
 
     fn interrupt(&self, stopping: &Stopping) {
-        // The flag first: the rig's own waits then stop their receive-only
-        // captures, and a flash client that exits on the signal is read as
-        // the interrupt it was.
-        stopping.cancel.cancel();
-        stopping.children.interrupt();
-
+        // Recorded before anything is signalled: a job that ends on the
+        // signal would otherwise end first, and its state never show the
+        // cancel that ended it.
         let id = stopping.id;
         self.store.update(|state| {
             if let Some(job) = state
@@ -849,6 +847,12 @@ impl Shared {
             log.push(format!("Cancel requested for job {id}"));
         }
         self.output.say(format!("Job {id}: cancel requested"));
+
+        // The flag before the signals: the rig's own waits then stop their
+        // receive-only captures, and a flash client that exits on the
+        // signal is read as the interrupt it was.
+        stopping.cancel.cancel();
+        stopping.children.interrupt();
     }
 
     /// Refuse new jobs and cancel the running one; its thread, to wait on.

@@ -127,9 +127,9 @@ case "$3 $4" in
   case "$out" in *burst)
     i=0; while [ $i -lt 3000 ]; do echo "burst line $i of the capture's own output" >&2; i=$((i+1)); done ;;
   esac
-  echo '{{"status":"running"}}' > "$out/report.json"
   trap 'echo INT > "$out/signal"; kill $! 2>/dev/null; exit 1' INT
   trap 'echo TERM > "$out/signal"; kill $! 2>/dev/null; exit 1' TERM
+  echo '{{"status":"running"}}' > "$out/report.json"
   case "$out" in
   */held-*) until [ -e "$out/release" ]; do sleep 0.05; done & wait $! ;;
   *) sleep {hold} & wait $! ;;
@@ -434,6 +434,9 @@ async fn a_cancel_interrupts_the_flash_client_and_the_cleanup_cuts_power() {
         log.ends_with(&[(STRAP, false)]) && log.contains(&(POWER, true))
     })
     .await;
+    // The stand-in capture says it runs once it traps the signal.
+    let report = checkout.capture("l1").join("report.json");
+    until("the capture", || report.exists()).await;
     server.client.cancel(id, DuringWrite::Refuse).await.unwrap();
 
     let (end, lines) = follow(&server.client, id).await;
@@ -563,6 +566,12 @@ async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
     .await;
     asks.send(Ask::Terminate).unwrap();
     asks.send(Ask::Terminate).unwrap();
+    // The stop shows once the stopper took the first signal, however slow
+    // a loaded host makes that; then nothing more may happen.
+    state_until(&server, "the deferred stop", |state| {
+        state.server.stopping.is_some()
+    })
+    .await;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // The writer was never signalled, and the server still serves, shows
