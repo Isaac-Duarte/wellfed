@@ -31,7 +31,6 @@ use axum::Router;
 use axum::extract::DefaultBodyLimit;
 pub use proxy::{ProxyRange, TrustedProxies};
 use tokio_util::sync::CancellationToken;
-use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
@@ -169,7 +168,9 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(foods::delete_refill))
         .routes(routes!(backups::backups, backups::create_backup))
         .routes(routes!(export::export))
-        .layer(RequestBodyLimitLayer::new(BODY_LIMIT));
+        // Every small route reads its body through `Json`, which refuses one
+        // past this `too_large`, however it is framed.
+        .layer(DefaultBodyLimit::max(BODY_LIMIT));
     // A clip is read only up to the feeder's length: a longer one is
     // refused `too_large` while it arrives, never held whole.
     let calls = OpenApiRouter::new()

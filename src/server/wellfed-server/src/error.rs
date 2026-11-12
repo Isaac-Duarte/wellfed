@@ -26,7 +26,14 @@ impl From<Error> for ApiError {
 
 impl From<JsonRejection> for ApiError {
     fn from(rejection: JsonRejection) -> Self {
-        Self::Code(ErrorCode::Invalid, Some(rejection.body_text()))
+        // A body past the route's limit fails to buffer, framed with its
+        // length or in chunks alike.
+        let code = if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ErrorCode::TooLarge
+        } else {
+            ErrorCode::Invalid
+        };
+        Self::Code(code, Some(rejection.body_text()))
     }
 }
 
