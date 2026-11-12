@@ -769,14 +769,20 @@ impl Watch {
         }
     }
 
-    /// Past [`TRACKED_MAX`], the oldest reports end: a feeder that can't
-    /// vouch for an end for long must not grow the file without bound.
+    /// Past [`TRACKED_MAX`], the oldest reports the table no longer lists
+    /// end: a feeder that can't vouch for an end for long must not grow
+    /// the file without bound. One it still lists stays, since the next
+    /// read would track it anew and post it again. The table holds far
+    /// fewer than the bound, so the reports held past the bound are absent.
     fn bound(&mut self) {
         while self.open.len() > TRACKED_MAX {
             let Some(oldest) = self
                 .open
                 .iter()
-                .find(|tracked| matches!(tracked.notice, Notice::Alert { open } if !open.alert.kind().is_condition()))
+                .find(|tracked| {
+                    tracked.absent.is_some()
+                        && matches!(tracked.notice, Notice::Alert { open } if !open.alert.kind().is_condition())
+                })
                 .map(|tracked| tracked.key)
             else {
                 return;
