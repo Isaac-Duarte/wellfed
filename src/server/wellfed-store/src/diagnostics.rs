@@ -93,7 +93,9 @@ impl Store {
     }
 
     /// Feed `feed`'s trace in `epoch`, or in the newest epoch that has one
-    /// when `epoch` is `None`.
+    /// when `epoch` is `None`. An epoch is drawn at random when a ring is
+    /// made, so its value says nothing of its age: the newest is the
+    /// feeder's current epoch, else the one whose trace was fetched last.
     pub async fn trace(
         &self,
         id: FeederId,
@@ -103,7 +105,9 @@ impl Store {
         let row = sqlx::query!(
             r#"SELECT epoch, feed, fetched_ms, summary, stored, body, refusal FROM feed_traces
                WHERE feeder_id = ?1 AND feed = ?2 AND (?3 IS NULL OR epoch = ?3)
-               ORDER BY epoch DESC LIMIT 1"#,
+               ORDER BY epoch IS (SELECT epoch FROM feeders WHERE id = ?1) DESC,
+                        fetched_ms DESC
+               LIMIT 1"#,
             id.0,
             feed,
             epoch,

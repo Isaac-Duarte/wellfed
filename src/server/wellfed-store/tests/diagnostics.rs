@@ -140,6 +140,45 @@ async fn a_trace_is_kept_by_its_feed_and_a_later_fetch_replaces_it() {
     assert_eq!(store.trace(ID, Some(3), 4).await.unwrap(), None);
 }
 
+/// An epoch is drawn at random, so the newest trace of a feed number is
+/// the feeder's current epoch's, else the one fetched last, never the one
+/// with the larger epoch.
+#[tokio::test]
+async fn a_trace_with_no_epoch_is_the_newest_not_the_largest_epoch() {
+    let (_dir, store) = fresh().await;
+    let (old, new) = (0xf000_0000, 5);
+    fed(&store, old, 1, 4).await;
+    store
+        .record_trace(ID, old, 4, at(10), &trace(4, 100))
+        .await
+        .unwrap();
+    fed(&store, new, 1, 4).await;
+    store
+        .record_trace(ID, new, 4, at(20), &trace(4, 200))
+        .await
+        .unwrap();
+
+    let newest = store.trace(ID, None, 4).await.unwrap().unwrap();
+    assert_eq!(newest.epoch, new, "the feeder's current epoch");
+
+    // A feed number the current epoch has no trace of: the one fetched
+    // last.
+    store
+        .record_trace(ID, 3, 9, at(30), &trace(9, 300))
+        .await
+        .unwrap();
+    store
+        .record_trace(ID, old, 9, at(40), &trace(9, 400))
+        .await
+        .unwrap();
+    store
+        .record_trace(ID, 7, 9, at(35), &trace(9, 350))
+        .await
+        .unwrap();
+    let latest = store.trace(ID, None, 9).await.unwrap().unwrap();
+    assert_eq!((latest.epoch, latest.fetched), (old, at(40)));
+}
+
 #[tokio::test]
 async fn only_the_recent_feeds_with_no_trace_are_asked_for() {
     let (_dir, store) = fresh().await;
