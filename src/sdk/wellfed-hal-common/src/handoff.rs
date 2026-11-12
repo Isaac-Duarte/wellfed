@@ -22,6 +22,8 @@
 //! one whole view under the interrupt guard, so a reader never pairs half
 //! of one view with half of another.
 
+use core::cell::Cell;
+use core::marker::PhantomData;
 #[cfg(any(not(target_os = "none"), feature = "km4"))]
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -121,7 +123,10 @@ impl<T> Handoff<T> {
                 Ordering::Acquire,
             )
             .ok()
-            .map(|_| Taken { handoff: self })
+            .map(|_| Taken {
+                handoff: self,
+                not_sync: PhantomData,
+            })
     }
 
     /// Drop a queued value nobody has taken (a host test's fresh start).
@@ -141,8 +146,15 @@ impl<T> Handoff<T> {
 }
 
 /// The consumer's hold on a [`Handoff`]'s value.
+///
+/// A guard may move to another task, but it is never `Sync`: the slot is
+/// exclusive to whoever holds the guard, and a guard shared by reference
+/// would let two tasks read through it at once (a `T` with interior
+/// mutability then races). The marker takes `Sync` away whatever `T` is;
+/// the workspace runs no compile-fail tests, so this comment is its record.
 pub struct Taken<'a, T> {
     handoff: &'a Handoff<T>,
+    not_sync: PhantomData<Cell<()>>,
 }
 
 impl<T> Taken<'_, T> {
