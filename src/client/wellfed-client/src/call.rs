@@ -40,6 +40,9 @@ const SILENCE: f64 = 0.01;
 const ZEROS: f64 = 12.0;
 /// The low-pass's cutoff against the lower rate's Nyquist frequency.
 const CUTOFF: f64 = 0.9;
+/// The longest recording converted at all: well past the clip the feeder
+/// keeps, which trimming silence could never bring a longer one under.
+const RECORDING_MAX_MS: u64 = 60_000;
 
 const _: () = assert!(CALL_RATE_HZ == clip::RATE_HZ && CALL_BYTES_MAX == clip::BYTES_MAX);
 
@@ -60,7 +63,7 @@ pub enum ClipError {
     Shape { channels: u16, rate: u32 },
     #[error("the recording is silent")]
     Silent,
-    #[error("the recording plays {ms} ms once trimmed; the feeder keeps at most {max_ms} ms")]
+    #[error("the recording plays {ms} ms; the feeder keeps at most {max_ms} ms")]
     TooLong { ms: u32, max_ms: u32 },
 }
 
@@ -82,9 +85,14 @@ pub enum UploadError {
     Refused(Refusal),
     #[error("the feeder answered something other than the meal call")]
     Unexpected,
+    /// An answer this build can't read, which a newer feeder sent: the
+    /// step may have run (a start may have erased the old clip), so the
+    /// upload's end is unknown, as for an answer that never came.
+    #[error("the feeder's answer could not be read: the upload's state is unknown")]
+    Uncertain,
     #[error("the feeder no longer receives this upload (restarted, or another began)")]
     Lost,
-    #[error("the feeder read the stream back and it did not match: it keeps no clip")]
+    #[error("the feeder keeps no clip: its read-back did not match, or it restarted")]
     Rejected,
 }
 
@@ -201,6 +209,7 @@ impl Clip {
             Answer::Refused(Refusal::Busy) => Ok(Sent::Retry),
             Answer::Refused(Refusal::Invalid) => Ok(Sent::Ask),
             Answer::Refused(refusal) => Err(UploadError::Refused(*refusal)),
+            Answer::Unreadable => Err(UploadError::Uncertain),
             _ => Err(UploadError::Unexpected),
         }
     }
@@ -376,6 +385,7 @@ impl<'a> Upload<'a> {
                     Ok(())
                 }
                 Answer::Refused(refusal) => Err(UploadError::Refused(*refusal)),
+                Answer::Unreadable => Err(UploadError::Uncertain),
                 _ => Err(UploadError::Unexpected),
             },
             Stage::Chunk { offset } => {
@@ -392,8 +402,16 @@ impl<'a> Upload<'a> {
                 }
                 Ok(())
             }
+            // A chunk the feeder did not want may follow the last one in:
+            // a clip it already stores is this upload done, as when one
+            // resumes ([`Self::resume`]).
             Stage::Where => {
-                let offset = self.clip.resume(&call_view(answer)?)?;
+                let view = call_view(answer)?;
+                if self.clip.settled(&view).is_ok_and(|stored| stored) {
+                    self.ended = Some(Step::Stored(view));
+                    return Ok(());
+                }
+                let offset = self.clip.resume(&view)?;
                 self.stage = Stage::Chunk { offset };
                 Ok(())
             }
@@ -420,6 +438,7 @@ fn call_view(answer: &Answer) -> Result<CallView, UploadError> {
     match answer {
         Answer::Call(view) => Ok(*view),
         Answer::Refused(refusal) => Err(UploadError::Refused(*refusal)),
+        Answer::Unreadable => Err(UploadError::Uncertain),
         _ => Err(UploadError::Unexpected),
     }
 }
@@ -455,15 +474,18 @@ impl Wav {
                 data = file.get(at + 8..);
                 break;
             }
+            // A length from the file can name any end, past a 32-bit
+            // target's address space too.
             let len = usize::try_from(len).map_err(|_| ClipError::Truncated)?;
-            let body = file.get(at + 8..at + 8 + len).ok_or(ClipError::Truncated)?;
+            let end = (at + 8).checked_add(len).ok_or(ClipError::Truncated)?;
+            let body = file.get(at + 8..end).ok_or(ClipError::Truncated)?;
             match id {
                 b"fmt " => format = Some(body),
                 b"data" => data = Some(body),
                 _ => {}
             }
             // Chunks are padded to an even length.
-            at += 8 + len + len % 2;
+            at = end.checked_add(len % 2).ok_or(ClipError::Truncated)?;
         }
         let format = format.ok_or(ClipError::Missing("fmt "))?;
         let data = data.ok_or(ClipError::Missing("data"))?;
@@ -491,9 +513,31 @@ impl Wav {
         }
         // Each sample sits in a container of the block's share of bytes,
         // its valid bits at the top, so the container decides the decode.
+        // The fields are the file's, so the arithmetic is wide enough for
+        // any of them.
         let width = align / channels;
-        if align == 0 || width * channels != align || bits == 0 || bits > width * 8 {
+        let fits = u32::from(width) * u32::from(channels) == u32::from(align)
+            && bits != 0
+            && u32::from(bits) <= u32::from(width) * 8;
+        if align == 0 || !fits {
             return Err(ClipError::Unsupported { format: tag, bits });
+        }
+        // Converting costs time and memory by the recording's length, so
+        // one far longer than the feeder keeps is refused before it is
+        // decoded. Trimming takes only silence, and this bound is well
+        // past the clip's.
+        let frames = data.len() / usize::from(align);
+        let ms = u64::try_from(frames)
+            .unwrap_or(u64::MAX)
+            .saturating_mul(1000)
+            / u64::from(rate);
+        if ms > RECORDING_MAX_MS {
+            let rate = u64::from(CALL_RATE_HZ);
+            return Err(ClipError::TooLong {
+                ms: u32::try_from(ms).unwrap_or(u32::MAX),
+                max_ms: u32::try_from(u64::from(CALL_BYTES_MAX) * 2 * 1000 / rate)
+                    .unwrap_or(u32::MAX),
+            });
         }
         let decode: fn(&[u8]) -> f64 = match (tag, width) {
             (PCM, 1) => |b| (f64::from(b[0]) - 128.0) / 128.0,
@@ -988,6 +1032,100 @@ mod tests {
             let mut upload = Upload::resume(&clip, &start);
             assert_eq!(upload.poll(now), Step::Ask(clip.start()), "{start:?}");
         }
+    }
+
+    /// A WAV's header fields are the file's own: any block alignment,
+    /// channel count and width is refused or read, never a panic, and a
+    /// chunk length past the address space is truncated.
+    #[test]
+    fn any_format_fields_are_refused_or_read() {
+        let base = wav(8_000, 1, &tone(8_000, 300.0, 0.05, 10_000.0));
+        for align in 0..=u16::MAX {
+            for channels in [1u16, 3, 0xffff] {
+                for bits in [0u16, 16, 0xffff] {
+                    let mut file = base.clone();
+                    file[22..24].copy_from_slice(&channels.to_le_bytes());
+                    file[32..34].copy_from_slice(&align.to_le_bytes());
+                    file[34..36].copy_from_slice(&bits.to_le_bytes());
+                    let _ = Clip::from_wav(&file);
+                }
+            }
+        }
+        let mut huge = base.clone();
+        huge[40..44].copy_from_slice(&0xffff_fff0u32.to_le_bytes());
+        assert_eq!(Clip::from_wav(&huge), Err(ClipError::Truncated));
+    }
+
+    /// A recording far past the clip is refused by its header's length
+    /// before a sample is decoded.
+    #[test]
+    fn a_long_recording_is_refused_before_it_is_decoded() {
+        let minute = tone(8_000, 300.0, 0.01, 10_000.0);
+        let mut file = wav(8_000, 1, &minute);
+        // Two minutes of samples the file names and holds, all zero.
+        let samples = 2 * 60 * 8_000;
+        file.truncate(file.len() - minute.len() * 2);
+        let at = file.len() - 4;
+        file[at..].copy_from_slice(&u32::try_from(samples * 2).unwrap().to_le_bytes());
+        file.resize(file.len() + samples * 2, 0);
+
+        assert_eq!(
+            Clip::from_wav(&file),
+            Err(ClipError::TooLong {
+                ms: 120_000,
+                max_ms: 8_064
+            })
+        );
+    }
+
+    /// A chunk the feeder did not want after the last one is in, with the
+    /// clip already stored: the upload is done, not lost.
+    #[test]
+    fn a_clip_stored_when_the_upload_asks_where_it_stands_is_done() {
+        let clip = short_clip();
+        let now = Instant::now();
+        let mut upload = Upload::new(&clip);
+        upload.poll(now);
+        upload.answer(&Answer::Done { generation: None }, now);
+        upload.poll(now);
+        upload.answer(&Answer::Refused(Refusal::Invalid), now);
+        assert_eq!(upload.poll(now), Step::Ask(Op::GetCall));
+        let stored = CallView {
+            writable: true,
+            clip: CallClip::Stored {
+                bytes: clip.bytes(),
+                crc: clip.crc(),
+            },
+        };
+        upload.answer(&Answer::Call(stored), now);
+
+        assert_eq!(upload.poll(now), Step::Stored(stored));
+    }
+
+    /// An answer this build can't read may follow a step that ran (a
+    /// start erases the old clip), so the upload ends uncertain, not as an
+    /// answer of the wrong kind.
+    #[test]
+    fn an_unreadable_answer_leaves_the_upload_uncertain() {
+        let clip = short_clip();
+        let now = Instant::now();
+        let mut upload = Upload::new(&clip);
+        upload.poll(now);
+        upload.answer(&Answer::Unreadable, now);
+        assert_eq!(
+            upload.poll(now),
+            Step::Failed(UploadFailed::Upload(UploadError::Uncertain))
+        );
+
+        let mut chunked = Upload::new(&clip);
+        chunked.poll(now);
+        chunked.answer(&Answer::Done { generation: None }, now);
+        chunked.poll(now);
+        chunked.answer(&Answer::Unreadable, now);
+        assert_eq!(
+            chunked.poll(now),
+            Step::Failed(UploadFailed::Upload(UploadError::Uncertain))
+        );
     }
 
     #[test]

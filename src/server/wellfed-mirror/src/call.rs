@@ -55,6 +55,7 @@ impl Operation {
             Answer::Refused(refusal) => {
                 Err(UploadFailed::Upload(UploadError::Refused(refusal)).into())
             }
+            Answer::Unreadable => Err(UploadFailed::Upload(UploadError::Uncertain).into()),
             _ => Err(UploadFailed::Upload(UploadError::Unexpected).into()),
         }
     }
