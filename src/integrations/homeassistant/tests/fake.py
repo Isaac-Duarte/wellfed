@@ -134,7 +134,7 @@ def written(result: bridge.WriteResult, **fields: Any) -> SimpleNamespace:
 
 def pending(id: str = "a-lost-feed", portions: int = 1) -> bridge.Pending:
     """A feed whose answer was lost, as the bridge hands it out."""
-    return bridge.Pending(id, portions, 1_793_793_600_000, None)
+    return bridge.Pending(id, portions, 1_793_793_600_000, None, False)
 
 
 def uncertain(lost: bridge.Pending) -> SimpleNamespace:

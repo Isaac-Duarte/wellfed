@@ -93,6 +93,7 @@ fn connect(schema: u32) -> (Update, usize) {
             ..Timing::DEFAULT
         },
         retry: Duration::from_millis(100),
+        settle: Clocks::DEFAULT.settle,
     };
     let target = Target {
         identity: *Keypair::from_secret(FEEDER).public(),

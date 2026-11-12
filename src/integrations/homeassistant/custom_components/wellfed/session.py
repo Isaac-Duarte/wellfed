@@ -434,6 +434,11 @@ class FeederSession:
             self.kept.add_pending(update.pending)
             self._holding.add(update.pending.id)
             self._uncertain_issue()
+        elif kind == bridge.UpdateKind.Sending and update.pending is not None:
+            # Kept with no repair: only a lost answer says it may have run.
+            self.kept.add_pending(update.pending)
+        elif kind == bridge.UpdateKind.Cleared:
+            self._cleared(update.pending)
         elif kind == bridge.UpdateKind.Answered:
             self.kept.set_answered(update.answered)
         elif kind == bridge.UpdateKind.Settled:
@@ -455,6 +460,7 @@ class FeederSession:
                 update.portions,
             )
             if update.pending is not None:
+                self.kept.mark_reported(update.pending)
                 self._holding.discard(update.pending.id)
             self._uncertain_issue()
             self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
@@ -463,10 +469,7 @@ class FeederSession:
                 "A feed of %s portions whose answer was lost is no longer watched for",
                 update.portions,
             )
-            if update.pending is not None:
-                self.kept.settle(update.pending)
-                self._holding.discard(update.pending.id)
-            self._uncertain_issue()
+            self._cleared(update.pending)
         else:
             return False
         return True
@@ -480,6 +483,14 @@ class FeederSession:
         self._uncertain_issue()
         if not self.kept.pending:
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
+
+    @callback
+    def _cleared(self, pending: bridge.Pending | None) -> None:
+        """`pending` is no longer kept, with nothing learned of it."""
+        if pending is not None:
+            self.kept.settle(pending)
+            self._holding.discard(pending.id)
+        self._uncertain_issue()
 
     @callback
     def _uncertain_issue(self) -> None:

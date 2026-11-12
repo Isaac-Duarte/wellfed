@@ -132,10 +132,10 @@ struct Uncertain {
     pending: Pending,
     /// Its number, once the server's journal names it.
     feed: Option<u32>,
-    sent: Instant,
-    /// Reported still unknown; still settled by the journal until
+    /// When it went out. Once reported still unknown
+    /// (`pending.reported`), the journal still settles it until
     /// [`KEEP_MS`](crate::feeder::KEEP_MS).
-    reported: bool,
+    sent: Instant,
 }
 
 /// Where a history was read to.
@@ -222,16 +222,14 @@ pub(crate) async fn run(
         // Only a key this integration drew names a command on the server.
         match Uuid::parse_str(&pending.id) {
             Ok(key) => {
-                let reported = direct::reported(pending.sent_ms);
                 // One that has not been reported is announced again, so the
                 // integration's repair says it is still waited on.
-                if !reported && updates.send(Update::pending(pending.clone())).is_err() {
+                if !pending.reported && updates.send(Update::pending(pending.clone())).is_err() {
                     return;
                 }
                 memory.uncertain.push(Uncertain {
                     key,
                     sent: sent_at(pending.sent_ms),
-                    reported,
                     pending,
                     feed: None,
                 });
@@ -823,6 +821,7 @@ impl<'a> Session<'a> {
             portions,
             sent_ms: now_ms(),
             after: None,
+            reported: false,
         };
         // Announced on the updates before anything can settle it, so the
         // integration keeps it first; a handle gone has no one to tell.
@@ -832,7 +831,6 @@ impl<'a> Session<'a> {
             pending: pending.clone(),
             feed,
             sent: Instant::now(),
-            reported: false,
         });
         Written::uncertain_feed(pending)
     }
@@ -982,7 +980,7 @@ impl<'a> Session<'a> {
             .partition(|uncertain| direct::forgotten(uncertain.pending.sent_ms));
         self.memory.uncertain = open;
         for uncertain in gone {
-            if !uncertain.reported {
+            if !uncertain.pending.reported {
                 self.send(Update::still_unknown(uncertain.pending.clone()))?;
             }
             self.send(Update::forgotten(uncertain.pending))?;
@@ -997,8 +995,8 @@ impl<'a> Session<'a> {
     fn report(&mut self, due: impl Fn(&Uncertain) -> bool) -> Step {
         let mut reported = Vec::new();
         for uncertain in &mut self.memory.uncertain {
-            if !uncertain.reported && due(uncertain) {
-                uncertain.reported = true;
+            if !uncertain.pending.reported && due(uncertain) {
+                uncertain.pending.reported = true;
                 reported.push(uncertain.pending.clone());
             }
         }

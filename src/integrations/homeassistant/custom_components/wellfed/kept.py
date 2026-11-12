@@ -1,9 +1,11 @@
 """What an entry keeps across restarts and reloads, in a store of its own.
 
-- **Pending feeds:** each feed whose answer was lost, until an update
-  settles it or the bridge stops waiting on it. The next session is handed
-  them, so a feed lost before a restart is still settled rather than
-  forgotten.
+- **Pending feeds:** each direct feed from just before it goes out, and
+  each feed whose answer was lost, until its answer clears it, an update
+  settles it, or the bridge stops waiting on it; with whether it was
+  reported still unknown. The next session is handed them, so a feed lost
+  before a restart, or out when Home Assistant stopped, is still settled
+  rather than forgotten, and one already reported is not reported again.
 - **Answered feeds:** the feed numbers this Home Assistant has the end of,
   as the bridge last listed them: each feed it was answered for, and each
   lost feed a `Fed` event settled, as many as the bridge needs kept.
@@ -61,6 +63,7 @@ class PendingData(TypedDict):
     portions: int
     sent_ms: int
     after: int | None
+    reported: bool
 
 
 class KeptData(TypedDict):
@@ -84,6 +87,7 @@ def _pending(item: Any) -> bool:
         and _int(item.get("portions"))
         and _int(item.get("sent_ms"))
         and (item.get("after") is None or _int(item.get("after")))
+        and isinstance(item.get("reported"), bool)
     )
 
 
@@ -188,7 +192,9 @@ class Kept:
     @property
     def pending(self) -> list[bridge.Pending]:
         return [
-            bridge.Pending(item["id"], item["portions"], item["sent_ms"], item["after"])
+            bridge.Pending(
+                item["id"], item["portions"], item["sent_ms"], item["after"], item["reported"]
+            )
             for item in self._data["pending"]
         ]
 
@@ -210,8 +216,16 @@ class Kept:
                 "portions": pending.portions,
                 "sent_ms": pending.sent_ms,
                 "after": pending.after,
+                "reported": pending.reported,
             }
         )
+        self._save()
+
+    def mark_reported(self, pending: bridge.Pending) -> None:
+        """`pending` was reported still unknown."""
+        for item in self._data["pending"]:
+            if item["id"] == pending.id:
+                item["reported"] = True
         self._save()
 
     def settle(self, pending: bridge.Pending) -> None:

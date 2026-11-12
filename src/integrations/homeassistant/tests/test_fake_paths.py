@@ -403,6 +403,39 @@ async def test_a_lost_feed_no_longer_waited_on_leaves_the_store(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_a_feed_going_out_is_kept_with_no_repair_until_its_answer(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    out = fake.pending("out", portions=2)
+    feeder.push(fake.update(bridge.UpdateKind.Sending, pending=out))
+    await _until(hass, lambda: [p.id for p in session.kept.pending] == ["out"])
+    # Only a lost answer says it may have run.
+    assert _issue(hass, "uncertain_feed") is None
+
+    feeder.push(fake.update(bridge.UpdateKind.Cleared, pending=out))
+    await _until(hass, lambda: session.kept.pending == [])
+    assert _issue(hass, "uncertain_feed") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_feed_reported_unknown_is_kept_as_reported(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    lost = fake.pending(portions=2)
+    feeder.push(
+        fake.update(bridge.UpdateKind.Pending, pending=lost),
+        fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost),
+    )
+    await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
+    # The next session is handed it as reported, and reports it no more.
+    assert [(p.id, p.reported) for p in session.kept.pending] == [(lost.id, True)]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_a_reported_lost_feed_keeps_no_repair_for_a_newer_one(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:

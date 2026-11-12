@@ -612,13 +612,15 @@ class NotSent:
 @final
 class Pending:
     """
-    A feed whose answer never came, until it is settled: what the
+    A feed whose end is not known, until it is settled: what the
     integration keeps across a restart, and hands back to the next session
-    so it is settled then.
+    so it is settled then. A direct feed is kept from just before it goes
+    out ([`UpdateKind::Sending`]), so a restart before its answer finds it
+    lost rather than forgotten.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
-    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None = None) -> Pending:
+    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None, reported: bool) -> Pending:
         """
         A pending feed as the integration kept it, to hand back to a new
         session.
@@ -637,6 +639,12 @@ class Pending:
         """
     @property
     def portions(self, /) -> int: ...
+    @property
+    def reported(self, /) -> bool:
+        """
+        Reported still unknown ([`UpdateKind::StillUnknown`]): it no longer
+        holds new feeds back, and is not reported again.
+        """
     @property
     def sent_ms(self, /) -> int:
         """
@@ -1137,8 +1145,9 @@ class Update:
         """
         For [`UpdateKind::Pending`]: the feed to keep. For
         [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`],
-        [`UpdateKind::StillUnknown`] and [`UpdateKind::Forgotten`]: the
-        pending feed it accounts for.
+        [`UpdateKind::StillUnknown`], [`UpdateKind::Forgotten`],
+        [`UpdateKind::Sending`] and [`UpdateKind::Cleared`]: the pending
+        feed it accounts for.
         """
     @property
     def portions(self, /) -> int | None:
@@ -1184,6 +1193,11 @@ class UpdateKind:
     every number to keep for the next session, where a `Fed` for one
     of them settles nothing, in place of those kept before.
     """
+    Cleared: Final[UpdateKind]
+    """
+    A direct feed kept while it went out has its answer: no longer
+    kept. A feed it ran comes as [`UpdateKind::Answered`] first.
+    """
     Connected: Final[UpdateKind]
     """
     A session opened: its build, role and capabilities.
@@ -1214,6 +1228,11 @@ class UpdateKind:
     """
     The feeder no longer knows this client's key; the session will
     not reconnect.
+    """
+    Sending: Final[UpdateKind]
+    """
+    A direct feed about to go out, in `pending`: keep it as pending,
+    with no repair yet. A restart before its answer finds it lost.
     """
     ServerLostFeeder: Final[UpdateKind]
     """

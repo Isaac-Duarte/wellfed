@@ -472,6 +472,12 @@ view_enum! {
         /// as long as one is kept with no end found: no longer pending, and
         /// nothing settles it now.
         Forgotten => "forgotten",
+        /// A direct feed about to go out, in `pending`: keep it as pending,
+        /// with no repair yet. A restart before its answer finds it lost.
+        Sending => "sending",
+        /// A direct feed kept while it went out has its answer: no longer
+        /// kept. A feed it ran comes as [`UpdateKind::Answered`] first.
+        Cleared => "cleared",
     }
 }
 

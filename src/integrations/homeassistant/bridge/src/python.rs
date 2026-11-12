@@ -168,13 +168,14 @@ impl Pending {
     /// A pending feed as the integration kept it, to hand back to a new
     /// session.
     #[new]
-    #[pyo3(signature = (id, portions, sent_ms, after=None))]
-    fn new(id: String, portions: u8, sent_ms: i64, after: Option<u64>) -> Self {
+    #[pyo3(signature = (id, portions, sent_ms, after, reported))]
+    fn new(id: String, portions: u8, sent_ms: i64, after: Option<u64>, reported: bool) -> Self {
         Self {
             id,
             portions,
             sent_ms,
             after,
+            reported,
         }
     }
 }
