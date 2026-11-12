@@ -56,6 +56,16 @@ void main() {
     expect(again.state.feed, same(running));
   });
 
+  test('a request the bridge fails reads as unanswered, never as a throw', () async {
+    final ports = FakeFeederPorts();
+    ports.fakeRouter.routed = (request) => throw StateError('a bridge panic');
+    final feeder = FeederController(FakeBook()..feeders = [_kitchen], ports, _kitchen);
+    addTearDown(feeder.dispose);
+
+    final FeederReply reply = await feeder.ask(const FeederRequest.setLock(locked: true));
+    expect(reply, const FeederReply.unanswered());
+  });
+
   test('a change that never said how it ended is shown, checked only by reading, and put away', () async {
     final ports = FakeFeederPorts();
     ports.fakeRouter.held.addAll([_held('s1', WriteKind.settings), _held('f1', WriteKind.feed)]);

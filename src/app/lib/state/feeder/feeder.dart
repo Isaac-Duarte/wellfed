@@ -249,7 +249,17 @@ class FeederController extends ChangeNotifier {
   Future<FeederReply> ask(FeederRequest request) async {
     final PathRouter? router = _ports.router;
     if (router == null) return const FeederReply.notSent(reason: NotSentReason.store);
-    final RoutedReply routed = await router.ask(feeder: _state.known.identity, request: request);
+    final RoutedReply routed;
+    try {
+      routed = await router.ask(feeder: _state.known.identity, request: request);
+    } on Object catch (error) {
+      // The bridge failed, a panic among them: a write may have gone, so its
+      // end is unknown and it is never sent again. What the router pinned
+      // is read again.
+      debugPrint('the router failed a request: $error');
+      if (!_disposed) _readUnconfirmed();
+      return const FeederReply.unanswered();
+    }
     if (_disposed) return routed.reply;
     _keep(request, routed.reply);
     if (routed.pending != null) _readUnconfirmed();

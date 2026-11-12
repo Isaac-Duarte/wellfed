@@ -141,6 +141,20 @@ void main() {
       expect(find.textContaining("It's busy"), findsOneWidget);
     });
 
+    testWidgets('a write that throws reads as unanswered, and the card settles it after', (tester) async {
+      final _Host host = await _host(tester);
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+      host.asks.single.completeError(StateError('a bridge panic'));
+      await settle(tester);
+      expect(_shown(tester), isFalse);
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+
+      host.card.value = true;
+      await settle(tester);
+      expect(_shown(tester), isTrue, reason: 'nothing is left out, so the card shows');
+    });
+
     testWidgets('shows the card and says so when unanswered or never sent', (tester) async {
       final _Host host = await _host(tester);
       await tester.tap(find.byType(Switch));
