@@ -262,8 +262,7 @@ class RestoreFlow extends ChangeNotifier {
   }
 
   Future<void> _locate() async {
-    final String hex = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-    final String? found = await _ports.locate(hex);
+    final String? found = await _ports.locate(_ports.hexOf(identity));
     if (_look != RestoreLook.looking || _lookEnd == null) return;
     if (found != null) {
       _sighted = true;

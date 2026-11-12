@@ -224,6 +224,9 @@ class FakeInstallPorts implements InstallPorts {
   Stream<void> setupHeard() => heard.stream;
 
   @override
+  String hexOf(List<int> identity) => identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+
+  @override
   Future<String?> locate(String identity) async => located;
 
   @override

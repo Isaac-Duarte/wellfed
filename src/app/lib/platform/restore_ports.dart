@@ -2,14 +2,14 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
-
 import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 import 'package:wellfed/src/rust/api/install.dart' as install;
 import 'package:wellfed/src/rust/api/keys.dart';
-import 'package:wellfed/src/rust/api/restore.dart';
 import 'package:wellfed/src/rust/api/restore.dart' as rust;
+import 'package:wellfed/src/rust/api/restore.dart';
+import 'package:wellfed/src/rust/api/store.dart' show identityHex;
 
 /// What a restore reaches outside Dart: the Rust run, NSD, the foreground
 /// service, the kept backup and the file picker. Behind this, so every screen
@@ -38,6 +38,9 @@ abstract interface class RestorePorts {
 
   /// One run, which goes once.
   RestoreRun newRun(RestoreSpec spec);
+
+  /// A feeder's identity, as lowercase hex.
+  String hexOf(List<int> identity);
 
   /// Where the feeder `identity` (hex) answers.
   Future<String?> locate(String identity);
@@ -92,6 +95,9 @@ class AppRestorePorts implements RestorePorts {
 
   @override
   RestoreRun newRun(RestoreSpec spec) => RestoreRun(key: _key, spec: spec);
+
+  @override
+  String hexOf(List<int> identity) => identityHex(identity: identity);
 
   @override
   Future<String?> locate(String identity) => _install.locate(identity);

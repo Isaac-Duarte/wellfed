@@ -177,7 +177,7 @@ extension InstallRunning on InstallFlow {
       case InstallEvent_Paired(:final identity, :final address, :final rebooting):
         _stage = InstallStage.finishing;
         _identityBytes = identity;
-        _identity = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+        _identity = _ports.hexOf(identity);
         _address = address ?? _address;
         _joining = rebooting ? CheckState.running : CheckState.waiting;
       case InstallEvent_Joined(:final address):

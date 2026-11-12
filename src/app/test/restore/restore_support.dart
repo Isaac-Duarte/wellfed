@@ -79,6 +79,9 @@ class FakeRestorePorts implements RestorePorts {
   }
 
   @override
+  String hexOf(List<int> identity) => identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+
+  @override
   Future<String?> locate(String identity) async => located;
 
   /// What a read over a session says.
