@@ -15,7 +15,7 @@ import 'server_views.dart';
 import 'store.dart';
 part 'alerts.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `detail`, `fingerprint`, `identity_of`, `server_route`, `toggle`, `view`, `views`
+// These functions are ignored because they are not marked as `pub`: `detail`, `fingerprint`, `identity_of`, `posts`, `server_route`, `toggle`, `view`, `views`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `partial_cmp`
 
 /// Keep catch-ups off while `run` goes (`held`), or let go. A hold lapses by

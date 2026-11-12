@@ -1,9 +1,12 @@
 //! The JNI hooks Kotlin calls with no Dart running.
 //!
-//! `MainActivity` calls the first once at startup, before Dart runs: it gives the TLS certificate verifier the app's context, so an `https`
-//! server is checked against Android's own trust store, a CA the owner
-//! installed on the phone included. reqwest's rustls asks that verifier,
-//! which panics on the first check if it was never given the context.
+//! `MainActivity` and `BackgroundEngine` call the first before their engine
+//! runs Dart, so a process WorkManager or the boot receiver started, with
+//! no activity, has it too; a second call changes nothing. It gives the TLS
+//! certificate verifier the app's context, so an `https` server is checked
+//! against Android's own trust store, a CA the owner installed on the phone
+//! included. reqwest's rustls asks that verifier, which panics on the first
+//! check if it was never given the context.
 //!
 //! The Kotlin half of the verifier ships in the APK from the
 //! `org.rustls:rustls-platform-verifier` Maven package, at the version the

@@ -14,7 +14,7 @@ use std::path::Path;
 
 use flutter_rust_bridge::frb;
 use jiff::Timestamp;
-use wellfed_client::alerts::{Change, Delivery, Notice, NoticeKind, Tracked};
+use wellfed_client::alerts::{Change, Delivery, Notice, NoticeKind, Posting, Tracked};
 use wellfed_formats::canonical::{canonical_of, sha256};
 use wellfed_model::{
     Alert, AlertLevel, Blocked, ClientRole, FeedOutcome, FeedReason, MissedReason, UpdateStop,
@@ -186,6 +186,20 @@ pub struct PostedNotice {
     pub id: i32,
     pub seen_ms: i64,
     pub kind: NoticeKind,
+}
+
+impl PostedNotice {
+    /// Whether this is the posting of `tracked` as it stands: Dart posted
+    /// the notice under its id, as the watch still tracks it.
+    pub(crate) fn posts(&self, feeder: &[u8; 32], tracked: &Tracked) -> bool {
+        let posting = tracked.posting();
+        self.id == tracked.key.notification_id(feeder)
+            && Posting {
+                key: posting.key,
+                seen_ms: self.seen_ms,
+                kind: self.kind,
+            } == posting
+    }
 }
 
 impl From<&NoticeView> for PostedNotice {

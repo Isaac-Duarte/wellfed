@@ -198,11 +198,7 @@ impl AlertState {
             let done = match &change {
                 Change::Post(tracked) => {
                     let id = tracked.key.notification_id(feeder);
-                    let made = posted.iter().any(|notice| {
-                        notice.id == id
-                            && notice.seen_ms == tracked.seen.as_millisecond()
-                            && notice.kind == tracked.notice.kind()
-                    });
+                    let made = posted.iter().any(|notice| notice.posts(feeder, tracked));
                     made && !sweeping.contains(&id)
                 }
                 Change::Remove(key) => removed.contains(&key.notification_id(feeder)),

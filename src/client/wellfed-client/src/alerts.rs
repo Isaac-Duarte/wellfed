@@ -786,17 +786,32 @@ impl Watch {
     }
 }
 
+/// Which posting of a notice a post handed over: its key, when the watch
+/// first saw it (to the millisecond, as a webhook's delivery id and the app's
+/// notice views carry it) and its kind. A notice comes due again only as a
+/// new posting: one that ended and opened again is tracked anew, seen at
+/// that catch-up's time, and one whose kind changed takes the new kind. New
+/// words in the same kind are no new posting, as they post nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Posting {
+    pub key: NoticeKey,
+    pub seen_ms: i64,
+    pub kind: NoticeKind,
+}
+
 impl Tracked {
-    /// Whether `self` and `other` are one posting of one notice: the same
-    /// key, first seen at the same time, in the same kind. A notice comes
-    /// due again only as a new posting: one that ended and opened again is
-    /// tracked anew, seen at that catch-up's time, and one whose kind
-    /// changed takes the new kind. New words in the same kind are no new
-    /// posting, as they post nothing.
+    /// This notice's posting as it stands.
+    pub fn posting(&self) -> Posting {
+        Posting {
+            key: self.key,
+            seen_ms: self.seen.as_millisecond(),
+            kind: self.notice.kind(),
+        }
+    }
+
+    /// Whether `self` and `other` are one posting of one notice.
     pub fn same_posting(&self, other: &Tracked) -> bool {
-        self.key == other.key
-            && self.seen == other.seen
-            && self.notice.kind() == other.notice.kind()
+        self.posting() == other.posting()
     }
 
     /// Since when this alert, absent from the table now, has counted as
