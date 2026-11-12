@@ -16,7 +16,6 @@ pub struct RunRecord {
     /// Why the suite stopped when the feeder went quiet; it then needs UART recovery.
     pub silent: Option<String>,
     /// Root-relative UART capture directories, in order.
-    #[serde(default)]
     pub captures: Vec<String>,
 }
 

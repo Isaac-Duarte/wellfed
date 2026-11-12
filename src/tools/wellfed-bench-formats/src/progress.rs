@@ -226,7 +226,7 @@ pub struct RelayState {
 /// (a step, an outcome), or at most every 0.2 s, for the stream of tool
 /// output lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Flush {
+enum Flush {
     Now,
     Throttled,
 }
@@ -304,7 +304,8 @@ impl Status {
         if let Some(directory) = &self.directory {
             fs::create_dir_all(directory)?;
         }
-        self.write(Flush::Now)
+        self.write(Flush::Now);
+        Ok(())
     }
 
     /// Mark `label` running and any running step done.
@@ -312,7 +313,7 @@ impl Status {
         let Some(state) = &mut self.state else { return };
         if self.fixed {
             state.progress = None;
-            self.write_quietly(Flush::Now);
+            self.write(Flush::Now);
             return;
         }
         for s in &mut state.steps {
@@ -334,7 +335,7 @@ impl Status {
         };
         state.steps[index].set(StepState::Running);
         state.progress = None;
-        self.write_quietly(Flush::Now);
+        self.write(Flush::Now);
     }
 
     /// Keep the steps [`Self::begin`] gave: children's steps no longer add
@@ -355,7 +356,7 @@ impl Status {
         {
             step.set(state);
         }
-        self.write_quietly(Flush::Now);
+        self.write(Flush::Now);
     }
 
     /// One line of tool output: kept and scanned for progress counts.
@@ -393,7 +394,7 @@ impl Status {
                 when = Flush::Now;
             }
         }
-        self.write_quietly(when);
+        self.write(when);
     }
 
     pub fn capture(&mut self, output: Option<&Path>, seconds: f64) {
@@ -404,7 +405,7 @@ impl Status {
             seconds,
             started: now(),
         });
-        self.write_quietly(Flush::Now);
+        self.write(Flush::Now);
     }
 
     /// Expected serial traffic of an update session, for an estimated bar.
@@ -417,7 +418,7 @@ impl Status {
             rx,
             started: Some(now()),
         });
-        self.write_quietly(Flush::Now);
+        self.write(Flush::Now);
     }
 
     /// A relay this command set or read. The server's live state carries the
@@ -426,7 +427,7 @@ impl Status {
         if let Some(state) = &mut self.state {
             state.relay.insert(channel.to_string(), on);
         }
-        self.write_quietly(Flush::Now);
+        self.write(Flush::Now);
     }
 
     /// The record as last written; `None` before [`Self::begin`].
@@ -438,14 +439,14 @@ impl Status {
         if let Some(state) = &mut self.state {
             state.flash_tool = Some(tool);
         }
-        self.write_quietly(Flush::Now);
+        self.write(Flush::Now);
     }
 
     pub fn next(&mut self, line: String) {
         if let Some(state) = &mut self.state {
             state.next = Some(line);
         }
-        self.write_quietly(Flush::Now);
+        self.write(Flush::Now);
     }
 
     pub fn finish(&mut self, code: u8, error: Option<String>) {
@@ -480,7 +481,7 @@ impl Status {
             error: state.error.clone(),
             next: state.next.clone(),
         };
-        self.write_quietly(Flush::Now);
+        self.write(Flush::Now);
 
         if let Some(directory) = &self.directory
             && let Err(error) = append_history(directory, &entry)
@@ -490,27 +491,22 @@ impl Status {
     }
 
     /// Progress is advisory: a failed status write never stops a session.
-    fn write_quietly(&mut self, when: Flush) {
-        if let Err(error) = self.write(when) {
-            eprintln!("Could not record bench progress: {error}");
-        }
-    }
-
-    pub fn write(&mut self, when: Flush) -> Result<()> {
+    /// Publish the record to the sink, at most five times a second unless
+    /// `when` says now. Publishing cannot fail: the sink owns any writing.
+    fn write(&mut self, when: Flush) {
         let (Some(sink), Some(state)) = (&mut self.sink, &self.state) else {
-            return Ok(());
+            return;
         };
         if when == Flush::Throttled
             && self
                 .written
                 .is_some_and(|at| at.elapsed().as_secs_f64() < 0.2)
         {
-            return Ok(());
+            return;
         }
 
         self.written = Some(Instant::now());
         sink.publish(state);
-        Ok(())
     }
 }
 
@@ -591,7 +587,7 @@ mod tests {
         status.step("loader entry");
         status.step("wellfed-flash read full");
         status.line("Read 4096/8388608 bytes\n");
-        status.write(Flush::Now).unwrap();
+        status.write(Flush::Now);
 
         let current = sink.last();
         assert_eq!(current["steps"][0]["state"], "done");
