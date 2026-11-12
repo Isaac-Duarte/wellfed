@@ -235,6 +235,93 @@ fn fountain(image: &Path, layout: &Path) -> Result<LayoutAudit> {
 mod tests {
     use super::*;
     use crate::Error;
+    use wellfed_formats::layout::PreserveRange;
+    use wellfed_image::fixtures::{synthetic_payload, wrap};
+
+    fn layout(model: Model) -> Layout {
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        wellfed_formats::load(&root.join(wellfed_formats::layout::relative_path(model))).unwrap()
+    }
+
+    /// The fountain's audit of `image` against `layout`, both written to a
+    /// scratch directory.
+    fn fountain_audit(image: &[u8], layout: &Layout) -> Result<LayoutAudit> {
+        let scratch = tempfile::tempdir().unwrap();
+        let (image_path, layout_path) = (
+            scratch.path().join("OTA_All.bin"),
+            scratch.path().join("layout.json"),
+        );
+        fs::write(&image_path, image).unwrap();
+        fs::write(&layout_path, serde_json::to_vec(layout).unwrap()).unwrap();
+        fountain(&image_path, &layout_path)
+    }
+
+    fn refused(image: &[u8], layout: &Layout) -> LayoutError {
+        match fountain_audit(image, layout) {
+            Err(Error::LayoutAudit(error)) => error,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_candidate_in_bank_1_clear_of_preserved_data_passes() {
+        let image = wrap(&synthetic_payload(9000, 30000, 3));
+        let audit = fountain_audit(&image, &layout(Model::Plwf106)).unwrap();
+        assert_eq!(audit.candidate_placements[0].flash_offset, Hex(0x0018_6000));
+    }
+
+    /// Each layout refusal fails on what it claims to catch: an image over
+    /// the cap, one that is not whole sectors, one over preserved data and
+    /// banks out of order.
+    #[test]
+    fn the_layout_audit_refuses_what_it_guards() {
+        let image = wrap(&synthetic_payload(9000, 30000, 3));
+
+        let mut capped = layout(Model::Plwf106);
+        capped.candidate_payload_cap_bytes = 4096;
+        assert!(matches!(refused(&image, &capped), LayoutError::Footprint));
+
+        let mut payload = synthetic_payload(9000, 30000, 3);
+        payload.truncate(payload.len() - 16);
+        assert!(matches!(
+            refused(&wrap(&payload), &layout(Model::Plwf106)),
+            LayoutError::Alignment
+        ));
+
+        let mut preserved = layout(Model::Plwf106);
+        preserved.known_preserve_ranges.push(PreserveRange {
+            name: "inside_bank_1".into(),
+            start: Hex(0x0018_7000),
+            end_exclusive: Hex(0x0018_8000),
+        });
+        assert!(
+            matches!(refused(&image, &preserved), LayoutError::Preserved { ranges } if ranges == ["inside_bank_1"])
+        );
+
+        let mut swapped = layout(Model::Plwf106);
+        swapped.ota_bank_offsets.reverse();
+        assert!(matches!(
+            refused(&image, &swapped),
+            LayoutError::BankOffsets
+        ));
+    }
+
+    /// The feeder's layout must name the verified stock image, before any
+    /// file is read.
+    #[test]
+    fn the_feeder_audit_refuses_a_layout_for_other_stock() {
+        let mut other = layout(Model::Plaf103);
+        other.stock_sha256 = Some("0".repeat(64));
+        let scratch = tempfile::tempdir().unwrap();
+        let path = scratch.path().join("layout.json");
+        fs::write(&path, serde_json::to_vec(&other).unwrap()).unwrap();
+
+        let refused = feeder(Path::new("/nonexistent"), Path::new("/nonexistent"), &path);
+        assert!(
+            matches!(refused, Err(Error::LayoutAudit(LayoutError::Identity))),
+            "{refused:?}"
+        );
+    }
 
     /// The fountain's own layout, its model swapped: refused for its model
     /// alone, before the image is read.
