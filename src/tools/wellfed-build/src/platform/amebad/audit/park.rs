@@ -122,11 +122,8 @@ fn sequence(listing: &str) -> Vec<String> {
         .collect()
 }
 
-pub(crate) const SYMBOLS: [&str; 6] = [
-    "wellfed_amebad_flash_park_publish",
+pub(crate) const SYMBOLS: [&str; 3] = [
     "wellfed_amebad_flash_park_wait",
-    "wellfed_amebad_flash_sem_try_claim",
-    "wellfed_amebad_flash_sem_release",
     "wellfed_amebad_flash_owner_begin",
     "wellfed_amebad_flash_owner_end",
 ];
@@ -354,11 +351,7 @@ pub(crate) fn audit(
                 ],
                 &elf,
             )?;
-            let minimum = if name.contains("_sem_") || KM4_SYMBOLS.contains(&name) {
-                1
-            } else {
-                3
-            };
+            let minimum = if KM4_SYMBOLS.contains(&name) { 1 } else { 3 };
             let leaf = check_leaf(&listing, address, size, minimum)?;
             if KM4_SYMBOLS.contains(&name) {
                 let found = sequence(&listing);

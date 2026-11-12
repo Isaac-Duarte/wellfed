@@ -1,6 +1,7 @@
-//! Target builds only: the C entry points of the RAM park and the IPC
-//! semaphore over this core's real registers (KM0 or KM4, by the `km0`
-//! feature). Like the rest of the park, they stay leaf code in RAM text.
+//! Target builds only: the C entry points of the RAM park over this core's
+//! real registers (KM0 or KM4, by the `km0` feature): the parked core's
+//! wait and the owner's begin and end. Like the rest of the park, they stay
+//! leaf code in RAM text.
 
 use super::*;
 
@@ -51,44 +52,17 @@ impl Mmio for Hardware {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]
 #[inline(never)]
-pub unsafe extern "C" fn wellfed_amebad_flash_park_publish(
-    token: *const ParkToken,
-    command: u32,
-) -> bool {
-    // SAFETY: the C caller passes null or a readable token.
-    unsafe { publish::<Hardware>(token, command) }
-}
-
-/// # Safety
-/// As for [`wellfed_amebad_flash_park_publish`].
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".image2.ram.text.wellfed_park")]
-#[inline(never)]
 pub unsafe extern "C" fn wellfed_amebad_flash_park_wait(
     token: *const ParkToken,
     tick_limit: u32,
     poll_limit: u32,
 ) -> bool {
-    // SAFETY: as for `wellfed_amebad_flash_park_publish`.
+    // SAFETY: the C caller passes null or a readable token.
     unsafe { wait::<Hardware>(token, tick_limit, poll_limit) }
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".image2.ram.text.wellfed_park")]
-#[inline(never)]
-pub extern "C" fn wellfed_amebad_flash_sem_try_claim(index: u32) -> bool {
-    sem_try_claim::<Hardware>(index)
-}
-
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".image2.ram.text.wellfed_park")]
-#[inline(never)]
-pub extern "C" fn wellfed_amebad_flash_sem_release(index: u32) -> bool {
-    sem_release::<Hardware>(index)
-}
-
 /// # Safety
-/// As for [`wellfed_amebad_flash_park_publish`].
+/// As for [`wellfed_amebad_flash_park_wait`].
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]
 #[inline(never)]
@@ -98,12 +72,12 @@ pub unsafe extern "C" fn wellfed_amebad_flash_owner_begin(
     tick_limit: u32,
     poll_limit: u32,
 ) -> bool {
-    // SAFETY: as for `wellfed_amebad_flash_park_publish`.
+    // SAFETY: as for `wellfed_amebad_flash_park_wait`.
     unsafe { owner_begin::<Hardware>(token, channel, tick_limit, poll_limit) }
 }
 
 /// # Safety
-/// As for [`wellfed_amebad_flash_park_publish`].
+/// As for [`wellfed_amebad_flash_park_wait`].
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]
 #[inline(never)]
@@ -113,6 +87,6 @@ pub unsafe extern "C" fn wellfed_amebad_flash_owner_end(
     tick_limit: u32,
     poll_limit: u32,
 ) -> bool {
-    // SAFETY: as for `wellfed_amebad_flash_park_publish`.
+    // SAFETY: as for `wellfed_amebad_flash_park_wait`.
     unsafe { owner_end::<Hardware>(token, channel, tick_limit, poll_limit) }
 }
