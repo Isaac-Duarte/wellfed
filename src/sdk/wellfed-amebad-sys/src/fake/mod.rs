@@ -49,6 +49,9 @@ mod board {
     pub(super) const INTERRUPT_PIN: u32 = BUTTON;
 }
 
+// The fake's GPIO interrupt is port A's (`GPIOA_IRQ`).
+const _: () = assert!(board::INTERRUPT_PIN < 32);
+
 /// PB3 is SWD_CLK on every AmebaD board: while SWD holds it, its GPIO latch
 /// never reaches the pad.
 const SWD_CLK_PB_BIT: u32 = 1 << 3;
@@ -661,9 +664,10 @@ pub fn advance(ticks: u32, run_timer: bool) {
     }
 }
 
-/// Drive the feedback input (PA18) and raise its interrupt when enabled.
+/// Drive the board's interrupt input (the PLAF103's feedback switch, the
+/// PLWF106's button) and raise its interrupt when enabled.
 pub fn edge(high: bool) {
-    let mask = 1u32 << 18;
+    let mask = wellfed_board::pins::bit(board::INTERRUPT_PIN);
     let raise = with(|h| {
         if high {
             h.input[0] |= mask;
