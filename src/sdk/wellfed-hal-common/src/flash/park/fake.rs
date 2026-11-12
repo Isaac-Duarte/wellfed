@@ -13,8 +13,11 @@ use super::{KM0_IPC, KM4_IPC, Mmio};
 
 /// The USR words each core's model keeps.
 const WORDS: usize = 12;
-/// Where USR word 0 sits in a core's IPC block.
+/// Where USR word 0 sits in a core's IPC block, and where the modelled
+/// words end.
 const USR: u32 = 0x20;
+const USR_END: u32 = USR + 4 * 12;
+const _: () = assert!(WORDS == 12);
 
 thread_local! {
     /// USR words 0..11 per core: index 0 KM0, 1 KM4.
@@ -44,7 +47,7 @@ fn locate(address: u32) -> (usize, usize) {
     };
     let offset = address & 0xfff;
     assert!(
-        (USR..USR + 4 * WORDS as u32).contains(&offset) && offset & 3 == 0,
+        (USR..USR_END).contains(&offset) && offset & 3 == 0,
         "not a USR word: {address:#x}"
     );
     (core, ((offset - USR) / 4) as usize)
