@@ -1344,14 +1344,18 @@ pub extern "C" fn wellfed_app_start() {
     // Before anything arms or writes the marker register's attempt bits.
     if let Some(fault) = LeaseFault::take() {
         let mut report = startup::Report::new();
-        if let Ok(line) = report.record(format_args!(
-            "PLSUP1 lease_fault stage={} phase={} fault={} reply={} elapsed_ms={}\r\n",
-            fault.stage.code(),
-            fault.phase.code(),
-            fault.fault.code(),
-            fault.reply.code(),
-            fault.elapsed_ms
-        )) {
+        let line = match fault {
+            Ok(fault) => report.record(format_args!(
+                "PLSUP1 lease_fault stage={} phase={} fault={} reply={} elapsed_ms={}\r\n",
+                fault.stage.code(),
+                fault.phase.code(),
+                fault.fault.code(),
+                fault.reply.code(),
+                fault.elapsed_ms
+            )),
+            Err(raw) => report.record(format_args!("PLSUP1 lease_fault raw={raw:#010x}\r\n")),
+        };
+        if let Ok(line) = line {
             sdk::log(line);
         }
     }

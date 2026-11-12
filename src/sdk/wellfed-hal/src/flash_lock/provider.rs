@@ -161,14 +161,17 @@ impl LeaseFault {
 
     /// The fault the last boot left, cleared from the register so it is
     /// reported once. Called at startup, before anything arms or writes the
-    /// marker's other bits; it leaves those bits as they are.
-    pub fn take() -> Option<Self> {
+    /// marker's other bits; it leaves those bits as they are. A field that
+    /// does not decode (another build's codes) comes back raw, since it may
+    /// be the only account of why that boot halted.
+    pub fn take() -> Option<Result<Self, u32>> {
         let marker = sdk::backup_read(MARKER_REGISTER);
-        if marker & LEASE_FAULT_MASK == 0 {
+        let field = marker & LEASE_FAULT_MASK;
+        if field == 0 {
             return None;
         }
         sdk::backup_write(MARKER_REGISTER, marker & !LEASE_FAULT_MASK);
-        Self::decode(marker)
+        Some(Self::decode(marker).ok_or(field))
     }
 }
 

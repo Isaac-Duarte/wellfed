@@ -641,9 +641,29 @@ fn the_runtime_takes_the_lease_fault_once_and_leaves_the_attempt_bits() {
     .join()
     .unwrap();
 
-    assert_eq!(fault.map(|f| f.stage), Some(LeaseStage::Begin));
+    assert_eq!(
+        fault.map(|f| f.map(|f| f.stage)),
+        Some(Ok(LeaseStage::Begin))
+    );
     assert_eq!(left, ATTEMPT_BIT, "the attempt bit still decides the skip");
     assert_eq!(again, None, "reported once");
+}
+
+#[test]
+fn a_lease_fault_that_does_not_decode_is_reported_raw_and_cleared() {
+    let (fault, left) = std::thread::spawn(|| {
+        fake::reset_hardware();
+        // An unknown phase code (15) with the attempt bit.
+        let raw = (1 << 31) | (15 << 24);
+        fake::with(|h| h.backup[MARKER_REGISTER as usize] = raw | ATTEMPT_BIT);
+        let fault = LeaseFault::take();
+        (fault, fake::with(|h| h.backup[MARKER_REGISTER as usize]))
+    })
+    .join()
+    .unwrap();
+
+    assert_eq!(fault, Some(Err((1 << 31) | (15 << 24))));
+    assert_eq!(left, ATTEMPT_BIT);
 }
 
 #[test]
