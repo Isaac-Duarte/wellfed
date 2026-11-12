@@ -72,6 +72,8 @@ With no valid clock the feeder needs the time, and the device API says so: `Stat
 
 The zone is a feeder setting (`PutTime`'s `zone`): a POSIX TZ rule such as `MST7MDT,M3.2.0,M11.1.0`. The feeder evaluates it for any year without a zone database (`wellfed_core::clock::zone`).
 
+The evaluator reads each year's two changes alone, and a meal's local minute is placed by looking a day either side of it, so the parser refuses a rule with a change within a day of New Year or two changes less than two days apart. No tzdb zone comes near either; only a hand-written rule could. A rule that keeps daylight time from New Year to New Year (`EST5EDT,0/0,J365/25`, zic's way of writing permanent daylight time) reads as the one offset it is.
+
 A client turns the owner's IANA name into the rule with `wellfed_client::time::rule`:
 
 - It takes the footer of the zone's TZif file (RFC 8536) from the tzdb that `jiff-tzdb` bundles.

@@ -109,7 +109,8 @@ pub fn weekday(day: i64) -> u8 {
 /// millisecond); `None` when it gives none.
 ///
 /// The offsets a day either side bracket any change near `local_ms`, since
-/// a zone changes at most once in two days. Each that maps the local time
+/// a zone changes at most once in two days (the zone parser refuses a
+/// rule that would not). Each that maps the local time
 /// back onto itself is a real instant, and the earlier wins (a repeated
 /// minute's first pass). None does in a skipped minute, which then runs at
 /// the earlier offset's instant: as far past the change as it was meant

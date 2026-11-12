@@ -52,9 +52,12 @@ fn last_weekday_and_julian_dates() {
     assert_eq!(berlin.offset_at(1_774_745_999), H);
     assert_eq!(berlin.offset_at(1_774_746_000), 2 * H);
 
-    // Permanent daylight time written as all-year rules.
+    // Permanent daylight time written as all-year rules: one offset, and
+    // never a change.
     let permanent = rule("EST5EDT,0/0,J365/25");
     assert_eq!(permanent.offset_at(1_782_864_000), -4 * H);
+    assert_eq!(permanent.offset_at(1_798_761_600), -4 * H);
+    assert_eq!(permanent.next_change(1_782_864_000), None);
 }
 
 #[test]
@@ -74,6 +77,15 @@ fn bad_rules_are_refused() {
         "MST7MDT,M3.2.7,M11.1.0",
         "MST7MDT,J0,J365",
         "MST7MDT,M3.2.0,M11.1.0/168",
+        // Changes an hour apart: a schedule's step a day either side of a
+        // minute would see both.
+        "AAA0BBB-1,J100/2,J100/4",
+        "AAA0BBB-1,J100,J101/1",
+        // A change on New Year's Eve, which the year's evaluation would
+        // miss in the year it falls in.
+        "AAA0BBB,J1/-2,J180",
+        "AAA0BBB,J180,J365/23",
+        "AAA0BBB,J180,M12.5.0",
         "<+05>-5x",
         "<+5>-5",
     ] {
