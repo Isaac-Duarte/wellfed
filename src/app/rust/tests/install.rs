@@ -789,6 +789,48 @@ fn a_bench_run_goes_where_the_listener_heard_it() {
     });
 }
 
+/// Where the listener heard a feeder, one that already knows this phone's
+/// key proves only that it is one of the owner's, not that stock's install
+/// went to it: the run opens the recovery window there rather than taking
+/// it as paired.
+#[test]
+fn a_known_feeder_where_the_listener_heard_one_is_not_taken_as_paired() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Bench);
+        let keys = Keypair::from_secret([0x51; 32]);
+        let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
+
+        let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.24");
+        spec.address = Some(sim.address.to_string());
+        spec.known_feeders = vec![KnownFeeder {
+            identity: wellfed_session::hex::Lower(&sim.identity).to_string(),
+            name: "Hall".into(),
+            address: Some(sim.address.to_string()),
+            manual_address: None,
+        }];
+        let (run, mut heard) = started(&fixture, spec);
+
+        let ask = loop {
+            match next(&mut heard).await {
+                InstallUpdate::Ask { ask, .. } => break ask,
+                InstallUpdate::Event {
+                    event: event @ InstallEvent::Paired { .. },
+                } => panic!("taken as paired on its answer: {event:?}"),
+                InstallUpdate::Ended { end } => panic!("{end:?}"),
+                InstallUpdate::Event { .. } => {}
+            }
+        };
+        assert_eq!(ask, InstallAsk::OpenRecoveryWindow);
+
+        run.stop();
+        assert!(matches!(
+            ended(&mut heard).await,
+            InstallEnd::Stopped { .. }
+        ));
+        sim.stop().await;
+    });
+}
+
 /// Picking up a bench image with nothing said about where it is: the lease is
 /// gone with the run that held it, so the enrollment's record says, and the
 /// run waits there. A stop ends the wait; it never reads "no address".

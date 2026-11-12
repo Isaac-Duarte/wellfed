@@ -213,10 +213,12 @@ enum Located {
     /// A run from stock: where stock connected from, or an address given
     /// with it.
     Stock,
-    /// A run from bank 0 given an address: the owner's, or where the stock
-    /// listener found something answering at stock's old address. What
-    /// answers there proves only that it holds a key this client knows, not
-    /// that stock's request went to it.
+    /// A run from bank 0 given the address where the stock listener found
+    /// something answering at stock's old address. What answers there
+    /// proves only that it holds a key this client knows, not that stock's
+    /// request went to it (a DHCP lease can pass to another of the owner's
+    /// feeders), so its feeder is found by setup or the recovery window,
+    /// never taken on that answer.
     Given,
     /// A run from bank 0 with no address given.
     No,
@@ -239,12 +241,6 @@ enum Lookup {
     /// only where this run knows its feeder is, never by discovery, and
     /// setup follows if it does not answer.
     KeyFile { identity: [u8; 32] },
-    /// The key's known feeder at an address given to a run from bank 0:
-    /// tried there as a `KeyFile` is, but its answering is not recorded as
-    /// this device's install, as a `Picked` feeder's is not. An address can
-    /// pass to another of the owner's feeders (a DHCP lease), and a record
-    /// would close this device's trial on that feeder's word.
-    Given { identity: [u8; 32] },
     /// The feeder the owner named for a run from bank 0: looked for as a
     /// record's is. Its not answering stops the run, since setup could only
     /// reach another feeder.
@@ -255,9 +251,10 @@ enum Lookup {
 
 /// The lookup for a run whose broker enrolled `device`: the record when it
 /// is this install's (and `prefix`, if given, names its feeder). Else the keys'
-/// feeder where this run has a place of its own to try it, or from bank 0 only if
-/// `prefix` named it. Else setup: a known feeder that answers is not this run's
-/// for that alone.
+/// feeder where this run has a place of its own to try it (a run from stock),
+/// or from bank 0 only if `prefix` named it. Else setup: a known feeder that
+/// answers, at an address the listener found or anywhere else, is not this
+/// run's for that alone.
 fn lookup(
     record: Option<&storage::Paired>,
     device: Option<&str>,
@@ -276,9 +273,8 @@ fn lookup(
         },
         (None, Some(identity)) => match (located, prefix) {
             (Located::Stock, _) => Lookup::KeyFile { identity },
-            (Located::Given, _) => Lookup::Given { identity },
-            (Located::No, Some(_)) => Lookup::Picked { identity },
-            (Located::No, None) => Lookup::Setup,
+            (Located::Given | Located::No, Some(_)) => Lookup::Picked { identity },
+            (Located::Given | Located::No, None) => Lookup::Setup,
         },
         (None, None) => Lookup::Setup,
     }
@@ -308,7 +304,6 @@ fn looked_up(
         (
             Lookup::Recorded { identity, .. }
             | Lookup::KeyFile { identity }
-            | Lookup::Given { identity }
             | Lookup::Picked { identity },
             Some(address),
         ) => Ok(Looked::Paired(identity, address)),
@@ -325,7 +320,7 @@ fn looked_up(
         (Lookup::Recorded { identity, .. } | Lookup::Picked { identity }, None) => {
             Err(Error::NotAnswering { feeder: identity })
         }
-        (Lookup::KeyFile { .. } | Lookup::Given { .. } | Lookup::Setup, _) => Ok(Looked::SetUp),
+        (Lookup::KeyFile { .. } | Lookup::Setup, _) => Ok(Looked::SetUp),
     }
 }
 
@@ -804,11 +799,12 @@ where
     /// replacement knows this client's key. It may still be starting, so
     /// a session is tried until it answers.
     async fn recover(&mut self, install: &mut Install) -> Result<(), Error> {
+        let device = self.stock.device()?;
+        let record = storage::Paired::load(&self.backups)?
+            .filter(|record| device.as_deref() == Some(record.device.as_str()));
         // A resumed run: where this install's feeder last answered.
         if self.found.is_none()
-            && let Some(device) = self.stock.device()?
-            && let Some(record) = storage::Paired::load(&self.backups)?
-            && record.device == device
+            && let Some(record) = &record
         {
             self.found = record.address;
         }
@@ -821,7 +817,14 @@ where
             self.found = self.io.keys.last_address(&identity);
         }
         let address = self.address()?;
-        if let Some(identity) = self.io.keys.feeder(self.feeder.as_deref()) {
+        // At the listener's address, only the feeder this install recorded,
+        // or the one the owner picked, is tried: any other key the phone
+        // holds may open another of the owner's feeders there.
+        let known = match self.located {
+            Located::Given if self.feeder.is_none() => record.map(|record| record.identity.0),
+            _ => self.io.keys.feeder(self.feeder.as_deref()),
+        };
+        if let Some(identity) = known {
             let deadline = Instant::now() + REPLACEMENT_WAIT;
             loop {
                 match wellfed_connect::Connection::open(
@@ -917,9 +920,7 @@ where
                 self.answering(identity, Look::Discovered, last).await
             }
             Lookup::Picked { identity } => self.answering(identity, Look::Discovered, None).await,
-            Lookup::KeyFile { identity } | Lookup::Given { identity } => {
-                self.answering(identity, Look::Known, None).await
-            }
+            Lookup::KeyFile { identity } => self.answering(identity, Look::Known, None).await,
             Lookup::Setup => None,
         };
         match looked_up(lookup, answered, self.unjoined)? {
@@ -931,9 +932,8 @@ where
                 // install went, so it is not recorded as that device's: a
                 // record is what closes the device's trial on a feeder's word,
                 // and a trial left open only makes a later run wait. A record
-                // that names it already is a `Recorded` lookup, not this. Nor
-                // is one that answered at a given address.
-                if matches!(lookup, Lookup::Picked { .. } | Lookup::Given { .. }) {
+                // that names it already is a `Recorded` lookup, not this.
+                if matches!(lookup, Lookup::Picked { .. }) {
                     self.identity = Some(identity);
                     self.found = Some(address);
                 } else {
@@ -1562,28 +1562,25 @@ mod tests {
             Err(Error::NotAnswering { .. })
         ));
 
-        // From bank 0 at a given address, as the stock listener resumes a run
-        // where something answered at stock's old address, the keys' feeder is
-        // tried there but never taken as this device's install, and setup
-        // follows if it does not answer.
+        // From bank 0 at the address the stock listener found, as it resumes a
+        // run where something answered at stock's old address, the keys'
+        // feeder is not tried there: setup finds the feeder. Only this
+        // install's own record, or a feeder the owner picked, is looked for.
         let given = Located::Given;
-        let at_given = Lookup::Given {
-            identity: [0xcd; 32],
-        };
-        assert_eq!(lookup(None, Some("AF_A"), None, known, given), at_given);
+        assert_eq!(
+            lookup(None, Some("AF_A"), None, known, given),
+            Lookup::Setup
+        );
         assert_eq!(
             lookup(Some(&recorded), Some("AF_B"), None, known, given),
-            at_given
+            Lookup::Setup
         );
         assert_eq!(
             lookup(Some(&recorded), Some("AF_A"), None, known, given),
             ours,
             "this install's own record still names its feeder"
         );
-        assert_eq!(
-            looked_up(at_given, None, Unjoined::Wait).unwrap(),
-            Looked::SetUp
-        );
+        assert_eq!(lookup(None, None, Some("cd"), known, given), picked);
 
         // This install's feeder not answering stops the run.
         let here: SocketAddr = "192.168.4.31:7100".parse().unwrap();
