@@ -6,9 +6,7 @@ use std::cell::RefCell;
 use wellfed_hal_common::flash::park::{
     ACK, HELLO, Mmio, RELEASE, RELEASED, REQUEST, SYSTICK_CTRL, TICKS,
 };
-use wellfed_hal_common::flash::peer::{
-    BACKUP_BASE, INJECT_LEASE, MARKER_REGISTER, ParkEvent, Peer,
-};
+use wellfed_hal_common::flash::peer::{BACKUP_BASE, MARKER_REGISTER, ParkEvent, Peer};
 
 #[derive(Default)]
 struct Model {
@@ -128,16 +126,19 @@ fn foreign_or_unanswered_requests_are_ignored() {
     assert_ne!(with(|m| m.regs[0][10]), ACK);
 }
 
+/// A lease attempt mark in the backup register, whatever its value, never
+/// keeps the peer from parking: no value withholds a lease.
 #[test]
-fn marker_withholds_only_the_injection_lease() {
-    let mut peer = requested(INJECT_LEASE);
-    with(|m| m.backup[MARKER_REGISTER as usize] = 1);
-    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Withheld);
-    assert_ne!(with(|m| m.regs[0][10]), ACK);
-
-    let mut peer = requested(INJECT_LEASE);
-    with(|m| m.backup[MARKER_REGISTER as usize] = 2);
-    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Released);
+fn no_backup_mark_withholds_a_lease() {
+    for mark in [0, 1, 2, 0x100, 0x200, u32::MAX] {
+        let mut peer = requested(101);
+        with(|m| m.backup[MARKER_REGISTER as usize] = mark);
+        assert_eq!(
+            peer.on_request::<Km0>(),
+            ParkEvent::Released,
+            "mark {mark:#x}"
+        );
+    }
 }
 
 #[test]

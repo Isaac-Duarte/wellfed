@@ -9,7 +9,7 @@
 
 use std::cell::RefCell;
 
-use super::{KM0_IPC, KM4_IPC, Mmio};
+use super::{KM0_IPC, KM4_IPC, Mmio, READY, handshake, publish_raw};
 
 /// The USR words each core's model keeps: the one count the register
 /// offsets and the array length both come from.
@@ -114,4 +114,14 @@ impl Mmio for Refusing {
     fn halt() -> ! {
         panic!("halt")
     }
+}
+
+/// KM0 peer: republish READY for the answered authority with `peer`, as a
+/// rebooted peer would, for the authority's tests of a lost peer.
+pub fn reannounce<M: Mmio>(peer: u64, answered: u64) -> bool {
+    if !M::KM0 || peer == 0 || answered == 0 {
+        return false;
+    }
+    publish_raw::<M>(&handshake(answered, peer), READY);
+    true
 }

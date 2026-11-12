@@ -1,9 +1,9 @@
 //! Boot handshake between the KM4 authority and the KM0 peer over the
 //! reserved IPC USR words, with both cores sharing one register model.
 
-use wellfed_hal_common::flash::park::fake::{Ipc, reset, set_usr, usr};
+use wellfed_hal_common::flash::park::fake::{Ipc, reannounce, reset, set_usr, usr};
 use wellfed_hal_common::flash::park::{
-    HELLO, READY, REQUEST, Reply, answer, hello, reannounce, reply, session,
+    HELLO, READY, REQUEST, Reply, answer, hello, reply, session,
 };
 
 type Km0 = Ipc<true>;

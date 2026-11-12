@@ -608,16 +608,6 @@ pub fn answer<M: Mmio>(peer: u64, answered: &mut u64) -> u64 {
     }
 }
 
-/// KM0 peer: republish READY for the answered authority with `peer`, as a
-/// rebooted peer would. Fault injection only.
-pub fn reannounce<M: Mmio>(peer: u64, answered: u64) -> bool {
-    if !M::KM0 || peer == 0 || answered == 0 {
-        return false;
-    }
-    publish_raw::<M>(&handshake(answered, peer), READY);
-    true
-}
-
 #[cfg(target_os = "none")]
 mod exported;
 #[cfg(not(target_os = "none"))]

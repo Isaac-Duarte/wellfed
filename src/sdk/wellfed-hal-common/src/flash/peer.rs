@@ -2,26 +2,18 @@
 //! with this boot's peer session. Task context from XIP; no flash lease
 //! exists yet, so nothing here parks or touches flash.
 //!
-//! EXPERIMENTAL fault injection: when `INJECT_PEER_LOSS_MS` is set, the peer
-//! republishes READY with a new session that long after answering, as a
-//! rebooted KM0 would, once per boot.
-//!
 //! An IPC channel-16 request parks this core in RAM through
 //! `park::wait` until the exact RELEASE. A task-driven heartbeat in a
-//! backup register lets KM4 see that the core really stopped. When the
-//! backup marker reads `WITHHOLD_MARKER`, lease `INJECT_LEASE` is ignored
-//! without ACK, once, so the authority's begin must time out.
+//! backup register lets KM4 see that the core really stopped.
 
 use crate::flash::park::{self, Mmio};
 
 /// SDK SYSTIMER rate, as measured on the bench.
 const TICKS_PER_SECOND: u32 = 32_768;
 
-pub const INJECT_PEER_LOSS_MS: Option<u32> = None;
 pub const PARK_CHANNEL: u32 = 16;
-pub const INJECT_LEASE: u64 = 101;
+/// The backup register KM4's lease attempt and update marks live in.
 pub const MARKER_REGISTER: u32 = 1;
-pub const WITHHOLD_MARKER: u32 = 1;
 pub const HEARTBEAT_REGISTER: u32 = 5;
 /// The KM0 backup registers (SDK `BACKUP_REG_BASE`), readable by both cores.
 pub const BACKUP_BASE: u32 = 0x4800_03c0;
@@ -35,9 +27,6 @@ pub const PARK_POLL_LIMIT: u32 = 100_000_000;
 pub struct Peer {
     pub session: u64,
     pub answered: u64,
-    pub answered_at: u32,
-    pub boot_count: u32,
-    pub injected: bool,
     pub last_lease: u64,
 }
 
@@ -47,7 +36,6 @@ pub enum PeerEvent {
     #[default]
     None = 0,
     Answered = 1,
-    Injected = 2,
 }
 
 impl PeerEvent {
@@ -62,7 +50,6 @@ pub enum ParkEvent {
     #[default]
     Ignored = 0,
     Released = 1,
-    Withheld = 2,
     Refused = 3,
 }
 
@@ -84,7 +71,6 @@ impl Peer {
         M::store(BACKUP_BASE + HEARTBEAT_REGISTER * 4, beat);
 
         if self.session == 0 {
-            self.boot_count = boot_count;
             self.session = park::session(boot_count, ticks, true);
         }
 
@@ -94,21 +80,9 @@ impl Peer {
             // leases already read as foreign, since a request must name the
             // answered authority, so its high-water mark guards nothing.
             self.last_lease = 0;
-            self.answered_at = ticks;
             return PeerEvent::Answered;
         }
 
-        if let Some(ms) = INJECT_PEER_LOSS_MS
-            && self.answered != 0
-            && !self.injected
-            && u64::from(ticks.wrapping_sub(self.answered_at)) * 1000
-                >= u64::from(ms) * u64::from(TICKS_PER_SECOND)
-        {
-            self.injected = true;
-            self.session = park::session(self.boot_count.wrapping_add(1), ticks, true);
-            park::reannounce::<M>(self.session, self.answered);
-            return PeerEvent::Injected;
-        }
         PeerEvent::None
     }
 }
@@ -127,11 +101,6 @@ impl Peer {
         let lease = u64::from(token.lease_lo) | (u64::from(token.lease_hi) << 32);
         if lease <= self.last_lease {
             return ParkEvent::Ignored;
-        }
-
-        if lease == INJECT_LEASE && backup::<M>(MARKER_REGISTER) == WITHHOLD_MARKER {
-            self.last_lease = lease;
-            return ParkEvent::Withheld;
         }
         // SAFETY: `token` is a live local.
         if unsafe { park::ram_wait::<M>(&token, PARK_TICK_LIMIT, PARK_POLL_LIMIT) } {
@@ -155,9 +124,6 @@ mod exported {
     static PEER: TaskCell<Peer> = TaskCell::new(Peer {
         session: 0,
         answered: 0,
-        answered_at: 0,
-        boot_count: 0,
-        injected: false,
         last_lease: 0,
     });
 
