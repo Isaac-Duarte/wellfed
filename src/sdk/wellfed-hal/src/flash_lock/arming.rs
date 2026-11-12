@@ -96,11 +96,12 @@ impl Arming {
     /// address and is not otherwise borrowed.
     pub unsafe fn step<M: Mmio, H: Hooks>(&mut self, provider: *mut Provider) -> Poll {
         match self.stage {
-            // Arming sets the attempt marker: not into a decided reset.
             Stage::Hello => {
                 let raw = sdk::systimer_ticks();
                 let handshake = match Handshake::start::<M>(raw) {
                     Ok(handshake) => handshake,
+                    // Arming sets the attempt marker, so not into a reset
+                    // the runtime decided: on a later poll.
                     Err(Unstarted::Held) => return Poll::Pending(None),
                     Err(Unstarted::Refused) => return self.fail(Event::Clock),
                 };
