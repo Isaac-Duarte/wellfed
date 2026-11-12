@@ -72,6 +72,7 @@ pub use frame::{FrameError, SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
 
 use wellfed_model::{Client, ClientRole, Readiness};
 
+use crate::offer::{Confirmation, Restarted, confirmation};
 use crate::update::InstallError as UpdateError;
 use crate::update_key::{EnrollError, Enrolled};
 
@@ -878,22 +879,24 @@ impl Install {
         if self.stage != Stage::AwaitConfirm {
             return;
         }
-        let reported = status.build.to_ascii_lowercase();
-        match status.bank {
-            0 => self.stage = Stage::Failed(InstallError::FellBack),
-            _ if reported != self.build => {
-                self.stage = Stage::Failed(InstallError::WrongPromotion { reported });
-            }
-            _ => match self.version {
-                Some(version)
-                    if confirmed_version >= version || readiness == Some(Readiness::Ready) =>
-                {
-                    self.stage = Stage::Done;
-                }
-                Some(_) => {}
-                None => self.stage = Stage::Failed(InstallError::PromotionUnknown),
-            },
-        }
+        let restarted = Restarted {
+            build: status.build,
+            bank: status.bank,
+            confirmed: confirmed_version,
+            ready: readiness == Some(Readiness::Ready),
+        };
+        // A run that never chose a version cannot tell its build confirmed:
+        // once the build is the one it activated, it fails.
+        let version = self.version.unwrap_or(u32::MAX);
+        self.stage = match confirmation(&self.build, version, restarted) {
+            Confirmation::FellBack => Stage::Failed(InstallError::FellBack),
+            Confirmation::WrongBuild => Stage::Failed(InstallError::WrongPromotion {
+                reported: status.build.to_ascii_lowercase(),
+            }),
+            _ if self.version.is_none() => Stage::Failed(InstallError::PromotionUnknown),
+            Confirmation::Confirmed => Stage::Done,
+            Confirmation::Pending => return,
+        };
     }
 
     /// The caller's bound on the current wait ran out.

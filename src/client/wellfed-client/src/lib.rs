@@ -39,6 +39,7 @@ pub mod call;
 pub mod connection;
 pub mod history;
 pub mod install;
+pub mod offer;
 pub mod plans;
 pub mod release;
 pub mod setup;
