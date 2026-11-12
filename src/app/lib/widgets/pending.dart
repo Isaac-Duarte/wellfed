@@ -112,8 +112,15 @@ class _PendingState<T> extends State<Pending<T>> implements PendingWrite<T> {
       _out++;
     });
 
-    final FeederReply reply = await _sent(send);
-    _out--;
+    // The controller turns the bridge's failures into an unknown end; should
+    // `send` throw all the same, the write still stops counting as out, so
+    // a card that agrees settles the control.
+    final FeederReply reply;
+    try {
+      reply = await send();
+    } finally {
+      _out--;
+    }
     if (!mounted) return;
     if (ticket == _ticket) {
       setState(() {
@@ -126,18 +133,6 @@ class _PendingState<T> extends State<Pending<T>> implements PendingWrite<T> {
       });
     }
     showProblem(context, reply);
-  }
-
-  /// What `send` answered, or an unknown end when it threw (the bridge
-  /// failing, a panic among them): the write may have gone, so it is never
-  /// sent again, and the count of writes out still comes down.
-  static Future<FeederReply> _sent(Future<FeederReply> Function() send) async {
-    try {
-      return await send();
-    } on Object catch (error) {
-      debugPrint('a write ended with no answer: $error');
-      return const FeederReply.unanswered();
-    }
   }
 
   @override
