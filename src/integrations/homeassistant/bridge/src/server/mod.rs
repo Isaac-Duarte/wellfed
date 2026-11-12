@@ -345,6 +345,9 @@ impl<'a> Session<'a> {
         let stream = Stream::read(stream);
         let detail = self.detail().await?;
 
+        // The account's role as the feeder's, for the write gate: what the
+        // person may do, not the server's key it goes out under
+        // (`writes::gate`).
         self.role = match self.account {
             server::Role::Owner => ClientRole::Owner,
             server::Role::Member => ClientRole::Member,

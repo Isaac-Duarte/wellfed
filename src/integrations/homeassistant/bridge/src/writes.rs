@@ -144,6 +144,12 @@ pub struct Read<'a> {
 /// role a newer build added grants nothing here. An op holding a value
 /// only a newer build names has no wire form for the matrix to class; the
 /// connection refuses it `Invalid` before a byte goes out.
+///
+/// Through the owner's server, `role` is the account's, read as the
+/// feeder's owner or member: the gate asks what that person may do, but
+/// the server sends with its own key, whose role the feeder checks. So a
+/// write the gate lets through, such as the portion weight, which the
+/// server's key may not set, can still come back refused.
 pub fn gate(role: ClientRole, op: &Op) -> Result<(), NotSent> {
     let unsendable = op.to_proto().is_err();
     wellfed_formats::require(unsendable || op.allowed(role), || NotSent::Forbidden)
