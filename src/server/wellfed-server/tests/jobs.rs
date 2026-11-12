@@ -245,6 +245,51 @@ async fn jobs_never_overlap_and_catch_up_once() {
     task.await.expect("the supervisor ends cleanly");
 }
 
+/// The host's clock ran a year ahead while every job ran, then was set
+/// back. The recorded starts count from now, so each job runs a period on
+/// rather than a year later.
+#[tokio::test]
+async fn a_run_recorded_ahead_of_the_clock_counts_from_now() {
+    let clock = ManualClock::new();
+    clock.advance_to(at("2026-10-27T12:00:00Z"));
+    let last = Job::ALL
+        .into_iter()
+        .map(|job| JobRun {
+            job,
+            started: at("2027-10-27T12:00:00Z"),
+            finished: at("2027-10-27T12:00:01Z"),
+            outcome: JobOutcome::Succeeded,
+        })
+        .collect();
+    let (fake, mut watch) = runner(&clock, "UTC", last, false);
+    let cancel = CancellationToken::new();
+    let task = jobs::spawn(fake, Arc::new(clock.clone()), cancel.clone());
+
+    watch.quiet().await;
+    clock.advance(HOUR);
+    let one = at("2026-10-27T13:00:00Z");
+    assert_eq!(
+        watch.starts(2).await,
+        [(Job::Rollups, one), (Job::Expiry, one)]
+    );
+    // By 04:00 the next day each daily job has had its time, once.
+    clock.advance(HOUR * 15);
+    let mut ran: Vec<Job> = watch
+        .starts(5)
+        .await
+        .into_iter()
+        .map(|(job, _)| job)
+        .collect();
+    ran.sort_by_key(|job| job.code());
+    let mut all = Job::ALL.to_vec();
+    all.sort_by_key(|job| job.code());
+    assert_eq!(ran, all);
+    watch.quiet().await;
+
+    cancel.cancel();
+    task.await.expect("the supervisor ends cleanly");
+}
+
 #[tokio::test]
 async fn shutdown_ends_a_running_job_and_a_waiting_supervisor() {
     let clock = ManualClock::new();

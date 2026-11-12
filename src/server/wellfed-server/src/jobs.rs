@@ -11,7 +11,8 @@
 //!   delays the next.
 //! - **Catching up.** A job's next time follows its last recorded run, so
 //!   a job due while the server was down runs once when it starts, not
-//!   once for every time it missed.
+//!   once for every time it missed. A recorded run ahead of the clock
+//!   counts from now, so a clock set back never holds a job.
 //! - **Shutdown.** Cancelling the token ends the task at once: a job cut
 //!   short is not recorded, and runs again at its next time.
 
@@ -154,6 +155,20 @@ async fn supervise<R: Runner>(runner: R, clock: Arc<dyn Clock>, cancel: Cancella
         .collect();
 
     loop {
+        let now = clock.now();
+        // A start recorded ahead of the clock (a host clock that ran ahead,
+        // then was set back) would hold its job until the clock got there,
+        // which may be a year: it counts as now instead.
+        for (job, at) in &mut last {
+            if *at > now {
+                warn!(
+                    job = job.code(),
+                    recorded = %at,
+                    "a job's last start is ahead of the clock, which was set back; counting it from now"
+                );
+                *at = now;
+            }
+        }
         let zone = runner.zone();
         let next = Job::ALL
             .into_iter()
@@ -164,7 +179,6 @@ async fn supervise<R: Runner>(runner: R, clock: Arc<dyn Clock>, cancel: Cancella
             })
             .min_by_key(|(due, _)| *due);
 
-        let now = clock.now();
         if let Some((due, job)) = next
             && due <= now
         {
