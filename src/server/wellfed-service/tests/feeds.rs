@@ -393,9 +393,10 @@ fn a_reused_key_and_a_refused_feed_send_nothing_more() {
     });
 }
 
-/// Two feeds lose their answers, and one `Fed` event comes back: either
-/// could be its feed, so neither is settled by a guess. Both stay unknown,
-/// and neither is resent.
+/// Two feeds lose their answers, and one `Fed` event comes back: the
+/// second reached the feeder while the first still fed, and was refused
+/// busy, but either could be the `Fed` event's feed, so neither is settled
+/// by a guess. Both stay unknown, and neither is resent.
 #[test]
 fn two_lost_answers_and_one_fed_event_stay_unknown() {
     local(async {
@@ -407,10 +408,12 @@ fn two_lost_answers_and_one_fed_event_stay_unknown() {
         server.link(id, Link::Online).await;
         let service = server.service();
 
+        sim.control(Control::StallFeeds(true));
         relay.hold_answers();
         let (first, second): (IdempotencyKey, IdempotencyKey) = ([0xda; 16], [0xdb; 16]);
         assert!(unknown(&service.feed(&ada().into(), id, 1, first).await));
         assert!(unknown(&service.feed(&ada().into(), id, 1, second).await));
+        sim.control(Control::StallFeeds(false));
         relay.cut();
         relay.resume();
 
