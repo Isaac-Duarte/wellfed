@@ -93,7 +93,11 @@ fn a_client_change_records_its_event_in_the_writers_turn() {
     while events::record(None, body) {
         queued += 1;
     }
-    assert_eq!(events::take_lost(), 1, "the loop's queue is full");
+    assert_eq!(
+        queued,
+        events::QUEUE - events::RESERVED,
+        "the loop's queue is full"
+    );
     let last = events::last_seq();
 
     assert_eq!(
@@ -243,6 +247,7 @@ fn a_cut_between_the_change_and_its_event_loses_only_the_event() {
     };
     assert_eq!((result, event), (KeyResult::Done, WriteEvent::Lost));
     assert_eq!(events::take_written(), None);
+    assert_eq!(events::take_lost(), 1, "a Lost follows into the ring");
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
 
     let mut table = [None; wellfed_device_api::clients::CLIENTS];

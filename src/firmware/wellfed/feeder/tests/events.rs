@@ -30,14 +30,14 @@ fn the_reserved_slot_takes_only_a_feed_s_outcome() {
     assert_eq!(events::take_lost(), 0, "the shared slots hold every record");
 
     feeder.device(0, &mut feeds).record(0, LOCK);
-    assert_eq!(events::take_lost(), 1, "a plain record past them is lost");
-
     feeder.record_outcome(0, LOCK);
-    assert_eq!(
-        events::take_lost(),
-        0,
-        "the outcome takes the reserved slot"
-    );
     feeder.record_outcome(0, LOCK);
-    assert_eq!(events::take_lost(), 1, "and the queue is full");
+    // The count is handed over once its `Lost` has a shared slot, so it is
+    // read after two records leave (the first outcome holds the reserved
+    // one): the plain record past the shared slots and the second outcome
+    // were lost.
+    events::finish_pending(None);
+    assert_eq!(events::take_lost(), 0, "no shared slot for the Lost yet");
+    events::finish_pending(None);
+    assert_eq!(events::take_lost(), 2);
 }

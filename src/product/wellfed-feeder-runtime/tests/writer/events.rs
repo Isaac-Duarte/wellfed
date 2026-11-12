@@ -11,8 +11,9 @@ use wellfed_device_runtime::writer::{self as writer};
 use wellfed_feeder_runtime::writer::{Record, Writer};
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
+use wellfed_proto::api::EventBody;
 
-use crate::support::{A, Armed, B, Unreached, start, step};
+use crate::support::{A, Armed, B, EVENTS_PROGRAMS_FAIL, Unreached, start, step};
 
 /// The loop's queued events reach the ring, survive a reboot, and
 /// come back through the read mailbox in order.
@@ -378,7 +379,6 @@ fn a_feeds_outcome_has_a_slot_however_many_events_pile_up() {
         queued += 1;
     }
     assert_eq!(usize::from(queued), events::QUEUE - events::RESERVED);
-    assert_eq!(events::take_lost(), 1);
     assert!(
         events::record_outcome(None, [0xfe; 16]),
         "the outcome's slot"
@@ -386,12 +386,22 @@ fn a_feeds_outcome_has_a_slot_however_many_events_pile_up() {
     assert!(!events::record_outcome(None, [0xff; 16]), "one slot");
     step(&mut writer, &mut provider);
     assert_eq!(events::last_seq(), None, "held off by the feed");
+    assert_eq!(
+        events::take_lost(),
+        0,
+        "the count waits for a slot its Lost fits"
+    );
 
     INTERLOCK.release_feed();
     for _ in 0..events::QUEUE {
         step(&mut writer, &mut provider);
     }
     assert_eq!(events::last_seq(), Some(u64::from(queued) + 1));
+    assert_eq!(
+        events::take_lost(),
+        2,
+        "every record dropped while the queue was full"
+    );
     assert_eq!(
         events::read_result(A, Some(u64::from(queued))),
         None,
@@ -402,4 +412,27 @@ fn a_feeds_outcome_has_a_slot_however_many_events_pile_up() {
         panic!("the outcome");
     };
     assert_eq!(last.body, [0xfe; 16]);
+}
+
+/// A queued event the ring refused (a failed program) is counted lost, so a
+/// `Lost` follows it into the history; a refused `Lost` is not counted
+/// again, or a store whose programs keep failing would queue one a pass.
+#[test]
+fn an_event_the_ring_refused_is_counted_lost_once() {
+    let (_guard, mut writer, mut provider) = start();
+    for _ in 0..7 {
+        step(&mut writer, &mut provider); // open, net open, time open, keys, events, stats, its save
+    }
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(true));
+
+    assert!(events::record(None, [1; 16]));
+    assert_eq!(step(&mut writer, &mut provider), Some(Record::EventError));
+    assert_eq!(events::take_lost(), 1, "the refused event");
+
+    let mut lost = [0; 16];
+    wellfed_proto::encode(&EventBody::Lost { count: 1 }, &mut lost).unwrap();
+    assert!(events::record(None, lost));
+    assert_eq!(step(&mut writer, &mut provider), Some(Record::EventError));
+    assert_eq!(events::take_lost(), 0, "the refused Lost");
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
 }

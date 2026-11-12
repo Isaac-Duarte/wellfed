@@ -1048,6 +1048,7 @@ impl<F: FlashOps> Core<F> {
         arming::clear_attempt();
 
         if appended.is_err() {
+            events::append_failed();
             return WriteEvent::Lost;
         }
         events::wrote(at, bytes, self.events.last_seq(), tells_alerts(body));
@@ -1112,6 +1113,14 @@ impl<F: FlashOps> Core<F> {
     }
 }
 
+/// Whether a queued body is the loop's report of records lost.
+fn is_lost(body: &[u8; ring::BODY_BYTES]) -> bool {
+    matches!(
+        wellfed_proto::decode_padded::<EventBody>(body),
+        Some(EventBody::Lost { .. })
+    )
+}
+
 impl<F: FlashOps, P: Product<F>> Writer<F, P> {
     /// Append one queued event, or answer one read; the faster poll while
     /// either has more waiting.
@@ -1130,6 +1139,12 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 arming::clear_attempt();
                 if appended.is_err() {
                     record = Some(Record::EventError);
+                    // A `Lost` the ring refused is not counted again: under
+                    // a store whose programs keep failing, each would queue
+                    // the next, and every attempt costs a slot.
+                    if !is_lost(&queued.body) {
+                        events::append_failed();
+                    }
                 }
                 events::finish_pending(core.events.last_seq());
                 self.publish_fill();

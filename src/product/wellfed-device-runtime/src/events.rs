@@ -6,6 +6,8 @@
 //!   writer drains the queue with [`pending`] and [`finish_pending`]. A full
 //!   queue drops the record and counts it ([`take_lost`]), so a burst can
 //!   never stall the loop; the loop records the count as an event of its own.
+//!   The writer counts a record the ring refused there too
+//!   ([`append_failed`]).
 //!   The last slot is kept for a feed's outcome ([`record_outcome`]): appends
 //!   wait while a feed holds the outputs, so the events of a long feed pile
 //!   up here, and the feed's own result must not be the one lost.
@@ -132,9 +134,24 @@ fn push(at: Option<u32>, body: [u8; BODY_BYTES], limit: usize) -> bool {
     })
 }
 
-/// Records dropped since the last call.
+/// Records dropped since the last call, once the queue has a shared slot
+/// for the `Lost` event that reports them: 0 while it has none, and the
+/// count keeps growing until it does. Handed over sooner, the `Lost` would
+/// itself be dropped and its count with it.
 pub fn take_lost() -> u32 {
-    with(|shared| core::mem::take(&mut shared.lost))
+    with(|shared| {
+        if shared.len >= QUEUE - RESERVED {
+            return 0;
+        }
+        core::mem::take(&mut shared.lost)
+    })
+}
+
+/// The writer's half: an event it could not append to the ring (a failed
+/// program) is dropped, and counted with the queue's, so a `Lost` follows
+/// it into the history.
+pub fn append_failed() {
+    with(|shared| shared.lost = shared.lost.saturating_add(1));
 }
 
 /// The writer's half: the oldest queued record, if any; it stays queued
