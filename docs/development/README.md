@@ -108,7 +108,7 @@ Every host tool is Rust. [src/tools/README.md](../../src/tools/README.md) lists 
 | I want to… | Use | Read |
 | --- | --- | --- |
 | Pair with a feeder, feed, plans, settings, history and status | `wellfed` | [commands](../../src/tools/README.md#the-wellfed-command-line), [device API](../firmware/device-api.md) |
-| Run against a feeder without hardware | `wellfed-feeder-sim` | [tools](../../src/tools/README.md) |
+| Run against a feeder without hardware | `wellfed-feeder-sim` | [simulators](../../src/tools/README.md#simulators) |
 | Build a firmware image | `wellfed-build` | [firmware builds](firmware-builds.md) |
 | Freeze a build for installing, or sign it as an update | `wellfed-build review`, `sign` | [development updates](uart-development.md) |
 | Read or write the feeder's flash over UART | `wellfed-flash` | [Rust flash client](rust-flash.md) |
