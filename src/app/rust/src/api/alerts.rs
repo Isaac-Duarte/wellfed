@@ -42,15 +42,30 @@ pub enum PhoneNetwork {
     Elsewhere,
 }
 
+/// What every fingerprint of the current form starts with. A home learned
+/// under another form names no home at all, so the phone learns it again
+/// from the feeder, as it does a home it never had, rather than taking
+/// itself to be away from it for good.
+const FINGERPRINT_FORM: &str = "gateway-subnet:";
+
 impl PhoneNetwork {
     /// A digest of the network's addresses, so the file keeps none of them. A
-    /// lookalike with the same gateway and subnet still passes.
+    /// lookalike with the same gateway and subnet still passes, which is why
+    /// a catch-up at home asks the owner's server before it counts silence.
     fn fingerprint(&self) -> Result<Option<String>, BridgeError> {
         match self {
-            Self::Wifi { gateway, subnet } => Ok(Some(sha256(&canonical_of(&(gateway, subnet))?))),
+            Self::Wifi { gateway, subnet } => Ok(Some(format!(
+                "{FINGERPRINT_FORM}{}",
+                sha256(&canonical_of(&(gateway, subnet))?)
+            ))),
             Self::Elsewhere => Ok(None),
         }
     }
+}
+
+/// Whether `home` is a fingerprint of the current form.
+pub(crate) fn current_form(home: &str) -> bool {
+    home.starts_with(FINGERPRINT_FORM)
 }
 
 /// Which try of a round this is.
@@ -78,8 +93,9 @@ pub enum CatchUpEnd {
     Away,
     /// Nothing answered the first try: look for the feeder and try again.
     Unanswered,
-    /// Nothing answered the last try. On the feeder's home network that
-    /// counts towards unreachable; anywhere else it counts for nothing.
+    /// Nothing answered the last try, and no owner's server holds the
+    /// feeder. On the feeder's home network that counts towards
+    /// unreachable; anywhere else it counts for nothing.
     Failed,
     /// Away from home: it read what the owner's server last read of the
     /// feeder, and applied it.

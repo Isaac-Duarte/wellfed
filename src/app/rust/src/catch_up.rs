@@ -15,18 +15,19 @@
 //! Only the last try of a round judges the link. The first tries where the
 //! feeder last answered; if nothing answers there, the caller looks for it
 //! with NSD and tries again, since a lease may have moved it, and only that
-//! try's failure counts towards "unreachable", and only on the network where
-//! the feeder last answered.
+//! try's failure counts towards "unreachable", only on the network where
+//! the feeder last answered, and only with no owner's server to ask.
 //!
 //! Away from home (off the network the feeder last answered on), a feeder
 //! the owner's server holds is read through the server instead
-//! ([`ServerRoute`]), and so is one that never answered this phone and
-//! doesn't now: `GET /feeders/{id}/alerts`, the table the server last
-//! read under the same cursor a session reads, applied to the same watch,
-//! so an alert seen at home and again through the server posts once. The
-//! server's judgement that it can't reach the feeder stands in for the
-//! phone's, which counts only at home. That read is a `GET` and nothing
-//! else: the route is the only one a catch-up has.
+//! ([`ServerRoute`]). So is one that never answered this phone and doesn't
+//! now, and one silent on the last try at home, since a network is told by
+//! its gateway and subnet alone and a café's can match. The server's read
+//! is `GET /feeders/{id}/alerts`, the table the server last read under the
+//! same cursor a session reads, applied to the same watch, so an alert seen
+//! at home and again through the server posts once. The server's judgement
+//! that it can't reach the feeder stands in for the phone's. That read is a
+//! `GET` and nothing else: the route is the only one a catch-up has.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -120,9 +121,14 @@ pub(crate) async fn catch_up(
         .map(|watched| watched.watch.clone())
         .unwrap_or_default();
     // Off the feeder's home network the server answers for it. On Wi-Fi
-    // before this phone has ever reached it, home is unknown: the feeder is
-    // tried first, and the server only if nothing answers.
-    let home = watch.reach.home.as_deref();
+    // before this phone has ever reached it, or with a home learned under
+    // an older fingerprint, home is unknown: the feeder is tried first, and
+    // the server only if nothing answers.
+    let home = watch
+        .reach
+        .home
+        .as_deref()
+        .filter(|home| crate::api::alerts::current_form(home));
     let unknown_home = home.is_none() && target.network.is_some();
     let away = !unknown_home && (target.network.is_none() || target.network.as_deref() != home);
     if away && let Some(server) = &target.server {
@@ -144,7 +150,12 @@ pub(crate) async fn catch_up(
         Some(address) => visit(address, target, &watch).await,
         None => Visit::NoAnswer,
     };
-    if unknown_home
+    // A network only looks like home by its gateway and subnet, which a
+    // café's can share. So silence on the last try at home goes to the
+    // owner's server too: it reads the feeder, or judges it unreachable
+    // itself, and the phone counts a failure only with no server to ask.
+    let last = *target.attempt != Attempt::First;
+    if (unknown_home || last)
         && matches!(visit, Visit::NoAnswer)
         && let Some(server) = &target.server
     {

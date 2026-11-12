@@ -4,6 +4,9 @@
 //!   posts its alerts;
 //! - home again, a catch-up reads the feeder itself and posts nothing new,
 //!   and away once more nothing either: one alert, one notification;
+//! - on a network that only looks like home, the server answers for a
+//!   feeder that is silent, and the silence counts for nothing;
+//! - a home learned under an older fingerprint is learned again;
 //! - a server that turns the phone away, or doesn't answer, judges nothing.
 
 use std::time::Duration;
@@ -45,6 +48,16 @@ async fn catch_up(
     network: PhoneNetwork,
     server: Option<AlertServer>,
 ) -> CatchUp {
+    catch_up_at(dir, sim, Attempt::First, network, server).await
+}
+
+async fn catch_up_at(
+    dir: &str,
+    sim: &Running,
+    attempt: Attempt,
+    network: PhoneNetwork,
+    server: Option<AlertServer>,
+) -> CatchUp {
     let key = ClientKey::restore(PHONE.to_vec()).unwrap();
     catch_up_with(
         dir.into(),
@@ -52,7 +65,7 @@ async fn catch_up(
         hex(&sim.identity),
         None,
         Some(sim.address.to_string()),
-        Attempt::First,
+        attempt,
         network,
         server,
     )
@@ -185,6 +198,34 @@ fn an_alert_heard_away_and_then_at_home_posts_once() {
         .await;
         assert_eq!(again.end, CatchUpEnd::Server);
         assert!(post(&dir, &sim, &again).await.is_empty());
+
+        // A network that only looks like home, where the feeder's address
+        // answers nothing: the server, which reaches the feeder, answers
+        // for it, and the silence counts for nothing.
+        let nowhere = Attempt::Last {
+            located: Some("127.0.0.1:9".into()),
+        };
+        let lookalike = catch_up_at(&dir, &sim, nowhere, home(), Some(alert_server.clone())).await;
+        assert_eq!(lookalike.end, CatchUpEnd::Server);
+        assert!(post(&dir, &sim, &lookalike).await.is_empty());
+
+        // A home learned under an older fingerprint is learned again from
+        // the feeder, server or not, rather than read as away for good.
+        let alerts = format!("{dir}/alerts.json");
+        let kept = std::fs::read_to_string(&alerts).unwrap();
+        assert!(kept.contains("gateway-subnet:"), "{kept}");
+        std::fs::write(&alerts, kept.replace("gateway-subnet:", "")).unwrap();
+        let relearned = catch_up(&dir, &sim, home(), Some(alert_server.clone())).await;
+        assert!(
+            matches!(relearned.end, CatchUpEnd::Read | CatchUpEnd::Unchanged),
+            "{:?}",
+            relearned.end
+        );
+        assert!(
+            std::fs::read_to_string(&alerts)
+                .unwrap()
+                .contains("gateway-subnet:")
+        );
 
         // A server that turns this phone away judges nothing either, and
         // says it did.
