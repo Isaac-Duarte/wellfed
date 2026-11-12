@@ -101,7 +101,7 @@ The limits of that promise matter:
 
 ## Uncertain is an answer
 
-When an answer is lost, no client resends a feed. If your phone loses the connection after sending, the app asks whether the feeder fed and tells you to look at the bowl. If the feeder stayed on, it finishes by itself and keeps the result in its history. The CLI does the same, and `wellfed feeds` reads the result later. The CLI can also stop waiting on a long feed after 2 minutes, while the feed carries on, so an error there doesn't mean the feed failed.
+When an answer is lost, no client resends a feed. If your phone loses the connection after sending, the app asks whether the feeder fed and tells you to look at the bowl. If the feeder stayed on, it finishes by itself and keeps the result in its history. The CLI does the same, and `wellfed feeds` reads the result later. The CLI can also stop waiting on a long feed after 2 minutes, while the feed carries on. Whenever it can't tell whether a feed ran, it exits with status 3, not 1, so a script doesn't read it as a feed that never happened.
 
 A refusal is different, because nothing moved. The app offers **Start over**, which is a new feed you ask for.
 

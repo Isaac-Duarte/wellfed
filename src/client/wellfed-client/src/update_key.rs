@@ -22,7 +22,9 @@
 //!    closes. It is sent once: a second offer would need a second press,
 //!    and an unanswered one may already have enrolled the key (a press
 //!    admitted before the session ended still writes), so it ends
-//!    [`EnrollError::Uncertain`] and the caller reads the list again.
+//!    [`EnrollError::Uncertain`] and the caller reads the list again. So
+//!    does an answer this build cannot read: only a refusal says the key
+//!    was not enrolled.
 
 use wellfed_model::{Answer, Client, ClientRole, Op, Refusal, UpdateRefusal};
 pub use wellfed_proto::setup::LABEL_MAX;
@@ -87,9 +89,10 @@ pub enum EnrollError {
     Busy,
     #[error("every client slot on the feeder is taken")]
     Full,
-    /// No answer came to the enrollment: a press may have enrolled the key
-    /// all the same. Read the client list to know; never send it again.
-    #[error("no answer came to the enrollment; the key may be enrolled all the same")]
+    /// No answer came to the enrollment, or none this build can read: a
+    /// press may have enrolled the key all the same. Read the client list
+    /// to know; never send it again.
+    #[error("no readable answer came to the enrollment; the key may be enrolled all the same")]
     Uncertain,
     /// No answer came to the client list: nothing was enrolled, and asking
     /// again is safe.
@@ -193,9 +196,13 @@ impl Enroll {
                 },
                 answer => Stage::Ended(Err(refusal(answer))),
             },
+            // Only a refusal says nothing was enrolled: an answer this
+            // build cannot read (a newer build's), or of another kind, may
+            // follow an enrollment the press confirmed.
             Stage::Enrolling => Stage::Ended(match answer {
                 Answer::Done { .. } => Ok(Enrolled::Now),
-                answer => Err(refusal(answer)),
+                Answer::Refused(_) => Err(refusal(answer)),
+                _ => Err(EnrollError::Uncertain),
             }),
             Stage::Start | Stage::Absent | Stage::Ended(_) => {
                 Stage::Ended(Err(EnrollError::Unexpected))
@@ -356,7 +363,10 @@ mod tests {
                 Answer::Refused(Refusal::NotWritable),
                 Err(EnrollError::Refused(Refusal::NotWritable)),
             ),
-            (Answer::Clients(Vec::new()), Err(EnrollError::Unexpected)),
+            // A newer build's answer, or one of another kind, may follow
+            // an enrollment that went through.
+            (Answer::Unreadable, Err(EnrollError::Uncertain)),
+            (Answer::Clients(Vec::new()), Err(EnrollError::Uncertain)),
         ];
         for (answer, outcome) in cases {
             let (mut enroll, _) = enrolling();

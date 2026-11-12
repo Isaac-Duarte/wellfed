@@ -95,16 +95,62 @@ impl Connection {
         }
     }
 
-    /// One request under a fresh id, and its answer.
+    /// One request under a fresh id, and its answer. A write that went
+    /// out and got no answer, or one this build cannot read, may have run:
+    /// it comes back [uncertain](crate::uncertain), and is never sent
+    /// again.
     pub(crate) async fn ask(&mut self, op: &Op) -> Result<Answer> {
-        match self {
+        let answer = match self {
             Self::Direct(connection) => {
                 let id: RequestId = random()?;
-                Ok(connection.ask(id, op).await?)
+                connection
+                    .ask(id, op)
+                    .await
+                    .map_err(|error| unanswered(op, error))?
             }
-            Self::Bench(lent) => lent.ask(op).await,
+            Self::Bench(lent) => lent.ask(op).await?,
+        };
+
+        match answer {
+            Answer::Unreadable if writes(op) => Err(crate::uncertain(format!(
+                "the feeder answered in a way this build cannot read (a newer feeder build's); \
+                 {}",
+                check(op)
+            ))),
+            answer => Ok(answer),
         }
     }
+}
+
+/// Whether `op` changes something on the feeder: the device API's own
+/// rule, which every op decides.
+pub(crate) fn writes(op: &Op) -> bool {
+    op.to_proto().is_ok_and(|op| op.writes())
+}
+
+/// What reads back whether `op` ran.
+fn check(op: &Op) -> &'static str {
+    match op {
+        Op::Feed { .. } | Op::CancelFeed { .. } => "`wellfed feeds` shows whether it ran",
+        _ => "`wellfed events` shows what the feeder recorded",
+    }
+}
+
+/// `error`, which ended `op`'s wait for its answer, as the command reports
+/// it. Only a request refused before a byte went is sure not to have run;
+/// once one is queued, a session that ends or an answer that never comes
+/// says nothing of whether a write ran.
+fn unanswered(op: &Op, error: wellfed_connect::Error) -> anyhow::Error {
+    use wellfed_connect::Error as Connect;
+
+    let unsent = matches!(
+        error,
+        Connect::Encode | Connect::ReservedId | Connect::Legacy
+    );
+    if unsent || !writes(op) {
+        return error.into();
+    }
+    crate::uncertain(format!("no answer came ({error}); {}", check(op)))
 }
 
 /// The shared steps (the backup's read, the update key's enrollment) run
@@ -124,5 +170,35 @@ impl wellfed_install::session::Session for Connection {
 
     async fn ask(&mut self, op: &Op) -> Result<Answer, wellfed_install::PlatformError> {
         Ok(Self::ask(self, op).await?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_connect::Error as Connect;
+
+    use super::*;
+    use crate::Uncertain;
+
+    /// A write queued and then left unanswered may have run, so it is
+    /// uncertain and says what settles it; a request refused before a
+    /// byte went, and a read, are plain failures.
+    #[test]
+    fn a_write_with_no_answer_is_uncertain() {
+        let feed = Op::Feed { portions: 1 };
+        for ended in [Connect::Timeout, Connect::Closed, Connect::Silent] {
+            let error = unanswered(&feed, ended);
+            assert!(error.downcast_ref::<Uncertain>().is_some(), "{error:#}");
+            let words = format!("{error:#}");
+            assert!(words.contains("may have run"), "{words}");
+            assert!(words.contains("`wellfed feeds`"), "{words}");
+        }
+
+        for unsent in [Connect::Encode, Connect::ReservedId, Connect::Legacy] {
+            let error = unanswered(&feed, unsent);
+            assert!(error.downcast_ref::<Uncertain>().is_none(), "{error:#}");
+        }
+        let read = unanswered(&Op::Status, Connect::Timeout);
+        assert!(read.downcast_ref::<Uncertain>().is_none(), "{read:#}");
     }
 }

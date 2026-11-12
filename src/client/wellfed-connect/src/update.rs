@@ -89,9 +89,12 @@ pub enum Pushed {
     AlreadyRunning,
     /// The install's own error, for good.
     Failed(InstallError),
-    /// The feeder stopped answering the device API. With `offered`, the
-    /// offer went out: bank 1 may be partly written, or activated with its
-    /// answer lost, and only the feeder can tell.
+    /// The feeder stopped answering the device API, or answered in a way
+    /// this build cannot read. With `offered`, the offer went out: bank 1
+    /// may be partly written, or activated with its answer lost, and only
+    /// the feeder can tell, so a caller should report it as uncertain. Not
+    /// every caller does yet: the installer's promotion still reads it as
+    /// bank 0 not installing the update.
     Gone { offered: bool },
 }
 
@@ -133,6 +136,14 @@ pub async fn push<S: Steps>(
             Next::Send(sent, op) => {
                 offered |= sent == Sent::Offer;
                 match steps.step(op).await? {
+                    // Only a state or a refusal says where the install
+                    // stands. An answer this build cannot read (a newer
+                    // build's), or of another kind, may follow an offer
+                    // that took: the push ends `Gone`, as with a feeder
+                    // that went silent, and nothing is sent again.
+                    Some(answer) if !matches!(answer, Answer::Update(_) | Answer::Refused(_)) => {
+                        return Ok(Pushed::Gone { offered });
+                    }
                     // An answer the installer rejects ends the install; the
                     // next poll says so.
                     Some(answer) => {
@@ -159,6 +170,73 @@ pub async fn push<S: Steps>(
             }
             // Nothing here cancels.
             Next::Cancelled => return Ok(Pushed::Failed(InstallError::Lost)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::convert::Infallible;
+
+    use super::*;
+
+    /// A feeder that answers every request with `answer`, and keeps what it
+    /// was sent.
+    struct Answering {
+        answer: Answer,
+        sent: Vec<Op>,
+    }
+
+    impl Steps for Answering {
+        type Error = Infallible;
+
+        async fn step(&mut self, op: Op) -> Result<Option<Answer>, Infallible> {
+            self.sent.push(op);
+            Ok(Some(self.answer.clone()))
+        }
+
+        async fn reopen(&mut self) -> Result<Option<Opened>, Infallible> {
+            Ok(Some(Opened {
+                bank: 0,
+                build: "bank 0".into(),
+            }))
+        }
+
+        fn activated(&mut self, _: &Opened) -> bool {
+            false
+        }
+
+        fn progress(&mut self, _: &UpdateView) {}
+    }
+
+    /// An offer answered in a way this build cannot read, or with an answer
+    /// of another kind, may have taken: the push ends unsettled after the
+    /// one offer, never as a refusal, and offers nothing again.
+    #[test]
+    fn an_unreadable_answer_to_the_offer_leaves_the_push_unsettled() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let image = Image {
+            manifest: b"manifest",
+            downgrade: None,
+            payload: &[1; 64],
+        };
+
+        for answer in [Answer::Unreadable, Answer::Done { generation: None }] {
+            let mut feeder = Answering {
+                answer: answer.clone(),
+                sent: Vec::new(),
+            };
+            let pushed = runtime.block_on(push(image, &mut feeder, Pace::DEFAULT));
+
+            assert_eq!(pushed, Ok(Pushed::Gone { offered: true }), "{answer:?}");
+            assert!(
+                matches!(feeder.sent[..], [Op::OfferUpdate { .. }]),
+                "{answer:?}: {:?}",
+                feeder.sent
+            );
         }
     }
 }

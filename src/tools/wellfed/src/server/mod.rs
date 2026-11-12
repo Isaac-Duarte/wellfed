@@ -43,9 +43,6 @@ use uuid::Uuid;
 use wellfed_server_client::Error;
 use wellfed_server_client::api::{ErrorCode, Problem};
 
-/// The exit status of a write whose outcome is unknown.
-const UNKNOWN: u8 = 3;
-
 #[derive(Args)]
 pub(crate) struct ServerArgs {
     /// Print the API's bodies as JSON, one per line, instead of text.
@@ -131,7 +128,7 @@ pub(crate) async fn run(args: ServerArgs) -> Result<ExitCode> {
 
     match ran {
         Ok(Settled::Known) => Ok(ExitCode::SUCCESS),
-        Ok(Settled::Unknown) => Ok(ExitCode::from(UNKNOWN)),
+        Ok(Settled::Unknown) => Ok(ExitCode::from(crate::UNKNOWN)),
         Err(error) => Err(out.failed(error)),
     }
 }
@@ -166,9 +163,10 @@ async fn verb(verb: Verb, token_file: &Path, out: Output) -> Result<Settled> {
     }
 }
 
-/// How a command ended, short of an error: the exit status's 0 or 3.
+/// How a command ended, short of an error: the exit status's 0 or
+/// [`crate::UNKNOWN`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Settled {
+pub(crate) enum Settled {
     Known,
     /// A write may or may not have run, and the journal does not say yet.
     Unknown,

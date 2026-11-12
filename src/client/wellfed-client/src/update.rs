@@ -122,6 +122,9 @@ pub enum InstallError {
     Stopped(UpdateStop),
     #[error("bank 0 is not installing this update")]
     Lost,
+    /// An answer of another kind, or one this build cannot read. The
+    /// request may have run all the same, so a driver that meets one after
+    /// an offer reports the push unsettled, never as a refusal.
     #[error("the feeder answered with something other than the update's state")]
     Unexpected,
 }

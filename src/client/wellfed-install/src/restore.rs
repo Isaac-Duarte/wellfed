@@ -28,8 +28,9 @@
 //! floor stays where it was) and writes stock into bank 1. Within the push the
 //! shared installer offers again where the update protocol needs it, but
 //! nothing offers once the push has returned: a refusal ends the restore, and
-//! a feeder that stops answering after an offer went out leaves the result
-//! uncertain, since stock serves no device API to ask.
+//! a feeder that stops answering after an offer went out, or answers in a way
+//! this build cannot read, leaves the result uncertain, since stock serves no
+//! device API to ask.
 //!
 //! [rollback]: ../../../../docs/firmware/consumer-installation.md#rollback
 
@@ -152,7 +153,8 @@ pub enum Restored {
 /// Why a restore's end is not known.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Uncertainty {
-    /// The feeder stopped answering after the offer went out.
+    /// The feeder stopped answering after the offer went out, or answered
+    /// in a way this build cannot read.
     Gone,
     /// The owner stopped the run once an offer may have gone out; it may not
     /// have, since the mark goes up before anything is sent.
@@ -404,11 +406,30 @@ async fn enroll<D: Discovery>(
             shown(Enrollment::Enrolled(Enrolled::Now));
             Ok(())
         }
-        Err(EnrollError::ListUnanswered) => Err(Error::RestoreEnroll(EnrollError::ListUnanswered)),
         Err(error) => {
-            absent.set(true);
+            absent.set(not_enrolled(error));
             Err(Error::RestoreEnroll(error))
         }
+    }
+}
+
+/// Whether an enrollment that ended in `error` leaves the key surely not
+/// enrolled, so its file can go: a refusal by the feeder, or a check that
+/// refused it before anything was sent. Any other end keeps the file, since
+/// a key the feeder may trust is not deleted on a guess, and a later run
+/// within [`KEY_LIFE`] finds it listed or enrolls it.
+fn not_enrolled(error: EnrollError) -> bool {
+    match error {
+        EnrollError::Label
+        | EnrollError::NotOwner { .. }
+        | EnrollError::Forbidden
+        | EnrollError::SessionKey { .. }
+        | EnrollError::HeldAsSessionKey
+        | EnrollError::Unconfirmed
+        | EnrollError::Busy
+        | EnrollError::Full
+        | EnrollError::Refused(_) => true,
+        EnrollError::Uncertain | EnrollError::ListUnanswered | EnrollError::Unexpected => false,
     }
 }
 
@@ -704,6 +725,39 @@ mod tests {
 
         async fn settle(&mut self) -> Result<(), PlatformError> {
             Ok(())
+        }
+    }
+
+    /// Only an enrollment the feeder refused lets the fresh key's file go.
+    /// An answer this build cannot read may follow a press that enrolled
+    /// it, so the run reads the signers instead, and the file stays.
+    #[test]
+    fn only_a_refused_enrollment_lets_its_key_file_go() {
+        use wellfed_client::update_key::{Enroll, Next};
+
+        let mut enroll = Enroll::new([0x5e; 32], LABEL, ClientRole::Owner)
+            .unwrap()
+            .unlisted();
+        assert!(matches!(enroll.poll(), Next::Press(_)));
+        enroll.answer(&Answer::Unreadable);
+        assert_eq!(enroll.poll(), Next::Failed(EnrollError::Uncertain));
+
+        for kept in [
+            EnrollError::Uncertain,
+            EnrollError::ListUnanswered,
+            EnrollError::Unexpected,
+        ] {
+            assert!(!not_enrolled(kept), "{kept:?}");
+        }
+        for refused in [
+            EnrollError::Unconfirmed,
+            EnrollError::Busy,
+            EnrollError::Full,
+            EnrollError::Forbidden,
+            EnrollError::HeldAsSessionKey,
+            EnrollError::Refused(Refusal::NotWritable),
+        ] {
+            assert!(not_enrolled(refused), "{refused:?}");
         }
     }
 

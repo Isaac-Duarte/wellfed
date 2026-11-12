@@ -71,7 +71,9 @@ Tap **Feed now**, choose 1 to 48 portions and confirm. You can close the sheet, 
 wellfed feed --portions 2
 ```
 
-It prints the feed's number and waits for the result. On a long feed, it can give up waiting after 2 minutes with an error while the feed carries on. Don't feed again: read `wellfed feeds` once it has had time to finish. To stop it, run `wellfed cancel-feed <feed>` from another terminal.
+It prints the feed's number and waits for the result. On a long feed, it can give up waiting after 2 minutes while the feed carries on. Don't feed again: read `wellfed feeds` once it has had time to finish. To stop it, run `wellfed cancel-feed <feed>` from another terminal.
+
+The exit status says how it went: 0 for a feed done, 1 for an error or a feed that ended without its portions, and 3 when the CLI can't tell whether it ran. Every other change the CLI sends exits the same way, and it never sends one again on its own.
 
 <!-- /tabs -->
 

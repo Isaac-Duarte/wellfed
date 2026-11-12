@@ -1,16 +1,21 @@
 //! A feed over the device API, under a fresh request id and never retried:
 //! a feed whose answer is lost may have run, and is settled from the
 //! feeder's history instead.
+//!
+//! The command exits as `wellfed server feed` does: 0 for a feed done, 1
+//! for one the feeder refused or that ended without its portions, and
+//! [`crate::UNKNOWN`] for one that may have run or whose end is not known.
 
 use std::time::Duration;
 
 use anyhow::{Result, bail};
 use clap::Args;
 use wellfed_client::history::Feed;
-use wellfed_model::{Answer, Event, Op, PORTIONS_MAX, Pushed, Refusal};
+use wellfed_model::{Answer, Event, FeedOutcome, Op, PORTIONS_MAX, Pushed, Refusal};
 
 use crate::device::Connection;
-use crate::{Target, ask_and_print, connect, print_json, text};
+use crate::server::Settled;
+use crate::{Target, ask_and_print, connect, print_json, text, uncertain};
 
 #[derive(Args)]
 pub(crate) struct FeedArgs {
@@ -49,27 +54,48 @@ pub(crate) async fn feed(connection: &mut Connection, portions: u8) -> Result<()
     connection.subscribe(status.last_event, false).await?;
 
     let answer = connection.ask(&Op::Feed { portions }).await?;
-    print_json(&answer)?;
+    let printed = print_json(&answer);
     let feed = started(&answer)?;
+    shown(printed);
 
+    // The feed runs now: whatever ends this wait leaves its result to the
+    // history, never to a second feed.
+    let unsettled = |why: String| {
+        uncertain(format!(
+            "{why}; feed {feed} may still be running: `wellfed feeds` shows its result once \
+             recorded. Don't feed again before it does"
+        ))
+    };
     loop {
-        let Some(message) = connection.next(FEED_WAIT).await? else {
-            bail!(
-                "no result for feed {feed} after {} s; `wellfed events` shows it once recorded",
-                FEED_WAIT.as_secs()
-            );
+        let message = match connection.next(FEED_WAIT).await {
+            Ok(Some(message)) => message,
+            Ok(None) => {
+                return Err(unsettled(format!(
+                    "no result after {} s",
+                    FEED_WAIT.as_secs()
+                )));
+            }
+            Err(error) => return Err(unsettled(format!("{error:#}"))),
         };
         if let Pushed::Event(event) = message
-            && let Some(line) = fed(&event, feed)
+            && let Some(ended) = fed(&event, feed)
         {
-            print_json(&event)?;
-            eprintln!("{line}");
-            return Ok(());
+            shown(print_json(&event));
+            eprintln!("{}", text::fed(&ended));
+            return match settled(ended.outcome)? {
+                Settled::Known => Ok(()),
+                Settled::Unknown => Err(uncertain(format!(
+                    "feed {feed} ended {}: look at the bowl before feeding again",
+                    text::word(&ended.outcome)
+                ))),
+            };
         }
     }
 }
 
-/// The feed the answer started, or why it started none.
+/// The feed the answer started, or why it started none. Only a refusal says
+/// nothing ran: an answer this build cannot read, or of another kind, may
+/// follow a feed that started.
 fn started(answer: &Answer) -> Result<u32> {
     match answer {
         Answer::Feeding { feed } => Ok(*feed),
@@ -77,16 +103,43 @@ fn started(answer: &Answer) -> Result<u32> {
             bail!("the feeder refused {asked} portions: a feed asks for 1 to {PORTIONS_MAX}")
         }
         Answer::Refused(refusal) => bail!("the feeder did not start the feed: {refusal:?}"),
-        _ => bail!("the feeder did not start the feed: {answer:?}"),
+        Answer::Unreadable => Err(uncertain(
+            "the feeder answered the feed in a way this build cannot read (a newer feeder \
+             build's), so it may have started: `wellfed feeds` shows whether it ran",
+        )),
+        _ => Err(uncertain(
+            "the feeder answered the feed with something other than its start, so it may have \
+             started: `wellfed feeds` shows whether it ran",
+        )),
     }
 }
 
-/// `feed`'s result as one line, if `event` is its `Fed` event: the same
-/// line `wellfed feeds` shows for it.
-fn fed(event: &Event, feed: u32) -> Option<String> {
-    Feed::from_event(event)
-        .filter(|ended| ended.feed == feed)
-        .map(|ended| text::fed(&ended))
+/// A print that failed once the feed went out, said on standard error: the
+/// exit stays the feed's own, never a plain failure that reads as a feed
+/// that did not run.
+fn shown(printed: Result<()>) {
+    if let Err(error) = printed {
+        eprintln!("(could not print it: {error:#})");
+    }
+}
+
+/// `feed`'s end, if `event` is its `Fed` event.
+fn fed(event: &Event, feed: u32) -> Option<Feed> {
+    Feed::from_event(event).filter(|ended| ended.feed == feed)
+}
+
+/// What a feed's recorded end says of the command that asked for it, on
+/// either path: done is success, and an uncertain end (or one a newer
+/// feeder build added) is unknown, since anything up to the portions asked
+/// for may have dropped. Any other end is the command's failure.
+pub(crate) fn settled(outcome: FeedOutcome) -> Result<Settled> {
+    match outcome {
+        FeedOutcome::Done => Ok(Settled::Known),
+        FeedOutcome::Uncertain | FeedOutcome::Unknown => Ok(Settled::Unknown),
+        FeedOutcome::Cancelled | FeedOutcome::Expired | FeedOutcome::Failed => {
+            bail!("the feed ended {}", text::word(&outcome))
+        }
+    }
 }
 
 pub(crate) async fn cancel_feed_command(args: CancelFeedArgs) -> Result<()> {
@@ -99,6 +152,7 @@ mod tests {
     use wellfed_model::{EventBody, FeedOutcome, FeedReason, FeederEvent, FoodLevel, Source};
 
     use super::*;
+    use crate::Uncertain;
 
     #[derive(Parser)]
     struct Cli {
@@ -132,6 +186,38 @@ mod tests {
         assert!(started(&Answer::Refused(Refusal::Busy)).is_err());
     }
 
+    /// Only a refusal says the feed never started: an answer this build
+    /// cannot read, or of another kind, may follow one that did.
+    #[test]
+    fn an_unreadable_answer_to_a_feed_is_uncertain() {
+        for answer in [Answer::Unreadable, Answer::Done { generation: None }] {
+            let error = started(&answer).unwrap_err();
+            assert!(error.downcast_ref::<Uncertain>().is_some(), "{error:#}");
+            assert!(error.to_string().contains("may have started"), "{error}");
+        }
+
+        let refused = started(&Answer::Refused(Refusal::Busy)).unwrap_err();
+        assert!(refused.downcast_ref::<Uncertain>().is_none(), "{refused:#}");
+    }
+
+    /// A feed's recorded end, as the command's exit: done is success, an
+    /// end without its portions a failure, and an uncertain one unknown.
+    #[test]
+    fn a_feed_exits_by_how_it_ended() {
+        assert_eq!(settled(FeedOutcome::Done).unwrap(), Settled::Known);
+        for unknown in [FeedOutcome::Uncertain, FeedOutcome::Unknown] {
+            assert_eq!(settled(unknown).unwrap(), Settled::Unknown, "{unknown:?}");
+        }
+        for failed in [
+            FeedOutcome::Failed,
+            FeedOutcome::Cancelled,
+            FeedOutcome::Expired,
+        ] {
+            let error = settled(failed).unwrap_err().to_string();
+            assert!(error.starts_with("the feed ended"), "{error}");
+        }
+    }
+
     #[test]
     fn the_result_line_says_what_was_asked_for_and_delivered() {
         let fed_event = |outcome, completed, reason, hopper| Event {
@@ -155,8 +241,9 @@ mod tests {
             FeedReason::NoFeedback,
             FoodLevel::Present,
         );
+        let line = |event: &Event| fed(event, 7).map(|ended| text::fed(&ended));
         assert_eq!(
-            fed(&failed, 7).as_deref(),
+            line(&failed).as_deref(),
             Some("feed 7  by feeder  2 of 3 portions, failed (no_feedback)")
         );
         assert_eq!(fed(&failed, 8), None);
@@ -169,13 +256,13 @@ mod tests {
             FoodLevel::Present,
         );
         assert_eq!(
-            fed(&lost, 7).as_deref(),
+            line(&lost).as_deref(),
             Some("feed 7  by feeder  2 to 3 of 3 portions, uncertain (output)")
         );
 
         let low = fed_event(FeedOutcome::Done, 3, FeedReason::Done, FoodLevel::Low);
         assert_eq!(
-            fed(&low, 7).as_deref(),
+            line(&low).as_deref(),
             Some("feed 7  by feeder  3 of 3 portions, done (done)  food read low")
         );
     }

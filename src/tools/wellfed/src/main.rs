@@ -19,6 +19,10 @@
 //!   speaks the server's HTTP API through `wellfed-server-client`, with
 //!   the token `wellfed server login` keeps.
 //!
+//! Either path exits 0 on success, 1 on an error and 3 when a write's
+//! outcome is unknown: it went out, and nothing the command read says
+//! whether it ran. Such a write is never sent again.
+//!
 //! Installing from stock 1.1.15 is the Android app's alone. `wellfed backup`
 //! and `wellfed restore-stock` (the `backup` module) are how this command line
 //! keeps stock's image and goes back to it.
@@ -155,8 +159,8 @@ enum Command {
     Server(server::ServerArgs),
 }
 
-/// Exits 0 on success and 1 on an error; `wellfed server` also exits 3
-/// when a write's outcome is unknown.
+/// Exits 0 on success, 1 on an error and [`UNKNOWN`] when a write's
+/// outcome is unknown, on either path.
 fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
     // Every command is one session on one thread.
@@ -209,7 +213,32 @@ fn main() -> Result<ExitCode> {
         Command::Backup(args) => runtime.block_on(backup::command(args)),
         Command::RestoreStock(args) => runtime.block_on(backup::restore(*args)),
     };
-    device.map(|()| ExitCode::SUCCESS)
+    match device {
+        Ok(()) => Ok(ExitCode::SUCCESS),
+        Err(error) if error.downcast_ref::<Uncertain>().is_some() => {
+            eprintln!("Error: {error:?}");
+            Ok(ExitCode::from(UNKNOWN))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// The exit status of a write whose outcome is unknown, on either path:
+/// apart from 1, which a script reads as "it did not run" and may answer by
+/// sending it again.
+const UNKNOWN: u8 = 3;
+
+/// The mark of a write that may have run: it went out, and nothing this
+/// command read settles it. It is never sent again, and the command exits
+/// [`UNKNOWN`].
+#[derive(Debug, thiserror::Error)]
+#[error("its outcome is unknown: it may have run, and is not sent again")]
+struct Uncertain;
+
+/// What became of a write that may have run, as the error that exits
+/// [`UNKNOWN`]: `what` says what happened and what to read to settle it.
+fn uncertain(what: impl std::fmt::Display + Send + Sync + 'static) -> anyhow::Error {
+    anyhow::Error::new(Uncertain).context(what)
 }
 
 /// The passphrase: typed at a terminal with no echo, or piped in by a script.
@@ -335,13 +364,19 @@ async fn ask_and_print(target: &Target, op: &Op) -> Result<()> {
     print_answer(&answer)
 }
 
-/// The answer as JSON; a refusal is also the command's failure.
+/// The answer as JSON; a refusal is also the command's failure, and so is
+/// an answer this build cannot read. A write's unreadable answer never
+/// gets here: [`Connection::ask`] already made it uncertain.
 fn print_answer(answer: &Answer) -> Result<()> {
     print_json(answer)?;
-    if let Answer::Refused(refusal) = answer {
-        bail!("refused: {refusal:?}");
+    match answer {
+        Answer::Refused(refusal) => bail!("refused: {refusal:?}"),
+        Answer::Unreadable => bail!(
+            "the feeder answered in a way this build cannot read (a newer feeder build's): \
+             update this command line"
+        ),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 #[cfg(test)]
