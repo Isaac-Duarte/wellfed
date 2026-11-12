@@ -36,6 +36,12 @@ class InstallStoppedPage extends StatelessWidget {
     ),
   ];
 
+  /// What the feeder holds beside Wellfed, as far as this install knows: a
+  /// promotion that may have gone in may have replaced its original firmware.
+  String _stockHeld() => state.promotionMayHaveGone
+      ? 'the backup of its original firmware stays on this $deviceName'
+      : 'still holds its original firmware';
+
   (String, String) _words(StopCase stop) => switch (stop) {
     StopCase_Uncertain() => switch (state.listening) {
       Listening.stockStayed when state.stop?.resume == Resume.fromStart => (
@@ -194,7 +200,7 @@ class InstallStoppedPage extends StatelessWidget {
         SetupRefusal.invalid => 'It rejected the $deviceName name or the Wi-Fi. Check them and start again.',
         null =>
           'The Bluetooth exchange broke off. Move closer and try again. It '
-              'runs Wellfed and still holds its original firmware.',
+              'runs Wellfed and ${_stockHeld()}.',
       },
     ),
     StopCase_OtherFeeder() => (
@@ -256,7 +262,7 @@ class InstallStoppedPage extends StatelessWidget {
     ),
     StopCase_PromotionFailed() => (
       "Wellfed didn't become permanent",
-      'The feeder runs Wellfed for now and still holds its original firmware.',
+      'The feeder runs Wellfed for now and ${_stockHeld()}.',
     ),
     StopCase_FellBack() => (
       'It went back after restarting',

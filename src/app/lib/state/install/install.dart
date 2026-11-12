@@ -97,6 +97,11 @@ class InstallFlow extends ChangeNotifier {
   CheckState _checked = CheckState.waiting;
   CheckState _promoting = CheckState.waiting;
   double _written = 0;
+
+  /// A promotion of this install's may have gone in: a run stopped
+  /// unsure of it. Until a clean start, what the feeder holds in place of
+  /// its original firmware is not known here, and no stop says it does.
+  bool _promotionMayHaveGone = false;
   CheckState _confirming = CheckState.waiting;
 
   /// A checked copy of stock.
@@ -423,6 +428,7 @@ class InstallFlow extends ChangeNotifier {
         stockSeen: _stockSeen,
         setupSeen: _setupSeen,
         listenerDetail: _listenerDetail,
+        promotionMayHaveGone: _promotionMayHaveGone,
       ),
     };
   }

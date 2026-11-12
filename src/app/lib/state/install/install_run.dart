@@ -263,6 +263,7 @@ extension InstallRunning on InstallFlow {
         unawaited(_release());
       case final InstallEnd_Stopped stopped:
         _stop = stopped;
+        if (stopped.case_ case StopCase_UncertainWrite(write: UncertainWrite.promotion)) _promotionMayHaveGone = true;
         _readPending();
         _stage = InstallStage.stopped;
         _windowAsk = null;

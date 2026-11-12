@@ -139,6 +139,7 @@ extension InstallListening on InstallFlow {
   /// Back to the first screen, knowing nothing of any run.
   void _startClean() {
     _stop = null;
+    _promotionMayHaveGone = false;
     _frameTaken = false;
     _frameAddress = null;
     _feederReset = false;

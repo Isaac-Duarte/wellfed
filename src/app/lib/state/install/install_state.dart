@@ -347,10 +347,15 @@ final class InstallStopped extends InstallState {
     required this.stockSeen,
     required this.setupSeen,
     required this.listenerDetail,
+    this.promotionMayHaveGone = false,
   });
 
   /// How it ended.
   final InstallEnd_Stopped? stop;
+
+  /// An earlier run of this install stopped unsure whether its promotion
+  /// went in, so the feeder may no longer hold its original firmware.
+  final bool promotionMayHaveGone;
 
   /// What the listener after an uncertain request has heard.
   final Listening listening;

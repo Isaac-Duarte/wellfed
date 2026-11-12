@@ -45,6 +45,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a pick-up after an uncertain promotion never says the feeder still holds stock', (tester) async {
+    final ports = FakeInstallPorts(pendingInstall: PendingInstall.paired);
+    await installStopped(
+      tester,
+      ports,
+      const StopCase.uncertainWrite(write: UncertainWrite.promotion),
+      resume: Resume.fromBank0,
+    );
+    await installTap(tester, 'Pick up where it stopped');
+    ports.run.stopped(const StopCase.promotionFailed(), resume: Resume.fromBank0);
+    await settle(tester);
+
+    expect(find.textContaining('still holds its original firmware'), findsNothing);
+    expect(find.textContaining('the backup of its original firmware stays on this'), findsOneWidget);
+  });
+
   testWidgets('a pick-up past the backup still offers to save it', (tester) async {
     final ports = FakeInstallPorts(pendingInstall: PendingInstall.paired)..kept = '/data/kept.bin';
     await installOpen(tester, ports);
