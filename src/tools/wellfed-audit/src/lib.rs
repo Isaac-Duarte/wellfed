@@ -1,14 +1,10 @@
 //! Offline audits of PLAF103 evidence. None of them opens a serial port,
 //! touches the network or writes flash; reports go to new private files.
 //!
-//! Ports of the Python auditors, with the same checks, outcomes and report
-//! fields, so either version's reports read the same:
 //! - `startup`: a receive-only startup capture against its source-bound build
-//!   (`audit-firmware-startup.py`)
-//! - `qa`: the QA firmware's guided self-test (new in Rust; no Python auditor)
+//! - `qa`: the QA firmware's guided self-test
 //! - `transients`: logic-analyzer captures of the motor driver
-//!   (`audit-driver-transients.py`)
-//! - `backup`: two full-flash reads compared (`audit-flash-backup.py`)
+//! - `backup`: two full-flash reads compared
 //!
 //! Each report is a typed struct whose fields are the report's keys; an
 //! audit's sub-checks are flattened into it, so the JSON stays one object.
@@ -37,7 +33,7 @@ pub use capture::CaptureError;
 /// Why an audit refused its input. A refusal (exit status 2) means the audit
 /// never ran, which is distinct from evidence that ran and failed. Each
 /// audit's refusals keep their own enum, and every message is the operator's
-/// one line, unchanged from the Python auditors where they had one.
+/// one line.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -83,13 +79,14 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub(crate) use wellfed_formats::canonical::sha256 as digest;
 
-/// Python's `round(value, digits)`: the correctly rounded decimal, ties to even.
+/// `value` to `digits` decimal places, from its exact binary value, so a
+/// report's numbers read the same on every run and platform.
 pub(crate) fn round(value: f64, digits: usize) -> f64 {
     format!("{value:.digits$}").parse().unwrap_or(value)
 }
 
-/// A closed set with fixed text: report outcomes, written as the Python
-/// auditors' strings, and the names refusal messages interpolate.
+/// A closed set with fixed text: report outcomes, and the names refusal
+/// messages interpolate.
 macro_rules! outcomes {
     ($(#[$meta:meta])* $vis:vis enum $name:ident { $($variant:ident => $text:literal,)* }) => {
         $(#[$meta])*
@@ -176,8 +173,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_matches_python() {
-        // Python: round(2.675, 2) == 2.67 (binary value just below the tie).
+    fn round_works_from_the_exact_binary_value() {
+        // 2.675 is stored just below the tie, so it rounds down.
         assert_eq!(round(2.675, 2), 2.67);
         assert_eq!(round(0.5, 0), 0.0);
         assert_eq!(round(1.5, 0), 2.0);

@@ -1,7 +1,5 @@
 //! Two existing full-flash reads compared offline; no serial, network or flash writes.
 //!
-//! Port of `audit-flash-backup.py`, with the same checks and report fields.
-//!
 //! Both reads are stable snapshots of distinct files. The comparison passes
 //! only when each is exactly the operator-supplied capacity, they are
 //! byte-identical, neither is all 0xFF, all zero or two identical halves, and

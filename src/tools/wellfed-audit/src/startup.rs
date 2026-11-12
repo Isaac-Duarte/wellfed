@@ -1,9 +1,7 @@
 //! A finalized receive-only diagnostic startup against its build artifact.
 //!
-//! Port of `audit-firmware-startup.py`: the same policies, record formats,
-//! outcomes and report fields, less the retired flash-coordination records,
-//! which it now refuses. Only fixed public fields are parsed; arbitrary device
-//! text is never returned.
+//! The retired flash-coordination records are refused. Only fixed public
+//! fields are parsed; arbitrary device text is never returned.
 //!
 //! `load` binds the evidence before anything is classified: the manifest's
 //! `startup_identity` is the hash of its profile and inputs, the image is the
@@ -50,7 +48,7 @@ pub enum StartupError {
 }
 
 fn re(pattern: &str) -> Regex {
-    // Byte-wise ASCII semantics, as Python's bytes patterns.
+    // Byte-wise ASCII semantics: device text is bytes, not UTF-8.
     Regex::new(&format!("(?-u){pattern}")).expect("audit pattern")
 }
 
@@ -907,7 +905,7 @@ impl StartupVerdict {
     }
 }
 
-/// The startup audit of one capture, as `verify` in the Python auditor.
+/// The startup audit of one capture.
 pub fn verify(
     capture: &Path,
     manifest: &Path,

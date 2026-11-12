@@ -1,6 +1,6 @@
 //! A finalized receive-only capture: `serial-rx.bin`, `serial-tx.bin`,
-//! `serial-events.jsonl` and `report.json`, validated as
-//! `analyze` in `audit-uart-startups.py` does before anything is read from it.
+//! `serial-events.jsonl` and `report.json`, validated before anything is read
+//! from it.
 //!
 //! Nothing is read until the hashes match the finalized report and the event
 //! log covers both streams contiguously and in time order; any gap, overlap or
@@ -28,8 +28,8 @@ pub(crate) type Time = DateTime<FixedOffset>;
 pub enum CaptureError {
     #[error("Timestamp requires a timezone")]
     NoTimezone { text: String },
-    /// Not ISO 8601 at all; the message is Python's `fromisoformat` refusal.
-    #[error("Invalid isoformat string: {text:?}")]
+    /// Not an ISO 8601 date and time at all.
+    #[error("Not an ISO 8601 timestamp: {text:?}")]
     Timestamp { text: String },
     /// A record offset no receive chunk of the event log covers.
     #[error("No receive chunk holds offset {offset}")]
@@ -57,8 +57,8 @@ pub enum CaptureError {
     Coverage,
 }
 
-/// An ISO 8601 timestamp that carries its offset, as Python's `fromisoformat`
-/// with a required timezone.
+/// An ISO 8601 timestamp that carries its offset. One without an offset is
+/// refused apart, since the bench always records one.
 pub(crate) fn timestamp(text: &str) -> Result<Time> {
     if let Ok(time) = DateTime::parse_from_rfc3339(text) {
         return Ok(time);
@@ -71,7 +71,8 @@ pub(crate) fn timestamp(text: &str) -> Result<Time> {
     Err(CaptureError::Timestamp { text: text.into() }.into())
 }
 
-/// `(later - earlier).total_seconds()`, from whole microseconds as Python has them.
+/// `later - earlier` in seconds, from whole microseconds, the resolution the
+/// bench records.
 pub(crate) fn seconds(later: Time, earlier: Time) -> f64 {
     let micros =
         |t: Time| i128::from(t.timestamp()) * 1_000_000 + i128::from(t.timestamp_subsec_micros());

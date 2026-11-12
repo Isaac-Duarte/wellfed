@@ -132,8 +132,7 @@ fn after_led(declared: bool, led: bool, probe: Probe) -> Result<()> {
 }
 
 impl Policies {
-    /// Every declared policy, refusing a mismatch with `image` in the
-    /// Python auditor's order, so the first refusal reads the same.
+    /// Every declared policy, refusing the first mismatch with `image`.
     pub(super) fn bind(manifest: &BuildManifest, image: &[u8]) -> Result<Self> {
         let has = |mark: &[u8]| contains(image, mark);
 
