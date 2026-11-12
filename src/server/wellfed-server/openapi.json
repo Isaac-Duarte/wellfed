@@ -5416,6 +5416,26 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "login_limited: too many wrong current passwords for the account or from the address, counted with failed logins",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds until the next is taken"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }

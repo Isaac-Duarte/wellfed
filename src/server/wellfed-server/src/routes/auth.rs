@@ -97,18 +97,21 @@ pub(crate) async fn login(
         (status = 400, body = Problem, description = "invalid: a password under 10 characters"),
         (status = 401, body = Problem, description = "bad_credentials: not the current password"),
         (status = 403, body = Problem, description = "session_required: not from a token"),
+        (status = 429, body = Problem, description = "login_limited: too many wrong current passwords for the account or from the address, counted with failed logins",
+            headers(("Retry-After" = u64, description = "Seconds until the next is taken"))),
     ),
 )]
 pub(crate) async fn change_password(
     State(state): State<AppState>,
     Allowed(caller, _): Allowed<need::OwnAccount>,
+    remote: Remote,
     headers: HeaderMap,
     WithRejection(Json(change), _): JsonBody<PasswordChange>,
 ) -> ApiResult<StatusCode> {
     let session = auth::session(&headers);
     state
         .service
-        .change_password(&caller, session.as_ref(), change)
+        .change_password(&caller, session.as_ref(), change, remote.address)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -249,15 +249,28 @@ impl Service {
     /// their other sessions; `session`, the one they asked on, stays. Their
     /// tokens stay too: each is revoked on its own. It takes a login, as
     /// every password change does.
+    ///
+    /// A wrong current password counts as a failed login from `from`, and
+    /// the same limits refuse it ([`AccountError::Limited`]): a stolen
+    /// session could otherwise guess the account's password at the rate
+    /// the server hashes, and hold the logins' hashing slots meanwhile.
     pub async fn change_password(
         &self,
         caller: &Caller,
         session: Option<&SessionToken>,
         change: PasswordChange,
+        from: IpAddr,
     ) -> Result<()> {
         session_only(caller)?;
         let user = &caller.user;
         password(&change.password)?;
+        let attempt = self
+            .accounts
+            .limits
+            .attempt(&user.name, Some(user.id), from, self.shared.clock.now())
+            .map_err(|limited| AccountError::Limited {
+                retry_after: limited.retry_after,
+            })?;
         let store = &self.shared.store;
         let hash = store.password_hash(user.id).await?;
         let checked = hash.ok_or(Error::NotFound(Resource::User))?;
@@ -266,6 +279,9 @@ impl Service {
         if !matches {
             return Err(AccountError::BadCredentials.into());
         }
+        self.accounts
+            .limits
+            .succeeded(attempt, self.shared.clock.now());
 
         // Only over the hash just checked: a reset that landed since stands,
         // and the current password given was not its.

@@ -199,6 +199,48 @@ fn a_password_change_ends_the_users_other_sessions() {
     });
 }
 
+/// Wrong current passwords count as failed logins: after the name's five a
+/// minute the next is refused unhashed, so a stolen session cannot guess
+/// the password at the rate the server hashes.
+#[test]
+fn wrong_current_passwords_are_limited_as_failed_logins_are() {
+    local(async {
+        let server = TestService::start().await;
+        let service = server.service();
+        setup(service).await;
+        service
+            .create_user(&from_login(), new_user("vic", Role::Viewer, None))
+            .await
+            .unwrap();
+        let (vic, here) = service
+            .login(login("vic", "temporary pass"), HERE)
+            .await
+            .unwrap();
+        let guess = |n: u32| PasswordChange {
+            current: format!("guess {n}"),
+            password: "my own secret".into(),
+        };
+
+        for n in 0..5 {
+            let wrong = service
+                .change_password(&vic.clone().into(), Some(&here), guess(n), HERE)
+                .await;
+            assert!(
+                matches!(wrong, Err(Error::Account(AccountError::BadCredentials))),
+                "guess {n}: {wrong:?}"
+            );
+        }
+        let limited = service
+            .change_password(&vic.clone().into(), Some(&here), guess(5), HERE)
+            .await;
+        assert!(
+            matches!(limited, Err(Error::Account(AccountError::Limited { .. }))),
+            "{limited:?}"
+        );
+        server.shutdown().await;
+    });
+}
+
 /// Any role changes its own password with the current one; the session it
 /// asked on stays and the others end.
 #[test]
@@ -226,7 +268,7 @@ fn a_user_changes_their_own_password() {
         };
         assert!(matches!(
             service
-                .change_password(&vic.clone().into(), Some(&here), wrong)
+                .change_password(&vic.clone().into(), Some(&here), wrong, HERE)
                 .await,
             Err(Error::Account(AccountError::BadCredentials))
         ));
@@ -236,7 +278,7 @@ fn a_user_changes_their_own_password() {
         };
         assert!(matches!(
             service
-                .change_password(&vic.clone().into(), Some(&here), short)
+                .change_password(&vic.clone().into(), Some(&here), short, HERE)
                 .await,
             Err(Error::Invalid(Invalid::Password))
         ));
@@ -247,7 +289,7 @@ fn a_user_changes_their_own_password() {
             password: "my own secret".into(),
         };
         service
-            .change_password(&vic.clone().into(), Some(&here), change)
+            .change_password(&vic.clone().into(), Some(&here), change, HERE)
             .await
             .unwrap();
         assert!(service.authenticate(&here).await.unwrap().is_some());
@@ -548,7 +590,7 @@ fn a_password_change_checked_before_a_reset_does_not_undo_it() {
             current: ada_login().password,
             password: "a password of mine".into(),
         };
-        let changed = service.change_password(&ada, None, change).await;
+        let changed = service.change_password(&ada, None, change, HERE).await;
         assert!(
             matches!(changed, Err(Error::Account(AccountError::BadCredentials))),
             "{changed:?}"
