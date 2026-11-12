@@ -249,6 +249,8 @@ The replacement's storage lives at 0x340000–0x372000: 50 sectors of 4 KiB. The
 
 **Statistics wear.** The lifetime statistics in sectors 32–33 erase each sector about 8,800 times a year from their hourly and boot saves under any crash pattern, about 35,100 in the worst case with saves after feeds, and about 550 more at three meals a day ([statistics](device-api-diagnostics.md#statistics)).
 
+**Feed journal wear.** The feed journal refuses a new reservation once it has written 100,000 records (`WEAR_LIMIT`), which keeps each of its two units near 50,000 erases, half a typical NOR part's rating. A feed writes at least two records, its reservation and its end, so the limit is about 50,000 feeds: about 45 years at three meals a day, and about 11 years at ten planned meals and two manual feeds every day. Past it every feed is refused `Worn` for good, scheduled ones included, while a feed already reserved still finishes. Nothing warns the owner before the limit yet.
+
 ## mDNS
 
 The vendor responder is 33.5 KB of code and 2.3 KB of BSS, and creates its own FreeRTOS task, outside the stack audit. The feeder needs only its own advertisement: a PTR, SRV, TXT and A answer for one service. So the device API has its own responder in the loop task, on one UDP socket: a few KB and no task ([device API](device-api.md#mdns)).
