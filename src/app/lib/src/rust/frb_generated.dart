@@ -21820,7 +21820,8 @@ class FirmwareUpdateImpl extends RustOpaque implements FirmwareUpdate {
       .crateApiUpdateFirmwareUpdateAnswer(that: this, id: id, answer: answer);
 
   /// Offer the image once, and report until the update ends. The stream
-  /// closes with the run.
+  /// closes with the run. A second call offers nothing and leaves the
+  /// first run's asks where they go: its own stream hears that it ran.
   Stream<UpdateProgress> run() =>
       RustLib.instance.api.crateApiUpdateFirmwareUpdateRun(that: this);
 }

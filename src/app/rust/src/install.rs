@@ -1001,13 +1001,25 @@ impl Run {
 
     /// Start `spec` on its own thread. `deliver` hears the run to its end
     /// and returns `false` once nobody listens. A run starts once: a second
-    /// call, with no spec left, reports that and ends.
+    /// call, with no spec left, tells its own `deliver` so and leaves the
+    /// first run's updates where they go.
     pub fn start(
         &self,
         spec: Option<InstallSpec>,
         keys: Keypair,
         deliver: impl Fn(InstallUpdate) -> bool + Send + 'static,
     ) {
+        let Some(spec) = spec else {
+            deliver(InstallUpdate::Ended {
+                end: InstallEnd::Stopped {
+                    case: StopCase::Other,
+                    resume: Resume::Nothing,
+                    detail: "this install already ran".to_string(),
+                },
+            });
+            return;
+        };
+
         *self.asks.deliver() = Some(Box::new(deliver));
         let asks = self.asks.clone();
         let stop = self.stop.subscribe();
@@ -1022,16 +1034,7 @@ impl Run {
             .spawn(move || {
                 let _held = held;
                 let end = guarded(
-                    || match spec {
-                        Some(spec) => {
-                            run_on_this_thread(spec, keys, pin.as_ref(), poll, asks.clone(), stop)
-                        }
-                        None => InstallEnd::Stopped {
-                            case: StopCase::Other,
-                            resume: Resume::Nothing,
-                            detail: "this install already ran".to_string(),
-                        },
-                    },
+                    || run_on_this_thread(spec, keys, pin.as_ref(), poll, asks.clone(), stop),
                     |detail| InstallEnd::Stopped {
                         case: StopCase::Other,
                         resume: Resume::Nothing,
@@ -1050,6 +1053,7 @@ impl Run {
                     detail: format!("no thread for the install: {error}"),
                 },
             });
+            *self.asks.deliver() = None;
         }
     }
 

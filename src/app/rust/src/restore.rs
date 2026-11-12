@@ -152,7 +152,8 @@ impl RestoreThread {
 
     /// Start `spec` on its own thread. `deliver` hears the run to its end and
     /// returns `false` once nobody listens. A run starts once: a second call,
-    /// with no spec left, reports that and ends.
+    /// with no spec left, tells its own `deliver` so and leaves the first
+    /// run's updates where they go.
     pub fn start(
         &self,
         spec: Option<RestoreSpec>,
@@ -170,12 +171,22 @@ impl RestoreThread {
     }
 
     /// [`Self::start`] on a plan already made, or the end that stopped it.
+    /// An end goes to `deliver` alone: no thread starts, and a run already
+    /// going keeps its updates.
     pub fn start_plan(
         &self,
         plan: Result<Plan, RestoreEnd>,
         keys: Keypair,
         deliver: impl Fn(RestoreUpdate) -> bool + Send + Sync + 'static,
     ) {
+        let plan = match plan {
+            Ok(plan) => plan,
+            Err(end) => {
+                deliver(RestoreUpdate::Ended { end });
+                return;
+            }
+        };
+
         let deliver = Arc::new(deliver);
         let heard = deliver.clone();
         *self.asks.deliver() = Some(Box::new(move |update| match update {
@@ -198,10 +209,7 @@ impl RestoreThread {
                 let _held = held;
                 let shown = offering.clone();
                 let end = guarded(
-                    || match plan {
-                        Ok(plan) => run_on_this_thread(plan, keys, asks.clone(), stop, offering),
-                        Err(end) => end,
-                    },
+                    || run_on_this_thread(plan, keys, asks.clone(), stop, offering),
                     |detail| {
                         // A panic says nothing about an offer that may be out.
                         if shown.may_be_out() {
@@ -225,6 +233,7 @@ impl RestoreThread {
                     format!("no thread for the restore: {error}"),
                 ),
             });
+            *self.asks.deliver() = None;
         }
     }
 

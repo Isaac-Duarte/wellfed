@@ -170,6 +170,43 @@ fn a_feeder_nobody_can_find_is_asked_for_and_not_answering() {
     });
 }
 
+/// A second start while the first runs ends on its own stream at once, and
+/// the first run's lookup and end still reach the first.
+#[test]
+fn a_second_start_leaves_the_first_run_heard() {
+    local(async {
+        let rig = Rig::start().await;
+        let plan = Plan::synthetic(&synthetic(), rig.target(None, Signing::Fresh));
+        let (run, mut heard) = started(plan);
+        let (again, mut second) = mpsc::unbounded_channel();
+        run.start(None, Keypair::from_secret(OWNER), move |update| {
+            again.send(update).is_ok()
+        });
+
+        let RestoreUpdate::Ended {
+            end: RestoreEnd::Stopped { case, .. },
+        } = next(&mut second).await
+        else {
+            panic!("a second start ran");
+        };
+        assert_eq!(case, RestoreStop::Other);
+        assert!(second.recv().await.is_none());
+
+        let RestoreUpdate::Ask { id, .. } = next(&mut heard).await else {
+            panic!("the lookup comes first");
+        };
+        run.answer(id, InstallAnswer::Located { address: None });
+        let RestoreUpdate::Ended {
+            end: RestoreEnd::Stopped { case, .. },
+        } = next(&mut heard).await
+        else {
+            panic!("it ends");
+        };
+        assert_eq!(case, RestoreStop::NotAnswering);
+        rig.sim.stop().await;
+    });
+}
+
 /// A refused offer reads as refused, and asks for nothing more.
 #[test]
 fn a_refused_offer_reads_as_refused() {

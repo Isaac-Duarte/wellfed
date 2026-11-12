@@ -6,6 +6,7 @@
 use std::cell::Cell;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use flutter_rust_bridge::frb;
@@ -99,6 +100,8 @@ pub struct FirmwareUpdate {
     address: Option<String>,
     image_dir: String,
     asks: Arc<Asks>,
+    /// The image is offered once, by the first [`Self::run`].
+    started: AtomicBool,
 }
 
 impl FirmwareUpdate {
@@ -117,6 +120,7 @@ impl FirmwareUpdate {
             address,
             image_dir,
             asks: Arc::new(Asks::new()),
+            started: AtomicBool::new(false),
         })
     }
 
@@ -127,8 +131,18 @@ impl FirmwareUpdate {
     }
 
     /// Offer the image once, and report until the update ends. The stream
-    /// closes with the run.
+    /// closes with the run. A second call offers nothing and leaves the
+    /// first run's asks where they go: its own stream hears that it ran.
     pub fn run(&self, updates: StreamSink<UpdateProgress>) {
+        if !self.first_run() {
+            let _ = updates.add(UpdateProgress::Ended {
+                end: UpdateEnd::Failed {
+                    detail: "this update already ran".to_string(),
+                },
+            });
+            return;
+        }
+
         let keys = self.keys.clone();
         let (feeder, address) = (self.feeder, self.address.clone());
         let image_dir = self.image_dir.clone();
@@ -182,6 +196,13 @@ impl FirmwareUpdate {
         // With no thread the sink dropped with the closure, which closes Dart's
         // stream: the screen reads that as a run with no end.
         drop(thread);
+    }
+}
+
+impl FirmwareUpdate {
+    /// Whether this is the first run, which alone may offer the image.
+    fn first_run(&self) -> bool {
+        !self.started.swap(true, Ordering::SeqCst)
     }
 }
 
@@ -476,6 +497,16 @@ mod tests {
         ));
 
         assert!(matches!(end, UpdateEnd::Failed { .. }));
+    }
+
+    /// A second run of one update offers nothing: only the first may.
+    #[test]
+    fn an_update_offers_once() {
+        let key = ClientKey::from_secret([7; 32]);
+        let update = FirmwareUpdate::new(&key, vec![0; 32], None, String::new()).unwrap();
+
+        assert!(update.first_run());
+        assert!(!update.first_run());
     }
 
     /// An update state read idle on `bank`, with floor `floor` and bank 0's

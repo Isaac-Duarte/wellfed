@@ -296,6 +296,36 @@ fn a_run_starts_once() {
     ));
 }
 
+/// A second start while the first runs says so on its own stream, and the
+/// first run's asks and end still reach the first.
+#[test]
+fn a_second_start_leaves_the_first_run_heard() {
+    // SAFETY: nextest runs each test in a process of its own, and no other
+    // thread is running yet.
+    unsafe { std::env::set_var("WELLFED_ALLOW_UNREVIEWED_OTA_BUILD", "1") };
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let (run, mut heard) = started(&fixture, fixture.spec(InstallStart::Reset, "127.41.8.4"));
+        let (again, mut second) = mpsc::unbounded_channel();
+        run.start(None, Keypair::from_secret([0x51; 32]), move |update| {
+            again.send(update).is_ok()
+        });
+
+        let InstallEnd::Stopped { detail, .. } = ended(&mut second).await else {
+            panic!("a second start ran");
+        };
+        assert_eq!(detail, "this install already ran");
+
+        let (_, ask) = next_ask(&mut heard).await;
+        assert_eq!(ask, InstallAsk::JoinFeederNetwork);
+        run.stop();
+        let InstallEnd::Stopped { case, .. } = ended(&mut heard).await else {
+            panic!("a stopped run did not stop");
+        };
+        assert_eq!(case, StopCase::Cancelled);
+    });
+}
+
 /// An image the review cannot hold together stops before the feeder is
 /// touched: no ask ever goes out.
 #[test]
