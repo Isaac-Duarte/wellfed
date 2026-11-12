@@ -232,6 +232,37 @@ fn a_dispense_press_feeds_one_portion_and_one_during_a_feed_is_recorded_not_queu
     });
 }
 
+/// While a feed holds the outputs, a store write is refused `Busy`, as the
+/// feeder refuses it, and goes through once the feed has ended.
+#[test]
+fn a_write_while_a_feed_holds_the_outputs_is_refused_busy() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = start(&flash).await;
+        sim.control(Control::StallFeeds(true));
+        let mut owner = open(&sim).await;
+        owner.subscribe(None, Samples::Off).await.unwrap();
+
+        let answer = owner.ask([1; 16], &Op::Feed { portions: 3 }).await.unwrap();
+        assert_eq!(answer, Answer::Feeding { feed: 1 });
+        let change = |base| Op::PutSettings {
+            base,
+            changes: FeederSettingsPatch {
+                volume: Some(21),
+                ..FeederSettingsPatch::default()
+            },
+        };
+        let refused = owner.ask([2; 16], &change(Generation(0))).await.unwrap();
+        assert_eq!(refused, Answer::Refused(Refusal::Busy));
+
+        sim.control(Control::StallFeeds(false));
+        next_fed(&mut owner).await;
+        let done = owner.ask([3; 16], &change(Generation(0))).await.unwrap();
+        assert_matches!(done, Answer::Done { .. });
+        sim.stop().await;
+    });
+}
+
 #[test]
 fn a_cancel_ends_the_feed_and_finds_nothing_once_it_has_ended() {
     local(async {

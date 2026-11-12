@@ -1607,10 +1607,9 @@ mod tests {
             };
             while heard.try_recv().is_ok() {}
 
-            // Meanwhile, with the stream unread: a feed and a settings
-            // change.
-            let fed = owner.feed(adopted.id, 1, Uuid::new_v4()).await.unwrap();
-            let fed = fed.feed.expect("the feed's number");
+            // Meanwhile, with the stream unread: a settings change and a
+            // feed, in that order, since a feeder refuses a settings
+            // change while a feed holds the outputs.
             let Settings::Feeder(held) = owner.settings(adopted.id).await.unwrap() else {
                 panic!("a feeder's settings");
             };
@@ -1623,6 +1622,8 @@ mod tests {
                 .put_settings(adopted.id, base, &quieter, Uuid::new_v4())
                 .await
                 .unwrap();
+            let fed = owner.feed(adopted.id, 1, Uuid::new_v4()).await.unwrap();
+            let fed = fed.feed.expect("the feed's number");
             until("the server has the feed's end", || async {
                 let page = owner
                     .events(adopted.id, &EventQuery::default())

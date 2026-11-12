@@ -40,10 +40,13 @@
 //! - [`SimFeeds::refuse`] makes the owner refuse every feed `Busy` once its
 //!   claim is taken, as an owner that lost a race does: the refusal after a
 //!   claim the device API and the server must handle.
-//! - [`SimFeeds::hold_write`] holds a storage write on a claim's way, on an
-//!   interlock of its own, as the settings writer does: a feed then waits to
-//!   claim the outputs once a pass, for at most `WRITE_WAIT_MS`, and is
-//!   refused past it, the firmware's claim on the firmware's interlock.
+//! - A feed claims the outputs on the process's `INTERLOCK`, the one the
+//!   platform's `outputs_claimed` and the update stage read, as the
+//!   firmware's does: while it holds them the device API refuses a store
+//!   write `Busy`, and the update stage's write turn waits.
+//! - [`SimFeeds::hold_write`] holds a storage write on a claim's way, as the
+//!   settings writer does: a feed then waits to claim the outputs once a
+//!   pass, for at most `WRITE_WAIT_MS`, and is refused past it.
 //! - The hopper has food until [`SimFeeds::fill`] empties it. Each feed
 //!   reads it as the food beam would, runs whatever it reads (as the
 //!   firmware's and stock's do) and records the reading in its `Fed`
@@ -68,7 +71,7 @@ use wellfed_core_feeder::floor::Floor;
 use wellfed_feeder::trace::DriveFigures;
 use wellfed_fw_feeder::feeding::adapter::{FeedOwner, Feeding, Opening, Runtime};
 use wellfed_fw_feeder::feeding::{PowerCycle, Record};
-use wellfed_hal::interlock::{Interlock, WriteStep, WriteTurn};
+use wellfed_hal::interlock::{INTERLOCK, Interlock, WriteStep, WriteTurn};
 use wellfed_hal::supervision::supervise;
 use wellfed_hal_feeder::owner::{FeedTrace, OwnerFault, OwnerState, OwnerStatus, SubmitResult};
 use wellfed_proto::api::{EventBody, PORTIONS_MAX, TraceSummary};
@@ -106,7 +109,6 @@ impl SimFeeds {
             flash: Rc::clone(flash),
             owner: SimOwner::default(),
             opened: Cell::new(false),
-            interlock: Interlock::new(),
         };
         Self {
             feeding: Feeding::new(runtime),
@@ -173,7 +175,7 @@ impl SimFeeds {
     pub fn hold_write(&mut self, held: bool) -> Result<(), WriteWaits> {
         let runtime = self.feeding.runtime();
         if !held {
-            runtime.interlock.end_write();
+            INTERLOCK.end_write();
             return Ok(());
         }
 
@@ -183,11 +185,11 @@ impl SimFeeds {
         // later claim back for the boot. The simulator runs on one thread
         // and nothing here begins a food reading, so these two are all that
         // would make it wait (bar held writes, which count no waiter).
-        if runtime.interlock.outputs_claimed() || runtime.interlock.writing() {
+        if INTERLOCK.outputs_claimed() || INTERLOCK.writing() {
             return Err(WriteWaits);
         }
         let now = runtime.owner.now_ms.get();
-        match WriteTurn::new().begin(&runtime.interlock, now, || true) {
+        match WriteTurn::new().begin(&INTERLOCK, now, || true) {
             WriteStep::Go(_) => Ok(()),
             WriteStep::Wait => Err(WriteWaits),
         }
@@ -196,7 +198,7 @@ impl SimFeeds {
     /// Whether the outputs are claimed: a feed's claim was taken and it has
     /// not ended.
     pub fn outputs_claimed(&self) -> bool {
-        self.feeding.runtime().interlock.outputs_claimed()
+        INTERLOCK.outputs_claimed()
     }
 
     /// Step the adapter at `now_ms`: the `Fed` event of a feed that ended,
@@ -215,8 +217,8 @@ impl SimFeeds {
 #[error("the write waits: a feed holds the outputs or another write is held")]
 pub struct WriteWaits;
 
-/// The adapter's runtime in the simulator: the owner below, an interlock
-/// of its own, and nothing of the board's (no trial, no reset storm, no
+/// The adapter's runtime in the simulator: the owner below, the process's
+/// interlock, and nothing of the board's (no trial, no reset storm, no
 /// install lease, no traces).
 #[derive(Debug)]
 pub struct SimRuntime {
@@ -224,7 +226,6 @@ pub struct SimRuntime {
     owner: SimOwner,
     /// The owner has opened on a journal that opened.
     opened: Cell<bool>,
-    interlock: Interlock,
 }
 
 impl Runtime for SimRuntime {
@@ -267,7 +268,7 @@ impl Runtime for SimRuntime {
     }
 
     fn interlock(&self) -> &Interlock {
-        &self.interlock
+        &INTERLOCK
     }
 
     fn now_ms(&self) -> u32 {
