@@ -312,6 +312,60 @@ fn a_flash_client_a_killed_server_left_keeps_the_lease_from_breaking() {
     assert!(lease::inspect(root.path()).unwrap().is_none());
 }
 
+/// A restore-stock's `wellfed` a killed server left is listed with the
+/// rest, and `serve` refuses to run a flash client under a name the
+/// orphan check would not know it by.
+#[test]
+fn a_left_install_is_listed_and_a_renamed_flash_client_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("private")).unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    let wellfed = tools.path().join("wellfed");
+    std::os::unix::fs::symlink(which("sleep"), &wellfed).unwrap();
+    let left = Other(
+        std::process::Command::new(&wellfed)
+            .arg("60")
+            .current_dir(root.path())
+            .spawn()
+            .unwrap(),
+    );
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while orphans::running(root.path()).is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the stand-in never showed"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let found = orphans::running(root.path());
+    assert_eq!(
+        (found[0].pid, found[0].name.as_str()),
+        (left.0.id(), "wellfed")
+    );
+    drop(left);
+
+    let renamed = tools.path().join("wf-flash");
+    let flash_bin = renamed.display().to_string();
+    let error = run_in(
+        root.path(),
+        &[
+            "serve",
+            "--device",
+            "plaf103",
+            "--plain",
+            "--flash-bin",
+            &flash_bin,
+        ],
+    )
+    .unwrap_err();
+    assert_matches!(
+        error.downcast::<orphans::OrphanError>(),
+        Ok(orphans::OrphanError::FlashRenamed { path }) if path == renamed
+    );
+    assert!(lease::inspect(root.path()).unwrap().is_none());
+}
+
 /// `name` on the PATH.
 fn which(name: &str) -> PathBuf {
     std::env::split_paths(&std::env::var_os("PATH").unwrap())

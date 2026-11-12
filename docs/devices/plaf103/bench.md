@@ -50,7 +50,7 @@ The older relay bench added four switches to a bare FT232R adapter's [UART wirin
    cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock-server -p wellfed
    ```
 
-   The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another, and `restore-stock` the `wellfed` beside it unless `serve --wellfed-bin` does.
+   The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another (named `wellfed-flash` too, which the orphan check finds it by), and `restore-stock` the `wellfed` beside it unless `serve --wellfed-bin` does.
 
 2. Write the ignored `private/bench.json` with `/dev/serial/by-id/` paths, since the relay board also enumerates as a USB serial port and can take the UART adapter's old name:
 

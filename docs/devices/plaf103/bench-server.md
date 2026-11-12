@@ -206,7 +206,7 @@ Stopped: The bench lease of pid 81234 (…) outlived its process: that run was k
 With no server only `status` runs, and that is the way back:
 
 1. Run `target/release/wellfed-bench status`. It shows the lease first (free, held, or left by a process that is gone), finds no server, and reads the relays itself without taking the lease.
-2. Stop what the killed job left running. Under a lease whose holder is gone, `status` lists every `wellfed-flash`, `wellfed-stock`, `wellfed-build` and `sigrok-cli` running on this bench, with pid and command line. They no longer count as the bench's. Let a `wellfed-flash` finish, or stop it with SIGINT (`kill -INT PID`) so it records its stop. Stop the others by hand.
+2. Stop what the killed job left running. Under a lease whose holder is gone, `status` lists every `wellfed-flash`, `wellfed` (a `restore-stock`'s), `wellfed-build` and `sigrok-cli` running on this bench, with pid and command line. They are found by name, so `serve` refuses a `--flash-bin` named anything but `wellfed-flash`. They no longer count as the bench's. Let a `wellfed-flash` finish, or stop it with SIGINT (`kill -INT PID`) so it records its stop. Stop the others by hand.
 3. Run `target/release/wellfed-bench status --break-lease`. It refuses while a `wellfed-flash` still runs on this bench, naming it, since it may be writing. Otherwise it removes the lease, only if its holder is gone, then shows the relays.
 4. Start the server again. It replaces the stale `private/bench.sock` once it holds the lease; until then a client finds nothing answering and says to start one.
 

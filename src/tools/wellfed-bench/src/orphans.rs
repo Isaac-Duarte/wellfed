@@ -8,20 +8,19 @@
 //! whose `private/` is a link to the main checkout's (and shares its lease)
 //! finds the main server's tools too. A checkout with a `private/` of its
 //! own has a bench of its own, and its tools are left alone. Nothing needs
-//! recording by the server that was killed.
+//! recording by the server that was killed: the processes are found by
+//! name, so `serve` runs a flash client only under its own name
+//! ([`flash_named`]).
 
 use std::path::Path;
 
 /// The directory a bench's lease, and so the bench, is identified by.
 const PRIVATE: &str = "private";
 
-/// The tools a job runs, by their process names.
-const TOOLS: [&str; 4] = [
-    "wellfed-flash",
-    "wellfed-stock",
-    "wellfed-build",
-    "sigrok-cli",
-];
+/// The tools a job runs, by their process names: every program the rig's
+/// tools and the server's tool jobs spawn and leave running, which a new
+/// one must join here.
+const TOOLS: [&str; 4] = ["wellfed-flash", "wellfed", "wellfed-build", "sigrok-cli"];
 pub(crate) const FLASH: &str = "wellfed-flash";
 
 /// One such process.
@@ -42,6 +41,23 @@ pub(crate) enum OrphanError {
          stop it with SIGINT (`kill -INT {pid}`) so it records its stop, then break the lease"
     )]
     FlashAlive { pid: u32, command: String },
+    /// A flash client under another name would go unseen by [`no_flash`]
+    /// once its server was killed.
+    #[error(
+        "--flash-bin {} must be named wellfed-flash: a killed server's flash client is found by that name, and under another a broken lease could free the UART mid-write",
+        path.display()
+    )]
+    FlashRenamed { path: std::path::PathBuf },
+}
+
+/// Refuse a flash client `serve` would run under a name other than
+/// [`FLASH`].
+pub(crate) fn flash_named(path: &Path) -> Result<(), OrphanError> {
+    wellfed_formats::require(path.file_name().is_some_and(|name| name == FLASH), || {
+        OrphanError::FlashRenamed {
+            path: path.to_path_buf(),
+        }
+    })
 }
 
 /// The bench's tools running from any checkout that shares `root`'s
