@@ -283,6 +283,16 @@ async fn confirm(
     version: u32,
 ) -> UpdateEnd {
     tokio::time::sleep(RESTART).await;
+    after_restart(connect, served, version).await
+}
+
+/// [`confirm`] once the restart has begun: read until the shared rule
+/// settles the end, or [`CONFIRM_WAIT`] passes.
+async fn after_restart(
+    connect: &impl AsyncFn() -> Result<Connection, wellfed_install::Error>,
+    served: &str,
+    version: u32,
+) -> UpdateEnd {
     let deadline = Instant::now() + CONFIRM_WAIT;
     while Instant::now() < deadline {
         if let Some(read) = reading(connect).await {
@@ -460,5 +470,36 @@ mod tests {
         ));
 
         assert!(matches!(end, UpdateEnd::Failed { .. }));
+    }
+
+    /// Bank 1 running some other build than the one activated is not a
+    /// fallback: another update came between, and the end says so rather
+    /// than that the trial failed. The simulator's bank 1 runs its own build;
+    /// the same reads of that build confirm it.
+    #[test]
+    fn another_build_on_bank_1_ends_on_the_wrong_build() {
+        use wellfed_feeder_sim::banks::BANK1_BUILD;
+        use wellfed_feeder_sim::flash::Flash;
+        use wellfed_feeder_sim::harness::{Running, local};
+
+        const OWNER: [u8; 32] = [7; 32];
+        local(async {
+            let keys = Keypair::from_secret(OWNER);
+            let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
+            let (identity, address) = (sim.identity, sim.address);
+            let connect = async || -> Result<Connection, wellfed_install::Error> {
+                let ephemeral = wellfed_install::session::random()?;
+                Ok(Connection::open(&keys, identity, address, ephemeral).await?)
+            };
+
+            let another = hex::Lower(&[0xcd; 32]).to_string();
+            let end = after_restart(&connect, &another, 1).await;
+            assert!(matches!(end, UpdateEnd::WrongBuild));
+            let running = hex::Lower(&BANK1_BUILD).to_string();
+            let end = after_restart(&connect, &running, 0).await;
+            assert!(matches!(end, UpdateEnd::Confirmed));
+
+            sim.stop().await;
+        });
     }
 }

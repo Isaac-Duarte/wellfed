@@ -14,7 +14,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'update.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `confirm`, `reading`, `try_update`, `update`
+// These functions are ignored because they are not marked as `pub`: `after_restart`, `confirm`, `reading`, `try_update`, `update`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Reading`
 
 /// Whether to offer the image `build` at `version` to a feeder that runs
