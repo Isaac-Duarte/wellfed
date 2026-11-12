@@ -266,15 +266,44 @@ class FakeFeederPorts with FakeUpdateRules implements FeederPorts {
     return adoptAnswer;
   }
 
+  /// As the bridge's `settled_feed` reads a feed's end (its Rust tests pin
+  /// it): an uncertain end, or one a newer feeder named, is a range up to
+  /// what it asked; the reason goes through; the journal names no requester.
   @override
   FeedResult? settledFeed(Settlement settlement) => switch (settlement) {
-    Settlement_Fed(:final int feed, :final int requested, :final int completed, :final FeedOutcome outcome) => fakeFed(
-      feed: feed,
-      requested: requested,
-      confirmed: completed,
-      atMost: requested,
-      outcome: outcome,
-    ),
+    Settlement_Fed(
+      :final int feed,
+      :final int requested,
+      :final int completed,
+      :final FeedOutcome outcome,
+      :final FeedReason reason,
+    ) =>
+      switch (outcome) {
+        FeedOutcome.uncertain || FeedOutcome.unknown => FeedResult(
+          feed: feed,
+          requested: requested,
+          confirmed: completed,
+          atMost: requested,
+          outcome: outcome,
+          reason: reason,
+          uncertain: outcome == FeedOutcome.uncertain,
+          words: '$completed to $requested of $requested portions, uncertain',
+          by: const FedBy.unknown(),
+          hopper: FoodLevel.unread,
+        ),
+        _ => FeedResult(
+          feed: feed,
+          requested: requested,
+          confirmed: completed,
+          atMost: completed,
+          outcome: outcome,
+          reason: reason,
+          uncertain: false,
+          words: '$completed of $requested portions, ${outcome.name}',
+          by: const FedBy.unknown(),
+          hopper: FoodLevel.unread,
+        ),
+      },
     _ => null,
   };
 

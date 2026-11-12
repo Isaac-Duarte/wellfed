@@ -14,6 +14,9 @@
 
 use uuid::Uuid;
 use wellfed_api::{CommandOutcome, CommandState};
+use wellfed_client::history::Feed;
+use wellfed_client::settle::{self, After, Lost};
+use wellfed_server_client::Settled;
 
 use crate::api::feeder::{FeederReply, NotAsked};
 use crate::api::router::{NotSentReason, RoutePath, Settlement};
@@ -287,49 +290,41 @@ pub(crate) const fn retry_plan(pin: &PinRecord) -> RetryPlan {
 }
 
 /// What a journal entry, as the server holds it now, settles of a write
-/// pinned to the server; `None` while it is still unknown or in flight.
+/// pinned to the server, by the reading every server client shares; `None`
+/// while it is still unknown or in flight, or for an outcome a newer server
+/// added, which leaves the write unsettled, so it is never sent again.
 pub(crate) fn settled_by_command(
     state: CommandState,
     outcome: Option<&CommandOutcome>,
 ) -> Option<Settlement> {
-    match state {
-        CommandState::Sent | CommandState::Unknown => None,
-        CommandState::Answered | CommandState::Resolved => outcome.and_then(settlement_of),
-    }
+    wellfed_server_client::settled(state, outcome).map(Settlement::from)
 }
 
-/// What `outcome` settles; `None` for one a newer server added, which
-/// leaves the write unsettled, so it is never sent again.
-fn settlement_of(outcome: &CommandOutcome) -> Option<Settlement> {
-    let settlement = match outcome {
-        CommandOutcome::Done
-        | CommandOutcome::Settings { .. }
-        | CommandOutcome::Plans { .. }
-        | CommandOutcome::Calibration { .. }
-        | CommandOutcome::Call { .. }
-        | CommandOutcome::Invited { .. } => Settlement::Done,
-        CommandOutcome::Superseded => Settlement::Superseded,
-        CommandOutcome::Refused { refusal } => Settlement::Refused {
-            refusal: (*refusal).into(),
-        },
-        CommandOutcome::Feeding { feed } => Settlement::Started { feed: *feed },
-        CommandOutcome::Fed {
-            feed,
-            requested,
-            completed,
-            outcome,
-            reason,
-        } => Settlement::Fed {
-            feed: *feed,
-            requested: *requested,
-            completed: *completed,
-            outcome: *outcome,
-            reason: *reason,
-        },
-        CommandOutcome::Unrecorded => Settlement::Unrecorded,
-        CommandOutcome::Unknown => return None,
-    };
-    Some(settlement)
+impl From<Settled> for Settlement {
+    fn from(settled: Settled) -> Self {
+        match settled {
+            Settled::Done => Self::Done,
+            Settled::Superseded => Self::Superseded,
+            Settled::Refused(refusal) => Self::Refused {
+                refusal: refusal.into(),
+            },
+            Settled::Started { feed } => Self::Started { feed },
+            Settled::Fed {
+                feed,
+                requested,
+                completed,
+                outcome,
+                reason,
+            } => Self::Fed {
+                feed,
+                requested,
+                completed,
+                outcome,
+                reason,
+            },
+            Settled::Unrecorded => Self::Unrecorded,
+        }
+    }
 }
 
 /// A server write the journal does not hold settles as never sent, once its
@@ -347,59 +342,58 @@ pub(crate) fn settled_unfound(
     (same && since_tried.passed(grace_ms)).then_some(Settlement::NotSent)
 }
 
-/// A feed's end this phone's own session read from the feeder's history.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Seen {
-    pub(crate) seq: u64,
-    pub(crate) feed: u32,
-    pub(crate) requested: u8,
-    pub(crate) completed: u8,
-    pub(crate) outcome: wellfed_model::FeedOutcome,
-    pub(crate) reason: wellfed_model::FeedReason,
+/// What this phone's own feed ends on `feeder`, as its session read them
+/// from the history (`seen`), settle of the direct feeds pinned there, by
+/// the rule the app shares with Home Assistant ([`wellfed_client::settle`]):
+/// an uncertain feed is never given another's end. Every direct feed pinned
+/// to the feeder takes part, one still sending too, so none is given an end
+/// that may be another's; only an uncertain one is settled. A feed sent
+/// before its session knew any event (no mark) is never settled, since any
+/// `Fed` could be from before it. `phone` is this phone's key's first four
+/// bytes, as events name it.
+pub(crate) fn settled_by_history(
+    pins: &[PinRecord],
+    feeder: &str,
+    seen: &[Feed],
+    phone: [u8; 4],
+) -> Vec<(Uuid, Settlement)> {
+    let feeds: Vec<(&PinRecord, u8)> = pins
+        .iter()
+        .filter(|pin| pin.feeder == feeder && pin.path == RoutePath::Direct)
+        .filter_map(|pin| match pin.write {
+            PinnedWrite::Feed { portions } => Some((pin, portions)),
+            PinnedWrite::Other { .. } => None,
+        })
+        .collect();
+    let lost: Vec<Lost<'_>> = feeds
+        .iter()
+        .map(|(pin, portions)| Lost {
+            portions: *portions,
+            after: pin.mark.map_or(After::Unknown, After::Event),
+            excluded: &pin.excluded,
+        })
+        .collect();
+
+    let ends = settle::settled(&lost, seen, phone);
+    feeds
+        .iter()
+        .zip(ends)
+        .filter(|((pin, _), _)| pin.state == PinState::Uncertain)
+        .filter_map(|((pin, _), fed)| Some((pin.key, fed_settlement(fed?))))
+        .collect()
 }
 
-/// What the feeds this phone's key asked for, as the feeder's history
-/// records them (`seen`), settle of `pin`, a feed pinned to the phone's own
-/// session. Its `Fed` is the one event after the newest the session knew
-/// when it was sent, for the portions it asked, and not a feed this phone
-/// saw started (before or since). Anything another unsettled direct feed on
-/// the feeder could also claim settles neither: an uncertain feed is never
-/// given another's end.
-pub(crate) fn settled_by_history(
-    pin: &PinRecord,
-    others: &[&PinRecord],
-    seen: &[Seen],
-) -> Option<Settlement> {
-    let PinnedWrite::Feed { portions } = pin.write else {
-        return None;
-    };
-    let mark = pin.mark?;
-    let mut candidates = seen.iter().filter(|seen| {
-        seen.seq > mark && seen.requested == portions && !pin.excluded.contains(&seen.feed)
-    });
-    let found = candidates.next()?;
-    if candidates.next().is_some() {
-        return None;
+/// A feed's end as its pin's settlement: an uncertain one by the portions
+/// it confirmed, never more.
+fn fed_settlement(fed: &Feed) -> Settlement {
+    let (completed, _) = fed.delivered.bounds();
+    Settlement::Fed {
+        feed: fed.feed,
+        requested: fed.requested,
+        completed,
+        outcome: fed.outcome,
+        reason: fed.reason,
     }
-
-    let claimed = others.iter().any(|other| {
-        other.key != pin.key
-            && other.feeder == pin.feeder
-            && other.path == RoutePath::Direct
-            && matches!(other.write, PinnedWrite::Feed { portions } if portions == found.requested)
-            && !other.excluded.contains(&found.feed)
-            && other.mark.is_none_or(|mark| found.seq > mark)
-    });
-    if claimed {
-        return None;
-    }
-    Some(Settlement::Fed {
-        feed: found.feed,
-        requested: found.requested,
-        completed: found.completed,
-        outcome: found.outcome,
-        reason: found.reason,
-    })
 }
 
 /// The pinned writes and this phone's running direct feeds, as the router

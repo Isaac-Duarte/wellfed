@@ -577,3 +577,80 @@ impl PathRouter {
         self.router.close();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fed(completed: u8, outcome: FeedOutcome, reason: FeedReason) -> Settlement {
+        Settlement::Fed {
+            feed: 7,
+            requested: 3,
+            completed,
+            outcome,
+            reason,
+        }
+    }
+
+    /// A counted end is one number; an uncertain one, or one a newer
+    /// feeder named, is the range from what it confirmed to what it asked,
+    /// never a count. The reason goes through, and the journal names no
+    /// requester.
+    #[test]
+    fn a_settled_feed_reads_as_the_history_would_show_it() {
+        let cases = [
+            (
+                fed(2, FeedOutcome::Failed, FeedReason::Jammed),
+                (2, 2),
+                false,
+            ),
+            (fed(3, FeedOutcome::Done, FeedReason::Done), (3, 3), false),
+            (
+                fed(1, FeedOutcome::Uncertain, FeedReason::Interrupted),
+                (1, 3),
+                true,
+            ),
+            (
+                fed(0, FeedOutcome::Unknown, FeedReason::Unknown),
+                (0, 3),
+                false,
+            ),
+        ];
+        for (settlement, (confirmed, at_most), uncertain) in cases {
+            let Settlement::Fed { reason, .. } = settlement else {
+                unreachable!("every case is a feed's end");
+            };
+            let result = settled_feed(settlement.clone()).expect("a feed's end");
+            assert_eq!(
+                (result.confirmed, result.at_most),
+                (confirmed, at_most),
+                "{settlement:?}"
+            );
+            assert_eq!(result.uncertain, uncertain, "{settlement:?}");
+            assert_eq!(result.reason, reason);
+            assert_eq!((result.feed, result.requested), (7, 3));
+            assert_eq!(result.by, FedBy::Unknown);
+            assert_eq!(result.at_ms, None);
+            assert_eq!(result.hopper, FoodLevel::Unread);
+        }
+        let uncertain = settled_feed(fed(1, FeedOutcome::Uncertain, FeedReason::Interrupted));
+        assert_eq!(
+            uncertain.map(|result| result.words),
+            Some("1 to 3 of 3 portions, uncertain".to_owned())
+        );
+    }
+
+    /// Only a feed's end is a feed result.
+    #[test]
+    fn only_a_feed_s_end_is_a_feed_result() {
+        for settlement in [
+            Settlement::Done,
+            Settlement::Started { feed: 7 },
+            Settlement::Unrecorded,
+            Settlement::NotSent,
+            Settlement::Superseded,
+        ] {
+            assert!(settled_feed(settlement).is_none());
+        }
+    }
+}
