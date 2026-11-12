@@ -254,6 +254,9 @@ pub struct OwnerTask<S> {
     /// A beat came due after the gap had passed; latched, so no later beat
     /// is ever published.
     pub beat_lost: bool,
+    /// A request was taken while a lease kept its rest beat back: the rest
+    /// gap applies until that beat is published.
+    pub rest_beat_owed: bool,
     pub queued_at: u32,
 
     pub initialized: bool,
@@ -302,6 +305,7 @@ impl<S> Default for OwnerTask<S> {
             beat_raw: 0,
             beat_gap_ms: u32::MAX,
             beat_lost: false,
+            rest_beat_owed: false,
             queued_at: 0,
             initialized: false,
             board_attempted: false,

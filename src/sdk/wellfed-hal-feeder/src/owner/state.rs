@@ -245,9 +245,12 @@ impl<S: OwnerStorage> OwnerTask<S> {
         }
     }
 
-    /// The gap that applies now: the active one while outputs may move.
+    /// The gap that applies now: the active one while outputs may move,
+    /// once a new request's rest beat is published.
     fn gap_ms(&self) -> u32 {
-        if self.active_phase() || self.state == OwnerState::Reporting {
+        if self.rest_beat_owed {
+            self.config.idle_gap_ms
+        } else if self.active_phase() || self.state == OwnerState::Reporting {
             self.config.max_progress_gap_ms
         } else {
             self.config.idle_gap_ms
@@ -297,8 +300,18 @@ impl<S: OwnerStorage> OwnerTask<S> {
             beat::beat(sdk::uptime_ms(), gap, supervised);
             self.beat_raw = sdk::systimer_ticks();
             self.beat_gap_ms = gap;
+            self.rest_beat_owed = false;
         }
         true
+    }
+
+    /// The rest beat a request taken under a lease could not publish, at
+    /// the first step the lease lets it: before the active gap applies and
+    /// before any output can be enabled.
+    fn pay_rest_beat(&mut self) {
+        if self.rest_beat_owed {
+            let _ = self.beat(false);
+        }
     }
 
     /// Authority time is owned by the global transport, not the event-clock
@@ -529,7 +542,10 @@ impl<S: OwnerStorage> OwnerTask<S> {
                 ..OwnerResult::default()
             };
             // A fresh beat at rest before the active gap applies, so a loop
-            // held off just before the request does not fault the feed.
+            // held off just before the request does not fault the feed. A
+            // lease blocking the outputs holds it back, and the rest gap
+            // stays until it is paid ([`Self::pay_rest_beat`]).
+            self.rest_beat_owed = true;
             let _ = self.beat(false);
             self.state = OwnerState::Preparing;
             let (state, result) = (self.state, self.result);
@@ -806,6 +822,7 @@ impl<S: OwnerStorage> OwnerTask<S> {
             }
 
             (*this).take_request();
+            (*this).pay_rest_beat();
             if (*this).fault == OwnerFault::Ok {
                 (*this).check_progress(); // A reservation can block.
             }
