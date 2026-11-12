@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/discovery.dart';
@@ -61,6 +63,29 @@ void main() {
     expect(ports.logins.single.url, '192.168.1.20:8080', reason: 'Rust picks the scheme, never Dart');
     expect(book.server?.link, serverLink);
     expect(server.state, isA<ServerLinked>());
+  });
+
+  testWidgets('a login pops the add-server screen once, though a server is heard as it leaves', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, _) = _server();
+    await tester.pumpWidget(themed(const Text('beneath')));
+    final NavigatorState navigator = tester.state(find.byType(Navigator));
+    unawaited(
+      navigator.push(MaterialPageRoute<bool>(builder: (_) => AddServerScreen(newFlow: () => AddServerFlow(server)))),
+    );
+    await settle(tester);
+
+    await tester.enterText(find.byType(TextField).at(1), 'ada');
+    await tester.enterText(find.byType(TextField).at(2), 'hunter2');
+    await tester.enterText(find.byType(TextField).at(0), '192.168.1.20:8080');
+    await tester.pump();
+    await tester.ensureVisible(find.text('Log in'));
+    await tester.tap(find.text('Log in'));
+    await tester.pump();
+    ports.found.add(const FoundServer(url: 'http://192.168.1.21:8080', name: 'other'));
+    await settle(tester);
+
+    expect(find.text('beneath'), findsOneWidget);
   });
 
   testWidgets('a plain address heard on the network says the password would go unencrypted', (tester) async {

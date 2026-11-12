@@ -26,9 +26,14 @@ class _AddServerScreenState extends State<AddServerScreen> {
   final _name = TextEditingController();
   final _password = TextEditingController();
 
+  /// This screen has popped itself: it is still mounted while it leaves.
+  bool _left = false;
+
   void _changed() {
-    // Logged in: the account screen is where the owner goes next.
-    if (_flow.state.stage is AddServerDone && mounted) Navigator.pop(context, true);
+    // Logged in: the account screen is where the owner goes next, once.
+    if (_flow.state.stage is! AddServerDone || !mounted || _left) return;
+    _left = true;
+    Navigator.pop(context, true);
   }
 
   @override

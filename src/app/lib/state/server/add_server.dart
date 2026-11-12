@@ -103,6 +103,12 @@ class AddServerFlow extends ChangeNotifier {
     _stage(const AddServerLoggingIn());
     final LoginOutcome outcome = await _server.logIn(url: url.trim(), name: name.trim(), password: password);
     if (_disposed) return;
+    if (outcome is LoginDone) {
+      // Nothing listens for another server once one is in: a server heard
+      // now would only stir a screen on its way out.
+      unawaited(_browsing?.cancel());
+      _browsing = null;
+    }
     _stage(switch (outcome) {
       LoginDone() => const AddServerDone(),
       LoginNotKept() => const AddServerNotKept(),
