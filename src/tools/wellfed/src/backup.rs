@@ -284,7 +284,7 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
                     format!("this run failed as the offer was going out, or after it had ({error})")
                 }
             };
-            bail!(
+            Err(crate::uncertain(format!(
                 "uncertain: {what}. Nothing is sent again. Look for the feeder first: if a \
                  session with this computer's key opens, the replacement still runs and \
                  `wellfed restore-stock` may go again. If it advertises Bluetooth setup, the \
@@ -292,7 +292,7 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
                  hold Reset, which on the replacement erases the identity the backup is filed \
                  under. Only if neither shows after a few minutes is it probably on stock: check \
                  stock's app, and only then hold Reset to set it up there."
-            )
+            )))
         }
     }
 }

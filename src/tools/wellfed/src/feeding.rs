@@ -10,7 +10,7 @@ use wellfed_client::history::Feed;
 use wellfed_model::{Answer, Event, Op, PORTIONS_MAX, Pushed, Refusal};
 
 use crate::device::Connection;
-use crate::{Target, ask_and_print, connect, print_json, text};
+use crate::{Target, ask_and_print, connect, print_json, text, uncertain};
 
 #[derive(Args)]
 pub(crate) struct FeedArgs {
@@ -69,7 +69,9 @@ pub(crate) async fn feed(connection: &mut Connection, portions: u8) -> Result<()
     }
 }
 
-/// The feed the answer started, or why it started none.
+/// The feed the answer started, or why it started none. Only a refusal says
+/// nothing ran: an answer this build cannot read, or of another kind, may
+/// follow a feed that started.
 fn started(answer: &Answer) -> Result<u32> {
     match answer {
         Answer::Feeding { feed } => Ok(*feed),
@@ -77,7 +79,14 @@ fn started(answer: &Answer) -> Result<u32> {
             bail!("the feeder refused {asked} portions: a feed asks for 1 to {PORTIONS_MAX}")
         }
         Answer::Refused(refusal) => bail!("the feeder did not start the feed: {refusal:?}"),
-        _ => bail!("the feeder did not start the feed: {answer:?}"),
+        Answer::Unreadable => Err(uncertain(
+            "the feeder answered the feed in a way this build cannot read (a newer feeder \
+             build's), so it may have started: `wellfed feeds` shows whether it ran",
+        )),
+        _ => Err(uncertain(
+            "the feeder answered the feed with something other than its start, so it may have \
+             started: `wellfed feeds` shows whether it ran",
+        )),
     }
 }
 
@@ -99,6 +108,7 @@ mod tests {
     use wellfed_model::{EventBody, FeedOutcome, FeedReason, FeederEvent, FoodLevel, Source};
 
     use super::*;
+    use crate::Uncertain;
 
     #[derive(Parser)]
     struct Cli {
@@ -130,6 +140,20 @@ mod tests {
 
         assert_eq!(started(&Answer::Feeding { feed: 7 }).unwrap(), 7);
         assert!(started(&Answer::Refused(Refusal::Busy)).is_err());
+    }
+
+    /// Only a refusal says the feed never started: an answer this build
+    /// cannot read, or of another kind, may follow one that did.
+    #[test]
+    fn an_unreadable_answer_to_a_feed_is_uncertain() {
+        for answer in [Answer::Unreadable, Answer::Done { generation: None }] {
+            let error = started(&answer).unwrap_err();
+            assert!(error.downcast_ref::<Uncertain>().is_some(), "{error:#}");
+            assert!(error.to_string().contains("may have started"), "{error}");
+        }
+
+        let refused = started(&Answer::Refused(Refusal::Busy)).unwrap_err();
+        assert!(refused.downcast_ref::<Uncertain>().is_none(), "{refused:#}");
     }
 
     #[test]

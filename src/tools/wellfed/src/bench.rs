@@ -502,10 +502,10 @@ impl Lent {
         })?;
         match self.bench.call(Method::POST, "/device/ask", body).await? {
             Asked::Answered { answer } => Ok(answer),
-            Asked::Uncertain => bail!(
-                "no answer came through the bench server; the request may have run, and is \
-                 not sent again"
-            ),
+            Asked::Uncertain if crate::device::writes(op) => {
+                Err(crate::uncertain("no answer came through the bench server"))
+            }
+            Asked::Uncertain => bail!("no answer came through the bench server"),
         }
     }
 }

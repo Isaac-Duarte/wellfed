@@ -148,18 +148,18 @@ async fn enroll(connection: &mut Connection, file: &Path, label: &str) -> Result
         // A pre-revision build cannot list its clients, so `show` has
         // nothing to check with until the feeder is updated.
         Err(EnrollError::Uncertain) if wellfed_install::session::Session::legacy(connection) => {
-            bail!(
-                "no answer came to the enrollment of update key {id}: a press may have \
-                 enrolled it all the same. The feeder runs a build from before API revisions, \
-                 so update it first, then check with `wellfed update-key show`; the request is \
-                 not sent again"
-            )
+            return Err(crate::uncertain(format!(
+                "no readable answer came to the enrollment of update key {id}: a press may \
+                 have enrolled it all the same. The feeder runs a build from before API \
+                 revisions, so update it first, then check with `wellfed update-key show`"
+            )));
         }
-        Err(EnrollError::Uncertain) => bail!(
-            "no answer came to the enrollment of update key {id}: a press may have enrolled \
-             it all the same. Check with `wellfed update-key show`; the request is not sent \
-             again"
-        ),
+        Err(EnrollError::Uncertain) => {
+            return Err(crate::uncertain(format!(
+                "no readable answer came to the enrollment of update key {id}: a press may \
+                 have enrolled it all the same. Check with `wellfed update-key show`"
+            )));
+        }
         Err(error) => return Err(error.into()),
     }
     Ok(())
