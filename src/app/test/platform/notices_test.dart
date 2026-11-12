@@ -24,14 +24,25 @@ void main() {
     expect(notificationAskFor(sdkAtLeast33: false, refusedBefore: true), NotificationAsk.openSettings);
   });
 
-  test('one feeder whose catch-up throws does not end the round for the next', () async {
+  group('a round', () {
     const feeders = [KnownFeeder(identity: 'aa', name: 'Kitchen'), KnownFeeder(identity: 'bb', name: 'Hall')];
-    final reached = <String>[];
-    await eachFeeder(feeders, (feeder) async {
+
+    Future<void> round(RoundFailures failures, List<String> reached) => feederRound(feeders, failures, (feeder) async {
       if (feeder.identity == 'aa') throw StateError('the verifier was never started');
       reached.add(feeder.identity);
     });
-    expect(reached, ['bb']);
+
+    test('in the background, a feeder whose catch-up throws leaves the next its turn', () async {
+      final reached = <String>[];
+      await round(RoundFailures.logged, reached);
+      expect(reached, ['bb']);
+    });
+
+    test('asked for, it gives every feeder its turn, then throws the failure', () async {
+      final reached = <String>[];
+      await expectLater(round(RoundFailures.thrown, reached), throwsStateError);
+      expect(reached, ['bb'], reason: 'the round finished first');
+    });
   });
 
   test('a sweep takes only alert notifications', () {

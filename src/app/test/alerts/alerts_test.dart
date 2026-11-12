@@ -6,6 +6,7 @@ import 'package:wellfed/screens/alerts/alerts_screen.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/alerts/alert_settings.dart';
 import 'package:wellfed/state/alerts/alert_words.dart';
 import 'package:wellfed/state/alerts/alerts.dart';
@@ -63,6 +64,19 @@ void main() {
       await alerts.dismiss(failedMeal());
       expect(ports.dismissed, [0x40000001]);
       expect((alerts.state as AlertsShown).notices.map((notice) => notice.kind), [NoticeKind.foodLow]);
+    });
+
+    test("a check whose round failed for the feeder says so, and isn't taken for a success", () async {
+      final ports = _RoundPorts()..notices = [foodLow()];
+      final alerts = FeederAlertsController(ports, kitchen);
+      addTearDown(alerts.dispose);
+      await alerts.load();
+
+      await alerts.check();
+      final shown = alerts.state as AlertsShown;
+      expect(shown.checking, isFalse);
+      expect(shown.problem, "Couldn't check: no route to the feeder.");
+      expect(shown.reachedMs, isNull, reason: 'the list was not read as fresh');
     });
 
     test('a store that does not read is a failure, and a failed check keeps the list', () async {
@@ -340,4 +354,15 @@ void main() {
       expect(kindName(kind), isNotEmpty);
     }
   });
+}
+
+/// Ports whose check runs the app's own round over the feeders, each of
+/// whose catch-ups fails as the bridge would.
+class _RoundPorts extends FakeAlertPorts {
+  @override
+  Future<void> check(List<KnownFeeder> feeders) => feederRound(
+    feeders,
+    RoundFailures.thrown,
+    (feeder) async => throw const BridgeError(kind: ErrorKind.closed, message: 'no route to the feeder'),
+  );
 }

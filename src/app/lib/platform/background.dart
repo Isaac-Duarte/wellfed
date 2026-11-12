@@ -47,6 +47,7 @@ Future<void> _round(String dir) async {
     dir: dir,
     feeders: store.feeders,
     network: () async => phoneNetwork(await _channel.invokeMapMethod<Object?, Object?>('network')),
+    failures: RoundFailures.logged,
     server: await alertServer(dir),
   );
 }
