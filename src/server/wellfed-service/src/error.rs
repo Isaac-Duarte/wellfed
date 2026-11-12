@@ -124,6 +124,8 @@ pub enum InternalError {
     UndecodableSample,
     #[error("a feeder key does not open with this server's key")]
     Unseal,
+    #[error("a feeder key could not be sealed with this server's key")]
+    Seal,
     #[error("the feeder sent an answer that does not fit the request")]
     Unexpected,
     #[error("hash a request body: {0}")]
