@@ -25,9 +25,9 @@ use wellfed_formats::transients::{self, TransientCycle, TransientsManifest};
 
 use crate::tools::{Analyzer, Children, Observation, Observer, Tools};
 use crate::{Cancel, Error, Result};
-use wellfed_formats::bench::banks::{Bank, Content, Source, Written};
-use wellfed_formats::bench::progress::{BenchCommand, Status};
-use wellfed_formats::bench::{CAPTURES, Config, Paths, plain_name, relative};
+use wellfed_bench_formats::banks::{Bank, Content, Source, Written};
+use wellfed_bench_formats::progress::{BenchCommand, Status};
+use wellfed_bench_formats::{CAPTURES, Config, Paths, plain_name, relative};
 use wellfed_formats::require;
 use wellfed_formats::review::{ImageKind, ImageReview};
 use wellfed_proto::device::Model;

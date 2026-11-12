@@ -16,17 +16,17 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use tokio::sync::Notify;
-use wellfed_formats::bench::banks::BANKS;
-use wellfed_formats::bench::lease::{self, Holder, Lease};
-use wellfed_formats::bench::live::{
+use wellfed_bench_formats::banks::BANKS;
+use wellfed_bench_formats::lease::{self, Holder, Lease};
+use wellfed_bench_formats::live::{
     AnswerError, BenchState, CancelState, JOBS, JobEnd, JobId, JobView, Pause, Phase, ServerView,
     Uart,
 };
-use wellfed_formats::bench::notes::Seen;
-use wellfed_formats::bench::progress::{Current, ProgressSink};
-use wellfed_formats::bench::prompt::Answer;
-use wellfed_formats::bench::rendezvous::{self, Rendezvous};
-use wellfed_formats::bench::{CONFIG, Config, now, relative};
+use wellfed_bench_formats::notes::Seen;
+use wellfed_bench_formats::progress::{Current, ProgressSink};
+use wellfed_bench_formats::rendezvous::{self, Rendezvous};
+use wellfed_bench_formats::{CONFIG, Config, now, relative};
+use wellfed_install::prompt::Answer;
 use wellfed_relay::{Board, POWER};
 use wellfed_rig::Cancel;
 use wellfed_rig::tools::Children;

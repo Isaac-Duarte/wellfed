@@ -12,8 +12,8 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+use crate::prompt::{CodePresses, DispensePurpose, Prompt};
 use wellfed_client::install::PairRoute;
-use wellfed_formats::bench::prompt::{CodePresses, DispensePurpose, Prompt};
 use wellfed_session::noise::Keypair;
 use wellfed_session::setup_code::Code;
 

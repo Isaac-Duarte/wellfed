@@ -1,0 +1,35 @@
+[package]
+license.workspace = true
+name = "wellfed-bench-formats"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "The relay bench's protocol between wellfed-bench and its clients: its config and evidence layout, the lease, the progress and run records, the live state, the bank ledger, the operator's notes and the suite's catalog"
+publish.workspace = true
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std", "serde"] }
+clap = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+wellfed-formats.workspace = true
+wellfed-install = { workspace = true, optional = true }
+wellfed-model = { workspace = true, optional = true }
+wellfed-session.workspace = true
+
+[features]
+# The suite's tier as a command-line option (`--tier`).
+clap = ["dep:clap"]
+# The bench server's live state, whose pending prompt is the installer's.
+# The tools that only take the lease (the flash client, stock's server) do
+# without it, and so without the installer.
+live = ["dep:wellfed-install"]
+# The bench server's /device/* routes, which carry device API values.
+device = ["live", "dep:wellfed-model"]
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

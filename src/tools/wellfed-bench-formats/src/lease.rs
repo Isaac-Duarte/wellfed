@@ -36,8 +36,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::private::{SYSTEM_RANDOM, random, write_json};
-use crate::require;
+use wellfed_formats::private::{SYSTEM_RANDOM, random, write_json};
+use wellfed_formats::require;
 
 /// Root-relative: the lease file.
 pub const LEASE: &str = "private/bench.lease";
@@ -137,14 +137,17 @@ pub enum LeaseError {
     Free,
     /// The lease file exists but is not a lease; nothing can say who holds it.
     #[error("{}: not a bench lease ({source}); remove it by hand once the bench is idle", path.display())]
-    Unreadable { path: PathBuf, source: crate::Error },
+    Unreadable {
+        path: PathBuf,
+        source: wellfed_formats::Error,
+    },
     /// A process's or this host's identity could not be read from the system.
     #[error("{}: no process identity in it", path.display())]
     Identity { path: PathBuf },
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error(transparent)]
-    Formats(#[from] crate::Error),
+    Formats(#[from] wellfed_formats::Error),
 }
 
 pub type Result<T, E = LeaseError> = std::result::Result<T, E>;
@@ -333,9 +336,11 @@ pub fn descends_from(pid: u32, holder: &Holder) -> Result<bool> {
 
 /// The lease at `path`, if there is one.
 fn read(path: &Path) -> Result<Option<Holder>> {
-    match crate::load(path) {
+    match wellfed_formats::load(path) {
         Ok(holder) => Ok(Some(holder)),
-        Err(crate::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(wellfed_formats::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
+            Ok(None)
+        }
         Err(source) => Err(LeaseError::Unreadable {
             path: path.to_path_buf(),
             source,

@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::{mpsc, oneshot};
-use wellfed_formats::bench::lease;
-use wellfed_formats::bench::live::{
+use wellfed_bench_formats::lease;
+use wellfed_bench_formats::live::{
     ActivityKind, BenchState, CancelState, JOBS, JobEnd, JobId, Phase, Uart,
 };
 use wellfed_relay::{AtBoard, Board, FakeBoard, POWER, STRAP, Switch};

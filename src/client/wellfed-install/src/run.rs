@@ -14,6 +14,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::prompt::Prompt;
 use wellfed_client::install::{
     FeederTrust, Install, InstallError, Options, PairRoute, Promoted, Promotion, Provision,
     Replacement, Requested, Step, StockBackup, StockNotReady, UpdateKey,
@@ -22,7 +23,6 @@ use wellfed_client::setup::Credentials;
 use wellfed_client::update::{Image, InstallError as UpdateError};
 use wellfed_client::update_key::{EnrollError, Enrolled};
 use wellfed_connect::AskError;
-use wellfed_formats::bench::prompt::Prompt;
 use wellfed_formats::manifest::Provisioning;
 use wellfed_formats::stock::TrialPhase;
 use wellfed_model::setup::Refusal as SetupRefusal;

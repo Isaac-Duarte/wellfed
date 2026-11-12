@@ -24,9 +24,9 @@ use std::time::{Duration, Instant};
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Json, Response};
 use tokio::sync::broadcast::error::RecvError;
-use wellfed_formats::bench::live::{BenchState, JobId, Uart};
-use wellfed_formats::bench::notes::TimerState;
-use wellfed_formats::bench::now;
+use wellfed_bench_formats::live::{BenchState, JobId, Uart};
+use wellfed_bench_formats::notes::TimerState;
+use wellfed_bench_formats::now;
 
 use crate::server::api::{Refusal, WAIT_MAX_MS, Wait, WaitError, WaitFor, Waited};
 use crate::server::notes::{Heard, event_kind};
@@ -325,7 +325,7 @@ mod tests {
             bank: Some(1),
         };
         let mut state = crate::server::tests::idle_state();
-        state.feeder.status = Some(wellfed_formats::bench::live::FeederStatus {
+        state.feeder.status = Some(wellfed_bench_formats::live::FeederStatus {
             build: "4d37c21a00ff".into(),
             bank: 1,
             uptime_ms: 4000,
@@ -351,7 +351,7 @@ mod tests {
         state
             .operator
             .timers
-            .push(wellfed_formats::bench::notes::Timer {
+            .push(wellfed_bench_formats::notes::Timer {
                 label: "fire".into(),
                 started: 0.0,
                 due: 1.0,

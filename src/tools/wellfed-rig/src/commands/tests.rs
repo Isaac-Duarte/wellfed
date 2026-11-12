@@ -13,8 +13,8 @@ use super::*;
 use crate::commands::ota::{ArgError, OtaError, Source};
 use crate::device::{Answer, DeviceError, DeviceStatus};
 use crate::tools::{Capture, CaptureFailure, Captured, InstallJob, Installing, PushError};
-use wellfed_formats::bench::VERIFICATION;
-use wellfed_formats::bench::progress::{FlashTool, StepState};
+use wellfed_bench_formats::progress::{FlashTool, StepState};
+use wellfed_formats::VERIFICATION;
 use wellfed_relay::{FakeBoard, Switch};
 use wellfed_signed::SECTOR;
 
@@ -835,7 +835,7 @@ fn a_write_that_exits_short_of_complete_leaves_its_bank_unknown_whatever_its_cod
             [Written {
                 bank: Bank::One,
                 content: Content::Unknown,
-                source: wellfed_formats::bench::banks::Source::GiveWay,
+                source: wellfed_bench_formats::banks::Source::GiveWay,
             }],
             "exit {code}"
         );
@@ -1780,7 +1780,7 @@ fn ota_passes_across_segments_and_records_steps() {
         [Written {
             bank: Bank::One,
             content: Content::Build { id: BUILD.into() },
-            source: wellfed_formats::bench::banks::Source::OtaConfirmed,
+            source: wellfed_bench_formats::banks::Source::OtaConfirmed,
         }]
     );
 }
@@ -1814,7 +1814,7 @@ fn ota_reports_a_fallback_with_its_boot_count() {
         [Written {
             bank: Bank::One,
             content: Content::Invalid,
-            source: wellfed_formats::bench::banks::Source::OtaFellBack,
+            source: wellfed_bench_formats::banks::Source::OtaFellBack,
         }]
     );
 }
@@ -3009,7 +3009,7 @@ fn an_execute_needs_the_bank_1_review_its_prepare_bound() {
 /// ledger with no image there leaves the first sector the only check.
 #[test]
 fn the_bank_1_review_must_be_what_the_ledger_has_in_bank_1() {
-    use wellfed_formats::bench::banks::{BANKS, Check, Entry, Ledger, Witness};
+    use wellfed_bench_formats::banks::{BANKS, Check, Entry, Ledger, Witness};
 
     let image = |sha256: &str| Content::Image {
         sha256: sha256.into(),
@@ -3053,7 +3053,7 @@ fn the_bank_1_review_must_be_what_the_ledger_has_in_bank_1() {
             Bank::One,
             Entry {
                 content: content.clone(),
-                source: wellfed_formats::bench::banks::Source::FlashExecute,
+                source: wellfed_bench_formats::banks::Source::FlashExecute,
                 session: None,
                 at: 0.0,
                 check,

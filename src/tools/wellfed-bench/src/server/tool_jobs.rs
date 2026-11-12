@@ -35,11 +35,11 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use clap::Args;
+use wellfed_bench_formats::banks::{Bank, Content, Source};
+use wellfed_bench_formats::live::{ActivityKind, AnswerError, JobId, PendingPrompt};
 use wellfed_core::buttons::{Button, Buttons};
 use wellfed_core::virtual_panel::DEFAULT_HOLD_MS;
-use wellfed_formats::bench::banks::{Bank, Content, Source};
-use wellfed_formats::bench::live::{ActivityKind, AnswerError, JobId, PendingPrompt};
-use wellfed_formats::bench::prompt::{Answer, DispensePurpose, Prompt};
+use wellfed_install::prompt::{Answer, DispensePurpose, Prompt};
 use wellfed_rig::commands::Bench;
 use wellfed_rig::tools::own_group_with_input;
 
@@ -368,7 +368,7 @@ fn converse(
         // The checkout's own key and backups, whatever the host user's are.
         .env(
             "WELLFED_HOME",
-            bench.root.join(wellfed_formats::bench::WELLFED_HOME),
+            bench.root.join(wellfed_bench_formats::WELLFED_HOME),
         )
         .args(arguments)
         .stdout(Stdio::piped())
@@ -628,7 +628,7 @@ fn panel_press(prompt: &Prompt) -> Option<Buttons> {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_formats::bench::prompt::Expects;
+    use wellfed_install::prompt::Expects;
 
     use super::*;
 

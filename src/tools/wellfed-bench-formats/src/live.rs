@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use super::banks::Ledger;
 use super::notes::Operator;
 use super::progress::{Current, RelayState, StepState, Unit};
-use super::prompt::{Answer, Expects, Prompt};
+use wellfed_install::prompt::{Answer, Expects, Prompt};
 
 /// A job's number, counting up across servers (see [`JOBS`]).
 pub type JobId = u64;
@@ -543,7 +543,7 @@ pub enum JobEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bench::progress::{BenchCommand, Outcome, Progress, Step};
+    use crate::progress::{BenchCommand, Outcome, Progress, Step};
 
     fn record() -> Current {
         Current {

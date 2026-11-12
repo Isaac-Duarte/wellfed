@@ -1,4 +1,4 @@
-//! The operator's notes (`wellfed_formats::bench::notes`): appended from
+//! The operator's notes (`wellfed_bench_formats::notes`): appended from
 //! `POST /notes`, folded into the live state, and the timers settled as
 //! what they expect arrives.
 //!
@@ -23,9 +23,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::broadcast;
 
-use wellfed_formats::bench::live::Uart;
-use wellfed_formats::bench::notes::{Body, Expect, NOTES, Note, Operator, Seen};
-use wellfed_formats::bench::now;
+use wellfed_bench_formats::live::Uart;
+use wellfed_bench_formats::notes::{Body, Expect, NOTES, Note, Operator, Seen};
+use wellfed_bench_formats::now;
 use wellfed_model::EventKind;
 
 use crate::server::api::NoteError;
@@ -267,8 +267,8 @@ pub(crate) fn event_kind(name: &str) -> Result<EventKind, NoteError> {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_formats::bench::live::BenchState;
-    use wellfed_formats::bench::notes::{TimerState, Verdict, WINDOW};
+    use wellfed_bench_formats::live::BenchState;
+    use wellfed_bench_formats::notes::{TimerState, Verdict, WINDOW};
 
     use super::*;
 

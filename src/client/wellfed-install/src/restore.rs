@@ -558,13 +558,13 @@ mod tests {
     use std::rc::Rc;
     use std::time::SystemTime;
 
+    use crate::prompt::Prompt;
     use tokio::task::LocalSet;
     use wellfed_client::install::StockPins;
     use wellfed_feeder_sim::banks::Banks;
     use wellfed_feeder_sim::flash::Flash;
     use wellfed_feeder_sim::harness::Running;
     use wellfed_feeder_sim::serve::Control;
-    use wellfed_formats::bench::prompt::Prompt;
     use wellfed_model::{Refusal, UpdateRefusal};
     use wellfed_signed::{MARKER, SECTOR};
 

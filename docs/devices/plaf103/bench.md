@@ -73,12 +73,13 @@ Run the bench from the repository root, or pass `--root`. A job resolves the pat
 
 | Crate | What it does |
 | --- | --- |
+| `wellfed-bench-formats` | The protocol the server and its clients share |
 | `wellfed-relay` | The relay board driver, behind a `Board` trait the Wellfed Bench board can implement |
 | `wellfed-rig` | The operator sequences, and the steps the suite builds on |
 | `wellfed-itest` | The integration suite, on the rig |
 | `wellfed-bench` | One binary over the others: the server (the lease, the board, the socket, the feeder session, the UART capture, the sequences and the suite as its jobs, and the bank ledger), `serve` and its clients |
 
-Dependencies run down the table. Their shared shapes (the bench config, progress records, the server's live state, run records, the suite's catalog) are typed in `wellfed-formats`; the rig signs offers through `wellfed-signing`; builds run as `wellfed-build` processes, and flash reads and writes as `wellfed-flash` ones.
+Dependencies run down the table. Their shared shapes (the bench config, progress records, the server's live state, run records, the suite's catalog) are typed in `wellfed-bench-formats`; the rig signs offers through `wellfed-signing`; builds run as `wellfed-build` processes, and flash reads and writes as `wellfed-flash` ones.
 
 ## Commands
 

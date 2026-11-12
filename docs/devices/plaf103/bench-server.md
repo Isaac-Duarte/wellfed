@@ -190,7 +190,7 @@ Stopped: The bench is held by pid 81234 (`wellfed-bench serve --device plaf103`,
 - **The restore.** The server never stops for one: its `restore-stock` job runs `wellfed restore-stock` on its lease. From another terminal while a server holds the bench, `wellfed restore-stock` is refused with the server named.
 - **The stock server.** `wellfed-stock` keeps the lease beside its `--config`, on the bench `private/`. Its `serve` takes none: it only answers the feeder, beside the bench command that drives it, and never asks stock to install (only the Android app does, and a phone holds no lease).
 
-Taking, breaking and releasing run under an advisory lock on `private/bench.lease.lock`, which the kernel drops with the process, so two tools racing for a free or stale lease cannot both win. The lease is replaced atomically, so `status` never reads it torn. The lease and its rules are `wellfed_formats::bench::lease`.
+Taking, breaking and releasing run under an advisory lock on `private/bench.lease.lock`, which the kernel drops with the process, so two tools racing for a free or stale lease cannot both win. The lease is replaced atomically, so `status` never reads it torn. The lease and its rules are `wellfed_bench_formats::lease`.
 
 While a server runs, `status` shows the relays as the server last read them, since it holds the board's port. While another holder keeps the port open (a hand-run tool), `status` shows the lease, then stops with "Serial port: Device or resource busy" instead of the relays.
 

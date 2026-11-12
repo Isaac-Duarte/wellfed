@@ -22,7 +22,7 @@ use wellfed_core::ota::install::StopStage;
 use wellfed_core::record::{self, Api, Confirm, Trial, Update, Watch};
 
 use crate::Event;
-use wellfed_formats::bench::catalog;
+use wellfed_bench_formats::catalog;
 use wellfed_formats::require;
 use wellfed_model::Generation;
 use wellfed_rig::commands::ota::Outcome;

@@ -19,7 +19,7 @@ use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use tokio::runtime::Runtime;
 use wellfed_bench::server::Client;
 use wellfed_bench::server::stopping::CONFIRM_PROMPT;
-use wellfed_formats::bench::live::{BenchState, CancelState, Phase, Uart};
+use wellfed_bench_formats::live::{BenchState, CancelState, Phase, Uart};
 use wellfed_relay::{FakeBoard, Link};
 
 mod support;

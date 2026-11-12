@@ -5101,6 +5101,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "uuid",
+ "wellfed-bench-formats",
  "wellfed-client",
  "wellfed-connect",
  "wellfed-feeder-sim",
@@ -5213,11 +5214,13 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "wellfed-bench-formats",
  "wellfed-client",
  "wellfed-connect",
  "wellfed-core",
  "wellfed-feeder-sim",
  "wellfed-formats",
+ "wellfed-install",
  "wellfed-itest",
  "wellfed-model",
  "wellfed-proto",
@@ -5231,6 +5234,22 @@ name = "wellfed-bench-at"
 version = "0.1.0"
 dependencies = [
  "heapless",
+]
+
+[[package]]
+name = "wellfed-bench-formats"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "wellfed-formats",
+ "wellfed-install",
+ "wellfed-model",
+ "wellfed-session",
 ]
 
 [[package]]
@@ -5478,6 +5497,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "uuid",
+ "wellfed-bench-formats",
  "wellfed-core",
  "wellfed-emu",
  "wellfed-formats",
@@ -5500,7 +5520,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "uuid",
- "wellfed-model",
  "wellfed-proto",
  "wellfed-session",
 ]
@@ -5667,6 +5686,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "wellfed-bench-formats",
  "wellfed-core",
  "wellfed-core-feeder",
  "wellfed-formats",
@@ -5782,6 +5802,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "wellfed-bench-formats",
  "wellfed-build",
  "wellfed-client",
  "wellfed-connect",
@@ -6022,6 +6043,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "wellfed-bench-formats",
  "wellfed-client",
  "wellfed-formats",
  "wellfed-session",

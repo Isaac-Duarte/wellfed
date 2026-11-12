@@ -44,6 +44,7 @@ pub mod event;
 pub mod listen;
 pub mod pairing;
 pub mod platform;
+pub mod prompt;
 pub mod push;
 pub mod restore;
 mod review;
@@ -87,7 +88,7 @@ pub(crate) fn text(error: &(dyn std::error::Error + 'static)) -> String {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use wellfed_formats::bench::prompt::Prompt;
+    use crate::prompt::Prompt;
 
     use crate::platform::{Announcement, PlatformError, Prompter};
 

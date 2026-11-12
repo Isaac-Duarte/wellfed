@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc::UnboundedReceiver;
-use wellfed_formats::bench::live::{BenchState, DeferredStop, JobId, Uart};
-use wellfed_formats::bench::now;
+use wellfed_bench_formats::live::{BenchState, DeferredStop, JobId, Uart};
+use wellfed_bench_formats::now;
 
 use crate::server::state::Store;
 
@@ -215,7 +215,7 @@ mod tests {
     use std::sync::Mutex;
 
     use tokio::sync::mpsc::unbounded_channel;
-    use wellfed_formats::bench::live::{CancelState, JobEnd, JobView};
+    use wellfed_bench_formats::live::{CancelState, JobEnd, JobView};
 
     use super::*;
 

@@ -30,10 +30,12 @@ serde.workspace = true
 serde_json.workspace = true
 # The `GET /wait` query, from the clients' side.
 serde_urlencoded = "0.7.1"
+wellfed-bench-formats = { path = "../wellfed-bench-formats", features = ["clap", "device"] }
 wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-core.workspace = true
-wellfed-formats = { workspace = true, features = ["clap", "device"] }
+wellfed-formats = { workspace = true, features = ["clap"] }
+wellfed-install.workspace = true
 wellfed-itest = { path = "../wellfed-itest" }
 wellfed-model.workspace = true
 wellfed-proto.workspace = true

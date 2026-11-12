@@ -102,7 +102,7 @@ The repository is self-contained: SDK and toolchain copies and fixtures resolve 
 
 ## Which tool do I use?
 
-Every host tool is Rust. [src/tools/README.md](../../src/tools/README.md) lists them all, with which touch hardware. The files they pass to each other are typed once, in `wellfed-formats`.
+Every host tool is Rust. [src/tools/README.md](../../src/tools/README.md) lists them all, with which touch hardware. The files they pass to each other are typed once, in `wellfed-formats`, and the bench's protocol in `wellfed-bench-formats`.
 
 | I want to… | Use | Read |
 | --- | --- | --- |

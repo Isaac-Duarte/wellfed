@@ -1535,7 +1535,7 @@ fn the_record_lists_every_verdict_as_physical_evidence() {
 #[test]
 fn the_scenarios_run_in_catalog_order() {
     let names: Vec<_> = SCENARIOS.iter().map(|s| s.name).collect();
-    let catalog: Vec<_> = wellfed_formats::bench::catalog::SCENARIOS
+    let catalog: Vec<_> = wellfed_bench_formats::catalog::SCENARIOS
         .iter()
         .map(|s| s.name)
         .collect();

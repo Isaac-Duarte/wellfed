@@ -24,7 +24,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use wellfed_bench::server::api::DuringWrite;
-use wellfed_formats::bench::prompt::{Answer, Prompt};
+use wellfed_install::prompt::{Answer, Prompt};
 
 use crate::note::{self, NoteArgs, What};
 
@@ -1240,7 +1240,7 @@ mod tests {
         for prompt in [
             Prompt::JoinBack,
             Prompt::PressDispense {
-                purpose: wellfed_formats::bench::prompt::DispensePurpose::EnrollUpdateKey,
+                purpose: wellfed_install::prompt::DispensePurpose::EnrollUpdateKey,
             },
         ] {
             assert!(agent_may_answer(&prompt).is_ok(), "{prompt:?}");

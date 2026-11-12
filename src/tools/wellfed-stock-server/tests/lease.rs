@@ -6,7 +6,7 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
-use wellfed_formats::bench::lease::Holder;
+use wellfed_bench_formats::lease::Holder;
 
 /// The holder of the bench lease in `directory`, if any.
 fn lease(directory: &Path) -> Option<Holder> {

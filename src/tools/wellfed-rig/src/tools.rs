@@ -19,9 +19,9 @@ use wellfed_formats::canonical::sha256;
 
 use crate::device::{Answer, Ask, Device, DeviceError, DeviceLink, DeviceStatus, Fault};
 use crate::{Cancel, Error, Result, Waited, wait_child};
-use wellfed_formats::bench::live::ActivityKind;
-use wellfed_formats::bench::progress::{FlashTool, Status};
-use wellfed_formats::bench::relative;
+use wellfed_bench_formats::live::ActivityKind;
+use wellfed_bench_formats::progress::{FlashTool, Status};
+use wellfed_bench_formats::relative;
 use wellfed_formats::require;
 use wellfed_formats::session::Status as SessionStatus;
 use wellfed_signing::CONTAINER_HEADER;
@@ -1001,7 +1001,7 @@ mod tests {
     use std::assert_matches;
     use std::os::unix::fs::PermissionsExt;
 
-    use wellfed_formats::bench::progress::BenchCommand;
+    use wellfed_bench_formats::progress::BenchCommand;
 
     /// Held by every test that writes or runs a child: a script being
     /// written while another test forks can fail to exec with ETXTBSY.

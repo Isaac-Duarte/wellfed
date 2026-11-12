@@ -48,7 +48,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use wellfed_signed::offer::{self, ImageKind as OfferKind, KeyId, Signed};
 
-use wellfed_formats::bench::VERIFICATION;
+use wellfed_formats::VERIFICATION;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::credentials::{KeyScope, OtaKeyFile};
 use wellfed_formats::manifest::{BuildManifest, Provisioning};
@@ -94,7 +94,7 @@ pub const KEY_PATH: &str = "private/ota-key.json";
 /// The highest version signed so far in the checkout at `root`, with its
 /// file: the bench's manifests in [`VERIFICATION`] and the promotions
 /// a run kept beside each feeder's backup under `backups`
-/// (root-relative unless absolute; `wellfed_formats::bench::STOCK_BACKUPS`
+/// (root-relative unless absolute; `wellfed_formats::STOCK_BACKUPS`
 /// by default). The bench
 /// and the installer both sign one above it, so neither reuses a version
 /// the other signed.
@@ -642,7 +642,7 @@ mod tests {
 
     use serde_json::json;
     use wellfed_core::record::Tag;
-    use wellfed_formats::bench::STOCK_BACKUPS;
+    use wellfed_formats::STOCK_BACKUPS;
     use wellfed_signed::SECTOR;
 
     use super::*;

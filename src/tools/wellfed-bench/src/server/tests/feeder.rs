@@ -1,14 +1,14 @@
 //! The feeder session against the simulator, the UART capture beside the
 //! jobs, and the bank ledger, over the socket in a temporary checkout.
 
+use wellfed_bench_formats::banks::{Bank, Check, Content, Source, Witness};
+use wellfed_bench_formats::feeder::{Asked, Stream};
+use wellfed_bench_formats::live::{DEVICE_CURSOR, DeviceCursor, Pause, Session, Unavailable};
+use wellfed_bench_formats::{notes, rendezvous};
 use wellfed_feeder_sim::harness::Relay;
 use wellfed_feeder_sim::harness::Threaded;
 use wellfed_feeder_sim::harness::pre_revision::{PreRevision, Seen};
 use wellfed_feeder_sim::serve::Control;
-use wellfed_formats::bench::banks::{Bank, Check, Content, Source, Witness};
-use wellfed_formats::bench::feeder::{Asked, Stream};
-use wellfed_formats::bench::live::{DEVICE_CURSOR, DeviceCursor, Pause, Session, Unavailable};
-use wellfed_formats::bench::{notes, rendezvous};
 use wellfed_model::{Answer, Op, Pushed, Skew};
 use wellfed_rig::device::{Ask as RigAsk, DeviceLink};
 
@@ -390,8 +390,8 @@ async fn job_results_write_the_ledger_and_the_banner_disputes_them() {
         "{entry:?}"
     );
     // Kept on disk, and read back by the next server.
-    let kept: wellfed_formats::bench::banks::Ledger =
-        wellfed_formats::load(&root.join(wellfed_formats::bench::banks::BANKS)).unwrap();
+    let kept: wellfed_bench_formats::banks::Ledger =
+        wellfed_formats::load(&root.join(wellfed_bench_formats::banks::BANKS)).unwrap();
     assert_eq!(kept.banks[&Bank::One].content, entry.content);
 
     // A give-way leaves bank 1 without a valid image, which the banner of
@@ -740,7 +740,7 @@ fn the_hotspot_is_read_only_while_no_job_and_no_loader_or_write_runs() {
     assert!(!crate::server::serve::hotspot_due(&state));
 
     state.uart = Uart::Idle;
-    state.job = Some(wellfed_formats::bench::live::JobView {
+    state.job = Some(wellfed_bench_formats::live::JobView {
         id: 1,
         label: "ota o1".into(),
         log: String::new(),
@@ -838,7 +838,7 @@ async fn after_an_epoch_change_the_history_is_the_new_epoch_s_and_a_feed_reports
 
 /// A timer for `label`, due in a minute, expecting `expect`.
 fn timer(label: &str, expect: notes::Expect) -> notes::Body {
-    let due = wellfed_formats::bench::now() + 60.0;
+    let due = wellfed_bench_formats::now() + 60.0;
     notes::Body::Timer {
         label: label.into(),
         due,
@@ -904,7 +904,7 @@ async fn notes_fold_into_the_state_and_a_uart_line_or_a_lapsed_window_settles_a_
         ))
         .await
         .unwrap();
-    let now = wellfed_formats::bench::now();
+    let now = wellfed_bench_formats::now();
     server
         .client
         .note(&notes::Body::Timer {
@@ -1079,7 +1079,7 @@ read a
 
     server
         .client
-        .answer(id, 1, wellfed_formats::bench::prompt::Answer::Done)
+        .answer(id, 1, wellfed_install::prompt::Answer::Done)
         .await
         .unwrap();
     assert_eq!(follow(&server.client, id).await.0.code, 0);

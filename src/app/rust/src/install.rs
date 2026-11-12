@@ -24,11 +24,11 @@ use wellfed_client::install::{
     manifest_build, manifest_version,
 };
 use wellfed_client::setup::{Credentials, Deframer, frame};
-use wellfed_formats::bench::prompt::Prompt;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::manifest::Provisioning;
 use wellfed_install::event::{Enrollment as KeyEnrollment, Wait};
 use wellfed_install::listen::{self, Listened, UNCERTAIN_WAIT};
+use wellfed_install::prompt::Prompt;
 use wellfed_install::{
     Announcement, Api, Bind, Bluetooth, Discovery, Error, Event, Keys, Plan, Platform,
     PlatformError, Prompter, Refusal, Rejection, Report, Review, SetupLink, Signer, Start,

@@ -22,9 +22,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::args::ItestArgs;
-use wellfed_formats::bench::CAPTURES;
-use wellfed_formats::bench::banks::{Bank, Content, Source};
-use wellfed_formats::bench::progress::StepState;
+use wellfed_bench_formats::CAPTURES;
+use wellfed_bench_formats::banks::{Bank, Content, Source};
+use wellfed_bench_formats::progress::StepState;
 use wellfed_formats::require;
 use wellfed_relay::{POWER, STRAP, Switch};
 use wellfed_rig::commands::Bench;

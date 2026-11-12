@@ -1,11 +1,15 @@
-//! The relay bench's files and shapes: its config, the evidence layout of a
+//! The relay bench's protocol: its config, the evidence layout of a
 //! session, the lease every tool driving the bench takes, a command's
 //! progress record, the bench server's live state, the bank ledger, the
-//! operator's notes, a job's prompts and their answers, and the
-//! integration suite's run records and catalog.
+//! operator's notes and the integration suite's run records and catalog.
 //!
-//! The bench server and the suite write these and the clients only read
-//! them, so the shapes they share live here.
+//! The bench server and the suite write these and the bench's clients
+//! read them. Only host tools take part, so the crate lives among them and
+//! no library the app, the server or a firmware builds on links it. The
+//! questions a job asks its operator are the installer's
+//! (`wellfed_install::prompt`), since the phone asks the same ones.
+
+#![forbid(unsafe_code)]
 
 pub mod banks;
 pub mod cancel;
@@ -13,10 +17,10 @@ pub mod catalog;
 #[cfg(feature = "device")]
 pub mod feeder;
 pub mod lease;
+#[cfg(feature = "live")]
 pub mod live;
 pub mod notes;
 pub mod progress;
-pub mod prompt;
 pub mod rendezvous;
 pub mod run;
 
@@ -24,6 +28,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
+use wellfed_formats::VERIFICATION;
 
 pub use cancel::Cancel;
 
@@ -33,13 +38,10 @@ pub const CONFIG: &str = "private/bench.json";
 pub const STATUS_DIR: &str = "private/bench-status";
 pub const CAPTURES: &str = "private/captures";
 pub const FLASH_BACKUPS: &str = "private/flash-backups";
-pub const VERIFICATION: &str = "private/verification";
-/// Root-relative: the owner's stock backups, one directory per feeder,
-/// where a run that signed its own promotion also keeps it.
-pub const STOCK_BACKUPS: &str = "private/stock-backups";
 /// Root-relative: the `wellfed` CLI's home (`WELLFED_HOME`) for the bench's
 /// jobs. Its key, backups and server login keep `private/`'s names there,
-/// so the job finds [`STOCK_BACKUPS`] and the bench's owner key.
+/// so the job finds [`wellfed_formats::STOCK_BACKUPS`] and the bench's
+/// owner key.
 pub const WELLFED_HOME: &str = "private";
 
 /// `private/bench.json`: the ports and pinned evidence the bench uses.
