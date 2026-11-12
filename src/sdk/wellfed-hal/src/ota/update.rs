@@ -154,6 +154,21 @@ impl<H: Hooks> Flash for SdkFlash<H> {
     }
 }
 
+/// Whether the activated candidate `c` never reached bank 1's marker: a
+/// replacement whose marker bytes all still read erased, past any cache. A
+/// cut between recording the activation and programming the marker leaves
+/// that, and the loader never booted the build, so it did not fail: the
+/// same offer installs again. A give-way clears the marker's first byte
+/// and a cut program leaves some bit down, so a build that ran, or may
+/// have, still reads as failed. A stock activation keeps its own rule (the
+/// handover's), so it is never taken back here.
+fn never_marked(c: &Candidate, flash: &mut impl Flash) -> bool {
+    let mut marker = [0u8; 8];
+    c.kind == ImageKind::Replacement
+        && flash.read_uncached(0, 0, &mut marker)
+        && marker == [0xff; 8]
+}
+
 /// The handover wrote a new update record under the stage's feet. Both run on
 /// the service task, one step at a time, and an offer waits for what the
 /// handover holds back from being published, so the stage reads it again
@@ -1011,7 +1026,7 @@ impl<I: SlotIo + Clone> Update<I> {
         if self.bank == 1 {
             return self.check_bank0(admitted, flash, version);
         }
-        self.start_install(admitted, now)
+        self.start_install(admitted, flash, now)
     }
 
     /// Bank 1: bank 0 must hold a valid marker and exactly the image it
@@ -1090,13 +1105,13 @@ impl<I: SlotIo + Clone> Update<I> {
 
     /// Bank 0: install the pending manifest, or this one when none is
     /// pending.
-    fn start_install(&mut self, admitted: Admitted, now: u32) -> Step {
+    fn start_install(&mut self, admitted: Admitted, flash: &mut impl Flash, now: u32) -> Step {
         let candidate = candidate(&admitted);
         match self.store.record().state {
             State::Pending(c) if c.digest != candidate.digest => {
                 return self.refuse(Refused::Pending);
             }
-            State::Activated(c) if c.digest == candidate.digest => {
+            State::Activated(c) if c.digest == candidate.digest && !never_marked(&c, flash) => {
                 return self.refuse(Refused::Failed);
             }
             State::Pending(_) => {}

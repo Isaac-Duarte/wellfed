@@ -528,10 +528,10 @@ fn a_failed_program_or_readback_stops_the_install() {
 /// Each way the marker's program can end without reading back: it may be
 /// down all the same, so the activation stands and the feeder restarts as
 /// after any activation. The boot decides: the new build (when the marker
-/// landed) raises the floor as it confirms; bank 0 again (when it did not)
-/// finds the manifest activated, as after a failed trial, and never takes
-/// it again. Never `Pending`, which would leave a build booting from that
-/// marker below the floor.
+/// landed) raises the floor as it confirms; bank 0 again (when nothing of
+/// it landed) finds the manifest activated over an erased marker, which
+/// never booted, and takes it again. Never `Pending` at the activation,
+/// which would leave a build booting from that marker below the floor.
 #[test]
 fn a_marker_that_does_not_read_back_stands_activated_and_the_boot_decides() {
     type Fault = fn(&mut TestFlash);
@@ -587,13 +587,16 @@ fn a_marker_that_does_not_read_back_stands_activated_and_the_boot_decides() {
             );
             assert_eq!(store().record().min_version, 3);
         } else {
-            // Bank 0 boots again: the same manifest is never installed
-            // again, as after a failed trial. The restart clears what the
+            // Bank 0 boots again with bank 1's marker still erased: the
+            // loader never booted the build, so it never failed, and the
+            // same manifest installs again. The restart clears what the
             // boot before held in RAM.
             mailbox::reset();
             INTERLOCK.reset();
             let mut rig = Rig::bench(0);
-            assert_eq!(rig.offer(&signed, None), Err(Refused::Failed), "{label}");
+            let again = progress(rig.offer(&signed, None));
+            assert_eq!(again.phase, Phase::Receiving, "{label}");
+            assert!(matches!(store().record().state, State::Pending(c) if c.version == 3));
             assert_eq!(store().record().min_version, 0);
         }
     }
@@ -1044,10 +1047,23 @@ fn bank_0_installs_only_the_pending_manifest_and_never_a_failed_one() {
     rig.ask(Request::Cancel).unwrap();
     assert_eq!(store().record().state, State::None);
 
-    // Activated and back on bank 0: the trial failed.
+    // Activated and back on bank 0 with the marker's first byte cleared:
+    // the trial failed and gave way.
     store().set_activated(candidate).unwrap();
+    fake::with(|h| {
+        h.bank1[..8].copy_from_slice(&MARKER);
+        h.bank1[0] = 0;
+    });
     let mut rig = Rig::bench(0);
     assert_eq!(rig.offer(&first, None), Err(Refused::Failed));
+
+    // Activated over a marker still erased: a cut came between the record
+    // and the marker, the loader never booted the build, and it installs
+    // again.
+    fake::with(|h| h.bank1[..8].fill(0xff));
+    let mut rig = Rig::bench(0);
+    assert_eq!(progress(rig.offer(&first, None)).phase, Phase::Receiving);
+    assert!(matches!(store().record().state, State::Pending(c) if c.version == 3));
 }
 
 /// With no handover the floor holds: the same version and a lower one are
@@ -1943,11 +1959,11 @@ fn a_marker_the_flash_was_not_armed_for_stops_and_keeps_the_offer_pending() {
 
 /// An activation that never reached the marker goes back to pending. When
 /// the store won't take that write, it reads unreadable for the rest of the
-/// boot and takes no offer; the next boot reads the manifest still
-/// activated, as a build that failed, and refuses it until a cancel clears
-/// it. Then it installs again.
+/// boot and takes no offer. The next boot reads the manifest still
+/// activated, but over a marker still erased, which the loader never
+/// booted, so it installs again.
 #[test]
-fn an_unwritten_marker_whose_revert_fails_waits_for_a_cancel() {
+fn an_unwritten_marker_whose_revert_fails_installs_again_next_boot() {
     let _guard = start(0);
     let mut rig = Rig::bench(0);
     let payload = image(SECTOR);
@@ -1969,11 +1985,9 @@ fn an_unwritten_marker_whose_revert_fails_waits_for_a_cancel() {
     mailbox::reset();
     INTERLOCK.reset();
     let mut rig = Rig::bench(0);
-    assert_eq!(rig.offer(&signed, None), Err(Refused::Failed));
-    progress(rig.ask(Request::Cancel));
-    assert_eq!(store().record().state, State::None);
     let again = progress(rig.offer(&signed, None));
     assert_eq!(again.phase, Phase::Receiving);
+    assert!(matches!(store().record().state, State::Pending(c) if c.version == 3));
     assert_eq!(rig.push(&payload, None).phase, Phase::Activated);
 }
 
