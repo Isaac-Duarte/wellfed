@@ -5,6 +5,7 @@
 //! The PLAF103's panel drivers, which build for no other board.
 #![cfg(wellfed_board = "plaf103")]
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use wellfed_core::buttons::{Button, Buttons, Config, Gesture};
@@ -133,4 +134,41 @@ fn an_invalid_configuration_is_refused_without_touching_the_pins() {
     assert_eq!(step.record, Some(Record::Refused));
     assert_eq!(step.delay_ms, 0);
     assert_eq!(fake::with(|h| h.direction[1]) & RELEASED, RELEASED);
+}
+
+/// Port writes and direction changes the fake saw, and how many of them
+/// came with interrupts unmasked: another context's write to the same port
+/// could then interleave with the ROM's read-modify-write.
+static WRITES: AtomicU32 = AtomicU32::new(0);
+static UNMASKED: AtomicU32 = AtomicU32::new(0);
+
+fn note_write() {
+    WRITES.fetch_add(1, Ordering::Relaxed);
+    if wellfed_hal::sdk::primask() == 0 {
+        UNMASKED.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Count every GPIO write from here on.
+fn watch_writes() {
+    WRITES.store(0, Ordering::Relaxed);
+    UNMASKED.store(0, Ordering::Relaxed);
+    fake::with(|h| {
+        h.output_hook = Some(note_write);
+        h.direction_hook = Some(note_write);
+    });
+}
+
+#[test]
+fn opening_the_inputs_holds_the_interrupt_lock() {
+    let (_guard, mut service) = start();
+    watch_writes();
+
+    service.step();
+    assert_eq!(
+        WRITES.load(Ordering::Relaxed),
+        4,
+        "one direction change a button"
+    );
+    assert_eq!(UNMASKED.load(Ordering::Relaxed), 0);
 }

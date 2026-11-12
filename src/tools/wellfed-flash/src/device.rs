@@ -253,7 +253,7 @@ mod tests {
                 let same = listed == preserve
                     && layout.ota_bank_offsets[1] == hex(pins.bank1.0)
                     && layout.candidate_payload_cap_bytes == cap
-                    && layout.model.to_lowercase() == model.name();
+                    && layout.model == model;
                 assert_eq!(same, other == model, "{model:?} pins, {other:?} layout");
             }
         }

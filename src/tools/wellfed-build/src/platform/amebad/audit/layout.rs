@@ -61,7 +61,9 @@ pub(crate) fn audit(
 fn feeder(image: &Path, stock: &Path, layout: &Path) -> Result<LayoutAudit> {
     let layout: Layout = wellfed_formats::load(layout)?;
     require(
-        layout.schema_version == 1 && layout.stock_sha256.as_deref() == Some(STOCK_SHA256),
+        layout.schema_version == 1
+            && layout.model == Model::Plaf103
+            && layout.stock_sha256.as_deref() == Some(STOCK_SHA256),
         || LayoutError::Identity,
     )?;
     let Some(table_address) = layout.bank_table_runtime_address else {
@@ -163,7 +165,9 @@ fn feeder(image: &Path, stock: &Path, layout: &Path) -> Result<LayoutAudit> {
 fn fountain(image: &Path, layout: &Path) -> Result<LayoutAudit> {
     let layout: Layout = wellfed_formats::load(layout)?;
     require(
-        layout.schema_version == 1 && layout.model == "PLWF106" && layout.stock_sha256.is_none(),
+        layout.schema_version == 1
+            && layout.model == Model::Plwf106
+            && layout.stock_sha256.is_none(),
         || LayoutError::Identity,
     )?;
     let offsets: Vec<u64> = layout.ota_bank_offsets.iter().map(|o| o.0).collect();
@@ -225,4 +229,29 @@ fn fountain(image: &Path, layout: &Path) -> Result<LayoutAudit> {
                 PLWF106 layout's cap; no stock OTA to compare, not a flash plan"
             .into(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Error;
+
+    /// The fountain's own layout, its model swapped: refused for its model
+    /// alone, before the image is read.
+    #[test]
+    fn the_fountain_audit_refuses_another_models_layout() {
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        let path = root.join(wellfed_formats::layout::relative_path(Model::Plwf106));
+        let mut layout: Layout = wellfed_formats::load(&path).unwrap();
+        layout.model = Model::Plaf103;
+        let swapped = std::env::temp_dir().join(format!("layout-{}.json", std::process::id()));
+        fs::write(&swapped, serde_json::to_vec(&layout).unwrap()).unwrap();
+
+        let refused = fountain(Path::new("/nonexistent"), &swapped);
+        fs::remove_file(&swapped).unwrap();
+        assert!(
+            matches!(refused, Err(Error::LayoutAudit(LayoutError::Identity))),
+            "{refused:?}"
+        );
+    }
 }

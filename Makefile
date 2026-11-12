@@ -76,12 +76,19 @@ check-deps:
 	cargo deny --manifest-path src/fuzz/Cargo.toml --locked check --config src/fuzz/deny.toml
 	cargo deny --manifest-path $(BENCH_BOARD)/Cargo.toml --locked check --config $(BENCH_BOARD)/deny.toml
 
-# A consumer identity, because a bench one hashes the ignored build Wi-Fi file
-# and this check needs no private file. The build only needs a well-formed id,
-# so the fountain's KM0 archive, which has no device directory yet, takes it.
+# The KM0 core's routines for both boards, built and linted for the target,
+# where the RAM park, the trial and the C exports compile: the host passes in
+# `check-rust` never see that code. A consumer identity, because a bench one
+# hashes the ignored build Wi-Fi file and this check needs no private file;
+# the build only needs a well-formed id, so the fountain's takes it too. The
+# KM4 crates need the SDK's bindings, so only an image build compiles them.
+KM0 = -p wellfed-hal-common --release --target thumbv8m.base-none-eabi --features km0
+KM0_ID = WELLFED_BUILD_ID=$$(cargo run --quiet --locked --release -p wellfed-build -- source-id --device plaf103 --provisioning consumer)
 check-cross: check-bench-board
-	WELLFED_BUILD_ID=$$(cargo run --quiet --locked --release -p wellfed-build -- source-id --device plaf103 --provisioning consumer) cargo build --locked -p wellfed-hal-common --release --target thumbv8m.base-none-eabi --features km0
-	WELLFED_BUILD_ID=$$(cargo run --quiet --locked --release -p wellfed-build -- source-id --device plaf103 --provisioning consumer) $(FOUNTAIN) cargo build --locked -p wellfed-hal-common --release --target thumbv8m.base-none-eabi --features km0
+	$(KM0_ID) cargo clippy --locked $(KM0) --lib -- -D warnings $(PRODUCTION_LINTS)
+	$(KM0_ID) cargo build --locked $(KM0)
+	$(KM0_ID) $(FOUNTAIN) cargo clippy --locked $(KM0) --lib -- -D warnings $(PRODUCTION_LINTS)
+	$(KM0_ID) $(FOUNTAIN) cargo build --locked $(KM0)
 
 # The bench board's firmware is its own workspace, built from its folder so
 # its .cargo/config.toml (target, linker script, UF2 runner) applies. It only

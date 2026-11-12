@@ -1,11 +1,13 @@
 //! CDC#1: the SH-UR04A relay protocol plus telemetry queries.
 //!
 //! One reply per command line, nothing unprompted: `wellfed-relay` flushes
-//! its input, sends a line and reads exactly one reply line within 1 s.
+//! its input, sends a line and reads exactly one reply line within 1 s. A
+//! switch while a RECOVER sequence holds the relays is answered `ERROR` at
+//! once, so a command the host saw refused never runs later.
 
 use embassy_time::{Duration, Timer};
 use embassy_usb::class::cdc_acm::Sender;
-use wellfed_bench_at::{Command, Line, LineBuffer};
+use wellfed_bench_at::{Command, Line, LineBuffer, Relays};
 
 use crate::usb::{Cdc, PACKET, UsbDriver};
 use crate::{outputs, telemetry};
@@ -40,12 +42,26 @@ async fn execute(sender: &mut Sender<'static, UsbDriver>, line: &[u8]) {
         return;
     };
 
-    let channels = {
-        let mut relays = outputs::lock().await;
+    // A switch takes the relays now or is refused: the host gives up after
+    // 1 s, and a RECOVER sequence holds them for seconds. A query reads the
+    // last state and never waits.
+    let channels = if command.switches() {
+        let guard = outputs::try_lock();
+        let held = if guard.is_some() {
+            Relays::Free
+        } else {
+            Relays::Held
+        };
+        let Some(mut relays) = guard.filter(|_| !wellfed_bench_at::refused(command, held)) else {
+            send(sender, wellfed_bench_at::ERROR).await;
+            return;
+        };
         if let Command::Set(channel, on) = command {
             relays.set(channel, on);
         }
         relays.state()
+    } else {
+        outputs::snapshot()
     };
     let reply = wellfed_bench_at::reply(command, channels, &telemetry::latest(), VERSION);
     send(sender, &reply).await;

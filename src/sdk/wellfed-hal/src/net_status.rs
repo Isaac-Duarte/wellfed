@@ -5,7 +5,7 @@
 //! whether the link is live, so a loss clears it before the event saying so
 //! is even drained.
 
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering};
 
 use crate::sdk::WifiEvent;
 
@@ -22,8 +22,8 @@ static LINK_LOSSES: AtomicU32 = AtomicU32::new(0);
 /// Those of [`LINK_LOSSES`] the watch noticed (the lease or the gateway)
 /// rather than the association.
 static CHECK_LOSSES: AtomicU32 = AtomicU32::new(0);
-/// 0 none, 1 link, 2 the watch's check.
-static LAST_LOSS: AtomicU32 = AtomicU32::new(0);
+/// [`LossCause::code`] of the latest loss.
+static LAST_LOSS: AtomicU8 = AtomicU8::new(LossCause::None.code());
 /// [`wellfed_core::liveness::Liveness::live`] of the current join.
 static LIVE: AtomicBool = AtomicBool::new(false);
 /// Bumped at every join and loss: a connection opened in an older generation
@@ -40,6 +40,36 @@ static CHANNEL: AtomicU32 = AtomicU32::new(0);
 static ACCESS_POINT: AtomicU32 = AtomicU32::new(0);
 static AP_CHANGES: AtomicU32 = AtomicU32::new(0);
 
+/// What noticed the latest loss of a joined link.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LossCause {
+    /// No joined link has been lost this boot.
+    #[default]
+    None = 0,
+    /// The association: the driver gave up on the access point.
+    Link = 1,
+    /// The watch's check: the lease or the gateway.
+    Check = 2,
+}
+
+impl LossCause {
+    /// The variant's number, as the shared atomic keeps it.
+    pub const fn code(self) -> u8 {
+        self as u8
+    }
+
+    /// The variant `byte` numbers, if any.
+    pub const fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0 => Some(Self::None),
+            1 => Some(Self::Link),
+            2 => Some(Self::Check),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Status {
     pub rssi: i32,
@@ -49,7 +79,7 @@ pub struct Status {
     /// Those the watch noticed, the lease or the gateway, rather than the
     /// association.
     pub check_losses: u32,
-    pub last_loss: u32,
+    pub last_loss: LossCause,
     /// The link is known good: associated, leased and, once its gateway
     /// has answered this join, answering still. No internet is involved.
     pub live: bool,
@@ -78,11 +108,11 @@ pub fn observe(event: &WifiEvent) {
             // Any cause but the association's is the watch's check.
             let cause = if event.result != 0 {
                 CHECK_LOSSES.fetch_add(1, Ordering::Relaxed);
-                2
+                LossCause::Check
             } else {
-                1
+                LossCause::Link
             };
-            LAST_LOSS.store(cause, Ordering::Relaxed);
+            LAST_LOSS.store(cause.code(), Ordering::Relaxed);
             CHANNEL.store(0, Ordering::Relaxed);
             GENERATION.fetch_add(1, Ordering::Release);
         }
@@ -132,7 +162,8 @@ pub fn read() -> Status {
         attempt: ATTEMPT.load(Ordering::Relaxed),
         link_losses: LINK_LOSSES.load(Ordering::Relaxed),
         check_losses: CHECK_LOSSES.load(Ordering::Relaxed),
-        last_loss: LAST_LOSS.load(Ordering::Relaxed),
+        // Only `observe` stores it, and only a variant's code.
+        last_loss: LossCause::from_byte(LAST_LOSS.load(Ordering::Relaxed)).unwrap_or_default(),
         dhcp_renewals: RENEWALS.load(Ordering::Relaxed),
         gateway_answers: GATEWAY_ANSWERS.load(Ordering::Relaxed),
         gateway_ms: GATEWAY_MS.load(Ordering::Relaxed),
@@ -150,7 +181,6 @@ pub fn reset() {
         &ATTEMPT,
         &LINK_LOSSES,
         &CHECK_LOSSES,
-        &LAST_LOSS,
         &GENERATION,
         &RENEWALS,
         &GATEWAY_ANSWERS,
@@ -161,6 +191,7 @@ pub fn reset() {
     ] {
         counter.store(0, Ordering::Relaxed);
     }
+    LAST_LOSS.store(LossCause::None.code(), Ordering::Relaxed);
     RSSI.store(0, Ordering::Relaxed);
     LIVE.store(false, Ordering::Relaxed);
 }

@@ -15,6 +15,7 @@ use wellfed_hal::link::{
     self, Driver, Join, radio_begin, radio_end, radio_failed, wellfed_wifi_scan_complete,
     wellfed_wifi_scan_seen,
 };
+use wellfed_hal::net_status::LossCause;
 use wellfed_hal::sdk::{self, JoinCredentials, WifiEvent, fake};
 use wellfed_hal::{net_status, supervision};
 
@@ -380,13 +381,13 @@ fn losses_count_by_cause() {
     lost(Cause::Link);
     let status = net_status::read();
     assert_eq!((status.link_losses, status.check_losses), (1, 0));
-    assert_eq!(status.last_loss, 1);
+    assert_eq!(status.last_loss, LossCause::Link);
 
     lost(Cause::Gateway);
     lost(Cause::Lease);
     let status = net_status::read();
     assert_eq!((status.link_losses, status.check_losses), (3, 2));
-    assert_eq!(status.last_loss, 2);
+    assert_eq!(status.last_loss, LossCause::Check);
     assert_eq!(status.generation, 3, "every loss is a new generation");
 }
 

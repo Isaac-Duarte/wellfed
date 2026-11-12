@@ -6,7 +6,7 @@
 
 use wellfed_core::adc_scale::{AdcCalibration, MAX_RAW, SAMPLES};
 
-use crate::sdk;
+use crate::{board, sdk};
 
 /// What `open` did, for diagnostics.
 #[derive(Clone, Copy, Debug, Default)]
@@ -43,9 +43,10 @@ pub fn open() -> Opened {
         return result;
     }
 
-    // PB1 and PB2, the external channels' pads.
-    sdk::pad_disable(33);
-    sdk::pad_disable(34);
+    for &pad in board::pins::ADC_PADS {
+        // SAFETY: the board's ADC pads are analog inputs this module owns.
+        unsafe { sdk::pad_disable(pad) };
+    }
     sdk::adc_init_manual();
     sdk::adc_cmd(true);
     result.calibration = calibration;

@@ -6,9 +6,7 @@ use std::cell::RefCell;
 use wellfed_hal_common::flash::park::{
     ACK, HELLO, Mmio, RELEASE, RELEASED, REQUEST, SYSTICK_CTRL, TICKS,
 };
-use wellfed_hal_common::flash::peer::{
-    BACKUP_BASE, INJECT_LEASE, MARKER_REGISTER, ParkEvent, Peer,
-};
+use wellfed_hal_common::flash::peer::{BACKUP_BASE, MARKER_REGISTER, ParkEvent, Peer};
 
 #[derive(Default)]
 struct Model {
@@ -128,16 +126,19 @@ fn foreign_or_unanswered_requests_are_ignored() {
     assert_ne!(with(|m| m.regs[0][10]), ACK);
 }
 
+/// A lease attempt mark in the backup register, whatever its value, never
+/// keeps the peer from parking: no value withholds a lease.
 #[test]
-fn marker_withholds_only_the_injection_lease() {
-    let mut peer = requested(INJECT_LEASE);
-    with(|m| m.backup[MARKER_REGISTER as usize] = 1);
-    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Withheld);
-    assert_ne!(with(|m| m.regs[0][10]), ACK);
-
-    let mut peer = requested(INJECT_LEASE);
-    with(|m| m.backup[MARKER_REGISTER as usize] = 2);
-    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Released);
+fn no_backup_mark_withholds_a_lease() {
+    for mark in [0, 1, 2, 0x100, 0x200, u32::MAX] {
+        let mut peer = requested(101);
+        with(|m| m.backup[MARKER_REGISTER as usize] = mark);
+        assert_eq!(
+            peer.on_request::<Km0>(),
+            ParkEvent::Released,
+            "mark {mark:#x}"
+        );
+    }
 }
 
 #[test]
@@ -152,4 +153,63 @@ fn unmasked_context_is_refused_without_ack() {
     });
     assert_eq!(peer.on_request::<Km0>(), ParkEvent::Refused);
     assert_ne!(with(|m| m.regs[0][10]), ACK);
+}
+
+const B: u64 = 0x0000_0002_2222_2222;
+
+/// KM4 announces a new authority to a peer that keeps running, as after a
+/// KM4-only reset.
+fn announce(authority: u64) {
+    with(|m| {
+        let r = &mut m.regs[1];
+        (r[2], r[3], r[4], r[5], r[6], r[9], r[10]) = (
+            authority as u32,
+            (authority >> 32) as u32,
+            0,
+            0,
+            0,
+            0,
+            HELLO,
+        );
+    });
+}
+
+/// KM4 publishes REQUEST for `lease` under `authority`, naming `peer`'s
+/// session, and releases it 50 ticks later.
+fn request(peer: &Peer, authority: u64, lease: u64) {
+    let session = peer.session;
+    with(|m| {
+        let r = &mut m.regs[1];
+        (r[2], r[3], r[4], r[5], r[6], r[9], r[10]) = (
+            authority as u32,
+            (authority >> 32) as u32,
+            session as u32,
+            (session >> 32) as u32,
+            lease as u32,
+            (lease >> 32) as u32,
+            REQUEST,
+        );
+        m.release_at = m.ticks + 50;
+    });
+}
+
+#[test]
+fn a_new_authority_starts_its_leases_afresh() {
+    let mut peer = requested(5);
+    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Released);
+
+    announce(B);
+    peer.step::<Km0>(1, 9);
+    assert_eq!(peer.answered, B);
+
+    request(&peer, B, 1);
+    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Released);
+
+    // Within the new authority a lease still never repeats or goes back.
+    request(&peer, B, 1);
+    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Ignored);
+
+    // And the old authority's leases stay foreign, whatever their number.
+    request(&peer, A, 6);
+    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Ignored);
 }

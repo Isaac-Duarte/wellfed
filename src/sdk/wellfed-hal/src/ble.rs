@@ -54,6 +54,7 @@ named_enum! {
 named_enum! {
     /// Why a link was dropped (`drop reason=`).
     pub enum DropReason {
+        /// A reply could not be queued, or the stack refused part of one.
         Notify = "notify",
         TooLong = "too_long",
         Timeout = "timeout",
@@ -152,6 +153,8 @@ struct Connection {
     received: usize,
     /// A whole message is held until `consume`.
     held: bool,
+    /// Dropped, and waiting for the stack's disconnect: asked for once.
+    closing: bool,
 }
 
 #[derive(Debug)]
@@ -161,6 +164,10 @@ pub struct BleSetup {
     seq: u32,
     connection: Option<Connection>,
     advertising: Advertising,
+    /// Events were lost: once the ring is read up to date, check the link
+    /// against the stack's own state, since the lost ones may have opened
+    /// or closed it.
+    reconcile: bool,
 }
 
 impl Default for BleSetup {
@@ -177,6 +184,7 @@ impl BleSetup {
             seq: 1,
             connection: None,
             advertising: Advertising::Off,
+            reconcile: false,
         }
     }
 }
@@ -221,11 +229,18 @@ impl BleSetup {
     /// Drop the host. Its disconnect event arrives as [`Link::Closed`].
     pub fn close(&mut self, reason: DropReason) -> Record {
         sdk::ble_disconnect();
+        self.closing();
+        Record::Drop { reason }
+    }
+
+    /// The link is going: no replies, no reads, and no second drop while
+    /// the stack's disconnect is on its way.
+    fn closing(&mut self) {
         if let Some(connection) = self.connection.as_mut() {
             connection.open = false;
             connection.held = false;
+            connection.closing = true;
         }
-        Record::Drop { reason }
     }
 
     /// One event's effect, its record and what the firmware must act on.
@@ -260,6 +275,7 @@ impl BleSetup {
                     message: [0; PREFIX + MAX_MESSAGE],
                     received: 0,
                     held: false,
+                    closing: false,
                 });
                 let interval = event.value;
                 (Some(Record::Connect { interval }), None)
@@ -270,17 +286,58 @@ impl BleSetup {
                 (Some(Record::Disconnect { cause }), link)
             }
             BleEvent::MTU => (Some(Record::Mtu { mtu: event.value }), None),
-            BleEvent::NOTIFY if event.value != 0 => {
-                let Some(connection) = self.connection.as_mut() else {
+            BleEvent::NOTIFY => {
+                let Some(connection) = self.connection.as_mut().filter(|c| !c.closing) else {
                     return (None, None);
                 };
-                // A host that resubscribes starts over.
+                if event.value == 0 {
+                    // Unsubscribed: replies can no longer reach the host.
+                    connection.open = false;
+                    return (None, None);
+                }
+                // A host that resubscribes starts over; the C side cleared
+                // what it wrote before.
                 connection.open = true;
                 connection.received = 0;
                 connection.held = false;
                 (None, Some(Link::Opened))
             }
+            BleEvent::REFUSED => {
+                // The C side already disconnects and refuses more replies.
+                if self.connection.as_ref().is_none_or(|c| c.closing) {
+                    return (None, None);
+                }
+                self.closing();
+                let reason = DropReason::Notify;
+                (Some(Record::Drop { reason }), None)
+            }
             _ => (None, None),
+        }
+    }
+
+    /// After lost events, with every event still held read: match the link
+    /// to the stack's, which changes its state and posts the event together.
+    /// A lost disconnect closes the session here; a lost connect leaves a
+    /// host this side never saw, which is dropped so it starts over. An
+    /// event posted since the last poll may be what changed the stats (a
+    /// host that just connected), so the stats count only while none is
+    /// waiting; otherwise the events go first and the check comes again.
+    fn reconcile(&mut self) -> Option<Link> {
+        let connected = sdk::ble_stats().connected != 0;
+        if !matches!(sdk::ble_event(self.seq), BlePoll::Pending) {
+            self.reconcile = true;
+            return None;
+        }
+        match (connected, self.connection.is_some()) {
+            (false, true) => {
+                self.connection = None;
+                Some(Link::Closed)
+            }
+            (true, false) => {
+                sdk::ble_disconnect();
+                None
+            }
+            _ => None,
         }
     }
 
@@ -298,7 +355,7 @@ impl BleSetup {
 
     /// Read the host's bytes until one message is whole.
     fn read(&mut self, now: u32) -> (Option<Record>, Option<Link>) {
-        let Some(connection) = self.connection.as_mut() else {
+        let Some(connection) = self.connection.as_mut().filter(|c| !c.closing) else {
             return (None, None);
         };
         if now.wrapping_sub(connection.since) >= SESSION_MS {
@@ -343,9 +400,20 @@ impl BleSetup {
                 while let BlePoll::Lost = sdk::ble_event(self.seq) {
                     self.seq = self.seq.wrapping_add(1);
                 }
+                self.reconcile = true;
                 return next(1, Some(Record::Lost));
             }
-            BlePoll::Pending => {}
+            BlePoll::Pending => {
+                if core::mem::take(&mut self.reconcile)
+                    && let Some(link) = self.reconcile()
+                {
+                    return Step {
+                        delay_ms: 1,
+                        record: None,
+                        link: Some(link),
+                    };
+                }
+            }
         }
 
         match self.stage {

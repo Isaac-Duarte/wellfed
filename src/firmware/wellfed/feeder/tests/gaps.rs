@@ -6,7 +6,7 @@
 use wellfed_fw_feeder::gaps::{
     Net, OVER_MS, PERIOD_MS, Probe, Record, Task, WINDOW_MS, Window, Windows,
 };
-use wellfed_sdk::hal::net_status::Status;
+use wellfed_sdk::hal::net_status::{LossCause, Status};
 use wellfed_sdk::hal::startup::Report;
 
 /// System timer ticks for `ms`, rounded up so they read back as `ms`.
@@ -31,7 +31,7 @@ fn status(generation: u32) -> Status {
         attempt: 2,
         link_losses: 1,
         check_losses: 0,
-        last_loss: 1,
+        last_loss: LossCause::Link,
         live: true,
         generation,
         dhcp_renewals: 0,

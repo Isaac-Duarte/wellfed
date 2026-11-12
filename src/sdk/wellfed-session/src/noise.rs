@@ -1,19 +1,21 @@
-//! The Noise Protocol Framework (revision 34) for the device API: the two
+//! The Noise Protocol Framework (revision 34) for the device API: the three
 //! handshakes the product uses, over 25519, ChaChaPoly and SHA-256.
 //!
-//! - **XX** pairs a client the feeder has never seen: both static keys travel
-//!   encrypted, and each side learns the other's.
+//! - **XX** pairs a client the feeder has never seen (BLE setup): both
+//!   static keys travel encrypted, and each side learns the other's.
 //! - **IK** opens a paired client's session on the device API: the
 //!   client already holds the feeder's static key and sends its own encrypted
 //!   in the first message, so the feeder learns which client is connecting
 //!   without trying each enrolled key, in one round trip with no identity in
 //!   clear.
-//! - **KK** reconnects when both sides already hold the other's static key
-//!   (the budget measured it).
 //! - **XXpsk3** is XX bound to an invite's secret: the third message
 //!   fails unless both sides hold the same pre-shared key. The responder
 //!   learns which invite from the first message's payload, so it sets the
 //!   key after the handshake starts.
+//!
+//! A handshake step that fails leaves the handshake failed: it refuses every
+//! later step and names no remote key, since a key read from a message
+//! whose payload did not authenticate may be one an attacker chose.
 //!
 //! This is sans-IO and allocates nothing: the caller passes message buffers
 //! in and gets lengths back, so the feeder's loop task and the host client
@@ -41,7 +43,6 @@ pub const MAX_MESSAGE: usize = 65_535;
 pub enum Pattern {
     Xx,
     Ik,
-    Kk,
     XxPsk3,
 }
 
@@ -51,7 +52,6 @@ impl Pattern {
         match self {
             Self::Xx => b"Noise_XX_25519_ChaChaPoly_SHA256",
             Self::Ik => b"Noise_IK_25519_ChaChaPoly_SHA256",
-            Self::Kk => b"Noise_KK_25519_ChaChaPoly_SHA256",
             Self::XxPsk3 => b"Noise_XXpsk3_25519_ChaChaPoly_SHA256",
         }
     }
@@ -61,7 +61,6 @@ impl Pattern {
         match self {
             Self::Xx => &[&[E], &[E, Ee, S, Es], &[S, Se]],
             Self::Ik => &[&[E, Es, S, Ss], &[E, Ee, Se]],
-            Self::Kk => &[&[E, Es, Ss], &[E, Ee, Se]],
             Self::XxPsk3 => &[&[E], &[E, Ee, S, Es], &[S, Se, Psk]],
         }
     }
@@ -100,11 +99,12 @@ pub enum Error {
     Decrypt,
     /// A Diffie-Hellman result was all zeros: the peer sent a low-order key.
     WeakKey,
-    /// KK, and IK's initiator, need the remote static key before it starts.
+    /// IK's initiator needs the remote static key before it starts.
     MissingRemoteKey,
     /// A PSK pattern reached its `psk` token with no key set.
     MissingPsk,
-    /// Called out of turn, or after the handshake finished.
+    /// Called out of turn, after the handshake finished, or after a step
+    /// failed.
     WrongTurn,
     /// The handshake has not finished, so there are no transport keys.
     Unfinished,
@@ -322,11 +322,14 @@ pub struct Handshake {
     psk: Option<[u8; KEY_LEN]>,
     /// The next message of the pattern.
     step: usize,
+    /// A step failed part-way: its state is neither the step before nor
+    /// the one after, so nothing more is read from it.
+    failed: bool,
 }
 
 impl Handshake {
-    /// `ephemeral` is a fresh random secret, never used before. KK, and IK's
-    /// initiator, need the peer's static key in `remote_static`; XX and IK's
+    /// `ephemeral` is a fresh random secret, never used before. IK's
+    /// initiator needs the peer's static key in `remote_static`; XX and IK's
     /// responder learn it and ignore one given here.
     pub fn new(
         pattern: Pattern,
@@ -341,18 +344,6 @@ impl Handshake {
 
         let rs = match pattern {
             Pattern::Xx | Pattern::XxPsk3 => None,
-            Pattern::Kk => {
-                // KK's pre-messages: the initiator's static, then the
-                // responder's, the same order on both sides.
-                let remote = remote_static.ok_or(Error::MissingRemoteKey)?;
-                let (first, second) = match role {
-                    Role::Initiator => (*local_static.public(), remote),
-                    Role::Responder => (remote, *local_static.public()),
-                };
-                state.mix_hash(&first);
-                state.mix_hash(&second);
-                Some(remote)
-            }
             // IK's one pre-message is the responder's static; the
             // responder learns the initiator's from the first message.
             Pattern::Ik => match role {
@@ -378,6 +369,7 @@ impl Handshake {
             re: None,
             psk: None,
             step: 0,
+            failed: false,
         })
     }
 
@@ -386,19 +378,27 @@ impl Handshake {
         self.psk = Some(psk);
     }
 
-    /// Whether the next call is ours to write (false once finished).
+    /// Whether the next call is ours to write (false once finished or
+    /// failed).
     pub fn is_my_turn(&self) -> bool {
         let initiator_writes = self.step.is_multiple_of(2);
-        !self.is_finished() && initiator_writes == (self.role == Role::Initiator)
+        !self.failed && !self.is_finished() && initiator_writes == (self.role == Role::Initiator)
     }
 
+    /// Whether every message is written or read; never once a step failed.
     pub fn is_finished(&self) -> bool {
-        self.step >= self.pattern.messages().len()
+        !self.failed && self.step >= self.pattern.messages().len()
     }
 
-    /// The peer's static key, once known.
+    /// Whether a step failed: the handshake is over, and a new one starts.
+    pub const fn is_failed(&self) -> bool {
+        self.failed
+    }
+
+    /// The peer's static key, once known from a message that authenticated;
+    /// none once a step failed.
     pub const fn remote_static(&self) -> Option<&[u8; KEY_LEN]> {
-        self.rs.as_ref()
+        if self.failed { None } else { self.rs.as_ref() }
     }
 
     /// Binds a later message to this handshake (channel binding).
@@ -406,12 +406,19 @@ impl Handshake {
         &self.state.h
     }
 
-    /// Writes our next message, carrying `payload`, into `out`.
+    /// Writes our next message, carrying `payload`, into `out`. A failure
+    /// fails the handshake (`out` too small included: the tokens before it
+    /// have moved the state).
     pub fn write_message(&mut self, payload: &[u8], out: &mut [u8]) -> Result<usize, Error> {
         if !self.is_my_turn() {
             return Err(Error::WrongTurn);
         }
+        let written = self.write_tokens(payload, out);
+        self.failed = written.is_err();
+        written
+    }
 
+    fn write_tokens(&mut self, payload: &[u8], out: &mut [u8]) -> Result<usize, Error> {
         let mut len = 0;
         for token in self.pattern.messages()[self.step] {
             let rest = out.get_mut(len..).ok_or(Error::BufferTooSmall)?;
@@ -450,11 +457,17 @@ impl Handshake {
     }
 
     /// Reads the peer's next message into `payload`, returning its length.
-    /// A failed read leaves the handshake unusable: start a new one.
+    /// A failed read fails the handshake: start a new one.
     pub fn read_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, Error> {
-        if self.is_finished() || self.is_my_turn() {
+        if self.failed || self.is_finished() || self.is_my_turn() {
             return Err(Error::WrongTurn);
         }
+        let read = self.read_tokens(message, payload);
+        self.failed = read.is_err();
+        read
+    }
+
+    fn read_tokens(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize, Error> {
         if message.len() > MAX_MESSAGE {
             return Err(Error::BadLength);
         }
@@ -577,5 +590,72 @@ impl Transport {
             return Err(Error::BadLength);
         }
         self.receive.decrypt(&[], message, out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+
+    use std::vec;
+
+    use super::*;
+
+    /// The last nonce is Noise's reserved value: the one before it seals,
+    /// then both directions refuse and the counter stays put, so a key and
+    /// nonce pair is never used twice.
+    #[test]
+    fn the_reserved_nonce_is_never_used() {
+        let mut send = CipherState::keyed([7; KEY_LEN]);
+        let mut receive = CipherState::keyed([7; KEY_LEN]);
+        send.nonce = u64::MAX - 1;
+        receive.nonce = u64::MAX - 1;
+        let mut sealed = [0; 4 + TAG_LEN];
+        let mut opened = [0; 4];
+
+        assert_eq!(send.encrypt(&[], b"last", &mut sealed), Ok(4 + TAG_LEN));
+        assert_eq!(receive.decrypt(&[], &sealed, &mut opened), Ok(4));
+        assert_eq!(&opened, b"last");
+
+        assert_eq!(
+            send.encrypt(&[], b"more", &mut sealed),
+            Err(Error::NonceExhausted)
+        );
+        assert_eq!(
+            receive.decrypt(&[], &sealed, &mut opened),
+            Err(Error::NonceExhausted)
+        );
+        assert_eq!((send.nonce, receive.nonce), (u64::MAX, u64::MAX));
+    }
+
+    fn transport() -> Transport {
+        Transport {
+            send: CipherState::keyed([1; KEY_LEN]),
+            receive: CipherState::keyed([1; KEY_LEN]),
+            remote_static: None,
+            handshake_hash: [0; 32],
+        }
+    }
+
+    /// A message shorter than a tag, or one past the Noise limit, is a
+    /// length refusal that leaves the counters where they were.
+    #[test]
+    fn transport_lengths_are_refused_before_any_crypto() {
+        let mut transport = transport();
+        let mut out = vec![0; MAX_MESSAGE + 1];
+
+        for short in 0..TAG_LEN {
+            assert_eq!(
+                transport.open(&out[..short], &mut [0; 64]),
+                Err(Error::BadLength)
+            );
+        }
+        let too_long = vec![0; MAX_MESSAGE - TAG_LEN + 1];
+        assert_eq!(transport.seal(&too_long, &mut out), Err(Error::BadLength));
+        assert_eq!(transport.open(&out, &mut [0; 64]), Err(Error::BadLength));
+        assert_eq!((transport.send.nonce, transport.receive.nonce), (0, 0));
+
+        let longest = vec![0; MAX_MESSAGE - TAG_LEN];
+        assert_eq!(transport.seal(&longest, &mut out), Ok(MAX_MESSAGE));
     }
 }

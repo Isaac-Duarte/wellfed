@@ -736,3 +736,69 @@ fn a_reset_not_asked_by_hand_keeps_a_corrupt_update_store() {
     assert_eq!(sectors(storage::UPDATE), before);
     assert_eq!(update_status(), UpdateStatus::Corrupt);
 }
+
+/// The reset erases the meal call's sectors without taking the clip hold
+/// the settings writer takes, and needs none: it runs on a boot whose
+/// speaker starts with no clip, and the writer publishes nothing until it
+/// is done, so no call can start and read the sectors. The speaker keeps
+/// the boot before's settings view here, so only the missing clip refuses
+/// the call.
+#[test]
+fn no_call_plays_while_a_reset_erases_its_clip() {
+    use wellfed_core::store::slot::crc32;
+    use wellfed_device_api::mailbox::{CallChange, CallClip, CallResult};
+    use wellfed_feeder_runtime::call;
+    use wellfed_hal::audio::{self, PlayResult};
+    use wellfed_hal::board::storage;
+
+    let (_guard, mut writer, mut provider) = start();
+    restart_mailboxes();
+    audio::reset();
+    fake::with(|h| h.adc_noise = 0x0f0f_5a5a);
+    assert_eq!(rng::start().result, Ok(()));
+    for _ in 0..7 {
+        step(&mut writer, &mut provider);
+    }
+    let stream: Vec<u8> = (0..600u32).map(|i| (i * 7) as u8).collect();
+    let crc = crc32(&stream);
+    assert!(matches!(
+        call::change(CallChange::Start { bytes: 600, crc }),
+        CallResult::Current { pending: true, .. }
+    ));
+    step(&mut writer, &mut provider);
+    assert_eq!(call::chunk(0, &stream[..512]), Ok(()));
+    step(&mut writer, &mut provider);
+    assert_eq!(call::chunk(512, &stream[512..]), Ok(()));
+    assert_eq!(
+        step(&mut writer, &mut provider),
+        Some(Record::Product(FeederRecord::Call {
+            clip: CallClip::Stored { bytes: 600, crc }
+        }))
+    );
+    let phone = phone();
+    change(&mut writer, &mut provider, phone);
+    assert_eq!(
+        change(&mut writer, &mut provider, Change::Reset),
+        changed(KeyChange::Reset, KeyResult::Done, 0)
+    );
+    assert!(reset_marked());
+
+    // The restart: a speaker with no clip, but the old settings view.
+    let sound = wellfed_hal::settings::current().expect("the settings are published");
+    restart_mailboxes();
+    audio::reset();
+    wellfed_hal::settings::publish(sound);
+    let mut writer = Writer::default();
+    let mut done = false;
+    for taken in 0..60 {
+        let record = step(&mut writer, &mut provider);
+        if matches!(record, Some(Record::ResetDone { .. })) {
+            done = true;
+            break;
+        }
+        assert_eq!(audio::request_call(1), PlayResult::Busy, "step {taken}");
+    }
+    assert!(done);
+    assert!(sectors(storage::CALL).iter().all(|&byte| byte == 0xff));
+    assert_eq!(audio::request_call(1), PlayResult::Busy, "no clip after");
+}

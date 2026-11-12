@@ -104,18 +104,35 @@ fn the_factory_reset_clears_every_sector_it_does_not_keep() {
     );
 }
 
-/// The handover from stock erases the Wi-Fi, the plans and the uplink
-/// store's sectors, in region order, and nothing it keeps or clears in a
-/// step of its own.
+/// The handover from stock erases every store of the previous owner's, in
+/// region order, and nothing it keeps or clears in a step of its own.
 #[test]
 fn the_handover_clears_every_sector_it_does_not_keep() {
     let cleared: Vec<u32> = (0..storage::HANDOVER_CLEARED_SECTORS)
         .map(|index| storage::handover_cleared(index).unwrap())
         .collect();
-    assert_eq!(cleared, [5, 6, 11, 12, 37, 38, 39]);
-    assert!(
-        storage::HANDOVER_KEPT.contains(&storage::FEEDER_SETTINGS),
-        "the feeder's settings stay with the device's"
+    let mut expected = Vec::new();
+    for owners in [
+        storage::SETTINGS,
+        storage::NET,
+        storage::PLANS,
+        storage::EVENTS,
+        storage::TIME,
+        storage::TRACES,
+        storage::UPLINK,
+        storage::CALL,
+        storage::FEEDER_SETTINGS,
+    ] {
+        expected.extend(owners.first..owners.first + owners.count);
+    }
+    expected.sort_unstable();
+    assert_eq!(cleared, expected);
+    assert_eq!(
+        cleared,
+        [
+            2, 3, 5, 6, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29, 30, 31,
+            37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49
+        ]
     );
     assert_eq!(
         storage::handover_cleared(storage::HANDOVER_CLEARED_SECTORS),
@@ -147,4 +164,31 @@ fn pins_are_pinned() {
     assert_eq!(pins::MOTOR_MASK, 0x6000);
     assert_eq!([pins::MOTOR_A_BIT, pins::MOTOR_B_BIT], [1 << 13, 1 << 14]);
     assert_eq!([pins::IR_PA_BIT, pins::IR_PB_BIT], [1 << 15, 1 << 3]);
+}
+
+/// The flash writers' copy of the stock flash, `layout.json`, and the
+/// region agree: the store lies above a full-size bank 1 and its candidate
+/// cap, and clear of every range the writers preserve.
+#[test]
+fn the_storage_region_is_clear_of_the_flash_writers_layout() {
+    use wellfed_formats::layout::Layout;
+
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../firmware/devices/plaf103/layout.json"
+    );
+    let layout: Layout = wellfed_formats::load(std::path::Path::new(path)).unwrap();
+    let start = u64::from(STORAGE_OFFSET);
+    let end = start + u64::from(STORAGE_SECTORS) * layout.sector_bytes;
+
+    let [bank0, bank1] = [layout.ota_bank_offsets[0].0, layout.ota_bank_offsets[1].0];
+    assert!(start >= bank1 + (bank1 - bank0), "past a full-size bank 1");
+    assert!(start >= bank1 + layout.candidate_payload_cap_bytes);
+    for range in &layout.known_preserve_ranges {
+        assert!(
+            end <= range.start.0 || start >= range.end_exclusive.0,
+            "{} overlaps the store",
+            range.name
+        );
+    }
 }

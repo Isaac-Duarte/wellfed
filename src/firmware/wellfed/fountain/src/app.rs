@@ -18,6 +18,10 @@ static BEATS: AtomicU32 = AtomicU32::new(0);
 /// Called once by the SDK's `example_entry`, before the scheduler starts.
 /// The pump is latched off first, before anything else runs.
 #[unsafe(no_mangle)]
+#[expect(
+    unreachable_pub,
+    reason = "a C export: the SDK's entry calls it by name"
+)]
 pub extern "C" fn wellfed_app_start() {
     boot::start(wellfed_hal::startup::snapshot);
 

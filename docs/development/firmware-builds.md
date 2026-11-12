@@ -94,7 +94,7 @@ A consumer image trusts the release key, not the bench key, so once installed th
    make -C src/firmware/vendor firstboot
    ```
 
-   You should see the build, then its audits, finish without a refusal. The manifest, logs and Rust archives land in `private/firmware-build/<device>/<profile>/`.
+   You should see Clippy pass over each core's Rust, then the build, then its audits, finish without a refusal. The manifest, logs and Rust archives land in `private/firmware-build/<device>/<profile>/`.
 
 5. To freeze the image for installing, continue with [development updates](uart-development.md).
 

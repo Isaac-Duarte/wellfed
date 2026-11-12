@@ -4,10 +4,13 @@
 //! DTR/RTS forced low, while the feeder's loader session runs on. So the bridge
 //! never resets or gates on DTR. When the host (re)opens the port it sends
 //! SET_CONTROL_LINE_STATE and SET_LINE_CODING; on either we drop UART bytes
-//! that queued up while nobody was reading, so a new process sees only fresh
-//! traffic, and apply the requested baud rate.
+//! that queued up while nobody was reading and apply the requested baud
+//! rate. A new process sees fresh traffic apart from at most one USB packet
+//! (64 bytes) already handed to the controller, which embassy's driver
+//! cannot take back; the flash writer refuses such bytes rather than act on
+//! them.
 
-use portable_atomic::{AtomicBool, Ordering};
+use portable_atomic::{AtomicBool, AtomicU32, Ordering};
 
 use embassy_futures::join::join;
 use embassy_futures::select::{Either, select};
@@ -98,12 +101,20 @@ async fn host_reopened(rx: &mut BufferedUartRx, baud: u32) {
     set_baud(baud);
 }
 
+/// The feeder's rate, which the UART starts at.
+pub(crate) const START_BAUD: u32 = 115_200;
+
+/// The rate the UART runs at, as `set_baud` last applied it.
+static APPLIED_BAUD: AtomicU32 = AtomicU32::new(START_BAUD);
+
 /// Only the rate is honoured: the feeder link is always 8N1, and
-/// `BufferedUart` cannot change framing after a split.
+/// `BufferedUart` cannot change framing after a split. The PL011's divisor
+/// and LCR_H must not change mid-character, and every open and close asks
+/// again for the same rate, so an unchanged rate writes nothing.
 fn set_baud(baud: u32) {
     // Linux sends 9600 or 0 before the application's termios; ignore
     // nonsense and keep the current divisor.
-    if !(300..=3_000_000).contains(&baud) {
+    if !(300..=3_000_000).contains(&baud) || APPLIED_BAUD.swap(baud, Ordering::Relaxed) == baud {
         return;
     }
     let clk = embassy_rp::clocks::clk_peri_freq();

@@ -7,7 +7,6 @@
 //! contract, `wellfed-board`: the panic and RAM-park output writes and the
 //! storage bounds read them there.
 #![cfg_attr(target_os = "none", no_std)]
-#![allow(clippy::missing_safety_doc)]
 
 use core::ffi::c_void;
 
@@ -28,10 +27,17 @@ pub const ADC_SUPPLY_CHANNEL: u32 = 10;
 /// `REG_SWD_PMUX_EN` bit 0 (reset 1): the SWD function holds PA27 and PB3
 /// (SWD_CLK). While set, GPIO writes to PB3 do not reach the pad.
 pub const SWD_PMUX_BIT: u32 = 1;
+/// A pad's control word (`pad_control`), by the pinned `rtl8721d_pinmux.h`
+/// and checked against it in target builds: the function field (GPIO is 0),
+/// the pull-up and pull-down enables and the shutdown bit.
+pub const PAD_FUNCTION_MASK: u32 = 0x1f;
+pub const PAD_PULL_UP: u32 = 1 << 8;
+pub const PAD_PULL_DOWN: u32 = 1 << 9;
+pub const PAD_SHUTDOWN: u32 = 1 << 15;
 /// The pad-control bits the ROM's `Pinmux_Config` rewrites to select GPIO:
-/// the pad shutdown bit (15) and the function field (bits 0–4, GPIO is 0).
-/// Checked against SDK constants in target builds.
-pub(crate) const PAD_GPIO_CLEAR: u32 = 1 << 15 | 0x1f;
+/// the shutdown bit and the function field. Only KM4 drives pads.
+#[cfg(any(not(target_os = "none"), feature = "km4"))]
+pub(crate) const PAD_GPIO_CLEAR: u32 = PAD_SHUTDOWN | PAD_FUNCTION_MASK;
 
 /// One read of the log UART's receive side.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -301,6 +307,10 @@ impl BleEvent {
     pub const DISCONNECT: u32 = 4;
     pub const MTU: u32 = 5;
     pub const NOTIFY: u32 = 8;
+    /// The stack refused a notification, so a reply lost its tail: the C
+    /// side dropped the rest, refuses more on this link and disconnects.
+    /// `value` is the bytes dropped.
+    pub const REFUSED: u32 = 9;
 
     /// Ready failures: the radio never came up, then the stack's own steps.
     pub const READY_WIFI: i32 = -1;
@@ -347,6 +357,17 @@ pub struct BleStats {
     pub mtu: u32,
     pub connected: u32,
 }
+
+// The structs the C ports fill or read, each the size its C twin asserts
+// (`example_entry.c`, `wellfed_ble.c`): a field added on one side alone
+// fails the build rather than misreading on the bench. Those holding a
+// pointer have the C's size only on the 32-bit target.
+const _: () = assert!(size_of::<WifiEvent>() == 32);
+const _: () = assert!(size_of::<TaskStack>() == 20);
+const _: () = assert!(size_of::<BleEvent>() == 16);
+const _: () = assert!(size_of::<BleStats>() == 20);
+#[cfg(target_os = "none")]
+const _: () = assert!(size_of::<JoinCredentials>() == 20);
 
 /// What a non-blocking device API receive found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -417,6 +438,8 @@ const LOG_RING_BYTES: usize = 4096;
 static LOG_RING: wellfed_core::log_ring::LogRing<LOG_RING_BYTES> =
     wellfed_core::log_ring::LogRing::new();
 
+#[cfg(any(not(target_os = "none"), feature = "km4"))]
+mod span;
 #[cfg(all(target_os = "none", feature = "km4"))]
 mod target;
 #[cfg(all(target_os = "none", feature = "km4"))]
@@ -467,6 +490,9 @@ mod audio {
     /// The codec's DMA ring, as one handle. A [`Page`] borrows it mutably, so
     /// one page is out at a time and none outlives the handle; [`Audio::take`]
     /// hands out at most one handle, so two callers never fill the same page.
+    /// Opening and closing the codec borrow it too, so neither can reset the
+    /// ring under a page that is out: a page submitted after a reopen would
+    /// mark a different ring slot ready than the one it filled.
     #[derive(Debug)]
     pub struct Audio {
         /// Not `Send`: the fake keeps the take flag and the page per thread,
@@ -482,6 +508,18 @@ mod audio {
             })
         }
 
+        /// Start the codec's line output and its DMA ring at `rate_hz` (8, 16,
+        /// 32 or 48 kHz); false for another rate, when already open or when
+        /// no DMA channel was free.
+        pub fn open(&mut self, rate_hz: u32) -> bool {
+            backend::audio_open(rate_hz)
+        }
+
+        /// Stop the DMA and power the codec down.
+        pub fn close(&mut self) {
+            backend::audio_close();
+        }
+
         /// The next free ring page, while the codec is open and the DMA does
         /// not own every page. Fill it, then [`Page::submit`].
         pub fn page(&mut self) -> Option<Page<'_>> {
@@ -490,7 +528,10 @@ mod audio {
             // `AUDIO_PAGE_SAMPLES` samples that the DMA does not own until it is
             // submitted; borrowing `self` keeps it the only reference to it.
             let samples = unsafe { page.as_mut() }?;
-            Some(Page { samples })
+            Some(Page {
+                samples,
+                _audio: PhantomData,
+            })
         }
     }
 
@@ -503,9 +544,12 @@ mod audio {
     /// One free ring page, borrowed from the [`Audio`] handle. Dropping it
     /// unsubmitted leaves the page free, so the next [`Audio::page`] returns it
     /// again.
+    /// Not `Send`, as its [`Audio`] is not: submitting hands the ring of the
+    /// task (on the host, the thread) that took the handle its page.
     #[derive(Debug)]
     pub struct Page<'a> {
         samples: &'a mut [i16; AUDIO_PAGE_SAMPLES],
+        _audio: PhantomData<&'a mut Audio>,
     }
 
     impl Page<'_> {

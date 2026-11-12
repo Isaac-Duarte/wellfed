@@ -84,9 +84,25 @@ pub fn boot_reason() -> u32 {
 }
 
 fn storage_span(sector: u32, offset: u32, len: usize) -> Option<usize> {
-    let end = offset as usize + len;
-    ((0..STORAGE_SECTORS).contains(&sector) && end <= SECTOR_BYTES as usize)
-        .then(|| (sector * SECTOR_BYTES + offset) as usize)
+    crate::span::storage(sector, offset, len).map(|at| at as usize)
+}
+
+/// Program `data` into a modelled region at `at`, as the target does: one
+/// NOR program per page, each only clearing bits.
+fn program(region: &mut [u8], at: usize, data: &[u8]) {
+    let Ok(len) = u32::try_from(data.len()) else {
+        return;
+    };
+    let Ok(start) = u32::try_from(at) else {
+        return;
+    };
+    for program in crate::span::programs(start, len) {
+        let cells = program.address as usize..program.address as usize + program.len as usize;
+        let bytes = &data[program.from..program.from + program.len as usize];
+        for (cell, &byte) in region[cells].iter_mut().zip(bytes) {
+            *cell &= byte;
+        }
+    }
 }
 
 /// # Safety
@@ -110,14 +126,10 @@ pub unsafe fn storage_program(sector: u32, offset: u32, data: &[u8]) -> bool {
     let Some(at) = storage_span(sector, offset, data.len()) else {
         return false;
     };
-    if !offset.is_multiple_of(4) || !data.len().is_multiple_of(4) {
+    if !crate::span::aligned(offset, data.len()) {
         return false;
     }
-    with(|h| {
-        for (cell, &byte) in h.storage[at..at + data.len()].iter_mut().zip(data) {
-            *cell &= byte;
-        }
-    });
+    with(|h| program(&mut h.storage, at, data));
     true
 }
 
@@ -164,11 +176,7 @@ pub fn running_bank() -> Option<u8> {
 }
 
 fn bank1_span(sector: u32, offset: u32, len: usize) -> Option<usize> {
-    let end = offset as usize + len;
-    with(|h| h.running_bank == Some(0))
-        .then_some(())
-        .filter(|_| sector < crate::BANK1_SECTORS && end <= SECTOR_BYTES as usize)
-        .map(|_| (sector * SECTOR_BYTES + offset) as usize)
+    crate::span::bank1(running_bank(), sector, offset, len).map(|at| at as usize)
 }
 
 /// # Safety
@@ -192,14 +200,10 @@ pub unsafe fn bank1_program(sector: u32, offset: u32, data: &[u8]) -> bool {
     let Some(at) = bank1_span(sector, offset, data.len()) else {
         return false;
     };
-    if !offset.is_multiple_of(4) || !data.len().is_multiple_of(4) {
+    if !crate::span::aligned(offset, data.len()) {
         return false;
     }
-    with(|h| {
-        for (cell, &byte) in h.bank1[at..at + data.len()].iter_mut().zip(data) {
-            *cell &= byte;
-        }
-    });
+    with(|h| program(&mut h.bank1, at, data));
     true
 }
 
@@ -218,11 +222,10 @@ pub fn bank1_read_uncached(sector: u32, offset: u32, bytes: &mut [u8]) -> bool {
 
 /// Bank 0's bytes, its first 8 from `bank0_marker`.
 pub fn bank0_read(offset: u32, bytes: &mut [u8]) -> bool {
-    let start = offset as usize;
-    let end = start + bytes.len();
-    if end > (crate::BANK1_OFFSET - crate::BANK0_OFFSET) as usize {
+    let Some(start) = crate::span::bank0(offset, bytes.len()) else {
         return false;
-    }
+    };
+    let start = start as usize;
     with(|h| {
         for (i, byte) in bytes.iter_mut().enumerate() {
             let at = start + i;
@@ -266,7 +269,11 @@ pub fn systick_ctrl() -> u32 {
 }
 
 /// CLKSOURCE (bit 2) reads 1 whatever is written, as on the KM4 Cortex-M33.
-pub fn set_systick_ctrl(value: u32) {
+///
+/// # Safety
+/// The caller owns the scheduler's tick: a flash lease stops it while the
+/// peer is parked and restores it after.
+pub unsafe fn set_systick_ctrl(value: u32) {
     with(|h| h.systick = value | 4);
 }
 
@@ -379,13 +386,25 @@ pub unsafe fn gpio_enable_outputs(port: u32, mask: u32) {
     }
 }
 
+/// A read of the log UART's line status, as the target's: it clears the
+/// UART's overrun flag, which the read keeps until the receive side
+/// reports it.
+fn loguart_status(h: &mut Hardware) {
+    if core::mem::take(&mut h.log_uart_overrun) {
+        h.log_uart_overrun_kept = true;
+    }
+}
+
 pub fn log_uart_receive() -> crate::LogUartReceive {
-    with(|h| match h.log_uart_rx.pop_front() {
-        None => crate::LogUartReceive::Empty,
-        Some(byte) => crate::LogUartReceive::Byte {
-            byte,
-            overrun: core::mem::take(&mut h.log_uart_overrun),
-        },
+    with(|h| {
+        loguart_status(h);
+        match h.log_uart_rx.pop_front() {
+            None => crate::LogUartReceive::Empty,
+            Some(byte) => crate::LogUartReceive::Byte {
+                byte,
+                overrun: core::mem::take(&mut h.log_uart_overrun_kept),
+            },
+        }
     })
 }
 
@@ -446,8 +465,11 @@ pub fn efuse_read8(address: u32) -> Option<u8> {
     with(|h| (!h.efuse_fail).then_some(255))
 }
 
-pub fn pad_disable(pin: u8) {
-    assert!(pin == 33 || pin == 34);
+/// # Safety
+/// The caller owns `pin`, an analog input whose digital path may go.
+pub unsafe fn pad_disable(pin: u32) {
+    assert!(pin < 64);
+    with(|h| h.pads_disabled |= 1 << pin);
 }
 
 pub fn adc_init_manual() {}
@@ -543,7 +565,9 @@ pub fn heap_min_free() -> u32 {
 
 pub fn gtimer_clock_enable() {}
 
-pub fn gpio_int_config(pin: u32, enabled: bool) {
+/// # Safety
+/// The caller owns `pin` and the port's interrupt.
+pub unsafe fn gpio_int_config(pin: u32, enabled: bool) {
     assert_eq!(pin, board::INTERRUPT_PIN);
     with(|h| {
         if enabled {
@@ -554,7 +578,9 @@ pub fn gpio_int_config(pin: u32, enabled: bool) {
     });
 }
 
-pub fn gpio_int_mode(pin: u32, enabled: bool) {
+/// # Safety
+/// As for [`gpio_int_config`].
+pub unsafe fn gpio_int_mode(pin: u32, enabled: bool) {
     assert_eq!(pin, board::INTERRUPT_PIN);
     with(|h| {
         if enabled {
@@ -610,14 +636,20 @@ pub fn tim2_init(period: u32) {
     });
 }
 
+/// The update interrupt's enable. The request is the flag and the enable
+/// together, so enabling it over a flag still set raises the line.
 pub fn tim2_int_config(enabled: bool) {
-    with(|h| {
+    let raise = with(|h| {
         if enabled {
             h.timer.dier |= TIM_IT_UPDATE;
         } else {
             h.timer.dier &= !TIM_IT_UPDATE;
         }
+        enabled && h.timer.sr & TIM_IT_UPDATE != 0
     });
+    if raise {
+        super::irq(super::TIMER2_IRQ);
+    }
 }
 
 pub fn tim2_cmd(enabled: bool) {
@@ -628,7 +660,10 @@ pub fn tim2_int_clear() {
     with(|h| h.timer.sr = 0);
 }
 
-pub fn irq_register(irq: Irq, isr: Isr, priority: u32) -> bool {
+/// # Safety
+/// The caller owns `irq`'s line, and `isr` is sound to run as its handler,
+/// with a null context, from the moment it is registered.
+pub unsafe fn irq_register(irq: Irq, isr: Isr, priority: u32) -> bool {
     assert_eq!(priority, 4);
     with(|h| {
         if (irq == Irq::Timer2 && h.fail_timer_register)
@@ -698,7 +733,8 @@ pub unsafe fn wdg_init(count_id: u32, divisor: u32) {
             (count_id << 25) | divisor | WDG_BIT_CLEAR | WDG_BIT_RST_MODE | WDG_BIT_ISR_CLEAR;
         h.watchdog_vendor = written & !(WDG_BIT_CLEAR | WDG_BIT_ISR_CLEAR);
     });
-    set_lp_km0_ctrl(lp_km0_ctrl() | LP_WDT_RESET_HS_ALL);
+    // SAFETY: the caller's contract makes it the watchdog's one owner.
+    unsafe { set_lp_km0_ctrl(lp_km0_ctrl() | LP_WDT_RESET_HS_ALL) };
 }
 
 /// # Safety
@@ -734,7 +770,10 @@ pub fn hs_platform_para() -> u32 {
     with(|h| h.hs_control)
 }
 
-pub fn set_hs_platform_para(value: u32) {
+/// # Safety
+/// The caller is the watchdog's one owner: the register holds the scope
+/// of the watchdog's reset.
+pub unsafe fn set_hs_platform_para(value: u32) {
     with(|h| {
         if !h.watchdog_scope_blocked {
             h.hs_control = value;
@@ -746,7 +785,10 @@ pub fn lp_km0_ctrl() -> u32 {
     with(|h| h.lp_control)
 }
 
-pub fn set_lp_km0_ctrl(value: u32) {
+/// # Safety
+/// As for [`set_hs_platform_para`]: the register holds which cores the
+/// watchdog's reset reaches.
+pub unsafe fn set_lp_km0_ctrl(value: u32) {
     with(|h| {
         if !h.watchdog_scope_blocked {
             h.lp_control = value;
@@ -796,6 +838,8 @@ pub fn panic_outputs_safe() {
 /// The host's output has no line time to spare a task, so a line is out by
 /// the time this returns and the drain below has nothing to do.
 pub fn log(message: &CStr) {
+    // The target's sender reads the line status before each burst.
+    with(loguart_status);
     print!("{}", message.to_string_lossy());
     crate::LOG_TAIL.push(message.to_bytes());
 }
@@ -814,9 +858,15 @@ pub fn unscheduled<R>(f: impl FnOnce() -> R) -> R {
 }
 
 /// Each host thread stands for one task: the test harness runs tests on
-/// separate threads, and a static claimed by one must refuse another.
+/// separate threads, and a static claimed by one must refuse another. From
+/// an interrupt (a handler the fake runs, or a test that sets `ipsr`) there
+/// is no task, and the identity is 0, as on the target.
 pub fn current_task() -> usize {
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    if in_interrupt() {
+        return 0;
+    }
 
     static NEXT: AtomicUsize = AtomicUsize::new(1);
     std::thread_local! {
@@ -825,7 +875,7 @@ pub fn current_task() -> usize {
     TASK.with(|task| *task)
 }
 
-pub fn audio_open(rate_hz: u32) -> bool {
+pub(crate) fn audio_open(rate_hz: u32) -> bool {
     with(|h| {
         if h.audio_open || h.audio_open_fails || ![8000, 16000, 32000, 48000].contains(&rate_hz) {
             return false;
@@ -876,7 +926,7 @@ pub fn audio_underruns() -> u32 {
     with(|h| h.audio_underruns)
 }
 
-pub fn audio_close() {
+pub(crate) fn audio_close() {
     with(|h| {
         h.audio_open = false;
         h.audio_queue.clear();
@@ -896,14 +946,23 @@ pub fn delay_ms(ms: u32) {
     with(|h| h.uptime_ms = h.uptime_ms.wrapping_add(ms));
 }
 
-/// The calling thread stands for the task.
+/// The calling thread stands for the task; 0 from an interrupt.
 pub fn task_handle() -> usize {
     current_task()
 }
 
-/// Counted for tests: nothing here sleeps to be woken.
+/// Counted for tests: nothing here sleeps to be woken. From an interrupt it
+/// does nothing, as the target's task-context call does.
 pub fn task_notify(_handle: usize) {
-    with(|h| h.task_notifies += 1);
+    with(|h| {
+        if h.ipsr == 0 {
+            h.task_notifies += 1;
+        }
+    });
+}
+
+fn in_interrupt() -> bool {
+    with(|h| h.ipsr != 0)
 }
 
 /// The whole wait passes on the fake clock.
@@ -1104,6 +1163,9 @@ pub fn ble_disconnect() -> bool {
 }
 
 pub fn ble_stats() -> BleStats {
+    if let Some(hook) = with(|h| h.ble_stats_hook.take()) {
+        hook();
+    }
     with(|h| h.ble_stats)
 }
 

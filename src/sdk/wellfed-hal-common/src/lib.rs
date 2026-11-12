@@ -6,7 +6,6 @@
 //! firmware links the same panic handler. Host builds run against the SDK
 //! fake.
 #![cfg_attr(target_os = "none", no_std)]
-#![allow(clippy::missing_safety_doc)]
 
 // The KM4 provider fault callback calls the SDK's output guard.
 pub use wellfed_amebad_sys as sdk;

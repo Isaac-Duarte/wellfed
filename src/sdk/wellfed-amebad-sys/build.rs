@@ -94,8 +94,13 @@ mod sdk {
         "PINMUX_TypeDef",
     ];
 
-    pub fn generate() {
-        // KM0 runs only the SDK-independent flash-park and hook routines.
+    /// The KM4 bindings. KM0 calls no SDK function (its park and trial are
+    /// SDK-independent), so a KM0 build generates nothing.
+    pub(super) fn generate() {
+        assert!(
+            env::var("CARGO_FEATURE_KM4").is_err() || env::var("CARGO_FEATURE_KM0").is_err(),
+            "select exactly one of km0/km4"
+        );
         if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("none")
             || env::var("CARGO_FEATURE_KM4").is_err()
         {
@@ -107,29 +112,19 @@ mod sdk {
         );
         let newlib = env::var("WELLFED_NEWLIB_INCLUDE")
             .expect("WELLFED_NEWLIB_INCLUDE names newlib headers");
-        let km4 = env::var("CARGO_FEATURE_KM4").is_ok();
-        assert!(
-            km4 != env::var("CARGO_FEATURE_KM0").is_ok(),
-            "select exactly one of km0/km4"
-        );
-        let (core, port) = if km4 {
-            ("hp", "RTL8721D_HP/non_secure")
-        } else {
-            ("lp", "RTL8721D_LP")
-        };
 
         let soc = sdk.join("component/soc/realtek/amebad");
         let rtos = sdk.join("component/os/freertos/freertos_v10.2.0/Source");
         let includes = [
-            sdk.join(format!("project/realtek_amebaD_va0_example/inc/inc_{core}")),
+            sdk.join("project/realtek_amebaD_va0_example/inc/inc_hp"),
             sdk.join("component/os"),
             sdk.join("component/os/freertos"),
             rtos.join("include"),
-            rtos.join("portable/GCC").join(port),
+            rtos.join("portable/GCC/RTL8721D_HP/non_secure"),
             soc.join("cmsis"),
             soc.join("cmsis/device"),
             soc.join("fwlib/include"),
-            soc.join(format!("fwlib/rom_map_{core}")),
+            soc.join("fwlib/rom_map_hp"),
             soc.join("app/monitor/include"),
             soc.join("app/xmodem"),
             soc.join("swlib/include"),
@@ -146,30 +141,15 @@ mod sdk {
         // Layouts only: parse with a soft-float triple so CMSIS FPU asm is not
         // instantiated; no binding takes or returns floating-point values.
         let mut args: Vec<String> = vec![
-            if km4 {
-                "--target=thumbv8m.main-none-eabi"
-            } else {
-                "--target=thumbv8m.base-none-eabi"
-            }
-            .into(),
+            "--target=thumbv8m.main-none-eabi".into(),
             "-ffreestanding".into(),
             "-mcmse".into(),
             "-DCONFIG_PLATFORM_8721D".into(),
-            if km4 {
-                "-DARM_CORE_CM4"
-            } else {
-                "-DARM_CORE_CM0"
-            }
-            .into(),
+            "-DARM_CORE_CM4".into(),
             "-isystem".into(),
             newlib,
+            "-mfpu=none".into(),
         ];
-
-        if km4 {
-            args.push("-mfpu=none".into());
-        } else {
-            args.push("-D__ARM_FEATURE_DSP=0".into());
-        }
         args.extend(includes.iter().map(|path| format!("-I{}", path.display())));
 
         let mut builder = bindgen::Builder::default()
@@ -192,7 +172,7 @@ mod sdk {
         }
 
         let bindings = builder.generate().expect("generate AmebaD SDK bindings");
-        let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("sdk.rs");
+        let out = PathBuf::from(env::var("OUT_DIR").expect("Cargo names OUT_DIR")).join("sdk.rs");
         bindings.write_to_file(out).expect("write SDK bindings");
     }
 }

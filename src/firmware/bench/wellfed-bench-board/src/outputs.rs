@@ -63,8 +63,8 @@ impl Relays {
     }
 }
 
-/// Held for a whole command, or for a whole RECOVER sequence so host commands
-/// wait instead of interleaving with it.
+/// Held for a whole command, or for a whole RECOVER sequence; a host command
+/// that would switch an output meanwhile is refused, never queued.
 static RELAYS: Mutex<CriticalSectionRawMutex, Option<Relays>> = Mutex::new(None);
 
 /// Lock-free copy of the state for the LEDs.
@@ -97,6 +97,12 @@ impl core::ops::DerefMut for Guard {
 
 pub(crate) async fn lock() -> Guard {
     Guard(RELAYS.lock().await)
+}
+
+/// The relays now, or `None` while another holder (a RECOVER sequence) has
+/// them.
+pub(crate) fn try_lock() -> Option<Guard> {
+    RELAYS.try_lock().ok().map(Guard)
 }
 
 pub(crate) fn snapshot() -> Channels {

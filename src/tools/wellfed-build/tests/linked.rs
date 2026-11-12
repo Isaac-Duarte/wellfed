@@ -106,7 +106,7 @@ fn parking_code_with_calls_branches_or_flash_literals_is_refused() {
         for (name, function) in image["functions"].as_object().unwrap() {
             let (address, size) = (number(&function["address"]), number(&function["bytes"]));
             let listing = listing(&build, &elf, address, size);
-            let minimum = if name.contains("_sem_") || park::KM4_SYMBOLS.contains(&name.as_str()) {
+            let minimum = if park::KM4_SYMBOLS.contains(&name.as_str()) {
                 1
             } else {
                 3

@@ -17,8 +17,31 @@ use crate::sdk;
 
 /// PB4..PB7 as SDK pin numbers (port B is pins 32..63).
 pub const PINS: [u32; 4] = crate::board::pins::BUTTONS;
-const PORT_B: u32 = 1;
-const MASK: u32 = 0xf0;
+/// The buttons' port and bits, from the board's pins.
+const PORT_B: u32 = PINS[0] >> 5;
+const MASK: u32 = {
+    let mut mask = 0;
+    let mut index = 0;
+    while index < PINS.len() {
+        mask |= 1 << (PINS[index] & 31);
+        index += 1;
+    }
+    mask
+};
+
+// `Buttons::from_port_b` decodes PB4..PB7, in the order the board lists
+// them: a board whose buttons sit elsewhere does not build.
+const _: () = {
+    let mut bit = 0u32;
+    while bit < 4 {
+        assert!(
+            PINS[bit as usize] == 32 + 4 + bit,
+            "the buttons are PB4..PB7"
+        );
+        bit += 1;
+    }
+    assert!(PORT_B == 1 && MASK == 0xf0);
+};
 pub const POLL_MS: u32 = 5;
 
 /// Gestures waiting for the reader. A person makes a few a second at most,
@@ -132,6 +155,9 @@ impl Service {
         }
 
         for pin in PINS {
+            // `GPIO_Init` rewrites port B's direction, which the emitter's
+            // and the indicator's owners also set, from other contexts.
+            let _guard = sdk::IrqGuard::lock();
             // SAFETY: a button input; the button port owns them.
             unsafe { sdk::gpio_init(pin, false) };
         }
@@ -181,6 +207,7 @@ pub fn inject(gesture: Gesture) {
 }
 
 /// Tests only: empty the queue.
+#[cfg(not(target_os = "none"))]
 #[doc(hidden)]
 pub fn reset() {
     READ.store(WRITTEN.load(Ordering::Acquire), Ordering::Release);

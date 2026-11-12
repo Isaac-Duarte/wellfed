@@ -561,9 +561,10 @@ mod exported {
     ///
     /// # Safety
     /// Each pointer is valid for its length (8, [`super::BANK0_BYTES`],
-    /// `CONFIRM_LEN`, 4 and `line_len` bytes), and nothing writes bank 0
-    /// during the call (KM4 is not running yet).
+    /// `CONFIRM_LEN`, 4 and `line_len` bytes; `line` may be uninitialized),
+    /// and nothing writes bank 0 during the call (KM4 is not running yet).
     #[unsafe(no_mangle)]
+    #[expect(unreachable_pub, reason = "a C export: the KM0 glue calls it by name")]
     pub unsafe extern "C" fn wellfed_amebad_trial_decide(
         bank1: *const [u8; 8],
         bank0: *const [u8; 8],
@@ -602,8 +603,12 @@ mod exported {
         // SAFETY: as above.
         unsafe { *register = value };
 
+        // The glue's buffer may be uninitialized, and a slice must not be
+        // formed over uninitialized bytes: zero it through the pointer first.
         let len = usize::try_from(line_len).unwrap_or(0);
-        // SAFETY: as above; nothing else refers to the glue's buffer.
+        // SAFETY: as above, valid for `len` bytes; nothing else refers to it.
+        unsafe { core::ptr::write_bytes(line, 0, len) };
+        // SAFETY: as above, and now initialized.
         let buffer = unsafe { core::slice::from_raw_parts_mut(line, len) };
         super::report(reset, found, decision, &mut super::Line::new(buffer));
         u32::from(decision.gives_way())
@@ -616,6 +621,7 @@ mod exported {
     /// # Safety
     /// `register` is valid for 4 bytes.
     #[unsafe(no_mangle)]
+    #[expect(unreachable_pub, reason = "a C export: the KM0 glue calls it by name")]
     pub unsafe extern "C" fn wellfed_amebad_boot_count(register: *mut u32) -> u32 {
         // SAFETY: the caller's contract.
         let (value, count) = super::boot_counted(unsafe { *register });

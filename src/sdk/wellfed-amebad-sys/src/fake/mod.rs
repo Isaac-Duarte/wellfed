@@ -49,6 +49,9 @@ mod board {
     pub(super) const INTERRUPT_PIN: u32 = BUTTON;
 }
 
+// The fake's GPIO interrupt is port A's (`GPIOA_IRQ`).
+const _: () = assert!(board::INTERRUPT_PIN < 32);
+
 /// PB3 is SWD_CLK on every AmebaD board: while SWD holds it, its GPIO latch
 /// never reaches the pad.
 const SWD_CLK_PB_BIT: u32 = 1 << 3;
@@ -166,6 +169,8 @@ pub struct Hardware {
     /// Pads whose input path reads LOW regardless of the driven level.
     pub dead_input: [u32; 2],
     pub pad_control: [u32; 64],
+    /// Pads `pad_disable` shut down, a bit each.
+    pub pads_disabled: u64,
 
     pub adc_enabled: bool,
     pub trigger: bool,
@@ -288,10 +293,16 @@ pub struct Hardware {
     pub ble_notify_fails: bool,
     pub ble_disconnects: u32,
     pub ble_stats: BleStats,
+    /// Run once, as the next `ble_stats` reads: the stack moving between
+    /// the link's last poll and its read of the stats.
+    pub ble_stats_hook: Option<fn()>,
     /// Bytes waiting in the log UART's receive FIFO, and whether it
     /// overran before the next is read.
     pub log_uart_rx: VecDeque<u8>,
     pub log_uart_overrun: bool,
+    /// An overrun a status read cleared from the UART and kept for the
+    /// receive side, as the target keeps it.
+    pub log_uart_overrun_kept: bool,
 }
 
 /// The Wi-Fi shim's vendor calls, as the Wi-Fi task makes them: each one
@@ -398,6 +409,7 @@ impl Default for Hardware {
             // Physical observation on the research unit: PA0-PA7 read LOW.
             dead_input: [0xff, 0],
             pad_control: [0; 64],
+            pads_disabled: 0,
 
             adc_enabled: false,
             trigger: false,
@@ -490,8 +502,10 @@ impl Default for Hardware {
             ble_notify_fails: false,
             ble_disconnects: 0,
             ble_stats: BleStats::default(),
+            ble_stats_hook: None,
             log_uart_rx: VecDeque::new(),
             log_uart_overrun: false,
+            log_uart_overrun_kept: false,
         }
     }
 }
@@ -519,6 +533,16 @@ pub fn play_audio(pages: usize) {
             }
         }
     });
+}
+
+/// A host's subscription change, as `wellfed_ble.c`'s CCCD callback makes
+/// it: an unsubscribe drops the control bytes the host wrote, and either
+/// is recorded as a NOTIFY event.
+pub fn ble_subscribe(on: bool) {
+    if !on {
+        with(|h| h.ble_control.clear());
+    }
+    ble_record(crate::BleEvent::NOTIFY, 0, u32::from(on));
 }
 
 /// Record a BLE event as `wellfed_ble.c` would, numbered in order.
@@ -643,8 +667,10 @@ pub fn advance(ticks: u32, run_timer: bool) {
         h.timer_phase = u32::try_from(u64::from(h.timer_phase) % period)
             .expect("a remainder of a period at most 2^32");
         h.timer.sr |= api::TIM_IT_UPDATE;
-        // Model a coalesced pending IRQ, not one callback per lost period.
-        run_timer
+        // The update flag always sets; it reaches the NVIC only through its
+        // enable. Model a coalesced pending IRQ, not one callback per lost
+        // period.
+        run_timer && h.timer.dier & api::TIM_IT_UPDATE != 0
     });
 
     if fire {
@@ -652,9 +678,10 @@ pub fn advance(ticks: u32, run_timer: bool) {
     }
 }
 
-/// Drive the feedback input (PA18) and raise its interrupt when enabled.
+/// Drive the board's interrupt input (the PLAF103's feedback switch, the
+/// PLWF106's button) and raise its interrupt when enabled.
 pub fn edge(high: bool) {
-    let mask = 1u32 << 18;
+    let mask = wellfed_board::pins::bit(board::INTERRUPT_PIN);
     let raise = with(|h| {
         if high {
             h.input[0] |= mask;

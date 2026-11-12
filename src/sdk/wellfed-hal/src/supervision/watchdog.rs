@@ -113,10 +113,10 @@ pub fn force_reset(config: &WatchdogConfig) -> Option<bool> {
     }
 
     let _guard = IrqGuard::lock();
-    sdk::set_hs_platform_para(sdk::hs_platform_para() | sdk::HS_WDTRST_OPT);
     // SAFETY: no supervision watchdog opened this boot, so nothing feeds the
     // counter or relies on its settings; this boot ends at its expiry.
     unsafe {
+        sdk::set_hs_platform_para(sdk::hs_platform_para() | sdk::HS_WDTRST_OPT);
         sdk::wdg_init(u32::from(config.count_id), u32::from(config.divisor));
         sdk::wdg_cmd(true);
     }
@@ -237,12 +237,16 @@ impl Watchdog {
         }
         self.armed = false;
 
-        sdk::set_hs_platform_para(
-            (sdk::hs_platform_para() & !sdk::HS_WDTRST_OPT) | self.old_hs_scope,
-        );
-        sdk::set_lp_km0_ctrl(
-            (sdk::lp_km0_ctrl() & !sdk::LP_WDT_RESET_HS_ALL) | self.old_peripheral_scope,
-        );
+        // SAFETY: this watchdog is the one owner, and gives back the scope
+        // it found.
+        unsafe {
+            sdk::set_hs_platform_para(
+                (sdk::hs_platform_para() & !sdk::HS_WDTRST_OPT) | self.old_hs_scope,
+            );
+            sdk::set_lp_km0_ctrl(
+                (sdk::lp_km0_ctrl() & !sdk::LP_WDT_RESET_HS_ALL) | self.old_peripheral_scope,
+            );
+        }
 
         if sdk::hs_platform_para() & sdk::HS_WDTRST_OPT != self.old_hs_scope
             || sdk::lp_km0_ctrl() & sdk::LP_WDT_RESET_HS_ALL != self.old_peripheral_scope
@@ -281,10 +285,12 @@ impl Watchdog {
         self.clock =
             TickClock::new(config.systimer_hz, sdk::systimer_ticks(), 0).unwrap_or_default();
 
-        sdk::set_hs_platform_para(sdk::hs_platform_para() | sdk::HS_WDTRST_OPT);
         // SAFETY: claimed just above, with interrupts masked and no other
         // watchdog active.
-        unsafe { sdk::wdg_init(u32::from(config.count_id), u32::from(config.divisor)) };
+        unsafe {
+            sdk::set_hs_platform_para(sdk::hs_platform_para() | sdk::HS_WDTRST_OPT);
+            sdk::wdg_init(u32::from(config.count_id), u32::from(config.divisor));
+        }
         let mut ok = self.registers();
         if ok {
             // SAFETY: as above.

@@ -110,3 +110,21 @@ fn a_line_that_overran_presses_nothing() {
     assert_eq!(records, [Record::Virtual(Line::Refused)]);
     assert_eq!(buttons::next(), None);
 }
+
+/// A line sent on the same UART while the button task was held off reads
+/// the line status, which clears the UART's overrun flag: the overrun is
+/// kept for the panel all the same, so the damaged line still presses
+/// nothing.
+#[test]
+fn a_log_line_sent_after_an_overrun_does_not_hide_it() {
+    let (_guard, mut service) = start();
+
+    type_line(b"press dis");
+    fake::with(|h| h.log_uart_overrun = true);
+    type_line(b"pense\n");
+    wellfed_hal::sdk::log(c"PLTEST1 a line from another task\r\n");
+    let records = run(&mut service, 400);
+
+    assert_eq!(records, [Record::Virtual(Line::Refused)]);
+    assert_eq!(buttons::next(), None);
+}

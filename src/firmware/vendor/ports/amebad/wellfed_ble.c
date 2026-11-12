@@ -57,6 +57,7 @@ enum {
     WELLFED_BLE_EV_DISCONNECT = 4, /* result: HCI cause */
     WELLFED_BLE_EV_MTU = 5,        /* value: ATT MTU */
     WELLFED_BLE_EV_NOTIFY = 8,     /* value: 1 enabled, 0 disabled */
+    WELLFED_BLE_EV_REFUSED = 9,    /* value: reply bytes dropped */
 };
 
 enum {
@@ -90,6 +91,13 @@ struct wellfed_ble_stats {
     unsigned int connected;
 };
 
+/* Each layout is the Rust twin's in `wellfed-amebad-sys` (`RawBleConfig`,
+ * `BleEvent`, `BleStats`), which asserts the same sizes: a field added on
+ * one side alone fails the build rather than misreading on the bench. */
+_Static_assert(sizeof(struct wellfed_ble_config) == 40, "sdk RawBleConfig");
+_Static_assert(sizeof(struct wellfed_ble_event) == 16, "sdk::BleEvent");
+_Static_assert(sizeof(struct wellfed_ble_stats) == 20, "sdk::BleStats");
+
 /* A byte ring with one producer and one consumer, each side under a
  * critical section so a connect can clear it. */
 struct wellfed_ring {
@@ -117,6 +125,9 @@ static T_GAP_DEV_STATE wellfed_ble_state;
 /* What Rust asked for; the BLE task alone reads it and drives the stack. */
 static volatile unsigned int wellfed_ble_wanted;
 static unsigned int wellfed_ble_ready;
+/* A reply lost part of its bytes on this link: the length-prefixed stream
+ * is broken, so nothing more is queued until the next host connects. */
+static volatile unsigned int wellfed_ble_broken;
 
 /* Our IO messages, beside the stack's IO_MSG_TYPE_BT_STATUS. */
 #define WELLFED_BLE_IO 0x7e
@@ -134,6 +145,14 @@ static void wellfed_ble_event(unsigned int kind, int result, unsigned int value)
     e->kind = kind;
     e->result = result;
     e->value = value;
+    taskEXIT_CRITICAL();
+}
+
+/* Dropped bytes are counted from the stack's task and from Rust's. */
+static void wellfed_ble_dropped(unsigned int *counter, unsigned int n)
+{
+    taskENTER_CRITICAL();
+    *counter += n;
     taskEXIT_CRITICAL();
 }
 
@@ -259,7 +278,7 @@ static T_APP_RESULT wellfed_ble_write(uint8_t conn_id, T_SERVER_ID service_id, u
         return APP_RESULT_ATTR_NOT_FOUND;
     }
     if (!wellfed_ring_put(&wellfed_control, value, length)) {
-        wellfed_ble_counts.control_dropped += length;
+        wellfed_ble_dropped(&wellfed_ble_counts.control_dropped, length);
     }
     return APP_RESULT_SUCCESS;
 }
@@ -269,7 +288,16 @@ static void wellfed_ble_cccd(uint8_t conn_id, T_SERVER_ID service_id, uint16_t i
     (void)conn_id;
     (void)service_id;
     if (index == WELLFED_BLE_CONTROL_CCCD_INDEX) {
-        wellfed_ble_event(WELLFED_BLE_EV_NOTIFY, 0, (bits & GATT_CLIENT_CHAR_CONFIG_NOTIFY) != 0);
+        int on = (bits & GATT_CLIENT_CHAR_CONFIG_NOTIFY) != 0;
+        /* An unsubscribe ends the host's messages: bytes it wrote are not
+         * the start of its next ones. A subscription clears nothing, since
+         * a host may write its first message before its subscription lands
+         * and the ring holds it until the link opens. Writes and this
+         * callback both come on the stack's task, so their order holds. */
+        if (!on) {
+            wellfed_ring_clear(&wellfed_control);
+        }
+        wellfed_ble_event(WELLFED_BLE_EV_NOTIFY, 0, on);
     }
 }
 
@@ -287,8 +315,10 @@ static T_APP_RESULT wellfed_ble_profile(T_SERVER_ID service_id, void *data)
 }
 
 /* Send what Rust queued as notifications, split to the ATT payload. A
- * refused send drops the rest: the host then sees a short message and
- * gives up, and the Rust side drops the link. */
+ * send the stack refuses breaks the framed stream mid-message, so the rest
+ * is dropped, nothing more is queued, and the host is disconnected: its
+ * session ends at once rather than waiting out a reply that cannot come.
+ * The REFUSED event tells Rust why. */
 static void wellfed_ble_flush(void)
 {
     unsigned int payload = wellfed_ble_counts.mtu > 3 ? wellfed_ble_counts.mtu - 3 : 20;
@@ -301,9 +331,14 @@ static void wellfed_ble_flush(void)
         if (!wellfed_ble_counts.connected ||
             !server_send_data(wellfed_ble_conn, wellfed_ble_service, WELLFED_BLE_CONTROL_INDEX, chunk,
                               (uint16_t)n, GATT_PDU_TYPE_NOTIFICATION)) {
-            wellfed_ble_counts.notify_dropped += n;
             unsigned char rest[WELLFED_BLE_NOTIFY_RING];
-            wellfed_ble_counts.notify_dropped += wellfed_ring_take(&wellfed_notify, rest, sizeof rest);
+            n += wellfed_ring_take(&wellfed_notify, rest, sizeof rest);
+            wellfed_ble_dropped(&wellfed_ble_counts.notify_dropped, n);
+            if (wellfed_ble_counts.connected) {
+                wellfed_ble_broken = 1;
+                wellfed_ble_event(WELLFED_BLE_EV_REFUSED, 0, n);
+                le_disconnect(wellfed_ble_conn);
+            }
             return;
         }
     }
@@ -344,19 +379,26 @@ static void wellfed_ble_on_dev_state(T_GAP_DEV_STATE state)
 
 static void wellfed_ble_on_conn_state(uint8_t conn_id, T_GAP_CONN_STATE state, uint16_t cause)
 {
+    /* The link state and its event change together, so Rust, checking the
+     * stats after losing events, never sees one without the other. */
     if (state == GAP_CONN_STATE_CONNECTED) {
         wellfed_ring_clear(&wellfed_control);
         wellfed_ring_clear(&wellfed_notify);
         wellfed_ble_conn = conn_id;
-        wellfed_ble_counts.mtu = 23;
-        wellfed_ble_counts.connected = 1;
+        wellfed_ble_broken = 0;
 
         uint16_t interval = 0;
         le_get_conn_param(GAP_PARAM_CONN_INTERVAL, &interval, conn_id);
+        taskENTER_CRITICAL();
+        wellfed_ble_counts.mtu = 23;
+        wellfed_ble_counts.connected = 1;
         wellfed_ble_event(WELLFED_BLE_EV_CONNECT, 0, interval);
+        taskEXIT_CRITICAL();
     } else if (state == GAP_CONN_STATE_DISCONNECTED) {
+        taskENTER_CRITICAL();
         wellfed_ble_counts.connected = 0;
         wellfed_ble_event(WELLFED_BLE_EV_DISCONNECT, cause, 0);
+        taskEXIT_CRITICAL();
         wellfed_ble_follow();
     }
 }
@@ -504,6 +546,11 @@ static void wellfed_ble_task(void *unused)
     }
 }
 
+/* Post one of our IO messages and its event, both or neither: an IO
+ * message left without its event would make every later event pop the
+ * message before its own, and the task would run one message behind for
+ * good. With the scheduler held off by the critical section, room in both
+ * queues means both sends succeed. */
 static int wellfed_ble_post(uint16_t subtype)
 {
     if (wellfed_ble_io_queue == NULL || wellfed_ble_evt_queue == NULL) {
@@ -513,7 +560,16 @@ static int wellfed_ble_post(uint16_t subtype)
     msg.type = WELLFED_BLE_IO;
     msg.subtype = subtype;
     uint8_t event = EVENT_IO_TO_APP;
-    return os_msg_send(wellfed_ble_io_queue, &msg, 0) && os_msg_send(wellfed_ble_evt_queue, &event, 0);
+    uint32_t io = 0;
+    uint32_t events = 0;
+    int sent = 0;
+    taskENTER_CRITICAL();
+    if (os_msg_queue_peek(wellfed_ble_io_queue, &io) && os_msg_queue_peek(wellfed_ble_evt_queue, &events) &&
+        io < WELLFED_BLE_QUEUE && events < 2 * WELLFED_BLE_QUEUE) {
+        sent = os_msg_send(wellfed_ble_io_queue, &msg, 0) && os_msg_send(wellfed_ble_evt_queue, &event, 0);
+    }
+    taskEXIT_CRITICAL();
+    return sent;
 }
 
 /* Once per boot: 1 when the task was created. The config is copied. */
@@ -557,8 +613,8 @@ unsigned int wellfed_ble_control_read(void *buffer, unsigned int length)
  * BLE task). */
 int wellfed_ble_notify(const void *data, unsigned int length)
 {
-    if (!wellfed_ring_put(&wellfed_notify, data, length)) {
-        wellfed_ble_counts.notify_dropped += length;
+    if (wellfed_ble_broken || !wellfed_ring_put(&wellfed_notify, data, length)) {
+        wellfed_ble_dropped(&wellfed_ble_counts.notify_dropped, length);
         return 0;
     }
     return wellfed_ble_post(WELLFED_BLE_IO_NOTIFY);

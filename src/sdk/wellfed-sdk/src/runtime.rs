@@ -17,7 +17,7 @@
 //! session. A hung runtime task stops the feeding, so a hang becomes a
 //! watchdog reset that KM0 counts.
 
-use core::ffi::{CStr, c_void};
+use core::ffi::c_void;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
@@ -1272,7 +1272,8 @@ fn halted_reset() {
     let hz = u64::from(config::WATCHDOG.systimer_hz);
     let start = sdk::systimer_ticks();
     let mut next = 0;
-    let mut opened = || {
+    // Captures nothing, so it is `Copy`: each poll takes its own.
+    let opened = || {
         let opened = SdkHooks::watchdog();
         if !opened {
             sdk::log(c"PLSUP1 error watchdog=open\r\n");
@@ -1283,7 +1284,7 @@ fn halted_reset() {
         let ticks = u64::from(sdk::systimer_ticks().wrapping_sub(start));
         let now = u32::try_from(ticks * 1000 / hz).unwrap_or(u32::MAX);
         if now >= next {
-            match force_reset(now, &mut opened) {
+            match force_reset(now, opened) {
                 None => return,
                 Some(period) => next = now.saturating_add(period),
             }
@@ -1339,6 +1340,10 @@ fn log_trail(trail: &Result<trail::Trail<'_, trail::Ram>, trail::Refusal>) {
 
 /// Called once by the SDK's `example_entry`, before the scheduler starts.
 #[unsafe(no_mangle)]
+#[expect(
+    unreachable_pub,
+    reason = "a C export: the SDK's entry calls it by name"
+)]
 pub extern "C" fn wellfed_app_start() {
     let snapshot = stopped::initialize();
     // Before anything arms or writes the marker register's attempt bits.

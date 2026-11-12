@@ -45,7 +45,7 @@ fn connect(setup: &mut BleSetup) {
         setup.step(false).record,
         Some(Record::Connect { interval: 12 })
     );
-    ble_record(BleEvent::NOTIFY, 0, 1);
+    fake::ble_subscribe(true);
     assert_eq!(link(setup), Link::Opened);
 }
 
@@ -175,4 +175,154 @@ fn records_format() {
     )
     .unwrap();
     assert_eq!(text, "drop reason=protocol");
+}
+
+/// Every record the link reports over `steps` steps.
+fn records(setup: &mut BleSetup, steps: usize) -> Vec<Record> {
+    (0..steps)
+        .filter_map(|_| step(setup, false).record)
+        .collect()
+}
+
+#[test]
+fn an_outstayed_session_is_dropped_once_while_the_disconnect_comes() {
+    let mut setup = start();
+    connect(&mut setup);
+    fake::with(|h| h.uptime_ms += SESSION_MS);
+
+    let reason = DropReason::Timeout;
+    assert_eq!(records(&mut setup, 20), [Record::Drop { reason }]);
+    assert_eq!(fake::with(|h| h.ble_disconnects), 1);
+
+    ble_record(BleEvent::DISCONNECT, 0x16, 0);
+    assert_eq!(link(&mut setup), Link::Closed);
+}
+
+#[test]
+fn a_reply_the_stack_refused_drops_the_host() {
+    let mut setup = start();
+    connect(&mut setup);
+    assert_eq!(setup.send(&[1; 96]), Ok(()));
+
+    // The C side dropped the reply's tail and disconnects by itself.
+    ble_record(BleEvent::REFUSED, 0, 76);
+    let reason = DropReason::Notify;
+    assert_eq!(records(&mut setup, 20), [Record::Drop { reason }]);
+    assert_eq!(setup.send(b"more"), Err(DropReason::Notify));
+    assert_eq!(fake::with(|h| h.ble_disconnects), 0);
+
+    ble_record(BleEvent::DISCONNECT, 0x16, 0);
+    assert_eq!(link(&mut setup), Link::Closed);
+}
+
+#[test]
+fn an_unsubscribed_host_gets_no_replies() {
+    let mut setup = start();
+    connect(&mut setup);
+
+    write(b"half");
+    fake::ble_subscribe(false);
+    step(&mut setup, false);
+    assert_eq!(setup.send(b"reply"), Err(DropReason::Notify));
+
+    fake::ble_subscribe(true);
+    assert_eq!(link(&mut setup), Link::Opened);
+    assert_eq!(setup.send(b"reply"), Ok(()));
+    assert_eq!(step(&mut setup, false).link, None, "the old bytes went");
+}
+
+/// A host may write its first message before its subscription lands: the
+/// message waits and is read once the link opens.
+#[test]
+fn a_message_written_before_the_subscription_is_read_after_it() {
+    let mut setup = start();
+    ble_record(BleEvent::CONNECT, 0, 12);
+    step(&mut setup, false);
+
+    write(b"first");
+    for _ in 0..5 {
+        assert_eq!(step(&mut setup, false).link, None, "not read before");
+    }
+    fake::ble_subscribe(true);
+    assert_eq!(link(&mut setup), Link::Opened);
+    assert_eq!(link(&mut setup), Link::Message);
+    assert_eq!(setup.message(), Some(&b"first"[..]));
+}
+
+/// A disconnect lost among overwritten events closes the session once the
+/// link has read the ring up to date, by the stack's own link state.
+#[test]
+fn a_lost_disconnect_closes_the_session_and_advertising_resumes() {
+    let mut setup = start();
+    connect(&mut setup);
+    step(&mut setup, true);
+    assert_eq!(fake::with(|h| h.ble_advertising), Advertising::Off);
+
+    ble_record(BleEvent::DISCONNECT, 0x13, 0);
+    for _ in 0..16 {
+        ble_record(BleEvent::MTU, 0, 247);
+    }
+    fake::with(|h| h.ble_stats.connected = 0);
+
+    assert_eq!(link(&mut setup), Link::Closed);
+    step(&mut setup, true);
+    assert_eq!(fake::with(|h| h.ble_advertising), Advertising::On);
+}
+
+/// A connect lost the same way leaves a host this side never saw: it is
+/// dropped so it starts over, rather than holding the only link unseen.
+#[test]
+fn a_lost_connect_drops_the_host_it_never_saw() {
+    let mut setup = start();
+
+    ble_record(BleEvent::CONNECT, 0, 12);
+    for _ in 0..16 {
+        ble_record(BleEvent::ADVERTISING, 0, 0);
+    }
+    fake::with(|h| h.ble_stats.connected = 1);
+
+    assert!(records(&mut setup, 20).contains(&Record::Lost));
+    assert_eq!(fake::with(|h| h.ble_disconnects), 1);
+}
+
+/// Lost events whose effects the ring still holds change nothing: the
+/// connect that is still there opens the link as usual.
+#[test]
+fn lost_events_the_ring_still_answers_need_no_repair() {
+    let mut setup = start();
+
+    for _ in 0..17 {
+        ble_record(BleEvent::ADVERTISING, 0, 1);
+    }
+    ble_record(BleEvent::CONNECT, 0, 12);
+    ble_record(BleEvent::NOTIFY, 0, 1);
+    fake::with(|h| h.ble_stats.connected = 1);
+
+    assert_eq!(link(&mut setup), Link::Opened);
+    assert_eq!(fake::with(|h| h.ble_disconnects), 0);
+}
+
+/// A host that connects between the link's last poll and its read of the
+/// stack's stats is not taken for one it never saw: its connect event goes
+/// first, and nobody is dropped.
+#[test]
+fn a_connect_racing_the_repair_is_not_dropped() {
+    let mut setup = start();
+    for _ in 0..17 {
+        ble_record(BleEvent::ADVERTISING, 0, 1);
+    }
+    fake::with(|h| {
+        h.ble_stats_hook = Some(|| {
+            ble_record(BleEvent::CONNECT, 0, 12);
+            fake::with(|h| h.ble_stats.connected = 1);
+        });
+    });
+
+    let records = records(&mut setup, 20);
+    assert!(records.contains(&Record::Lost), "{records:?}");
+    assert!(
+        records.contains(&Record::Connect { interval: 12 }),
+        "{records:?}"
+    );
+    assert_eq!(fake::with(|h| h.ble_disconnects), 0);
 }

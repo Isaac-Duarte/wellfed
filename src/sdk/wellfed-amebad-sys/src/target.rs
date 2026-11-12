@@ -28,14 +28,31 @@ use super::{Advertising, BleEvent, BlePoll, BleService, BleStats};
     non_snake_case,
     non_upper_case_globals,
     dead_code,
+    unreachable_pub,
     clippy::all,
-    clippy::undocumented_unsafe_blocks
+    clippy::undocumented_unsafe_blocks,
+    reason = "bindgen's generated declarations, which no one edits"
 )]
 mod raw {
     include!(concat!(env!("OUT_DIR"), "/sdk.rs"));
 }
 
 use raw::wellfed_sdk_constant as k;
+
+/// An SDK constant the ROM takes as a byte, checked to fit at compile time.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "every caller is a const item, so the assert runs in the build"
+)]
+const fn sdk_byte(value: u32) -> u8 {
+    assert!(value <= 0xff, "an SDK byte argument above 255");
+    value as u8
+}
+
+const PUPD_NOPULL: u8 = sdk_byte(k::WELLFED_GPIO_PUPD_NOPULL);
+const L25E_OUT_VOLTAGE: u8 = sdk_byte(k::WELLFED_L25EOUTVOLTAGE);
+const SDK_DISABLE: u8 = sdk_byte(k::WELLFED_DISABLE);
+const SDK_ENABLE: u8 = sdk_byte(k::WELLFED_ENABLE);
 
 pub const GPIO_PORT_A: u32 = k::WELLFED_GPIO_PORT_A;
 pub const PMU_USER_BASE: u32 = k::WELLFED_PMU_DEV_USER_BASE;
@@ -86,7 +103,10 @@ const _: () = assert!(
 const _: () = assert!(k::WELLFED_BIT_SWD_PMUX == super::SWD_PMUX_BIT);
 
 const _: () = assert!(
-    k::WELLFED_PAD_SHUTDOWN | k::WELLFED_PAD_FUNCTION_MASK == super::PAD_GPIO_CLEAR
+    k::WELLFED_PAD_SHUTDOWN == super::PAD_SHUTDOWN
+        && k::WELLFED_PAD_FUNCTION_MASK == super::PAD_FUNCTION_MASK
+        && k::WELLFED_PAD_PULL_UP == super::PAD_PULL_UP
+        && k::WELLFED_PAD_PULL_DOWN == super::PAD_PULL_DOWN
         && k::WELLFED_PINMUX_GPIO == 0
 );
 
@@ -97,25 +117,40 @@ const LOGUART_RBR: u32 = 0x24;
 /// The same register written: the transmit FIFO.
 const LOGUART_THR: u32 = LOGUART_RBR;
 
+/// A receive overrun some read of the log UART's line status saw, kept until
+/// the receive side reports it. Reading the status clears the UART's own
+/// flag, and the log sender reads it before every burst: without this, a
+/// line sent while the button task was held off would clear the overrun the
+/// `virtual-panel` variant refuses a damaged line on.
+static LOGUART_OVERRUN: AtomicBool = AtomicBool::new(false);
+
+/// Read the log UART's line status, keeping any overrun it reports.
+#[inline(always)]
+fn loguart_status() -> u32 {
+    // SAFETY: the log UART's registers are always mapped on KM4, which
+    // prints through the same block. Reading the status clears only its
+    // error flags, and the overrun among them is kept below.
+    let status = unsafe { ptr::read_volatile(reg(k::WELLFED_LOGUART + LOGUART_LSR)) };
+    if status & k::WELLFED_LOGUART_OVERRUN != 0 {
+        LOGUART_OVERRUN.store(true, Ordering::Relaxed);
+    }
+    status
+}
+
 /// The oldest byte the log UART received, if any. Only the `virtual-panel`
 /// variant calls it: no other code in the image reads that FIFO (no vendor
 /// shell is linked, KM0 disables the log UART's interrupt, and KM4 holds
 /// its PMU wakelock, so KM0's tickless drain never runs).
 pub fn log_uart_receive() -> crate::LogUartReceive {
-    // SAFETY: the log UART's registers are always mapped on KM4, which
-    // prints through the same block. Reading the status clears only its
-    // error flags; reading the receive register pops one byte, and only
-    // after the status says one is there.
-    unsafe {
-        let status = ptr::read_volatile(reg(k::WELLFED_LOGUART + LOGUART_LSR));
-        if status & k::WELLFED_LOGUART_DATA_READY == 0 {
-            return crate::LogUartReceive::Empty;
-        }
-        let word = ptr::read_volatile(reg(k::WELLFED_LOGUART + LOGUART_RBR));
-        crate::LogUartReceive::Byte {
-            byte: word.to_le_bytes()[0],
-            overrun: status & k::WELLFED_LOGUART_OVERRUN != 0,
-        }
+    if loguart_status() & k::WELLFED_LOGUART_DATA_READY == 0 {
+        return crate::LogUartReceive::Empty;
+    }
+    // SAFETY: as for `loguart_status`; reading the receive register pops
+    // one byte, and only after the status says one is there.
+    let word = unsafe { ptr::read_volatile(reg(k::WELLFED_LOGUART + LOGUART_RBR)) };
+    crate::LogUartReceive::Byte {
+        byte: word.to_le_bytes()[0],
+        overrun: LOGUART_OVERRUN.swap(false, Ordering::Relaxed),
     }
 }
 
@@ -289,8 +324,9 @@ pub fn pad_control(pin: u32) -> u32 {
 /// Remove pad pull resistors explicitly; ROM GPIO_Init skips this for outputs.
 pub fn gpio_no_pull(pin: u32) {
     assert!(pin < 64);
+    let pad = u8::try_from(pin).expect("a pad number, checked below 64 above");
     // SAFETY: the pinned SDK routine, with plain-value arguments.
-    unsafe { raw::PAD_PullCtrl(pin as u8, k::WELLFED_GPIO_PUPD_NOPULL as u8) }
+    unsafe { raw::PAD_PullCtrl(pad, PUPD_NOPULL) }
 }
 
 /// # Safety
@@ -383,13 +419,20 @@ pub fn efuse_read8(address: u32) -> Option<u8> {
     let mut value = 0u8;
     let ok =
         // SAFETY: the pinned SDK routine, writing only through a live local.
-        unsafe { raw::EFUSERead8(0, address, &mut value, k::WELLFED_L25EOUTVOLTAGE as u8) } != 0;
+        unsafe { raw::EFUSERead8(0, address, &mut value, L25E_OUT_VOLTAGE) } != 0;
     ok.then_some(value)
 }
 
-pub fn pad_disable(pin: u8) {
-    // SAFETY: the pinned SDK routine, with plain-value arguments.
-    unsafe { raw::PAD_CMD(pin, k::WELLFED_DISABLE as u8) }
+/// Shut `pin`'s digital pad path down, for an analog input. A pin past
+/// the chip's 64 is no pad, and nothing is written.
+///
+/// # Safety
+/// The caller owns `pin`, an analog input whose digital path may go.
+pub unsafe fn pad_disable(pin: u32) {
+    if let Ok(pad @ 0..64) = u8::try_from(pin) {
+        // SAFETY: the pinned SDK routine, with plain-value arguments.
+        unsafe { raw::PAD_CMD(pad, SDK_DISABLE) }
+    }
 }
 
 /// Initialize the ADC with an empty conversion list (manual channel select).
@@ -467,18 +510,23 @@ pub fn gtimer_clock_enable() {
         raw::RCC_PeriphClockCmd(
             k::WELLFED_APB_GTIMER,
             k::WELLFED_APB_GTIMER_CLOCK,
-            k::WELLFED_ENABLE as u8,
+            SDK_ENABLE,
         )
     }
 }
 
-pub fn gpio_int_config(pin: u32, enabled: bool) {
+/// # Safety
+/// The caller owns `pin` and the port's interrupt.
+pub unsafe fn gpio_int_config(pin: u32, enabled: bool) {
     // SAFETY: the pinned SDK routine, with plain-value arguments.
     unsafe { raw::GPIO_INTConfig(pin, state(enabled)) }
 }
 
 /// Both-edge, active-low, debounced interrupt mode.
-pub fn gpio_int_mode(pin: u32, enabled: bool) {
+///
+/// # Safety
+/// As for [`gpio_int_config`].
+pub unsafe fn gpio_int_mode(pin: u32, enabled: bool) {
     // SAFETY: the pinned SDK routine, with plain-value arguments.
     unsafe {
         raw::GPIO_INTMode(
@@ -544,7 +592,7 @@ pub fn panic_outputs_safe() {
         )
     };
 
-    if PORT_A_HIGH | PORT_A_LOW != 0 {
+    if (PORT_A_HIGH, PORT_A_LOW) != (0, 0) {
         // SAFETY: Port A's data register; interrupts are masked above.
         unsafe { ptr::write_volatile(a, (ptr::read_volatile(a) | PORT_A_HIGH) & !PORT_A_LOW) };
     }
@@ -655,7 +703,11 @@ fn irqn(irq: Irq) -> raw::IRQn_Type {
 }
 
 /// `InterruptRegister`, i.e. the SDK's inline `irq_register_check`.
-pub fn irq_register(irq: Irq, isr: Isr, priority: u32) -> bool {
+///
+/// # Safety
+/// The caller owns `irq`'s line, and `isr` is sound to run as its handler,
+/// with a null context, from the moment it is registered.
+pub unsafe fn irq_register(irq: Irq, isr: Isr, priority: u32) -> bool {
     let priority = priority.min(k::WELLFED_MAX_IRQ_PRIORITY) << k::WELLFED_IRQ_PRIORITY_SHIFT;
     // SAFETY: the pinned SDK routine, with plain-value arguments.
     unsafe { raw::irq_register(Some(isr), irqn(irq), 0, priority) != 0 }
@@ -766,9 +818,7 @@ const _: () = assert!(k::WELLFED_SPI_FLASH_BASE == 0x0800_0000 && k::WELLFED_ERA
 /// if they lie inside it. On a board with no store the range is empty, so
 /// every sector is refused.
 fn storage_span(sector: u32, offset: u32, len: usize) -> Option<u32> {
-    let end = offset.checked_add(u32::try_from(len).ok()?)?;
-    ((0..STORAGE_SECTORS).contains(&sector) && end <= SECTOR_BYTES)
-        .then(|| STORAGE_OFFSET + sector * SECTOR_BYTES + offset)
+    crate::span::storage(sector, offset, len).map(|at| STORAGE_OFFSET + at)
 }
 
 /// Erases this boot, by storage sector, and of bank 1: the statistics'
@@ -818,23 +868,22 @@ pub unsafe fn storage_erase(sector: u32) -> bool {
 /// The HAL's flash hooks are armed, so the SDK routine takes the KM0 lease
 /// around the write, and the caller owns what it writes.
 pub unsafe fn storage_program(sector: u32, offset: u32, data: &[u8]) -> bool {
-    if storage_span(sector, offset, data.len()).is_none()
-        || !offset.is_multiple_of(4)
-        || !data.len().is_multiple_of(4)
-    {
+    let Some(address) = storage_span(sector, offset, data.len()) else {
+        return false;
+    };
+    let Ok(len) = u32::try_from(data.len()) else {
+        return false;
+    };
+    if !crate::span::aligned(offset, data.len()) {
         return false;
     }
 
-    let mut done = 0;
-    while done < data.len() {
-        let at = offset + done as u32;
-        let chunk = (256 - (at % 256) as usize).min(data.len() - done);
-        let mut page = [0u8; 256];
-        page[..chunk].copy_from_slice(&data[done..done + chunk]);
-        let address = STORAGE_OFFSET + sector * SECTOR_BYTES + at;
+    for program in crate::span::programs(address, len) {
+        let mut page = [0u8; crate::span::PROGRAM_PAGE as usize];
+        let bytes = program.from..program.from + program.len as usize;
+        page[..bytes.len()].copy_from_slice(&data[bytes]);
         // SAFETY: the SDK's RAM flash routine, inside the span checked above; the page buffer is live.
-        unsafe { raw::FLASH_TxData256BXIP(address, chunk as u32, page.as_mut_ptr()) };
-        done += chunk;
+        unsafe { raw::FLASH_TxData256BXIP(program.address, program.len, page.as_mut_ptr()) };
     }
 
     true
@@ -843,9 +892,8 @@ pub unsafe fn storage_program(sector: u32, offset: u32, data: &[u8]) -> bool {
 /// A bank-1 address for `sector`/`offset`/`len`, only while running from
 /// bank 0: the updater never writes the bank it executes from.
 fn bank1_span(sector: u32, offset: u32, len: usize) -> Option<u32> {
-    let end = offset.checked_add(u32::try_from(len).ok()?)?;
-    (flash_mmu_entry0().bank() == Some(0) && sector < super::BANK1_SECTORS && end <= SECTOR_BYTES)
-        .then(|| super::BANK1_OFFSET + sector * SECTOR_BYTES + offset)
+    crate::span::bank1(flash_mmu_entry0().bank(), sector, offset, len)
+        .map(|at| super::BANK1_OFFSET + at)
 }
 
 /// Erase one bank-1 sector through the hooked `FLASH_EraseXIP`.
@@ -869,23 +917,22 @@ pub unsafe fn bank1_erase(sector: u32) -> bool {
 /// The HAL's flash hooks are armed, so the SDK routine takes the KM0 lease
 /// around the write, and the caller owns what it writes.
 pub unsafe fn bank1_program(sector: u32, offset: u32, data: &[u8]) -> bool {
-    let Some(base) = bank1_span(sector, offset, data.len()) else {
+    let Some(address) = bank1_span(sector, offset, data.len()) else {
         return false;
     };
-
-    if !offset.is_multiple_of(4) || !data.len().is_multiple_of(4) {
+    let Ok(len) = u32::try_from(data.len()) else {
+        return false;
+    };
+    if !crate::span::aligned(offset, data.len()) {
         return false;
     }
 
-    let mut done = 0;
-    while done < data.len() {
-        let at = base + done as u32;
-        let chunk = (256 - (at % 256) as usize).min(data.len() - done);
-        let mut page = [0u8; 256];
-        page[..chunk].copy_from_slice(&data[done..done + chunk]);
+    for program in crate::span::programs(address, len) {
+        let mut page = [0u8; crate::span::PROGRAM_PAGE as usize];
+        let bytes = program.from..program.from + program.len as usize;
+        page[..bytes.len()].copy_from_slice(&data[bytes]);
         // SAFETY: the SDK's RAM flash routine, inside the span checked above; the page buffer is live.
-        unsafe { raw::FLASH_TxData256BXIP(at, chunk as u32, page.as_mut_ptr()) };
-        done += chunk;
+        unsafe { raw::FLASH_TxData256BXIP(program.address, program.len, page.as_mut_ptr()) };
     }
     true
 }
@@ -941,13 +988,7 @@ pub fn bank1_read_uncached(sector: u32, offset: u32, bytes: &mut [u8]) -> bool {
 /// Read bank 0 through the physical flash window, from either bank: the
 /// update path hashes the image there before giving way to it. Read only.
 pub fn bank0_read(offset: u32, bytes: &mut [u8]) -> bool {
-    let Some(end) = u32::try_from(bytes.len())
-        .ok()
-        .and_then(|len| offset.checked_add(len))
-    else {
-        return false;
-    };
-    if end > super::BANK1_OFFSET - super::BANK0_OFFSET {
+    if crate::span::bank0(offset, bytes.len()).is_none() {
         return false;
     }
     let base = k::WELLFED_SPI_FLASH_BASE + super::BANK0_OFFSET + offset;
@@ -970,8 +1011,8 @@ pub fn bank0_read(offset: u32, bytes: &mut [u8]) -> bool {
 pub unsafe fn bank1_give_way() -> bool {
     let read = |offset: u32| {
         let mut out = [0u8; 8];
-        for (i, byte) in out.iter_mut().enumerate() {
-            let at = k::WELLFED_SPI_FLASH_BASE + offset + i as u32;
+        let base = k::WELLFED_SPI_FLASH_BASE + offset;
+        for (byte, at) in out.iter_mut().zip(base..) {
             // SAFETY: inside the memory-mapped flash window, at an offset checked above.
             *byte = unsafe { ptr::read_volatile(at as usize as *const u8) };
         }
@@ -1053,7 +1094,10 @@ pub fn systick_ctrl() -> u32 {
     unsafe { ptr::read_volatile(reg(SYSTICK_CTRL)) }
 }
 
-pub fn set_systick_ctrl(value: u32) {
+/// # Safety
+/// The caller owns the scheduler's tick: a flash lease stops it while the
+/// peer is parked and restores it after.
+pub unsafe fn set_systick_ctrl(value: u32) {
     // SAFETY: a fixed register in the pinned SDK memory map.
     unsafe { ptr::write_volatile(reg(SYSTICK_CTRL), value) }
 }
@@ -1068,7 +1112,10 @@ pub fn hs_platform_para() -> u32 {
     unsafe { ptr::read_volatile(reg(k::WELLFED_SYSCTRL_HP + k::WELLFED_REG_HS_PLATFORM_PARA)) }
 }
 
-pub fn set_hs_platform_para(value: u32) {
+/// # Safety
+/// The caller is the watchdog's one owner: the register holds the scope
+/// of the watchdog's reset.
+pub unsafe fn set_hs_platform_para(value: u32) {
     // SAFETY: a fixed register in the pinned SDK memory map.
     unsafe {
         ptr::write_volatile(
@@ -1083,7 +1130,10 @@ pub fn lp_km0_ctrl() -> u32 {
     unsafe { ptr::read_volatile(reg(k::WELLFED_SYSCTRL_LP + k::WELLFED_REG_LP_KM0_CTRL)) }
 }
 
-pub fn set_lp_km0_ctrl(value: u32) {
+/// # Safety
+/// As for [`set_hs_platform_para`]: the register holds which cores the
+/// watchdog's reset reaches.
+pub unsafe fn set_lp_km0_ctrl(value: u32) {
     // SAFETY: a fixed register in the pinned SDK memory map.
     unsafe {
         ptr::write_volatile(
@@ -1400,8 +1450,8 @@ unsafe extern "C" {
 
 /// Start the codec's line output and its DMA ring (`example_entry.c`)
 /// at `rate_hz` (8, 16, 32 or 48 kHz); false for another rate, when already
-/// open or when no DMA channel was free.
-pub fn audio_open(rate_hz: u32) -> bool {
+/// open or when no DMA channel was free. Through [`crate::Audio::open`].
+pub(crate) fn audio_open(rate_hz: u32) -> bool {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_audio_open(rate_hz) != 0 }
 }
@@ -1441,7 +1491,8 @@ pub fn audio_underruns() -> u32 {
     unsafe { wellfed_audio_underruns_seen() }
 }
 
-pub fn audio_close() {
+/// Through [`crate::Audio::close`].
+pub(crate) fn audio_close() {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_audio_close() }
 }
@@ -1578,7 +1629,7 @@ pub fn mdns_recv(socket: i32, buffer: &mut [u8]) -> Datagram {
     match unsafe { wellfed_mdns_recv(socket, buffer.as_mut_ptr(), length, &mut ip, &mut port) } {
         0 => Datagram::None,
         n if n > 0 => Datagram::Got {
-            len: n as usize,
+            len: usize::try_from(n).map_or(0, |n| n.min(buffer.len())),
             ip,
             port: u16::try_from(port).unwrap_or(0),
         },
@@ -1831,10 +1882,7 @@ enum Burst {
 fn log_burst() -> Burst {
     let _guard = crate::IrqGuard::lock();
 
-    let status = reg(k::WELLFED_LOGUART + LOGUART_LSR);
-    // SAFETY: the log UART's registers are always mapped on KM4. Reading the
-    // status clears only its error flags, which nothing here acts on.
-    if unsafe { ptr::read_volatile(status) } & k::WELLFED_LOGUART_THR_EMPTY == 0 {
+    if loguart_status() & k::WELLFED_LOGUART_THR_EMPTY == 0 {
         return Burst::NoRoom;
     }
 
@@ -1872,8 +1920,7 @@ pub fn log_drain_open() {
 
 /// The drain's step: one burst if the UART has room; whether lines still
 /// wait, so that the caller comes back at the next tick. With none waiting it
-/// leaves the status register alone: reading it clears the receive overrun
-/// flag the `virtual-panel` variant refuses a line on.
+/// leaves the status register alone.
 #[inline(never)]
 pub fn log_drain() -> bool {
     if crate::LOG_RING.pending() {
@@ -1894,7 +1941,6 @@ pub fn log_flush() {
 /// A line of ours is partly on the wire. The print wraps in `example_entry.c`
 /// read it from RAM, and call [`wellfed_log_settle`] only when it is set, so
 /// a vendor print with XIP unavailable does not reach for flash.
-#[expect(non_upper_case_globals, reason = "a C symbol")]
 #[unsafe(no_mangle)]
 pub static wellfed_log_mid_line: AtomicBool = AtomicBool::new(false);
 
@@ -1964,6 +2010,9 @@ struct RawBleConfig {
     service: [u8; 16],
     control: [u8; 16],
 }
+
+#[cfg(feature = "bluetooth")]
+const _: () = assert!(size_of::<RawBleConfig>() == 40, "wellfed_ble.c's config");
 
 #[cfg(feature = "bluetooth")]
 unsafe extern "C" {

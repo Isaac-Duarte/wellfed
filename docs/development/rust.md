@@ -35,6 +35,8 @@ Every crate sets `license.workspace = true` and `publish.workspace = true`, and 
 | **Audited binaries.** Changing `repr(C)` types, `#[no_mangle]` symbols, the park/hook RAM code or flash record layouts reruns the link, RAM-park and stack audits and keeps their pins. | The pinned recovery path depends on them. | The image build's audits |
 | **Readable code.** Blank lines between a function's logical steps; comments and `//!` docs explain why (invariants, hardware or protocol constraints, ordering), not what the next line does. | The reader is usually debugging a bench run. | `cargo fmt` for layout; review for the rest |
 
+Code under `cfg(target_os = "none")`, the C and MMIO edge and the RAM park among it, compiles only for the target, so the host passes never see it. `make check-cross` lints the KM0 library for both boards, and every image build lints the crates it links for both cores, with the variant's features, before it builds them: the `[workspace.lints]` and `PRODUCTION_LINTS` rows hold there too, and a refusal stops the image.
+
 ### Errors
 
 - Library crates expose a `thiserror` enum; binaries and CLI glue use `anyhow` with context.

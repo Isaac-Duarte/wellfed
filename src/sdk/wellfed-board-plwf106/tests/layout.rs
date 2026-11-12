@@ -81,7 +81,7 @@ fn the_flash_writers_layout_keeps_the_same_stock_flash() {
         "/../../firmware/devices/plwf106/layout.json"
     );
     let layout: Layout = wellfed_formats::load(std::path::Path::new(path)).unwrap();
-    assert_eq!(layout.model, "PLWF106");
+    assert_eq!(layout.model.name(), "plwf106");
     assert_eq!(
         layout.candidate_payload_cap_bytes,
         u64::from(stock::IMAGE_FOOTPRINT)

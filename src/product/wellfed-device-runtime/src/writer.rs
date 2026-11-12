@@ -580,7 +580,8 @@ pub trait Product<F: FlashOps>: Default {
     /// With the device's: the stores a factory reset clears.
     fn open_cleared(&mut self);
 
-    /// After the handover: the stores it cleared, empty.
+    /// After the handover: the stores it cleared, read again from their
+    /// erased sectors (those [`Self::open_cleared`] opens).
     fn reopen_handed_over(&mut self);
 
     /// Publish each store's view; `armed` as the writer is.
@@ -1293,8 +1294,12 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         if matches!(record, Record::HandoverStopped { .. }) {
             network::handover_put_off();
         }
+        // The Open stage read these before the handover erased them. The
+        // event ring and the traces open after it, from erased sectors.
+        self.core.store = SettingsStore::default();
         self.core.net = NetStore::default();
-        self.core.net.open(Slots::new());
+        self.core.time = TimeStore::default();
+        self.core.open_cleared();
         self.product.reopen_handed_over();
         self.core.publish(&self.product);
         next(POLL_MS, Some(record))

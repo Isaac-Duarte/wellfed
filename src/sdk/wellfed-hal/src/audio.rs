@@ -13,9 +13,11 @@
 //! The meal call ([`request_call`]) plays the owner's clip from its
 //! storage sectors (`wellfed_core::clip`) the same way, a byte read at a
 //! time through the mapped flash: a read takes no lease. The settings
-//! writer alone writes those sectors, and it changes them only while no
-//! call plays ([`call_write_begin`]), so a call never reads a clip being
-//! rewritten.
+//! writer changes those sectors only while no call plays
+//! ([`call_write_begin`]), so a call never reads a clip being rewritten.
+//! A factory reset and the handover from stock erase them without that
+//! hold: each runs on a boot that starts with no clip ([`publish_call`])
+//! and publishes none until it is done.
 //!
 //! Nothing here touches the motor or the emitters or writes flash, and the
 //! device API only reaches [`request`] and [`request_call`], through the
@@ -32,11 +34,25 @@ pub use wellfed_core::tone::PlayResult;
 use wellfed_core::tone::{Player, SAMPLE_RATE, Tune};
 
 use crate::board::storage::CALL;
-use crate::sdk;
+use crate::sdk::{self, IrqGuard};
 use crate::{clock, settings};
 
 /// The amplifier enable (stock writes it HIGH around playback).
-pub const AMP_PIN: u32 = crate::board::pins::AMP;
+const AMP_PIN: u32 = crate::board::pins::AMP;
+const AMP_PORT: u32 = AMP_PIN >> 5;
+const AMP_MASK: u32 = 1 << (AMP_PIN & 31);
+
+// PB23 shares port B with the emitter, an indicator and the buttons, which
+// the supervision timer and the LED service write from other contexts. The
+// ROM's port writes and `GPIO_Init` read, modify and write the whole port,
+// so each write here is made under the interrupt lock, and the mask must
+// reach no pin another owner holds.
+const _: () = assert!(
+    AMP_PORT == 1
+        && AMP_MASK & crate::stopped::PB_MASK == 0
+        && AMP_MASK & crate::leds::PB_MASK == 0,
+    "the amplifier enable overlaps an emitter or indicator pin"
+);
 pub const POLL_MS: u32 = 20;
 /// Zero pages the amplifier gets to settle before the first note. 60 ms
 /// swallowed the 50 ms `key` tick whole while the 160 ms `alert` beeps were
@@ -93,16 +109,20 @@ pub fn call_write_end() {
 
 /// Open the codec at `rate_hz`, then enable the amplifier; false (amplifier
 /// off) when the codec would not open.
-pub fn open_output(rate_hz: u32) -> bool {
+fn open_output(audio: &mut sdk::Audio, rate_hz: u32) -> bool {
     if !AMP_READY.swap(true, Ordering::AcqRel) {
         // Configure the enable as an output, LOW, before its first use.
         amp(false);
+        let _guard = IrqGuard::lock();
         sdk::gpio_no_pull(AMP_PIN);
-        // SAFETY: the amplifier enable, which this module owns.
+        // SAFETY: the amplifier enable, which this module owns; `GPIO_Init`
+        // rewrites port B's direction, which the lock keeps from
+        // interleaving with another context's write.
         unsafe { sdk::gpio_init(AMP_PIN, true) };
-        amp(false);
+        // SAFETY: as above.
+        unsafe { sdk::gpio_port_write(AMP_PORT, AMP_MASK, 0) };
     }
-    if !sdk::audio_open(rate_hz) {
+    if !audio.open(rate_hz) {
         return false;
     }
     amp(true);
@@ -110,9 +130,9 @@ pub fn open_output(rate_hz: u32) -> bool {
 }
 
 /// Amplifier off first, then the codec.
-pub fn close_output() {
+fn close_output(audio: &mut sdk::Audio) {
     amp(false);
-    sdk::audio_close();
+    audio.close();
 }
 
 /// The device API's half: queue `tune` unless muted or busy.
@@ -164,6 +184,8 @@ fn local_ms() -> Option<i64> {
 }
 
 /// Forget everything (host tests).
+#[cfg(not(target_os = "none"))]
+#[doc(hidden)]
 pub fn reset() {
     SLOT.store(EMPTY, Ordering::Release);
     AMP_READY.store(false, Ordering::Release);
@@ -316,9 +338,12 @@ enum Stage {
     },
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Speaker {
     stage: Stage,
+    /// The codec ring's one handle, held from the open to the close, so no
+    /// page is filled against a ring another open reset.
+    audio: Option<sdk::Audio>,
     started: u32,
     /// The DMA's underrun count when streaming began, then the tune's own.
     underruns: u32,
@@ -331,8 +356,9 @@ fn next(delay_ms: u32, record: Option<Record>) -> Step {
 }
 
 fn amp(on: bool) {
-    // SAFETY: the amplifier enable, which this module owns.
-    unsafe { sdk::gpio_write_bit(AMP_PIN, on) };
+    let _guard = IrqGuard::lock();
+    // SAFETY: the amplifier enable, which this module owns (checked above).
+    unsafe { sdk::gpio_port_write(AMP_PORT, AMP_MASK, if on { AMP_MASK } else { 0 }) };
 }
 
 impl Speaker {
@@ -341,6 +367,7 @@ impl Speaker {
     pub const fn quiet() -> Self {
         Self {
             stage: Stage::Idle,
+            audio: None,
             started: 0,
             underruns: 0,
             length_ms: 0,
@@ -367,7 +394,11 @@ impl Speaker {
     }
 
     fn finish(&mut self, sound: Sound, drained: bool) -> Record {
-        close_output();
+        match self.audio.as_mut() {
+            Some(audio) => close_output(audio),
+            None => amp(false),
+        }
+        self.audio = None;
         if matches!(sound, Sound::Call { .. }) {
             CALL_HELD.store(HELD_FREE, Ordering::Release);
         }
@@ -455,7 +486,11 @@ impl Speaker {
                     let stage = ErrorStage::Clip;
                     return next(POLL_MS, Some(Record::Error { stage }));
                 };
-                if !open_output(SAMPLE_RATE) {
+                // The speaker is the ring's one user: no handle is out
+                // while it idles.
+                let audio = sdk::Audio::take()
+                    .and_then(|mut audio| open_output(&mut audio, SAMPLE_RATE).then_some(audio));
+                let Some(audio) = audio else {
                     if matches!(sound, Sound::Call { .. }) {
                         CALL_HELD.store(HELD_FREE, Ordering::Release);
                     }
@@ -466,7 +501,8 @@ impl Speaker {
                             stage: ErrorStage::Open,
                         }),
                     );
-                }
+                };
+                self.audio = Some(audio);
                 self.started = now;
                 self.length_ms = length_ms;
                 self.stage = Stage::Warm {
@@ -502,9 +538,7 @@ impl Speaker {
                     self.underruns = sdk::audio_underruns().wrapping_sub(self.underruns);
                     return next(POLL_MS, Some(self.finish(sound, false)));
                 }
-                // The slot makes this the only filler; a handle out elsewhere
-                // reads as a full ring.
-                if let Some(mut audio) = sdk::Audio::take() {
+                if let Some(audio) = self.audio.as_mut() {
                     while let Some(mut page) = audio.page() {
                         source.fill(&mut page[..]);
                         page.submit();

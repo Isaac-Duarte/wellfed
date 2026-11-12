@@ -64,6 +64,9 @@ pub mod pins {
     /// measured. The unpopulated radar footprint's pins are unknown and are
     /// not listed at all.
     pub const UNKNOWN_HIGH: [u32; 3] = [32 + 26, 32 + 23, 32 + 22];
+    /// No external ADC channel is established, so the ADC's opening shuts
+    /// no pad down: the chip's supply channel needs none.
+    pub const ADC_PADS: &[u32] = &[];
 
     /// The pin's bit in its port register.
     pub const fn bit(pin: u32) -> u32 {

@@ -170,7 +170,7 @@ mod stall {
 
     /// Spins with interrupts enabled, so the supervision timer and the
     /// watchdog feeder keep running while the loop does not.
-    pub fn step() {
+    pub(crate) fn step() {
         let done = usize::from(DONE.load(Ordering::Relaxed));
         let Some(&(at_ms, spin_ms)) = STALLS.get(done) else {
             return;
@@ -212,7 +212,7 @@ mod inject {
     /// The loop task's.
     static TRIGGER: Slot<Trigger> = Slot::filled(Trigger::new(FAULT));
 
-    pub fn step(feeding: &Feeding) {
+    pub(crate) fn step(feeding: &Feeding) {
         let Some(mut trigger) = TRIGGER.enter() else {
             return;
         };
@@ -264,13 +264,15 @@ mod inject {
         use wellfed_hal_feeder::inject;
         use wellfed_sdk::log;
 
+        use wellfed_feeder::feeder::Feeds;
+
         use crate::faults::Injection;
         use crate::feeding::Feeding;
 
         /// A hold is armed whose end is not yet logged.
         static WATCHING: AtomicBool = AtomicBool::new(false);
 
-        pub fn fail_stop(feeding: &Feeding, injection: &Injection) {
+        pub(crate) fn fail_stop(feeding: &Feeding, injection: &Injection) {
             inject::hold_stops(injection.ms());
             WATCHING.store(true, Ordering::Relaxed);
 
@@ -284,7 +286,7 @@ mod inject {
 
         /// Logs the hold's end, with how many STOP writes it skipped: the
         /// timer interrupt's retries, one a tick, and the owner's own.
-        pub fn report() {
+        pub(crate) fn report() {
             if !WATCHING.load(Ordering::Relaxed) {
                 return;
             }
@@ -338,7 +340,7 @@ mod show_faults {
         }
     }
 
-    pub fn step(feeding: &Feeding) {
+    pub(crate) fn step(feeding: &Feeding) {
         let Some(mut planner) = PLANNER.enter() else {
             return;
         };
@@ -380,6 +382,7 @@ mod show_faults {
 #[cfg(feature = "buzzer")]
 mod buzzer {
     use wellfed_core::{deadline_passed, until};
+    use wellfed_feeder::feeder::Feeds;
     use wellfed_sdk::hal::buzzer;
     use wellfed_sdk::hal::sdk;
     use wellfed_sdk::hal::supervision::config::SYSTIMER_HZ;
@@ -417,7 +420,7 @@ mod buzzer {
     });
 
     /// One step; returns the delay to the next.
-    pub fn step(feeding: &Feeding) -> u32 {
+    pub(crate) fn step(feeding: &Feeding) -> u32 {
         let Some(mut probe) = PROBE.enter() else {
             return ROUND_MS;
         };
@@ -551,7 +554,7 @@ mod held_stall {
     /// How often the task looks at the uptime before its stall.
     const POLL_MS: u32 = 1_000;
 
-    pub fn start() {
+    pub(crate) fn start() {
         let created = wellfed_sdk::spawn(stall_task);
         sdk::log(if created {
             c"PLHLD1 task created=1\r\n"
@@ -597,13 +600,13 @@ mod gap_probe {
     const PROBE_STACK_WORDS: u16 = 256;
 
     /// The loop task's passes; only the loop wakes it.
-    pub static LOOP: Probe = Probe::new(0);
+    pub(crate) static LOOP: Probe = Probe::new(0);
     /// The probe task's wakes; only the probe task wakes it.
     static HIGH: Probe = Probe::new(PERIOD_MS);
     /// The loop task's.
     static WINDOWS: Slot<Windows> = Slot::filled(Windows::new());
 
-    pub fn start() {
+    pub(crate) fn start() {
         let created = wellfed_sdk::spawn(gap_task);
         sdk::log(if created {
             c"PLGAP1 task created=1\r\n"
@@ -614,7 +617,7 @@ mod gap_probe {
 
     /// The loop asked for `delay_ms` before its next pass; logs a window
     /// once one has run.
-    pub fn end_pass(delay_ms: u32) {
+    pub(crate) fn end_pass(delay_ms: u32) {
         LOOP.asked(delay_ms);
         let Some(mut windows) = WINDOWS.enter() else {
             return;

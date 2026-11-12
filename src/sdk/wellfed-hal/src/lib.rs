@@ -17,7 +17,6 @@
 //! routines both cores link (flash park, hooks, peer, OTA trial) live in
 //! `wellfed-hal-common` and are re-exported here.
 #![cfg_attr(target_os = "none", no_std)]
-#![allow(clippy::missing_safety_doc)]
 
 // The ports' public types carry SDK types, so the SDK crate is part of this API.
 pub use wellfed_amebad_sys as sdk;

@@ -7,5 +7,8 @@ rust-version.workspace = true
 description = "The PLAF103 board: its pins and ADC channels, and the replacement firmware's storage sector map"
 publish.workspace = true
 
+[dev-dependencies]
+wellfed-formats.workspace = true
+
 [lints]
 workspace = true

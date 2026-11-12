@@ -128,18 +128,17 @@ fn context<M: Mmio>() -> bool {
     M::mask() == 1 && M::load(SYSTICK_CTRL) & SYSTICK_CONTROL_BITS == 0
 }
 
+/// The SYSTIMER count, sampled as the SDK's `RTIM_GetCount` does on both
+/// cores: twice, then once more on a change. The counter runs on the 32 kHz
+/// domain, so a single read can catch it mid-transition, and one torn
+/// sample that reads backward would fault a lease as CLOCK. Leaf code: no
+/// ROM call from the park.
 #[inline(always)]
 fn ticks<M: Mmio>() -> u32 {
-    if M::KM0 {
-        // Pinned KM0 ROM RTIM_GetCount reads twice, then once more on change.
-        // Keep that bounded asynchronous-counter sampling without calling ROM.
-        let first = M::load(TICKS);
-        let second = M::load(TICKS);
-        if first == second {
-            second
-        } else {
-            M::load(TICKS)
-        }
+    let first = M::load(TICKS);
+    let second = M::load(TICKS);
+    if first == second {
+        second
     } else {
         M::load(TICKS)
     }
@@ -454,6 +453,13 @@ pub unsafe fn owner_end<M: Mmio>(
 /// # Safety
 /// As for `wait`.
 #[inline(always)]
+#[cfg_attr(
+    target_os = "none",
+    expect(
+        clippy::extra_unused_type_parameters,
+        reason = "the RAM export is this core's hardware; the host runs `M`"
+    )
+)]
 pub unsafe fn ram_wait<M: Mmio>(t: *const ParkToken, tick_limit: u32, poll_limit: u32) -> bool {
     #[cfg(target_os = "none")]
     {
@@ -473,6 +479,13 @@ pub unsafe fn ram_wait<M: Mmio>(t: *const ParkToken, tick_limit: u32, poll_limit
 /// # Safety
 /// As for `owner_begin`.
 #[inline(always)]
+#[cfg_attr(
+    target_os = "none",
+    expect(
+        clippy::extra_unused_type_parameters,
+        reason = "the RAM export is this core's hardware; the host runs `M`"
+    )
+)]
 pub unsafe fn ram_owner_begin<M: Mmio>(
     t: *const ParkToken,
     channel: u32,
@@ -496,6 +509,13 @@ pub unsafe fn ram_owner_begin<M: Mmio>(
 /// # Safety
 /// As for `owner_end`.
 #[inline(always)]
+#[cfg_attr(
+    target_os = "none",
+    expect(
+        clippy::extra_unused_type_parameters,
+        reason = "the RAM export is this core's hardware; the host runs `M`"
+    )
+)]
 pub unsafe fn ram_owner_end<M: Mmio>(
     t: *const ParkToken,
     channel: u32,
@@ -607,16 +627,6 @@ pub fn answer<M: Mmio>(peer: u64, answered: &mut u64) -> u64 {
         }
         _ => 0,
     }
-}
-
-/// KM0 peer: republish READY for the answered authority with `peer`, as a
-/// rebooted peer would. Fault injection only.
-pub fn reannounce<M: Mmio>(peer: u64, answered: u64) -> bool {
-    if !M::KM0 || peer == 0 || answered == 0 {
-        return false;
-    }
-    publish_raw::<M>(&handshake(answered, peer), READY);
-    true
 }
 
 #[cfg(target_os = "none")]

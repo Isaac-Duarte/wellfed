@@ -5,18 +5,21 @@ use std::sync::MutexGuard;
 
 use wellfed_core::store::handover;
 use wellfed_device_runtime::keys::{self};
-use wellfed_device_runtime::network;
 use wellfed_device_runtime::writer::Identity;
-use wellfed_feeder_runtime::writer::Record;
+use wellfed_device_runtime::{events, network};
+use wellfed_feeder_runtime::writer::{Record, Writer};
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::rng;
 use wellfed_hal::sdk::fake;
 
 use crate::support::{
-    Armed, PROGRAM_FAILS, change, phone, reset_boot, sectors, start, step, storage_reset_first,
+    Armed, PROGRAM_FAILS, change, current, phone, reset_boot, sectors, start, step,
+    storage_reset_first,
 };
 
-/// A paired feeder on Wi-Fi with one more boot to go: the identity it has.
+/// A paired feeder on Wi-Fi with one more boot to go, holding its owner's
+/// settings, plans, history, a trace, a time zone and a meal-call
+/// recording: the identity it has.
 fn paired_with_wifi() -> (MutexGuard<'static, ()>, Provider, [u8; 32]) {
     use wellfed_device_api::mailbox::{PLANS, Plan, PlansChange, Weekdays};
     use wellfed_device_api::wifi::Credentials;
@@ -54,10 +57,57 @@ fn paired_with_wifi() -> (MutexGuard<'static, ()>, Provider, [u8; 32]) {
             .iter()
             .any(|&b| b != 0xff)
     );
+    owners_data(&mut writer, &mut provider);
     let phone = phone();
     change(&mut writer, &mut provider, phone);
+    assert!(events::record(Some(1_700_000_000), [1; 16]));
+    step(&mut writer, &mut provider);
     let (_, identity) = keys::identity_since(0).expect("the identity is published");
     (guard, provider, identity)
+}
+
+/// The owner's settings, time zone and meal call, saved, and a trace's
+/// bytes in its sectors.
+fn owners_data(writer: &mut Writer<Armed>, provider: &mut Provider) {
+    use wellfed_core::store::slot::crc32;
+    use wellfed_device_api::mailbox::{CallChange, NtpServer, SettingsFields, TimeSettings, Zone};
+    use wellfed_device_runtime::time;
+    use wellfed_feeder_runtime::call;
+    use wellfed_feeder_runtime::settings::SETTINGS;
+    use wellfed_hal::board::storage;
+
+    SETTINGS.request(SettingsFields {
+        volume: Some(7),
+        ..SettingsFields::default()
+    });
+    step(writer, provider);
+    time::change(TimeSettings {
+        zone: Some(Zone::parse(b"MST7MDT,M3.2.0,M11.1.0").unwrap()),
+        ntp: NtpServer::default(),
+    });
+    step(writer, provider);
+    let stream: Vec<u8> = (0..600u32).map(|i| (i * 7) as u8).collect();
+    call::change(CallChange::Start {
+        bytes: 600,
+        crc: crc32(&stream),
+    });
+    step(writer, provider);
+    assert_eq!(call::chunk(0, &stream[..512]), Ok(()));
+    step(writer, provider);
+    assert_eq!(call::chunk(512, &stream[512..]), Ok(()));
+    step(writer, provider);
+
+    let traces = storage::TRACES.first as usize * 0x1000;
+    fake::with(|h| h.storage[traces..traces + 64].fill(0x24));
+    for owners in [
+        storage::SETTINGS,
+        storage::FEEDER_SETTINGS,
+        storage::TIME,
+        storage::CALL,
+        storage::TRACES,
+    ] {
+        assert!(sectors(owners).iter().any(|&b| b != 0xff), "{owners:?}");
+    }
 }
 
 fn plant_handover() {
@@ -355,4 +405,47 @@ fn a_handover_waits_for_an_update_store_it_can_read() {
     let mut update = UpdateStore::default();
     update.open(Slots::new());
     assert_eq!(update.record().min_version, 0);
+}
+
+/// The feeder may have changed hands while it ran stock: the handover
+/// leaves none of the previous owner's settings, history, traces, time zone
+/// or meal call, and each store opens empty as on a first install.
+#[test]
+fn a_handover_clears_the_previous_owners_data() {
+    use wellfed_device_api::mailbox::{CallClip, CallResult, TimeSettings, TimeSettingsResult};
+    use wellfed_device_runtime::time;
+    use wellfed_feeder_runtime::call;
+    use wellfed_hal::board::storage;
+
+    let (_guard, mut provider, _) = paired_with_wifi();
+    let old_epoch = events::epoch().unwrap();
+    plant_handover();
+
+    let records = reset_boot(&mut provider, None);
+
+    assert!(
+        records.contains(&Record::HandoverDone { cleared: true }),
+        "{records:?}"
+    );
+    for cleared in [storage::TIME, storage::CALL, storage::FEEDER_SETTINGS] {
+        assert!(sectors(cleared).iter().all(|&b| b == 0xff), "{cleared:?}");
+    }
+    assert!(
+        !sectors(storage::TRACES).contains(&0x24),
+        "the trace is gone"
+    );
+    assert_eq!(current(), (true, true, 50, 0, true), "default settings");
+    let TimeSettingsResult::Current { view, .. } = time::current() else {
+        panic!("the time settings are published");
+    };
+    assert_eq!(
+        (view.settings, view.generation),
+        (TimeSettings::default(), 0)
+    );
+    let CallResult::Current { view, .. } = call::current() else {
+        panic!("the meal call is published");
+    };
+    assert_eq!(view.clip, CallClip::None);
+    assert_ne!(events::epoch(), Some(old_epoch), "a new history");
+    assert_eq!(events::last_seq(), None, "the history is empty");
 }
