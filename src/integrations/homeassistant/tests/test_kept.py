@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -37,7 +38,7 @@ async def _flushed(hass: HomeAssistant) -> None:
 
 def _a_pending() -> bridge.Pending:
     return bridge.Pending(
-        "01a0c450-6c00-7000-8000-000000000003", 3, 1790000002000, None, False, None
+        "01a0c450-6c00-7000-8000-000000000003", 3, 1790000002000, None, False, None, None
     )
 
 
@@ -49,14 +50,24 @@ async def test_version_1_reads_as_its_sample(
     await store.load()
 
     pending = [
-        (p.id, p.portions, p.sent_ms, p.after, p.reported, p.released_ms) for p in store.pending
+        (p.id, p.portions, p.sent_ms, p.after, p.reported, p.released_ms, p.token_id)
+        for p in store.pending
     ]
     assert pending == [
-        ("01a0c450-6c00-7000-8000-000000000001", 2, 1790000000000, 41, True, 1790000900000),
-        ("01a0c450-6c00-7000-8000-000000000002", 1, 1790000001000, None, False, None),
+        (
+            "01a0c450-6c00-7000-8000-000000000001",
+            2,
+            1790000000000,
+            41,
+            True,
+            1790000900000,
+            "01a0c450-6c00-7000-8000-0000000000aa",
+        ),
+        ("01a0c450-6c00-7000-8000-000000000002", 1, 1790000001000, None, False, None, None),
     ]
     assert store.answered == [41, 9]
-    assert store.leftover_key == bytes([1] * 32)
+    assert store.leftover_keys == [bytes([1] * 32), bytes([2] * 32)]
+    assert not store.unread
 
 
 async def test_a_newer_minor_reads_and_keeps_what_it_added(
@@ -86,6 +97,7 @@ async def test_a_newer_major_is_read_as_nothing_and_never_written(
     await store.load()
     assert store.pending == []
     assert "newer version of the integration" in caplog.text
+    assert store.unread, "a lost feed it holds may have run"
 
     store.add_pending(_a_pending())
     store.set_answered([7])
@@ -104,6 +116,7 @@ async def test_a_store_that_cannot_be_set_aside_is_never_saved_over(
     await store.load()
     assert store.pending == []
     assert "could not be set aside" in caplog.text
+    assert store.unread
 
     store.add_pending(_a_pending())
     await _flushed(hass)
@@ -133,7 +146,9 @@ def _with_pending(**changes: Any) -> dict[str, Any]:
         },
         {**SAMPLE["data"], "answered": [-1]},
         {**SAMPLE["data"], "answered": [2**32]},
-        {**SAMPLE["data"], "leftover_key": "not a key"},
+        _with_pending(token_id=7),
+        {**SAMPLE["data"], "leftover_keys": ["not a key"]},
+        {**SAMPLE["data"], "unread": "no"},
     ],
 )
 async def test_a_value_the_bridge_would_refuse_reads_as_another_shape(
@@ -146,8 +161,27 @@ async def test_a_value_the_bridge_would_refuse_reads_as_another_shape(
     store = kept(hass, ENTRY)
     await store.load()
 
-    assert store.pending == [] and store.answered == [] and store.leftover_key is None
+    assert store.pending == [] and store.answered == [] and store.leftover_keys == []
     assert "not in the shape it writes" in caplog.text
+    # A lost feed it held went with it: every feed waits.
+    assert store.unread
+
+
+async def test_a_store_set_aside_is_saved_unread_at_once(
+    hass: HomeAssistant, hass_storage: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = sys.modules["custom_components.wellfed.kept"]
+    monkeypatch.setattr(module, "set_aside", lambda path: f"{path}.bad-1")
+    hass_storage[KEY] = _stored(1, 1, {"pending": [{"id": "x"}]})
+    store = kept(hass, ENTRY)
+    await store.load()
+    await _flushed(hass)
+    # A restart finds the hold, not the file again.
+    assert hass_storage[KEY]["data"]["unread"] is True
+
+    store.bowls_checked()
+    await _flushed(hass)
+    assert hass_storage[KEY]["data"]["unread"] is False
 
 
 def test_set_aside_copies_to_the_next_free_name_and_never_replaces(tmp_path: Path) -> None:

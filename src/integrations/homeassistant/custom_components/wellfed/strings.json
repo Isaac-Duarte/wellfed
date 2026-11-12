@@ -120,7 +120,7 @@
       "invalid_invite": "That is not a Wellfed invite.",
       "join_unreachable": "Home Assistant could not reach the feeder, or it did not answer, so nothing was joined. Check the address and that the feeder is on, then try again.",
       "join_not_accepted": "The feeder did not accept the invite. It may have expired or been used already, so make a new one.",
-      "join_uncertain": "The feeder took the invite, but its answer was lost and Home Assistant could not check whether it joined. Submit again: Home Assistant asks the feeder first, and needs a new invite only if it did not join.",
+      "join_uncertain": "The feeder took the invite, but its answer was lost and Home Assistant could not check whether it joined. Submit again: Home Assistant asks the feeder first, and needs a new invite only if it did not join. If you stop here, a repair names the key so you can remove it.",
       "join_failed": "Joining the feeder failed. Try again.",
       "wrong_feeder": "That invite is for a different feeder.",
       "not_member_invite": "That invite gives more than a member's rights. Home Assistant joins only as a member, so it removed the key it was given. Make a member invite instead.",
@@ -379,7 +379,7 @@
       "message": "Not sent: that value is outside what the feeder accepts."
     },
     "not_sent_held": {
-      "message": "Not sent: another feed is still being answered, or one whose answer was lost may have run. No other feed goes until that feed settles or you allow feeding again from its repair. Check the bowl first."
+      "message": "Not sent: another feed is still being answered, a feed whose answer was lost may have run, or Home Assistant could not read its records. No feed goes until that is settled or you allow feeding again from its repair. Check the bowl first."
     },
     "refused_forbidden": {
       "message": "The feeder refused: this client's role may not do that."
@@ -442,7 +442,7 @@
   "issues": {
     "uncertain_feed": {
       "title": "A feed on feeder {feeder} may have run",
-      "description": "Home Assistant sent a feed and no answer came, so it may have run. It was not sent again. This clears itself once the feeder's history shows the feed. Check the bowl before feeding again."
+      "description": "Home Assistant sent a feed and no answer came, so it may have run. It was not sent again, and Home Assistant sends no other feed until it is settled. This clears itself once the feed's record turns up. Check the bowl."
     },
     "unknown_feed": {
       "title": "Feeding from Home Assistant is paused on feeder {feeder}",
@@ -450,7 +450,7 @@
         "step": {
           "confirm": {
             "title": "Allow feeding again on feeder {feeder}",
-            "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it. It may have run without being recorded, or never reached the feeder. So that the bowl is not filled twice, Home Assistant sends no other feed until that feed's record turns up, which clears this by itself.\n\nCheck the bowl first. Submitting allows feeding from Home Assistant again even though that feed may have run. If its record turns up within a week, Home Assistant still logs how it ended."
+            "description": "Home Assistant sent a feed of {portions} portions and no answer came, and no record of it has turned up, in the feeder's history or the server's journal. It may have run without being recorded, or never reached the feeder. So that the bowl is not filled twice, Home Assistant sends no other feed until that feed's record turns up, which clears this by itself.\n\nCheck the bowl first. Submitting allows feeding from Home Assistant again even though that feed may have run. If its record turns up within a week, Home Assistant still logs how it ended. Deleting this feeder's Wellfed entry also drops the hold."
           }
         },
         "abort": {
@@ -458,9 +458,23 @@
         }
       }
     },
-    "unknown_feed_server": {
-      "title": "Whether a feed on feeder {feeder} ran is not known",
-      "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it yet. It may have run without being recorded, or never reached the feeder. Check the bowl, then ignore this. Home Assistant feeds again meanwhile, and if the feed's record turns up within a week, this clears itself."
+    "store_unread": {
+      "title": "Feeding from Home Assistant is paused on feeder {feeder}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Allow feeding again on feeder {feeder}",
+            "description": "Home Assistant could not read what it had kept about feeder {feeder}, which may have included a feed whose answer was lost and that may have run. So that the bowl is not filled twice, Home Assistant sends no feed until you say the bowl is checked.\n\nCheck the bowl first. Submitting allows feeding from Home Assistant again. Deleting this feeder's Wellfed entry also drops the hold."
+          }
+        },
+        "abort": {
+          "not_loaded": "This feeder's Wellfed entry is not loaded. Try again once it is set up."
+        }
+      }
+    },
+    "hold_dropped": {
+      "title": "Check the bowl of feeder {feeder} before feeding",
+      "description": "A Wellfed entry for feeder {feeder} was deleted while Home Assistant held its feeds back after a feed that may have run, or after its records could not be read. The hold went with the entry, so a new entry for the feeder feeds at once. Check the bowl before feeding, then ignore this."
     },
     "update_feeder": {
       "title": "Feeder {feeder} runs older firmware",
@@ -489,6 +503,10 @@
     "leftover_key_left": {
       "title": "Remove Home Assistant's old key from feeder {feeder}",
       "description": "A Wellfed entry was deleted while feeder {feeder} may still list a key Home Assistant used before (the key starts {key}), and nothing checks it now. Remove the client named home-assistant whose key starts {key}, in the feeder's people in the app or with `wellfed revoke {key}`, then ignore this."
+    },
+    "leftover_key_unjoined": {
+      "title": "Remove a key Home Assistant may have added to feeder {feeder}",
+      "description": "Setting up feeder {feeder} stopped after a join whose answer was lost, so the feeder may list the key Home Assistant tried to add (it starts {key}). If it does, remove the client named home-assistant whose key starts {key}, in the feeder's people in the app or with `wellfed revoke {key}`, then ignore this."
     },
     "token_left": {
       "title": "Revoke Home Assistant's token on the Wellfed server",

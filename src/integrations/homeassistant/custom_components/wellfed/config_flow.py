@@ -72,6 +72,7 @@ from .const import (
     DOMAIN,
     ENTRY_MINOR_VERSION,
     ENTRY_VERSION,
+    LEFTOVER_KEY_UNJOINED,
     ROUTE_DIRECT,
     ROUTE_SERVER,
 )
@@ -99,48 +100,11 @@ class NotMember(Exception):
         self.removed = removed
 
 
-class Unsettled(Exception):
-    """A join the bridge could not check: the key `secret` may be enrolled on
-    the feeder `identity`."""
-
-    def __init__(self, secret: bytes, identity: bytes) -> None:
-        super().__init__()
-        self.secret = secret
-        self.identity = identity
-
-
-def _join(
-    invite: str, address: str | None, held: tuple[bytes, bytes] | None
-) -> tuple[bytes, bytes]:
-    """A key joined as a member with `invite`: its secret and the feeder.
-    `held` is a key an unchecked join may have enrolled on a feeder: when it
-    is this invite's feeder's and was enrolled, it is the key, and the invite
-    is not spent."""
-    identity = bridge.invite_feeder(invite)
-    if held is not None and held[1] == identity:
-        try:
-            enrolled = bridge.join_check(held[0], identity, address)
-        except bridge.JoinFailed as failed:
-            if failed.problem == bridge.JoinProblem.Uncertain:
-                raise Unsettled(*held) from failed
-            raise
-        if enrolled is not None:
-            return _member(held[0], identity, enrolled)
-
-    secret = bridge.generate_secret()
-    try:
-        joined = bridge.join(secret, invite, CLIENT_LABEL, address)
-    except bridge.JoinFailed as failed:
-        if failed.problem == bridge.JoinProblem.Uncertain:
-            raise Unsettled(secret, identity) from failed
-        raise
-    return _member(secret, identity, joined)
-
-
-def _member(secret: bytes, identity: bytes, joined: bridge.Joined) -> tuple[bytes, bytes]:
-    if joined.role != bridge.Role.Member:
-        raise NotMember(joined.removed)
-    return secret, identity
+def _member(redeemed: bridge.Redeemed) -> tuple[bytes, bytes]:
+    """The key an invite enrolled, and its feeder, kept only as a member."""
+    if redeemed.joined.role != bridge.Role.Member:
+        raise NotMember(redeemed.joined.removed)
+    return redeemed.secret, redeemed.feeder
 
 
 def _invite_feeder(invite: str) -> bytes | None:
@@ -209,13 +173,19 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         self._held: dict[str, Any] = {}
         self._held_step = ""
         self._confirmed = ""
-        # A key an unchecked join may have enrolled, and its feeder.
-        self._joining: tuple[bytes, bytes] | None = None
+        # A key an unchecked join may have enrolled, and its feeder: the
+        # bridge checks it before the next invite for that feeder is spent.
+        self._joining: bridge.HeldKey | None = None
 
     def async_remove(self) -> None:
-        """The flow ended: a token it made and no entry kept is revoked."""
+        """The flow ended: a token it made and no entry kept is revoked, and a key
+        an unchecked join may have enrolled is named in a repair, since nothing
+        will check it now."""
         if self._login is not None:
             self.hass.async_create_task(self._drop_login(), eager_start=False)
+        if (held := self._joining) is not None:
+            self._joining = None
+            key_left(self.hass, held.feeder, held.public_key(), LEFTOVER_KEY_UNJOINED)
 
     # Setup.
 
@@ -497,10 +467,11 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             removed = await self.hass.async_add_executor_job(
                 bridge.server_revoke_client, self._url, login.token, feeder.id, public
             )
-            store = kept(self.hass, entry.entry_id)
-            await store.load()
-            store.set_leftover_key(None if removed else public)
+            # Kept beside any key an earlier move left, each with its repair.
             if not removed:
+                store = kept(self.hass, entry.entry_id)
+                await store.load()
+                store.add_leftover_key(public)
                 key_left(self.hass, feeder.identity, public)
         return self.async_update_reload_and_abort(
             entry, data=_server_data(self._url, self._keep_login(), feeder)
@@ -522,24 +493,23 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         """Join once with `invite`; on failure, the error to show and `None`."""
         try:
             # An invite is single-use: this runs once, and a failure asks the
-            # owner for a new invite rather than retrying.
-            joined = await self.hass.async_add_executor_job(_join, invite, address, self._joining)
-        except Unsettled as unsettled:
-            self._joining = (unsettled.secret, unsettled.identity)
-            errors["base"] = "join_uncertain"
-            return None
-        except NotMember as refused:
-            errors["base"] = "not_member_invite" if refused.removed else "not_member_invite_kept"
+            # owner for a new invite rather than retrying. The bridge checks a
+            # key held from an unchecked join first, and says which is held.
+            redeemed = await self.hass.async_add_executor_job(
+                bridge.redeem, invite, CLIENT_LABEL, address, self._joining
+            )
         except bridge.JoinFailed as failed:
+            self._joining = failed.held
             errors["base"] = f"join_{failed.problem.key}"
+            return None
         except bridge.WellfedError:
             errors["base"] = "join_failed"
-        else:
-            self._joining = None
-            return joined
-        # The key held, if any, is not enrolled: the check said so, or a
-        # join answered for the invite.
-        self._joining = None
+            return None
+        self._joining = redeemed.held
+        try:
+            return _member(redeemed)
+        except NotMember as refused:
+            errors["base"] = "not_member_invite" if refused.removed else "not_member_invite_kept"
         return None
 
     async def _rejoin(

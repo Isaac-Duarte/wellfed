@@ -26,7 +26,7 @@ use wellfed_homeassistant::api::{
 };
 use wellfed_homeassistant::feeder::{Carried, Clocks, Feeder, Target};
 use wellfed_homeassistant::key::{
-    ClientKey, check_join, invite_feeder, join, join_member, join_problem,
+    ClientKey, Unsettled, check_join, invite_feeder, join, join_member, join_problem, redeem,
 };
 use wellfed_model::{
     Answer, ClientRole, FeederSettingsPatch, Generation, MealReminder, Op, PLANS, Plan, Pushed,
@@ -692,6 +692,7 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     let carried = Carried {
         pending: vec![older, sending],
         answered: Vec::new(),
+        unread: false,
     };
     let restarted =
         Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
@@ -743,10 +744,12 @@ fn a_lost_feed_a_week_old_is_forgotten() {
         after: Some(1),
         reported: true,
         released_ms: Some(i64::try_from(now_ms).unwrap() - week - 1000),
+        token_id: None,
     };
     let carried = Carried {
         pending: vec![old.clone()],
         answered: Vec::new(),
+        unread: false,
     };
     let feeder = Feeder::start(key, target, SHORT, carried).unwrap();
     let which = until(&feeder, |update| {
@@ -780,6 +783,7 @@ fn a_lost_feed_carried_across_a_restart_settles_in_the_next_session() {
     let carried = Carried {
         pending: vec![pending.clone()],
         answered: Vec::new(),
+        unread: false,
     };
     let restarted =
         Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
@@ -826,6 +830,7 @@ fn an_answered_feeds_fed_does_not_settle_a_lost_one_after_a_restart() {
     let carried = Carried {
         pending: vec![pending.clone()],
         answered: vec![b],
+        unread: false,
     };
     let restarted =
         Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
@@ -918,6 +923,7 @@ fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
     let carried = Carried {
         pending: vec![pending.clone()],
         answered,
+        unread: false,
     };
     let restarted =
         Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
@@ -1001,10 +1007,12 @@ fn a_lost_feed_holds_feeds_past_the_report_window_until_released() {
         after: Some(1),
         reported: true,
         released_ms: None,
+        token_id: None,
     };
     let carried = Carried {
         pending: vec![lost.clone()],
         answered: Vec::new(),
+        unread: false,
     };
     let feeder = Feeder::start(key, target, Clocks::DEFAULT, carried).unwrap();
     let again = until(&feeder, |update| {
@@ -1024,6 +1032,50 @@ fn listed(sim: &Threaded, key: [u8; 32]) -> bool {
         panic!("the owner lists the clients");
     };
     clients.iter().any(|client| client.key.0 == key)
+}
+
+/// A key an unchecked join left is checked before the next invite for its
+/// feeder is spent: enrolled, it is the key, and the invite stays unspent.
+/// One held for another feeder says nothing of this one and stays held.
+#[test]
+fn redeem_checks_a_held_key_before_it_spends_the_invite() {
+    let (sim, key) = joined();
+    let address = sim.address.to_string();
+    let held = Unsettled {
+        secret: key.secret(),
+        feeder: sim.identity,
+    };
+    let unspent = invite(&sim);
+    let redeemed = runtime()
+        .block_on(redeem(
+            &unspent,
+            "home-assistant",
+            Some(&address),
+            Some(held),
+        ))
+        .unwrap();
+    assert_eq!(redeemed.key.public(), key.public());
+    assert!(redeemed.held.is_none());
+
+    let elsewhere = Unsettled {
+        secret: [7; 32],
+        feeder: [9; 32],
+    };
+    let again = runtime()
+        .block_on(redeem(
+            &unspent,
+            "home-assistant",
+            Some(&address),
+            Some(elsewhere),
+        ))
+        .unwrap();
+    assert_ne!(
+        again.key.public(),
+        key.public(),
+        "the invite enrolled a new key"
+    );
+    assert!(listed(&sim, again.key.public()));
+    assert_eq!(again.held.map(|held| held.feeder), Some([9; 32]));
 }
 
 /// How many bytes a join sends the feeder, from one that went through the

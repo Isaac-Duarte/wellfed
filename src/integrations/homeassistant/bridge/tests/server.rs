@@ -4,9 +4,10 @@
 //!   lists the feeders and refuses a viewer;
 //! - the session announces the feeder through the server, its state, and
 //!   a feed answered with its number;
-//! - a feed whose answer is lost is uncertain, sent once, and settled from
-//!   the server's journal; one kept across a restart is settled by the
-//!   next session;
+//! - a feed whose answer is lost is uncertain, sent once, holds the next
+//!   feed until the server's journal settles it; one kept across a restart
+//!   is settled by the next session; one the direct route lost holds feeds
+//!   here until the owner releases it;
 //! - a revoked token stops the session, and every write after it is
 //!   refused unsent;
 //! - the alerts the server read before the session are shown and fire
@@ -19,7 +20,7 @@ use wellfed_homeassistant::api::{
     AlertKind, EventKind, NotSent, Pending, ServerProblem, Skew, Update, UpdateKind, WriteResult,
     Written,
 };
-use wellfed_homeassistant::feeder::Feeder;
+use wellfed_homeassistant::feeder::{Carried, Feeder};
 use wellfed_homeassistant::server::{self, Clocks, Refused, Target};
 use wellfed_model::{FeederSettingsPatch, Plan, Weekdays};
 use wellfed_server_client::Client;
@@ -103,10 +104,15 @@ fn resumed(
     let target = Target {
         url: server::address(&url(server)).unwrap(),
         token: login.token.clone(),
+        token_id: login.token_id.clone(),
         feeder: feeder.0,
         identity: feeder.1,
     };
-    Arc::new(Feeder::start_server(target, SHORT, pending).unwrap())
+    let carried = Carried {
+        pending,
+        ..Carried::default()
+    };
+    Arc::new(Feeder::start_server(target, SHORT, carried).unwrap())
 }
 
 /// Run a blocking call off the test's runtime, which serves the server.
@@ -301,6 +307,8 @@ fn a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_settled_by_the_journal
         let written = feed(&session, 1).await;
         assert_eq!(written.result, WriteResult::Uncertain);
         let pending = written.pending.expect("an uncertain feed is kept pending");
+        // A new feed under a new key would not be the journal's retry.
+        assert_eq!(feed(&session, 1).await, Written::not_sent(NotSent::Held));
 
         relay.cut();
         relay.resume();
@@ -312,6 +320,7 @@ fn a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_settled_by_the_journal
         let fed = settled.feed.expect("the feed the journal settled");
         assert_eq!((fed.feed, fed.requested, fed.completed), (1, 1, 1));
         assert_eq!(feeder::feeds(&flash), 1, "fed once, never resent");
+        assert_eq!(feed(&session, 1).await.result, WriteResult::Feeding);
         server.stop().await;
         sim.stop().await;
     });
@@ -345,6 +354,41 @@ fn a_lost_feed_carried_across_a_restart_is_settled_from_the_journal() {
         assert_eq!(settled.pending, Some(pending));
         assert_eq!(settled.feed.map(|fed| fed.completed), Some(1));
         assert_eq!(feeder::feeds(&flash), 1, "fed once, never resent");
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// An entry moved from the direct route while a feed's answer was lost:
+/// the server route cannot settle that feed, so it holds every feed until
+/// the owner releases it through its repair, which it asks for at once.
+#[test]
+fn a_feed_the_direct_route_lost_holds_the_server_route_until_released() {
+    local(async {
+        let sim = feeder::start().await;
+        let (server, owner) = started(TestServer::start().await).await;
+        let kitchen = adopt(&owner, &sim, sim.address.to_string()).await;
+        let login = ada(&server).await;
+        let lost = Pending {
+            id: "a-direct-feed".into(),
+            portions: 1,
+            sent_ms: 1_000,
+            after: Some(1),
+            reported: false,
+            released_ms: None,
+            token_id: None,
+        };
+        let session = resumed(&server, &login, kitchen, vec![lost.clone()]);
+        let asked = next(&session, UpdateKind::StillUnknown).await;
+        assert_eq!(asked.pending.as_ref().map(|p| p.reported), Some(true));
+        next(&session, UpdateKind::Connected).await;
+        settled_reads(&session).await;
+
+        assert_eq!(feed(&session, 1).await, Written::not_sent(NotSent::Held));
+        session.release(lost.id.clone());
+        let released = next(&session, UpdateKind::Released).await;
+        assert!(released.pending.is_some_and(|p| p.released_ms.is_some()));
+        assert_eq!(feed(&session, 1).await.result, WriteResult::Feeding);
         server.stop().await;
         sim.stop().await;
     });

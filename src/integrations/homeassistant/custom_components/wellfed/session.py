@@ -58,13 +58,14 @@ RECENT_EVENTS = 20
 
 # A feed whose answer was lost, until its `Fed` event settles it.
 UNCERTAIN_ISSUE = "uncertain_feed"
-# Directly: a lost feed the feeder's history holds no record of, which holds
-# new feeds back until it settles or the owner releases it through this
-# repair.
+# A lost feed with no record of it yet, on either route, which holds new
+# feeds back until it settles or the owner releases it through this repair.
 UNKNOWN_ISSUE = "unknown_feed"
-# Through the owner's server: a lost feed the journal holds no record of.
-# Nothing is held, so the owner only checks the bowl.
-UNKNOWN_SERVER_ISSUE = "unknown_feed_server"
+# The entry's store did not read: every feed waits until the owner says,
+# through this repair, that the bowls are checked.
+STORE_UNREAD_ISSUE = "store_unread"
+# An entry was deleted while it held feeds: the hold went with it.
+HOLD_DROPPED_ISSUE = "hold_dropped"
 # A feeder of an older API revision: what it lacks needs it updated.
 UPDATE_FEEDER_ISSUE = "update_feeder"
 # A feeder of a newer API revision: what it added needs this integration updated.
@@ -121,17 +122,29 @@ def event_data(identity: bytes, event: bridge.Event) -> dict[str, object]:
 
 
 def open_feeder(
-    data: Mapping[str, Any], pending: list[bridge.Pending], answered: list[int]
+    data: Mapping[str, Any], pending: list[bridge.Pending], answered: list[int], unread: bool
 ) -> bridge.Feeder:
     """The bridge's session for an entry's data, on the route it names, handed
-    the feeds the last run left unsettled."""
+    the feeds the last run left unsettled on either route, and whether the
+    store did not read."""
     identity = bytes.fromhex(data[CONF_IDENTITY])
     if data[CONF_ROUTE] == ROUTE_SERVER:
         return bridge.Feeder.server(
-            data[CONF_URL], data[CONF_TOKEN], data[CONF_FEEDER_ID], identity, pending
+            data[CONF_URL],
+            data[CONF_TOKEN],
+            data[CONF_TOKEN_ID],
+            data[CONF_FEEDER_ID],
+            identity,
+            pending,
+            unread,
         )
     return bridge.Feeder(
-        bytes.fromhex(data[CONF_SECRET]), identity, data.get(CONF_ADDRESS), pending, answered
+        bytes.fromhex(data[CONF_SECRET]),
+        identity,
+        data.get(CONF_ADDRESS),
+        pending,
+        answered,
+        unread,
     )
 
 
@@ -165,6 +178,28 @@ def token_left(hass: HomeAssistant, url: str, token_id: str) -> None:
     )
 
 
+def hold_dropped(hass: HomeAssistant, identity: bytes) -> None:
+    """An entry was deleted while it held feeds after a feed that may have run, or
+    after its store did not read: a new entry for the feeder starts without that
+    hold, so the owner checks the bowl first. Outlives the entry; the owner
+    dismisses it."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{HOLD_DROPPED_ISSUE}_{identity.hex()}",
+        is_fixable=False,
+        is_persistent=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=HOLD_DROPPED_ISSUE,
+        translation_placeholders={"feeder": identity.hex()[:8]},
+    )
+
+
+def leftover_issue(identity: bytes, key: bytes) -> str:
+    """The id of the repair for `key` left on the feeder `identity`: one per key."""
+    return f"{LEFTOVER_KEY_ISSUE}_{identity.hex()}_{key.hex()[:16]}"
+
+
 def key_left(
     hass: HomeAssistant, identity: bytes, key: bytes, translation_key: str = LEFTOVER_KEY_ISSUE
 ) -> None:
@@ -173,7 +208,7 @@ def key_left(
     ir.async_create_issue(
         hass,
         DOMAIN,
-        f"{LEFTOVER_KEY_ISSUE}_{identity.hex()}",
+        leftover_issue(identity, key),
         is_fixable=False,
         is_persistent=True,
         severity=ir.IssueSeverity.WARNING,
@@ -221,14 +256,11 @@ class FeederSession:
         self._event_listeners: list[Callable[[bridge.Event], None]] = []
         # The feeder's open alerts, and who hears each that opens or clears.
         self.alerts: bridge.Alerts | None = None
-        # Whether a lost feed holds new feeds back until it settles or the
-        # owner releases it, as the bridge's route says: directly.
-        self._holds = feeder.holds_lost_feeds
         # The lost feeds not yet judged, by id: announced pending and not yet
         # reported still unknown, settled or forgotten.
         self._holding: set[str] = set()
-        # Directly, the lost feeds reported still unknown that still hold new
-        # feeds back, by id: until they settle or the owner releases them.
+        # The lost feeds reported still unknown that still hold new feeds
+        # back, by id: until they settle or the owner releases them.
         self._unknown: set[str] = set()
         self._alert_listeners: list[Callable[[bridge.Alerts], None]] = []
         self._ready = asyncio.Event()
@@ -259,6 +291,10 @@ class FeederSession:
         # left that still holds feeds back, and the repairs follow those.
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
+        if self.kept.unread:
+            self._issue(STORE_UNREAD_ISSUE, ir.IssueSeverity.WARNING, {}, fixable=True)
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(STORE_UNREAD_ISSUE))
         self._pump = threading.Thread(target=self._run, name="wellfed-pump", daemon=True)
         self._pump.start()
 
@@ -482,7 +518,9 @@ class FeederSession:
                 )
             self._settled(update.pending)
         elif kind == bridge.UpdateKind.SettledUnfed:
-            _LOGGER.info("The feed whose answer was lost was refused after all: nothing ran")
+            _LOGGER.info(
+                "The feed whose answer was lost was refused, or never sent, after all: nothing ran"
+            )
             self._settled(update.pending)
         elif kind == bridge.UpdateKind.StillUnknown:
             _LOGGER.warning(
@@ -495,12 +533,14 @@ class FeederSession:
                 self.kept.mark_reported(pending)
                 self._holding.discard(pending.id)
             self._uncertain_issue()
-            placeholders = {"portions": str(update.portions)}
-            if not self._holds:
-                self._issue(UNKNOWN_SERVER_ISSUE, ir.IssueSeverity.WARNING, placeholders)
-            elif pending is not None and pending.released_ms is None:
+            if pending is not None and pending.released_ms is None:
                 self._unknown.add(pending.id)
+                placeholders = {"portions": str(update.portions)}
                 self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, placeholders, fixable=True)
+        elif kind == bridge.UpdateKind.BowlsChecked:
+            _LOGGER.info("The bowls are checked after the store did not read: feeds go again")
+            self.kept.bowls_checked()
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(STORE_UNREAD_ISSUE))
         elif kind == bridge.UpdateKind.Released and update.pending is not None:
             _LOGGER.info(
                 "A feed of %s portions whose answer was lost was released: feeds go again",
@@ -530,8 +570,6 @@ class FeederSession:
             self._unknown.discard(pending.id)
         self._uncertain_issue()
         self._unknown_issue()
-        if not self.kept.pending:
-            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_SERVER_ISSUE))
 
     @callback
     def _cleared(self, pending: bridge.Pending | None) -> None:
@@ -545,8 +583,8 @@ class FeederSession:
 
     @callback
     def _unknown_issue(self) -> None:
-        """Directly, the repair that releases lost feeds goes once none holds
-        new feeds back."""
+        """The repair that releases lost feeds goes once none holds new feeds
+        back."""
         if not self._unknown:
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
 
@@ -560,6 +598,15 @@ class FeederSession:
             return
         for pending_id in self._unknown:
             self._feeder.release(pending_id)
+
+    @callback
+    def check_bowls(self) -> None:
+        """The owner checked the bowls after the store did not read: feeds go
+        again once the bridge confirms it with a `BowlsChecked` update, which
+        clears the store's flag; until then, and across a restart before it
+        does, they still wait."""
+        if self._feeder is not None:
+            self._feeder.bowls_checked()
 
     @callback
     def _uncertain_issue(self) -> None:
@@ -617,7 +664,7 @@ class FeederSession:
             DOMAIN,
             self._issue_id(issue),
             is_fixable=fixable,
-            data={"identity": self.identity.hex()} if fixable else None,
+            data={"identity": self.identity.hex(), "repair": issue} if fixable else None,
             is_persistent=False,
             severity=severity,
             translation_key=issue,

@@ -54,7 +54,7 @@ from custom_components.wellfed.const import (
     ROUTE_SERVER,
 )
 from custom_components.wellfed.kept import kept
-from custom_components.wellfed.session import key_left
+from custom_components.wellfed.session import key_left, leftover_issue
 import wellfed_homeassistant as bridge
 
 from . import fake
@@ -70,6 +70,8 @@ class _Make:
         self.routes: list[str] = []
         # What each session was handed of the last run's unsettled feeds.
         self.handed: list[tuple[list[str], list[int]]] = []
+        # Whether each session was handed an unread store.
+        self.unread: list[bool] = []
 
     def __call__(
         self,
@@ -78,7 +80,9 @@ class _Make:
         address: str | None,
         pending: list[bridge.Pending],
         answered: list[int],
+        unread: bool = False,
     ) -> fake.FakeFeeder:
+        self.unread.append(unread)
         self.routes.append(ROUTE_DIRECT)
         self.handed.append(([p.id for p in pending], answered))
         return self.scripted
@@ -87,10 +91,13 @@ class _Make:
         self,
         url: str,
         token: str,
+        token_id: str,
         feeder_id: str,
         identity: bytes,
         pending: list[bridge.Pending],
+        unread: bool = False,
     ) -> fake.FakeFeeder:
+        self.unread.append(unread)
         self.routes.append(ROUTE_SERVER)
         self.handed.append(([p.id for p in pending], []))
         return self.scripted
@@ -367,8 +374,27 @@ async def test_a_store_in_another_shape_is_set_aside_and_setup_goes_on(
     feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.runtime_data.kept.pending == []
+    session = entry.runtime_data
+    assert session.kept.pending == []
     assert "not in the shape it writes" in caplog.text
+
+    # A lost feed it kept went with it: every feed waits until the owner
+    # checks the bowls through the repair.
+    assert cast(_Make, bridge.Feeder).unread == [True]
+    unread = _issue(hass, "store_unread")
+    assert unread is not None and unread.is_fixable
+    assert await async_setup_component(hass, "repairs", {})
+    flows = hass.data["repairs"]["flow_manager"]
+    shown = await flows.async_init(DOMAIN, context={"issue_id": unread.issue_id})
+    assert ("bowls_checked", ()) not in feeder.calls, "only once submitted"
+    done = await flows.async_configure(shown["flow_id"], {})
+    assert done["type"] == FlowResultType.CREATE_ENTRY
+    assert ("bowls_checked", ()) in feeder.calls
+    assert session.kept.unread, "until the bridge confirms it"
+
+    feeder.push(fake.update(bridge.UpdateKind.BowlsChecked))
+    await _until(hass, lambda: not session.kept.unread)
+    assert _issue(hass, "store_unread") is None
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
@@ -422,7 +448,7 @@ async def test_the_repair_releases_a_lost_feed_and_says_it_may_have_run(
 
     # The bridge confirms it: kept released, so the next session does not
     # hold on it, and still waited on for its record.
-    released = bridge.Pending(lost.id, 2, lost.sent_ms, None, True, 1_793_794_000_000)
+    released = bridge.Pending(lost.id, 2, lost.sent_ms, None, True, 1_793_794_000_000, None)
     feeder.push(fake.update(bridge.UpdateKind.Released, portions=2, pending=released))
     await _until(hass, lambda: [p.released_ms for p in session.kept.pending] == [1_793_794_000_000])
     assert _issue(hass, "unknown_feed") is None
@@ -452,27 +478,43 @@ async def test_the_repair_on_an_unloaded_entry_releases_nothing(
     assert ("release", (lost.id,)) not in feeder.calls
 
 
-async def test_through_the_server_a_lost_feed_holds_nothing_and_has_no_release(
+async def test_through_the_server_a_lost_feed_holds_until_released_too(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
-    feeder.holds_lost_feeds = False
     entry = await _ready(hass, feeder, SERVER_DATA)
-    session = entry.runtime_data
     lost = fake.pending(portions=2)
     feeder.push(
         fake.update(bridge.UpdateKind.Pending, pending=lost),
         fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost),
     )
-    await _until(hass, lambda: _issue(hass, "unknown_feed_server") is not None)
-    unknown = _issue(hass, "unknown_feed_server")
-    assert unknown is not None and not unknown.is_fixable
-    assert _issue(hass, "unknown_feed") is None
-
-    feeder.push(fake.update(bridge.UpdateKind.Forgotten, portions=2, pending=lost))
-    await _until(hass, lambda: session.kept.pending == [])
-    # Still unknown: the owner's repair stays until they ignore it.
-    assert _issue(hass, "unknown_feed_server") is not None
+    await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
+    unknown = _issue(hass, "unknown_feed")
+    assert unknown is not None and unknown.is_fixable
+    assert await async_setup_component(hass, "repairs", {})
+    flows = hass.data["repairs"]["flow_manager"]
+    shown = await flows.async_init(DOMAIN, context={"issue_id": unknown.issue_id})
+    done = await flows.async_configure(shown["flow_id"], {})
+    assert done["type"] == FlowResultType.CREATE_ENTRY
+    assert ("release", (lost.id,)) in feeder.calls
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_deleting_an_entry_that_holds_feeds_says_the_hold_went(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    lost = fake.pending(portions=2)
+    feeder.push(
+        fake.update(bridge.UpdateKind.Pending, pending=lost),
+        fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost),
+    )
+    await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
+
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    # Its own repairs go with it; one outlives it to say the hold went.
+    assert _issue(hass, "unknown_feed") is None
+    dropped = _issue(hass, "hold_dropped")
+    assert dropped is not None and dropped.is_persistent and not dropped.is_fixable
 
 
 async def test_a_lost_feed_reported_unknown_is_settled_by_a_late_record(
@@ -910,46 +952,44 @@ async def test_a_token_the_server_could_not_revoke_is_named_in_a_repair(
     assert issue.translation_placeholders == {"url": SERVER_DATA[CONF_URL], "token_id": token_id}
 
 
-async def test_a_leftover_key_clears_once_gone_and_with_its_entry(
+def _leftover(hass: HomeAssistant, key: bytes) -> ir.IssueEntry | None:
+    return ir.async_get(hass).async_get_issue(DOMAIN, leftover_issue(fake.IDENTITY, key))
+
+
+async def test_each_leftover_key_keeps_its_own_repair_until_it_is_gone(
     hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    listed = [True]
+    first, second = bytes(32), bytes([5] * 32)
+    still = {first, second}
     monkeypatch.setattr(
-        bridge, "server_client_listed", lambda url, token, feeder_id, key: listed[0]
+        bridge, "server_client_listed", lambda url, token, feeder_id, key: key in still
     )
     monkeypatch.setattr(bridge, "server_revoke_token", lambda url, token, token_id: None)
 
-    def leftover() -> None:
-        ir.async_create_issue(
-            hass,
-            DOMAIN,
-            f"leftover_key_{fake.IDENTITY.hex()}",
-            is_fixable=False,
-            is_persistent=True,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key="leftover_key",
-            translation_placeholders={"feeder": "f", "key": "k"},
-        )
-
+    # Two moves to the server each left a key: neither replaces the other.
     entry = _entry(hass, SERVER_DATA)
     store = kept(hass, entry.entry_id)
     await store.load()
-    store.set_leftover_key(bytes(32))
-    leftover()
+    for key in (first, second):
+        store.add_leftover_key(key)
+        key_left(hass, fake.IDENTITY, key)
     feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    # The feeder still lists it.
-    assert _issue(hass, "leftover_key") is not None
+    assert _leftover(hass, first) is not None and _leftover(hass, second) is not None
 
-    listed[0] = False
+    still.discard(first)
     feeder.push(fake.connected())
-    await _until(hass, lambda: _issue(hass, "leftover_key") is None)
-    assert store.leftover_key is None
+    await _until(hass, lambda: _leftover(hass, first) is None)
+    assert store.leftover_keys == [second]
+    assert _leftover(hass, second) is not None
 
-    leftover()
+    # Deleted while the second may still be listed: its repair stays,
+    # worded for no entry to check it.
     assert await hass.config_entries.async_remove(entry.entry_id)
-    assert _issue(hass, "leftover_key") is None
+    left = _leftover(hass, second)
+    assert left is not None and left.translation_key == "leftover_key_left"
+    assert _leftover(hass, first) is None
 
 
 async def test_a_leftover_key_is_checked_directly_and_outlives_its_entry(
@@ -969,19 +1009,19 @@ async def test_a_leftover_key_is_checked_directly_and_outlives_its_entry(
     entry = _entry(hass, DIRECT_DATA)
     store = kept(hass, entry.entry_id)
     await store.load()
-    store.set_leftover_key(old)
+    store.add_leftover_key(old)
     key_left(hass, fake.IDENTITY, old)
     feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
     assert await hass.config_entries.async_setup(entry.entry_id)
     await _until(hass, lambda: len(asked) == 1)
     # Asked with the key in use now, about the one left over.
     assert asked[0] == (fake.SECRET, fake.IDENTITY, old, DIRECT_DATA[CONF_ADDRESS])
-    assert _issue(hass, "leftover_key") is not None
+    assert _leftover(hass, old) is not None
 
     # Deleted while the feeder may still list it: the repair stays, worded
     # for no entry to check it.
     assert await hass.config_entries.async_remove(entry.entry_id)
-    issue = _issue(hass, "leftover_key")
+    issue = _leftover(hass, old)
     assert issue is not None and issue.is_persistent
     assert issue.translation_key == "leftover_key_left"
     assert issue.translation_placeholders == {

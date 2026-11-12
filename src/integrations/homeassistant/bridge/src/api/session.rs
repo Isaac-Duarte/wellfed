@@ -38,6 +38,12 @@ pub struct Pending {
     /// settles or is released, however long that takes; once released it
     /// is kept open to a late end for a week from then.
     pub released_ms: Option<i64>,
+    /// Through the owner's server, the id of the token it went under, which
+    /// names the journal that answers for it: a token belongs to one server
+    /// and one account, and only that journal's lack of it says it was
+    /// never sent. `None` for a direct feed. A route holds on the other
+    /// route's lost feeds without settling them.
+    pub token_id: Option<String>,
 }
 
 /// How a write ended.
@@ -291,6 +297,12 @@ impl Update {
             pending: Some(pending),
             ..Self::kind(UpdateKind::Cleared)
         }
+    }
+
+    /// The owner checked the bowls after the integration's store did not
+    /// read: feeds go again.
+    pub(crate) fn bowls_checked() -> Self {
+        Self::kind(UpdateKind::BowlsChecked)
     }
 
     /// The owner released a lost feed: it holds new feeds back no longer.

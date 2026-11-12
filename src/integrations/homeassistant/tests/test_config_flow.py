@@ -18,6 +18,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import pytest
 
@@ -27,6 +28,7 @@ from custom_components.wellfed.const import (
     CONF_SECRET,
     DOMAIN,
 )
+from custom_components.wellfed.session import leftover_issue
 import wellfed_homeassistant as bridge
 
 from .conftest import Simulator
@@ -217,22 +219,30 @@ async def test_an_owner_invite_is_refused_and_its_key_removed(
     assert await hass.config_entries.async_unload(result["result"].entry_id)
 
 
+def _lose_the_answer(monkeypatch: pytest.MonkeyPatch, joined: list[bytes]) -> None:
+    """The feeder enrolls the key; its answer, and the session that would
+    check it, are lost, so the bridge holds the key for the next try."""
+    real_redeem = bridge.redeem
+
+    def lost_answer(
+        invite: str,
+        label: str,
+        address: str | None = None,
+        held: bridge.HeldKey | None = None,
+    ) -> bridge.Redeemed:
+        redeemed = real_redeem(invite, label, address, held)
+        joined.append(redeemed.secret)
+        unchecked = bridge.HeldKey(redeemed.secret, redeemed.feeder)
+        raise bridge.JoinFailed(bridge.JoinProblem.Uncertain, unchecked, "the answer was lost")
+
+    monkeypatch.setattr(bridge, "redeem", lost_answer)
+
+
 async def test_a_join_left_unchecked_is_checked_before_another_invite(
     hass: HomeAssistant, simulator: Simulator, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     joined: list[bytes] = []
-    real_join = bridge.join
-
-    def lost_answer(
-        secret: bytes, invite: str, label: str, address: str | None = None
-    ) -> bridge.Joined:
-        # The feeder enrolls the key; its answer, and the session that
-        # would check it, are lost.
-        real_join(secret, invite, label, address)
-        joined.append(secret)
-        raise bridge.JoinFailed(bridge.JoinProblem.Uncertain, "the join's answer was lost")
-
-    monkeypatch.setattr(bridge, "join", lost_answer)
+    _lose_the_answer(monkeypatch, joined)
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"next_step_id": "direct"}
@@ -259,3 +269,29 @@ async def test_a_join_left_unchecked_is_checked_before_another_invite(
     assert bridge.public_key(joined[0]).hex() in clients
     await hass.async_block_till_done()
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_setup_left_after_an_unchecked_join_names_the_key_in_a_repair(
+    hass: HomeAssistant, simulator: Simulator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    joined: list[bytes] = []
+    _lose_the_answer(monkeypatch, joined)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "direct"}
+    )
+    invite = simulator.invite()
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_INVITE: invite, CONF_ADDRESS: simulator.address}
+    )
+    assert result["errors"] == {"base": "join_uncertain"}
+
+    # The owner walks away: nothing will check the key now.
+    hass.config_entries.flow.async_abort(result["flow_id"])
+    await hass.async_block_till_done()
+    feeder = bridge.invite_feeder(invite)
+    issue = ir.async_get(hass).async_get_issue(
+        DOMAIN, leftover_issue(feeder, bridge.public_key(joined[0]))
+    )
+    assert issue is not None and issue.is_persistent
+    assert issue.translation_key == "leftover_key_unjoined"

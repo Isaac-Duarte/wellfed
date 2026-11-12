@@ -441,14 +441,15 @@ view_enum! {
         /// server's journal, says how.
         Settled => "settled",
         /// A feed whose answer never came did not run: the feeder refused
-        /// it, as the server's journal learned.
+        /// it, as the server's journal learned, or the journal it went to
+        /// never had it, so it was never sent.
         SettledUnfed => "settled_unfed",
-        /// A feed whose answer never came has no `Fed` event this session
-        /// could find yet: whether it ran is not known. It stays pending: a
-        /// later update may still settle it, until
-        /// [`UpdateKind::Forgotten`]. Directly, it holds new feeds back
-        /// until it settles or the owner releases it
-        /// ([`UpdateKind::Released`]); through the server, it holds none.
+        /// A feed whose answer never came has no `Fed` event, or journal
+        /// entry, this session could find yet: whether it ran is not known.
+        /// It stays pending, and holds new feeds back until a later update
+        /// settles it or the owner releases it ([`UpdateKind::Released`]).
+        /// A lost feed from the other route comes so at each start: only
+        /// the owner's release ends it there.
         StillUnknown => "still_unknown",
         /// The feeder no longer knows this client's key; the session will
         /// not reconnect.
@@ -484,6 +485,9 @@ view_enum! {
         /// new feeds back no longer, and stays pending, so a later update
         /// may still settle it, until [`UpdateKind::Forgotten`].
         Released => "released",
+        /// The owner checked the bowls after the integration's store did
+        /// not read: feeds go again.
+        BowlsChecked => "bowls_checked",
     }
 }
 

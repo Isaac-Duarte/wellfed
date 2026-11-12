@@ -274,9 +274,8 @@ async def test_a_new_client_opens_an_alert_and_its_event_fires(
     before = int(_state(hass, alerts).state)
     assert _state(hass, alert).state == STATE_UNKNOWN
 
-    secret = await hass.async_add_executor_job(bridge.generate_secret)
     await hass.async_add_executor_job(
-        bridge.join, secret, simulator.invite(), "visitor", simulator.address
+        bridge.redeem, simulator.invite(), "visitor", simulator.address
     )
 
     await _until(hass, lambda: _state(hass, alert).state != STATE_UNKNOWN)

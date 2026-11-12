@@ -137,6 +137,106 @@ pub async fn check_join(
     }
 }
 
+/// A key a join that ended unchecked may have enrolled, on the feeder it
+/// was for: the setup flow holds it, and checks it before it spends another
+/// invite for that feeder.
+#[derive(Clone, Copy)]
+pub struct Unsettled {
+    pub secret: [u8; 32],
+    pub feeder: [u8; 32],
+}
+
+impl std::fmt::Debug for Unsettled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The secret is a secret.
+        f.debug_struct("Unsettled")
+            .field("feeder", &self.feeder)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A key an invite enrolled, kept only as a member ([`join_member`]).
+#[derive(Debug)]
+pub struct Redeemed {
+    pub key: ClientKey,
+    pub feeder: [u8; 32],
+    pub joined: Joined,
+    /// A key held from an earlier unchecked join for another feeder, still
+    /// held: this invite said nothing of it.
+    pub held: Option<Unsettled>,
+}
+
+/// An invite that did not end enrolled, and the key still held after it.
+#[derive(Debug, thiserror::Error)]
+#[error("the invite did not enroll a key")]
+pub struct Unredeemed {
+    #[source]
+    pub error: Error,
+    /// The key a later join must check first: the one this join may have
+    /// enrolled when it ended unchecked, or the one held before when this
+    /// invite said nothing of it.
+    pub held: Option<Unsettled>,
+}
+
+/// Join with `invite`, listed as `label`, at `address` or wherever mDNS finds
+/// its feeder, keeping the key only as a member. `held` is a key an earlier
+/// unchecked join may have enrolled: when it is for this invite's feeder it
+/// is checked first, and the invite is spent only when the feeder does not
+/// know it, since an invite works once. A join that ends unchecked holds
+/// its own new key in turn.
+pub async fn redeem(
+    invite: &str,
+    label: &str,
+    address: Option<&str>,
+    held: Option<Unsettled>,
+) -> Result<Redeemed, Box<Unredeemed>> {
+    let feeder = invite_feeder(invite).map_err(|error| Box::new(Unredeemed { error, held }))?;
+    let (ours, other) = match held {
+        Some(held) if held.feeder == feeder => (Some(held), None),
+        held => (None, held),
+    };
+
+    if let Some(held) = ours {
+        let key = ClientKey::from_secret(held.secret);
+        match check_join(&key, &feeder, address).await {
+            Ok(Some(joined)) => {
+                return Ok(Redeemed {
+                    key,
+                    feeder,
+                    joined,
+                    held: other,
+                });
+            }
+            // The feeder does not know it: the invite is still unspent.
+            Ok(None) => {}
+            Err(error) => {
+                let held = matches!(error, Error::JoinUnchecked(_)).then_some(held);
+                return Err(Box::new(Unredeemed { error, held }));
+            }
+        }
+    }
+
+    let key = ClientKey::generate().map_err(|error| Box::new(Unredeemed { error, held: other }))?;
+    match join_member(&key, invite, label, address).await {
+        Ok(joined) => Ok(Redeemed {
+            key,
+            feeder,
+            joined,
+            held: other,
+        }),
+        Err(error) => {
+            let unchecked = matches!(error, Error::JoinUnchecked(_)).then_some(Unsettled {
+                secret: key.secret(),
+                feeder,
+            });
+            Err(Box::new(Unredeemed {
+                error,
+                held: unchecked.or(other),
+            }))
+        }
+    }
+}
+
 /// Why a join did not end enrolled, as the setup flow words it.
 pub fn join_problem(error: &Error) -> crate::api::JoinProblem {
     use crate::api::JoinProblem;

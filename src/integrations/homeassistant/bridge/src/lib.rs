@@ -26,6 +26,7 @@
 mod alerts;
 pub mod api;
 pub mod feeder;
+mod hold;
 pub mod key;
 #[cfg(feature = "python")]
 mod python;

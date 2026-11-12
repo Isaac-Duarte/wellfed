@@ -3,11 +3,12 @@
 - **Pending feeds:** each direct feed from just before it goes out, and
   each feed whose answer was lost, until its answer clears it, an update
   settles it, or the bridge stops waiting on it; with whether it was
-  reported still unknown, and when the owner released it. The next session
-  is handed them, so a feed lost before a restart, or out when Home
-  Assistant stopped, is still settled rather than forgotten, one already
-  reported is not reported again, and one not released still holds new
-  feeds back.
+  reported still unknown, when the owner released it, and through the
+  server the token it went under. The next session is handed them, on
+  either route, so a feed lost before a restart, or out when Home Assistant
+  stopped, is still settled rather than forgotten, one already reported is
+  not reported again, and one not released still holds new feeds back,
+  whichever route the entry is on now.
 - **Answered feeds:** the feed numbers this Home Assistant has the end of,
   as the bridge last listed them: each feed it was answered for, and each
   lost feed a `Fed` event settled, as many as the bridge needs kept.
@@ -15,8 +16,11 @@
   session must know them too: a feed answered just before a lost one went
   out may end after it, and the replay of a `Fed` that settled one lost
   feed must not settle another.
-- **A leftover key:** the client key an entry held directly before it moved
+- **Leftover keys:** each client key an entry held directly before it moved
   to the server route, while the feeder may still list it.
+- **Unread:** the store before this one did not read, so a lost feed it
+  kept is lost with it; every feed waits until the owner says the bowls
+  are checked.
 
 One instance per entry, so a reload and a config flow write the same one.
 The store is kept by the beta upgrade rule:
@@ -26,10 +30,11 @@ The store is kept by the beta upgrade rule:
   saves it at the newer of the two minors, so a newer build never takes its
   own data for an older minor's.
 - A newer integration's major (after a downgrade) is read as nothing and
-  never written: the store is made read-only, and the entry starts empty.
+  never written: the store is made read-only, and the entry starts empty
+  and unread.
 - A file that does not read as this shape is copied aside under a numbered
-  name, never deleted, and the entry starts empty. When the copy fails, the
-  store is made read-only rather than saved over the file.
+  name, never deleted, and the entry starts empty and unread. When the copy
+  fails, the store is made read-only rather than saved over the file.
 """
 
 from __future__ import annotations
@@ -67,16 +72,18 @@ class PendingData(TypedDict):
     after: int | None
     reported: bool
     released_ms: int | None
+    token_id: str | None
 
 
 class KeptData(TypedDict):
     pending: list[PendingData]
     answered: list[int]
-    leftover_key: str | None
+    leftover_keys: list[str]
+    unread: bool
 
 
-def _empty() -> KeptData:
-    return {"pending": [], "answered": [], "leftover_key": None}
+def _empty(unread: bool = False) -> KeptData:
+    return {"pending": [], "answered": [], "leftover_keys": [], "unread": unread}
 
 
 def _int(value: Any, low: int, high: int) -> bool:
@@ -104,6 +111,8 @@ def _pending(item: Any) -> bool:
         and _optional(item, "after", 0, 2**64 - 1)
         and isinstance(item.get("reported"), bool)
         and _optional(item, "released_ms", -(2**63), 2**63 - 1)
+        and "token_id" in item
+        and (item["token_id"] is None or isinstance(item["token_id"], str))
     )
 
 
@@ -126,7 +135,9 @@ def _valid(data: Any) -> bool:
         and all(_pending(item) for item in data["pending"])
         and isinstance(data.get("answered"), list)
         and all(_int(feed, 0, 2**32 - 1) for feed in data["answered"])
-        and (data.get("leftover_key") is None or _key(data["leftover_key"]))
+        and isinstance(data.get("leftover_keys"), list)
+        and all(_key(key) for key in data["leftover_keys"])
+        and isinstance(data.get("unread"), bool)
     )
 
 
@@ -188,10 +199,13 @@ class Kept:
             _LOGGER.warning(
                 "Wellfed's store for this entry is from a newer version of the integration "
                 "and is left as it is (%s); until the integration is updated, the entry keeps "
-                "no lost feeds across restarts",
+                "no lost feeds across restarts, and feeds wait at each start until the "
+                "bowls are checked",
                 error,
             )
-            data = None
+            self._data = _empty(unread=True)
+            self._loaded = True
+            return
         if data is None:
             self._data = _empty()
         elif _valid(data):
@@ -204,16 +218,19 @@ class Kept:
                 _LOGGER.warning(
                     "Wellfed's store for this entry is not in the shape it writes and could "
                     "not be set aside (%s); it is left as it is, nothing is saved over it, "
-                    "and the entry starts with no lost feeds on record",
+                    "and feeds wait at each start until the bowls are checked",
                     error,
                 )
+                self._data = _empty(unread=True)
             else:
                 _LOGGER.warning(
                     "Wellfed's store for this entry is not in the shape it writes; kept as "
-                    "%s, and the entry starts with no lost feeds on record",
+                    "%s, and feeds wait until the bowls are checked",
                     aside,
                 )
-            self._data = _empty()
+                # Saved at once, so a restart finds the hold, not the file.
+                self._data = _empty(unread=True)
+                self._save()
         self._loaded = True
 
     @property
@@ -226,6 +243,7 @@ class Kept:
                 item["after"],
                 item["reported"],
                 item["released_ms"],
+                item["token_id"],
             )
             for item in self._data["pending"]
         ]
@@ -235,9 +253,14 @@ class Kept:
         return list(self._data["answered"])
 
     @property
-    def leftover_key(self) -> bytes | None:
-        key = self._data["leftover_key"]
-        return bytes.fromhex(key) if key is not None else None
+    def leftover_keys(self) -> list[bytes]:
+        return [bytes.fromhex(key) for key in self._data["leftover_keys"]]
+
+    @property
+    def unread(self) -> bool:
+        """The store before this one did not read, and the bowls are not yet
+        checked: every feed waits."""
+        return self._data["unread"]
 
     def add_pending(self, pending: bridge.Pending) -> None:
         if any(item["id"] == pending.id for item in self._data["pending"]):
@@ -250,6 +273,7 @@ class Kept:
                 "after": pending.after,
                 "reported": pending.reported,
                 "released_ms": pending.released_ms,
+                "token_id": pending.token_id,
             }
         )
         self._save()
@@ -278,8 +302,19 @@ class Kept:
         self._data["answered"] = list(feeds)
         self._save()
 
-    def set_leftover_key(self, key: bytes | None) -> None:
-        self._data["leftover_key"] = key.hex() if key is not None else None
+    def add_leftover_key(self, key: bytes) -> None:
+        """`key` may still be listed on the feeder: kept until it is not."""
+        if key.hex() not in self._data["leftover_keys"]:
+            self._data["leftover_keys"].append(key.hex())
+            self._save()
+
+    def remove_leftover_key(self, key: bytes) -> None:
+        self._data["leftover_keys"] = [k for k in self._data["leftover_keys"] if k != key.hex()]
+        self._save()
+
+    def bowls_checked(self) -> None:
+        """The owner checked the bowls, as the bridge confirmed: feeds go again."""
+        self._data["unread"] = False
         self._save()
 
     def _save(self) -> None:

@@ -38,6 +38,7 @@ from custom_components.wellfed.const import (
     ROUTE_DIRECT,
     ROUTE_SERVER,
 )
+from custom_components.wellfed.session import leftover_issue
 import wellfed_homeassistant as bridge
 
 from .conftest import OWNER, OWNER_PASSWORD, Server, Simulator
@@ -177,7 +178,9 @@ async def test_switching_routes_keeps_the_entities_and_drops_the_old_route(
     assert _unique_ids(hass, entry) == direct
     # The server, an owner on the feeder, removed the key held directly.
     assert old_key not in simulator.owner("clients")
-    assert ir.async_get(hass).async_get_issue(DOMAIN, f"leftover_key_{entry.unique_id}") is None
+    assert entry.unique_id is not None
+    leftover = leftover_issue(bytes.fromhex(entry.unique_id), bytes.fromhex(old_key))
+    assert ir.async_get(hass).async_get_issue(DOMAIN, leftover) is None
     # The direct session stopped first, so its key's removal started no reauth.
     await asyncio.sleep(3)
     await hass.async_block_till_done()
@@ -216,7 +219,8 @@ async def test_a_key_left_on_the_feeder_keeps_its_repair_back_on_the_direct_rout
     server.adopt(simulator)
     entry = await _direct_entry(hass, simulator)
     old_key = bridge.public_key(bytes.fromhex(entry.data[CONF_SECRET])).hex()
-    leftover = f"leftover_key_{entry.unique_id}"
+    assert entry.unique_id is not None
+    leftover = leftover_issue(bytes.fromhex(entry.unique_id), bytes.fromhex(old_key))
 
     # The server could not remove the direct key (as for a member's account).
     monkeypatch.setattr(bridge, "server_revoke_client", lambda *_: False)
