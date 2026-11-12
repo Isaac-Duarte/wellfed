@@ -37,6 +37,13 @@ pub const MARKER: [u8; 8] = *b"81958711";
 pub const BANK1_OFFSET: u32 = 0x18_6000;
 pub const BANK1_BYTES: u32 = 0x15_0000;
 
+/// Whether an image of `len` bytes is one bank 1 takes: at least a sector,
+/// and no more than the bank. The firmware's offer check and the signer
+/// both ask this, so a build the signer passes is one the feeder admits.
+pub const fn image_len_fits(len: u32) -> bool {
+    len >= SECTOR_BYTES && len <= BANK1_BYTES
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Manifest {
     pub version: u32,

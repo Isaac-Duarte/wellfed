@@ -160,7 +160,7 @@ The bench key stays in `private/ota-key.json`, for the bench only. The release k
 
 **The floor** (`min_version`) is the highest version a build confirmed at.
 
-- An offer at or below it, and every stock image, needs a `PLDWN1` downgrade statement signed by a trusted key, naming this feeder's identity key, the exact manifest's digest and the current floor. A replayed old manifest, a statement for another feeder, or one made before the floor last rose is refused.
+- An offer at or below it, and every stock image, needs a `PLDWN1` downgrade statement signed by a trusted key, naming this feeder's identity key, the exact manifest's digest and the current floor. A replayed old manifest, a statement for another feeder, or one made at another floor is refused. The statement binds the floor's value, not when it was set: the handover from stock's activation resets the floor to 0 (below), so a statement made at an earlier floor of 0 reads as current again, for the same feeder and the same manifest only.
 - Confirmation raises the floor after arming, and before it erases the confirmation sector. A store that can't be written leaves the build unconfirmed.
 - Sector 4's version field carries the version bank 0 activated: 0 for a build installed over UART, or after a torn confirmation rewrite (the store's candidate was already confirmed, so the retry finds nothing naming the build). Nothing decides on that field; the floor lives in the update store.
 

@@ -227,6 +227,13 @@ fn version_one_bank_size_kind_and_the_running_build_are_refused() {
             Err(OfferError::Size)
         );
     }
+    // The bounds themselves are images bank 1 takes.
+    for len in [SECTOR_BYTES, BANK1_BYTES] {
+        let mut fields = signed(&k.bench, 5, ImageKind::Replacement);
+        fields.manifest.image_len = len;
+        let admitted = admit_offer(&manifest(&k.bench, &fields), None, &ctx);
+        assert!(admitted.is_ok(), "{len}: {admitted:?}");
+    }
 
     let mut body = manifest_body(&signed(&k.bench, 5, ImageKind::Replacement));
     body[20] = 9;
@@ -496,6 +503,55 @@ fn a_bank_s_extent_comes_from_its_five_headers() {
 
     // Erased flash has no extent.
     assert_eq!(extent_of(&[0xff; 4 * SECTOR], BANK1_BYTES), None);
+}
+
+/// Every header field the profile pins refuses the bank when it is off, in
+/// every part, so two builds can never disagree over where an image ends.
+#[test]
+fn every_part_s_header_is_checked() {
+    let (km0, km0_ram, km4, km4_ram) = (5000, 300, 20_000, 700);
+    let image = bank(km0, km0_ram, km4, km4_ram);
+    let len = u32::try_from(image.len()).unwrap();
+    let second = 32 + km0 as usize;
+    let third = (second + 32 + km0_ram as usize).next_multiple_of(SECTOR);
+    let fourth = third + 32 + km4 as usize;
+    let fifth = fourth + 32 + km4_ram as usize;
+    assert_eq!(extent_of(&image, len), Some(len));
+
+    for at in [0, second, third, fourth, fifth] {
+        // The marker, the load address and each erased word.
+        for byte in [0, 7, 12, 15, 16, 20, 24, 28, 31] {
+            let mut off = image.clone();
+            off[at + byte] ^= 0x10;
+            assert_eq!(
+                extent_of(&off, BANK1_BYTES),
+                None,
+                "part at {at}, byte {byte}"
+            );
+        }
+        // A header the reader can't read, or one past the limit.
+        let unread = |offset: u32, header: &mut [u8; 32]| {
+            let offset = offset as usize;
+            header.copy_from_slice(&image[offset..offset + 32]);
+            offset != at
+        };
+        assert_eq!(image::extent(unread, BANK1_BYTES), None, "part at {at}");
+        let limit = u32::try_from(at + 31).unwrap();
+        assert_eq!(extent_of(&image, limit), None, "part at {at}");
+    }
+
+    // Only the PSRAM part is empty, and it always is.
+    let mut empty_ram = image.clone();
+    empty_ram[second + 8..second + 12].fill(0);
+    assert_eq!(extent_of(&empty_ram, BANK1_BYTES), None);
+    let mut psram = image.clone();
+    psram[fifth + 8] = 1;
+    assert_eq!(extent_of(&psram, BANK1_BYTES), None);
+
+    // A length that runs the arithmetic past u32 ends nothing.
+    let mut huge = image.clone();
+    huge[fourth + 8..fourth + 12].fill(0xff);
+    assert_eq!(extent_of(&huge, u32::MAX), None);
 }
 
 proptest! {

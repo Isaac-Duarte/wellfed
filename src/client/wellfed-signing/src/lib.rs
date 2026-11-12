@@ -612,10 +612,9 @@ fn bank_manifest(container: &[u8], version: u32, build_id: [u8; 32]) -> Result<M
     let payload = &container[CONTAINER_HEADER..];
     require(payload[..MARKER.len()] == MARKER, || ImageError::NoMarker)?;
     let image_len = u32::try_from(payload.len()).map_err(|_| ImageError::TooLarge)?;
-    require(
-        (wellfed_signed::SECTOR_BYTES..=wellfed_signed::BANK1_BYTES).contains(&image_len),
-        || ImageError::Size { bytes: image_len },
-    )?;
+    require(wellfed_signed::image_len_fits(image_len), || {
+        ImageError::Size { bytes: image_len }
+    })?;
 
     Ok(Manifest {
         version,
@@ -1134,6 +1133,8 @@ mod tests {
             Some(Error::Image(ImageError::Size { .. }))
         ));
         assert!(refused(&container(SECTOR, |_| 0)).is_none());
+        let whole_bank = container(wellfed_signed::BANK1_BYTES as usize, |_| 0);
+        assert!(refused(&whole_bank).is_none());
     }
 
     fn refusal(checkout: &Path, review: &Path) -> Error {

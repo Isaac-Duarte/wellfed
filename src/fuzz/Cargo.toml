@@ -17,6 +17,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4.13"
+ed25519-dalek = { version = "2", default-features = false }
 wellfed-core = { path = "../sdk/wellfed-core" }
 wellfed-signed = { path = "../sdk/wellfed-signed" }
 wellfed-device-api = { path = "../product/wellfed-device-api" }
