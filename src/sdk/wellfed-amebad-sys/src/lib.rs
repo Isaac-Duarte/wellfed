@@ -7,7 +7,6 @@
 //! contract, `wellfed-board`: the panic and RAM-park output writes and the
 //! storage bounds read them there.
 #![cfg_attr(target_os = "none", no_std)]
-#![allow(clippy::missing_safety_doc)]
 
 use core::ffi::c_void;
 

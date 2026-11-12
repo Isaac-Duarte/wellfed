@@ -23,7 +23,6 @@
 //!
 //! Host builds test everything against the SDK fake.
 #![cfg_attr(target_os = "none", no_std)]
-#![allow(clippy::missing_safety_doc)]
 
 #[cfg(all(target_os = "none", not(feature = "km4")))]
 compile_error!("wellfed-device-runtime target builds are KM4-only");

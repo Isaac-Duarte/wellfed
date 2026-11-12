@@ -46,6 +46,8 @@ impl Mmio for Hardware {
     }
 }
 
+/// # Safety
+/// `token` is null or points to a readable token.
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]
 #[inline(never)]
@@ -57,6 +59,8 @@ pub unsafe extern "C" fn wellfed_amebad_flash_park_publish(
     unsafe { publish::<Hardware>(token, command) }
 }
 
+/// # Safety
+/// As for [`wellfed_amebad_flash_park_publish`].
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]
 #[inline(never)]
@@ -83,6 +87,8 @@ pub extern "C" fn wellfed_amebad_flash_sem_release(index: u32) -> bool {
     sem_release::<Hardware>(index)
 }
 
+/// # Safety
+/// As for [`wellfed_amebad_flash_park_publish`].
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]
 #[inline(never)]
@@ -96,6 +102,8 @@ pub unsafe extern "C" fn wellfed_amebad_flash_owner_begin(
     unsafe { owner_begin::<Hardware>(token, channel, tick_limit, poll_limit) }
 }
 
+/// # Safety
+/// As for [`wellfed_amebad_flash_park_publish`].
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]
 #[inline(never)]

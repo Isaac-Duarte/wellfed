@@ -134,7 +134,10 @@ impl HookCpu for Hardware {
 
     // `data` is the SDK's opaque IPC message pointer, handed back unchanged
     // to the legacy handler it was meant for; nothing here dereferences it.
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    #[expect(
+        clippy::not_unsafe_ptr_arg_deref,
+        reason = "the pointer is passed on, never dereferenced"
+    )]
     #[inline(always)]
     fn legacy_ipc(data: *mut c_void, status: u32, channel: u32) {
         // SAFETY: as for `legacy_lock`.
@@ -149,6 +152,9 @@ pub extern "C" fn hook_fail(reason: HookFault) -> ! {
     fail_body::<Hardware>(reason)
 }
 
+/// # Safety
+/// `provider` is null or points to a provider that stays readable for the
+/// program's life.
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_hooks")]
 #[inline(never)]
@@ -178,6 +184,9 @@ pub extern "C" fn FLASH_Write_Unlock() {
     write_unlock::<Hardware>()
 }
 
+/// # Safety
+/// The SDK's IPC handler contract: `data` is the IPC message the SDK
+/// delivered, handed on unread to the legacy handler.
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_hooks")]
 #[inline(never)]
@@ -189,6 +198,10 @@ pub unsafe extern "C" fn FLASH_Write_IPC_Int(data: *mut c_void, status: u32, cha
 /// leaf code with no call or flash literal (audited). It requests the
 /// board's safe state (the feeder's motor STOP and infrared OFF, the
 /// fountain's pump off); the caller then halts in RAM for the watchdog.
+///
+/// # Safety
+/// Only the hook provider calls it, from `hook_fail`; neither argument is
+/// read.
 #[cfg(feature = "km4")]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]
