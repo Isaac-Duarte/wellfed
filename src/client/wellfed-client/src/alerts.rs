@@ -677,15 +677,17 @@ impl Watch {
     }
 
     /// The caller made `change`: it is not handed over again. A change made
-    /// stale meanwhile (the notice ended or was posted anew) is left as it is.
+    /// stale meanwhile is left as it is: a post confirms only the posting it
+    /// carried ([`Tracked::same_posting`]), so one the notice ended, opened
+    /// again or changed kind past while it was on the way leaves the newer
+    /// posting due. Delivery may take a while (a webhook's receiver, a
+    /// phone's notification), and a catch-up can change the watch meanwhile.
     pub fn confirm(&mut self, change: &Change) {
         match change {
             Change::Post(posted) => {
-                if let Some(tracked) = self
-                    .open
-                    .iter_mut()
-                    .find(|tracked| tracked.key == posted.key && tracked.delivery == Delivery::Due)
-                {
+                if let Some(tracked) = self.open.iter_mut().find(|tracked| {
+                    tracked.delivery == Delivery::Due && tracked.same_posting(posted)
+                }) {
                     tracked.delivery = Delivery::Posted;
                 }
             }
@@ -785,6 +787,18 @@ impl Watch {
 }
 
 impl Tracked {
+    /// Whether `self` and `other` are one posting of one notice: the same
+    /// key, first seen at the same time, in the same kind. A notice comes
+    /// due again only as a new posting: one that ended and opened again is
+    /// tracked anew, seen at that catch-up's time, and one whose kind
+    /// changed takes the new kind. New words in the same kind are no new
+    /// posting, as they post nothing.
+    pub fn same_posting(&self, other: &Tracked) -> bool {
+        self.key == other.key
+            && self.seen == other.seen
+            && self.notice.kind() == other.notice.kind()
+    }
+
     /// Since when this alert, absent from the table now, has counted as
     /// absent, or `None` while its hold doesn't run: one that waits for the
     /// clock (`clock`), while the feeder lacks what it needs, starts its

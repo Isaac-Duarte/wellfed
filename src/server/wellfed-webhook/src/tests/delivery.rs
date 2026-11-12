@@ -17,6 +17,16 @@ use super::*;
 /// A receiver on loopback that answers every POST with the next status
 /// of `answers` (the last one once they run out) and hands each body over.
 async fn receiver(answers: Vec<u16>) -> (Url, mpsc::UnboundedReceiver<serde_json::Value>) {
+    held_receiver(answers, None).await
+}
+
+/// The same, holding each answer until `release` gives one leave, or
+/// answering at once once it is closed: a delivery kept in flight while
+/// the test changes the table.
+async fn held_receiver(
+    answers: Vec<u16>,
+    mut release: Option<mpsc::UnboundedReceiver<()>>,
+) -> (Url, mpsc::UnboundedReceiver<serde_json::Value>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a port");
     let address = listener.local_addr().expect("an address");
     let (bodies, received) = mpsc::unbounded_channel();
@@ -59,6 +69,12 @@ async fn receiver(answers: Vec<u16>) -> (Url, mpsc::UnboundedReceiver<serde_json
                 }
             };
             let _ = bodies.send(serde_json::from_slice(&body).expect("a JSON body"));
+            if let Some(gate) = &mut release {
+                // Closed: every answer from now on goes at once.
+                if gate.recv().await.is_none() {
+                    release = None;
+                }
+            }
             let answer =
                 format!("HTTP/1.1 {status} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             let _ = socket.write_all(answer.as_bytes()).await;
@@ -128,9 +144,14 @@ async fn read(store: &Store, generation: u32, alerts: &[Alert]) {
 
 /// The same, in the ring `epoch`.
 async fn read_in(store: &Store, epoch: u32, generation: u32, alerts: &[Alert]) {
+    read_at(store, epoch, generation, alerts, Timestamp::UNIX_EPOCH).await;
+}
+
+/// The same, at `now` by the server's clock.
+async fn read_at(store: &Store, epoch: u32, generation: u32, alerts: &[Alert], now: Timestamp) {
     let mutes = Mutes::default();
     let context = Context {
-        now: Timestamp::UNIX_EPOCH,
+        now,
         mutes: &mutes,
         own: Hex([0; 4]),
         clock: FeederClock::Known,
@@ -374,4 +395,80 @@ async fn a_removed_feeder_is_sent_nothing_more() {
     read(&store, 3, &[]).await;
     webhook.pass().await;
     assert!(bodies.try_recv().is_err(), "no clear for a removed feeder");
+}
+
+/// A body's event, with its alert's kind.
+fn event(body: &serde_json::Value) -> (String, String) {
+    let text = |value: &serde_json::Value| value.as_str().expect("text").to_owned();
+    (text(&body["event"]), text(&body["alert"]["kind"]))
+}
+
+/// The receiver's events in order.
+fn events(bodies: &mut mpsc::UnboundedReceiver<serde_json::Value>) -> Vec<(String, String)> {
+    std::iter::from_fn(|| bodies.try_recv().ok())
+        .map(|body| event(&body))
+        .collect()
+}
+
+/// An alert opens and is delivered, held at the receiver while `meanwhile`
+/// changes the table; then everything left is delivered.
+async fn changed_in_flight(
+    answers: Vec<u16>,
+    opened: Alert,
+    meanwhile: impl AsyncFnOnce(&Store),
+) -> Vec<(String, String)> {
+    let (release, gate) = mpsc::unbounded_channel();
+    let (url, mut bodies) = held_receiver(answers, Some(gate)).await;
+    let (_dir, store, mut webhook) = webhook(url).await;
+    read(&store, 1, &[]).await;
+    read(&store, 2, &[opened]).await;
+
+    let mut first = None;
+    let change = async {
+        first = Some(bodies.recv().await.expect("the open is on the way"));
+        meanwhile(&store).await;
+        drop(release);
+    };
+    tokio::join!(webhook.pass(), change);
+    drain(&mut webhook, &store).await;
+
+    let mut sent = vec![event(&first.expect("the open"))];
+    sent.extend(events(&mut bodies));
+    sent
+}
+
+fn later(minutes: i64) -> Timestamp {
+    Timestamp::UNIX_EPOCH + jiff::SignedDuration::from_mins(minutes)
+}
+
+#[tokio::test]
+async fn an_alert_reopened_while_its_open_is_in_flight_is_sent_again() {
+    let events = changed_in_flight(vec![200], Alert::FoodLow, async |store| {
+        read_at(store, 1, 3, &[], later(1)).await;
+        read_at(store, 1, 4, &[Alert::FoodLow], later(2)).await;
+    })
+    .await;
+    let kinds = |event: &str| (event.to_owned(), "food_low".to_owned());
+    assert_eq!(
+        events,
+        [kinds("opened"), kinds("cleared"), kinds("opened")],
+        "the reopening is not taken for the open on the way"
+    );
+}
+
+#[tokio::test]
+async fn an_alert_whose_kind_changes_while_its_open_is_in_flight_is_sent_again() {
+    let due = Timestamp::UNIX_EPOCH;
+    let no_record = Alert::MealNoRecord { plan: 1, due };
+    let events = changed_in_flight(vec![200], no_record, async |store| {
+        let missed = Alert::MealMissed {
+            plan: 1,
+            due,
+            reason: wellfed_model::MissedReason::Late,
+        };
+        read_at(store, 1, 3, &[missed], later(1)).await;
+    })
+    .await;
+    let event = |kind: &str| ("opened".to_owned(), kind.to_owned());
+    assert_eq!(events, [event("meal_no_record"), event("meal_missed")]);
 }
