@@ -10,7 +10,6 @@ import 'fakes.dart';
 
 /// A run the test drives: its updates are the test's, its answers recorded.
 class FakeRun with FakeOpaque implements InstallRun {
-  // ignore: the test ends with it
   final updates = StreamController<InstallUpdate>();
   final answers = <int, InstallAnswer>{};
   final notifications = <List<int>>[];

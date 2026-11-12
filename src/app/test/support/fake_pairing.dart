@@ -28,7 +28,6 @@ class FakeRecovery with FakeOpaque implements Recovery {
 }
 
 class FakeBleLink implements BleLink {
-  // ignore: the test ends with it
   // ignore: close_sinks, the test ends with it
   final bytes = StreamController<List<int>>(onCancel: () async {});
   final written = <List<List<int>>>[];
@@ -81,7 +80,6 @@ class FakePairingPorts implements PairingPorts {
 
   final drivers = <FakeDriver>[];
   final recoveries = <FakeRecovery>[];
-  // ignore: the test ends with it
   // ignore: close_sinks, the test ends with it
   final scans = StreamController<DiscoveredDevice>(onCancel: () async {});
   final opened = <DiscoveredDevice>[];

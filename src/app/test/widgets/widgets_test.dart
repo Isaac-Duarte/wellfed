@@ -14,8 +14,14 @@ Widget _themed(Widget child, {Brightness brightness = Brightness.light}) => Mate
 
 void main() {
   // Dart's local time cannot be faked, so this needs a host zone with DST:
-  // `make check-app` sets TZ for it. Under UTC it passes without proving this.
+  // `make check-app` sets TZ for it. Under one with none it fails rather than
+  // pass without proving anything.
   test('yesterday is yesterday on every day of the year, DST days included', () {
+    expect(
+      DateTime(2026).timeZoneOffset,
+      isNot(DateTime(2026, 7).timeZoneOffset),
+      reason: 'run with a zone that has daylight saving, like TZ=America/Denver',
+    );
     for (var day = 1; day <= 366; day++) {
       final now = DateTime(2026, 1, day, 12);
       expect(dayText(DateTime(2026, 1, day, 6), now: now), 'Today');

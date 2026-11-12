@@ -13,7 +13,6 @@ import '../support/fakes.dart';
 
 /// A run the test drives.
 class FakeRestoreRun implements RestoreRun, RustOpaqueInterface {
-  // ignore: the test ends with it
   final updates = StreamController<RestoreUpdate>();
   final answers = <int, InstallAnswer>{};
   int stops = 0;

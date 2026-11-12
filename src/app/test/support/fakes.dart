@@ -56,7 +56,6 @@ class FakeSession with FakeOpaque implements FeederSession {
   /// The feeder it was opened to.
   final String identity;
 
-  // ignore: the test ends with it
   final updates = StreamController<SessionUpdate>();
   final requests = <FeederRequest>[];
   final feeds = <int>[];

@@ -950,7 +950,7 @@ packages:
     source: hosted
     version: "5.6.0"
   reactive_ble_platform_interface:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: reactive_ble_platform_interface
       sha256: b5c81a30be81b351c8e86b9520a1a9f267c5fcf0b51a2eee9139da404a18ed79
