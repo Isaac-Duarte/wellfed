@@ -288,9 +288,10 @@ enum CatchUpEnd {
   /// Nothing answered the first try: look for the feeder and try again.
   unanswered,
 
-  /// Nothing answered the last try, and no owner's server holds the
-  /// feeder. On the feeder's home network that counts towards
-  /// unreachable; anywhere else it counts for nothing.
+  /// Nothing answered the last try, and no owner's server answered for
+  /// the feeder: none holds it, or it was down or turned this phone away.
+  /// On the feeder's home network that counts towards unreachable;
+  /// anywhere else it counts for nothing.
   failed,
 
   /// Away from home: it read what the owner's server last read of the
