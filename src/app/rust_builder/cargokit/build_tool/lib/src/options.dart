@@ -4,8 +4,6 @@
 import 'dart:io';
 
 import 'package:collection/collection.dart';
-import 'package:ed25519_edwards/ed25519_edwards.dart';
-import 'package:hex/hex.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 import 'package:source_span/source_span.dart';
@@ -13,7 +11,6 @@ import 'package:yaml/yaml.dart';
 
 import 'builder.dart';
 import 'environment.dart';
-import 'rustup.dart';
 
 final _log = Logger('options');
 
@@ -101,77 +98,19 @@ class CargoBuildOptions {
   }
 }
 
-extension on YamlMap {
-  /// Map that extracts keys so that we can do map case check on them.
-  Map<dynamic, YamlNode> get valueMap =>
-      nodes.map((key, value) => MapEntry(key.value, value));
-}
-
-class PrecompiledBinaries {
-  final String uriPrefix;
-  final PublicKey publicKey;
-
-  PrecompiledBinaries({
-    required this.uriPrefix,
-    required this.publicKey,
-  });
-
-  static PublicKey _publicKeyFromHex(String key, SourceSpan? span) {
-    final bytes = HEX.decode(key);
-    if (bytes.length != 32) {
-      throw SourceSpanException(
-          'Invalid public key. Must be 32 bytes long.', span);
-    }
-    return PublicKey(bytes);
-  }
-
-  static PrecompiledBinaries parse(YamlNode node) {
-    if (node case YamlMap(valueMap: Map<dynamic, YamlNode> map)) {
-      if (map
-          case {
-            'url_prefix': YamlNode urlPrefixNode,
-            'public_key': YamlNode publicKeyNode,
-          }) {
-        final urlPrefix = switch (urlPrefixNode) {
-          YamlScalar(value: String urlPrefix) => urlPrefix,
-          _ => throw SourceSpanException(
-              'Invalid URL prefix value.', urlPrefixNode.span),
-        };
-        final publicKey = switch (publicKeyNode) {
-          YamlScalar(value: String publicKey) =>
-            _publicKeyFromHex(publicKey, publicKeyNode.span),
-          _ => throw SourceSpanException(
-              'Invalid public key value.', publicKeyNode.span),
-        };
-        return PrecompiledBinaries(
-          uriPrefix: urlPrefix,
-          publicKey: publicKey,
-        );
-      }
-    }
-    throw SourceSpanException(
-        'Invalid precompiled binaries value. '
-        'Expected Map with "url_prefix" and "public_key".',
-        node.span);
-  }
-}
-
 /// Cargokit options specified for Rust crate.
 class CargokitCrateOptions {
   CargokitCrateOptions({
     this.cargo = const {},
-    this.precompiledBinaries,
   });
 
   final Map<BuildConfiguration, CargoBuildOptions> cargo;
-  final PrecompiledBinaries? precompiledBinaries;
 
   static CargokitCrateOptions parse(YamlNode node) {
     if (node is! YamlMap) {
       throw SourceSpanException('Cargokit options must be a map', node.span);
     }
     final options = <BuildConfiguration, CargoBuildOptions>{};
-    PrecompiledBinaries? precompiledBinaries;
 
     for (final entry in node.nodes.entries) {
       if (entry
@@ -195,18 +134,12 @@ class CargokitCrateOptions {
               'Unknown build configuration. Must be one of ${BuildConfiguration.values.map((e) => e.name)}.',
               key.span);
         }
-      } else if (entry.key case YamlScalar(value: 'precompiled_binaries')) {
-        precompiledBinaries = PrecompiledBinaries.parse(entry.value);
       } else {
         throw SourceSpanException(
-            'Unknown cargokit option type. Must be "cargo" or "precompiled_binaries".',
-            entry.key.span);
+            'Unknown cargokit option type. Must be "cargo".', entry.key.span);
       }
     }
-    return CargokitCrateOptions(
-      cargo: options,
-      precompiledBinaries: precompiledBinaries,
-    );
+    return CargokitCrateOptions(cargo: options);
   }
 
   static CargokitCrateOptions load({
@@ -224,38 +157,20 @@ class CargokitCrateOptions {
 }
 
 class CargokitUserOptions {
-  // When Rustup is installed always build locally unless user opts into
-  // using precompiled binaries.
-  static bool defaultUsePrecompiledBinaries() {
-    return Rustup.executablePath() == null;
-  }
-
   CargokitUserOptions({
-    required this.usePrecompiledBinaries,
     required this.verboseLogging,
   });
 
-  CargokitUserOptions._()
-      : usePrecompiledBinaries = defaultUsePrecompiledBinaries(),
-        verboseLogging = false;
+  CargokitUserOptions._() : verboseLogging = false;
 
   static CargokitUserOptions parse(YamlNode node) {
     if (node is! YamlMap) {
       throw SourceSpanException('Cargokit options must be a map', node.span);
     }
-    bool usePrecompiledBinaries = defaultUsePrecompiledBinaries();
     bool verboseLogging = false;
 
     for (final entry in node.nodes.entries) {
-      if (entry.key case YamlScalar(value: 'use_precompiled_binaries')) {
-        if (entry.value case YamlScalar(value: bool value)) {
-          usePrecompiledBinaries = value;
-          continue;
-        }
-        throw SourceSpanException(
-            'Invalid value for "use_precompiled_binaries". Must be a boolean.',
-            entry.value.span);
-      } else if (entry.key case YamlScalar(value: 'verbose_logging')) {
+      if (entry.key case YamlScalar(value: 'verbose_logging')) {
         if (entry.value case YamlScalar(value: bool value)) {
           verboseLogging = value;
           continue;
@@ -265,14 +180,11 @@ class CargokitUserOptions {
             entry.value.span);
       } else {
         throw SourceSpanException(
-            'Unknown cargokit option type. Must be "use_precompiled_binaries" or "verbose_logging".',
+            'Unknown cargokit option type. Must be "verbose_logging".',
             entry.key.span);
       }
     }
-    return CargokitUserOptions(
-      usePrecompiledBinaries: usePrecompiledBinaries,
-      verboseLogging: verboseLogging,
-    );
+    return CargokitUserOptions(verboseLogging: verboseLogging);
   }
 
   static CargokitUserOptions load() {
@@ -297,6 +209,5 @@ class CargokitUserOptions {
     return CargokitUserOptions._();
   }
 
-  final bool usePrecompiledBinaries;
   final bool verboseLogging;
 }
