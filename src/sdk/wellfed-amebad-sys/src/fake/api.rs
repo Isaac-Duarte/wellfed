@@ -838,9 +838,15 @@ pub fn unscheduled<R>(f: impl FnOnce() -> R) -> R {
 }
 
 /// Each host thread stands for one task: the test harness runs tests on
-/// separate threads, and a static claimed by one must refuse another.
+/// separate threads, and a static claimed by one must refuse another. From
+/// an interrupt (a handler the fake runs, or a test that sets `ipsr`) there
+/// is no task, and the identity is 0, as on the target.
 pub fn current_task() -> usize {
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    if in_interrupt() {
+        return 0;
+    }
 
     static NEXT: AtomicUsize = AtomicUsize::new(1);
     std::thread_local! {
@@ -920,14 +926,23 @@ pub fn delay_ms(ms: u32) {
     with(|h| h.uptime_ms = h.uptime_ms.wrapping_add(ms));
 }
 
-/// The calling thread stands for the task.
+/// The calling thread stands for the task; 0 from an interrupt.
 pub fn task_handle() -> usize {
     current_task()
 }
 
-/// Counted for tests: nothing here sleeps to be woken.
+/// Counted for tests: nothing here sleeps to be woken. From an interrupt it
+/// does nothing, as the target's task-context call does.
 pub fn task_notify(_handle: usize) {
-    with(|h| h.task_notifies += 1);
+    with(|h| {
+        if h.ipsr == 0 {
+            h.task_notifies += 1;
+        }
+    });
+}
+
+fn in_interrupt() -> bool {
+    with(|h| h.ipsr != 0)
 }
 
 /// The whole wait passes on the fake clock.

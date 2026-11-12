@@ -80,3 +80,24 @@ fn a_refused_constructor_is_tried_again_and_a_local_slot_drops_its_value() {
     drop(slot);
     assert_eq!(Rc::strong_count(&value), 1);
 }
+
+/// An interrupt is no task, as on the target: it can neither enter a slot
+/// nor release one, and the task it interrupted keeps the slot.
+#[test]
+fn an_interrupt_neither_enters_nor_releases_a_slot() {
+    use wellfed_hal::sdk::{self, fake};
+
+    static SLOT: Slot<u32> = Slot::filled(5);
+
+    fake::with(|h| h.ipsr = 19);
+    assert_eq!(sdk::current_task(), 0);
+    assert_eq!(sdk::task_handle(), 0);
+    assert!(SLOT.enter().is_none());
+    assert!(!SLOT.release());
+    let notified = fake::with(|h| h.task_notifies);
+    sdk::task_notify(1);
+    assert_eq!(fake::with(|h| h.task_notifies), notified, "no notify");
+
+    fake::with(|h| h.ipsr = 0);
+    assert_eq!(*SLOT.enter().unwrap(), 5);
+}
