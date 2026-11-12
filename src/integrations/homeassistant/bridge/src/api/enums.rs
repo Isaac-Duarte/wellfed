@@ -388,6 +388,11 @@ view_enum! {
         /// The feeder runs a build from before API revisions, which the
         /// server sends nothing but an update: update the feeder.
         Legacy => "legacy",
+        /// A feed whose answer was lost is not settled yet. A new feed
+        /// waits until it is (at most 15 minutes, the settle window),
+        /// so the next `Fed` this client is named in can settle only that
+        /// one, and a feed refused unseen is never taken for one that ran.
+        Held => "held",
     }
 }
 
@@ -456,6 +461,10 @@ view_enum! {
         /// The feeder's alerts moved: what is open, and what opened and
         /// cleared since.
         Alerts => "alerts",
+        /// A feed number this client has the end of, in `answered`: its
+        /// write was answered, or its `Fed` settled a lost feed. Keep it
+        /// for the next session, where a `Fed` for it settles nothing.
+        Answered => "answered",
     }
 }
 

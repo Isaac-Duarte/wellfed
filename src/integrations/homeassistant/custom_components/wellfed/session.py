@@ -258,7 +258,7 @@ class FeederSession:
         written = await self._write(lambda feeder: feeder.feed(portions))
         if written.feed is None:
             raise WriteNotDone("write_uncertain")
-        self.kept.answered_feed(written.feed)
+        # The bridge announced its number for the store already.
         self.running_feed = written.feed
         self._changed()
         return written.feed
@@ -360,29 +360,8 @@ class FeederSession:
             _LOGGER.info(
                 "Some feeder events were not received: %s to %s", update.gap_from, update.gap_to
             )
-        elif kind == bridge.UpdateKind.Pending and update.pending is not None:
-            self.kept.add_pending(update.pending)
-            self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
-        elif kind == bridge.UpdateKind.Settled:
-            if update.feed is not None:
-                _LOGGER.info(
-                    "The feed whose answer was lost ran: feed %s, %s of %s portions",
-                    update.feed.feed,
-                    update.feed.completed,
-                    update.feed.requested,
-                )
-            self._settled(update.pending)
-        elif kind == bridge.UpdateKind.SettledUnfed:
-            _LOGGER.info("The feed whose answer was lost was refused after all: nothing ran")
-            self._settled(update.pending)
-        elif kind == bridge.UpdateKind.StillUnknown:
-            _LOGGER.warning(
-                "A feed of %s portions whose answer was lost left no record: whether it "
-                "ran is not known",
-                update.portions,
-            )
-            self._settled(update.pending)
-            self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
+        elif self._keep(update):
+            pass
         elif kind in (bridge.UpdateKind.Revoked, bridge.UpdateKind.TokenRefused):
             if kind == bridge.UpdateKind.Revoked:
                 _LOGGER.error("The feeder no longer knows this Home Assistant: pair it again")
@@ -408,6 +387,40 @@ class FeederSession:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)
             self.connected = False
         self._changed()
+
+    @callback
+    def _keep(self, update: bridge.Update) -> bool:
+        """Keep what `update` says of lost feeds in the store, with their
+        repairs: whether it said anything of them."""
+        kind = update.kind
+        if kind == bridge.UpdateKind.Pending and update.pending is not None:
+            self.kept.add_pending(update.pending)
+            self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
+        elif kind == bridge.UpdateKind.Answered and update.answered is not None:
+            self.kept.answered_feed(update.answered)
+        elif kind == bridge.UpdateKind.Settled:
+            if update.feed is not None:
+                _LOGGER.info(
+                    "The feed whose answer was lost ran: feed %s, %s of %s portions",
+                    update.feed.feed,
+                    update.feed.completed,
+                    update.feed.requested,
+                )
+            self._settled(update.pending)
+        elif kind == bridge.UpdateKind.SettledUnfed:
+            _LOGGER.info("The feed whose answer was lost was refused after all: nothing ran")
+            self._settled(update.pending)
+        elif kind == bridge.UpdateKind.StillUnknown:
+            _LOGGER.warning(
+                "A feed of %s portions whose answer was lost left no record: whether it "
+                "ran is not known",
+                update.portions,
+            )
+            self._settled(update.pending)
+            self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
+        else:
+            return False
+        return True
 
     @callback
     def _settled(self, pending: bridge.Pending | None) -> None:

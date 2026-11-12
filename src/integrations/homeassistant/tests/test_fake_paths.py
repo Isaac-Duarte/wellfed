@@ -238,6 +238,27 @@ async def test_a_lost_feed_settled_before_its_write_returns_is_not_kept(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_a_lost_feed_settled_by_its_fed_keeps_its_number(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    lost = fake.pending()
+    feeder.feed_result = fake.uncertain(lost)
+    with pytest.raises(HomeAssistantError):
+        await session.feed(1)
+
+    # The bridge announces the number before the settlement: after a
+    # restart, the replay of this `Fed` must settle no other lost feed.
+    feeder.push(
+        fake.update(bridge.UpdateKind.Answered, answered=4),
+        fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=lost),
+    )
+    await _until(hass, lambda: session.kept.pending == [])
+    assert session.kept.answered == [4]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_a_store_in_another_shape_is_set_aside_and_setup_goes_on(
     hass: HomeAssistant,
     feeder: fake.FakeFeeder,

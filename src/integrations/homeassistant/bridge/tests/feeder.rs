@@ -570,3 +570,85 @@ fn an_answered_feeds_fed_does_not_settle_a_lost_one_after_a_restart() {
     assert!(b_after, "B's `Fed` was replayed after A went out");
     assert_eq!(which, Some(pending));
 }
+
+/// While a feed's answer is lost, a second feed is not sent: a `Fed` names
+/// this client, not the request, so with two unsettled the first `Fed` could
+/// settle the wrong one. Once the first settles, a feed goes again.
+#[test]
+fn a_feed_is_held_while_another_is_uncertain() {
+    let (sim, key) = joined();
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let feeder = session(&sim, key, relay.address, SHORT);
+    state_where(&feeder, |_| true);
+
+    relay.hold_answers();
+    let lost = feeder.feed(1);
+    assert_eq!(lost.result, WriteResult::Uncertain);
+    let passed = relay.passed();
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
+    assert_eq!(relay.passed(), passed, "nothing went out");
+
+    relay.resume();
+    until(&feeder, |update| {
+        (update.kind == UpdateKind::Settled).then_some(())
+    });
+    assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
+}
+
+/// A lost feed settled by its `Fed` hands its number on, so after a restart
+/// the replay of that `Fed` settles nothing: a later lost feed, which the
+/// feeder refused while busy, is still unknown, never taken for it.
+#[test]
+fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
+    let (sim, key) = joined();
+    let secret = key.secret().to_vec();
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let feeder = session(&sim, key, relay.address, SHORT);
+    state_where(&feeder, |_| true);
+
+    // The first lost feed runs, and its `Fed` settles it.
+    relay.hold_answers();
+    assert_eq!(feeder.feed(1).result, WriteResult::Uncertain);
+    relay.resume();
+    let mut answered = Vec::new();
+    let settled = until(&feeder, |update| {
+        answered.extend(update.answered);
+        (update.kind == UpdateKind::Settled).then(|| update.feed.clone())
+    });
+    let first = settled.expect("the feed that ran").feed;
+    assert_eq!(answered, [first], "announced before its settlement");
+
+    // B runs for two seconds; a second lost feed goes out while it does,
+    // and is refused unseen.
+    let b = feeder.feed(10).feed.expect("the feeder numbered B");
+    until(&feeder, |update| (update.answered == Some(b)).then_some(()));
+    answered.push(b);
+    relay.hold_answers();
+    let lost = feeder.feed(1);
+    let pending = lost.pending.expect("an uncertain feed is kept pending");
+    drop(feeder);
+    std::thread::sleep(Duration::from_secs(3));
+
+    // The integration hands on what it was told.
+    let target = Target {
+        identity: sim.identity,
+        address: Some(sim.address.to_string()),
+    };
+    let carried = Carried {
+        pending: vec![pending.clone()],
+        answered,
+    };
+    let restarted =
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let which = until(&restarted, |update| {
+        assert_ne!(
+            update.kind,
+            UpdateKind::Settled,
+            "a replayed `Fed` settled the refused feed"
+        );
+        (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
+    });
+    assert_eq!(which, Some(pending));
+}
