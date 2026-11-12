@@ -1,6 +1,6 @@
  {
   "schema_version": 1,
-  "model": "PLAF103",
+  "model": "plaf103",
   "stock_version": "1.1.15",
   "stock_bytes": 1376288,
   "stock_sha256": "05147476fc70c91cc77ad7da6d6772376b2081d460ac7b1912e2d73868a09498",

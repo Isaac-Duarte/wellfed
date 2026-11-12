@@ -42,10 +42,13 @@ impl fmt::Display for Hex {
 /// The stock fields are the stock OTA image's and the addresses inside it.
 /// A model whose stock was only ever read from flash, the PLWF106, has no
 /// such image, so its layout writes them as `null`.
+/// Every key is known: a misspelled optional one would otherwise read as
+/// absent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Layout {
     pub schema_version: u32,
-    pub model: String,
+    pub model: Model,
     pub stock_version: Option<String>,
     pub stock_bytes: Option<u64>,
     pub stock_sha256: Option<String>,
@@ -83,7 +86,7 @@ mod tests {
         let path = root.join(relative_path(Model::Plaf103));
         assert!(path.ends_with("src/firmware/devices/plaf103/layout.json"));
         let layout: Layout = crate::load(&path).unwrap();
-        assert_eq!(layout.schema_version, 1);
+        assert_eq!((layout.schema_version, layout.model), (1, Model::Plaf103));
         assert_eq!(layout.flash_mapping_base, Hex(0x0800_0000));
         assert_eq!(layout.ota_bank_offsets, [Hex(0x6000), Hex(0x18_6000)]);
         assert!(!layout.known_preserve_ranges.is_empty());
@@ -96,7 +99,7 @@ mod tests {
     fn the_fountain_layout_loads_without_a_stock_image() {
         let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
         let layout: Layout = crate::load(&root.join(relative_path(Model::Plwf106))).unwrap();
-        assert_eq!(layout.model, "PLWF106");
+        assert_eq!(layout.model, Model::Plwf106);
         assert_eq!(layout.ota_bank_offsets, [Hex(0x6000), Hex(0x18_6000)]);
         assert_eq!(layout.candidate_payload_cap_bytes, 0xeb000);
         assert_eq!(
@@ -104,6 +107,17 @@ mod tests {
             (None, None)
         );
         assert!(!layout.boot_acceptance_verified && !layout.complete_partition_map);
+    }
+
+    /// A misspelled key is refused rather than read as an absent field.
+    #[test]
+    fn a_layout_with_an_unknown_key_does_not_load() {
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        let text = std::fs::read_to_string(root.join(relative_path(Model::Plwf106))).unwrap();
+        let misspelled = text.replacen("\"stock_sha256\"", "\"stock_sha265\"", 1);
+        assert_ne!(misspelled, text);
+        assert!(serde_json::from_str::<Layout>(&text).is_ok());
+        assert!(serde_json::from_str::<Layout>(&misspelled).is_err());
     }
 
     #[test]
