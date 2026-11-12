@@ -1,7 +1,9 @@
 //! Bench probe on KM4.
 //!
 //! Stage B: announce a fresh authority session and bind the KM0 peer's READY
-//! into a `FlashCoord` only after stopped-output readback.
+//! into a `FlashCoord` only after stopped-output readback, through the park
+//! handshake arming and the probes share, so it too waits out writes held
+//! for a decided reset.
 //!
 //! Settings stress (owner-approved region `plaf103::STORAGE_OFFSET`): with `Provider`
 //! installed in the SDK flash-lock hooks, stress the settings store on real
@@ -23,17 +25,16 @@
 //! lives in `Provider`.
 
 use wellfed_core::clock::tick::TickClock;
-use wellfed_core::flash_coord::{FlashCoord, FlashFault, FlashPhase, FlashReply};
+use wellfed_core::flash_coord::{FlashFault, FlashPhase, FlashReply};
 use wellfed_device::store::settings::{Settings, SettingsStatus, SettingsStore, SlotState};
 
-use wellfed_hal::flash::park::{self, Mmio, Reply};
+use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash::peer::MARKER_REGISTER;
-use wellfed_hal::flash_lock::provider::{
-    ATTEMPT_BIT, BOOT_COUNT_REGISTER, Provider, READY_TIMEOUT_MS,
-};
+use wellfed_hal::flash_lock::handshake::{Handshake, Handshaking, Unstarted};
+use wellfed_hal::flash_lock::provider::{ATTEMPT_BIT, Provider};
 use wellfed_hal::sdk;
 use wellfed_hal::stopped;
-use wellfed_hal::supervision::config::{FLASH_LIMITS, SYSTIMER_HZ, WATCHDOG};
+use wellfed_hal::supervision::config::{SYSTIMER_HZ, WATCHDOG};
 use wellfed_hal::supervision::watchdog::Watchdog;
 
 pub use wellfed_sdk::storage::{FlashOps, SETTINGS_BASE, SETTINGS_BINDING, Slots};
@@ -138,7 +139,7 @@ pub struct Step {
 enum Stage {
     #[default]
     Start,
-    Wait,
+    Wait(Handshake),
     Arm,
     Run,
     Idle,
@@ -153,7 +154,6 @@ pub struct Probe<F> {
     pub settings: SettingsStore<Slots<F, SETTINGS_BASE>>,
     clock: TickClock,
     stage: Stage,
-    authority: u64,
     progress: u64,
     foreign_seen: bool,
     opened: bool,
@@ -172,7 +172,6 @@ impl<F> Default for Probe<F> {
             settings: SettingsStore::default(),
             clock: TickClock::default(),
             stage: Stage::default(),
-            authority: 0,
             progress: 0,
             foreign_seen: false,
             opened: false,
@@ -212,63 +211,58 @@ impl<F: FlashOps> Probe<F> {
     pub unsafe fn step<M: Mmio>(&mut self, provider: *mut Provider) -> Step {
         match self.stage {
             Stage::Start => {
-                let count = sdk::backup_read(BOOT_COUNT_REGISTER).wrapping_add(1);
-                sdk::backup_write(BOOT_COUNT_REGISTER, count);
                 let raw = sdk::systimer_ticks();
-                self.clock = TickClock::new(SYSTIMER_HZ, raw, 0).unwrap_or_default();
-                self.authority = park::session(count, raw, false);
-                if !park::hello::<M>(self.authority) {
-                    return self.end(Record::ClockError);
-                }
+                let handshake = match Handshake::start::<M>(raw) {
+                    Ok(handshake) => handshake,
+                    // Not into a reset the runtime decided: on a later poll.
+                    Err(Unstarted::Held) => return next(POLL_MS, None),
+                    Err(Unstarted::Refused) => return self.end(Record::ClockError),
+                };
 
-                self.stage = Stage::Wait;
+                self.clock = TickClock::new(SYSTIMER_HZ, raw, 0).unwrap_or_default();
+                self.stage = Stage::Wait(handshake);
                 next(
                     POLL_MS,
                     Some(Record::Hello {
-                        authority: self.authority,
-                        count,
+                        authority: handshake.authority(),
+                        count: handshake.count(),
                     }),
                 )
             }
 
-            Stage::Wait => {
+            Stage::Wait(handshake) => {
                 let Some(now) = self.now() else {
                     return self.end(Record::ClockError);
                 };
-                match park::reply::<M>(self.authority) {
-                    Reply::Ready(peer) => {
-                        // Bind only with verified STOP and infrared OFF readback.
-                        let inactive = stopped::observe().verified();
-                        let Some(mut coord) = FlashCoord::new(&FLASH_LIMITS, self.authority, now)
-                        else {
-                            return self.end(Record::ClockError);
-                        };
-                        let reply = coord.ready(self.authority, peer, inactive, now);
-                        let record = Record::Ready {
-                            peer,
-                            reply,
-                            phase: coord.phase,
-                            fault: coord.fault,
-                            inactive,
-                        };
-
-                        // SAFETY: the caller's contract; no hook is armed yet.
-                        let p = unsafe { &mut *provider };
-                        *p = Provider::bound(coord, self.clock, self.authority);
-
-                        if reply != FlashReply::Accepted {
-                            return self.end(record);
-                        }
-                        self.stage = Stage::Arm;
-                        next(POLL_MS, Some(record))
-                    }
-                    _ if now >= READY_TIMEOUT_MS => self.end(Record::Timeout { ms: now }),
-                    Reply::Foreign if !self.foreign_seen => {
+                let answer = match handshake.step::<M>(now) {
+                    Handshaking::Ready(answer) => answer,
+                    Handshaking::TimedOut => return self.end(Record::Timeout { ms: now }),
+                    Handshaking::Waiting { foreign: true } if !self.foreign_seen => {
                         self.foreign_seen = true;
-                        next(POLL_MS, Some(Record::Foreign))
+                        return next(POLL_MS, Some(Record::Foreign));
                     }
-                    _ => next(POLL_MS, None),
+                    Handshaking::Waiting { .. } => return next(POLL_MS, None),
+                };
+                let Some((coord, reply)) = answer.with_any_reply() else {
+                    return self.end(Record::ClockError);
+                };
+                let record = Record::Ready {
+                    peer: answer.peer(),
+                    reply,
+                    phase: coord.phase,
+                    fault: coord.fault,
+                    inactive: answer.inactive(),
+                };
+
+                // SAFETY: the caller's contract; no hook is armed yet.
+                let p = unsafe { &mut *provider };
+                *p = Provider::bound(coord, self.clock, handshake.authority());
+
+                if reply != FlashReply::Accepted {
+                    return self.end(record);
                 }
+                self.stage = Stage::Arm;
+                next(POLL_MS, Some(record))
             }
 
             Stage::Arm => {

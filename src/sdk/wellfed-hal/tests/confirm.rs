@@ -5,12 +5,13 @@
 //! The confirmation keeps its record in the board's store.
 #![cfg(wellfed_board_store)]
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::sync::{Mutex, MutexGuard};
 
 use wellfed_core::ota::{CONFIRM_LEN, confirm_record, confirmed};
 use wellfed_core::store::update::{Candidate, State, UpdateStore};
-use wellfed_hal::flash::park::{self, Mmio};
+use wellfed_hal::flash::park;
+use wellfed_hal::flash::park::fake::{self as ipc, Ipc};
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::{self, Hooks};
 use wellfed_hal::flash_lock::provider::{ATTEMPT_BIT, Provider};
@@ -25,39 +26,7 @@ use wellfed_hal::trial::identity;
 use wellfed_signed::offer::ImageKind;
 
 thread_local! {
-    static REGS: RefCell<[[u32; 12]; 2]> = const { RefCell::new([[0; 12]; 2]) };
     static ARMED: Cell<bool> = const { Cell::new(false) };
-}
-
-struct Core<const KM0: bool>;
-
-impl<const KM0: bool> Mmio for Core<KM0> {
-    const KM0: bool = KM0;
-    fn load(address: u32) -> u32 {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow()[c][i])
-    }
-    fn store(address: u32, value: u32) {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow_mut()[c][i] = value);
-    }
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
-}
-
-/// USR words per core: index 0 KM0 (0x4800_6000), 1 KM4 (0x4000_6000).
-fn locate(address: u32) -> (usize, usize) {
-    let core = if address & 0xffff_f000 == 0x4800_6000 {
-        0
-    } else {
-        1
-    };
-    (core, (((address & 0xfff) - 0x20) / 4) as usize)
 }
 
 struct FakeHooks;
@@ -84,7 +53,7 @@ fn start() -> MutexGuard<'static, ()> {
     let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     INTERLOCK.reset();
     fake::reset_hardware();
-    REGS.with(|r| *r.borrow_mut() = [[0; 12]; 2]);
+    ipc::reset();
     ARMED.with(|a| a.set(false));
     fake::with(|h| h.interrupts = 1);
     assert!(stopped::initialize().verified());
@@ -132,10 +101,10 @@ fn run_with(
     let mut out = Vec::new();
 
     for _ in 0..steps {
-        park::answer::<Core<true>>(0x0000_0001_4b30_abcd, &mut answered);
+        park::answer::<Ipc<true>>(0x0000_0001_4b30_abcd, &mut answered);
         // SAFETY: `provider` outlives the run.
         let step = unsafe {
-            confirm.step::<Core<false>, FakeHooks>(
+            confirm.step::<Ipc<false>, FakeHooks>(
                 &mut provider,
                 storage,
                 &mut *raise,
@@ -483,7 +452,7 @@ fn a_torn_record_after_the_floor_rose_confirms_on_the_next_boot() {
     );
 
     // The next boot: nothing names the build any more, the floor stays.
-    REGS.with(|r| *r.borrow_mut() = [[0; 12]; 2]);
+    ipc::reset();
     ARMED.with(|a| a.set(false));
     let mut stage = Update::new(1, identity(), None, Slots::new());
     let mut confirm = Confirm::default();

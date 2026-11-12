@@ -16,7 +16,7 @@ use wellfed_device_runtime::writer::{
 };
 use wellfed_device_runtime::{events, keys, network};
 use wellfed_hal::board::storage::{FACTORY_CLEARED_SECTORS, UPDATE};
-use wellfed_hal::flash::park::Mmio;
+use wellfed_hal::flash::park::fake::Unreached;
 use wellfed_hal::flash_lock::arming::Hooks;
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
@@ -104,25 +104,6 @@ impl<F: FlashOps> Product<F> for Bare {
     }
 }
 
-struct NoMmio;
-
-impl Mmio for NoMmio {
-    const KM0: bool = false;
-    fn load(_: u32) -> u32 {
-        unreachable!("no arming with the hooks armed")
-    }
-    fn store(_: u32, _: u32) {
-        unreachable!("no arming with the hooks armed")
-    }
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
-}
-
 struct Armed;
 
 impl Hooks for Armed {
@@ -162,7 +143,7 @@ impl FlashOps for Armed {
 
 fn step(writer: &mut Writer<Armed, Bare>, provider: &mut Provider) -> Option<Record<Never>> {
     // SAFETY: the provider outlives the run.
-    unsafe { writer.step::<NoMmio, Armed>(provider) }.record
+    unsafe { writer.step::<Unreached, Armed>(provider) }.record
 }
 
 /// The fake hardware and the runtime's mailboxes at boot, and a writer.
@@ -230,7 +211,7 @@ fn a_product_without_stores_keeps_the_devices() {
     assert!(text.starts_with("saved generation=1 "), "{text}");
 
     // SAFETY: as above.
-    let idle = unsafe { writer.step::<NoMmio, Armed>(&mut provider) };
+    let idle = unsafe { writer.step::<Unreached, Armed>(&mut provider) };
     assert_eq!((idle.delay_ms, idle.record), (POLL_MS, None));
 }
 

@@ -15,30 +15,11 @@ use wellfed_fw_qa::sequence::{
 use wellfed_probes::buttons::{self, MASK};
 use wellfed_probes::{adc, optics};
 use wellfed_sdk::hal::board::pins::MOTOR_MASK;
-use wellfed_sdk::hal::flash::park::Mmio;
+use wellfed_sdk::hal::flash::park::fake::Refusing;
 use wellfed_sdk::hal::leds::{self, Led};
 use wellfed_sdk::hal::sdk::fake;
 use wellfed_sdk::hal::settings::SettingsView;
 use wellfed_sdk::hal::{audio, settings, stopped};
-
-/// A KM0-side view of the IPC registers: `hello` refuses, as it would with
-/// no KM4 authority to announce, so the optics probe ends at once.
-struct Absent;
-
-impl Mmio for Absent {
-    const KM0: bool = true;
-    fn load(_: u32) -> u32 {
-        0
-    }
-    fn store(_: u32, _: u32) {}
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
-}
 
 /// How long the scripted operator takes to react to a prompt, and then
 /// holds the button.
@@ -100,7 +81,7 @@ fn run(qa: &mut Qa, operator: &mut Operator) -> Vec<Line> {
     let mut held: Option<(Button, u32)> = None;
 
     for _ in 0..1_000_000 {
-        let step = qa.step::<Absent>(&mut Probes {
+        let step = qa.step::<Refusing>(&mut Probes {
             optics: &mut optics,
             power: &mut power,
             buttons: &mut buttons,

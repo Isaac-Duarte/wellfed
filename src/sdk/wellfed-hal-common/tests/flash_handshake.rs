@@ -1,59 +1,13 @@
 //! Boot handshake between the KM4 authority and the KM0 peer over the
 //! reserved IPC USR words, with both cores sharing one register model.
 
-use std::cell::RefCell;
-
+use wellfed_hal_common::flash::park::fake::{Ipc, reset, set_usr, usr};
 use wellfed_hal_common::flash::park::{
-    HELLO, Mmio, READY, REQUEST, Reply, answer, hello, reannounce, reply, session,
+    HELLO, READY, REQUEST, Reply, answer, hello, reannounce, reply, session,
 };
 
-thread_local! {
-    /// USR words 0..11 per core: index 0 KM0 (0x4800_6000), 1 KM4 (0x4000_6000).
-    static REGS: RefCell<[[u32; 12]; 2]> = const { RefCell::new([[0; 12]; 2]) };
-}
-
-fn locate(address: u32) -> (usize, usize) {
-    let core = match address & 0xffff_f000 {
-        0x4800_6000 => 0,
-        0x4000_6000 => 1,
-        _ => panic!("unexpected address {address:#x}"),
-    };
-    let offset = address & 0xfff;
-    assert!((0x20..0x50).contains(&offset) && offset & 3 == 0);
-    (core, ((offset - 0x20) / 4) as usize)
-}
-
-struct Core<const KM0: bool>;
-
-impl<const KM0: bool> Mmio for Core<KM0> {
-    const KM0: bool = KM0;
-    fn load(address: u32) -> u32 {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow()[c][i])
-    }
-    fn store(address: u32, value: u32) {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow_mut()[c][i] = value);
-    }
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
-}
-
-type Km0 = Core<true>;
-type Km4 = Core<false>;
-
-fn reset() {
-    REGS.with(|r| *r.borrow_mut() = [[0; 12]; 2]);
-}
-
-fn usr(core: usize, index: usize) -> u32 {
-    REGS.with(|r| r.borrow()[core][index])
-}
+type Km0 = Ipc<true>;
+type Km4 = Ipc<false>;
 
 const A: u64 = 0x0000_0001_1234_5679;
 const P: u64 = 0x0000_0001_4b30_abcd;
@@ -108,13 +62,10 @@ fn stale_or_foreign_replies_are_never_ready() {
     assert_eq!(reply::<Km4>(b), Reply::Ready(P));
 
     // A non-handshake command or a lease word never reads as READY.
-    REGS.with(|r| r.borrow_mut()[0][10] = REQUEST);
+    set_usr(0, 10, REQUEST);
     assert_eq!(reply::<Km4>(b), Reply::Waiting);
-    REGS.with(|r| {
-        let mut r = r.borrow_mut();
-        r[0][10] = READY;
-        r[0][6] = 1;
-    });
+    set_usr(0, 10, READY);
+    set_usr(0, 6, 1);
     assert_eq!(reply::<Km4>(b), Reply::Foreign);
 }
 
@@ -128,7 +79,7 @@ fn roles_and_zero_sessions_are_refused() {
     assert_eq!(reply::<Km0>(A), Reply::Foreign);
 
     // A HELLO naming a zero authority is not answered.
-    REGS.with(|r| r.borrow_mut()[1][10] = HELLO);
+    set_usr(1, 10, HELLO);
     assert_eq!(answer::<Km0>(P, &mut answered), 0);
     assert!(!reannounce::<Km0>(P, 0) && !reannounce::<Km4>(P, A));
 }

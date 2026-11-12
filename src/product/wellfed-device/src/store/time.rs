@@ -24,8 +24,8 @@ use core::ffi::c_uint;
 
 use wellfed_core::clock::zone::{TEXT_MAX, Zone};
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u16, get_u64,
-    newest, put_u16, put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Newest, RECORD_BYTES, SlotIo, Version, get_u16, get_u64,
+    put_u16, put_u64, seal,
 };
 use wellfed_device_api::mailbox::{NtpServer, TimeSettings};
 
@@ -143,34 +143,23 @@ const _: () = assert!(ZONE_END <= CRC_AT);
 impl<I: SlotIo> TimeStore<I> {
     /// Bind to two exclusive erase units and load the newest valid record.
     pub fn open(&mut self, io: I) -> TimeStatus {
-        let unit = io.unit_bytes();
-        *self = Self {
-            units: DualSlot::new(io, &LAYOUT),
-            ..Self::default()
-        };
-        if (unit as usize) < RECORD_BYTES {
-            self.status = TimeStatus::Io;
-            return self.status;
-        }
-        let (Some(a), Some(b)) = (
-            self.units.scan(0, |_, p| decode(p)),
-            self.units.scan(1, |_, p| decode(p)),
-        ) else {
-            self.status = TimeStatus::Io;
-            return self.status;
-        };
-
-        self.status = match newest(a, b, |&(generation, _)| generation) {
-            Pick::Future => TimeStatus::ReadOnly,
-            Pick::Newest(slot, (generation, settings)) => {
+        *self = Self::default();
+        self.status = match self.units.open_newest(io, decode) {
+            Newest::Io => TimeStatus::Io,
+            Newest::Future => TimeStatus::ReadOnly,
+            Newest::Loaded {
+                slot,
+                generation,
+                value,
+            } => {
                 self.slot = slot;
                 self.generation = generation;
-                self.settings = settings;
+                self.settings = value;
                 TimeStatus::Loaded
             }
             // The two sectors are this store's alone, so anything else there
             // is a save of ours cut short: the defaults, still writable.
-            Pick::Nothing => TimeStatus::Empty,
+            Newest::Nothing { .. } => TimeStatus::Empty,
         };
         self.status
     }
@@ -187,15 +176,14 @@ impl<I: SlotIo> TimeStore<I> {
         if !self.writable() || !self.units.writable() {
             return false;
         }
-        let generation = self.generation + 1;
-        let slot = target(self.generation, self.slot);
-        let from = (self.generation > 0).then_some(self.slot);
-        if !self
+        let saved = self
             .units
-            .replace(slot, from, &encode(generation, settings))
-        {
-            return self.reread(generation);
-        }
+            .save_newest(self.generation, self.slot, |generation| {
+                encode(generation, settings)
+            });
+        let Some((slot, generation)) = saved else {
+            return self.reread(self.generation + 1);
+        };
         self.slot = slot;
         self.generation = generation;
         self.settings = *settings;

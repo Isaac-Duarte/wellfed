@@ -12,7 +12,7 @@ use wellfed_feeder_runtime::writer::{Record, Writer};
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
 
-use crate::support::{A, Armed, B, NoMmio, start, step};
+use crate::support::{A, Armed, B, Unreached, start, step};
 
 /// The loop's queued events reach the ring, survive a reboot, and
 /// come back through the read mailbox in order.
@@ -107,7 +107,7 @@ fn a_reader_catching_up_takes_a_batch_a_read() {
 
     assert_eq!(events::read_result(A, None), None, "asked");
     // SAFETY: the provider outlives the run.
-    let answered = unsafe { writer.step::<NoMmio, Armed>(&mut provider) };
+    let answered = unsafe { writer.step::<Unreached, Armed>(&mut provider) };
     assert_eq!(
         answered.delay_ms,
         writer::EVENTS_POLL_MS,
@@ -132,7 +132,7 @@ fn a_reader_catching_up_takes_a_batch_a_read() {
     // Past the batch the reader asks again; the writer, still at the read
     // pace, answers on its next poll.
     // SAFETY: as above.
-    let idle = unsafe { writer.step::<NoMmio, Armed>(&mut provider) };
+    let idle = unsafe { writer.step::<Unreached, Armed>(&mut provider) };
     assert_eq!(
         idle.delay_ms,
         writer::EVENTS_POLL_MS,
@@ -152,7 +152,7 @@ fn a_reader_catching_up_takes_a_batch_a_read() {
     // With no reader the writer goes back to its idle poll.
     let delay = (0..=writer::READ_LINGER_POLLS)
         // SAFETY: as above.
-        .map(|_| unsafe { writer.step::<NoMmio, Armed>(&mut provider) }.delay_ms)
+        .map(|_| unsafe { writer.step::<Unreached, Armed>(&mut provider) }.delay_ms)
         .last();
     assert_eq!(delay, Some(writer::POLL_MS));
 }

@@ -13,7 +13,7 @@ use wellfed_feeder_runtime::writer::Writer;
 use wellfed_feeder_runtime::{calibration, call, plans, traces};
 use wellfed_fw_feeder::platform::Plaf103;
 use wellfed_proto::api::FoodLevel;
-use wellfed_sdk::hal::flash::park::Mmio;
+use wellfed_sdk::hal::flash::park::fake::Unreached;
 use wellfed_sdk::hal::flash_lock::arming::Hooks;
 use wellfed_sdk::hal::flash_lock::provider::Provider;
 use wellfed_sdk::hal::interlock::INTERLOCK;
@@ -21,26 +21,6 @@ use wellfed_sdk::hal::ota::mailbox;
 use wellfed_sdk::hal::sdk::{self, fake};
 use wellfed_sdk::hal::{audio, bringup, buttons, clock, rng};
 use wellfed_sdk::storage::FlashOps;
-
-/// The writer runs with the hooks already armed, as after confirmation.
-struct NoMmio;
-
-impl Mmio for NoMmio {
-    const KM0: bool = false;
-    fn load(_: u32) -> u32 {
-        unreachable!("no arming with the hooks armed")
-    }
-    fn store(_: u32, _: u32) {
-        unreachable!("no arming with the hooks armed")
-    }
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
-}
 
 /// The fake's flash through hooks that are armed.
 struct Armed;
@@ -133,7 +113,7 @@ impl FirmwareRig {
 
     fn step(&mut self) {
         // SAFETY: the provider lives as long as the rig, at a fixed address.
-        unsafe { self.writer.step::<NoMmio, Armed>(&mut *self.provider) };
+        unsafe { self.writer.step::<Unreached, Armed>(&mut *self.provider) };
     }
 }
 
