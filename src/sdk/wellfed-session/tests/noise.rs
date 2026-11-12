@@ -517,3 +517,68 @@ mod properties {
         }
     }
 }
+
+/// A forged first message that names another client: anyone holding the
+/// feeder's public key can seal a victim's key under `es`, but not the
+/// payload under `ss`. The read fails, the handshake fails with it, and it
+/// names no client and takes no further step.
+#[test]
+fn a_failed_ik_read_names_no_client_and_ends_the_handshake() {
+    let feeder = *Keypair::from_secret(RESPONDER_STATIC).public();
+    let initiator = |secret| {
+        Handshake::new(
+            Pattern::Ik,
+            Role::Initiator,
+            PROLOGUE,
+            &Keypair::from_secret(secret),
+            Some(feeder),
+            INITIATOR_EPHEMERAL,
+        )
+        .unwrap()
+    };
+    let (mut victims, mut attackers) = ([0; 256], [0; 256]);
+    let len = initiator(INITIATOR_STATIC)
+        .write_message(b"hi", &mut victims)
+        .unwrap();
+    initiator([0x77; 32])
+        .write_message(b"hi", &mut attackers)
+        .unwrap();
+    // The ephemeral and the sealed static (32 + 48 bytes) only need `es`.
+    let mut forged = attackers;
+    forged[..80].copy_from_slice(&victims[..80]);
+
+    let mut responder = ours(Pattern::Ik, Role::Responder);
+    let mut payload = [0; 256];
+    assert_eq!(
+        responder.read_message(&forged[..len], &mut payload),
+        Err(Error::Decrypt)
+    );
+    assert!(responder.is_failed());
+    assert_eq!(responder.remote_static(), None);
+    assert!(!responder.is_my_turn() && !responder.is_finished());
+    assert_eq!(
+        responder.write_message(&[], &mut payload),
+        Err(Error::WrongTurn)
+    );
+    assert_eq!(
+        responder.read_message(&victims[..len], &mut payload),
+        Err(Error::WrongTurn)
+    );
+    assert!(matches!(responder.into_transport(), Err(Error::Unfinished)));
+}
+
+/// A write that runs out of room has already mixed its tokens, so it fails
+/// the handshake rather than leave one a retry would get wrong.
+#[test]
+fn a_failed_write_ends_the_handshake() {
+    let mut initiator = ours(Pattern::Ik, Role::Initiator);
+    assert_eq!(
+        initiator.write_message(b"hi", &mut [0; 64]),
+        Err(Error::BufferTooSmall)
+    );
+    assert!(initiator.is_failed());
+    assert_eq!(
+        initiator.write_message(b"hi", &mut [0; 256]),
+        Err(Error::WrongTurn)
+    );
+}
