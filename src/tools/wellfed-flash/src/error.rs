@@ -105,7 +105,9 @@ impl Error {
                 | wellfed_image::Error::Root(_)
                 | wellfed_image::Error::Review(_),
             )
-            | Self::Formats(wellfed_formats::Error::NotInteger)
+            | Self::Formats(
+                wellfed_formats::Error::NotInteger | wellfed_formats::Error::Shared { .. },
+            )
             | Self::Lease(_)
             | Self::Protocol(_)
             | Self::Sector(_)
