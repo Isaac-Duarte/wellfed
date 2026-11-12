@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use clap::Subcommand;
 use wellfed_formats::cli::Device;
 use wellfed_server_client::api::ReleaseQuery;
-use wellfed_server_client::{Client, Uploaded};
+use wellfed_server_client::{Client, Kept};
 
 use super::{Output, Settled, text};
 
@@ -56,10 +56,10 @@ pub(super) async fn releases(client: &Client, releases: Releases, out: Output) -
             let bytes = std::fs::read(&file).with_context(|| format!("read {}", file.display()))?;
             // Uploading the same file twice is harmless, so it needs no key.
             match client.upload_release(bytes).await? {
-                Uploaded::New(release) => {
+                Kept::New(release) => {
                     out.show(&release, |r| format!("Kept {}", text::release(r)))?;
                 }
-                Uploaded::Known(release) => {
+                Kept::Known(release) => {
                     out.show(&release, |r| format!("Already kept: {}", text::release(r)))?;
                 }
             }

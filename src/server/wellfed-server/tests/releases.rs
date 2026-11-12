@@ -4,10 +4,10 @@
 
 use ed25519_dalek::SigningKey;
 use wellfed_api::{
-    Credentials, ErrorCode, NewUser, ReleaseQuery, ReleaseRefusal, ReleaseSigner, ReleaseSource,
-    Role,
+    Credentials, ErrorCode, NewUser, Release, ReleaseQuery, ReleaseRefusal, ReleaseSigner,
+    ReleaseSource, Role,
 };
-use wellfed_server_client::{Client, Error, StatusCode, Uploaded};
+use wellfed_server_client::{Client, Error, Kept, StatusCode};
 use wellfed_server_testkit::release::{self, MANIFEST_LEN, SECTOR, project, signed};
 use wellfed_server_testkit::{TestServer, ada_setup, config, refused};
 use wellfed_service::{Config, RELEASE_MAX, ReleaseFeed};
@@ -37,7 +37,7 @@ async fn owner(server: &TestServer) -> Client {
 
 /// The refusal a `release_refused` problem names.
 #[track_caller]
-fn refused_as(result: Result<Uploaded, Error>, want: ReleaseRefusal) {
+fn refused_as(result: Result<Kept<Release>, Error>, want: ReleaseRefusal) {
     match result {
         Err(Error::Problem {
             status, problem, ..
@@ -62,7 +62,7 @@ async fn an_owner_uploads_a_release_and_lists_it() {
     let client = owner(&server).await;
     let file = release(&project(), 7);
 
-    let Uploaded::New(release) = client.upload_release(file.clone()).await.unwrap() else {
+    let Kept::New(release) = client.upload_release(file.clone()).await.unwrap() else {
         panic!("a first upload is new");
     };
     assert_eq!(release.version, 7);
@@ -70,7 +70,7 @@ async fn an_owner_uploads_a_release_and_lists_it() {
     assert_eq!(release.source, ReleaseSource::Upload);
 
     let again = client.upload_release(file).await.unwrap();
-    assert_eq!(again, Uploaded::Known(release.clone()));
+    assert_eq!(again, Kept::Known(release.clone()));
 
     let page = client.releases(&ReleaseQuery::default()).await.unwrap();
     assert_eq!((page.items, page.next), (vec![release], None));
@@ -88,7 +88,7 @@ async fn an_upload_may_be_a_full_bank() {
 
     let uploaded = client.upload_release(file).await.unwrap();
 
-    assert!(matches!(uploaded, Uploaded::New(_)), "{uploaded:?}");
+    assert!(matches!(uploaded, Kept::New(_)), "{uploaded:?}");
     server.stop().await;
 }
 

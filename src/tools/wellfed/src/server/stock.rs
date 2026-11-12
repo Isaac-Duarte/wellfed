@@ -106,7 +106,7 @@ pub(super) async fn stock(client: &Client, args: StockArgs, out: Output) -> Resu
     Ok(Settled::Known)
 }
 
-fn show_kept(kept: Kept, out: Output) -> Result<()> {
+fn show_kept(kept: Kept<wellfed_server_client::api::StockBackup>, out: Output) -> Result<()> {
     match kept {
         Kept::New(backup) => out.show(&backup, |b| format!("Kept {}", text::stock_backup(b))),
         Kept::Known(backup) => out.show(&backup, |b| {

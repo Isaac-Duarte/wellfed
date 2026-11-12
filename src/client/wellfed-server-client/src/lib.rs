@@ -64,9 +64,7 @@ pub use commands::{Settled, settled};
 pub use diagnostics::LogBatches;
 pub use error::{Error, Failure};
 pub use feeders::Lock;
-pub use releases::Uploaded;
 pub use reqwest::{self, Method, StatusCode, Url};
-pub use stock::Kept;
 pub use stream::{Update, Updates};
 /// The API's bodies, for a caller that may not depend on `wellfed-api`
 /// itself: the CLI reaches the server through this crate alone.
@@ -293,6 +291,25 @@ pub async fn expect_status(response: Response, expected: StatusCode) -> Result<R
         });
     }
     Err(Error::Unexpected { status, expected })
+}
+
+/// What a request that keeps something did: a release uploaded, a copy of
+/// stock uploaded or read. The server answers 201 for one it kept now and
+/// 200 for one it held already, the same body either way.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Kept<T> {
+    /// Verified and kept.
+    New(T),
+    /// The server held it already.
+    Known(T),
+}
+
+/// What a keeping request's `response` says it did.
+pub(crate) async fn kept<T: DeserializeOwned>(response: Response) -> Result<Kept<T>, Error> {
+    if response.status() == StatusCode::OK {
+        return Ok(Kept::Known(decode(response, StatusCode::OK).await?));
+    }
+    Ok(Kept::New(decode(response, StatusCode::CREATED).await?))
 }
 
 /// The JSON body of `response`, if its status is `expected`.

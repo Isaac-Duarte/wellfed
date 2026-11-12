@@ -11,7 +11,7 @@ use wellfed_api::{
     AdoptFeeder, ClientRole, Connection, Credentials, ErrorCode, FeederId, FeederRefusal, Hex,
     Install, InstallState, InstallTarget, NewUser, Release, Role, StreamEvent, StreamQuery,
 };
-use wellfed_server_client::{Client, Error, Lock, StatusCode, Uploaded};
+use wellfed_server_client::{Client, Error, Kept, Lock, StatusCode};
 use wellfed_server_testkit::feeder::{self, Banks, Running};
 use wellfed_server_testkit::release::{self, SECTOR, project, signed};
 use wellfed_server_testkit::{TestServer, WAIT, ada_setup, config, local, refused, until};
@@ -52,7 +52,7 @@ impl Rig {
         })
         .await;
         let file = signed(&project(), 7, BUILD, LEN);
-        let Uploaded::New(release) = http.upload_release(file).await.unwrap() else {
+        let Kept::New(release) = http.upload_release(file).await.unwrap() else {
             panic!("a first upload is new");
         };
 

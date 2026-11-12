@@ -18,7 +18,7 @@ use wellfed_server_client::api::{
     ErrorCode, EventPage, EventQuery, FeedOutcome, Feeder, FeederClient, FeederId, Hex, Install,
     InstallState, Problem, StockBackup, StockSource, StockState,
 };
-use wellfed_server_client::{Client, Uploaded};
+use wellfed_server_client::{Client, Kept};
 use wellfed_server_testkit::feeder::{self, Banks, Flash, Relay, Running};
 use wellfed_server_testkit::release;
 use wellfed_server_testkit::{TestServer, ada_login, ada_setup, config, local, until};
@@ -393,7 +393,7 @@ fn install_follows_a_release_to_activation() {
         };
         let kitchen = http.adopt(&request).await.unwrap().id;
         let file = release::signed(&release::project(), 7, BUILD, 16 * release::SECTOR);
-        let Uploaded::New(kept) = http.upload_release(file).await.unwrap() else {
+        let Kept::New(kept) = http.upload_release(file).await.unwrap() else {
             panic!("a first upload is new");
         };
         until("the server reads the feeder", || async {

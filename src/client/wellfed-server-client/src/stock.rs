@@ -3,19 +3,10 @@
 //! stock".
 
 use reqwest::header::{self, HeaderValue};
-use reqwest::{Method, Response, StatusCode};
+use reqwest::{Method, StatusCode};
 use wellfed_api::{FeederId, Install, StockBackup, StockRestore, StockState};
 
-use crate::{Client, Error, decode, expect_status};
-
-/// What keeping a copy of stock did.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Kept {
-    /// Verified and kept.
-    New(StockBackup),
-    /// The server kept a verified copy already.
-    Known(StockBackup),
-}
+use crate::{Client, Error, Kept, decode, expect_status, kept};
 
 impl Client {
     /// The feeder's kept stock backup, what the feeder says of its banks
@@ -42,7 +33,11 @@ impl Client {
     /// Upload a copy of the feeder's stock. A copy the server refuses comes
     /// back as a `stock_refused` problem. Uploading the same copy again is
     /// harmless, so it needs no idempotency key.
-    pub async fn upload_stock(&self, feeder: FeederId, file: Vec<u8>) -> Result<Kept, Error> {
+    pub async fn upload_stock(
+        &self,
+        feeder: FeederId,
+        file: Vec<u8>,
+    ) -> Result<Kept<StockBackup>, Error> {
         let response = self
             .api(Method::POST, &format!("/feeders/{feeder}/stock/upload"))
             .header(
@@ -58,7 +53,7 @@ impl Client {
     /// Have the server read bank 1 from the feeder (the replacement on
     /// bank 0, before promotion) and keep it; this waits for the read. A
     /// read changes nothing on the feeder, so it needs no idempotency key.
-    pub async fn read_stock(&self, feeder: FeederId) -> Result<Kept, Error> {
+    pub async fn read_stock(&self, feeder: FeederId) -> Result<Kept<StockBackup>, Error> {
         let response = self
             .api(Method::POST, &format!("/feeders/{feeder}/stock/read"))
             .send()
@@ -82,11 +77,4 @@ impl Client {
             .await?;
         decode(response, StatusCode::ACCEPTED).await
     }
-}
-
-async fn kept(response: Response) -> Result<Kept, Error> {
-    if response.status() == StatusCode::OK {
-        return Ok(Kept::Known(decode(response, StatusCode::OK).await?));
-    }
-    Ok(Kept::New(decode(response, StatusCode::CREATED).await?))
 }

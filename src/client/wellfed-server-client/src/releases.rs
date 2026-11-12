@@ -8,16 +8,7 @@ use wellfed_api::{
     FeederId, Hex, Install, InstallRequest, Release, ReleaseCheck, ReleasePage, ReleaseQuery,
 };
 
-use crate::{Client, Error, decode};
-
-/// What an upload did.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Uploaded {
-    /// Verified and kept.
-    New(Release),
-    /// The server held it already.
-    Known(Release),
-}
+use crate::{Client, Error, Kept, decode, kept};
 
 impl Client {
     /// A page of the server's verified releases, newest version first.
@@ -33,7 +24,7 @@ impl Client {
     /// Upload a release file. A file the server refuses comes back as a
     /// `release_refused` problem whose `release` says why. Uploading the
     /// same file again is harmless, so it needs no idempotency key.
-    pub async fn upload_release(&self, file: Vec<u8>) -> Result<Uploaded, Error> {
+    pub async fn upload_release(&self, file: Vec<u8>) -> Result<Kept<Release>, Error> {
         let response = self
             .api(Method::POST, "/releases")
             .header(
@@ -43,11 +34,7 @@ impl Client {
             .body(file)
             .send()
             .await?;
-
-        if response.status() == StatusCode::OK {
-            return Ok(Uploaded::Known(decode(response, StatusCode::OK).await?));
-        }
-        Ok(Uploaded::New(decode(response, StatusCode::CREATED).await?))
+        kept(response).await
     }
 
     /// Check the project's releases now, keeping each new one that
