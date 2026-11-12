@@ -2,15 +2,11 @@
 //! following a feeder's debug log (`GET /feeders/{id}/log`, Server-Sent
 //! Events).
 
-use std::collections::VecDeque;
-
-use futures_util::StreamExt;
-use futures_util::stream::BoxStream;
 use reqwest::header::{self, HeaderValue};
 use reqwest::{Method, StatusCode};
 use wellfed_api::{FeedTrace, FeederAlerts, FeederId, FeederStats, LogEvent, TraceQuery};
 
-use crate::stream::{Block, Parser};
+use crate::stream::Blocks;
 use crate::{Client, Error, decode, decode_page, decode_page_counted, expect_status};
 
 impl Client {
@@ -67,14 +63,8 @@ impl Client {
             );
 
         let response = expect_status(request.send().await?, StatusCode::OK).await?;
-        let body = response
-            .bytes_stream()
-            .map(|chunk| chunk.map(|bytes| bytes.to_vec()))
-            .boxed();
         Ok(LogBatches {
-            body,
-            parser: Parser::default(),
-            ready: VecDeque::new(),
+            blocks: Blocks::new(response),
         })
     }
 }
@@ -82,15 +72,13 @@ impl Client {
 /// A followed debug log. It ends when the feeder's tail does, at the
 /// server's shutdown, or once the session no longer holds.
 pub struct LogBatches {
-    body: BoxStream<'static, reqwest::Result<Vec<u8>>>,
-    parser: Parser,
-    ready: VecDeque<Block>,
+    blocks: Blocks,
 }
 
 impl std::fmt::Debug for LogBatches {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LogBatches")
-            .field("ready", &self.ready.len())
+            .field("ready", &self.blocks.queued())
             .finish_non_exhaustive()
     }
 }
@@ -99,15 +87,6 @@ impl LogBatches {
     /// The next message, or `None` once the log has ended. Cancel-safe: a
     /// block read but not yet returned stays queued.
     pub async fn next(&mut self) -> Option<Result<LogEvent, Error>> {
-        loop {
-            if let Some(block) = self.ready.pop_front() {
-                return Some(block.json());
-            }
-
-            match self.body.next().await? {
-                Ok(chunk) => self.ready.extend(self.parser.push(&chunk)),
-                Err(error) => return Some(Err(error.into())),
-            }
-        }
+        Some(self.blocks.next().await?.and_then(|block| block.json()))
     }
 }
