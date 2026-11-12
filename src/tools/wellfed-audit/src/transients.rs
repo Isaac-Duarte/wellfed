@@ -21,10 +21,12 @@
 //! recorded sessions show single skews of up to 4.5 µs between them. The
 //! pass rule the motor driver's evidence applies excludes that millisecond,
 //! and a differing read counts as drive only when the levels are firm. So a
-//! disagreement that starts inside [`RAMP_US`] of power-on and lasts at most
-//! [`SKEW_US`] is reported as a `ramp_skew`, kept out of the outcome, and a
-//! brief return to standby inside the ramp does not leave the brake. A
-//! longer disagreement, even inside the ramp, is drive. Whether the skews
+//! disagreement is reported as a `ramp_skew`, kept out of the outcome, only
+//! where it fits one threshold crossing: the pair's first disagreement, it
+//! starts inside [`RAMP_US`] of power-on, lasts at most [`SKEW_US`], and the
+//! pair rises through it, from L/L to H/H. One per pair per cycle; any
+//! other disagreement, even inside the ramp, is drive. A brief return to
+//! standby inside the ramp does not leave the brake. Whether the skews
 //! belong to the probe and the ramp, not the driver, is an open bench check
 //! (a scope on the inputs); until then the report counts them. An
 //! outputs-only session has no power-on edge of its own, so it takes no ramp.
@@ -125,6 +127,30 @@ impl Probes {
 }
 
 /// (value, start, length) for each run of `byte & mask` in the capture.
+/// The one disagreement of the line pair `[a, b]` the supply ramp excuses,
+/// as its first sample and length: the pair's first disagreement, if it
+/// starts in the ramp, lasts at most [`SKEW_US`], and sits between the pair
+/// at L/L and the pair at H/H, as one threshold crossing of a rising supply
+/// does. Any later disagreement, or one that falls or toggles, is drive.
+fn ramp_crossing(
+    data: &[u8],
+    [a, b]: [u8; 2],
+    in_ramp: impl Fn(usize) -> bool,
+    us: f64,
+) -> Option<(usize, usize)> {
+    let pair = runs(data, a | b);
+    let split = |value: u8| value != 0 && value != a | b;
+    let first = pair.iter().position(|&(value, _, _)| split(value))?;
+
+    let (_, start, length) = pair[first];
+    let rises = first > 0
+        && pair[first - 1].0 == 0
+        && pair
+            .get(first + 1)
+            .is_some_and(|&(next, _, _)| next == a | b);
+    (rises && in_ramp(start) && length as f64 * us <= SKEW_US).then_some((start, length))
+}
+
 pub(crate) fn runs(data: &[u8], mask: u8) -> Vec<(u8, usize, usize)> {
     let mut out = Vec::new();
     let mut start = 0;
@@ -235,37 +261,49 @@ pub(crate) fn check_cycle(
     let ramp_end = power_on.map(|at| at + RAMP_US);
     let in_ramp =
         |at: f64| power_on.is_some_and(|on| at >= on) && ramp_end.is_some_and(|end| at < end);
+    let crossing =
+        |pair: [u8; 2]| ramp_crossing(data, pair, |start| in_ramp(start as f64 * us), us);
+    let input_skew = input_bits.and_then(crossing);
+    let output_skew = crossing([outa, outb]);
+    let within = |skew: Option<(usize, usize)>, at: usize| {
+        skew.is_some_and(|(start, length)| (start..start + length).contains(&at))
+    };
+
     for &(value, start, length) in &timeline {
-        let event = |drive| DriveEvent {
+        let event = |start: usize, length: usize, drive| DriveEvent {
             start_us: round(start as f64 * us, 3),
             length_us: round(length as f64 * us, 3),
             drive,
         };
-        let skew = in_ramp(start as f64 * us) && length as f64 * us <= SKEW_US;
         if let Some([ina, inb]) = input_bits
             && on(value, ina) != on(value, inb)
         {
-            let drive = event(Drive::Direction(if on(value, ina) {
+            let drive = Drive::Direction(if on(value, ina) {
                 Direction::Forward
             } else {
                 Direction::Reverse
-            }));
-            if skew {
-                check.ramp_skew.push(drive);
-            } else {
-                check.input_drive.push(drive);
+            });
+            match input_skew {
+                // The crossing is reported once, whole, at its first sample.
+                Some((at, skew)) if at == start => {
+                    check.ramp_skew.push(event(at, skew, drive));
+                }
+                _ if within(input_skew, start) => {}
+                _ => check.input_drive.push(event(start, length, drive)),
             }
         }
         if on(value, outa) != on(value, outb) {
-            let drive = event(Drive::High(if on(value, outa) {
+            let drive = Drive::High(if on(value, outa) {
                 Output::Outa
             } else {
                 Output::Outb
-            }));
-            if skew {
-                check.ramp_skew.push(drive);
-            } else {
-                check.output_drive.push(drive);
+            });
+            match output_skew {
+                Some((at, skew)) if at == start => {
+                    check.ramp_skew.push(event(at, skew, drive));
+                }
+                _ if within(output_skew, start) => {}
+                _ => check.output_drive.push(event(start, length, drive)),
             }
         }
     }

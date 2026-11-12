@@ -80,23 +80,19 @@ fn a_single_sample_drive_is_caught_and_timed() {
     );
 }
 
-/// Inside the supply ramp's first millisecond, a skew of a few
-/// microseconds is reported apart and passes; the same skew after the ramp,
-/// or a long drive inside it, fails.
+/// With the inputs probed, one disagreement inside the first millisecond
+/// that fits a threshold crossing of the rising supply (L/L, one line high
+/// for at most a few microseconds, then H/H) is reported apart and passes.
+/// The same skew after the ramp, a long one, a second one, one that falls
+/// or one that toggles is drive.
 #[test]
 fn a_skew_in_the_supply_ramp_is_reported_but_a_drive_is_not_excused() {
-    let r = check(
-        &capture(&[(OFF, 1000), (FWD, 1), (BRAKE, 10), (REV, 4), (BRAKE, 2000)]),
-        Boot,
-    );
+    let r = check(&capture(&[(OFF, 1000), (FWD, 4), (BRAKE, 2000)]), Boot);
     assert_eq!(r["outcome"], "pass");
     assert_eq!(r["input_drive"], json!([]));
     assert_eq!(
         r["ramp_skew"],
-        json!([
-            {"start_us": 1000.0, "length_us": 1.0, "direction": "forward"},
-            {"start_us": 1011.0, "length_us": 4.0, "direction": "reverse"}
-        ])
+        json!([{"start_us": 1000.0, "length_us": 4.0, "direction": "forward"}])
     );
 
     // The same skew 2 ms after power-on is drive.
@@ -110,6 +106,40 @@ fn a_skew_in_the_supply_ramp_is_reported_but_a_drive_is_not_excused() {
     let r = check(&capture(&[(OFF, 1000), (FWD, 105), (BRAKE, 2000)]), Boot);
     assert_eq!(r["outcome"], "transients_input_drive");
     assert_eq!(r["ramp_skew"], json!([]));
+
+    // One crossing per pair: a second skew, even a short one, is drive.
+    let r = check(
+        &capture(&[(OFF, 1000), (FWD, 1), (BRAKE, 10), (REV, 4), (BRAKE, 2000)]),
+        Boot,
+    );
+    assert_eq!(r["outcome"], "transients_input_drive");
+    assert_eq!(
+        r["input_drive"],
+        json!([{"start_us": 1011.0, "length_us": 4.0, "direction": "reverse"}])
+    );
+
+    // A drive toggling in the first millisecond fits no crossing.
+    let r = check(
+        &capture(&[
+            (OFF, 1000),
+            (FWD, 2),
+            (OFF, 2),
+            (FWD, 2),
+            (OFF, 2),
+            (BRAKE, 2000),
+        ]),
+        Boot,
+    );
+    assert_eq!(r["outcome"], "transients_input_drive");
+    assert_eq!(r["ramp_skew"], json!([]));
+    assert_eq!(r["input_drive"].as_array().unwrap().len(), 2);
+
+    // A skew on the way down from H/H is no rising crossing.
+    let r = check(
+        &capture(&[(OFF, 1000), (BRAKE, 5), (FWD, 2), (OFF, 5), (BRAKE, 2000)]),
+        Boot,
+    );
+    assert_eq!(r["outcome"], "transients_input_drive");
 }
 
 #[test]
