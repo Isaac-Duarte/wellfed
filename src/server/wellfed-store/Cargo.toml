@@ -7,6 +7,11 @@ rust-version.workspace = true
 description = "The owner's server database: SQLite through sqlx, its migrations and typed queries"
 publish.workspace = true
 
+[features]
+# Store faults for other crates' tests (`testing`); no shipping crate
+# enables it.
+testing = []
+
 [dependencies]
 futures-util.workspace = true
 jiff.workspace = true

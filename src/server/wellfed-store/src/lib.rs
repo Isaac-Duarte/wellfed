@@ -49,6 +49,8 @@ mod projections;
 mod refills;
 mod retired;
 mod samples;
+#[cfg(feature = "testing")]
+pub mod testing;
 mod tokens;
 mod users;
 

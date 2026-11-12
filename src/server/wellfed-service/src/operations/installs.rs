@@ -351,17 +351,26 @@ impl Service {
                 }
             }
         };
-        // The sender goes with the push, so the note ends with it at the
-        // latest.
+        // A note the store would not take leaves a row a restart would read
+        // as an install that changed nothing, while bank 1 may be partly
+        // written: the push stops there, and the install ends uncertain now
+        // rather than carry on unrecorded. The sender goes with the push, so
+        // the note waits for nothing once it has ended.
         let note = async {
             if taken.wait_for(|took| *took).await.is_ok()
                 && let Err(error) = self.shared.store.install_offered(install).await
             {
-                warn!("that the feeder took the offer was not stored: {error}");
+                warn!(
+                    "that the feeder took the offer was not stored, so the install stops: {error}"
+                );
+                return;
             }
+            std::future::pending::<()>().await;
         };
-        let (pushed, ()) = tokio::join!(pushing, note);
-        pushed
+        tokio::select! {
+            pushed = pushing => pushed,
+            () = note => Ok(Pushed::Gone { offered: true }),
+        }
     }
 
     fn publish_install(&self, install: Install) {

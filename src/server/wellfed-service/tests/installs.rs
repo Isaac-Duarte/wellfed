@@ -153,6 +153,54 @@ fn a_restart_before_the_offer_took_is_interrupted() {
     });
 }
 
+/// A note that the feeder took the offer, which the store would not keep,
+/// would leave a row a restart reads as `interrupted` while bank 1 may be
+/// partly written: the install stops there and ends uncertain, and a
+/// restart reads it so.
+#[test]
+fn an_offer_the_store_cannot_note_stops_the_install_uncertain() {
+    local(async {
+        let banks = Banks::new();
+        let sim = feeder::start_updatable(&banks).await;
+        let server = TestService::start_with(release::trusting(config())).await;
+        let id = server
+            .adopt_as(&sim, &sim.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let had = banks.borrow().bank1_build;
+        let file = signed(&project(), 7, BUILD, LEN);
+        let (release, _) = server.service().upload_release(file).await.unwrap();
+        let request = InstallRequest {
+            release: release.id,
+        };
+
+        wellfed_store::testing::refuse_offer_notes(&server.store().path())
+            .await
+            .unwrap();
+        let first = server
+            .service()
+            .install(&ada().into(), id, request)
+            .await
+            .unwrap();
+
+        let uncertain = Some(InstallFailure::Unreachable { offered: true });
+        let ended = ended(server.service(), id).await;
+        assert_eq!(
+            (ended.id, ended.state, ended.failure),
+            (first.id, InstallState::Failed, uncertain)
+        );
+        assert_eq!(banks.borrow().bank1_build, had, "never activated");
+
+        let store = server.stop().await;
+        let server = TestService::open(store, release::trusting(config())).await;
+        let after = server.service().install_state(id).await.unwrap();
+        assert_eq!((after.id, after.failure), (first.id, uncertain));
+
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
 /// An owner's own session with the feeder, once it answers: a restart
 /// into bank 0 takes a moment.
 async fn session(sim: &feeder::Running) -> feeder::Connection {
