@@ -114,6 +114,55 @@ fn a_feed_is_numbered_by_the_journal_and_ends_in_its_fed_event() {
     });
 }
 
+/// Each portion drives for what the control set, across a restart, so a
+/// client's timing can be tested at the feeder's own pace.
+#[test]
+fn a_feed_takes_the_portion_time_the_control_set() {
+    paused(async {
+        let (_flash, sim, owner) = subscribed().await;
+        sim.control(Control::PortionMs(10_000));
+        sim.control(Control::Reboot);
+        let mut owner_after = loop {
+            sleep(Duration::from_millis(50)).await;
+            if let Ok(connection) = Connection::open(
+                &Keypair::from_secret(OWNER),
+                sim.identity,
+                sim.address,
+                [0xa2; 32],
+            )
+            .await
+            {
+                break connection;
+            }
+        };
+        drop(owner);
+        owner_after.subscribe(None, Samples::Off).await.unwrap();
+
+        let started = tokio::time::Instant::now();
+        let answer = owner_after
+            .ask([1; 16], &Op::Feed { portions: 2 })
+            .await
+            .unwrap();
+        assert_eq!(answer, Answer::Feeding { feed: 1 });
+        let fed = loop {
+            let pushed = owner_after.next(Duration::from_secs(60)).await.unwrap();
+            if let Pushed::Event(event) = pushed
+                && let EventBody::Feeder(FeederEvent::Fed { completed, .. }) = event.body
+            {
+                break completed;
+            }
+        };
+
+        assert_eq!(fed, 2);
+        let took = started.elapsed();
+        assert!(
+            (Duration::from_secs(20)..Duration::from_secs(21)).contains(&took),
+            "{took:?}"
+        );
+        sim.stop().await;
+    });
+}
+
 /// Every feed asks for 1 to 48 portions; anything else is refused by
 /// name, with the value, before readiness is checked, and reserves no
 /// number.

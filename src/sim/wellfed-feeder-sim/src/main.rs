@@ -47,6 +47,10 @@ struct Cli {
     /// refuses every offer.
     #[arg(long)]
     update_key: Option<String>,
+    /// How long each portion drives, in milliseconds. The default runs
+    /// feeds quickly; the feeder's motor takes about 10 000.
+    #[arg(long, default_value_t = wellfed_feeder_sim::feeding::PORTION_MS)]
+    portion_ms: u32,
 }
 
 fn main() -> Result<()> {
@@ -102,6 +106,8 @@ async fn run(cli: Cli, flash: Rc<Flash>, owner: Option<([u8; 32], Label)>) -> Re
     eprintln!("{HELP}");
 
     let (control, commands) = mpsc::unbounded_channel();
+    // Taken before any console line, so the first feed already drives at it.
+    let _ = control.send(Control::PortionMs(cli.portion_ms));
     tokio::spawn(read_console(control));
 
     let update_key = match cli.update_key.as_deref() {

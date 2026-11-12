@@ -76,6 +76,9 @@ pub enum Control {
     Hopper(bool),
     /// End the next feed on this fault once it has driven a portion.
     FaultFeed(FeedFault),
+    /// Drive each portion for this many milliseconds, from now on and
+    /// across restarts: the feeder's motor takes about 10 000.
+    PortionMs(u32),
     /// Stop serving.
     Quit,
 }
@@ -159,6 +162,7 @@ pub async fn serve(
     let mut boots = 1;
     let mut supply = SimSupply::MAINS;
     let mut sends_blocked = false;
+    let mut portion_ms = None;
     let mut booted = Booted::start(&feeder, boots, advertise, &mut log)?;
     let mut control = Some(control);
     let mut delay = Duration::ZERO;
@@ -197,6 +201,10 @@ pub async fn serve(
                 }
                 Some(Control::Hopper(food)) => booted.sim.fill_hopper(food),
                 Some(Control::FaultFeed(fault)) => booted.sim.fault_feed(fault.reason()),
+                Some(Control::PortionMs(ms)) => {
+                    portion_ms = Some(ms);
+                    booted.sim.set_portion_ms(ms);
+                }
                 Some(Control::Quit) => return Ok(()),
                 None => control = None,
             },
@@ -233,6 +241,9 @@ pub async fn serve(
             booted = Booted::start(&feeder, boots, advertise, &mut log)?;
             booted.sim.platform().set_supply(supply);
             booted.sim.platform().block_sends(sends_blocked);
+            if let Some(ms) = portion_ms {
+                booted.sim.set_portion_ms(ms);
+            }
             delay = Duration::ZERO;
         }
     }

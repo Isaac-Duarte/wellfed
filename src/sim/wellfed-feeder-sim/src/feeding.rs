@@ -14,7 +14,8 @@
 //!   counting across restarts, as the journal's high water does. A
 //!   reservation that cannot be written faults the owner, as the real one
 //!   faults on storage, and the feed ends refused `Fault`.
-//! - It then "drives" for [`PORTION_MS`] per portion of the loop's time, and
+//! - It then "drives" for [`PORTION_MS`] per portion of the loop's time (or
+//!   what [`SimFeeds::set_portion_ms`] set, up to the feeder's 10 s), and
 //!   its result goes into the journal before its `Fed` event is recorded; a
 //!   result that cannot be written faults the owner and the feed is
 //!   recorded as uncertain. A cancel ends it at the next step with the
@@ -79,7 +80,10 @@ use wellfed_proto::api::{EventBody, PORTIONS_MAX, TraceSummary};
 use crate::flash::{Flash, Region};
 use crate::platform::SimSupply;
 
-/// How long one portion takes to drive.
+/// How long one portion takes to drive by default: some 50 times faster
+/// than the feeder's motor, about 10 s a portion, so a test runs quickly.
+/// A test of a client's timing sets the feeder's own
+/// ([`SimFeeds::set_portion_ms`]).
 pub const PORTION_MS: u32 = 200;
 
 /// How often the owner asks to be stepped while a feed runs: the firmware
@@ -167,6 +171,13 @@ impl SimFeeds {
     /// Refuse every feed `Busy` once its claim is taken, or stop.
     pub fn refuse(&mut self, refusing: bool) {
         self.owner().inner.borrow_mut().refusing = refusing;
+    }
+
+    /// Drive each portion of the next feeds for `ms` (at least 1), as a
+    /// slower or faster motor would; a feed already driving takes it from
+    /// its next step.
+    pub fn set_portion_ms(&mut self, ms: u32) {
+        self.owner().inner.borrow_mut().portion_ms = ms.max(1);
     }
 
     /// Hold a storage write in the way of a feed's claim, or end it. A
@@ -340,6 +351,8 @@ struct Inner {
     refusing: bool,
     /// The fault the next feed ends on, after its first portion.
     inject: Option<FeedReason>,
+    /// How long one portion takes to drive.
+    portion_ms: u32,
     /// The pack against its floor, and whether the adapter was in at the
     /// last step.
     floor: Floor,
@@ -368,6 +381,7 @@ impl Default for Inner {
             stalled: false,
             refusing: false,
             inject: None,
+            portion_ms: PORTION_MS,
             floor: Floor::default(),
             adapter: true,
             hopper: true,
@@ -426,13 +440,14 @@ impl Inner {
         }
         self.stepped_ms = Some(now_ms);
         let portions = self.result.requested;
-        let full = u32::from(portions) * PORTION_MS;
+        let portion_ms = self.portion_ms;
+        let full = u32::from(portions).saturating_mul(portion_ms);
         // A fault comes after a portion's drive and ends the feed there:
         // stopped, never resumed. A feed of one has not reached its mark.
-        let faulted = self.inject.filter(|_| self.driven_ms >= PORTION_MS);
+        let faulted = self.inject.filter(|_| self.driven_ms >= portion_ms);
         if !self.cancelled && faulted.is_none() && self.driven_ms < full {
             let next = if self.inject.is_some() {
-                PORTION_MS
+                portion_ms
             } else {
                 full
             };
@@ -443,7 +458,7 @@ impl Inner {
             self.inject = None;
             (OwnerOutcome::Failed, reason, u16::from(portions > 1))
         } else if self.cancelled {
-            let driven = self.driven_ms.min(full) / PORTION_MS;
+            let driven = self.driven_ms.min(full) / portion_ms;
             let driven = u16::try_from(driven).unwrap_or(portions);
             (OwnerOutcome::Cancelled, FeedReason::Cancelled, driven)
         } else {
