@@ -62,6 +62,7 @@ fn every_chunk_once_makes_the_install_ready_and_the_marker_comes_last() {
     let mut flash = Vec::new();
     push(&mut install, &payload, &mut flash, 10).unwrap();
     assert!(install.ready());
+    assert_eq!(install.written() as usize, payload.len());
     assert_eq!(&flash[..8], &[0xff; 8], "the marker is withheld");
     assert_eq!(&flash[8..], &payload[8..]);
     assert_eq!(install.commit(), Ok((BANK1_OFFSET, MARKER)));
@@ -149,6 +150,61 @@ fn a_quiet_install_times_out_and_a_cancelled_one_never_activates() {
     assert_eq!(install.commit(), Err(Stop::Cancelled));
     assert_eq!(install.marked(Marking::ReadBack), Err(Stop::Cancelled));
     assert!(!install.activated());
+}
+
+/// Push every chunk of the first sector until the writer hands it out.
+fn first_sector_out(install: &mut Install, payload: &[u8], now: u32) {
+    for offset in (0..SECTOR as u32).step_by(MAX_CHUNK as usize) {
+        let chunk = &payload[offset as usize..offset as usize + MAX_CHUNK as usize];
+        if let Taken::Program(_) = install.chunk(offset, chunk, now).unwrap() {
+            return;
+        }
+    }
+    panic!("the first sector was never handed out");
+}
+
+#[test]
+fn a_readback_after_a_stop_never_readies_the_install() {
+    let payload = image(SECTOR);
+    let mut install = Install::new(admitted(&payload), 0).unwrap();
+    first_sector_out(&mut install, &payload, 1);
+    install.abort(Stop::Cancelled);
+    assert_eq!(install.programmed(true), Err(Stop::Cancelled));
+    assert!(!install.ready());
+    assert_eq!(install.stopped(), Some(Stop::Cancelled));
+    assert_eq!(install.commit(), Err(Stop::Cancelled));
+}
+
+#[test]
+fn a_sector_out_for_programming_never_times_out() {
+    let payload = image(SECTOR);
+    let mut install = Install::new(admitted(&payload), 0).unwrap();
+    first_sector_out(&mut install, &payload, 1);
+    assert_eq!(install.tick(1 + 4 * IDLE_MS), None);
+    install.programmed(true).unwrap();
+    assert!(install.ready());
+}
+
+#[test]
+fn progress_counts_only_the_image_bytes_of_a_partial_last_sector() {
+    let payload = image(2 * SECTOR + 700);
+    let mut install = Install::new(admitted(&payload), 0).unwrap();
+    let mut seen = Vec::new();
+    while install.wanted()[0].is_some() {
+        let wanted: Vec<u32> = install.wanted().into_iter().flatten().collect();
+        for offset in wanted {
+            let end = (offset as usize + MAX_CHUNK as usize).min(payload.len());
+            if let Taken::Program(_) = install
+                .chunk(offset, &payload[offset as usize..end], 1)
+                .unwrap()
+            {
+                install.programmed(true).unwrap();
+                seen.push(install.written());
+            }
+        }
+    }
+    let sector = SECTOR as u32;
+    assert_eq!(seen, [sector, 2 * sector, 2 * sector + 700]);
 }
 
 /// A marker never programmed is a stop; one programmed whose readback did
