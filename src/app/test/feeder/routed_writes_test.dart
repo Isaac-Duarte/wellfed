@@ -105,7 +105,7 @@ void main() {
       ..session = FakeServerSession(
         who: const ServerAccount(id: 'u2', name: 'sam', role: ServerRole.viewer),
       );
-    final server = HomeServer(book, serverPorts, ports.router);
+    final server = HomeServer(book, serverPorts, ports.router, FakeClientKey());
     final fleet = FeederFleet(book, ports, server: server);
     addTearDown(() {
       fleet.dispose();

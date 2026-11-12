@@ -12,12 +12,29 @@
 //! tokens refused, though kept, until an owner extends it. A token lasts
 //! until it is revoked, or until its own expiry if it was given one.
 //!
-//! Only a login makes a token, sets a password or adds an account, so
-//! revoking a leaked token is enough: it cannot have made other tokens,
-//! nor a password or an account to log in with and make them.
+//! Only a login makes a token, sets a password, adds an account, raises a
+//! role or gives an account a longer life, so a leaked token cannot have
+//! made other tokens, nor a password, an account or a promoted or revived
+//! login to log in with and make them. Revoking it also revokes its phone
+//! keys on every feeder and the keys they invited there, as the feeders
+//! reported them, unless the phone logs out from a login session, which
+//! leaves them the account's with no token ([`Service::log_out_token`]). What revoking it cannot undo is what it already did on a
+//! feeder: a key a phone key invited that its feeder's history lost before
+//! the server read it, or a write it made.
+//!
+//! Nor does a revocation reach a feeder the server can no longer reach. A
+//! stolen owner's token can get an owner-role phone key, and while that key
+//! is live on the LAN its holder can revoke the server's own key or move
+//! the feeder to another Wi-Fi network. The server then never reaches the
+//! feeder again, so no revocation of that key ever lands; only an owner at
+//! the feeder (a revoke from a phone on the LAN, or a reset) removes it.
+//! This is a known gap, without a design yet.
 
 use sha2::{Digest, Sha256};
-use wellfed_api::{AuditAction, CreatedToken, NewToken, RevokeReason, Token, TokenId, User};
+use wellfed_api::{
+    AuditAction, CreatedToken, LOGOUT_KEYS_MAX, LogOut, NewToken, RevokeReason, Token, TokenId,
+    User,
+};
 use wellfed_session::hex;
 use wellfed_store::Whose;
 
@@ -192,6 +209,52 @@ impl Service {
         self.record(caller, action).await;
         self.revoke_phones(Whose::Token(id), RevokeReason::TokenRevoked)
             .await
+    }
+
+    /// Log a phone out: revoke its token `id`, the caller's own, keeping
+    /// its keys on the feeders. The phone's own keys under the token
+    /// (`request.keys`) and the keys they invited stay the account's with
+    /// no token, so the phone still reaches its feeders on the LAN, the
+    /// account's deletion, demotion or expiry still revokes those keys, and
+    /// no token's revocation does. Every other key under the token, one
+    /// someone else got through it, is revoked with it. A named key not
+    /// under the token is passed over: the phone does not know which
+    /// feeders recorded its key.
+    ///
+    /// Only from a login session: the token alone cannot ask, since a
+    /// leaked token could then keep the keys it enrolled past its own
+    /// revocation. The phone asks with its account's password. Revoking
+    /// the token any other way ([`Self::revoke_token`]) revokes its keys.
+    pub async fn log_out_token(
+        &self,
+        caller: &Caller,
+        id: TokenId,
+        request: &LogOut,
+    ) -> Result<()> {
+        session_only(caller)?;
+        if request.keys.len() > LOGOUT_KEYS_MAX {
+            return Err(Invalid::LogOutKeys.into());
+        }
+        let token = self.shared.store.token(id).await?;
+        let Some(token) = token.filter(|token| token.user == caller.user.id) else {
+            return Err(Error::NotFound(Resource::Token));
+        };
+
+        let own: Vec<[u8; 32]> = request.keys.iter().map(|key| key.0).collect();
+        let now = self.shared.clock.now();
+        let Some(feeders) = self.shared.store.log_out_token(id, &own, now).await? else {
+            return Err(Error::NotFound(Resource::Token));
+        };
+        let action = AuditAction::LoggedOut {
+            token: id,
+            account: token.user,
+            token_name: token.name,
+        };
+        self.record(caller, action).await;
+        for feeder in feeders {
+            self.spawn_revoke(feeder);
+        }
+        Ok(())
     }
 }
 

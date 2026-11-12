@@ -47,17 +47,17 @@ void main() {
   for (final Brightness brightness in Brightness.values) {
     group('${brightness.name} theme', () {
       testWidgets('adding a home server', (tester) async {
-        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter());
+        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter(), FakeClientKey());
         addTearDown(server.dispose);
         await _show(tester, AddServerScreen(newFlow: () => AddServerFlow(server)), brightness);
         await expectAccessible(tester);
       });
 
       testWidgets('the home server account', (tester) async {
-        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter());
+        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter(), FakeClientKey());
         addTearDown(server.dispose);
         await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
-        await _show(tester, AccountScreen(server: server, household: () {}), brightness);
+        await _show(tester, AccountScreen(server: server, phoneKey: FakeClientKey(), household: () {}), brightness);
         await expectAccessible(tester);
       });
 
@@ -93,7 +93,7 @@ void main() {
       });
 
       testWidgets('the adoption prompt', (tester) async {
-        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter());
+        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter(), FakeClientKey());
         final flow = AdoptFlow(FakeFeederPorts(), server);
         addTearDown(() {
           flow.dispose();

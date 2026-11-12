@@ -19,6 +19,7 @@
 //! while the adoption is out.
 
 use wellfed_api::{AdoptFeeder, FeederId, Hex};
+use wellfed_session::noise::Keypair;
 
 use crate::api::feeder::{ClientRole, FeederReply, FeederRequest};
 use crate::api::router::{Adoption, NotSentReason};
@@ -26,6 +27,7 @@ use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::ServerFeeder;
 use crate::route::core::ServerFailure;
 use crate::route::io::{Router, now_ms, nowhere};
+use crate::route::own::claim_with_proof;
 
 fn no_server() -> ServerError {
     ServerError::new(ServerErrorKind::Closed, "no server is configured")
@@ -56,7 +58,7 @@ impl Router {
         feeder: &str,
         name: String,
         address: Option<String>,
-        phone: [u8; 32],
+        phone: &Keypair,
     ) -> Adoption {
         let Some(client) = self.server_client() else {
             return Adoption::Failed { error: no_server() };
@@ -98,7 +100,7 @@ impl Router {
             invite: invite.text.clone(),
             name,
             address,
-            phone_key: Some(Hex(phone)),
+            phone_key: Some(Hex(*phone.public())),
         };
 
         let failed = match client.adopt(&request).await {
@@ -151,7 +153,7 @@ impl Router {
     /// listed, its key is claimed; not listed while the server may still be
     /// adopting it, still unsettled; not listed past the grace, never
     /// adopted, and safe to adopt anew. Nothing is sent but the claim.
-    pub(crate) async fn check_adoption(&self, feeder: &str, phone: [u8; 32]) -> Adoption {
+    pub(crate) async fn check_adoption(&self, feeder: &str, phone: &Keypair) -> Adoption {
         if self.server_client().is_none() {
             return Adoption::Failed { error: no_server() };
         }
@@ -175,7 +177,7 @@ impl Router {
     }
 
     /// Record `phone`, this phone's key on `feeder`, as this account's.
-    pub(crate) async fn claim_phone(&self, feeder: &str, phone: [u8; 32]) -> Adoption {
+    pub(crate) async fn claim_phone(&self, feeder: &str, phone: &Keypair) -> Adoption {
         if self.server_client().is_none() {
             return Adoption::Failed { error: no_server() };
         }
@@ -185,18 +187,18 @@ impl Router {
         }
     }
 
-    async fn claim(&self, feeder: &str, id: FeederId, phone: [u8; 32]) -> Adoption {
-        let Some(client) = self.server_client() else {
+    async fn claim(&self, feeder: &str, id: FeederId, phone: &Keypair) -> Adoption {
+        let Some((client, token)) = self.server_login() else {
             return Adoption::Failed { error: no_server() };
         };
         // Listed: whatever became of a lost attempt, it stands.
         self.adoption_lost(feeder, None);
-        let claimed = client.claim_phone(id, Hex(phone)).await;
+        let claimed = claim_with_proof(&client, token, id, phone).await;
 
         let Some(listed) = self.listed_feeder(feeder).await else {
             return Adoption::Failed {
                 error: match claimed {
-                    Err(error) => error.into(),
+                    Err(error) => error,
                     Ok(_) => ServerError::new(ServerErrorKind::NotFound, "the server dropped it"),
                 },
             };
@@ -205,7 +207,7 @@ impl Router {
             Ok(_) => Adoption::Adopted { feeder: listed },
             Err(error) => Adoption::Unclaimed {
                 feeder: listed,
-                error: error.into(),
+                error,
             },
         }
     }

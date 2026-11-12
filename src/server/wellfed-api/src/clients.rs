@@ -14,6 +14,7 @@ use std::fmt;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use uuid::Uuid;
 use wellfed_model::{ClientRole, Hex};
 
 use crate::{Feeder, FeederId, FeederRefusal, TokenId, UserId};
@@ -70,6 +71,39 @@ pub struct NewPhoneInvite {
 pub struct PhoneClaim {
     #[schema(value_type = String)]
     pub key: Hex<32>,
+    /// That the phone holds the key's secret, answering a challenge
+    /// (`POST /phones/challenge`). Required to put under the caller's token
+    /// a key of the account's that a logout left with no token, so another
+    /// token of the account cannot take it; checked whenever given.
+    #[serde(default)]
+    pub proof: Option<KeyProof>,
+}
+
+/// A challenge for the caller's phone to prove it holds its key's secret
+/// (`POST /phones/challenge`), answered once, before `expires`, in a
+/// claim by the same token. The proof is an HMAC-SHA256 over `nonce`, the
+/// token's id (its 16 bytes) and the phone's public key, keyed by
+/// HMAC-SHA256 of the label `wellfed client key proof v1` under the
+/// X25519 of the phone's secret and `key`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PhoneChallenge {
+    pub id: Uuid,
+    /// The server's one-use X25519 public key, 64 hex digits.
+    #[schema(value_type = String)]
+    pub key: Hex<32>,
+    #[schema(value_type = String)]
+    pub nonce: Hex<32>,
+    pub expires: Timestamp,
+}
+
+/// A phone's answer to a [`PhoneChallenge`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct KeyProof {
+    /// The challenge's `id`.
+    pub challenge: Uuid,
+    /// The MAC, 64 hex digits.
+    #[schema(value_type = String)]
+    pub mac: Hex<32>,
 }
 
 /// A single-use invite for the caller's phone. The text holds the secret
@@ -142,6 +176,9 @@ pub enum RevokeReason {
     TokenRevoked,
     /// Its token was given an invite for another key: one key per token.
     Replaced,
+    /// The phone key whose invite it joined with is being revoked, or is
+    /// gone: a key goes with the key that invited it.
+    InviterRevoked,
     /// A value a newer server added, which this client cannot name. The
     /// server never sends it.
     #[serde(other)]
@@ -157,6 +194,7 @@ impl RevokeReason {
             Self::Expiring => "expiring",
             Self::TokenRevoked => "token_revoked",
             Self::Replaced => "replaced",
+            Self::InviterRevoked => "inviter_revoked",
             Self::Unknown => "unknown",
         }
     }
@@ -168,6 +206,7 @@ impl RevokeReason {
             Self::Expiring,
             Self::TokenRevoked,
             Self::Replaced,
+            Self::InviterRevoked,
         ]
         .into_iter()
         .find(|reason| reason.code() == code)

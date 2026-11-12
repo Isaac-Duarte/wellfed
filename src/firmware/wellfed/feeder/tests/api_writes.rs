@@ -146,6 +146,7 @@ fn writes_during_a_feed_are_refused_busy_and_reads_still_answer() {
         label: Label::new(b"phone").unwrap(),
         role: Role::Member,
         path: Path::Invite,
+        inviter: None,
     };
     assert!(keys_request(enroll).is_some());
 }

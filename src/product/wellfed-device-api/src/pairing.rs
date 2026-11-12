@@ -9,13 +9,16 @@
 //!   setup session then admits the app as an owner only if it proves the
 //!   same code (`wellfed_session::setup_code`); a press alone is not enough,
 //!   since it cannot tell the owner's phone from a relay in radio range.
-//! - **Signer:** an owner offers an Ed25519 update-signing key; a
-//!   Dispense press confirms it the same way.
+//! - **Signer:** an owner offers an Ed25519 update-signing key; a press
+//!   of Dispense alone confirms it, counted as it comes up.
 //! - **Invite:** a paired client mints a single-use invite that expires
 //!   after [`Config::invite_ms`]. Its secret is the PSK of the redeeming
-//!   client's Noise XXpsk3 handshake over the LAN. An invite never grants
-//!   more than its issuer holds, and invites live in RAM only, so a reboot
-//!   cancels them.
+//!   client's Noise XXpsk3 handshake over the LAN. An invite may name the
+//!   one static key that can redeem it, so whoever asked for it knows the
+//!   key it enrolls. An invite never grants more than its issuer holds,
+//!   and dies with the issuer's key ([`Pairing::issuers_left`]), so a
+//!   revoked client cannot leave a way back in behind it. Invites live in
+//!   RAM only, so a reboot cancels them.
 //! - **Recovery:** with the panel unlocked, holding Lock and Dispense
 //!   together opens a LAN window. A client that connects in it runs the same
 //!   exchange as BLE setup over the device API: its offer closes the
@@ -27,9 +30,23 @@
 //! A pending confirmation takes the next Dispense press, and a pending code
 //! every gesture until it is complete, whatever the lock says: the presses
 //! are someone at the feeder answering a pairing they started, and they
-//! feed nothing. [`Pairing::gesture`] returns an event for
+//! feed nothing. A confirmation counts the press as it comes up alone and
+//! short, as a code does, so an owner whose recovery hold starts with
+//! Dispense confirms nothing. [`Pairing::gesture`] returns an event for
 //! every gesture it consumes, and the firmware gives the panel only the
 //! rest.
+//!
+//! The client chooses its own code, so a press counts only when it is
+//! plainly one: a button that went down during the code and came up on its
+//! own, short. The button service reports a chord's first button going
+//! down before the chord forms, so counting a press as it goes down would
+//! let an owner's recovery or setup hold key in a code an attacker on the
+//! LAN or in radio range chose. A chord or a hold instead refuses the
+//! pending offer: it is the person at the feeder doing something else, and
+//! a hold that opens recovery or setup then acts as it would with nothing
+//! pending. A code of one button pressed every time is refused too, since
+//! an owner pressing Dispense for a feed that does not come would key it in
+//! ([`Code::one_button`]); clients never draw one.
 //!
 //! The policy holds no client keys: the firmware applies an [`Event::Admit`]
 //! to the client store. Invite secrets do live here, since a handshake
@@ -40,6 +57,7 @@
 use crate::clients::Role;
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_core::{deadline_passed, interval_valid, named_enum};
+use wellfed_proto::api::KeyPrefix;
 use wellfed_session::setup_code::{Code, PRESSES};
 
 use crate::mailbox::Lock;
@@ -103,6 +121,8 @@ named_enum! {
         Locked = "locked",
         /// Nobody pressed Dispense or keyed the code in in time.
         Unconfirmed = "unconfirmed",
+        /// The invite names another client's key.
+        WrongKey = "wrong-key",
     }
 }
 
@@ -112,13 +132,20 @@ pub enum Event {
     Confirming {
         path: Path,
     },
+    /// A button went down towards the code or the press of the offer
+    /// behind `path`; it counts once it comes up on its own, short.
+    Pressed {
+        path: Path,
+    },
     /// A press counted towards the code of the offer behind `path` (setup
     /// or recovery), which now has `entered`.
     Keyed {
         path: Path,
         entered: u8,
     },
-    /// A chord or a hold went to that code and counted for nothing.
+    /// A release went to that code or press and counted for nothing: a
+    /// press that began before the code, or one that grew into a chord or a
+    /// hold.
     Swallowed {
         path: Path,
     },
@@ -129,10 +156,12 @@ pub enum Event {
         path: Path,
         code: Code,
     },
-    /// Enroll the client behind `path` with `role`.
+    /// Enroll the client behind `path` with `role`; `inviter` is the
+    /// issuer's key prefix when it redeemed an invite.
     Admit {
         path: Path,
         role: Role,
+        inviter: Option<KeyPrefix>,
     },
     Invited {
         id: u32,
@@ -159,10 +188,14 @@ struct Pending {
 /// What an offer waits for.
 #[derive(Clone, Copy, Debug)]
 enum Confirm {
-    Press,
+    /// A press of Dispense alone; `down` once it went down during the
+    /// offer, until it is up.
+    Press { down: bool },
     Code {
         presses: [Button; PRESSES],
         entered: usize,
+        /// The lone button that went down during the code, until it is up.
+        down: Option<Button>,
     },
 }
 
@@ -170,6 +203,10 @@ enum Confirm {
 struct Invite {
     id: u32,
     role: Role,
+    /// The static key of the client that asked for it.
+    issuer: [u8; 32],
+    /// The only static key that may redeem it, if the issuer named one.
+    key: Option<[u8; 32]>,
     secret: [u8; 32],
     deadline_ms: u32,
 }
@@ -209,6 +246,7 @@ impl Pairing {
         let confirm = Confirm::Code {
             presses: [Button::Reset; PRESSES],
             entered: 0,
+            down: None,
         };
         self.offer(now_ms, Path::Setup, Role::Owner, confirm)
     }
@@ -218,7 +256,8 @@ impl Pairing {
         if by != Role::Owner {
             return refused(Path::Signer, Refusal::NotAllowed);
         }
-        self.offer(now_ms, Path::Signer, Role::UpdateSigner, Confirm::Press)
+        let confirm = Confirm::Press { down: false };
+        self.offer(now_ms, Path::Signer, Role::UpdateSigner, confirm)
     }
 
     /// The client behind a pending `path` offer went away: forget it, so the
@@ -253,15 +292,40 @@ impl Pairing {
         {
             return self.code(now_ms, gesture);
         }
+        let dispense = Buttons::of(Button::Dispense);
         match gesture {
-            Gesture::Down { chord } if chord == Buttons::of(Button::Dispense) => {
+            Gesture::Down { chord } if chord == dispense => {
+                let pending = self.pending.as_mut()?;
+                let path = pending.path;
+                if deadline_passed(now_ms, pending.deadline_ms) {
+                    self.pending = None;
+                    return Some(refused(path, Refusal::Unconfirmed));
+                }
+                pending.confirm = Confirm::Press { down: true };
+                Some(Event::Pressed { path })
+            }
+            Gesture::Up { chord, level, .. }
+                if self.pending.is_some_and(|pending| {
+                    matches!(pending.confirm, Confirm::Press { down: true })
+                }) =>
+            {
                 let pending = self.pending.take()?;
                 if deadline_passed(now_ms, pending.deadline_ms) {
                     return Some(refused(pending.path, Refusal::Unconfirmed));
                 }
+                if chord != dispense || level != 0 {
+                    // It grew into a chord or a hold: the person at the
+                    // feeder is doing something else.
+                    self.pending = Some(Pending {
+                        confirm: Confirm::Press { down: false },
+                        ..pending
+                    });
+                    return Some(Event::Swallowed { path: pending.path });
+                }
                 Some(Event::Admit {
                     path: pending.path,
                     role: pending.role,
+                    inviter: None,
                 })
             }
             Gesture::Hold { chord, level }
@@ -283,10 +347,11 @@ impl Pairing {
         }
     }
 
-    /// One gesture while a code (setup's or recovery's) is being keyed in. A press of one
-    /// button is one press of the code. A chord or a hold is swallowed and
-    /// counts for nothing, so no lock toggle or key reset fires mid-code; a
-    /// release goes on to the panel, which only notes it.
+    /// One gesture while a code (setup's or recovery's) is being keyed in.
+    /// A button that goes down alone and comes up alone, short, is one press
+    /// of the code, counted as it comes up. A chord or a hold refuses the
+    /// offer, so the panel never acts mid-code and the owner's next hold
+    /// starts afresh rather than keying in someone else's code.
     fn code(&mut self, now_ms: u32, gesture: Gesture) -> Option<Event> {
         let pending = self.pending.as_mut()?;
         let path = pending.path;
@@ -294,16 +359,36 @@ impl Pairing {
             self.pending = None;
             return Some(refused(path, Refusal::Unconfirmed));
         }
-        let Confirm::Code { presses, entered } = &mut pending.confirm else {
+        let Confirm::Code {
+            presses,
+            entered,
+            down,
+        } = &mut pending.confirm
+        else {
             return None;
         };
-        let chord = match gesture {
-            Gesture::Down { chord } => chord,
-            Gesture::Hold { .. } => return Some(Event::Swallowed { path }),
-            Gesture::Up { .. } => return None,
+        let button = match gesture {
+            Gesture::Down { chord } => {
+                let Some(&button) = Button::ALL.iter().find(|&&b| chord == Buttons::of(b)) else {
+                    self.pending = None;
+                    return Some(refused(path, Refusal::Unconfirmed));
+                };
+                *down = Some(button);
+                return Some(Event::Pressed { path });
+            }
+            Gesture::Hold { .. } => {
+                self.pending = None;
+                return Some(refused(path, Refusal::Unconfirmed));
+            }
+            Gesture::Up { chord, level, .. } => {
+                let pressed = down.take();
+                match pressed {
+                    Some(button) if level == 0 && chord == Buttons::of(button) => button,
+                    _ => return Some(Event::Swallowed { path }),
+                }
+            }
         };
-        let pressed = Button::ALL.iter().find(|&&b| chord == Buttons::of(b));
-        let (Some(&button), Some(slot)) = (pressed, presses.get_mut(*entered)) else {
+        let Some(slot) = presses.get_mut(*entered) else {
             return Some(Event::Swallowed { path });
         };
 
@@ -314,12 +399,24 @@ impl Pairing {
         }
         let code = Code::new(*presses);
         self.pending = None;
+        if code.one_button() {
+            return Some(refused(path, Refusal::Unconfirmed));
+        }
         Some(Event::Entered { path, code })
     }
 
-    /// A client with role `by` asks for an invite granting `role`, with a
-    /// secret the firmware drew from its generator.
-    pub fn invite(&mut self, now_ms: u32, by: Role, role: Role, secret: [u8; 32]) -> Event {
+    /// A client with role `by` and static key `issuer` asks for an invite
+    /// granting `role`, for the client with static key `key` alone if it
+    /// names one, with a secret the firmware drew from its generator.
+    pub fn invite(
+        &mut self,
+        now_ms: u32,
+        by: Role,
+        issuer: [u8; 32],
+        role: Role,
+        key: Option<[u8; 32]>,
+        secret: [u8; 32],
+    ) -> Event {
         let allowed = match by {
             Role::Owner => role != Role::UpdateSigner,
             Role::Member => role == Role::Member,
@@ -338,6 +435,8 @@ impl Pairing {
         *slot = Some(Invite {
             id,
             role,
+            issuer,
+            key,
             secret,
             deadline_ms: now_ms.wrapping_add(self.config.invite_ms),
         });
@@ -354,19 +453,39 @@ impl Pairing {
             .map(|invite| invite.secret)
     }
 
-    /// The handshake for invite `id` finished: use it up.
-    pub fn redeem(&mut self, now_ms: u32, id: u32) -> Event {
+    /// The handshake for invite `id` finished with the client's static
+    /// key `key`: use it up. An invite bound to another key is refused and
+    /// kept, so a holder of its secret cannot spend it for the right one.
+    pub fn redeem(&mut self, now_ms: u32, id: u32, key: &[u8; 32]) -> Event {
         self.expire_invites(now_ms);
         let found = self
             .invites
             .iter_mut()
             .find(|slot| slot.is_some_and(|invite| invite.id == id));
-        match found.and_then(Option::take) {
+        let Some(slot) = found else {
+            return refused(Path::Invite, Refusal::Unknown);
+        };
+        if slot.is_some_and(|invite| invite.key.is_some_and(|bound| bound != *key)) {
+            return refused(Path::Invite, Refusal::WrongKey);
+        }
+        match slot.take() {
             Some(invite) => Event::Admit {
                 path: Path::Invite,
                 role: invite.role,
+                inviter: Some(crate::key_prefix(&invite.issuer)),
             },
             None => refused(Path::Invite, Refusal::Unknown),
+        }
+    }
+
+    /// The client table changed: drop every invite whose issuer
+    /// `enrolled` no longer holds, so revoking a client also takes back
+    /// the invites it made.
+    pub fn issuers_left(&mut self, enrolled: impl Fn(&[u8; 32]) -> bool) {
+        for slot in &mut self.invites {
+            if slot.is_some_and(|invite| !enrolled(&invite.issuer)) {
+                *slot = None;
+            }
         }
     }
 
@@ -383,6 +502,7 @@ impl Pairing {
                 let confirm = Confirm::Code {
                     presses: [Button::Reset; PRESSES],
                     entered: 0,
+                    down: None,
                 };
                 self.offer(now_ms, Path::Recovery, Role::Owner, confirm)
             }

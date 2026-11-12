@@ -1,6 +1,7 @@
 //! A feeder's clients and the phones' own keys: listing whose each client
 //! is, keeping or revoking one, an invite for the caller's own phone, and
-//! claiming a key the phone already holds.
+//! claiming a key the phone already holds, with the challenge that proves
+//! it holds the key.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -8,7 +9,8 @@ use axum::http::StatusCode;
 use axum_extra::extract::WithRejection;
 use uuid::Uuid;
 use wellfed_api::{
-    FeederClient, FeederId, Hex, NewPhoneInvite, PhoneClaim, PhoneInvite, PhoneKey, Problem,
+    FeederClient, FeederId, Hex, NewPhoneInvite, PhoneChallenge, PhoneClaim, PhoneInvite, PhoneKey,
+    Problem,
 };
 
 use super::{ApiResult, IdPath, JsonBody, TAG_FEEDERS};
@@ -83,17 +85,20 @@ pub(crate) async fn revoke_client(
     params(("id" = FeederId, Path), ("key" = String, Path)),
     responses(
         (status = 204),
-        (status = 403, body = Problem, description = "forbidden: owners only"),
+        (status = 403, body = Problem, description = "forbidden: owners only; session_required: not from a token"),
         (status = 404, body = Problem),
         (status = 409, body = Problem, description = "feeder_archived"),
     ),
 )]
 pub(crate) async fn keep_client(
     State(state): State<AppState>,
-    _: Allowed<need::FeederAdmin>,
+    Allowed(caller, _): Allowed<need::FeederAdmin>,
     WithRejection(Path((id, key)), _): ClientPath,
 ) -> ApiResult<StatusCode> {
-    state.service.keep_client(FeederId(id), key.0).await?;
+    state
+        .service
+        .keep_client(&caller, FeederId(id), key.0)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -137,7 +142,10 @@ pub(crate) async fn invite_phone(
 /// asks for an invite (`POST /feeders/{id}/invites`) and joins with a new
 /// key instead. The token that recorded a key asking again, whatever its
 /// role, is answered that record, so a lost answer or
-/// `phone_key_unconfirmed` is settled by asking again.
+/// `phone_key_unconfirmed` is settled by asking again. A key of the
+/// account's that a logout left with no token goes under the caller's
+/// token only with a `proof` that the phone holds its secret
+/// (`POST /phones/challenge`); a proof given is checked either way.
 #[utoipa::path(
     post,
     path = "/feeders/{id}/phones",
@@ -147,7 +155,7 @@ pub(crate) async fn invite_phone(
     responses(
         (status = 200, body = PhoneKey),
         (status = 400, body = Problem, description = "invalid: the server's own key"),
-        (status = 403, body = Problem, description = "forbidden (a viewer), token_required, direct_key_refused, or phone_claim_owners_only (a member's claim of a key not recorded)"),
+        (status = 403, body = Problem, description = "forbidden (a viewer), token_required, direct_key_refused, phone_claim_owners_only (a member's claim of a key not recorded), phone_key_proof_required (a key a logout left with no token) or phone_key_proof_refused"),
         (status = 404, body = Problem),
         (status = 409, body = Problem, description = "phone_key_not_listed, phone_key_unconfirmed (claim again), phone_key_kept, phone_key_not_a_phone, client_key_taken or feeder_archived"),
     ),
@@ -159,6 +167,28 @@ pub(crate) async fn claim_phone(
     WithRejection(Json(request), _): JsonBody<PhoneClaim>,
 ) -> ApiResult<Json<PhoneKey>> {
     Ok(Json(state.service.claim_phone(&caller, id, request).await?))
+}
+
+/// A challenge for the caller's phone to prove it holds its key's secret,
+/// answered in a claim's `proof` by the same token, once, before it
+/// expires. A phone's token with no expiry on it or the account, as for a
+/// claim.
+#[utoipa::path(
+    post,
+    path = "/phones/challenge",
+    tag = TAG_FEEDERS,
+    responses(
+        (status = 201, body = PhoneChallenge),
+        (status = 401, body = Problem),
+        (status = 403, body = Problem, description = "forbidden (a viewer), token_required or direct_key_refused"),
+    ),
+)]
+pub(crate) async fn phone_challenge(
+    State(state): State<AppState>,
+    Allowed(caller, _): Allowed<need::InviteOwnPhone>,
+) -> ApiResult<(StatusCode, Json<PhoneChallenge>)> {
+    let challenge = state.service.phone_challenge(&caller).await?;
+    Ok((StatusCode::CREATED, Json(challenge)))
 }
 
 /// The phone keys the server recorded: everyone's for an owner, one's own

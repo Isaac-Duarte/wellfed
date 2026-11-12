@@ -32,14 +32,21 @@ const SHARED: [&str; 3] = [
 /// Written by the code generator from the bridge's own types.
 const GENERATED: &str = "frb_generated.rs";
 
+/// Why a client on the LAN never sends a key-bound invite.
+const BOUND_INVITE: &str = "the server sends it for a phone key it records; a client on the LAN \
+     invites a new client whose key it does not know, with CreateInvite";
+
 /// What the CLI does not do, with why.
-const NOT_IN_CLI: [(&str, &str); 0] = [];
+const NOT_IN_CLI: [(&str, &str); 1] = [("CreateBoundInvite", BOUND_INVITE)];
 /// What the app does not do, with why.
-const NOT_IN_APP: [(&str, &str); 1] = [(
-    "UpdateKeyStatement",
-    "a statement is signed offline by a built-in or the release key, and the phone holds no \
-     key a feeder trusts; the owner's computer carries one to the feeder",
-)];
+const NOT_IN_APP: [(&str, &str); 2] = [
+    (
+        "UpdateKeyStatement",
+        "a statement is signed offline by a built-in or the release key, and the phone holds \
+         no key a feeder trusts; the owner's computer carries one to the feeder",
+    ),
+    ("CreateBoundInvite", BOUND_INVITE),
+];
 
 /// The variants `source` declares for `enum`, in order.
 fn variants<'a>(source: &'a str, name: &str) -> Vec<&'a str> {

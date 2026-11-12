@@ -1,5 +1,5 @@
 {
-  "revision": 2,
+  "revision": 5,
   "document": {
     "components": {
       "schemas": {
@@ -689,6 +689,32 @@
                 "kind": {
                   "enum": [
                     "token_revoked"
+                  ],
+                  "type": "string"
+                },
+                "token": {
+                  "$ref": "#/components/schemas/TokenId"
+                },
+                "token_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "token",
+                "account",
+                "token_name",
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "account": {
+                  "$ref": "#/components/schemas/UserId"
+                },
+                "kind": {
+                  "enum": [
+                    "logged_out"
                   ],
                   "type": "string"
                 },
@@ -1834,6 +1860,28 @@
                 "kind"
               ],
               "type": "object"
+            },
+            {
+              "properties": {
+                "by": {
+                  "type": "string"
+                },
+                "client": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "invited"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "client",
+                "by",
+                "kind"
+              ],
+              "type": "object"
             }
           ]
         },
@@ -2081,6 +2129,8 @@
             "import_closed",
             "archive_invalid",
             "export_running",
+            "phone_key_proof_required",
+            "phone_key_proof_refused",
             "internal",
             "unknown"
           ],
@@ -2119,7 +2169,8 @@
             "update_stop",
             "update_at_boot",
             "restarting",
-            "update_confirmed"
+            "update_confirmed",
+            "invited"
           ],
           "type": "string"
         },
@@ -4225,6 +4276,22 @@
           ],
           "type": "object"
         },
+        "KeyProof": {
+          "properties": {
+            "challenge": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "mac": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "challenge",
+            "mac"
+          ],
+          "type": "object"
+        },
         "KeyRemoval": {
           "oneOf": [
             {
@@ -4356,6 +4423,20 @@
               "type": "object"
             }
           ]
+        },
+        "LogOut": {
+          "properties": {
+            "keys": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "keys"
+          ],
+          "type": "object"
         },
         "LoginFailure": {
           "enum": [
@@ -4905,10 +4986,45 @@
           ],
           "type": "string"
         },
+        "PhoneChallenge": {
+          "properties": {
+            "expires": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "nonce": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "key",
+            "nonce",
+            "expires"
+          ],
+          "type": "object"
+        },
         "PhoneClaim": {
           "properties": {
             "key": {
               "type": "string"
+            },
+            "proof": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/KeyProof"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -5815,6 +5931,7 @@
             "expiring",
             "token_revoked",
             "replaced",
+            "inviter_revoked",
             "unknown"
           ],
           "type": "string"
@@ -12364,6 +12481,40 @@
           }
         }
       },
+      "/api/v1/phones/challenge": {
+        "post": {
+          "operationId": "phone_challenge",
+          "responses": {
+            "201": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PhoneChallenge"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "/api/v1/releases": {
         "get": {
           "operationId": "releases",
@@ -12934,6 +13085,70 @@
           "responses": {
             "204": {},
             "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/tokens/{id}/logout": {
+        "post": {
+          "operationId": "log_out_token",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "required": true,
+              "schema": {
+                "$ref": "#/components/schemas/TokenId"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogOut"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "204": {},
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
               "content": {
                 "application/json": {
                   "schema": {

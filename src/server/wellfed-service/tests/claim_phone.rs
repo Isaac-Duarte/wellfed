@@ -65,7 +65,14 @@ async fn claim(
     key: [u8; 32],
 ) -> Result<PhoneKey> {
     service
-        .claim_phone(caller, id, PhoneClaim { key: Hex(key) })
+        .claim_phone(
+            caller,
+            id,
+            PhoneClaim {
+                key: Hex(key),
+                proof: None,
+            },
+        )
         .await
 }
 
@@ -225,7 +232,7 @@ fn a_key_the_account_cannot_hold_is_refused() {
         let service = server.service();
         let owner = on_phone(service, ada.user.clone(), None).await;
         let kept = paired(&sim, 5, ClientRole::Owner).await;
-        service.keep_client(id, kept).await.unwrap();
+        service.keep_client(&ada, id, kept).await.unwrap();
         let server_role = paired(&sim, 6, ClientRole::Server).await;
         let members = paired(&sim, 8, ClientRole::Member).await;
         let clients = service.clients(id).await.unwrap();

@@ -1,0 +1,45 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\",\n                      revoke IS NOT NULL AS \"revoking!: bool\"\n               FROM phone_keys\n               WHERE feeder_id = ? AND substr(key, 1, 7) = ? AND last_invitation < ?\n               ORDER BY last_invitation, key LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "user_id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "name": "token_id: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "token_id"
+          }
+        }
+      },
+      {
+        "name": "revoking!: bool",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b4e0618d3254609fed846a76c7a5e7f88ffa9640eef6052f220c264cca4f388b"
+}

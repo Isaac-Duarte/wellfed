@@ -444,8 +444,9 @@ impl PathRouter {
         address: Option<String>,
         key: &ClientKey,
     ) -> Adoption {
-        let phone = *key.keypair().public();
-        self.router.adopt(&feeder, name, address, phone).await
+        self.router
+            .adopt(&feeder, name, address, key.keypair())
+            .await
     }
 
     /// Read the server's list for `feeder` after an [`Adoption::Unsettled`]
@@ -454,15 +455,23 @@ impl PathRouter {
     /// with `NotFound`, and a new adoption makes a new invite. It sends
     /// nothing but the claim.
     pub async fn check_adoption(&self, feeder: String, key: &ClientKey) -> Adoption {
-        let phone = *key.keypair().public();
-        self.router.check_adoption(&feeder, phone).await
+        self.router.check_adoption(&feeder, key.keypair()).await
     }
 
     /// Record `key`, this phone's own key on `feeder`, as the account's
     /// phone key, for an adoption that left it [`Adoption::Unclaimed`].
     pub async fn claim_phone(&self, feeder: String, key: &ClientKey) -> Adoption {
-        let phone = *key.keypair().public();
-        self.router.claim_phone(&feeder, phone).await
+        self.router.claim_phone(&feeder, key.keypair()).await
+    }
+
+    /// Claim `key`, this phone's own, on every feeder the server lists, so
+    /// the token this login minted covers it: call it after each connect
+    /// and list. Each feeder is claimed once a session; a claim the server
+    /// could not settle is logged and tried again on the next call, and
+    /// none holds up another. An account with no key of its own claims
+    /// none.
+    pub async fn claim_own(&self, key: &ClientKey) {
+        self.router.claim_own(key.keypair()).await;
     }
 
     /// The path a new request to `feeder` takes now.

@@ -92,6 +92,14 @@ pub enum AuditAction {
         account: UserId,
         token_name: String,
     },
+    /// A phone logged out from a login session: its token revoked, its own
+    /// keys and the keys they invited left the account's, and any other key
+    /// under the token revoked with it.
+    LoggedOut {
+        token: TokenId,
+        account: UserId,
+        token_name: String,
+    },
     /// The home's settings, as they now stand.
     HomeChanged {
         home: Home,

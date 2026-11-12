@@ -3,9 +3,10 @@
 //! as an owner. Its responder's buffer would not fit a slot, so the server
 //! holds one, and one recovery session runs at a time.
 
+use super::handshake::find;
 use super::{Phase, Server, slot_id};
 use crate::clients::Role;
-use crate::pairing::{self, Pairing, Path};
+use crate::pairing::{self, Pairing};
 use crate::setup::{self as rescue, Offer, Received};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record};
 use wellfed_core::deadline_passed;
@@ -89,7 +90,6 @@ impl Server {
         index: usize,
         now_ms: u32,
         device: &mut D,
-        pairing: &mut Pairing,
         record: &mut impl FnMut(Record),
     ) -> Result<bool, Reason> {
         let slot = &mut self.slots[index];
@@ -105,7 +105,6 @@ impl Server {
             Rescue::Asked { offer } => {
                 // The client speaks only in the handshake and the proof.
                 if slot.wire.frame()?.is_some() {
-                    pairing.cancel(Path::Recovery);
                     return Err(Reason::Malformed);
                 }
                 match self.decision.take() {
@@ -179,6 +178,7 @@ impl Server {
                         label: offer.label,
                         role: Role::Owner,
                         path: proto::Path::Recovery,
+                        inviter: None,
                     };
                     if let Some(ticket) = device.keys(change) {
                         let stage = Rescue::Enrolling {
@@ -197,7 +197,19 @@ impl Server {
                     // enrolled.
                     KeyOutcome::Lost => return Err(Reason::Forgotten),
                     KeyOutcome::Done => SetupEnrolled::New,
-                    KeyOutcome::Duplicate => SetupEnrolled::Already,
+                    // Enrolled already, so nothing changed: it is an owner
+                    // only if it was one. A member's or the server's key
+                    // is refused, and the client recovers with a new key.
+                    KeyOutcome::Duplicate => match find(&self.clients, &offer.key) {
+                        Some(held) if held.role.covers(Role::Owner) => SetupEnrolled::Already,
+                        _ => {
+                            return self.rescued(
+                                index,
+                                SetupReply::Refused(SetupRefusal::Invalid),
+                                record,
+                            );
+                        }
+                    },
                     KeyOutcome::Full => {
                         return self.rescued(
                             index,

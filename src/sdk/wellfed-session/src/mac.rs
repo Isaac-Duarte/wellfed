@@ -1,6 +1,6 @@
 //! HMAC-SHA256 (RFC 2104) and a constant-time compare: the key schedule of
-//! Noise, the generator's DRBG, the setup code's commitments and the
-//! speaker variant's signed stream share them.
+//! Noise, the generator's DRBG, the setup code's commitments, the speaker
+//! variant's signed stream and a client key's proof share them.
 
 use sha2::{Digest, Sha256};
 

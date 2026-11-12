@@ -227,6 +227,9 @@ impl Fake {
             };
             // The writer's event, in the turn that made the change.
             if outcome == KeyOutcome::Done {
+                if let Some(invited) = change.invited() {
+                    self.record(0, invited);
+                }
                 self.record(0, change.event());
             }
             if self.keys_done.len() == KEYS_FINISHED {

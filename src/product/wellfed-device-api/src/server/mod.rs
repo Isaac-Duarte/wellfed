@@ -136,6 +136,8 @@ enum Phase {
         key: [u8; 32],
         label: Label,
         role: Role,
+        /// The prefix of the invite's issuer's key.
+        inviter: Option<proto::KeyPrefix>,
         ticket: Option<u32>,
     },
     /// The recovery window's session: the setup exchange over this
@@ -178,6 +180,9 @@ pub struct Server {
     signer: Option<pairing::Event>,
     /// A session waiting for an update key's press ended: cancel the offer.
     cancel_signer: bool,
+    /// The client table changed: drop the invites of every key gone from
+    /// it at the next pass, before any handshake can redeem one.
+    prune_invites: bool,
     /// Subscribers that ended since the last pass, by slot: the device
     /// hears of each on the next.
     readers_left: [bool; SESSIONS],
@@ -224,6 +229,7 @@ impl Server {
             cancel_rescue: false,
             signer: None,
             cancel_signer: false,
+            prune_invites: false,
             readers_left: [false; SESSIONS],
             feeding: false,
             handshook: false,
@@ -241,9 +247,11 @@ impl Server {
         (&mut self.clients, self.clients_generation)
     }
 
-    /// The table changed: close every session whose key is gone.
+    /// The table changed: close every session whose key is gone, and
+    /// (at the next pass) drop the invites it made.
     pub fn clients_changed(&mut self, generation: u32, mut record: impl FnMut(Record)) {
         self.clients_generation = generation;
+        self.prune_invites = true;
         for index in 0..SESSIONS {
             let Phase::Open { key, .. } = self.slots[index].phase else {
                 continue;
@@ -318,13 +326,6 @@ impl Server {
         match self.slots[slot].phase {
             Phase::Free => {}
             Phase::Closing => self.slots[slot] = Slot::FREE,
-            Phase::Recovery(_) => {
-                // An offer waiting for its code goes with its client.
-                self.cancel_rescue = true;
-                self.rescue.stop();
-                self.end(slot, Reason::Closed, &mut record);
-                self.slots[slot] = Slot::FREE;
-            }
             _ => {
                 self.end(slot, Reason::Closed, &mut record);
                 self.slots[slot] = Slot::FREE;
@@ -438,6 +439,10 @@ impl Server {
             pairing.cancel(Path::Signer);
             self.signer = None;
         }
+        if core::mem::take(&mut self.prune_invites) {
+            let clients = &self.clients;
+            pairing.issuers_left(|key| clients.iter().flatten().any(|c| c.key == *key));
+        }
         self.tell_readers_left(device);
         self.settle_left(device, &mut record);
 
@@ -496,23 +501,23 @@ impl Server {
         }
         slot.wire.discard();
 
-        // Ending by the driver's `closed` would see to this; the slot reaches
-        // that call already closing.
-        if matches!(slot.phase, Phase::Recovery(_)) {
-            self.cancel_rescue = true;
-            self.rescue.stop();
-        }
         self.end(index, Reason::Stalled, record);
         true
     }
 
     /// End `index` with `reason`: anything queued still goes out, then the
-    /// driver closes it.
+    /// driver closes it. A recovery session's offer waiting for its code
+    /// goes with it, however it ended (a hang-up, a stall or an error), so
+    /// the owner's next presses work the panel again.
     fn end(&mut self, index: usize, reason: Reason, record: &mut impl FnMut(Record)) {
         self.forget_waiting(index);
         let slot = &mut self.slots[index];
         if matches!(slot.phase, Phase::Free | Phase::Closing) {
             return;
+        }
+        if matches!(slot.phase, Phase::Recovery(_)) {
+            self.cancel_rescue = true;
+            self.rescue.stop();
         }
         if let Phase::Open {
             events: Some(_), ..

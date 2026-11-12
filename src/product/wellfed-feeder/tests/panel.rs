@@ -1,10 +1,11 @@
 //! The lock rules against synthetic gestures: the Lock hold toggles, a
-//! locked panel refuses Dispense, Mic and the Reset hold, and an idle unlocked
-//! panel relocks on stock's timer, counted from the last release.
+//! locked panel refuses Dispense, Mic and the Reset hold, an unlocked
+//! panel's Dispense or Mic alone waits out the chord window, and an idle
+//! unlocked panel relocks on stock's timer, counted from the last release.
 
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_device_api::mailbox::Lock;
-use wellfed_feeder::panel::{Action, BUTTONS, Config, Event, Panel, Source};
+use wellfed_feeder::panel::{Action, BUTTONS, CHORD_MS, Config, Event, Panel, Source};
 
 const RELOCK: u32 = Config::STOCK.relock_ms;
 
@@ -89,11 +90,67 @@ fn a_locked_panel_refuses_every_action_but_the_lock_hold() {
         hold_lock(&mut panel, 6_000),
         changed(Lock::Unlocked, Source::Button)
     );
+    assert_eq!(panel.gesture(11_300, down(Button::Dispense)), None);
     assert_eq!(
-        panel.gesture(11_300, down(Button::Dispense)),
+        panel.gesture(11_400, up(Button::Dispense, 0)),
         asked(Action::Feed, true)
     );
-    assert_eq!(panel.gesture(11_400, up(Button::Dispense, 0)), None);
+}
+
+/// An unlocked panel's press of Dispense or Mic alone acts once the chord
+/// window is over, or when it is released alone before then.
+#[test]
+fn a_lone_press_acts_after_the_chord_window_or_at_its_release() {
+    let mut panel = Panel::new(Config::STOCK, 0);
+    hold_lock(&mut panel, 0);
+
+    assert_eq!(panel.gesture(10_000, down(Button::Dispense)), None);
+    assert_eq!(panel.tick(10_000 + CHORD_MS - 1), None);
+    assert_eq!(panel.tick(10_000 + CHORD_MS), asked(Action::Feed, true));
+    assert_eq!(panel.gesture(10_500, up(Button::Dispense, 0)), None, "once");
+
+    assert_eq!(panel.gesture(11_000, down(Button::Mic)), None);
+    assert_eq!(
+        panel.gesture(11_080, up(Button::Mic, 0)),
+        asked(Action::Mic, true)
+    );
+    assert_eq!(panel.tick(11_000 + CHORD_MS), None, "once");
+}
+
+/// Dispense first, then Lock within the window: the recovery chord, which
+/// feeds nothing. Mic first, then Lock: the setup chord, which plays
+/// nothing.
+#[test]
+fn a_chord_started_with_dispense_or_mic_asks_for_nothing() {
+    for (first, at) in [(Button::Dispense, 10_000), (Button::Mic, 20_000)] {
+        let mut panel = Panel::new(Config::STOCK, 0);
+        hold_lock(&mut panel, 0);
+        let both = chord(first).with(Button::Lock);
+
+        let mut events = vec![
+            panel.gesture(at, down(first)),
+            panel.gesture(at + CHORD_MS - 50, Gesture::Down { chord: both }),
+        ];
+        events.extend((0..=5_000).step_by(20).map(|t| panel.tick(at + t)));
+        events.push(panel.gesture(
+            at + 5_000,
+            Gesture::Hold {
+                chord: both,
+                level: 1,
+            },
+        ));
+        events.push(panel.gesture(
+            at + 5_200,
+            Gesture::Up {
+                chord: both,
+                level: 1,
+                held_ms: 5_200,
+            },
+        ));
+
+        assert!(events.iter().all(Option::is_none), "{first:?}: {events:?}");
+        assert_eq!(panel.lock(), Lock::Unlocked);
+    }
 }
 
 #[test]
@@ -161,8 +218,10 @@ fn activity_restarts_the_relock_and_a_held_button_holds_it_off() {
     panel.gesture(20_100, up(Button::Mic, 0));
     assert_eq!(panel.tick(50_099), None);
 
-    // Dispense held past the timer: no relock until it is let go.
+    // Dispense held past the timer: no relock until it is let go. It
+    // feeds once, as the chord window ends.
     panel.gesture(50_000, down(Button::Dispense));
+    assert_eq!(panel.tick(50_000 + CHORD_MS), asked(Action::Feed, true));
     assert_eq!(panel.tick(90_000), None);
     panel.gesture(90_000, up(Button::Dispense, 1));
     assert_eq!(panel.tick(119_999), None);

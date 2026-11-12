@@ -48,9 +48,9 @@ pub use audit::{AuditAction, AuditEntry, AuditPage, LoginFailure};
 pub use auth::{Credentials, PasswordChange, Role, Setup, SetupState, User};
 pub use backups::{Backup, BackupPage};
 pub use clients::{
-    ClientOwner, FeederClient, KeyRemoval, NewPhoneInvite, PhoneClaim, PhoneInvite, PhoneKey,
-    PlayRequest, Removal, RevokeAttempt, RevokeReason, Revoking, TuneName, WifiChange,
-    WifiCredentials,
+    ClientOwner, FeederClient, KeyProof, KeyRemoval, NewPhoneInvite, PhoneChallenge, PhoneClaim,
+    PhoneInvite, PhoneKey, PlayRequest, Removal, RevokeAttempt, RevokeReason, Revoking, TuneName,
+    WifiChange, WifiCredentials,
 };
 pub use commands::{
     Command, CommandKind, CommandOutcome, CommandPage, CommandQuery, CommandState,
@@ -90,7 +90,7 @@ pub use stock::{
     StockSource, StockState,
 };
 pub use stream::{FeederSample, StreamEvent, StreamQuery};
-pub use tokens::{BEARER, CreatedToken, NewToken, Token, TokenId};
+pub use tokens::{BEARER, CreatedToken, LOGOUT_KEYS_MAX, LogOut, NewToken, Token, TokenId};
 pub use users::{NewUser, UserPatch};
 pub use views::{
     FOOD_VIEW_DAYS, FeedAnomaly, FeedRate, FeederPortions, FoodLeft, INTAKE_DAYS, INTAKE_DAYS_MAX,
@@ -119,7 +119,7 @@ pub const PREFIX: &str = "/api/v1";
 /// document to that ([API evolution]).
 ///
 /// [API evolution]: ../../../../docs/server/README.md#api-evolution
-pub const REVISION: u32 = 2;
+pub const REVISION: u32 = 5;
 
 /// The cookie a login sets: an opaque session token, `HttpOnly` and
 /// `SameSite=Strict`. A non-browser client sends it back as it came.

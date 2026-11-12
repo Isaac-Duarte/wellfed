@@ -199,6 +199,12 @@ class FakeRouter with FakeOpaque implements PathRouter {
   Future<Adoption> claimPhone({required String feeder, required ClientKey key}) =>
       throw UnimplementedError('no server here');
 
+  /// The keys it was asked to claim on the listed feeders, a round each.
+  final claims = <ClientKey>[];
+
+  @override
+  Future<void> claimOwn({required ClientKey key}) async => claims.add(key);
+
   @override
   void close() {}
 }

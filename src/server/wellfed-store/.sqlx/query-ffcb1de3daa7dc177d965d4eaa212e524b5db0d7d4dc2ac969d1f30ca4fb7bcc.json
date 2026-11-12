@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM phone_keys WHERE feeder_id = ? AND key = ? AND invited_by IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "ffcb1de3daa7dc177d965d4eaa212e524b5db0d7d4dc2ac969d1f30ca4fb7bcc"
+}

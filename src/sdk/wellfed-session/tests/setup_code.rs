@@ -122,3 +122,27 @@ fn every_button_appears_in_codes_and_none_in_debug() {
     }
     assert_eq!(format!("{all:?}"), "Code(..)");
 }
+
+/// A drawn code is never one button pressed every time, which a feeder
+/// refuses; every other code draws as its bits say.
+#[test]
+fn a_drawn_code_is_never_one_button() {
+    let mut one_button = 0;
+    for bits in 0..=u16::MAX {
+        let code = Code::from_bits(bits);
+        assert!(!code.one_button(), "{bits:#x}");
+        let plain: Vec<_> = (0..6)
+            .map(|i| Button::ALL[usize::from(bits >> (2 * i)) & 3])
+            .collect();
+        if plain.iter().all(|&press| press == plain[0]) {
+            one_button += 1;
+        } else {
+            assert_eq!(code.presses().as_slice(), plain.as_slice());
+        }
+    }
+    assert_eq!(
+        one_button,
+        4 * 16,
+        "four codes, each from 16 values of the unused bits"
+    );
+}

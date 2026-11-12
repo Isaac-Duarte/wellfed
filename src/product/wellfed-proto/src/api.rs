@@ -79,7 +79,7 @@ pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 /// it knows, and reads a refused `Unavailable` as one the feeder's build
 /// lacks; a client below it still uses every op it knows, and only what
 /// the newer build added is out of its reach.
-pub const REVISION: u32 = 1;
+pub const REVISION: u32 = 3;
 
 /// Frozen. The largest frame either way, Noise tag included.
 pub const FRAME_MAX: usize = 1024;
@@ -289,6 +289,17 @@ pub enum Op<'a> {
     /// The feeder's module; refused `Unavailable` by another kind.
     #[serde(borrow)]
     Feeder(FeederOp<'a>),
+    /// A single-use invite only the client whose static key is `key` can
+    /// redeem, answered [`Outcome::Invite`] like [`Self::CreateInvite`],
+    /// with its role rules. Whoever asks names the key the new client will
+    /// join with, so the key the feeder enrolls is the one the asker
+    /// recorded: a holder of the secret who joins with another key is
+    /// refused, and the invite stays for the right one. The redemption is
+    /// [`Open::Invite`]'s, unchanged.
+    CreateBoundInvite {
+        role: Role,
+        key: [u8; 32],
+    },
 }
 
 /// The update ops ([`Op::Update`]), frozen with everything they carry and
@@ -646,6 +657,7 @@ impl Op<'_> {
             Self::PutWifi { .. }
             | Self::TimeSync(_)
             | Self::CreateInvite { .. }
+            | Self::CreateBoundInvite { .. }
             | Self::RevokeClient { .. }
             | Self::Reboot
             | Self::PutTime { .. } => true,
@@ -1879,6 +1891,16 @@ pub enum EventBody {
     /// records nothing of its own, would read as a fall from a build that
     /// never confirmed.
     UpdateConfirmed,
+    /// The client `client` just enrolled joined through an invite the
+    /// client `by` asked for: each the first [`KEY_PREFIX`] bytes of its
+    /// key, too many for anyone to grind a key that shares them, where a
+    /// [`Fingerprint`] is not. A server that revokes a phone's key also
+    /// revokes the keys it invited by this. Recorded just before the key's
+    /// `Enrolled`, so a cut between the two loses the notice, not this.
+    Invited {
+        client: KeyPrefix,
+        by: KeyPrefix,
+    },
 }
 
 unit_enum! {
@@ -2319,6 +2341,14 @@ unit_enum! {
 /// The first 4 bytes of a client's key: enough to tell clients apart in
 /// the history, which has 16 bytes for a body.
 pub type Fingerprint = [u8; 4];
+
+/// How many of a key's first bytes [`KeyPrefix`] keeps.
+pub const KEY_PREFIX: usize = 7;
+
+/// A key's first [`KEY_PREFIX`] bytes: enough to name one client in an
+/// event that must not be confused with another, where a [`Fingerprint`]
+/// only labels it for people.
+pub type KeyPrefix = [u8; KEY_PREFIX];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Source {
@@ -3393,6 +3423,10 @@ mod tests {
             },
             EventBody::Restarting,
             EventBody::UpdateConfirmed,
+            EventBody::Invited {
+                client: [0xff; KEY_PREFIX],
+                by: [0xff; KEY_PREFIX],
+            },
         ] {
             let mut out = [0; EVENT_BODY_MAX];
             let len = encode(&body, &mut out).unwrap();

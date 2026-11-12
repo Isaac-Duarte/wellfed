@@ -180,15 +180,25 @@ pub fn phone_key(secret: [u8; 32]) -> [u8; 32] {
 /// Join the simulator as a phone with `secret`, redeeming `invite` (the
 /// text the server's phone invite answered): the role it enrolled with.
 pub async fn join_phone(sim: &Running, invite: &str, secret: [u8; 32]) -> ClientRole {
-    let invite = Invite::parse(invite).expect("the server's invite parses");
-    let keys = Keypair::from_secret(secret);
-    let joined = wellfed_connect::join(&keys, invite, "phone", sim.address, [0x77; 32])
+    let joined = try_join_phone(sim, invite, secret)
         .await
         .expect("the phone redeems the invite");
     match joined {
         Joined::Enrolled { role, .. } => role,
         Joined::Refused(refusal) => panic!("the feeder refused the phone: {refusal:?}"),
     }
+}
+
+/// Redeem `invite` with the phone whose secret is `secret`, whatever the
+/// feeder makes of it.
+pub async fn try_join_phone(
+    sim: &Running,
+    invite: &str,
+    secret: [u8; 32],
+) -> wellfed_connect::Result<Joined> {
+    let invite = Invite::parse(invite).expect("the server's invite parses");
+    let keys = Keypair::from_secret(secret);
+    wellfed_connect::join(&keys, invite, "phone", sim.address, [0x77; 32]).await
 }
 
 /// A session with the simulator as the phone whose secret is `secret`,
@@ -198,6 +208,46 @@ pub async fn open_phone(sim: &Running, secret: [u8; 32]) -> Connection {
     Connection::open(&keys, sim.identity, sim.address, [0x78; 32])
         .await
         .expect("a joined phone opens a session with the simulator")
+}
+
+/// A plain invite for `role` that the joined phone whose secret is
+/// `secret` asks the feeder for itself, over its own session: the server
+/// never sees it made.
+pub async fn phone_invite(sim: &Running, secret: [u8; 32], role: ClientRole) -> String {
+    static IDS: AtomicU8 = AtomicU8::new(0x40);
+    let id = [IDS.fetch_add(1, Ordering::Relaxed); 16];
+
+    let mut connection = open_phone(sim, secret).await;
+    let answer = connection
+        .ask(id, &Op::CreateInvite { role })
+        .await
+        .expect("the simulator answers the phone's invite request");
+    let Answer::Invite(invite) = answer else {
+        panic!("the phone's invite request answered {answer:?}");
+    };
+    Invite {
+        feeder: sim.identity,
+        id: invite.id,
+        secret: invite.secret.0,
+    }
+    .text()
+}
+
+/// The joined phone whose secret is `secret` revokes `key` over its own
+/// session, without the server.
+pub async fn phone_revoke(sim: &Running, secret: [u8; 32], key: [u8; 32]) {
+    static IDS: AtomicU8 = AtomicU8::new(0x60);
+    let id = [IDS.fetch_add(1, Ordering::Relaxed); 16];
+
+    let mut connection = open_phone(sim, secret).await;
+    let answer = connection
+        .ask(id, &Op::RevokeClient { key })
+        .await
+        .expect("the simulator answers the phone's revoke");
+    assert!(
+        matches!(answer, Answer::Done { .. }),
+        "the phone's revoke answered {answer:?}"
+    );
 }
 
 /// The public keys in the simulator's client table, as its owner reads

@@ -61,6 +61,7 @@ fn a_client_change_answers_its_ticket_on_the_writers_turn() {
                 label,
                 role: Role::Owner,
                 path: Path::Setup,
+                inviter: None,
             },
             at: Some(1_700_000_000),
         }),

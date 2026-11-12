@@ -97,6 +97,10 @@ fn every_op() -> Vec<Op> {
             due: jiff::Timestamp::UNIX_EPOCH,
         },
         Op::GetAlerts,
+        Op::CreateBoundInvite {
+            role: ClientRole::Member,
+            key: [0; 32],
+        },
     ];
     let mut kinds: Vec<_> = ops.iter().map(kind).collect();
     kinds.sort_unstable();
@@ -146,6 +150,7 @@ fn kind(op: &Op) -> u8 {
         Op::SkipMeal { .. } => 35,
         Op::UnskipMeal { .. } => 36,
         Op::GetAlerts => 37,
+        Op::CreateBoundInvite { .. } => 38,
     }
 }
 

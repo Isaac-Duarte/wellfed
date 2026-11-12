@@ -15,6 +15,13 @@
 //! over the device API; an unlock from there relocks on the same timer, as a
 //! button unlock does.
 //!
+//! On an unlocked panel, a press of Dispense or Mic alone waits
+//! [`CHORD_MS`] before it acts, since each starts one of the owner's
+//! chords: Lock and Dispense held opens recovery, Lock and Mic setup mode.
+//! A button that joins within the window makes it a chord, and the press
+//! asks for nothing; one released alone before then acts at once. A
+//! locked panel's refusal is not held: it acts on nothing either way.
+//!
 //! The panel starts locked at every boot. Stock's boot state is not
 //! recovered, and starting locked means an unattended reboot never leaves
 //! Dispense live.
@@ -35,6 +42,13 @@ pub const BUTTONS: ButtonsConfig = ButtonsConfig {
     holds_ms: [5_000, 0, 0],
     hold_count: 1,
 };
+
+/// How long a press of Dispense or Mic alone on an unlocked panel waits for
+/// another button before it acts. Someone pressing a two-button chord gets
+/// the second button down within about 100 ms of the first, and each must
+/// pass the 30 ms debounce; 200 ms covers both with room, and a feed or a
+/// tune that starts 200 ms after the press still answers it at once.
+pub const CHORD_MS: u32 = 200;
 
 /// How the panel locks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,6 +113,17 @@ pub struct Panel {
     active_ms: u32,
     /// A gesture is in progress (no `Up` yet).
     pressed: bool,
+    /// A press alone waiting out [`CHORD_MS`].
+    waiting: Option<Waiting>,
+}
+
+/// A press of Dispense or Mic alone, which acts at `until` unless another
+/// button joins it first.
+#[derive(Clone, Copy, Debug)]
+struct Waiting {
+    action: Action,
+    button: Button,
+    until: u32,
 }
 
 impl Panel {
@@ -109,6 +134,7 @@ impl Panel {
             lock: Lock::Locked,
             active_ms: now_ms,
             pressed: false,
+            waiting: None,
         }
     }
 
@@ -119,6 +145,23 @@ impl Panel {
     /// One gesture from the button service.
     pub fn gesture(&mut self, now_ms: u32, gesture: Gesture) -> Option<Event> {
         self.noted(now_ms, gesture);
+        if let Some(waiting) = self.waiting.take() {
+            match gesture {
+                // Released alone before the window ended: no chord comes.
+                Gesture::Up { chord, .. } if alone(chord, waiting.button) => {
+                    return Some(self.asked(waiting.action));
+                }
+                // Another button joined within the window: a chord, which
+                // asks for nothing.
+                Gesture::Down { .. } if !deadline_passed(now_ms, waiting.until) => {}
+                // The window is over and the tick has yet to act: a button
+                // joined too late to make a chord, or the lone button was
+                // held on. The press stands alone and asks now, as the tick
+                // would have; the rest of this gesture continues the same
+                // press, so it asks for nothing more.
+                _ => return Some(self.asked(waiting.action)),
+            }
+        }
 
         let held = |level: u8| level == self.config.hold_level;
         let action = match gesture {
@@ -126,18 +169,39 @@ impl Panel {
                 let lock = Lock::from_locked(!self.lock.locked());
                 return Some(self.set(lock, Source::Button));
             }
-            Gesture::Down { chord } if alone(chord, Button::Dispense) => Action::Feed,
-            Gesture::Down { chord } if alone(chord, Button::Mic) => Action::Mic,
+            Gesture::Down { chord } if alone(chord, Button::Dispense) => {
+                return self.wait(now_ms, Action::Feed, Button::Dispense);
+            }
+            Gesture::Down { chord } if alone(chord, Button::Mic) => {
+                return self.wait(now_ms, Action::Mic, Button::Mic);
+            }
             Gesture::Hold { chord, level } if alone(chord, Button::Reset) && held(level) => {
                 Action::Reset
             }
             _ => return None,
         };
+        Some(self.asked(action))
+    }
 
-        Some(Event::Asked {
+    /// A press of `button` alone asking for `action`: refused at once while
+    /// locked, else held for the chord window.
+    fn wait(&mut self, now_ms: u32, action: Action, button: Button) -> Option<Event> {
+        if self.lock.locked() {
+            return Some(self.asked(action));
+        }
+        self.waiting = Some(Waiting {
+            action,
+            button,
+            until: now_ms.wrapping_add(CHORD_MS),
+        });
+        None
+    }
+
+    const fn asked(&self, action: Action) -> Event {
+        Event::Asked {
             action,
             allowed: !self.lock.locked(),
-        })
+        }
     }
 
     /// A gesture pairing took (a code being keyed in) is still someone at
@@ -153,8 +217,15 @@ impl Panel {
         (lock != self.lock).then(|| self.set(lock, Source::Remote))
     }
 
-    /// Relocks an unlocked panel left idle for the configured time.
+    /// Acts on a press alone once its chord window is over, and relocks an
+    /// unlocked panel left idle for the configured time.
     pub fn tick(&mut self, now_ms: u32) -> Option<Event> {
+        if let Some(waiting) = self.waiting
+            && deadline_passed(now_ms, waiting.until)
+        {
+            self.waiting = None;
+            return Some(self.asked(waiting.action));
+        }
         let idle = !self.pressed
             && deadline_passed(now_ms, self.active_ms.wrapping_add(self.config.relock_ms));
         (self.lock == Lock::Unlocked && idle).then(|| self.set(Lock::Locked, Source::Idle))

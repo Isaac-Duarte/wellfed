@@ -364,6 +364,8 @@ pub enum KeyChange {
         role: Role,
         /// How the key joined.
         path: proto::Path,
+        /// The prefix of the key whose invite it redeemed, if it did.
+        inviter: Option<proto::KeyPrefix>,
     },
     Revoke {
         key: [u8; 32],
@@ -391,6 +393,24 @@ impl KeyChange {
                 client: crate::fingerprint(&key),
                 by,
             },
+        }
+    }
+
+    /// The event that names who invited a key this change enrolled, which
+    /// the writer records just before [`Self::event`]'s: a server revokes
+    /// the keys a phone's key invited with it, so this one must not be the
+    /// one a cut between the two loses.
+    pub fn invited(&self) -> Option<EventBody> {
+        match *self {
+            Self::Enroll {
+                key,
+                inviter: Some(by),
+                ..
+            } => Some(EventBody::Invited {
+                client: crate::key_prefix(&key),
+                by,
+            }),
+            Self::Enroll { inviter: None, .. } | Self::Revoke { .. } => None,
         }
     }
 }

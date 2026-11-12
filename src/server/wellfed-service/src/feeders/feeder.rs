@@ -8,6 +8,7 @@ use wellfed_session::hex;
 use wellfed_store::{FeederRow, NewFeeder};
 
 use crate::feeders::keys;
+use crate::feeders::phones::Possession;
 use crate::{Caller, Error, FeederError, InternalError, Invalid, Resource, Result, Service};
 
 const PAGE: u32 = 100;
@@ -102,7 +103,10 @@ impl Service {
         // waits for its session.
         drop(one_at_a_time);
         if let Some((holder, key)) = phone {
-            self.confirm_phone(caller, holder, id, key).await?;
+            // An adoption names a key with no proof: a key a logout left
+            // with no token is claimed again with one.
+            self.confirm_phone(caller, holder, id, key, Possession::Unproven)
+                .await?;
         }
         Ok(self.view(row))
     }

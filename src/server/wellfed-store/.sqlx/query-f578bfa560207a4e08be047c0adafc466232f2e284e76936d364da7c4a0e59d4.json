@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE phone_keys SET revoke = 'inviter_revoked', revoke_ms = ?1\n               WHERE revoke IS NULL AND invited_by IS NOT NULL AND EXISTS (\n                   SELECT 1 FROM phone_keys AS inviter\n                   WHERE inviter.feeder_id = phone_keys.feeder_id\n                     AND inviter.revoke IS NOT NULL\n                     AND substr(inviter.key, 1, 7) = phone_keys.invited_by)\n               RETURNING feeder_id AS \"feeder_id: Uuid\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "feeder_id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "feeder_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f578bfa560207a4e08be047c0adafc466232f2e284e76936d364da7c4a0e59d4"
+}

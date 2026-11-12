@@ -258,7 +258,7 @@ class _WellfedAppState extends State<WellfedApp> {
   late final _pairing = AppPairingPorts(widget.app.key);
   static const _phone = AppPhonePorts();
 
-  late final _server = HomeServer(widget.app, const AppServerPorts(), widget.app.router);
+  late final _server = HomeServer(widget.app, const AppServerPorts(), widget.app.router, widget.app.key);
   late final _feederPorts = AppFeederPorts(widget.app.key, widget.app.router);
   late final _fleet = FeederFleet(widget.app, _feederPorts, server: _server);
   late final _adopt = AdoptFlow(_feederPorts, _server);
@@ -266,6 +266,7 @@ class _WellfedAppState extends State<WellfedApp> {
   /// Each server screen's controller, on the session open when it is made.
   late final _serverScreens = ServerScreens(
     server: _server,
+    phoneKey: widget.app.key,
     adopt: _adopt,
     newAddServer: () => AddServerFlow(_server),
     newHousehold: () => switch (_server.session) {

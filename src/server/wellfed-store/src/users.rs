@@ -30,6 +30,28 @@ pub struct SessionRow {
     pub last_used: Timestamp,
 }
 
+/// A change to an account's role and expiry, with what goes with it in
+/// the same transaction.
+#[derive(Clone, Copy, Debug)]
+pub struct UserUpdate<'a> {
+    pub role: Role,
+    pub expires: Option<Timestamp>,
+    /// A new password hash, if the change sets one.
+    pub password_hash: Option<&'a str>,
+    pub sessions: Sessions<'a>,
+}
+
+/// Which of a user's sessions a change ends, in its own transaction, so
+/// the change never lands while a session it should end survives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sessions<'a> {
+    Kept,
+    /// Every one but `keep`, the session the change was asked on.
+    Ended {
+        keep: Option<&'a [u8; 32]>,
+    },
+}
+
 /// What became of a change to an account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Change {
@@ -144,17 +166,14 @@ impl Store {
         }
     }
 
-    /// Set a user's role and expiry, unless that demotes the last owner.
-    pub async fn update_user(
-        &self,
-        id: UserId,
-        role: Role,
-        expires: Option<Timestamp>,
-    ) -> Result<Change> {
-        let (code, expires) = (role.code(), expires.map(millis));
+    /// Set a user's role and expiry, and the password and sessions
+    /// `update` names, in one transaction, unless that demotes the last
+    /// owner.
+    pub async fn update_user(&self, id: UserId, update: UserUpdate<'_>) -> Result<Change> {
+        let (code, expires) = (update.role.code(), update.expires.map(millis));
 
         let mut tx = self.writer.begin().await?;
-        if let Some(refused) = guard_owner(&mut tx, id, Some(role)).await? {
+        if let Some(refused) = guard_owner(&mut tx, id, Some(update.role)).await? {
             return Ok(refused);
         }
         sqlx::query!(
@@ -165,6 +184,18 @@ impl Store {
         )
         .execute(&mut *tx)
         .await?;
+        if let Some(hash) = update.password_hash {
+            sqlx::query!(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                hash,
+                id.0
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+        if let Sessions::Ended { keep } = update.sessions {
+            end_sessions(&mut tx, id, keep).await?;
+        }
         tx.commit().await?;
         Ok(Change::Done)
     }
@@ -183,37 +214,63 @@ impl Store {
         Ok(Change::Done)
     }
 
-    /// Replace a user's password hash; whether the user exists.
-    pub async fn set_password(&self, id: UserId, password_hash: &str) -> Result<bool> {
+    /// Replace a user's password hash and end every session of theirs but
+    /// `keep`, in one transaction; whether it was replaced. `checked`, when
+    /// given, is the hash the caller verified the current password against:
+    /// a hash changed since (a reset that landed meanwhile) is left as it
+    /// is, so the change cannot undo it.
+    pub async fn set_password(
+        &self,
+        id: UserId,
+        password_hash: &str,
+        checked: Option<&str>,
+        keep: Option<&[u8; 32]>,
+    ) -> Result<bool> {
+        let mut tx = self.writer.begin().await?;
         let done = sqlx::query!(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            "UPDATE users SET password_hash = ?1 WHERE id = ?2 AND (?3 IS NULL OR password_hash = ?3)",
             password_hash,
-            id.0
+            id.0,
+            checked,
         )
-        .execute(&self.writer)
+        .execute(&mut *tx)
         .await?;
-        Ok(done.rows_affected() == 1)
+        if done.rows_affected() != 1 {
+            return Ok(false);
+        }
+        end_sessions(&mut tx, id, keep).await?;
+        tx.commit().await?;
+        Ok(true)
     }
 
+    /// Open a session for `user` only while their password hash is still
+    /// `verified`, the one the login was checked against, and the account
+    /// has not expired at `now`; whether it opened. One statement on the
+    /// writer, so a password change, an expiry or a deletion committed
+    /// while the login was being checked leaves no session behind it.
     pub async fn create_session(
         &self,
         token_hash: &[u8; 32],
         user: UserId,
+        verified: &str,
         now: Timestamp,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let hash = token_hash.as_slice();
         let now = millis(now);
-        sqlx::query!(
+        let done = sqlx::query!(
             "INSERT INTO sessions (token_hash, user_id, created_ms, last_used_ms)
-             VALUES (?, ?, ?, ?)",
+             SELECT ?, id, ?, ? FROM users
+             WHERE id = ? AND password_hash = ? AND (expires_ms IS NULL OR expires_ms > ?)",
             hash,
-            user.0,
             now,
+            now,
+            user.0,
+            verified,
             now,
         )
         .execute(&self.writer)
         .await?;
-        Ok(())
+        Ok(done.rows_affected() == 1)
     }
 
     /// The session with this token, and its user, however long ago it was
@@ -261,19 +318,6 @@ impl Store {
         Ok(())
     }
 
-    /// End every session of `user` but `except`; how many there were.
-    pub async fn delete_sessions_of(&self, user: UserId, except: Option<&[u8; 32]>) -> Result<u64> {
-        let keep = except.map(<[u8; 32]>::as_slice);
-        let done = sqlx::query!(
-            "DELETE FROM sessions WHERE user_id = ? AND token_hash IS NOT ?",
-            user.0,
-            keep,
-        )
-        .execute(&self.writer)
-        .await?;
-        Ok(done.rows_affected())
-    }
-
     /// The hash a user's password is checked against.
     pub async fn password_hash(&self, id: UserId) -> Result<Option<String>> {
         let row = sqlx::query!("SELECT password_hash FROM users WHERE id = ?", id.0)
@@ -297,6 +341,23 @@ impl Store {
         .await?;
         Ok(done.rows_affected())
     }
+}
+
+/// End every session of `user` but `keep`, inside a change's transaction.
+async fn end_sessions(
+    tx: &mut sqlx::SqliteConnection,
+    user: UserId,
+    keep: Option<&[u8; 32]>,
+) -> Result<()> {
+    let keep = keep.map(<[u8; 32]>::as_slice);
+    sqlx::query!(
+        "DELETE FROM sessions WHERE user_id = ? AND token_hash IS NOT ?",
+        user.0,
+        keep,
+    )
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
 }
 
 /// Whether the change of user `id` to `role` (`None`: deleting them) must

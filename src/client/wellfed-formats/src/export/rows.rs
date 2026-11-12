@@ -86,6 +86,8 @@ tables! {
     FeederState => "feeder_state": FeederState,
     PhoneKeys => "phone_keys": PhoneKey,
     KeptClients => "kept_clients": KeptClient,
+    Invitations => "invitations": Invitation,
+    DroppedPhones => "dropped_phones": DroppedPhone,
     Events => "events": Event,
     Gaps => "gaps": Gap,
     Samples => "samples": Sample,
@@ -183,6 +185,12 @@ pub struct PhoneKey {
     pub revoke: Option<String>,
     pub revoke_ms: Option<i64>,
     pub attempt: Option<String>,
+    /// The first bytes of the phone key whose invite it joined with, for a
+    /// key the server did not invite itself.
+    #[serde(with = "hex_option")]
+    pub invited_by: Option<Vec<u8>>,
+    /// The newest invitation's `id` when the key was recorded.
+    pub last_invitation: i64,
 }
 
 /// A client the server did not invite that an owner chose to keep.
@@ -193,6 +201,40 @@ pub struct KeptClient {
     #[serde(with = "hex_bytes")]
     pub key: Vec<u8>,
     pub kept_ms: i64,
+}
+
+/// A join through an invite a feeder reported: the first bytes of the key
+/// that joined and of the key that asked for the invite, and when the
+/// server attributed it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Invitation {
+    /// The order the server recorded joins in.
+    pub id: i64,
+    pub feeder_id: Uuid,
+    pub epoch: i64,
+    pub seq: i64,
+    #[serde(with = "hex_bytes")]
+    pub invitee: Vec<u8>,
+    #[serde(with = "hex_bytes")]
+    pub inviter: Vec<u8>,
+    pub received_ms: i64,
+    pub settled_ms: Option<i64>,
+}
+
+/// A phone key the feeder dropped, by its first bytes, kept so a key it
+/// invited still goes, and the newest invitation's `id` when the server
+/// recorded it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DroppedPhone {
+    pub feeder_id: Uuid,
+    #[serde(with = "hex_bytes")]
+    pub prefix: Vec<u8>,
+    pub user_id: Uuid,
+    pub token_id: Option<Uuid>,
+    pub last_invitation: i64,
+    pub dropped_ms: i64,
 }
 
 /// An event as the feeder recorded it: `body` is its postcard bytes.

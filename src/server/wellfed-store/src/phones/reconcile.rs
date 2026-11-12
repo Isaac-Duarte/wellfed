@@ -12,9 +12,9 @@ impl Store {
     /// Mark every key whose account or token no longer may hold one,
     /// whatever change left it so: a deleted account or token, a viewer, an
     /// owner's key on an account now a member's, an account or token with
-    /// an expiry. The account changes mark their keys themselves; this
-    /// catches a key recorded while its account changed. The feeders that
-    /// hold any key so marked.
+    /// an expiry, and every key a marked key invited. The account changes
+    /// mark their keys themselves; this catches a key recorded while its
+    /// account changed. The feeders that hold any key so marked.
     pub async fn reconcile_phones(&self, at: Timestamp) -> Result<Vec<FeederId>> {
         let at = millis(at);
         let mut tx = self.writer.begin().await?;
@@ -58,6 +58,7 @@ impl Store {
         )
         .fetch_all(&mut *tx)
         .await?;
+        let invited = super::invitees::cascade(&mut tx, at).await?;
         tx.commit().await?;
 
         let mut feeders: Vec<FeederId> = deleted
@@ -66,6 +67,7 @@ impl Store {
             .chain(token.into_iter().map(|row| row.feeder_id))
             .chain(demoted.into_iter().map(|row| row.feeder_id))
             .chain(expiring.into_iter().map(|row| row.feeder_id))
+            .chain(invited)
             .map(FeederId)
             .collect();
         feeders.sort_unstable();

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO dropped_phones\n             (feeder_id, prefix, user_id, token_id, last_invitation, dropped_ms)\n         VALUES (?, ?, ?, ?, ?, ?)\n         ON CONFLICT (feeder_id, prefix) DO UPDATE SET\n             user_id = CASE WHEN excluded.last_invitation < last_invitation\n                            THEN excluded.user_id ELSE user_id END,\n             token_id = CASE WHEN excluded.last_invitation < last_invitation\n                             THEN excluded.token_id ELSE token_id END,\n             last_invitation = MIN(last_invitation, excluded.last_invitation),\n             dropped_ms = excluded.dropped_ms",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "d5430b6e295fd163a8450c8afe9946d6f78a82ec72a7a1ccf7c5b3991765d453"
+}

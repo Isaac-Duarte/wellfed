@@ -423,6 +423,10 @@ impl From<proto::EventBody> for EventBody {
             }
             proto::EventBody::Restarting => EventBody::Core(CoreEvent::Restarting),
             proto::EventBody::UpdateConfirmed => EventBody::Core(CoreEvent::UpdateConfirmed),
+            proto::EventBody::Invited { client, by } => EventBody::Core(CoreEvent::Invited {
+                client: Hex(client),
+                by: Hex(by),
+            }),
             proto::EventBody::Fed {
                 feed,
                 requested,
@@ -547,6 +551,10 @@ impl TryFrom<EventBody> for proto::EventBody {
             },
             EventBody::Core(CoreEvent::Restarting) => Self::Restarting,
             EventBody::Core(CoreEvent::UpdateConfirmed) => Self::UpdateConfirmed,
+            EventBody::Core(CoreEvent::Invited { client, by }) => Self::Invited {
+                client: client.0,
+                by: by.0,
+            },
             EventBody::Feeder(FeederEvent::Fed {
                 feed,
                 requested,
@@ -1778,6 +1786,7 @@ impl Op {
             | proto::Op::PutWifi { .. }
             | proto::Op::TimeSync(_)
             | proto::Op::CreateInvite { .. }
+            | proto::Op::CreateBoundInvite { .. }
             | proto::Op::ListClients
             | proto::Op::RevokeClient { .. }
             | proto::Op::Reboot
@@ -1830,6 +1839,10 @@ impl Op {
             Self::TimeSync(sync) => proto::Op::TimeSync((*sync).into()),
             Self::CreateInvite { role } => proto::Op::CreateInvite {
                 role: (*role).try_into()?,
+            },
+            Self::CreateBoundInvite { role, key } => proto::Op::CreateBoundInvite {
+                role: (*role).try_into()?,
+                key: *key,
             },
             Self::ListClients => proto::Op::ListClients,
             Self::RevokeClient { key } => proto::Op::RevokeClient { key: *key },

@@ -1214,6 +1214,120 @@ fn the_phone_adopts_a_feeder_it_paired_and_its_key_becomes_the_accounts() {
     });
 }
 
+/// A round claims on more feeders than the server holds challenges for one
+/// token (8), and every claim's proof still answers its own challenge: the
+/// round never has so many out at once that a new challenge drops one not
+/// yet answered.
+#[test]
+fn a_round_on_more_feeders_than_a_tokens_challenges_claims_on_every_one() {
+    const FEEDERS: usize = 12;
+    local(async {
+        let (server, owner) = started().await;
+        let mut sims = Vec::new();
+        for _ in 0..FEEDERS {
+            let sim = feeder::start().await;
+            owner
+                .adopt(&AdoptFeeder {
+                    invite: feeder::invite(&sim, ClientRole::Server).await,
+                    name: "feeder".into(),
+                    address: Some(sim.address.to_string()),
+                    phone_key: None,
+                })
+                .await
+                .unwrap();
+            sims.push(sim);
+        }
+        eventually("the server reaches every feeder", async || {
+            let feeders = owner.feeders().await.unwrap();
+            feeders
+                .iter()
+                .all(|feeder| feeder.connection == Connection::Online)
+                .then_some(())
+        })
+        .await;
+        let phone = Phone::new();
+        let session = phone.log_in_as_ada(&server).await;
+
+        phone.router.claim_own(&phone.key).await;
+        let token = session.link().token_id;
+        let phones = owner.phones().await.unwrap();
+        let ours = phones.iter().filter(|recorded| {
+            recorded.key.0 == phone.key.public().as_slice()
+                && recorded.token.map(|token| token.to_string()) == Some(token.clone())
+        });
+        assert_eq!(
+            ours.count(),
+            FEEDERS,
+            "claimed on every feeder in one round"
+        );
+        server.stop().await;
+        for sim in sims {
+            sim.stop().await;
+        }
+    });
+}
+
+/// After a login the phone claims its own key on every feeder the server
+/// lists, once a session. A feeder whose clients the server cannot read
+/// (its answers held up) holds up neither the login nor the other feeder,
+/// and the next round claims it.
+#[test]
+fn a_login_claims_the_phones_key_on_each_feeder_and_tries_a_failed_one_again() {
+    local(async {
+        let kitchen_sim = feeder::start().await;
+        let hall_sim = feeder::start().await;
+        let relay = Relay::start(hall_sim.address).await;
+        let (server, owner) = started().await;
+        for (sim, address) in [
+            (&kitchen_sim, kitchen_sim.address),
+            (&hall_sim, relay.address),
+        ] {
+            owner
+                .adopt(&AdoptFeeder {
+                    invite: feeder::invite(sim, ClientRole::Server).await,
+                    name: "feeder".into(),
+                    address: Some(address.to_string()),
+                    phone_key: None,
+                })
+                .await
+                .unwrap();
+        }
+        let all_online = async || {
+            let feeders = owner.feeders().await.unwrap();
+            feeders
+                .iter()
+                .all(|feeder| feeder.connection == Connection::Online)
+                .then_some(())
+        };
+        eventually("the server reaches both feeders", all_online).await;
+        let phone = Phone::new();
+        let session = phone.log_in_as_ada(&server).await;
+        let token = session.link().token_id;
+        let claimed = async || {
+            let phones = owner.phones().await.unwrap();
+            let ours = phones.into_iter().filter(|recorded| {
+                recorded.key.0 == phone.key.public().as_slice()
+                    && recorded.token.map(|token| token.to_string()) == Some(token.clone())
+            });
+            ours.count()
+        };
+
+        relay.hold_answers();
+        phone.router.claim_own(&phone.key).await;
+        assert_eq!(claimed().await, 1, "the kitchen's, not the hall's");
+
+        // The hall answers again: this session's next round claims it, and
+        // the kitchen's, claimed already, is not sent again.
+        relay.resume();
+        eventually("the server reaches both feeders", all_online).await;
+        phone.router.claim_own(&phone.key).await;
+        assert_eq!(claimed().await, 2);
+        server.stop().await;
+        kitchen_sim.stop().await;
+        hall_sim.stop().await;
+    });
+}
+
 #[test]
 fn adopting_with_no_server_or_no_invite_adopts_nothing() {
     local(async {

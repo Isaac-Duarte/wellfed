@@ -15,6 +15,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use wellfed_api::{AdoptFeeder, ClientRole, NewUser, Role};
+use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::server::{
     CommandKind, NewRefill, ServerConnection, ServerEvent, ServerSession, ServerUpdate, Species,
 };
@@ -24,6 +25,11 @@ use wellfed_app_bridge::api::session::HistoryBody;
 use wellfed_app_bridge::api::store::{AppStore, KnownServer, ListedFeeder, load_store, save_store};
 use wellfed_server_client::{Auth, Client, Lock};
 use wellfed_server_testkit::{TestServer, ada_login, ada_setup, feeder, local};
+
+/// This phone's own key.
+fn own() -> ClientKey {
+    ClientKey::restore(vec![0x0a; 32]).unwrap()
+}
 
 const WAIT: Duration = Duration::from_secs(20);
 
@@ -246,7 +252,7 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
             .await;
         assert!(caught_up, "the first event after the command is the lock's");
 
-        session.logout().await.unwrap();
+        session.logout(ada_login().password, &own()).await.unwrap();
         heard(
             &mut updates,
             "the stream ends at logout",
@@ -264,7 +270,7 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
             Some(ServerErrorKind::TokenRevoked)
         );
         // Again: the token is already gone, which is what logging out wants.
-        restored.logout().await.unwrap();
+        restored.logout(ada_login().password, &own()).await.unwrap();
         assert!(owner.tokens().await.unwrap().is_empty());
 
         server.stop().await;

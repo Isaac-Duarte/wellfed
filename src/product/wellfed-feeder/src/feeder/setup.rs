@@ -575,6 +575,7 @@ impl Setup {
                         label: offer.label,
                         role: Role::Owner,
                         path: proto::Path::Setup,
+                        inviter: None,
                     },
                     at: super::events::wall_s(platform, now),
                 };

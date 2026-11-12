@@ -16,7 +16,9 @@ named_enum! {
         Owner = "owner",
         /// Feeding and settings, but no client management.
         Member = "member",
-        /// The optional server: history and release fetching.
+        /// The owner's optional server: feeding, settings, plans and the
+        /// lock as a member, but not the portion weight, the meal call or
+        /// invites (the device API's access classes say exactly).
         Server = "server",
         /// An owner's Ed25519 key for update signatures.
         UpdateSigner = "update-signer",
@@ -31,6 +33,20 @@ impl Role {
             Self::Server => 3,
             Self::UpdateSigner => 4,
         }
+    }
+
+    /// Whether a key holding this role may already do everything `asked`
+    /// grants: the same role, or an owner's for a role that opens a
+    /// session. An enrollment that finds its key already enrolled has
+    /// granted nothing, so it stands only if this holds.
+    pub const fn covers(self, asked: Self) -> bool {
+        matches!(
+            (self, asked),
+            (Self::Owner, Self::Owner | Self::Member | Self::Server)
+                | (Self::Member, Self::Member)
+                | (Self::Server, Self::Server)
+                | (Self::UpdateSigner, Self::UpdateSigner)
+        )
     }
 
     pub const fn from_byte(code: u8) -> Option<Self> {

@@ -36,7 +36,7 @@ Future<(FeederFleet, FakeFeederPorts, FakeServerPorts, FakeBook)> _fleet(
   ports.fakeRouter.listed = listed;
   final serverPorts = FakeServerPorts()..kept = kept == null ? null : 'token-secret';
   setUp?.call(serverPorts);
-  final server = HomeServer(book, serverPorts, ports.router);
+  final server = HomeServer(book, serverPorts, ports.router, FakeClientKey());
   final fleet = FeederFleet(book, ports, server: server);
   addTearDown(() {
     fleet.dispose();

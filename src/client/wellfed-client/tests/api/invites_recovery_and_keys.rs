@@ -256,12 +256,54 @@ fn an_invite_enrolls_a_new_client_once() {
     rig.publish();
     let _stranger = open(&mut rig, STRANGER);
 
+    // Who invited it comes just before its enrollment, each by the first
+    // bytes of its key, so a server can revoke it with the owner's key.
+    let bodies: Vec<EventBody> = rig.device.events.iter().map(|e| e.body).collect();
+    let prefix = |key: [u8; 32]| wellfed_device_api::key_prefix(&key);
+    let invited = EventBody::Invited {
+        client: prefix(public(STRANGER)),
+        by: prefix(public(OWNER)),
+    };
+    let joined = EventBody::Enrolled {
+        client: fingerprint(STRANGER),
+        role: proto::Role::Member,
+        path: proto::Path::Invite,
+    };
+    assert!(
+        bodies.windows(2).any(|pair| pair == [invited, joined]),
+        "{bodies:?}"
+    );
+
     // The invite was single-use, and an open naming none still live ends
     // before the generator is drawn on, so a stranger cannot spend it.
     let drawn = rig.device.counter;
     assert_eq!(redeem(&mut rig, invite, [0x50; 32]), None);
     assert!(rig.ended(Reason::Invite));
     assert_eq!(rig.device.counter, drawn);
+}
+
+/// Revoking a client takes back the invites it made: one a member minted
+/// before an owner revoked it admits nobody, though it has not expired.
+#[test]
+fn a_revoked_clients_invite_admits_nobody() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let mut member = open(&mut rig, MEMBER);
+    let invite = member_invite(&mut rig, &mut member, 1);
+
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    assert_eq!(
+        ask(&mut rig, &mut owner, 2, revoke),
+        Answer::Done { generation: None }
+    );
+    rig.publish();
+
+    assert_eq!(redeem(&mut rig, invite, STRANGER), None);
+    assert!(rig.ended(Reason::Invite));
+    rig.publish();
+    assert!(!rig.device.clients.iter().any(|c| c.key == public(STRANGER)));
 }
 
 /// The history's enrollments: the client, its role and how it came.
@@ -488,13 +530,20 @@ fn recover_until(
             let Reply::EnterCode { .. } = reply else {
                 return Some(reply);
             };
+            // Each press goes down and comes up alone, as the button
+            // service reports a short press; it counts as it comes up.
             for &button in keyed.presses() {
-                let down = Gesture::Down {
-                    chord: Buttons::of(button),
+                let chord = Buttons::of(button);
+                let up = Gesture::Up {
+                    chord,
+                    level: 0,
+                    held_ms: 100,
                 };
-                let event = rig.pairing.gesture(rig.now, down, Lock::Unlocked);
-                if matches!(event, Some(PairingEvent::Entered { .. })) {
-                    rig.recovery = event;
+                for gesture in [Gesture::Down { chord }, up] {
+                    let event = rig.pairing.gesture(rig.now, gesture, Lock::Unlocked);
+                    if matches!(event, Some(PairingEvent::Entered { .. })) {
+                        rig.recovery = event;
+                    }
                 }
             }
         }
@@ -568,6 +617,43 @@ fn a_recovery_client_that_stops_reading_gives_up_its_offer() {
     assert_eq!(rig.pairing.awaiting(), None, "the offer went with it");
 }
 
+/// A recovery session that ends on an error, here a frame whose length no
+/// frame has, loses its offer too: the owner's next presses work the panel.
+#[test]
+fn a_recovery_session_ended_by_an_error_gives_up_its_offer() {
+    use wellfed_client::setup::{Ask, Session as Setup};
+
+    let mut rig = Rig::new();
+    open_recovery(&mut rig);
+    let slot = rig.accept().unwrap();
+    let ask = Ask {
+        label: "laptop".into(),
+        wifi: None,
+    };
+    let keys = Keypair::from_secret(STRANGER);
+    let code = Code::from_bits(0x0abc);
+    let setup = Setup::new(&keys, [0x61; 32], ask, code, [0x62; 32]).unwrap();
+    let mut recovery = Recovery::new(setup).unwrap();
+    let mut outbox = Vec::new();
+    while rig.pairing.awaiting().is_none() {
+        while let Some(bytes) = recovery.poll_transmit() {
+            outbox.extend(bytes);
+        }
+        rig.deliver(slot, &mut outbox);
+        rig.pass();
+        let received = rig.collect(slot);
+        recovery.handle_input(&received).unwrap();
+    }
+
+    rig.deliver(slot, &mut vec![0xff, 0xff]);
+    rig.pass();
+    assert!(rig.ended(Reason::Malformed));
+    let records = &mut rig.records;
+    rig.server.closed(slot, |r| records.push(r));
+    rig.pass();
+    assert_eq!(rig.pairing.awaiting(), None, "the offer went with it");
+}
+
 #[test]
 fn the_recovery_window_admits_one_owner_who_proves_the_code() {
     use wellfed_model::setup::{Enrolled, Reply, WifiSaved};
@@ -611,6 +697,85 @@ fn the_recovery_window_admits_one_owner_who_proves_the_code() {
     );
     rig.publish();
     let _owner = open(&mut rig, STRANGER);
+}
+
+/// A key already enrolled that redeems an invite joins only if the role it
+/// holds covers the invited one, and is then told the role it holds: a
+/// member's key redeeming an owner's invite stays a member and is told no,
+/// and an owner's key redeeming a member's invite stays an owner.
+#[test]
+fn an_enrolled_key_joins_only_if_its_role_covers_the_invite() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let invite = ask(
+        &mut rig,
+        &mut owner,
+        1,
+        Op::CreateInvite {
+            role: model::ClientRole::Owner,
+        },
+    );
+    let Answer::Invite(invite) = invite else {
+        panic!("{invite:?}");
+    };
+    let invite = Invite {
+        feeder: public(FEEDER),
+        id: invite.id,
+        secret: invite.secret.0,
+    };
+    assert_eq!(
+        redeem(&mut rig, invite, MEMBER),
+        Some(Joined::Refused(model::Refusal::Invalid))
+    );
+    let role_of = |rig: &Rig, secret| {
+        rig.device
+            .clients
+            .iter()
+            .find(|c| c.key == public(secret))
+            .map(|c| c.role)
+    };
+    assert_eq!(role_of(&rig, MEMBER), Some(Role::Member));
+
+    let invite = member_invite(&mut rig, &mut owner, 2);
+    assert_eq!(
+        redeem(&mut rig, invite, OWNER),
+        Some(Joined::Enrolled {
+            role: model::ClientRole::Owner,
+            model: model::Model::Plaf103,
+        })
+    );
+    assert_eq!(role_of(&rig, OWNER), Some(Role::Owner));
+}
+
+/// Recovery with a key already enrolled grants nothing, so it succeeds only
+/// for an owner's key: a member's is refused and stays a member.
+#[test]
+fn recovery_with_a_members_key_is_refused_and_an_owners_is_already_done() {
+    use wellfed_model::setup::{Enrolled, Refusal, Reply, WifiSaved};
+
+    let mut rig = Rig::new();
+    let code = Code::from_bits(0x0abc);
+    open_recovery(&mut rig);
+    assert_eq!(
+        recover(&mut rig, MEMBER, code, code),
+        Some(Reply::Refused(Refusal::Invalid))
+    );
+    assert!(
+        rig.device
+            .clients
+            .iter()
+            .any(|c| c.key == public(MEMBER) && c.role == Role::Member)
+    );
+
+    rig.publish();
+    open_recovery(&mut rig);
+    assert_eq!(
+        recover(&mut rig, OWNER, code, code),
+        Some(Reply::Done {
+            enrolled: Enrolled::Already,
+            wifi: WifiSaved::Unchanged
+        })
+    );
 }
 
 /// A recovery client that hangs up once its enrollment is queued is still

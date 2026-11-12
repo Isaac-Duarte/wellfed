@@ -14,12 +14,13 @@ use std::time::Duration;
 use flutter_rust_bridge::frb;
 use tokio::sync::watch;
 use wellfed_api::{
-    Credentials, EventQuery, FoodPatch, IntakeQuery, NewFood, NewPet, NewToken, NewWeight,
-    PageQuery, PetPatch, StreamQuery, TokenId, at_home,
+    Credentials, EventQuery, FoodPatch, Hex, IntakeQuery, LogOut, NewFood, NewPet, NewToken,
+    NewWeight, PageQuery, PetPatch, StreamQuery, TokenId, at_home,
 };
 pub use wellfed_server_client::Timeouts;
 use wellfed_server_client::{Auth, Client, PlainHttp, Url};
 
+use crate::api::keys::ClientKey;
 pub use crate::api::model::{FeedOutcome, FeedReason};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 pub use crate::api::server_views::{
@@ -238,23 +239,40 @@ impl ServerSession {
         Ok(self.client.session().await?.into())
     }
 
-    /// Revoke this phone's token on the server and end every follow. The
-    /// phone's own keys on its feeders stay: it reaches them directly. A
-    /// token the server already stopped counts as revoked.
-    pub async fn logout(&self) -> Result<(), ServerError> {
-        self.close();
-
+    /// Log this phone out: revoke its token on the server while its own key
+    /// on the feeders (`key`), and the keys it invited, stay the account's,
+    /// so it still reaches them directly and the account's removal still
+    /// revokes them. Any other key under the token goes with it. The server takes that only from a login, so a
+    /// leaked token cannot keep the keys it enrolled: `password` is the
+    /// account's, used once for a login that ends here, and never kept. A
+    /// token the server already dropped counts as logged out. Every follow
+    /// ends once it is; a wrong password changes nothing.
+    pub async fn logout(&self, password: String, key: &ClientKey) -> Result<(), ServerError> {
         let id = TokenId(ids::parse(&self.link.token_id)?);
-        match self.client.revoke_token(id).await {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                let error = ServerError::from(error);
-                match error.kind {
-                    ServerErrorKind::TokenRevoked => Ok(()),
-                    _ => Err(error),
-                }
+        // The server keeps only the keys the phone names as its own: one
+        // someone else got through the token goes with it.
+        let request = LogOut {
+            keys: vec![Hex(*key.keypair().public())],
+        };
+        let mut login = open(&self.link.url, TIMEOUTS)?;
+        let credentials = Credentials {
+            name: self.link.user.clone(),
+            password,
+        };
+        login.login(&credentials).await?;
+        let ended = login.log_out_token(id, &request).await;
+        // The login was only the way to the logout; one that never ends
+        // expires on the server.
+        let _ = login.logout().await;
+
+        if let Err(error) = ended {
+            let error = ServerError::from(error);
+            if error.kind != ServerErrorKind::NotFound {
+                return Err(error);
             }
         }
+        self.close();
+        Ok(())
     }
 
     pub async fn feeders(&self) -> Result<Vec<ServerFeeder>, ServerError> {

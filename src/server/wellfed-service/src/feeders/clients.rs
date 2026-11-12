@@ -11,6 +11,7 @@ use wellfed_api::{
 use wellfed_model::{Answer, Client, Op};
 use wellfed_store::FeederRow;
 
+use crate::accounts::tokens::session_only;
 use crate::feeders::commands::{done, refused};
 use crate::feeders::journal::Write;
 use crate::feeders::keys;
@@ -45,6 +46,14 @@ pub enum ClientError {
         "only an owner claims a key the server has not recorded: ask for an invite for your phone instead"
     )]
     PhoneClaimOwnersOnly,
+    #[error(
+        "that key is your account's, left with no token by a logout: prove your phone holds it (a challenge's proof) to claim it"
+    )]
+    PhoneKeyProofRequired,
+    #[error(
+        "the proof does not answer a challenge of this token's (unknown, used, expired or another token's) with that key: ask for a new challenge"
+    )]
+    PhoneKeyProofRefused,
 }
 
 impl ClientError {
@@ -59,6 +68,8 @@ impl ClientError {
             Self::PhoneKeyKept => ErrorCode::PhoneKeyKept,
             Self::PhoneKeyNotAPhone => ErrorCode::PhoneKeyNotAPhone,
             Self::PhoneClaimOwnersOnly => ErrorCode::PhoneClaimOwnersOnly,
+            Self::PhoneKeyProofRequired => ErrorCode::PhoneKeyProofRequired,
+            Self::PhoneKeyProofRefused => ErrorCode::PhoneKeyProofRefused,
         }
     }
 }
@@ -106,8 +117,13 @@ impl Service {
     }
 
     /// Keep a client the server did not invite, so it no longer shows as
-    /// unowned. Nothing is sent to the feeder.
-    pub async fn keep_client(&self, id: FeederId, key: [u8; 32]) -> Result<()> {
+    /// unowned, or detach one a phone key invited from that key's account,
+    /// so removing the account or the inviter leaves it. Nothing is sent to
+    /// the feeder. Only a signed-in owner keeps one: a kept key outlives
+    /// every account and token, so a leaked token must not vouch for a key
+    /// it enrolled.
+    pub async fn keep_client(&self, caller: &Caller, id: FeederId, key: [u8; 32]) -> Result<()> {
+        session_only(caller)?;
         self.live_row(id).await?;
         let now = self.shared.clock.now();
         Ok(self.shared.store.keep_client(id, &key, now).await?)
@@ -146,7 +162,11 @@ impl Service {
         if recorded.outcome != gone {
             done(&recorded.outcome)?;
         }
-        self.shared.store.forget_client(id, &key).await?;
+        // The keys a phone key invited go with it.
+        let now = self.shared.clock.now();
+        if self.shared.store.forget_client(id, &key, now).await? {
+            self.spawn_revoke(id);
+        }
         Ok(())
     }
 

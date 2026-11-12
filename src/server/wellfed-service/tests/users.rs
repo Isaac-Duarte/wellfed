@@ -1,7 +1,7 @@
 //! The accounts owners manage: roles, expiry, temporary passwords, the
 //! last owner, sliding sessions and `reset-owner`.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -13,6 +13,7 @@ use wellfed_server_testkit::{HERE, TestService, ada_login, ada_setup, local};
 use wellfed_service::{
     AccountError, Caller, Error, Invalid, Resource, Service, SessionToken, reset_owner,
 };
+use wellfed_store::Store;
 
 const HOUR: Duration = Duration::from_secs(3600);
 
@@ -444,4 +445,119 @@ fn reset_owner_gives_the_sole_owner_a_new_password() {
 
 fn clock_now(clock: &ManualClock) -> Timestamp {
     wellfed_service::Clock::now(clock)
+}
+
+/// A generator that runs `hook`, once armed, at the next draw of `len`
+/// bytes: a session token's 32, between a login's password check and its
+/// session, or a password salt's 16, between a password change's check and
+/// its write.
+struct Gated {
+    seeded: SeededRandom,
+    len: Mutex<usize>,
+    hook: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl Gated {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            seeded: SeededRandom::fresh(),
+            len: Mutex::new(0),
+            hook: Mutex::new(None),
+        })
+    }
+
+    /// Run the host's `reset-owner` on the database at `path` at the next
+    /// draw of `len` bytes; the receiver gets the password it set.
+    fn reset_at(&self, len: usize, path: std::path::PathBuf) -> std::sync::mpsc::Receiver<String> {
+        let (reset, set) = std::sync::mpsc::channel();
+        *self.len.lock().unwrap() = len;
+        *self.hook.lock().unwrap() = Some(Box::new(move || {
+            // Another process's reset: its own runtime and connection.
+            let host = std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                runtime.block_on(async {
+                    let store = Store::open(&path, FixedClock.now()).await.unwrap();
+                    let random = SeededRandom::fresh();
+                    let (_, password) = reset_owner(&store, None, &random, FixedClock.now())
+                        .await
+                        .unwrap();
+                    store.close().await;
+                    password
+                })
+            });
+            reset.send(host.join().unwrap()).unwrap();
+        }));
+        set
+    }
+}
+
+impl wellfed_service::Random for Gated {
+    fn fill(&self, out: &mut [u8]) -> Result<(), wellfed_service::RandomFailed> {
+        if out.len() == *self.len.lock().unwrap()
+            && let Some(hook) = self.hook.lock().unwrap().take()
+        {
+            hook();
+        }
+        self.seeded.fill(out)
+    }
+}
+
+/// A login checked against the old password opens no session once a reset
+/// lands before its session does: here the host's `reset-owner`, run on the
+/// database between the login's password check and its session's insert.
+#[test]
+fn a_login_checked_before_a_reset_opens_no_session() {
+    local(async {
+        let gated = Gated::new();
+        let server = TestService::start_with_random(gated.clone()).await;
+        let service = server.service();
+        setup(service).await;
+
+        let set = gated.reset_at(32, server.store().path());
+        assert!(matches!(
+            service.login(ada_login(), HERE).await,
+            Err(Error::Account(AccountError::BadCredentials))
+        ));
+        let password = set.recv().unwrap();
+
+        assert!(matches!(
+            service.login(ada_login(), HERE).await,
+            Err(Error::Account(AccountError::BadCredentials))
+        ));
+        service.login(login("ada", &password), HERE).await.unwrap();
+        server.shutdown().await;
+    });
+}
+
+/// A password change checked against the old password does not undo a
+/// reset that lands between its check and its write: it is refused, and
+/// the reset's password stands.
+#[test]
+fn a_password_change_checked_before_a_reset_does_not_undo_it() {
+    local(async {
+        let gated = Gated::new();
+        let server = TestService::start_with_random(gated.clone()).await;
+        let service = server.service();
+        let ada: Caller = setup(service).await.0.into();
+
+        let set = gated.reset_at(16, server.store().path());
+        let change = PasswordChange {
+            current: ada_login().password,
+            password: "a password of mine".into(),
+        };
+        let changed = service.change_password(&ada, None, change).await;
+        assert!(
+            matches!(changed, Err(Error::Account(AccountError::BadCredentials))),
+            "{changed:?}"
+        );
+        let password = set.recv().unwrap();
+
+        let mine = login("ada", "a password of mine");
+        assert!(service.login(mine, HERE).await.is_err());
+        service.login(login("ada", &password), HERE).await.unwrap();
+        server.shutdown().await;
+    });
 }

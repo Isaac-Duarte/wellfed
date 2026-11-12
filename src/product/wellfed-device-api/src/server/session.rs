@@ -2,6 +2,7 @@
 //! request, else push a frame of events, a sample or log lines. A redeemed invite's key is
 //! enrolled here before its connection closes.
 
+use super::handshake::find;
 use super::recovery::Rescue;
 use super::request::{Action, Reply, proto_role};
 use super::{Phase, Server, proto_encode, slot_id};
@@ -118,7 +119,7 @@ impl Server {
                 }
                 Ok(false)
             }
-            Phase::Recovery(_) => self.rescue_step(index, now_ms, device, pairing, record),
+            Phase::Recovery(_) => self.rescue_step(index, now_ms, device, record),
         }
     }
 
@@ -135,6 +136,7 @@ impl Server {
             key,
             label,
             role,
+            inviter,
             ticket,
         } = &mut slot.phase
         else {
@@ -146,6 +148,7 @@ impl Server {
                 label: *label,
                 role: *role,
                 path: proto::Path::Invite,
+                inviter: *inviter,
             });
             return Ok(false);
         };
@@ -160,9 +163,20 @@ impl Server {
         let joined = match outcome {
             // Unanswered, the client cannot tell whether it joined.
             KeyOutcome::Lost => return Err(Reason::Forgotten),
-            KeyOutcome::Done | KeyOutcome::Duplicate => Joined::Enrolled {
+            KeyOutcome::Done => Joined::Enrolled {
                 role: proto_role(*role),
                 model: device.model(),
+            },
+            // The key was enrolled already and the writer changed nothing:
+            // it joined only if the role it holds covers the one invited,
+            // and then the answer names the role it holds. Otherwise the
+            // client is told no, and joins with a new key.
+            KeyOutcome::Duplicate => match find(&self.clients, key) {
+                Some(held) if held.role.covers(*role) => Joined::Enrolled {
+                    role: proto_role(held.role),
+                    model: device.model(),
+                },
+                _ => Joined::Refused(Refusal::Invalid),
             },
             KeyOutcome::Full => Joined::Refused(Refusal::Full),
             KeyOutcome::NotFound | KeyOutcome::NotWritable => Joined::Refused(Refusal::NotWritable),

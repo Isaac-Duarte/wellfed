@@ -59,10 +59,13 @@ const METHODS: &[&str] = &["get", "put", "post", "delete", "patch", "head", "opt
 /// - a statistics section, skipped from its page;
 /// - a sample, read by a metric the client names, or skipped on the stream;
 /// - an alert, skipped from a feeder's alerts and counted as unread, as a
-///   client of the device API skips one it can't read.
+///   client of the device API skips one it can't read;
+/// - an event kind, which only a client sends (the history's filter) and
+///   no answer carries, so an older client never reads a newer one.
 const SKIPPED: &[&str] = &[
     "Alert",
     "CoreEvent",
+    "EventKind",
     "FeederEvent",
     "SampleValue",
     "Stats",

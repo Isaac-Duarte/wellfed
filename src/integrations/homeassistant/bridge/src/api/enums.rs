@@ -265,6 +265,7 @@ view_enum! {
         UpdateAtBoot => "update_at_boot",
         Restarting => "restarting",
         UpdateConfirmed => "update_confirmed",
+        Invited => "invited",
     }
 }
 
@@ -297,6 +298,7 @@ impl From<&model::EventBody> for EventKind {
             model::EventBody::Core(model::CoreEvent::UpdateAtBoot { .. }) => Self::UpdateAtBoot,
             model::EventBody::Core(model::CoreEvent::Restarting) => Self::Restarting,
             model::EventBody::Core(model::CoreEvent::UpdateConfirmed) => Self::UpdateConfirmed,
+            model::EventBody::Core(model::CoreEvent::Invited { .. }) => Self::Invited,
         }
     }
 }

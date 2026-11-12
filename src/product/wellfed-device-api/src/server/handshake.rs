@@ -24,8 +24,8 @@ use crate::clients::{CLIENTS, Client, Label, Role};
 use crate::pairing::{self, Pairing};
 use crate::{Device, Reason, Record, SESSIONS};
 use wellfed_proto::api::{
-    self as proto, Fingerprint, Hello, Open, OpenRefusal, PROLOGUE, PROTOCOL_MAJOR,
-    PROTOCOL_MAJOR_MIN, Welcome,
+    self as proto, Fingerprint, Hello, KEY_PREFIX, KeyPrefix, Open, OpenRefusal, PROLOGUE,
+    PROTOCOL_MAJOR, PROTOCOL_MAJOR_MIN, Welcome,
 };
 use wellfed_session::noise::{Handshake, Keypair, Pattern, Role as NoiseRole};
 
@@ -171,9 +171,9 @@ impl Server {
                     let Open::Invite { id } = *open else {
                         return Err(Reason::Malformed);
                     };
-                    let event = pairing.redeem(now_ms, id);
+                    let event = pairing.redeem(now_ms, id, &key);
                     record(Record::Pairing(event));
-                    let pairing::Event::Admit { role, .. } = event else {
+                    let pairing::Event::Admit { role, inviter, .. } = event else {
                         return Err(Reason::Invite);
                     };
                     let Phase::Handshake { handshake, .. } =
@@ -186,6 +186,7 @@ impl Server {
                         key,
                         label,
                         role,
+                        inviter,
                         ticket: None,
                     };
                     return Ok(true);
@@ -330,6 +331,13 @@ pub(super) fn invite(id: u32, secret: [u8; 32]) -> proto::Invite {
 
 pub fn fingerprint(key: &[u8; 32]) -> Fingerprint {
     [key[0], key[1], key[2], key[3]]
+}
+
+/// A key's [`KeyPrefix`].
+pub fn key_prefix(key: &[u8; 32]) -> KeyPrefix {
+    let mut prefix = [0; KEY_PREFIX];
+    prefix.copy_from_slice(&key[..KEY_PREFIX]);
+    prefix
 }
 
 const fn refusal_reason(refusal: OpenRefusal) -> Reason {

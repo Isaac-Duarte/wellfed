@@ -132,7 +132,8 @@ impl Service {
         }
 
         self.mirror.set_zone(zone);
-        let token = self.open_session(user.id).await?;
+        let token = self.open_session(user.id, &hash).await?;
+        let token = token.ok_or(AccountError::BadCredentials)?;
         self.record_as(Some(&user), None, AuditAction::Setup).await;
         Ok((user, token))
     }
@@ -150,15 +151,18 @@ impl Service {
         from: IpAddr,
     ) -> Result<(User, SessionToken)> {
         let name = credentials.name.trim();
+        // Read first, so an address the account logged in from is known
+        // by the account's id, not by a name another account may fold to.
+        let login = self.shared.store.login(name).await?;
+        let account = login.as_ref().map(|login| login.user.id);
         let attempt = self
             .accounts
             .limits
-            .attempt(name, from, self.shared.clock.now())
+            .attempt(name, account, from, self.shared.clock.now())
             .map_err(|limited| AccountError::Limited {
                 retry_after: limited.retry_after,
             })?;
 
-        let login = self.shared.store.login(name).await?;
         // A name with no password (an imported account's empty hash) costs
         // the decoy's hash like an unknown one, and matches nothing.
         let (user, hash, usable) = match login {
@@ -168,7 +172,9 @@ impl Service {
             Some(login) => (Some(login.user), decoy()?.to_owned(), false),
             None => (None, decoy()?.to_owned(), false),
         };
-        let verified = blocking(move || Ok(verify_password(&credentials.password, &hash))).await?;
+        let checked = hash.clone();
+        let verified =
+            blocking(move || Ok(verify_password(&credentials.password, &checked))).await?;
         let matches = usable && verified;
 
         let Some(user) = user else {
@@ -193,10 +199,14 @@ impl Service {
             .into());
         }
 
+        // The account may have changed while the hash was checked: a reset,
+        // an expiry or a deletion that landed since leaves no session.
+        let Some(token) = self.open_session(user.id, &hash).await? else {
+            return Err(AccountError::BadCredentials.into());
+        };
         self.accounts
             .limits
             .succeeded(attempt, self.shared.clock.now());
-        let token = self.open_session(user.id).await?;
         self.record_as(Some(&user), None, AuditAction::Login { from })
             .await;
         Ok((user, token))
@@ -250,20 +260,23 @@ impl Service {
         password(&change.password)?;
         let store = &self.shared.store;
         let hash = store.password_hash(user.id).await?;
-        let hash = hash.ok_or(Error::NotFound(Resource::User))?;
-        let current = change.current;
-        let matches = blocking(move || Ok(verify_password(&current, &hash))).await?;
+        let checked = hash.ok_or(Error::NotFound(Resource::User))?;
+        let (current, against) = (change.current, checked.clone());
+        let matches = blocking(move || Ok(verify_password(&current, &against))).await?;
         if !matches {
             return Err(AccountError::BadCredentials.into());
         }
 
+        // Only over the hash just checked: a reset that landed since stands,
+        // and the current password given was not its.
         let hash = self.hash_password(change.password).await?;
-        if !store.set_password(user.id, &hash).await? {
-            return Err(Error::NotFound(Resource::User));
+        let keep = session.and_then(SessionToken::hash);
+        if !store
+            .set_password(user.id, &hash, Some(&checked), keep.as_ref())
+            .await?
+        {
+            return Err(AccountError::BadCredentials.into());
         }
-        store
-            .delete_sessions_of(user.id, session.and_then(SessionToken::hash).as_ref())
-            .await?;
         let action = AuditAction::PasswordSet {
             account: user.id,
             name: user.name.clone(),
@@ -272,14 +285,17 @@ impl Service {
         Ok(())
     }
 
-    async fn open_session(&self, user: UserId) -> Result<SessionToken> {
+    /// A new session for `user`, unless their password hash is no longer
+    /// `verified` or the account expired or went since it was checked.
+    async fn open_session(&self, user: UserId, verified: &str) -> Result<Option<SessionToken>> {
         let secret = self.shared.random::<32>()?;
         let token = SessionToken(hex::Lower(&secret).to_string());
         let hash: [u8; 32] = Sha256::digest(secret).into();
 
         let now = self.shared.clock.now();
-        self.shared.store.create_session(&hash, user, now).await?;
-        Ok(token)
+        let store = &self.shared.store;
+        let opened = store.create_session(&hash, user, verified, now).await?;
+        Ok(opened.then_some(token))
     }
 
     /// Hash a new password with a fresh salt.

@@ -5,7 +5,7 @@
 //! under one hold before it goes, so two feeds asked at once cannot both
 //! pass and a write that never got written down never goes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -90,6 +90,9 @@ struct State {
     /// that the account would not allow while the app is still reading its
     /// token and asking the server.
     cold: Option<Keys>,
+    /// The feeders this phone's own key was claimed on this session, or is
+    /// being claimed on: one a claim could not settle leaves it.
+    claimed: HashSet<FeederId>,
 }
 
 struct Server {
@@ -119,6 +122,16 @@ struct Entry {
     /// What the server last said of its link: `None` before it said.
     online: Option<bool>,
     direct: Option<Arc<DirectLink>>,
+}
+
+/// A round of claims of the phone's own key, read under one lock.
+pub(crate) struct ClaimsDue {
+    pub(crate) client: wellfed_server_client::Client,
+    /// The phone token's id, which a proof is bound to.
+    pub(crate) token: Option<Uuid>,
+    pub(crate) session: u64,
+    /// The feeders to claim on.
+    pub(crate) due: Vec<FeederId>,
 }
 
 pub(crate) fn now_ms() -> i64 {
@@ -247,9 +260,11 @@ impl State {
         Some((self.client()?, self.session))
     }
 
-    /// Another server session from here on.
-    const fn new_session(&mut self) {
+    /// Another server session from here on: its token claims the phone's
+    /// own key anew.
+    fn new_session(&mut self) {
         self.session = self.session.wrapping_add(1);
+        self.claimed.clear();
     }
 
     /// Route through `handle`, under `account`.
@@ -485,6 +500,7 @@ impl Router {
             tried: Steady::new(),
             adoptions_lost: Steady::new(),
             session: 0,
+            claimed: HashSet::new(),
         };
         // What the last run left counts from this run's start, never from
         // the wall clock's record alone.
@@ -712,12 +728,59 @@ impl Router {
         self.state().client()
     }
 
+    /// The server's client and the phone token's id, when one is
+    /// configured.
+    pub(crate) fn server_login(&self) -> Option<(wellfed_server_client::Client, Option<Uuid>)> {
+        let state = self.state();
+        let server = state.server.as_ref()?;
+        Some((server.handle.client.clone(), server.handle.token))
+    }
+
     /// The server's id for `feeder`, while a server is configured and its
     /// last list named it.
     pub(crate) fn listed(&self, feeder: &str) -> Option<FeederId> {
         let state = self.state();
         state.server.as_ref()?;
         state.feeders.get(feeder)?.server
+    }
+
+    /// The server's client and session, and the feeders its last list
+    /// named that this phone's own key is not claimed on yet this session,
+    /// marked as claimed from now so a second round sends none of them.
+    /// `None` with no server, or with an account that holds no key of its
+    /// own.
+    pub(crate) fn claims_due(&self) -> Option<ClaimsDue> {
+        let mut guard = self.state();
+        let state = &mut *guard;
+        let server = state.server.as_ref()?;
+        if server.keys.under(state.standing) != Keys::Own {
+            return None;
+        }
+
+        let client = server.handle.client.clone();
+        let token = server.handle.token;
+        let claimed = &mut state.claimed;
+        let due = state
+            .feeders
+            .values()
+            .filter_map(|entry| entry.server)
+            .filter(|id| claimed.insert(*id))
+            .collect();
+        Some(ClaimsDue {
+            client,
+            token,
+            session: state.session,
+            due,
+        })
+    }
+
+    /// Claim the phone's own key on `id` again in the next round, while
+    /// `session` lasts.
+    pub(crate) fn claim_again(&self, session: u64, id: FeederId) {
+        let mut state = self.state();
+        if state.session == session {
+            state.claimed.remove(&id);
+        }
     }
 
     /// Read the account again, so a demotion or a new expiry routes from

@@ -127,6 +127,15 @@ pub enum CoreEvent {
     Restarting,
     /// The build this boot activated confirmed itself, with no restart.
     UpdateConfirmed,
+    /// The client `client` joined through an invite the client `by` asked
+    /// for, each named by its key's first 7 bytes. Recorded just before
+    /// the client's `enrolled`.
+    Invited {
+        #[schema(value_type = String)]
+        client: Hex<7>,
+        #[schema(value_type = String)]
+        by: Hex<7>,
+    },
 }
 
 /// An event only a feeder records.
@@ -396,6 +405,7 @@ impl EventBody {
                 CoreEvent::UpdateAtBoot { .. } => EventKind::UpdateAtBoot,
                 CoreEvent::Restarting => EventKind::Restarting,
                 CoreEvent::UpdateConfirmed => EventKind::UpdateConfirmed,
+                CoreEvent::Invited { .. } => EventKind::Invited,
             },
             Self::Feeder(event) => match event {
                 FeederEvent::Lock { .. } => EventKind::Lock,
@@ -459,10 +469,11 @@ pub enum EventKind {
     UpdateAtBoot,
     Restarting,
     UpdateConfirmed,
+    Invited,
 }
 
 impl EventKind {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::Boot,
         Self::Lock,
         Self::Settings,
@@ -485,6 +496,7 @@ impl EventKind {
         Self::UpdateAtBoot,
         Self::Restarting,
         Self::UpdateConfirmed,
+        Self::Invited,
     ];
 
     /// The stored spelling, the same as the JSON one.
@@ -512,6 +524,7 @@ impl EventKind {
             Self::UpdateAtBoot => "update_at_boot",
             Self::Restarting => "restarting",
             Self::UpdateConfirmed => "update_confirmed",
+            Self::Invited => "invited",
         }
     }
 
@@ -532,7 +545,8 @@ impl EventKind {
             | Self::UpdateStop
             | Self::UpdateAtBoot
             | Self::Restarting
-            | Self::UpdateConfirmed => None,
+            | Self::UpdateConfirmed
+            | Self::Invited => None,
             Self::Lock
             | Self::Settings
             | Self::Fed

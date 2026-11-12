@@ -301,7 +301,7 @@ impl Keypair {
         &self.public
     }
 
-    fn dh(&self, remote: &[u8; KEY_LEN]) -> Result<[u8; 32], Error> {
+    pub(crate) fn dh(&self, remote: &[u8; KEY_LEN]) -> Result<[u8; 32], Error> {
         let shared = self.secret.diffie_hellman(&PublicKey::from(*remote));
         if !shared.was_contributory() {
             return Err(Error::WeakKey);

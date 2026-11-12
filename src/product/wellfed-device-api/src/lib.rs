@@ -81,7 +81,7 @@ pub use device::{
     UpdateKeyChange, UpdateRequest,
 };
 pub use record::{Reason, Record};
-pub use server::handshake::fingerprint;
+pub use server::handshake::{fingerprint, key_prefix};
 pub use server::request::proto_role;
 pub use server::{Pass, Server};
 

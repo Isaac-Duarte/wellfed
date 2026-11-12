@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\", last_invitation\n           FROM phone_keys WHERE feeder_id = ? AND key = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "user_id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "name": "token_id: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "token_id"
+          }
+        }
+      },
+      {
+        "name": "last_invitation",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "phone_keys",
+            "name": "last_invitation"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "c03270f6a4fbdad6775ed1a6df664d831be9da1b85a4eb68cae9f0f764250c49"
+}

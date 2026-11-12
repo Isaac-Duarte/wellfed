@@ -4,8 +4,17 @@
 //! while the server is down. The server makes the invite it joins with,
 //! recording the key, account and token first, so a phone that joins with
 //! the key it named is attributed even when the invite's answer is lost.
+//! The invite is bound to that key, so the feeder admits no other with it.
+//! A joined phone key can still ask the feeder for plain invites of its
+//! own; the feeder reports each such join, and [`invitees`] records the key
+//! under the inviting key's account and token, so revoking either, or the
+//! inviting key, revokes it too. A join the feeder's history lost before
+//! the server read it, or one on a feeder too old to report it, is not
+//! attributed: that key shows unowned until an owner revokes or keeps it.
 //! A phone that already holds a key (paired before the server, or one whose
-//! adoption named it) claims it, and [`claim`] records it the same way. A
+//! adoption named it) claims it, and [`claim`] records it the same way; a
+//! claim of a key a logout left with no token answers a [`proof`]
+//! challenge. A
 //! viewer, and an account or token with an expiry, holds no key: the
 //! server alone enforces its limits. Revoking them is [`revoke`]'s.
 
@@ -19,9 +28,13 @@ use wellfed_model::Op;
 use wellfed_store::{NewPhone, Recorded, Whose};
 
 mod claim;
+mod invitees;
+mod proof;
 mod revoke;
 
-pub(crate) use revoke::{Revocations, own_revoke, revocation};
+pub(crate) use proof::Challenges;
+pub(in crate::feeders) use proof::Possession;
+pub(crate) use revoke::{Revocations, own_revoke, rank, revocation};
 
 use crate::feeders::journal::Write;
 use crate::{
@@ -40,7 +53,8 @@ impl Service {
     /// `request.key` on the LAN. Only a phone's token gets one, for an
     /// owner's or member's account with no expiry on it or the token; the
     /// phone joins with its account's role. One key per token: once the
-    /// invite is made, the token's other key on the feeder is revoked.
+    /// invite is made, the token's other key on the feeder is revoked, and
+    /// the keys that one invited move to the new key.
     ///
     /// The key is recorded before the invite is asked for. The invite is
     /// never resent: its secret is not kept, so a caller that lost the
@@ -87,7 +101,10 @@ impl Service {
                 kind: CommandKind::Invite,
                 body: &request,
                 key: None,
-                op: Op::CreateInvite { role },
+                // Bound to the key just recorded: a holder of the secret
+                // who joins with another key is refused, so the key the
+                // feeder enrolls is always one this account is revoked by.
+                op: Op::CreateBoundInvite { role, key },
             })
             .await;
         let made = match sent {

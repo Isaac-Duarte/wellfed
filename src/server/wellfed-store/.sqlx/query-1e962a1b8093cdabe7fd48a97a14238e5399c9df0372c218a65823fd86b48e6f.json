@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT user_id AS \"user_id: Uuid\", token_id AS \"token_id: Uuid\"\n                   FROM dropped_phones\n                   WHERE feeder_id = ? AND prefix = ? AND last_invitation < ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "user_id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "dropped_phones",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "name": "token_id: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "dropped_phones",
+            "name": "token_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "1e962a1b8093cdabe7fd48a97a14238e5399c9df0372c218a65823fd86b48e6f"
+}

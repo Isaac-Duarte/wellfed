@@ -7,10 +7,22 @@
 //! it, and again each time it reconnects, until it has dropped them; until
 //! then each key shows the last attempt, so an owner sees which feeders
 //! still hold one. A revoke is idempotent, so each attempt takes a fresh
-//! request id and needs no journal entry. The feeder does not bind an
-//! invite to a key, so `not_found` settles a revoke only once the key's
-//! invite can no longer be redeemed; before then it is tried again at the
-//! invite's deadline.
+//! request id and needs no journal entry. The server's invite may be
+//! redeemed until its deadline, so `not_found` settles a revoke only once
+//! the key's invite can no longer be redeemed; before then it is tried
+//! again at the invite's deadline. Each pass first attributes the keys
+//! phone keys invited ([`super::invitees`]), so a key that joined through a
+//! revoked key's invite is revoked in the same pass.
+//!
+//! An owner may also revoke a phone key on the LAN, without the server.
+//! The feeder's `revoked` event names the key by its first 4 bytes alone,
+//! too few to pick a key by, so on one the server reads the feeder's
+//! clients and forgets each phone key no longer listed whose invite can no
+//! longer be redeemed: the keys it invited then go as they would through
+//! the server. Each connect, gap in the history and lag in reading it does
+//! the same, so a `revoked` event the server missed (it crashed after
+//! storing it, or the event was lost) and a wait for an invite's deadline
+//! that a restart dropped are still followed up.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -64,7 +76,7 @@ impl Service {
         Ok(())
     }
 
-    pub(super) fn spawn_revoke(&self, feeder: FeederId) {
+    pub(crate) fn spawn_revoke(&self, feeder: FeederId) {
         let service = self.clone();
         let span = info_span!(parent: None, "feeder", id = %feeder);
         self.tasks
@@ -79,27 +91,40 @@ impl Service {
         }
     }
 
+    /// The feeder's turn: one pass over its phone keys at a time, since an
+    /// account change, a reconnect and a revoke on the LAN may each start
+    /// one.
+    fn turn(&self, id: FeederId) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(lock(&self.feeders.revocations.turns).entry(id).or_default())
+    }
+
     async fn try_revoke_owed(&self, id: FeederId) -> Result<()> {
-        // One pass per feeder at a time: an account change and a reconnect
-        // may both start one.
-        let turn = Arc::clone(lock(&self.feeders.revocations.turns).entry(id).or_default());
+        let turn = self.turn(id);
         let _turn = turn.lock().await;
         let store = &self.shared.store;
+        self.try_attribute_invitees(id).await;
 
+        // A key forgotten here marks the keys it invited, if any were left
+        // unmarked: they take the next pass.
+        let mut again = false;
         for phone in store.revoking(id).await? {
             let key = phone.key.0;
             let client = hex::Lower(&key[..4]).to_string();
             let op = Op::RevokeClient { key };
             let attempt = match self.mirror.ask(id, self.request_id()?, op).await {
                 Ok(Answer::Done { .. }) => {
-                    store.forget_client(id, &key).await?;
+                    again |= store
+                        .forget_client(id, &key, self.shared.clock.now())
+                        .await?;
                     info!(%client, "a phone's key is revoked");
                     continue;
                 }
                 Ok(Answer::Refused(Refusal::NotFound))
                     if self.shared.clock.now() >= phone.invite_until =>
                 {
-                    store.forget_client(id, &key).await?;
+                    again |= store
+                        .forget_client(id, &key, self.shared.clock.now())
+                        .await?;
                     info!(%client, "a phone's key never joined, and its invite has expired");
                     continue;
                 }
@@ -124,14 +149,62 @@ impl Service {
             store.revoke_attempt(id, &key, &attempt).await?;
             warn!(%client, ?attempt, "a phone's key is not revoked yet");
             if attempt == RevokeAttempt::Offline {
-                break;
+                return Ok(());
             }
+        }
+        if again {
+            self.spawn_revoke(id);
         }
         Ok(())
     }
 
+    /// Forget each phone key the feeder no longer lists, once its invite
+    /// can no longer be redeemed, and mark the keys it invited: someone
+    /// revoked a client on the LAN. A key whose invite is still live may
+    /// not have joined yet, so it is judged again at the invite's deadline.
+    /// Whether a key is now owed a revoke.
+    async fn forget_unlisted(&self, id: FeederId) -> bool {
+        self.try_forget_unlisted(id).await.unwrap_or_else(|error| {
+            warn!(%error, "a revoke on the LAN is not followed up until the next one");
+            false
+        })
+    }
+
+    async fn try_forget_unlisted(&self, id: FeederId) -> Result<bool> {
+        let turn = self.turn(id);
+        let _turn = turn.lock().await;
+        let store = &self.shared.store;
+
+        // Read before the list: a key recorded after it was read (a claim,
+        // a new invite) is not judged by a list older than it.
+        let phones = store.feeder_phones(id).await?;
+        // Nothing recorded, nothing to follow up: the feeder is not asked,
+        // as on every connect of a feeder with no phone keys.
+        if phones.is_empty() {
+            return Ok(false);
+        }
+        let listed = self.list_clients(id).await?;
+        let now = self.shared.clock.now();
+        let mut owed = false;
+        for phone in phones {
+            let key = phone.key.0;
+            if listed.iter().any(|client| client.key.0 == key) {
+                continue;
+            }
+            if now < phone.invite_until {
+                self.wake_at(id, phone.invite_until);
+                continue;
+            }
+            owed |= store.forget_client(id, &key, now).await?;
+            let client = hex::Lower(&key[..4]).to_string();
+            info!(%client, "a phone's key was revoked on the LAN");
+        }
+        Ok(owed)
+    }
+
     /// Revoke the keys owed on the feeder again at `at`, an invite's
-    /// deadline, unless a wake no later is already set.
+    /// deadline, and forget the keys it no longer lists, unless a wake no
+    /// later is already set: each wake sets the next.
     fn wake_at(&self, id: FeederId, at: Timestamp) {
         {
             let mut wakes = lock(&self.feeders.revocations.wakes);
@@ -155,14 +228,18 @@ impl Service {
                     wakes.remove(&id);
                 }
             }
+            service.forget_unlisted(id).await;
             service.revoke_owed(id).await;
         };
         self.tasks.spawn(wake.instrument(span));
     }
 
     /// Revoke the keys owed on the feeder each time its session comes up,
-    /// and each time a client joins it (an owed key's invite redeemed) or
-    /// its history has a gap that may hide one.
+    /// and each time a client joins it (an owed key's invite redeemed, or a
+    /// phone key's invite, whose join is then attributed) or its history
+    /// has a gap that may hide one. A client revoked follows up a revoke on
+    /// the LAN, and so does each connect, gap and lag, in case its event
+    /// was missed.
     pub(crate) fn watch_revocations(&self, id: FeederId, mut updates: Receiver<MirrorEvent>) {
         let service = self.clone();
         let cancel = self.cancel.child_token();
@@ -175,21 +252,40 @@ impl Service {
                     update = updates.recv() => update,
                 };
                 match update {
+                    // A revoke on the LAN this server never followed up (one
+                    // read before a crash, one a lag or a gap hid, or one
+                    // whose invite wake a restart lost) is followed up here,
+                    // by the client list, whatever became of its event.
                     Ok(MirrorEvent::Link(Link::Online)) => {
                         if let Err(error) = service.reconcile_phones().await {
                             warn!(%error, "the phone keys could not be reconciled");
                         }
+                        service.forget_unlisted(id).await;
                         service.revoke_owed(id).await;
                     }
                     Ok(MirrorEvent::Event(event))
-                        if matches!(event.body, EventBody::Core(CoreEvent::Enrolled { .. })) =>
+                        if matches!(
+                            event.body,
+                            EventBody::Core(CoreEvent::Enrolled { .. } | CoreEvent::Invited { .. })
+                        ) =>
                     {
                         service.revoke_owed(id).await;
                     }
-                    Ok(MirrorEvent::Gap(_)) => service.revoke_owed(id).await,
+                    Ok(MirrorEvent::Event(event))
+                        if matches!(event.body, EventBody::Core(CoreEvent::Revoked { .. })) =>
+                    {
+                        if service.forget_unlisted(id).await {
+                            service.revoke_owed(id).await;
+                        }
+                    }
+                    Ok(MirrorEvent::Gap(_)) => {
+                        service.forget_unlisted(id).await;
+                        service.revoke_owed(id).await;
+                    }
                     Ok(_) => {}
                     Err(RecvError::Lagged(_)) => {
                         updates = updates.resubscribe();
+                        service.forget_unlisted(id).await;
                         service.revoke_owed(id).await;
                     }
                     Err(RecvError::Closed) => return,
@@ -204,18 +300,20 @@ impl Service {
 /// a lower role (a viewer holds no key, a member's phone no owner's), or
 /// an expiry where there was none or another.
 pub(crate) fn revocation(before: &User, after: &User) -> Option<RevokeReason> {
-    const fn rank(role: Role) -> u8 {
-        match role {
-            Role::Owner => 2,
-            Role::Member => 1,
-            Role::Viewer | Role::Unknown => 0,
-        }
-    }
-
     if rank(after.role) < rank(before.role) {
         return Some(RevokeReason::Demoted);
     }
     (after.expires.is_some() && after.expires != before.expires).then_some(RevokeReason::Expiring)
+}
+
+/// How much a role may do, for comparing two: an owner above a member,
+/// above a viewer or a role this build does not know.
+pub(crate) const fn rank(role: Role) -> u8 {
+    match role {
+        Role::Owner => 2,
+        Role::Member => 1,
+        Role::Viewer | Role::Unknown => 0,
+    }
 }
 
 /// What the feeder answered a revoke of the server's own key, as a

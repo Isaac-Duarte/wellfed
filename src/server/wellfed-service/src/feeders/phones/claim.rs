@@ -10,7 +10,10 @@
 //! person's key could then revoke it, by claiming another key under the
 //! same token or revoking the token. A member's phone that paired before
 //! the server gets a key of its own through an invite instead. Asking again
-//! for a key already recorded is answered for any role. What an owner's
+//! for a key already recorded is answered for any role. A key of the
+//! account's that a logout left with no token goes under the claiming token
+//! only with a proof that the phone holds its secret ([`super::proof`]).
+//! What an owner's
 //! claim cannot take: a key the feeder does not list, the server's own, one
 //! an owner kept as a client of its own, and one listed with a role no
 //! phone holds (a server's or an update signer's).
@@ -19,6 +22,7 @@ use tracing::warn;
 use wellfed_api::{ClientRole, FeederId, PhoneClaim, PhoneKey, RevokeReason, Role, TokenId};
 use wellfed_store::{NewPhone, Recorded, Whose};
 
+use super::Possession;
 use crate::{Caller, ClientError, Result, Service};
 
 /// Who may hold a key of their own: a phone's token, and the role its key
@@ -41,8 +45,10 @@ impl Service {
         claim: PhoneClaim,
     ) -> Result<PhoneKey> {
         let holder = self.direct_key_holder(caller).await?;
+        let possession = self.possession(holder, &claim.key.0, claim.proof)?;
         self.live_row(id).await?;
-        self.confirm_phone(caller, holder, id, claim.key.0).await
+        self.confirm_phone(caller, holder, id, claim.key.0, possession)
+            .await
     }
 
     /// Record `key` as `holder`'s phone key on the feeder once its live
@@ -55,14 +61,32 @@ impl Service {
         holder: Holder,
         id: FeederId,
         key: [u8; 32],
+        possession: Possession,
     ) -> Result<PhoneKey> {
         let store = &self.shared.store;
         if let Some(phone) = store.phone(id, &key).await? {
-            return if phone.token == Some(holder.token) && phone.revoking.is_none() {
-                Ok(phone)
-            } else {
-                Err(ClientError::KeyTaken.into())
-            };
+            if phone.token == Some(holder.token) && phone.revoking.is_none() {
+                return Ok(phone);
+            }
+            // The account's own key, left with no token by a logout: the
+            // phone logged in again, and its key follows the new token, so
+            // revoking that token (a lost phone) revokes it. Only the phone
+            // holding the key moves it: any token of the account may claim,
+            // and a stolen one must not take the key to revoke it with
+            // itself.
+            if phone.token.is_some() || phone.user != caller.user.id {
+                return Err(ClientError::KeyTaken.into());
+            }
+            if possession != Possession::Proven {
+                return Err(ClientError::PhoneKeyProofRequired.into());
+            }
+            if !store
+                .attach_token(id, &key, caller.user.id, holder.token)
+                .await?
+            {
+                return Err(ClientError::KeyTaken.into());
+            }
+            return self.claimed(id, holder.token, key).await;
         }
         if holder.role != ClientRole::Owner {
             return Err(ClientError::PhoneClaimOwnersOnly.into());
@@ -94,13 +118,19 @@ impl Service {
         // The account or token may have lost its key since it was checked:
         // the reconcile marks the key, and starts revoking it.
         self.reconcile_phones().await?;
-        let recorded = store.phone(id, &key).await?;
+        self.claimed(id, holder.token, key).await
+    }
+
+    /// The key just recorded or put under `token`, unless the account lost
+    /// its key meanwhile; the token's other key on the feeder is replaced.
+    async fn claimed(&self, id: FeederId, token: TokenId, key: [u8; 32]) -> Result<PhoneKey> {
+        let recorded = self.shared.store.phone(id, &key).await?;
         let Some(recorded) = recorded.filter(|phone| phone.revoking.is_none()) else {
             return Err(ClientError::DirectKeyRefused.into());
         };
         let replaced = Whose::Replaced {
             feeder: id,
-            token: holder.token,
+            token,
             keep: key,
         };
         self.revoke_phones(replaced, RevokeReason::Replaced).await?;

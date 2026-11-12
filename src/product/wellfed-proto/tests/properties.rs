@@ -111,6 +111,7 @@ fn op() -> impl Strategy<Value = Op<'static>> {
         tune().prop_map(|tune| Op::Feeder(FeederOp::Play { tune })),
         sync.prop_map(Op::TimeSync),
         role().prop_map(|role| Op::CreateInvite { role }),
+        (role(), any::<[u8; 32]>()).prop_map(|(role, key)| Op::CreateBoundInvite { role, key }),
         Just(Op::ListClients),
         any::<[u8; 32]>().prop_map(|key| Op::RevokeClient { key }),
         any::<u8>().prop_map(|portions| Op::Feeder(FeederOp::Feed { portions })),

@@ -26,7 +26,7 @@ const _cat = ServerPet(id: 'p1', name: 'Miso', species: Species.cat, feeders: ['
 (HomeServer, FakeServerPorts, FakeBook) _server() {
   final book = FakeBook()..feeders = [_kitchen];
   final ports = FakeServerPorts();
-  final server = HomeServer(book, ports, FakeRouter());
+  final server = HomeServer(book, ports, FakeRouter(), FakeClientKey());
   addTearDown(server.dispose);
   return (server, ports, book);
 }
@@ -95,21 +95,24 @@ void main() {
     expect(book.server, isNull);
   });
 
-  testWidgets('the account says the phone keeps its keys, and logging out revokes the token', (tester) async {
+  testWidgets('the account says the phone keeps its keys, and logging out asks the password for it', (tester) async {
     _phone(tester);
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
-    await tester.pumpWidget(themed(AccountScreen(server: server)));
+    await tester.pumpWidget(themed(AccountScreen(server: server, phoneKey: FakeClientKey())));
     await settle(tester);
 
     expect(find.text('Owner'), findsOneWidget);
-    expect(find.textContaining('Deleting your account on the server revokes those keys'), findsOneWidget);
+    expect(find.textContaining('keeps its own keys on its feeders'), findsOneWidget);
     await tester.tap(find.text('Log out').first);
     await settle(tester);
+    expect(find.textContaining('The phones it invited keep theirs too'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Password'), 'hunter2');
+    await tester.pump();
     await tester.tap(find.widgetWithText(TextButton, 'Log out'));
     await settle(tester);
 
-    expect(ports.session.logouts, 1);
+    expect(ports.session.logoutPasswords, ['hunter2']);
     expect(book.server, isNull);
     expect(book.feeders, [_kitchen]);
   });

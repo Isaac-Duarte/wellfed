@@ -131,6 +131,59 @@ fn a_client_change_records_its_event_in_the_writers_turn() {
     );
 }
 
+/// A key that joined through another client's invite records who invited
+/// it just before its enrollment, both in the writer's turn; only the
+/// enrollment goes to the alert rules.
+#[test]
+fn an_invited_key_records_its_inviter_before_its_enrollment() {
+    let (_guard, mut writer, mut provider) = opened();
+    let Change::Key { change: enroll, at } = phone() else {
+        unreachable!("the phone's change enrolls a key");
+    };
+    let ApiChange::Enroll {
+        key,
+        label,
+        role,
+        path,
+        ..
+    } = enroll
+    else {
+        unreachable!("the phone's change enrolls a key");
+    };
+    let invited = Change::Key {
+        change: ApiChange::Enroll {
+            key,
+            label,
+            role,
+            path,
+            inviter: Some([5; 7]),
+        },
+        at,
+    };
+
+    assert_eq!(
+        change(&mut writer, &mut provider, invited),
+        changed(KeyChange::Enroll, KeyResult::Done, 1)
+    );
+    let Some(written) = events::take_written() else {
+        panic!("the alert rules hear of the enrollment");
+    };
+    assert_eq!(
+        wellfed_proto::decode_padded::<EventBody>(&written.body),
+        Some(phone_joined())
+    );
+    assert_eq!(events::take_written(), None, "the inviter is no alert");
+
+    let inviter = EventBody::Invited {
+        client: [7; 7],
+        by: [5; 7],
+    };
+    assert_eq!(
+        ring(&mut writer, &mut provider),
+        [(Some(ASKED_AT), inviter), (Some(ASKED_AT), phone_joined())]
+    );
+}
+
 /// Two changes finished before the loop takes either: both are in the
 /// ring, in the order they were made, and the alert rules hear of both.
 #[test]
@@ -393,6 +446,7 @@ fn the_alert_outbox_takes_key_events_and_counts_an_overflow() {
             label: Label::new(b"phone").unwrap(),
             role: Role::Member,
             path: Path::Invite,
+            inviter: None,
         },
         at: Some(ASKED_AT),
     };

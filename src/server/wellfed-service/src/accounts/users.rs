@@ -9,11 +9,11 @@
 use jiff::Timestamp;
 use wellfed_api::{AuditAction, NewUser, RevokeReason, Role, User, UserId, UserPatch};
 use wellfed_session::hex;
-use wellfed_store::{Change, NewAudit, Store, Whose};
+use wellfed_store::{Change, NewAudit, Sessions, Store, UserUpdate, Whose};
 
 use crate::accounts::sessions::{self, disabled, hash_password, password, user_name};
 use crate::accounts::tokens::session_only;
-use crate::feeders::phones::revocation;
+use crate::feeders::phones::{rank, revocation};
 use crate::{
     AccountError, Caller, Error, Invalid, Random, Resource, Result, Service, SessionToken,
 };
@@ -69,8 +69,12 @@ impl Service {
     }
 
     /// Change a user's role, expiry or password, as `actor` (an owner)
-    /// on the session `session`. Setting a password takes a login: a token
-    /// could otherwise set one and log in as that user.
+    /// on the session `session`. Setting a password, raising a role, and
+    /// clearing or extending an expiry take a login: a token could otherwise
+    /// set a password and log in as that user, or give an account whose
+    /// password its holder knows owner rights or its life back, and so a
+    /// login that outlives the token. A token may still demote, shorten an
+    /// expiry or delete.
     pub async fn update_user(
         &self,
         actor: &Caller,
@@ -78,9 +82,6 @@ impl Service {
         id: UserId,
         patch: UserPatch,
     ) -> Result<User> {
-        if patch.password.is_some() {
-            session_only(actor)?;
-        }
         let caller = actor;
         let actor = &actor.user;
         let current = self.user(id).await?;
@@ -89,6 +90,9 @@ impl Service {
             expires: patch.expires.unwrap_or(current.expires),
             ..current.clone()
         };
+        if patch.password.is_some() || grants(&current, &updated) {
+            session_only(caller)?;
+        }
         known_role(updated.role)?;
         owner_never_expires(updated.role, updated.expires)?;
         let hash = match patch.password {
@@ -99,26 +103,32 @@ impl Service {
             None => None,
         };
 
-        let store = &self.shared.store;
-        changed(store.update_user(id, updated.role, updated.expires).await?)?;
-        if let Some(reason) = revocation(&current, &updated) {
-            self.revoke_phones(Whose::User(id), reason).await?;
-        }
         let now = self.shared.clock.now();
         let enabled = disabled(&current, now) && !disabled(&updated, now);
         let reset = hash.is_some();
-        if let Some(hash) = hash {
-            store.set_password(id, &hash).await?;
-        }
-
         // Whoever held the old password is logged out: everywhere when an
         // owner sets someone else's temporary one, and everywhere but here
-        // when they set their own.
+        // when they set their own. The sessions end in the change's own
+        // transaction, so neither lands without the other.
         let keep = session
             .filter(|_| actor.id == id)
             .and_then(SessionToken::hash);
-        if enabled || reset {
-            store.delete_sessions_of(id, keep.as_ref()).await?;
+        let sessions = if enabled || reset {
+            Sessions::Ended {
+                keep: keep.as_ref(),
+            }
+        } else {
+            Sessions::Kept
+        };
+        let update = UserUpdate {
+            role: updated.role,
+            expires: updated.expires,
+            password_hash: hash.as_deref(),
+            sessions,
+        };
+        changed(self.shared.store.update_user(id, update).await?)?;
+        if let Some(reason) = revocation(&current, &updated) {
+            self.revoke_phones(Whose::User(id), reason).await?;
         }
 
         let (account, name) = (updated.id, updated.name.clone());
@@ -159,6 +169,17 @@ impl Service {
     }
 }
 
+/// Whether a change from `before` to `after` gives the account more: a
+/// higher role, or an expiry cleared or moved later.
+fn grants(before: &User, after: &User) -> bool {
+    let longer = match (before.expires, after.expires) {
+        (Some(_), None) => true,
+        (Some(was), Some(now)) => now > was,
+        (None, _) => false,
+    };
+    rank(after.role) > rank(before.role) || longer
+}
+
 /// Give a locked-out owner a new temporary password, straight on the
 /// database (`wellfed-server reset-owner`), and end their sessions. The
 /// owner is `name`, or the only owner when it is `None`. The audit log
@@ -197,10 +218,9 @@ pub async fn reset_owner(
     let typed = password.clone();
     let hash = sessions::blocking(move || hash_password(&typed, &salt)).await?;
 
-    if !store.set_password(owner.id, &hash).await? {
+    if !store.set_password(owner.id, &hash, None, None).await? {
         return Err(Error::NotFound(Resource::User));
     }
-    store.delete_sessions_of(owner.id, None).await?;
     let action = AuditAction::PasswordSet {
         account: owner.id,
         name: owner.name.clone(),

@@ -152,6 +152,15 @@ pub enum ErrorCode {
     ArchiveInvalid,
     /// Another export is being written: one runs at a time.
     ExportRunning,
+    /// The key claimed is the account's, left with no token by a logout:
+    /// only a phone that proves it holds the key's secret puts it under
+    /// its token. Ask for a challenge (`POST /phones/challenge`) and claim
+    /// again with its `proof`.
+    PhoneKeyProofRequired,
+    /// The claim's proof does not answer a challenge this token holds:
+    /// unknown, used, expired, another token's, or a MAC the key's secret
+    /// did not make. Ask for a new challenge.
+    PhoneKeyProofRefused,
     Internal,
     /// A code a newer server added, which this client cannot name. The
     /// server never sends it; a client reads the request as refused by a

@@ -30,6 +30,9 @@ node_modules/
 .claude/
 skills-lock.json
 
+# The Kotlin compiler's session files, which an Android build leaves
+/src/app/android/.kotlin/
+
 # The server's release binaries (make server-dist)
 /dist/
 
