@@ -29,15 +29,7 @@ pub fn random<const N: usize>() -> Result<[u8; N]> {
 
 /// Create `path` exclusively, write it in full and fsync it.
 pub fn write_new(path: &Path, data: &[u8]) -> Result<()> {
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-
-    let mut file = options.open(path)?;
+    let mut file = create_private(path)?;
     file.write_all(data)?;
     file.sync_all()?;
     Ok(())
@@ -48,25 +40,44 @@ pub fn write_new(path: &Path, data: &[u8]) -> Result<()> {
 /// place by a step that never replaces ([`move_new`]), so a reader never sees it
 /// half written, and a writer killed partway leaves no partial file that would
 /// refuse the next attempt.
+///
+/// The temporary file's name is drawn fresh, so one a crashed writer left
+/// never refuses the next, and it is removed whenever this returns: a write
+/// that failed partway leaves no partial copy of a key or a backup beside
+/// the path.
 pub fn write_new_whole(path: &Path, data: &[u8]) -> Result<()> {
     let name = path
         .file_name()
         .ok_or_else(|| std::io::Error::other("the path names no file"))?;
     let mut temporary = name.to_owned();
-    temporary.push(format!(".{}.tmp", std::process::id()));
+    let tag = wellfed_session::hex::Lower(&random::<8>()?).to_string();
+    temporary.push(format!(".{tag}.tmp"));
     let temporary = path.with_file_name(temporary);
 
-    write_new(&temporary, data)?;
+    let mut file = create_private(&temporary)?;
     let result = (|| {
+        file.write_all(data)?;
+        file.sync_all()?;
         move_new(&temporary, path)?;
-        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-            fs::File::open(parent)?.sync_all()?;
-        }
+        sync_parent(path)?;
         Ok(())
     })();
 
+    // A rename leaves no temporary file; a link, or a failure, does.
     let _ = fs::remove_file(&temporary);
     result
+}
+
+/// Create `path` exclusively, mode 0600 on Unix.
+fn create_private(path: &Path) -> std::io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
 }
 
 /// Move `from` to `to`, failing if anything is there. Android's policy denies an
@@ -80,12 +91,19 @@ fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
     renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE).map_err(Into::into)
 }
 
+/// Whether [`move_new`] leaves `from` behind, for its caller to remove.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const MOVE_LEAVES_SOURCE: bool = false;
+
 /// Move `from` to `to`, failing if anything is there: elsewhere a link, which
 /// never replaces. The caller removes `from`.
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
     fs::hard_link(from, to)
 }
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+const MOVE_LEAVES_SOURCE: bool = true;
 
 /// The names a file set aside beside `path` takes, numbered, in order.
 fn aside_names(path: &Path) -> std::io::Result<impl Iterator<Item = std::path::PathBuf>> {
@@ -117,14 +135,27 @@ fn sync_parent(path: &Path) -> std::io::Result<()> {
 /// Rename a file an owner agreed to give up, to a numbered name beside it. It is
 /// never deleted, and never replaces an earlier one set aside. The new path.
 pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    set_aside_then(path, || {})
+}
+
+/// [`set_aside`], running `moved` once the file is under its new name: a
+/// test's other writer, placing a new file at `path` then. A rename leaves
+/// nothing at `path`, so only a link's old name is removed, and a file
+/// another writer put there after the move stays.
+fn set_aside_then(path: &Path, moved: impl FnOnce()) -> std::io::Result<std::path::PathBuf> {
+    let mut moved = Some(moved);
     for aside in aside_names(path)? {
         match move_new(path, &aside) {
             Ok(()) => {
-                // A hard link leaves the old name behind; a rename does not.
-                match fs::remove_file(path) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(error),
+                if let Some(moved) = moved.take() {
+                    moved();
+                }
+                if MOVE_LEAVES_SOURCE {
+                    match fs::remove_file(path) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => return Err(error),
+                    }
                 }
                 sync_parent(path)?;
                 return Ok(aside);
@@ -152,8 +183,13 @@ pub fn copy_aside(path: &Path, data: &[u8]) -> std::io::Result<std::path::PathBu
         }
         match options.open(&aside) {
             Ok(mut file) => {
-                file.write_all(data)?;
-                file.sync_all()?;
+                // A copy that failed partway would read later as what the
+                // file held: it goes.
+                let written = file.write_all(data).and_then(|()| file.sync_all());
+                if let Err(error) = written {
+                    let _ = fs::remove_file(&aside);
+                    return Err(error);
+                }
                 sync_parent(path)?;
                 return Ok(aside);
             }
@@ -277,5 +313,34 @@ mod tests {
         assert!(write_new_whole(&path, b"second").is_err());
         assert_eq!(fs::read(&path).unwrap(), b"first");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1, "no temp left");
+    }
+
+    /// A temporary file a killed writer left, under the name this process
+    /// would once have used, refuses nothing.
+    #[test]
+    fn a_left_temporary_file_refuses_no_later_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.bin");
+        let left = dir.path().join(format!("a.bin.{}.tmp", std::process::id()));
+        fs::write(&left, b"partial").unwrap();
+
+        write_new_whole(&path, b"x").unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"x");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    /// A file another writer puts at the path just after it was set aside
+    /// stays: a rename leaves nothing there to remove.
+    #[test]
+    fn a_file_written_after_a_set_aside_stays() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.json");
+        fs::write(&path, "old").unwrap();
+
+        let aside = set_aside_then(&path, || fs::write(&path, "new").unwrap()).unwrap();
+
+        assert_eq!(fs::read(&aside).unwrap(), b"old");
+        assert_eq!(fs::read(&path).unwrap(), b"new");
     }
 }
