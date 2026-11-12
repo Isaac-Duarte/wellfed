@@ -30,7 +30,7 @@ pub mod key;
 #[cfg(feature = "python")]
 mod python;
 pub mod server;
-pub mod writes;
+mod writes;
 
 /// Why a call into the bridge failed.
 #[derive(Debug, thiserror::Error)]
@@ -51,8 +51,6 @@ pub enum Error {
     Thread(std::io::Error),
     #[error(transparent)]
     Server(#[from] wellfed_server_client::Error),
-    #[error("not a server address: {0}")]
-    Address(String),
     #[error("a client key is 32 bytes, not {0}")]
     KeyLength(usize),
 }

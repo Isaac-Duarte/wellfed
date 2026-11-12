@@ -63,7 +63,7 @@ impl Written {
         }
     }
 
-    pub fn feeding(feed: u32) -> Self {
+    pub(crate) fn feeding(feed: u32) -> Self {
         Self {
             feed: Some(feed),
             ..Self::result(WriteResult::Feeding)
@@ -74,12 +74,12 @@ impl Written {
         Self::result(WriteResult::Done)
     }
 
-    pub fn refused(refusal: &model::Refusal) -> Self {
+    pub(crate) fn refused(refusal: &model::Refusal) -> Self {
         Self::refused_for(refusal.into())
     }
 
     /// Refused for `refusal`, as the owner's server names it.
-    pub fn refused_for(refusal: RefusalKind) -> Self {
+    pub(crate) fn refused_for(refusal: RefusalKind) -> Self {
         Self {
             refusal: Some(refusal),
             ..Self::result(WriteResult::Refused)
@@ -93,12 +93,12 @@ impl Written {
         }
     }
 
-    pub fn uncertain() -> Self {
+    pub(crate) fn uncertain() -> Self {
         Self::result(WriteResult::Uncertain)
     }
 
     /// An uncertain feed, kept as `pending` until an update settles it.
-    pub fn uncertain_feed(pending: Pending) -> Self {
+    pub(crate) fn uncertain_feed(pending: Pending) -> Self {
         Self {
             pending: Some(pending),
             ..Self::uncertain()
@@ -174,7 +174,7 @@ impl Update {
         }
     }
 
-    pub fn connected(
+    pub(crate) fn connected(
         build: impl Into<String>,
         role: model::ClientRole,
         capabilities: Capabilities,
@@ -185,7 +185,7 @@ impl Update {
 
     /// A session opened, with the side to update already decided: through
     /// the owner's server, its own revision counts too.
-    pub fn connected_as(
+    pub(crate) fn connected_as(
         build: impl Into<String>,
         role: Role,
         capabilities: Capabilities,
@@ -200,14 +200,14 @@ impl Update {
         }
     }
 
-    pub fn state(state: State) -> Self {
+    pub(crate) fn state(state: State) -> Self {
         Self {
             state: Some(state),
             ..Self::kind(UpdateKind::State)
         }
     }
 
-    pub fn event(event: &model::Event, replayed: bool) -> Self {
+    pub(crate) fn event(event: &model::Event, replayed: bool) -> Self {
         Self {
             event: Some(event.into()),
             replayed,
@@ -215,7 +215,7 @@ impl Update {
         }
     }
 
-    pub fn gap(gap: Option<&model::Gap>) -> Self {
+    pub(crate) fn gap(gap: Option<&model::Gap>) -> Self {
         Self {
             gap_from: gap.map(|gap| gap.from),
             gap_to: gap.map(|gap| gap.to),
@@ -225,7 +225,7 @@ impl Update {
 
     /// A feed whose answer never came, to keep until an update settles
     /// it: sent before the write's own answer, so before any such update.
-    pub fn pending(pending: Pending) -> Self {
+    pub(crate) fn pending(pending: Pending) -> Self {
         Self {
             portions: Some(pending.portions),
             pending: Some(pending),
@@ -235,14 +235,14 @@ impl Update {
 
     /// The feed numbers this client has the end of, now that it has one
     /// more: what the integration keeps for the next session.
-    pub fn answered(feeds: Vec<u32>) -> Self {
+    pub(crate) fn answered(feeds: Vec<u32>) -> Self {
         Self {
             answered: feeds,
             ..Self::kind(UpdateKind::Answered)
         }
     }
 
-    pub fn settled(feed: Feed, pending: Pending) -> Self {
+    pub(crate) fn settled(feed: Feed, pending: Pending) -> Self {
         Self {
             feed: Some(feed),
             pending: Some(pending),
@@ -252,14 +252,14 @@ impl Update {
 
     /// A feed whose answer never came did not run after all: the
     /// feeder refused it, as the server's journal later learned.
-    pub fn settled_unfed(pending: Pending) -> Self {
+    pub(crate) fn settled_unfed(pending: Pending) -> Self {
         Self {
             pending: Some(pending),
             ..Self::kind(UpdateKind::SettledUnfed)
         }
     }
 
-    pub fn still_unknown(pending: Pending) -> Self {
+    pub(crate) fn still_unknown(pending: Pending) -> Self {
         Self {
             portions: Some(pending.portions),
             pending: Some(pending),
@@ -269,7 +269,7 @@ impl Update {
 
     /// A direct feed about to go out: kept, so a restart before its answer
     /// finds it lost.
-    pub fn sending(pending: Pending) -> Self {
+    pub(crate) fn sending(pending: Pending) -> Self {
         Self {
             portions: Some(pending.portions),
             pending: Some(pending),
@@ -279,7 +279,7 @@ impl Update {
 
     /// A direct feed kept while it went out has its answer: no longer
     /// kept.
-    pub fn cleared(pending: Pending) -> Self {
+    pub(crate) fn cleared(pending: Pending) -> Self {
         Self {
             portions: Some(pending.portions),
             pending: Some(pending),
@@ -289,7 +289,7 @@ impl Update {
 
     /// A feed whose answer never came is no longer waited on: still
     /// unknown, and nothing settles it now.
-    pub fn forgotten(pending: Pending) -> Self {
+    pub(crate) fn forgotten(pending: Pending) -> Self {
         Self {
             portions: Some(pending.portions),
             pending: Some(pending),
@@ -299,29 +299,29 @@ impl Update {
 
     /// The feeder's alerts moved: what is open, and what opened and
     /// cleared.
-    pub fn alerts(alerts: Alerts) -> Self {
+    pub(crate) fn alerts(alerts: Alerts) -> Self {
         Self {
             alerts: Some(alerts),
             ..Self::kind(UpdateKind::Alerts)
         }
     }
 
-    pub fn revoked() -> Self {
+    pub(crate) fn revoked() -> Self {
         Self::kind(UpdateKind::Revoked)
     }
 
-    pub fn token_refused() -> Self {
+    pub(crate) fn token_refused() -> Self {
         Self::kind(UpdateKind::TokenRefused)
     }
 
-    pub fn server_lost_feeder(reason: impl Into<String>) -> Self {
+    pub(crate) fn server_lost_feeder(reason: impl Into<String>) -> Self {
         Self {
             reason: Some(reason.into()),
             ..Self::kind(UpdateKind::ServerLostFeeder)
         }
     }
 
-    pub fn disconnected(reason: impl Into<String>) -> Self {
+    pub(crate) fn disconnected(reason: impl Into<String>) -> Self {
         Self {
             reason: Some(reason.into()),
             ..Self::kind(UpdateKind::Disconnected)
