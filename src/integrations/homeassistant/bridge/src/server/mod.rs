@@ -577,9 +577,14 @@ impl<'a> Session<'a> {
         for key in keys {
             match self.client.command(key).await {
                 Ok(command) => self.journalled(&command)?,
-                // Not journalled yet: the request may still be on its way
-                // to the server, so it may still run. Unauthorized ends
-                // the session; anything else is asked at the next connect.
+                // No journal entry under the key (a 404): the request may
+                // not have reached the server yet, so it may still run, or
+                // the server may have let an old key go. Neither says
+                // whether the feed ran, so it stays open to a later answer
+                // from the journal, and is reported unknown and later
+                // forgotten by its age, never by this answer. Unauthorized
+                // ends the session; anything else is asked again at the
+                // next connect or resync.
                 Err(error) if error.failure() == Failure::Unauthorized => {
                     return Err(Ended::TokenRefused);
                 }
