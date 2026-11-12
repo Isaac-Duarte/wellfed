@@ -359,32 +359,59 @@ pub(super) async fn events(client: &Client, args: EventsArgs, out: Output) -> Re
     let mut printed = history(client, id, query, out, None).await?;
     while let Some(update) = updates.next().await {
         let update = update?;
-        match &update.event {
-            StreamEvent::Event { feeder, event }
-                if *feeder == id && Some((event.epoch, event.seq)) > printed =>
-            {
-                out.show(&update.event, |_| text::event(event))?;
-                printed = Some((event.epoch, event.seq));
+        match followed(&update.event, id, printed, &query) {
+            Followed::Show(text) => {
+                out.show(&update.event, |_| text)?;
+                if let StreamEvent::Event { event, .. } = &update.event {
+                    printed = Some((event.epoch, event.seq));
+                }
             }
-            StreamEvent::Gap { feeder, gap } if *feeder == id => {
-                out.show(&update.event, |_| text::gap(gap))?;
-            }
-            // This subscriber fell behind and the server dropped what it
-            // could not hold: read what was skipped from the history.
-            StreamEvent::Resync => {
+            Followed::Read(skipped) => {
                 eprintln!("The stream fell behind; reading what it skipped.");
-                let skipped = EventQuery {
-                    epoch: printed.map(|(epoch, _)| epoch).or(args.epoch),
-                    after: printed.map(|(_, seq)| seq).or(args.after),
-                    limit: args.limit,
-                    kind: None,
-                };
                 printed = history(client, id, skipped, out, printed).await?;
             }
-            _ => {}
+            Followed::Pass => {}
         }
     }
     bail!("the server ended the stream")
+}
+
+/// What `--follow` does with one update of the stream.
+#[derive(Debug, PartialEq, Eq)]
+enum Followed {
+    /// Show it, as this text.
+    Show(String),
+    /// Read the history from this query: the server dropped what this
+    /// subscriber fell behind on.
+    Read(EventQuery),
+    /// Another feeder's, one already shown, or not an event.
+    Pass,
+}
+
+/// What to do with `event`, for feeder `id`, after the newest event shown
+/// (`printed`), in a run that began at `start`. A resync reads on from the
+/// newest shown, or from where the run began when it showed none.
+fn followed(
+    event: &StreamEvent,
+    id: FeederId,
+    printed: Option<(u32, u64)>,
+    start: &EventQuery,
+) -> Followed {
+    match event {
+        StreamEvent::Event { feeder, event }
+            if *feeder == id && Some((event.epoch, event.seq)) > printed =>
+        {
+            Followed::Show(text::event(event))
+        }
+        StreamEvent::Gap { feeder, gap } if *feeder == id => Followed::Show(text::gap(gap)),
+        StreamEvent::Resync => Followed::Read(EventQuery {
+            epoch: printed.map(|(epoch, _)| epoch).or(start.epoch),
+            after: printed.map(|(_, seq)| seq).or(start.after),
+            limit: start.limit,
+            kind: None,
+        }),
+        _ => Followed::Pass,
+    }
 }
 
 /// One page of history from `query`, shown.
@@ -499,9 +526,75 @@ fn settled(entry: &Command) -> Result<Settled> {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_server_client::api::{CommandKind, FeedOutcome, FeedReason, UserId};
+    use wellfed_server_client::api::{
+        CommandKind, CoreEvent, EventBody, FeedOutcome, FeedReason, Gap, HistoryEvent, UserId,
+    };
 
     use super::*;
+
+    /// With `--follow`, an event is shown once, after what was shown; and
+    /// when the server says the stream fell behind, the history is read on
+    /// from the newest event shown, or from where the run began.
+    #[test]
+    fn a_resync_reads_the_history_on_from_the_newest_event_shown() {
+        let (id, other) = (FeederId(Uuid::from_u128(1)), FeederId(Uuid::from_u128(2)));
+        let start = EventQuery {
+            epoch: Some(2),
+            after: Some(10),
+            limit: Some(50),
+            kind: None,
+        };
+        let event = |feeder, seq| StreamEvent::Event {
+            feeder,
+            event: HistoryEvent {
+                epoch: 3,
+                seq,
+                at: None,
+                received: jiff::Timestamp::UNIX_EPOCH,
+                body: EventBody::Core(CoreEvent::Boot {
+                    bank: 1,
+                    reset_flags: 0,
+                }),
+            },
+        };
+
+        let shown = Some((3, 40));
+        assert!(matches!(
+            followed(&event(id, 41), id, shown, &start),
+            Followed::Show(_)
+        ));
+        for passed in [event(id, 40), event(id, 39), event(other, 99)] {
+            assert_eq!(followed(&passed, id, shown, &start), Followed::Pass);
+        }
+        let gap = StreamEvent::Gap {
+            feeder: id,
+            gap: Gap {
+                epoch: 3,
+                from: 41,
+                to: 44,
+                received: jiff::Timestamp::UNIX_EPOCH,
+            },
+        };
+        assert!(matches!(
+            followed(&gap, id, shown, &start),
+            Followed::Show(_)
+        ));
+
+        assert_eq!(
+            followed(&StreamEvent::Resync, id, shown, &start),
+            Followed::Read(EventQuery {
+                epoch: Some(3),
+                after: Some(40),
+                limit: Some(50),
+                kind: None,
+            })
+        );
+        assert_eq!(
+            followed(&StreamEvent::Resync, id, None, &start),
+            Followed::Read(start),
+            "nothing shown yet: from where the run began"
+        );
+    }
 
     fn entry(state: CommandState, outcome: Option<CommandOutcome>) -> Command {
         Command {

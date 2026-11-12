@@ -13,10 +13,10 @@ use std::time::{Duration, Instant};
 use wellfed_connect::Samples;
 
 use wellfed_feeder_sim::console;
-use wellfed_feeder_sim::harness::Threaded;
 use wellfed_feeder_sim::harness::newer::Newer;
+use wellfed_feeder_sim::harness::{Relay, Threaded};
 use wellfed_feeder_sim::serve::Control;
-use wellfed_model::{EventBody, FeedOutcome, FeederEvent, Pushed};
+use wellfed_model::{Answer, EventBody, FeedOutcome, FeederEvent, Op, Pushed};
 use wellfed_session::hex::Lower;
 use wellfed_session::noise::Keypair;
 
@@ -155,6 +155,51 @@ fn a_feed_whose_result_is_lost_exits_unknown_and_is_sent_once() {
     // The restart resolved the one feed it interrupted; none came after.
     let feeds = fed(&feeder);
     assert_eq!(feeds, [(1, FeedOutcome::Uncertain)], "one feed, sent once");
+}
+
+/// `wellfed time` stamps its sync once the session is open, so a slow
+/// handshake does not set the feeder's clock behind by however long it
+/// took.
+#[test]
+fn a_time_sync_is_stamped_after_a_slow_handshake() {
+    let feeder = Threaded::start(owner());
+    let home = Home::new(&feeder.identity);
+    let runtime = tokio::runtime::Runtime::new().expect("a runtime builds");
+    let relay = runtime.block_on(Relay::start(feeder.address));
+
+    // The handshake waits in the relay for 3 s.
+    relay.pause();
+    let child = home
+        .command(&["time"], relay.address)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the CLI starts");
+    std::thread::sleep(Duration::from_secs(3));
+    relay.resume();
+    let ran = finished(child, Duration::from_secs(30));
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    let clock = runtime.block_on(async {
+        let keypair = Keypair::from_secret(OWNER);
+        let mut session =
+            wellfed_connect::Connection::open(&keypair, feeder.identity, feeder.address, [8; 32])
+                .await
+                .expect("a session");
+        match session.ask([7; 16], &Op::Status).await.expect("the status") {
+            Answer::Status(status) => status.clock,
+            other => panic!("{other:?}"),
+        }
+    });
+    let behind = jiff::Timestamp::now().duration_since(clock.expect("the clock is set"));
+    assert!(
+        behind < jiff::SignedDuration::from_secs(2),
+        "the feeder's clock is {behind:?} behind"
+    );
 }
 
 /// `child`'s end within `wait`; a child still running then is killed and
