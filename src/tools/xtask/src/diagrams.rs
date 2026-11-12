@@ -38,13 +38,27 @@ macro_rules! regex {
 
 regex!(MARKER, r"^%% svg: (\S+\.svg)\s*$");
 regex!(PALETTE_CLASS, r"\.(d-[a-z-]+)");
-regex!(CLASS, r#"\bclass\s*=\s*"([^"]*)""#);
+// An attribute's value in either quote: XML takes both, so a lint that read
+// only double quotes would let `fill='red'` through. The value is the
+// `d` or the `s` group.
+regex!(CLASS, r#"\bclass\s*=\s*(?:"(?P<d>[^"]*)"|'(?P<s>[^']*)')"#);
 regex!(
     COLOR,
-    r#"\b(fill|stroke|stop-color|flood-color|lighting-color|color)\s*=\s*"([^"]*)""#
+    r#"\b(fill|stroke|stop-color|flood-color|lighting-color|color)\s*=\s*(?:"(?P<d>[^"]*)"|'(?P<s>[^']*)')"#
 );
-regex!(HREF, r#"\bhref\s*=\s*"([^"]*)""#);
+regex!(HREF, r#"\bhref\s*=\s*(?:"(?P<d>[^"]*)"|'(?P<s>[^']*)')"#);
 regex!(STYLE, r"\bstyle\s*=|<style\b");
+// An event handler runs script as surely as <script>, and the docs site
+// inlines each drawing into its page.
+regex!(HANDLER, r"\son[a-zA-Z]+\s*=");
+
+/// A quoted attribute's value, whichever quote held it.
+fn quoted<'a>(capture: &regex::Captures<'a>) -> &'a str {
+    capture
+        .name("d")
+        .or_else(|| capture.name("s"))
+        .map_or("", |value| value.as_str())
+}
 
 /// Why the diagrams fail the check, or cannot be blessed.
 #[derive(Debug, thiserror::Error)]
@@ -246,28 +260,29 @@ fn lint(svg: &str, palette: &BTreeSet<String>) -> Vec<Rule> {
     if STYLE.is_match(svg) {
         rules.push(Rule::InlineStyle);
     }
-    if svg.contains("<script") {
+    if svg.contains("<script") || HANDLER.is_match(svg) {
         rules.push(Rule::Script);
     }
     if svg.contains("<foreignObject") {
         rules.push(Rule::ForeignObject);
     }
     for color in COLOR.captures_iter(svg) {
-        if &color[2] != "none" {
+        if quoted(&color) != "none" {
             rules.push(Rule::OwnColor {
                 attribute: color[1].to_owned(),
             });
         }
     }
     for href in HREF.captures_iter(svg) {
-        if !href[1].starts_with('#') {
+        let href = quoted(&href);
+        if !href.starts_with('#') {
             rules.push(Rule::ExternalReference {
-                href: href[1].to_owned(),
+                href: href.to_owned(),
             });
         }
     }
     for list in CLASS.captures_iter(svg) {
-        for class in list[1].split_whitespace() {
+        for class in quoted(&list).split_whitespace() {
             if !palette.contains(class) {
                 rules.push(Rule::UnknownClass {
                     class: class.to_owned(),
@@ -665,5 +680,28 @@ mod tests {
             ]
         );
         assert!(lint(DRAWING, &palette).is_empty());
+    }
+
+    /// Single quotes and event handlers are no way around the rules.
+    #[test]
+    fn single_quotes_and_handlers_break_the_rules_too() {
+        let palette = palette(".diagram .d-box {}");
+        let svg = "<svg viewBox='0 0 1 1' onload='alert(1)'><title>t</title><rect fill='red' class='nope'/><a href='javascript:alert(1)'><text>x</text></a></svg>";
+
+        assert_eq!(
+            lint(svg, &palette),
+            [
+                Rule::Script,
+                Rule::OwnColor {
+                    attribute: "fill".to_owned()
+                },
+                Rule::ExternalReference {
+                    href: "javascript:alert(1)".to_owned()
+                },
+                Rule::UnknownClass {
+                    class: "nope".to_owned()
+                },
+            ]
+        );
     }
 }
