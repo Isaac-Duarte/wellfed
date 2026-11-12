@@ -107,14 +107,10 @@ pub(crate) async fn join_command(args: JoinArgs) -> Result<()> {
                     role: session.role(),
                     model: session.model(),
                 },
-                Err(wellfed_connect::Error::UnknownKey) => bail!(
-                    "the feeder took the invite and its answer was lost, and it does not know                      this key yet; it may still enroll it after a feed: run `wellfed join`                      again with a new invite if `wellfed status` keeps refusing this key"
-                ),
+                Err(wellfed_connect::Error::UnknownKey) => bail!(LOST_JOIN_UNKNOWN),
                 Err(error) => {
                     key.remember(&invite.feeder)?;
-                    bail!(
-                        "the feeder took the invite and its answer was lost, and a session to                          check failed ({error}): the key may be enrolled; `wellfed status`                          tells"
-                    )
+                    bail!("{LOST_JOIN_UNCHECKED}: {error}")
                 }
             }
         }
@@ -129,6 +125,17 @@ pub(crate) async fn join_command(args: JoinArgs) -> Result<()> {
         Joined::Refused(refusal) => bail!("refused: {refusal:?}"),
     }
 }
+
+/// A join whose answer was lost, and a session then refused the key. The
+/// feeder checks an invite's secret only at the handshake's third message,
+/// so a wrong secret ends the join just as a lost answer does.
+const LOST_JOIN_UNKNOWN: &str = "the join's answer was lost, and the feeder does not know this key: \
+    the invite was refused (a wrong invite secret looks the same) or the enrollment did not land; \
+    run `wellfed join` again with a new invite";
+
+/// A join whose answer was lost, and no session could check it.
+const LOST_JOIN_UNCHECKED: &str = "the join's answer was lost and a session to check it failed, \
+    so the key may be enrolled (`wellfed status` tells)";
 
 pub(crate) async fn clients_command(target: Target) -> Result<()> {
     let (_, _, mut connection) = connect(&target).await?;
@@ -165,4 +172,24 @@ pub(crate) async fn revoke_command(args: RevokeArgs) -> Result<()> {
     };
     let answer = connection.ask(&Op::RevokeClient { key: *key }).await?;
     print_answer(&answer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A wrapped message reads as one sentence, with no run of spaces
+    /// where its source line broke.
+    #[test]
+    fn a_lost_join_s_messages_read_as_one_sentence() {
+        assert_eq!(
+            LOST_JOIN_UNKNOWN,
+            "the join's answer was lost, and the feeder does not know this key: the invite was \
+             refused (a wrong invite secret looks the same) or the enrollment did not land; run \
+             `wellfed join` again with a new invite"
+        );
+        for message in [LOST_JOIN_UNKNOWN, LOST_JOIN_UNCHECKED] {
+            assert!(!message.contains("  "), "{message}");
+        }
+    }
 }
