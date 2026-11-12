@@ -187,13 +187,13 @@ fn open_file(path: &Path) -> std::io::Result<File> {
     OpenOptions::new().create(true).append(true).open(path)
 }
 
+/// The furthest ahead a timer may fall due or end: ten years, in seconds.
+const TIMER_HORIZON: f64 = 10.0 * 365.25 * 24.0 * 3600.0;
+
 /// What a client may note: never a server's own settlement, a timer whose
 /// window ends before it is due, an expectation that matches everything,
 /// an event kind the device API does not have, or evidence outside
 /// `private/`.
-/// The furthest ahead a timer may fall due or end: ten years, in seconds.
-const TIMER_HORIZON: f64 = 10.0 * 365.25 * 24.0 * 3600.0;
-
 fn check(body: &Body) -> Result<(), NoteError> {
     match body {
         Body::Seen { .. } => Err(NoteError::ServerOnly {

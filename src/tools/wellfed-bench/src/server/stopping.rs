@@ -161,6 +161,10 @@ impl Stopper {
                             (self.say)(CONFIRM_PROMPT.into());
                         }
                         Ask::ConfirmQuit => {
+                            // The window runs from the `q`, not from the
+                            // write it was pressed during: a `y` inside it
+                            // stops a write that started since, which still
+                            // takes that deliberate `y`.
                             let asked = console
                                 .take()
                                 .is_some_and(|at| at.elapsed() <= CONFIRM_WINDOW);

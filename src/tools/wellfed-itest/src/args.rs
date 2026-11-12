@@ -48,6 +48,10 @@ pub struct ItestArgs {
     /// motor, and run unattended, so the hopper may be empty.
     #[arg(long)]
     pub feeds: bool,
+    /// Required with --feeds: the bench server refuses unattended feeds
+    /// that do not confirm the hopper is empty.
+    #[arg(long)]
+    pub confirm_motion: bool,
     /// Run the remaining scenarios after one fails (never after the feeder goes silent).
     #[arg(long)]
     pub keep_going: bool,

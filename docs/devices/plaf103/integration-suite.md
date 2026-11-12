@@ -5,7 +5,7 @@
 The suite is the `wellfed-itest` crate, linked into the [bench server](bench-server.md), which runs it as a job in its own process: the run, its cancel and its exit status are the job's, and the client exits with that status. `--list` answers in the client, with no server.
 
 > [!WARNING]
-> `--feeds` and `sustained` ask the feeder to feed unattended. Follow the bench's [safety rules](bench.md#safety-rules): hopper empty, D cells out, at most 3 portions a feed.
+> `--feeds` and `sustained` ask the feeder to feed unattended. Follow the bench's [safety rules](bench.md#safety-rules): hopper empty, D cells out, at most 3 portions a feed. The bench server refuses `--feeds` without `--confirm-motion`, which says the hopper is empty, whichever client posts it; the MCP tools refuse `--feeds` outright.
 
 ```sh
 cargo build --release --bins --examples
@@ -14,8 +14,8 @@ target/release/wellfed-bench itest itest-YYYYMMDD-01 --build --tier smoke    # a
 target/release/wellfed-bench itest itest-YYYYMMDD-02 --build --power         # standard (default tier)
 target/release/wellfed-bench itest itest-YYYYMMDD-03 --build --power --destructive --confirm-destructive
 target/release/wellfed-bench itest itest-YYYYMMDD-04 --review private/verification/<review> --only requests,request-auth
-target/release/wellfed-bench itest itest-YYYYMMDD-05 --review private/verification/<review> --only feed-writes --feeds
-target/release/wellfed-bench itest itest-YYYYMMDD-06 --build --power --destructive --confirm-destructive --feeds --only sustained   # the 8-hour run
+target/release/wellfed-bench itest itest-YYYYMMDD-05 --review private/verification/<review> --only feed-writes --feeds --confirm-motion
+target/release/wellfed-bench itest itest-YYYYMMDD-06 --build --power --destructive --confirm-destructive --feeds --confirm-motion --only sustained   # the 8-hour run
 ```
 
 **Tiers.** `--tier smoke` runs `ota-update`, `requests` and `request-auth`, minutes once the build under test runs. `standard`, the default, runs the whole functional suite. `soak` adds `sustained`, which is meant to run alone. `--only` picks scenarios whatever their tier.
@@ -79,7 +79,7 @@ The `sustained` scenario (`src/tools/wellfed-itest/src/sustained.rs`) is the lon
 2. Run it, keeping the console:
 
    ```sh
-   target/release/wellfed-bench itest itest-YYYYMMDD-NN --build --power --destructive --confirm-destructive --feeds --only sustained \
+   target/release/wellfed-bench itest itest-YYYYMMDD-NN --build --power --destructive --confirm-destructive --feeds --confirm-motion --only sustained \
      | tee private/verification/itest-YYYYMMDD-NN-console.log
    # a shakedown of every fault once (4 h): add --sustained-cycles 8
    ```

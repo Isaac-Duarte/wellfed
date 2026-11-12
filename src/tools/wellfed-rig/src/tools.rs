@@ -44,7 +44,9 @@ pub trait Tools {
     fn observe(&mut self, port: &str, output: &Path, length: Duration)
     -> Result<Box<dyn Observer>>;
     /// Run one `wellfed-flash` command to completion, echoing and recording
-    /// its output; returns its exit status (0 complete, 1 stopped, 2 refused).
+    /// its output; returns its exit status: 0 complete, 1 stopped, 2 refused
+    /// before the session, 3 a verified bank-0 write still to be recorded,
+    /// 4 an inspection that found the bank in another state.
     fn flash(&mut self, args: &[String], status: &mut Status) -> Result<i32>;
     /// The feeder's status over the device API, as the owner key file at
     /// `keys` (root-relative); `config` is the server config whose hotspot

@@ -318,10 +318,17 @@ fn confirmed(command: &JobCommand) -> Result<(), Refusal> {
                 what: "restore-stock --virtual-panel".into(),
             });
         }
-        JobCommand::Itest(args) if args.destructive && !args.confirm_destructive => {
-            return Err(Refusal::UnconfirmedDestructive {
-                what: "itest --destructive".into(),
-            });
+        JobCommand::Itest(args) => {
+            if args.feeds && !args.confirm_motion {
+                return Err(Refusal::UnconfirmedMotion {
+                    what: "itest --feeds".into(),
+                });
+            }
+            if args.destructive && !args.confirm_destructive {
+                return Err(Refusal::UnconfirmedDestructive {
+                    what: "itest --destructive".into(),
+                });
+            }
         }
         _ => {}
     }
@@ -569,6 +576,8 @@ mod tests {
             &["press", "lock+dispense", "--hold-ms", "5200"],
             &["press", "dispense", "--confirm-destructive"],
             &["restore-stock", "--virtual-panel"],
+            &["itest", "i", "--feeds"],
+            &["itest", "i", "--feeds", "--confirm-destructive"],
         ] {
             assert!(
                 matches!(refused(line), Some(Refusal::UnconfirmedMotion { .. })),
@@ -623,6 +632,7 @@ mod tests {
                 "--destructive",
                 "--confirm-destructive",
             ],
+            &["itest", "i", "--feeds", "--confirm-motion"],
         ] {
             assert!(refused(line).is_none(), "{line:?}");
         }
