@@ -205,6 +205,14 @@ async fn restore(
             );
             Ok(Settled::Unknown)
         }
+        Ended::Another => {
+            eprintln!(
+                "The stream ended, and the feeder's latest install is another one, so this \
+                 restore's end was not read; nothing is sent again. `stock` reads where the \
+                 feeder stands."
+            );
+            Ok(Settled::Unknown)
+        }
         // As `wellfed restore-stock` words it: Reset on the replacement
         // erases the identity the backup is filed under.
         Ended::Uncertain(why) => {

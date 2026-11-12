@@ -47,7 +47,7 @@ pub(super) async fn install(client: &Client, args: InstallArgs, out: Output) -> 
         // The stream ended first: read where it stands.
         None => client.install_state(feeder).await?,
     };
-    if ended.id != started.id {
+    if ended.id != started.id || ended.state == InstallState::Running {
         out.show(&ended, text::install)?;
     }
     match settled(&started, &ended) {
@@ -57,6 +57,14 @@ pub(super) async fn install(client: &Client, args: InstallArgs, out: Output) -> 
             eprintln!(
                 "The stream ended while the install ran; nothing is sent again. `install` \
                  without a release reads where it stands."
+            );
+            Ok(Settled::Unknown)
+        }
+        Ended::Another => {
+            eprintln!(
+                "The stream ended, and the feeder's latest install is another one, so this \
+                 one's end was not read; nothing is sent again. `install` without a release \
+                 reads where the feeder stands."
             );
             Ok(Settled::Unknown)
         }
@@ -79,9 +87,10 @@ pub(super) enum Ended {
     Done,
     /// It ended before anything could take: the feeder keeps its build.
     Failed(InstallFailure),
-    /// The last word the command has says it still runs, or is another
-    /// install's.
+    /// The last word the command has says it still runs.
     Running,
+    /// The last word the command has is another install's.
+    Another,
     /// The offer may have taken, or the end is one this build cannot read.
     Uncertain(Option<InstallFailure>),
 }
@@ -92,7 +101,7 @@ pub(super) enum Ended {
 /// added are not.
 pub(super) fn settled(started: &Install, ended: &Install) -> Ended {
     if ended.id != started.id {
-        return Ended::Running;
+        return Ended::Another;
     }
     match (ended.state, ended.failure) {
         (InstallState::Activated | InstallState::AlreadyRunning, _) => Ended::Done,
@@ -112,6 +121,8 @@ fn took(failure: InstallFailure) -> bool {
         | InstallFailure::Stopped { .. }
         | InstallFailure::Lost
         | InstallFailure::Unreachable { offered: false } => false,
+        // An older server recorded an answer it could not read after the
+        // offer as `unexpected`, so one may follow an offer that took.
         InstallFailure::Unreachable { offered: true }
         | InstallFailure::Unexpected
         | InstallFailure::Server
@@ -124,7 +135,9 @@ fn took(failure: InstallFailure) -> bool {
 pub(super) fn uncertain_words(why: Option<InstallFailure>) -> String {
     match why {
         Some(InstallFailure::Unreachable { offered: true }) => {
-            "the feeder stopped answering after the offer went out".into()
+            "the feeder stopped answering, or answered in a way the server cannot read, after \
+             the offer went out"
+                .into()
         }
         Some(InstallFailure::Interrupted) => {
             "the server stopped while the install ran, perhaps after the offer went out".into()
@@ -219,7 +232,7 @@ mod tests {
         // Another install's row says nothing of this one.
         let mut other = install(InstallState::Failed, Some(InstallFailure::Lost));
         other.id = InstallId(Uuid::from_u128(2));
-        assert_eq!(settled(&started, &other), Ended::Running);
+        assert_eq!(settled(&started, &other), Ended::Another);
     }
 
     fn install(state: InstallState, failure: Option<InstallFailure>) -> Install {
