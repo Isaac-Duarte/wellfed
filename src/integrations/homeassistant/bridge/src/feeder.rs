@@ -359,6 +359,12 @@ impl Memory {
     fn fed(&mut self, feed: Feed) {
         fed(&mut self.facts, feed);
     }
+
+    /// Whether a lost feed is still unsettled, one carried from the last
+    /// run included: a new feed waits for it.
+    fn holds_feeds(&self) -> bool {
+        !self.uncertain.is_empty()
+    }
 }
 
 /// Add a feed the history gave to the day's facts.
@@ -728,7 +734,7 @@ impl<'a> Session<'a> {
     /// Whether a feed this client sent has no end yet: uncertain, or
     /// still waiting on its answer, which may yet be lost.
     fn feed_unsettled(&self) -> bool {
-        !self.memory.uncertain.is_empty()
+        self.memory.holds_feeds()
             || self.pending.values().any(|pending| {
                 matches!(
                     pending,
@@ -1103,6 +1109,25 @@ mod tests {
             .enable_all()
             .build()
             .unwrap()
+    }
+
+    /// A lost feed handed over from the last run holds a new feed as one
+    /// lost in this run does, until the session settles it.
+    #[test]
+    fn a_lost_feed_carried_from_the_last_run_holds_new_feeds() {
+        assert!(!Memory::carried(Carried::default()).holds_feeds());
+
+        let lost = Pending {
+            id: "a-lost-feed".into(),
+            portions: 1,
+            sent_ms: now_ms(),
+            after: Some(4),
+        };
+        let carried = Carried {
+            pending: vec![lost],
+            answered: Vec::new(),
+        };
+        assert!(Memory::carried(carried).holds_feeds());
     }
 
     /// A write that waited past [`FRESH`] is answered unsent; a fresh one
