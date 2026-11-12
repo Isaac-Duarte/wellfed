@@ -17,9 +17,9 @@
 //! - a crate outside `src/tools/` links no host tool's crate, so what the
 //!   app, the server and the firmware build on is a library in its own
 //!   layer, never a tool's internals;
-//! - the simulators in `src/sim/` are linked by the tools, by test kits and
-//!   by other crates' tests, never by a crate that ships, so no build an
-//!   owner runs carries a simulated feeder.
+//! - the simulators in `src/sim/` are linked by the tools, by the server's
+//!   test kit and by other crates' tests, never by a crate that ships, so no
+//!   build an owner runs carries a simulated feeder.
 //!
 //! The arrows name crates that do not exist yet, so a new crate is checked
 //! from its first manifest. Dev-dependencies are exempt from the arrows (a
@@ -159,12 +159,12 @@ const TOOLS: &str = "src/tools/";
 /// simulator.
 const SIM: &str = "src/sim/";
 
-/// A test kit is the harness other crates' tests start (the server's starts
-/// a whole server against the simulated feeder), so it may link a
-/// simulator as the tools do.
-fn is_test_kit(name: &str) -> bool {
-    name.ends_with("-testkit")
-}
+/// The only edges from outside [`TOOLS`] and [`SIM`] that link a
+/// simulator: the server's test kit is the harness the server crates' tests
+/// start, and the simulated feeder is the feeder it serves them. Named
+/// edge by edge, so a new kit a shipped crate could link (and carry the
+/// simulator into its build) is refused until it is listed here.
+const INTO_SIM: [(&str, &str); 1] = [("wellfed-server-testkit", "wellfed-feeder-sim")];
 
 /// What `wellfed-api` may depend on: serde types, schemas, ids and times,
 /// all of which build for Android. A new entry needs that check.
@@ -410,10 +410,10 @@ fn rules(graph: &Graph) -> Vec<String> {
             if !graph.tools.contains(member)
                 && !graph.sims.contains(member)
                 && graph.sims.contains(dep)
-                && !is_test_kit(from)
+                && !INTO_SIM.contains(&(from, to))
             {
                 errors.push(format!(
-                    "dependency rule: {from} → {to}: outside {TOOLS} and {SIM}, only a test kit links a simulator; others take one for their tests"
+                    "dependency rule: {from} → {to}: outside {TOOLS} and {SIM}, only the server's test kit links a simulator; others take one for their tests"
                 ));
             }
             if let Some(allowed) = arrows.get(from) {
@@ -654,10 +654,11 @@ mod tests {
     }
 
     #[test]
-    fn only_tools_test_kits_and_tests_link_a_simulator() {
+    fn only_tools_the_server_s_test_kit_and_tests_link_a_simulator() {
         use Use::{Links, TestsOnly};
         let members = [
             "wellfed",
+            "wellfed-app-testkit",
             "wellfed-core",
             "wellfed-device-sim",
             "wellfed-feeder-sim",
@@ -683,12 +684,16 @@ mod tests {
         edges.extend([
             ("wellfed-core", "wellfed-sim", Links),
             ("wellfed-fw-feeder", "wellfed-sim", Links),
+            // Another kit is no exception: a shipped crate could link it and
+            // carry the simulator into its build.
+            ("wellfed-app-testkit", "wellfed-feeder-sim", Links),
         ]);
         assert_eq!(
             rules(&graph(&members, &edges)),
             [
-                "dependency rule: wellfed-core → wellfed-sim: outside src/tools/ and src/sim/, only a test kit links a simulator; others take one for their tests",
-                "dependency rule: wellfed-fw-feeder → wellfed-sim: outside src/tools/ and src/sim/, only a test kit links a simulator; others take one for their tests",
+                "dependency rule: wellfed-app-testkit → wellfed-feeder-sim: outside src/tools/ and src/sim/, only the server's test kit links a simulator; others take one for their tests",
+                "dependency rule: wellfed-core → wellfed-sim: outside src/tools/ and src/sim/, only the server's test kit links a simulator; others take one for their tests",
+                "dependency rule: wellfed-fw-feeder → wellfed-sim: outside src/tools/ and src/sim/, only the server's test kit links a simulator; others take one for their tests",
             ]
         );
     }

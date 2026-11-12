@@ -10,7 +10,7 @@ The full rules for every Rust crate in the workspace, why each exists, and what 
 | `src/product/` | Product policy shared by the firmware and the server |
 | `src/client/` | The device API values, the sans-IO client and the tokio connector every host client shares, and the libraries host programs share: the installer, the shared file formats (`wellfed-formats`), image checks (`wellfed-image`), update signing (`wellfed-signing`) and stock's protocol (`wellfed-stock`) |
 | `src/server/` | The owner's server |
-| `src/sim/` | The simulated devices ([simulators](../../src/tools/README.md#simulators)), which only the tools, test kits and tests link |
+| `src/sim/` | The simulated devices ([simulators](../../src/tools/README.md#simulators)), which only the tools, the server's test kit and tests link |
 | `src/tools/wellfed-*`, `src/tools/xtask` | Host tools ([inventory](../../src/tools/README.md)), which no crate outside `src/tools/` links |
 | `src/firmware/wellfed/` | One `no_std` staticlib per firmware ([firmware guide](../../src/firmware/wellfed/README.md)) |
 
@@ -87,7 +87,7 @@ Some crates may not be linked at all. cargo-deny cannot ban every dependent with
 - Each server crate takes only the workspace crates its arrows name.
 - `wellfed-api` keeps to an allow-list, so it builds for Android ([server design](../server/design.md#allowed-dependencies)).
 - No crate outside `src/tools/` links a crate under it (tests may), so what the app, the server and the firmware build on is a library in its own layer.
-- Outside `src/tools/` and `src/sim/`, only a test kit (`wellfed-server-testkit`, which serves the server's tests the simulated feeder) links a simulator; other crates take one for their tests, so no crate that ships carries a simulated device.
+- Outside `src/tools/` and `src/sim/`, only `wellfed-server-testkit`, which serves the server's tests the simulated feeder, links a simulator, and only that one; other crates take one for their tests, so no crate that ships carries a simulated device.
 - The SDK's device-neutral crates link no device kind's own crate by any path.
 
 ### The fuzz crate
