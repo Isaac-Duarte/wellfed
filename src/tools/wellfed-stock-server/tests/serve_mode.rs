@@ -10,12 +10,7 @@ use wellfed_stock::{ota, storage};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn serve_refuses_trial_publication() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("server.json");
-    let mut config = common::config();
-    config.plans = None;
-    [config.mqtt_listen, config.http_listen] = common::addresses().unwrap();
-    storage::write_json(&path, &config).unwrap();
+    let (_dir, path, config) = common::configured();
 
     let service = common::start(&path);
     let http = common::http();

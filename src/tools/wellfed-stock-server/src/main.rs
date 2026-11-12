@@ -352,13 +352,27 @@ async fn api_request(
 
     let response = request.send().await?;
     let status = response.status();
-    let body: serde_json::Value = response.json().await?;
-    println!("{}", serde_json::to_string_pretty(&body)?);
-    if !status.is_success() {
-        bail!("local API returned {status}");
-    }
+    let text = response.text().await?;
+    let (shown, result) = answered(status, &text);
+    println!("{shown}");
+    result
+}
 
-    Ok(())
+/// What a command prints of the local API's answer, and whether it failed.
+/// The status is judged before the body is read as JSON, so an error body
+/// that is not JSON (a route an older server lacks, a refused extractor)
+/// still names the status, and is printed as it came.
+fn answered(status: reqwest::StatusCode, text: &str) -> (String, Result<()>) {
+    let shown = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|body| serde_json::to_string_pretty(&body).ok())
+        .unwrap_or_else(|| text.to_owned());
+    let result = if status.is_success() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("local API returned {status}"))
+    };
+    (shown, result)
 }
 
 #[cfg(test)]
@@ -368,6 +382,18 @@ mod tests {
     use clap::{CommandFactory, Parser};
 
     use super::{Action, Cli, INSTALLER_CONFIG};
+
+    /// An error answer that is not JSON still names its status.
+    #[test]
+    fn a_non_json_error_names_its_status() {
+        let (shown, result) = super::answered(reqwest::StatusCode::NOT_FOUND, "");
+        assert_eq!(shown, "");
+        assert!(result.unwrap_err().to_string().contains("404"));
+
+        let (shown, result) = super::answered(reqwest::StatusCode::OK, "{\"a\":1}");
+        assert_eq!(shown, "{\n  \"a\": 1\n}");
+        assert!(result.is_ok());
+    }
 
     #[test]
     fn the_command_line_is_well_formed() {
