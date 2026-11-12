@@ -19,6 +19,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use tokio::sync::oneshot;
 use tracing::{Instrument, info, info_span, warn};
 use wellfed_api::{
     ClientRole, Connection as Link, FeederId, FeederRefusal, Install, InstallFailure, InstallId,
@@ -28,7 +29,7 @@ use wellfed_mirror::{PushError, Pushed, Restore, Update, UpdateError};
 use wellfed_model::{Refusal, UpdateView};
 use wellfed_releases::{STOCK_VERSION, StockBackup};
 
-use crate::{Caller, CommandError, Error, Resource, Result, Service, lock};
+use crate::{Caller, CommandError, Error, InternalError, Resource, Result, Service, lock};
 
 mod error;
 
@@ -141,9 +142,49 @@ impl Service {
 
     /// Take the slot for `install` (refused while another runs), keep it,
     /// and push `offer` in the background.
+    ///
+    /// The row is kept by the install's own task, not the caller: a caller
+    /// dropped while the row is written would otherwise free the slot with
+    /// the row left `running` and nothing to end it. The caller only waits
+    /// for the row to be kept, and an install it stops waiting for runs on.
     pub(crate) async fn begin(&self, install: Install, offer: Offer) -> Result<Install> {
         let claim = Claim::take(&self.operations.installing, install)?;
-        self.shared.store.save_install(&install).await?;
+        let (kept, was_kept) = oneshot::channel::<Result<()>>();
+
+        let service = self.clone();
+        let cancel = self.cancel.child_token();
+        let span = info_span!(parent: None, "install", feeder = %install.feeder);
+        self.tasks.spawn(
+            async move {
+                if let Err(error) = service.shared.store.save_install(&install).await {
+                    drop(claim);
+                    let _unheard = kept.send(Err(error.into()));
+                    return;
+                }
+                service.started(install);
+                let _unheard = kept.send(Ok(()));
+
+                // On shutdown the push stops and the row stays `running`
+                // until the next start marks it interrupted, as after a
+                // crash. Cancellation is looked at first: shutting down also
+                // ends the mirror's session, and a push polled after that
+                // would end `unreachable` and store it, though the server
+                // stopped it.
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => {}
+                    () = service.run_install(claim, offer) => {}
+                }
+            }
+            .instrument(span),
+        );
+
+        was_kept.await.map_err(|_| InternalError::Task)??;
+        Ok(install)
+    }
+
+    /// Say that `install` started: in the log and on the stream.
+    fn started(&self, install: Install) {
         match install.target {
             InstallTarget::Release { release } => info!(
                 feeder = %install.feeder,
@@ -161,27 +202,6 @@ impl Service {
             InstallTarget::Unknown => {}
         }
         self.publish_install(install);
-
-        let service = self.clone();
-        let cancel = self.cancel.child_token();
-        let span = info_span!(parent: None, "install", feeder = %install.feeder);
-        self.tasks.spawn(
-            async move {
-                // On shutdown the push stops and the row stays `running`
-                // until the next start marks it interrupted, as after a
-                // crash. Cancellation is looked at first: shutting down also
-                // ends the mirror's session, and a push polled after that
-                // would end `unreachable` and store it, though the server
-                // stopped it.
-                tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => {}
-                    () = service.run_install(claim, offer) => {}
-                }
-            }
-            .instrument(span),
-        );
-        Ok(install)
     }
 
     /// The running install, if it is the feeder `id`'s.

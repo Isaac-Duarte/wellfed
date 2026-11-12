@@ -94,6 +94,54 @@ fn a_restart_mid_install_fails_it_frees_the_slot_and_the_next_activates() {
     });
 }
 
+/// An install whose caller is dropped while its row is kept runs on to
+/// its end: the slot is never freed with the row left `running` and nothing
+/// to end it.
+#[test]
+fn an_install_whose_caller_is_dropped_as_it_starts_still_ends() {
+    local(async {
+        let banks = Banks::new();
+        let sim = feeder::start_updatable(&banks).await;
+        let server = TestService::start_with(release::trusting(config())).await;
+        let id = server
+            .adopt_as(&sim, &sim.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let file = signed(&project(), 7, BUILD, LEN);
+        let (release, _) = server.service().upload_release(file).await.unwrap();
+        let service = server.service();
+
+        // Polled until the install holds the slot, then dropped: the row is
+        // being kept at that moment.
+        let caller = ada().into();
+        let mut installing = Box::pin(service.install(
+            &caller,
+            id,
+            InstallRequest {
+                release: release.id,
+            },
+        ));
+        loop {
+            let polled = futures_util::poll!(installing.as_mut());
+            assert!(
+                polled.is_pending(),
+                "the install started before it was seen"
+            );
+            let claimed = service.install_state(id).await;
+            if claimed.is_ok_and(|install| install.state == InstallState::Running) {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        drop(installing);
+
+        let ended = ended(service, id).await;
+        assert_eq!(ended.state, InstallState::Activated);
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
 /// A release built for another model is listed under its model and never
 /// offered to this device: the install is refused before anything is sent.
 #[test]
