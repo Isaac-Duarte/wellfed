@@ -5,6 +5,8 @@
 //! runtime, the relay and the generator are every device's
 //! (`wellfed_device_sim::harness`).
 
+pub mod newer;
+mod peer;
 pub mod pre_revision;
 
 use std::cell::RefCell;
