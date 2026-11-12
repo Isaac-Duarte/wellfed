@@ -184,8 +184,8 @@ fn cargokit_builds_with_the_pinned_toolchain() {
         .collect();
     assert_eq!(
         named,
-        [channel, channel],
-        "cargokit.yaml's debug and release toolchains"
+        [channel; 3],
+        "cargokit.yaml's debug, profile and release toolchains"
     );
     let flags: Vec<&str> = cargokit
         .lines()
@@ -193,7 +193,7 @@ fn cargokit_builds_with_the_pinned_toolchain() {
         .collect();
     assert_eq!(
         flags,
-        ["[--locked]", "[--locked]"],
+        ["[--locked]"; 3],
         "cargokit.yaml builds the bridge from the checked lockfile"
     );
 }
