@@ -28,6 +28,7 @@ use wellfed_mirror::{InviteText, Unreachable};
 pub use clients::ClientError;
 pub use commands::CommandError;
 pub use diagnostics::LogFollow;
+pub use keys::seal as seal_key;
 pub use parity::{Method, NoRoute, Parity, parity};
 
 use crate::{Service, lock};

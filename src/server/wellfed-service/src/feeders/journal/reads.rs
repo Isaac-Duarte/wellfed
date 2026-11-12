@@ -66,6 +66,12 @@ impl Service {
 }
 
 pub(crate) fn view(row: CommandRow) -> Command {
+    // An unknown entry's outcome only tells this server not to resend it
+    // (`retry.rs`): to a client, unknown is unknown, with no outcome.
+    let outcome = match row.state {
+        CommandState::Unknown => None,
+        CommandState::Sent | CommandState::Answered | CommandState::Resolved => row.outcome,
+    };
     Command {
         key: Uuid::from_bytes(row.key),
         user: row.user,
@@ -73,7 +79,7 @@ pub(crate) fn view(row: CommandRow) -> Command {
         feeder: row.feeder,
         kind: row.kind,
         state: row.state,
-        outcome: row.outcome,
+        outcome,
         feed: row.feed,
         boot_count: row.boot_count,
         sent: row.sent,

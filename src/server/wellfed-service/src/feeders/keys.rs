@@ -9,7 +9,10 @@ use wellfed_store::SealedKey;
 
 use crate::{InternalError, Result};
 
-pub(crate) fn seal(
+/// Seal the server's `secret` key for `feeder`, whose identity key is
+/// `identity`, under the config's `key`: as adoption stores it, and as a
+/// test stores a feeder the server did not adopt.
+pub fn seal(
     key: &[u8; 32],
     feeder: FeederId,
     identity: &[u8; 32],

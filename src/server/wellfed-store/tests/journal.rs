@@ -135,6 +135,45 @@ async fn an_answer_is_never_downgraded_and_only_an_unsent_entry_is_dropped() {
     assert!(!store.command_unknown(&[3; 16], at(40)).await.unwrap());
 }
 
+/// An entry the feeder answered without settling stays unknown, with an
+/// outcome that tells it from one no answer came for, and keeps it when a
+/// later attempt finds it unknown again. An answered entry is left as is.
+#[tokio::test]
+async fn an_unsettled_answer_leaves_the_entry_unknown_and_marked() {
+    let (_dir, store, feeder) = fresh().await;
+    for key in 1..=3 {
+        store.journal(&command(key, feeder)).await.unwrap();
+    }
+
+    assert!(store.command_unsettled(&[1; 16], at(20)).await.unwrap());
+    let unsettled = store.command(&[1; 16]).await.unwrap().unwrap();
+    assert_eq!(unsettled.state, CommandState::Unknown);
+    assert_eq!(unsettled.outcome, Some(CommandOutcome::Unknown));
+    assert_eq!(unsettled.updated, at(20));
+    assert!(store.command_unknown(&[1; 16], at(30)).await.unwrap());
+    let again = store.command(&[1; 16]).await.unwrap().unwrap();
+    assert_eq!(again.outcome, Some(CommandOutcome::Unknown), "kept");
+
+    // An entry a lost answer left unknown takes the mark from a resend.
+    assert!(store.command_unknown(&[2; 16], at(20)).await.unwrap());
+    assert_eq!(
+        store.command(&[2; 16]).await.unwrap().unwrap().outcome,
+        None
+    );
+    assert!(store.command_unsettled(&[2; 16], at(30)).await.unwrap());
+    let resent = store.command(&[2; 16]).await.unwrap().unwrap();
+    assert_eq!(resent.outcome, Some(CommandOutcome::Unknown));
+
+    store
+        .answer_command(&[3; 16], &CommandOutcome::Done, at(20))
+        .await
+        .unwrap();
+    assert!(!store.command_unsettled(&[3; 16], at(30)).await.unwrap());
+    let answered = store.command(&[3; 16]).await.unwrap().unwrap();
+    assert_eq!(answered.state, CommandState::Answered);
+    assert_eq!(answered.outcome, Some(CommandOutcome::Done));
+}
+
 #[tokio::test]
 async fn a_start_marks_what_was_left_sent_unknown() {
     let (_dir, store, feeder) = fresh().await;

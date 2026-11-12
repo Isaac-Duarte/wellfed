@@ -13,7 +13,9 @@ enum Resend {
     /// The feeder answers a repeated id from memory, including a write
     /// still under way, which the resend waits on. Only once the id is gone
     /// (after a feeder restart, or once newer ids pushed it out) does the
-    /// write run again, harmlessly or refused as stale.
+    /// write run again, harmlessly or refused: and since a refusal then
+    /// says nothing of the first send, which may have landed, the entry
+    /// stays unknown and is not sent a third time.
     SameId,
     /// Sent again only after reading the feeder's meal call: never over
     /// a change that came after the first send (`feeders/call.rs`).
@@ -91,6 +93,10 @@ pub(super) fn retry(row: &CommandRow) -> Retry {
         }
         // Another attempt in this server is sending it.
         CommandState::Sent => Retry::Unknown,
+        // The feeder answered, but not so as to settle it: an answer this
+        // server could not read, or a resend's refusal. A resend could only
+        // run it again, so it never goes out again, whatever its kind.
+        CommandState::Unknown if row.outcome.is_some() => Retry::Unknown,
         CommandState::Unknown => match resend(row.kind) {
             Resend::SameId | Resend::Checked => Retry::Resend(row.request_id),
             Resend::Never => Retry::Unknown,
@@ -161,6 +167,10 @@ mod tests {
                 Resend::Never => Retry::Unknown,
             };
             assert_eq!(retry(&unknown), want, "{kind:?}");
+        }
+        for kind in CommandKind::ALL {
+            let unsettled = entry(kind, CommandState::Unknown, Some(CommandOutcome::Unknown));
+            assert_eq!(retry(&unsettled), Retry::Unknown, "{kind:?}");
         }
         let resent = CommandKind::ALL.map(resend);
         assert_eq!(

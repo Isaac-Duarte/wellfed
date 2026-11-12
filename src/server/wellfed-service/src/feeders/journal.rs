@@ -14,11 +14,15 @@
 //! - An unknown write goes out again under the request id it was first sent
 //!   under, which the feeder answers from memory if it ran it, but only for
 //!   a kind whose resend rule allows it. A feed never goes out again.
-//!   A settings change resent after the feeder's ring has moved on runs
-//!   again against its base, which the first run moved past, so it comes
-//!   back as a stale refusal although the change was made. A meal call's
-//!   upload runs on the long lane instead (`feeders/call.rs`), and its
-//!   retry picks up where the feeder's upload stands.
+//!   A settings change resent after the feeder forgot its id (a restart)
+//!   runs again against its base, which the first run may have moved
+//!   past, so a resend's refusal says nothing of the first send: the entry
+//!   stays unknown. A meal call's upload runs on the long lane instead
+//!   (`feeders/call.rs`), and its retry picks up where the feeder's upload
+//!   stands.
+//! - An unknown write the feeder answered without settling it (an answer
+//!   this server could not read, or a resend's refusal) is never sent
+//!   again: a retry is answered unknown, unsent.
 //!
 //! A key that already names another request is refused and nothing is
 //! sent. The send runs in a task of its own, so the entry reaches its
@@ -33,7 +37,7 @@ use uuid::Uuid;
 use wellfed_api::{CommandKind, CommandOutcome, CommandState, FeederId, StreamEvent};
 use wellfed_formats::canonical::canonical_of;
 use wellfed_mirror::{AskError, Clip};
-use wellfed_model::{Answer, DeviceKind, Invite, Op};
+use wellfed_model::{Answer, DeviceKind, Invite, Op, Refusal};
 use wellfed_store::{Journaled, NewCommand, Synced};
 
 use self::id::write_id;
@@ -264,6 +268,9 @@ impl Service {
         op: Op,
         attempt: Attempt,
     ) -> Result<(CommandOutcome, Option<Invite>)> {
+        // A revocation resent after the first landed finds the key gone,
+        // which is what it asked: its `not_found` settles it either way.
+        let revokes = matches!(op, Op::RevokeClient { .. });
         let answer = self.mirror.ask(feeder, request, op).await;
         let store = &self.shared.store;
         let now = self.shared.clock.now();
@@ -278,16 +285,25 @@ impl Service {
                     seconds: made.seconds,
                 }
             }
+            // A resend that finds the feeder no longer remembers its id
+            // runs again, and its refusal says nothing of the first send,
+            // which may have landed: a settings change refused stale
+            // because the first moved its base, a cancel whose feed the
+            // first stopped.
+            Ok(Answer::Refused(refusal))
+                if matches!(attempt, Attempt::Retry)
+                    && !(revokes && refusal == Refusal::NotFound) =>
+            {
+                return Err(self.unsettled(&key, now).await);
+            }
             Ok(Answer::Refused(refusal)) => CommandOutcome::Refused {
                 refusal: refusal.into(),
             },
             Ok(Answer::Feeding { feed }) => CommandOutcome::Feeding { feed },
-            // An answer that fits no write: what the feeder did is not
-            // known from it.
-            Ok(_) => {
-                self.unknown(&key, now).await?;
-                return Err(InternalError::Unexpected.into());
-            }
+            // An answer this server could not read (a newer feeder's), or
+            // one that fits no write: what the feeder did is not known
+            // from it, and a resend could only run it again.
+            Ok(_) => return Err(self.unsettled(&key, now).await),
             Err(AskError::Unknown) => {
                 self.unknown(&key, now).await?;
                 return Err(CommandError::Unknown.into());
@@ -354,6 +370,24 @@ impl Service {
                 warn!(key = %Uuid::from_bytes(*key), %error, "a changed entry was not streamed");
             }
         }
+    }
+
+    /// Settle `key`'s entry as unknown with the feeder's answer in hand,
+    /// so a retry never sends it again: the error for the caller. Should
+    /// the store fail, the entry is left plainly unknown at best, which a
+    /// retry may resend under the same id, as after any lost answer.
+    async fn unsettled(&self, key: &IdempotencyKey, now: jiff::Timestamp) -> Error {
+        match self.shared.store.command_unsettled(key, now).await {
+            Ok(true) => self.published(key).await,
+            Ok(false) => {
+                warn!(key = %Uuid::from_bytes(*key), "an unsettled write's entry was not open");
+            }
+            Err(error) => {
+                self.unknown_best_effort(key).await;
+                return error.into();
+            }
+        }
+        CommandError::Unknown.into()
     }
 
     /// Mark `key`'s entry unknown. An entry another attempt answered stays

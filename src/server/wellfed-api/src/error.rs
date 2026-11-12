@@ -107,8 +107,11 @@ pub enum ErrorCode {
     /// final for its `Idempotency-Key`: the feeder replays the refusal while
     /// it remembers the id, and a later attempt needs a new key.
     FeederRefused,
-    /// No answer arrived in time. The feeder may have run the request:
-    /// retry with the same `Idempotency-Key`, which it answers once.
+    /// The feeder may have run the request, and whether it did is not
+    /// known: no answer arrived in time, the answer could not be read, or the
+    /// feeder refused a resend. Retry with the
+    /// same `Idempotency-Key`, which it answers once; a write whose answer
+    /// settled nothing stays unknown, and is never sent again.
     OutcomeUnknown,
     /// The `Idempotency-Key` already names another request (another
     /// body, feeder, kind of write or user). Nothing was sent.

@@ -84,7 +84,7 @@ pub use accounts::{AccountError, BearerToken, Caller, Permission, SessionToken, 
 pub use config::{Config, Timing};
 pub use error::{Error, InternalError, Invalid, Reply, Resource, Result};
 pub use feeders::{
-    ClientError, CommandError, FeederError, LogFollow, Method, NoRoute, Parity, parity,
+    ClientError, CommandError, FeederError, LogFollow, Method, NoRoute, Parity, parity, seal_key,
 };
 pub use hub::{Hub, Resume, Stamped, StreamId, Subscription};
 use jiff::Timestamp;

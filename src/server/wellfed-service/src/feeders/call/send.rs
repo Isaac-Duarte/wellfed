@@ -148,12 +148,9 @@ impl Service {
                 Ok(outcome)
             }
             CallError::Unsent(error) => Err(self.nothing_sent(key, attempt, error.into()).await),
-            CallError::Failed(UploadFailed::Upload(UploadError::Unexpected)) => {
-                self.unknown(key, now).await?;
-                Err(InternalError::Unexpected.into())
-            }
-            // The feeder holds what it received, or its restart forgot it:
-            // a retry under the key reads which and goes on from there.
+            // The feeder holds what it received, or its restart forgot it,
+            // or it answered so this server could not read it: a retry
+            // under the key reads which and goes on from there.
             CallError::Lost(_) | CallError::Failed(_) => {
                 self.unknown(key, now).await?;
                 Err(CommandError::Unknown.into())
