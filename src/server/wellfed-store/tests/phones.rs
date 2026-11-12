@@ -114,62 +114,66 @@ async fn the_reconcile_marks_a_key_whose_account_is_gone() {
 /// expiry.
 #[tokio::test]
 async fn the_reconcile_marks_each_change_with_its_reason() {
-    let cases: [(
-        &str,
-        Role,
-        Option<Timestamp>,
-        bool,
-        Option<Timestamp>,
-        ClientRole,
-        RevokeReason,
-    ); 5] = [
-        (
-            "token gone",
-            Role::Member,
-            None,
-            false,
-            None,
-            ClientRole::Member,
-            RevokeReason::TokenRevoked,
-        ),
-        (
-            "a viewer",
-            Role::Viewer,
-            None,
-            true,
-            None,
-            ClientRole::Member,
-            RevokeReason::Demoted,
-        ),
-        (
-            "a member's owner key",
-            Role::Member,
-            None,
-            true,
-            None,
-            ClientRole::Owner,
-            RevokeReason::Demoted,
-        ),
-        (
-            "an account expiring",
-            Role::Member,
-            Some(at(500)),
-            true,
-            None,
-            ClientRole::Member,
-            RevokeReason::Expiring,
-        ),
-        (
-            "a token expiring",
-            Role::Member,
-            None,
-            true,
-            Some(at(500)),
-            ClientRole::Member,
-            RevokeReason::Expiring,
-        ),
+    /// An account and token as a change left them, and the key it holds.
+    struct Case {
+        what: &'static str,
+        role: Role,
+        expires: Option<Timestamp>,
+        /// Whether the token is still stored.
+        stored: bool,
+        token_expires: Option<Timestamp>,
+        key_role: ClientRole,
+        reason: RevokeReason,
+    }
+    let member = Case {
+        what: "",
+        role: Role::Member,
+        expires: None,
+        stored: true,
+        token_expires: None,
+        key_role: ClientRole::Member,
+        reason: RevokeReason::Demoted,
+    };
+    let cases = [
+        Case {
+            what: "token gone",
+            stored: false,
+            reason: RevokeReason::TokenRevoked,
+            ..member
+        },
+        Case {
+            what: "a viewer",
+            role: Role::Viewer,
+            ..member
+        },
+        Case {
+            what: "a member's owner key",
+            key_role: ClientRole::Owner,
+            ..member
+        },
+        Case {
+            what: "an account expiring",
+            expires: Some(at(500)),
+            reason: RevokeReason::Expiring,
+            ..member
+        },
+        Case {
+            what: "a token expiring",
+            token_expires: Some(at(500)),
+            reason: RevokeReason::Expiring,
+            ..member
+        },
     ];
-    for (what, role, expires, stored, token_expires, key_role, reason) in cases {
+    for case in cases {
+        let Case {
+            what,
+            role,
+            expires,
+            stored,
+            token_expires,
+            key_role,
+            reason,
+        } = case;
         let (_dir, store, feeder) = fresh().await;
         let user = UserId(Uuid::from_u128(0x50));
         let token = TokenId(Uuid::from_u128(7));
