@@ -131,6 +131,12 @@ pub enum ReviewError {
     /// bench image.
     #[error("A release installs a consumer image; {} holds a bench one", folder.display())]
     InstallerBench { folder: PathBuf },
+    #[error("{} holds a review but no image.bin", folder.display())]
+    InstallerNoImage { folder: PathBuf },
+    /// The checks the app's bridge runs before it offers the image: the
+    /// image and the manifest against the review's digests.
+    #[error("The installer folder does not pass the app's own checks")]
+    InstallerServed(#[source] wellfed_install::Error),
 }
 
 /// The files `make app-installer-input` copies into the app's installer
@@ -138,10 +144,12 @@ pub enum ReviewError {
 const INSTALLER_FILES: [&str; 3] = ["build-manifest.json", "image.bin", "update.manifest"];
 
 /// Refuse an installer folder a release APK must not carry: anything but
-/// no image at all, or a consumer image whose build manifest is the one its
-/// review froze. A bench image carries the build's Wi-Fi passphrase and
-/// trusts the bench key, and the release bridge refuses to install it, so
-/// it never goes into a release APK either.
+/// no image at all, or a consumer image whose image and build manifest are
+/// the ones its review froze. A bench image carries the build's Wi-Fi
+/// passphrase and trusts the bench key, and the release bridge refuses to
+/// install it, so it never goes into a release APK either. The folder is
+/// read by the bridge's own checks, so the APK carries only what the app
+/// would accept.
 pub fn require_release_installer(folder: &Path) -> Result<()> {
     let review = folder.join("review.json");
     if !review.exists() {
@@ -156,14 +164,21 @@ pub fn require_release_installer(folder: &Path) -> Result<()> {
         return Ok(());
     }
 
+    require(folder.join("image.bin").is_file(), || {
+        ReviewError::InstallerNoImage {
+            folder: folder.to_path_buf(),
+        }
+    })?;
     let review: ImageReview = serde_json::from_slice(&fs::read(review)?)?;
     let raw = fs::read(folder.join("build-manifest.json"))?;
     require(
         review.manifest_sha256.as_deref() == Some(&sha256(&raw)),
         || ReviewError::InstallerManifest,
     )?;
-    let manifest: BuildManifest = serde_json::from_slice(&raw)?;
-    require(manifest.provisioning == Provisioning::Consumer, || {
+
+    wellfed_install::Review::check_served(folder).map_err(ReviewError::InstallerServed)?;
+    let review = wellfed_install::Review::open(folder).map_err(ReviewError::InstallerServed)?;
+    require(review.provisioning() == Provisioning::Consumer, || {
         ReviewError::InstallerBench {
             folder: folder.to_path_buf(),
         }
@@ -585,9 +600,10 @@ mod tests {
     use super::*;
     use crate::Error;
 
-    /// A release APK carries no image or a consumer one. A bench image, a
-    /// build manifest the review did not freeze, or an image's file without
-    /// its review is refused before Flutter builds anything.
+    /// A release APK carries no image or a consumer one. A bench image, an
+    /// image or build manifest the review did not freeze, a review with no
+    /// image, or an image's file without its review is refused before
+    /// Flutter builds anything.
     #[test]
     fn a_release_installer_holds_a_consumer_image_or_none() {
         let folder = tempfile::tempdir().unwrap();
@@ -602,7 +618,14 @@ mod tests {
             "an empty folder builds an APK with no image"
         );
 
-        fs::write(folder.join("image.bin"), b"image").unwrap();
+        // A container the image server takes: its header, then the marker.
+        let image = |fill: u8| {
+            let mut image = vec![0xff; 32];
+            image.extend_from_slice(b"81958711");
+            image.extend_from_slice(&[fill; 64]);
+            image
+        };
+        fs::write(folder.join("image.bin"), image(0x5a)).unwrap();
         assert!(matches!(
             refusal(folder),
             Some(ReviewError::InstallerUnreviewed {
@@ -611,18 +634,19 @@ mod tests {
             })
         ));
 
-        let freeze = |provisioning: Provisioning| {
-            let manifest = BuildManifest {
-                device: "plaf103".into(),
-                profile: "firstboot".into(),
-                provisioning,
-                ..BuildManifest::default()
-            };
-            let raw = serde_json::to_vec(&manifest).unwrap();
+        let manifest = |provisioning: Provisioning| BuildManifest {
+            device: "plaf103".into(),
+            profile: "firstboot".into(),
+            startup_identity: Some("ab".repeat(32)),
+            provisioning,
+            ..BuildManifest::default()
+        };
+        let freeze = |provisioning: Provisioning, frozen: &[u8]| {
+            let raw = serde_json::to_vec(&manifest(provisioning)).unwrap();
             fs::write(folder.join("build-manifest.json"), &raw).unwrap();
             let review = serde_json::json!({
                 "schema_version": 1, "kind": "plaf103_development_image_review",
-                "image_kind": "build", "ota_sha256": sha256(b"image"),
+                "image_kind": "build", "ota_sha256": sha256(frozen),
                 "payload_sha256": sha256(b"payload"), "payload_bytes": 7,
                 "manifest_sha256": sha256(&raw),
                 "review": {"stock_sha256": sha256(b"stock")},
@@ -630,30 +654,41 @@ mod tests {
             });
             fs::write(folder.join("review.json"), review.to_string()).unwrap();
         };
-        freeze(Provisioning::Consumer);
+        freeze(Provisioning::Consumer, &image(0x5a));
         assert!(refusal(folder).is_none());
 
-        freeze(Provisioning::Bench);
+        freeze(Provisioning::Bench, &image(0x5a));
         assert!(matches!(
             refusal(folder),
             Some(ReviewError::InstallerBench { .. })
         ));
 
+        // A consumer review beside a bench image.bin it never froze.
+        freeze(Provisioning::Consumer, &image(0x5a));
+        fs::write(folder.join("image.bin"), image(0xa5)).unwrap();
+        assert!(matches!(
+            refusal(folder),
+            Some(ReviewError::InstallerServed(_))
+        ));
+
         // A consumer manifest swapped in beside a bench review.
-        let consumer = BuildManifest {
-            device: "plaf103".into(),
-            profile: "firstboot".into(),
-            provisioning: Provisioning::Consumer,
-            ..BuildManifest::default()
-        };
+        fs::write(folder.join("image.bin"), image(0x5a)).unwrap();
+        freeze(Provisioning::Bench, &image(0x5a));
         fs::write(
             folder.join("build-manifest.json"),
-            serde_json::to_vec(&consumer).unwrap(),
+            serde_json::to_vec(&manifest(Provisioning::Consumer)).unwrap(),
         )
         .unwrap();
         assert!(matches!(
             refusal(folder),
             Some(ReviewError::InstallerManifest)
+        ));
+
+        // A review with its image gone.
+        fs::remove_file(folder.join("image.bin")).unwrap();
+        assert!(matches!(
+            refusal(folder),
+            Some(ReviewError::InstallerNoImage { .. })
         ));
     }
 

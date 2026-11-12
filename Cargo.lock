@@ -5293,6 +5293,7 @@ dependencies = [
  "wellfed-emu",
  "wellfed-formats",
  "wellfed-image",
+ "wellfed-install",
  "wellfed-proto",
  "wellfed-session",
  "wellfed-signed",
