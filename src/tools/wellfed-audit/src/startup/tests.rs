@@ -612,6 +612,106 @@ fn evidence_artifact_binding_and_window() {
     ));
 }
 
+/// A probe bound to the image but not graded is listed, so a pass says what
+/// it covered, and its terminal failure records still fail the startup.
+#[test]
+fn probes_bound_but_not_graded_are_listed_and_their_failures_fail() {
+    let mut f = Fixture::new(json!({"source": "f".repeat(64)}));
+    let id = f.identity.clone();
+    f.set("startup_led_policy", json!("bounded-probe-v1"));
+    f.image(
+        &[
+            &b"container "[..],
+            format!("PLFW1 start build={id} ").as_bytes(),
+            b"PLLED1 begin",
+        ]
+        .concat(),
+    );
+    let led = [&boot(&id)[..], &led_full(1).concat()].concat();
+
+    f.capture(&[(0.0, led.clone())], 120.0);
+    let plain = serde_json::to_value(f.verify(60.0).unwrap()).unwrap();
+    assert_eq!(plain["probes_not_classified"], json!([]));
+
+    f.set("startup_motion_policy", json!("fw16-pulse-v1"));
+    f.image(
+        &[
+            &b"container "[..],
+            format!("PLFW1 start build={id} ").as_bytes(),
+            b"PLLED1 begin PLMOT1 start created=",
+        ]
+        .concat(),
+    );
+    let motion = |records: &str| [&led[..], records.as_bytes()].concat();
+
+    f.capture(
+        &[(0.0, motion("PLMOT1 start created=1\r\nPLMOT1 done\r\n"))],
+        120.0,
+    );
+    let passed = serde_json::to_value(f.verify(60.0).unwrap()).unwrap();
+    assert_eq!(passed["outcome"], "pass");
+    assert_eq!(passed["probes_not_classified"], json!(["Motion"]));
+    assert!(passed.get("probe_failed").is_none());
+
+    for failure in [
+        "PLMOT1 start created=0\r\n",
+        "PLMOT1 start created=1\r\nPLMOT1 timeout ms=1000\r\n",
+        "PLMOT1 start created=1\r\nPLMOT1 error stage=drive fault=current stopped=1\r\n",
+    ] {
+        f.capture(&[(0.0, motion(failure))], 120.0);
+        let failed = serde_json::to_value(f.verify(60.0).unwrap()).unwrap();
+        assert_eq!(
+            (&failed["outcome"], &failed["probe_failed"]),
+            (&json!("probe_failed"), &json!("Motion")),
+            "{failure}"
+        );
+    }
+}
+
+#[test]
+fn each_graded_probe_knows_its_failure_records() {
+    for (probe, failed, fine) in [
+        (
+            Probe::Motion,
+            "PLMOT1 open board=1 ready=0 attached=0 events=0 capture=0 ms=0\r\n",
+            "PLMOT1 open board=1 ready=1 attached=1 events=1 capture=1 ms=12\r\n",
+        ),
+        (
+            Probe::Optics,
+            "PLOPT1 open board=1 ready=1 attached=1 events=1 inputs=0 ms=12\r\n",
+            "PLOPT1 open board=1 ready=1 attached=1 events=1 inputs=1 ms=12\r\n",
+        ),
+        (
+            Probe::Optics,
+            "PLOPT1 error kind=stall n=1 fault=0 stall=-\r\n",
+            "PLOPT1 done windows=4\r\n",
+        ),
+        (
+            Probe::Adc,
+            "PLADC1 error n=3 ticks=9 stopped=1\r\n",
+            "PLADC1 sample n=1 ticks=9 food=0\r\n",
+        ),
+        (
+            Probe::Adc,
+            "PLADC1 open outputs=1 efuse=0 offset=0 gain=0 default_offset=1 default_gain=1 status=fail\r\n",
+            "PLADC1 open outputs=1 efuse=0 offset=0 gain=0 default_offset=1 default_gain=1 status=pass\r\n",
+        ),
+        (
+            Probe::Adc,
+            "PLADC1 clock function_before=0 status=fail\r\n",
+            "PLADC1 clock function_before=0 status=pass\r\n",
+        ),
+    ] {
+        assert!(probe_failed(failed.as_bytes(), probe), "{failed}");
+        assert!(!probe_failed(fine.as_bytes(), probe), "{fine}");
+    }
+
+    // Nothing of these is known as a failure, so they are only listed.
+    for probe in [Probe::Wifi, Probe::Transport, Probe::Trial] {
+        assert!(!probe_failed(b"PLWIF1 error\r\n", probe));
+    }
+}
+
 /// Builds signed with the update key, and variant builds, embed an identity
 /// that binds the key and variant too.
 #[test]

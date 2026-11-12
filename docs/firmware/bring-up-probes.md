@@ -6,18 +6,20 @@ The bring-up firmwares and the [QA firmware](qa.md) still run the optics, button
 
 **An open record with `board=1 ready=0`.** The optics and pulse probes bind a flash authority through the park handshake with KM0 that arming uses, before they drive anything. Their `open` record (`PLOPT1`, `PLMOT1`) doesn't name why the bind failed, but its `ms=` separates two cases. Near 0 ms, the handshake never started: either the runtime was holding writes for a reset it had decided, or KM0 took no hello, and the record can't tell those two apart. At 10 ms or more, KM0 answered, but STOP and infrared OFF did not read back verified (or the clock failed), so the authority refused the bind and the probe attached nothing. A timeout has its own `timeout ms=` record.
 
-**How the audit binds them.** `wellfed-audit startup --device plaf103` binds each live policy both ways to a record format in the image: a manifest that declares the policy needs the marker string in the image, and an image carrying the marker needs the policy. Policies for different probes exclude each other, so an image is audited under exactly the probe it carries. The retired probes below (the supervision probe, the flash-coordination probes from the [boot handshake](#boot-handshake) to the [settings power-cut test](#settings-power-cut-test), ) are refused: no current image carries them, so a manifest naming one of their policies fails, and an image carrying the supervision probe's `PLTMR1 open board=` fails too. The health transport's policy is still accepted, bound both ways to its start record. Their sections stay as the record reference.
+**How the audit binds them.** `wellfed-audit startup --device plaf103` binds each live policy both ways to a record format in the image: a manifest that declares the policy needs the marker string in the image, and an image carrying the marker needs the policy. The motion probe excludes the optics probe, and the trial test runs alone. The audit grades the indicator probe's records in full. For the other live probes it only binds the policy: the report lists each one under `probes_not_classified`, so a pass says nothing about what they measured. A terminal failure record of one still fails the startup as `probe_failed` (naming the probe): `start created=0`, `timeout ms=`, `error`, an optics `open` with `inputs=0` or a pulse `open` with `capture=0`, and an ADC `clock` or `open` record with `status=fail`. The Wi-Fi, transport and trial sources are gone, so none of their records is known as a failure, and they are only listed. The retired probes below (the supervision probe, the flash-coordination probes from the [boot handshake](#boot-handshake) to the [settings power-cut test](#settings-power-cut-test), ) are refused: no current image carries them, so a manifest naming one of their policies fails, and an image carrying the supervision probe's `PLTMR1 open board=` fails too. The health transport's policy is still accepted, bound both ways to its start record. Their sections stay as the record reference.
 
 | Probe | Policy | Records | In the audit |
 | --- | --- | --- | --- |
 | [Indicator](#indicator-probe) | `bounded-probe-v3` | `PLLED1`, `PLDBG1` | Yes, for older captures |
 | [Supervision](#supervision-probe) | `fw05-probe-v1` | `PLTMR1`, `PLWDG1` | Retired |
 | [Boot handshake](#boot-handshake) to [settings power-cut test](#settings-power-cut-test) | `fw06-*`, `fw15-*` | `PLFLS1`, `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLJNL1`, `PLSET1` | Retired |
-| [Power input](#power-input-probe) | `fw14-adc-v1`, `-v2` | `PLADC1` | Yes |
-| [Wi-Fi scan](#wi-fi-scan), [join](#wi-fi-join) | `fw07-scan-v1`, `fw07-join-v1` | `PLWIF1`, `PLWIF2` | Yes |
-| [Wi-Fi DNS check](#wi-fi-dns-check-retired) | `fw07-dns-v1` | `PLWIF3` | Yes, until no frozen review declares it |
-| [Health transport](#health-transport-deleted) | `fw08-transport-v1` | `PLMQT1` | Yes, bound to `PLMQT1 start created=` and the `Keep` Wi-Fi policy |
-| [Optics](#optics-probe) | `fw13-optics-v1`, `-v2` | `PLOPT1` | Yes |
+| [Power input](#power-input-probe) | `fw14-adc-v1`, `-v2` | `PLADC1` | Bound; failure records fail |
+| [Wi-Fi scan](#wi-fi-scan), [join](#wi-fi-join) | `fw07-scan-v1`, `fw07-join-v1` | `PLWIF1`, `PLWIF2` | Bound and listed |
+| [Wi-Fi DNS check](#wi-fi-dns-check-retired) | `fw07-dns-v1` | `PLWIF3` | Bound and listed, until no frozen review declares it |
+| [Health transport](#health-transport-deleted) | `fw08-transport-v1` | `PLMQT1` | Bound to `PLMQT1 start created=` and the `Keep` Wi-Fi policy, and listed |
+| [Optics](#optics-probe) | `fw13-optics-v1`, `-v2` | `PLOPT1` | Bound; failure records fail |
+| [Motor pulse](motor-pulse.md) | `fw16-pulse-v1` | `PLMOT1` | Bound; failure records fail |
+| Trial reset | `fw11-reset-v1` | `PLTRL1` | Bound and listed |
 
 ## Indicator probe
 
@@ -136,7 +138,7 @@ After startup KM4 opens the board's outputs (motor STOP, emitters OFF, no flash 
 - Once a second, `PLADC1 sample n=<n> ticks=<n> food=<0|1> outlet=<0|1> dc=<0|1> stopped=<0|1> current=<min,max,mean,scaled> battery=<min,max,mean,scaled>`, with ` supply=<min,max,mean,scaled>` under v2. `ticks` times the capture (32 conversions, 48 under v2) on the SYSTIMER.
 - `PLADC1 error n=<n> ticks=<n> stopped=<0|1>` on a capture timeout or failed stopped readback, which ends the probe with the board tripped.
 
-The audit checks only that the policy and markers agree, not the samples. What the channels mean is in [power](power.md#inputs).
+The audit checks that the policy and markers agree and fails a startup on a `status=fail` or `error` record, but it doesn't grade the samples. What the channels mean is in [power](power.md#inputs).
 
 ## Wi-Fi scan
 

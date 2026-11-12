@@ -34,10 +34,10 @@ workspace = true
 
 # What wellfed-build reads. The normal image adds nothing; each variant
 # brings up one area. Variants apply to first-boot builds only, which always
-# record their policies in the manifest: the startup audit checks the optics
-# and ADC policies against the image's markers, `wellfed-audit adc` reads the
-# ADC one to parse the samples, and the bench's attended-motion gate sees the
-# pulse's motion policy on every image that can drive the motor.
+# record their policies in the manifest: the startup audit checks the optics,
+# ADC and motion policies against the image's markers and fails a startup on
+# their failure records, and the bench's attended-motion gate sees the pulse's
+# motion policy on every image that can drive the motor.
 [package.metadata.wellfed]
 devices = ["plaf103"]
 

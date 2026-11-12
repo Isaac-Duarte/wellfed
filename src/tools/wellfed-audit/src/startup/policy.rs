@@ -81,12 +81,15 @@ crate::outcomes! {
 }
 
 crate::outcomes! {
-    /// A probe that runs after the LED probe.
+    /// A probe this audit binds to the image without grading its records;
+    /// a startup's report lists it as not classified.
     pub enum Probe {
         Wifi => "Wi-Fi",
         Optics => "Optics",
         Motion => "Motion",
         Adc => "ADC",
+        Transport => "Transport",
+        Trial => "Trial",
     }
 }
 
@@ -98,6 +101,9 @@ pub(super) struct Policies {
     pub(super) led: Option<u8>,
     pub(super) routing: Option<u8>,
     pub(super) power: Option<u8>,
+    /// Declared probes whose records are not graded, in declaration order.
+    /// Only their terminal failure records are read (`probe_failure`).
+    pub(super) unclassified: Vec<Probe>,
 }
 
 /// A declared policy's version: absent (None) or one of `known`.
@@ -145,7 +151,7 @@ impl Policies {
         let led = bind_led(manifest, &has)?;
         let routing = bind_routing(manifest, &has)?;
         let power = bind_power(manifest, &has)?;
-        bind_unclassified(manifest, &has, led.is_some())?;
+        let unclassified = bind_unclassified(manifest, &has, led.is_some())?;
         refuse_retired_flash(manifest, &has)?;
 
         Ok(Self {
@@ -154,6 +160,7 @@ impl Policies {
             led,
             routing,
             power,
+            unclassified,
         })
     }
 }
@@ -264,13 +271,14 @@ fn bind_power(manifest: &BuildManifest, has: &dyn Fn(&[u8]) -> bool) -> Result<O
     Ok(power)
 }
 
-/// The probes this audit only binds to the image, without classifying
-/// their records. Each needs the LED probe, which they follow.
+/// The probes this audit only binds to the image, without grading their
+/// records, returned in a fixed order. Wi-Fi, optics, motion and ADC follow
+/// the LED probe and need it.
 fn bind_unclassified(
     manifest: &BuildManifest,
     has: &dyn Fn(&[u8]) -> bool,
     led: bool,
-) -> Result<()> {
+) -> Result<Vec<Probe>> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Wifi {
         Scan,
@@ -361,7 +369,19 @@ fn bind_unclassified(
         (adc == Some(2)) == has(ADC_SUPPLY_MARK),
         Declaration::AdcSupply,
     )?;
-    after_led(adc.is_some(), led, Probe::Adc)
+    after_led(adc.is_some(), led, Probe::Adc)?;
+
+    Ok([
+        (wifi.is_some(), Probe::Wifi),
+        (transport, Probe::Transport),
+        (optics.is_some(), Probe::Optics),
+        (motion, Probe::Motion),
+        (trial, Probe::Trial),
+        (adc.is_some(), Probe::Adc),
+    ]
+    .into_iter()
+    .filter_map(|(declared, probe)| declared.then_some(probe))
+    .collect())
 }
 
 /// The flash-coordination probes are retired and no version of them is known:
