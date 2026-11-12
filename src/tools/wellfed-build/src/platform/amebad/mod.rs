@@ -26,7 +26,7 @@ use self::sdk::{Overrides, Staged, check_sdk_worktree, checked_worktree, prepare
 use self::toolchain::{toolchain_lock, verify_toolchain};
 use super::{Built, Job};
 use crate::device::StockPaths;
-use crate::environment::{BOARD_VARIABLE, Environment};
+use crate::environment::{BOARD_VARIABLE, BUILD_WIFI_VARIABLE, Environment, OTA_KEY_VARIABLE};
 use crate::{Error, Firmware, Profile, Provisioning, Repo, Result, Stage, digest, relative, text};
 use wellfed_formats::require;
 use wellfed_proto::device::Model;
@@ -58,6 +58,10 @@ pub enum AmebadError {
     Banner,
     #[error("Linked image is missing the source-bound startup identity")]
     NoIdentity,
+    /// The image does not carry the update key its manifest will name, so
+    /// something other than the build chose the key it compiled in.
+    #[error("Linked image does not carry the update key {key} the build set")]
+    OtaKey { key: String },
     #[error("Linked image is missing required application/core symbols")]
     ImageSymbols,
     #[error("Rust archive is missing expected symbols: {}", missing.join(", "))]
@@ -78,11 +82,6 @@ pub(crate) const TOOL_LOCK: &str = "src/firmware/vendor/probe/toolchain.lock.jso
 /// The application entry's generated-header input: read from an ignored
 /// private file; only its hash reaches the manifest.
 const WIFI_CREDENTIALS: &str = "private/hotspot.json";
-/// Set, with no meaningful value, exactly when the image has build Wi-Fi;
-/// the feeder runtime reads its presence (`network::BUILD_WIFI`). The
-/// header's presence macro has the same name.
-const BUILD_WIFI_VARIABLE: &str = credentials::PRESENCE;
-
 /// The generated credentials header for `provisioning`, and the private
 /// file it was generated from, if any.
 pub(crate) fn credentials_header(
@@ -253,9 +252,9 @@ fn cargo_environment(
             .display()
             .to_string(),
     );
-    environment.remove("WELLFED_OTA_PUBLIC_KEY");
+    environment.remove(OTA_KEY_VARIABLE);
     if let Some(key) = ota_key {
-        environment.insert("WELLFED_OTA_PUBLIC_KEY".into(), key.into());
+        environment.insert(OTA_KEY_VARIABLE.into(), key.into());
     }
     environment.remove(BUILD_WIFI_VARIABLE);
     if wifi_credentials(provisioning).is_some() {
@@ -608,6 +607,7 @@ impl Build<'_> {
                 ),
             || AmebadError::NoIdentity,
         )?;
+        carries_key(&combined, self.job.ota_key)?;
         Ok((ota, banner))
     }
 
@@ -828,9 +828,38 @@ impl Amebad {
     }
 }
 
+/// Refuse an image that lacks the update key the build set. `wellfed-hal`
+/// keeps the key as the 64 hex characters it was given, so the packaged code
+/// holds them; anything that compiled in another key (a cargo `[env]` entry
+/// the environment check missed) leaves them out.
+fn carries_key(combined: &[u8], key: Option<&str>) -> Result<()> {
+    let Some(key) = key else {
+        return Ok(());
+    };
+    require(contains(combined, key.as_bytes()), || AmebadError::OtaKey {
+        key: key.to_string(),
+    })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_image_without_the_key_the_build_set_is_refused() {
+        let key = "ab".repeat(32);
+        let image = format!("code{key}data").into_bytes();
+        carries_key(&image, Some(&key)).unwrap();
+        carries_key(&image, None).unwrap();
+
+        let other = "cd".repeat(32);
+        let error = carries_key(&image, Some(&other)).unwrap_err();
+        assert!(
+            matches!(&error, Error::Amebad(AmebadError::OtaKey { key }) if key == &other),
+            "{error:?}"
+        );
+    }
 
     /// The archive build's lints are the root Makefile's production lints,
     /// with warnings denied: one rule set for host and target code.
