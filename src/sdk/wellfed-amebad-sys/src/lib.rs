@@ -28,11 +28,17 @@ pub const ADC_SUPPLY_CHANNEL: u32 = 10;
 /// `REG_SWD_PMUX_EN` bit 0 (reset 1): the SWD function holds PA27 and PB3
 /// (SWD_CLK). While set, GPIO writes to PB3 do not reach the pad.
 pub const SWD_PMUX_BIT: u32 = 1;
+/// A pad's control word (`pad_control`), by the pinned `rtl8721d_pinmux.h`
+/// and checked against it in target builds: the function field (GPIO is 0),
+/// the pull-up and pull-down enables and the shutdown bit.
+pub const PAD_FUNCTION_MASK: u32 = 0x1f;
+pub const PAD_PULL_UP: u32 = 1 << 8;
+pub const PAD_PULL_DOWN: u32 = 1 << 9;
+pub const PAD_SHUTDOWN: u32 = 1 << 15;
 /// The pad-control bits the ROM's `Pinmux_Config` rewrites to select GPIO:
-/// the pad shutdown bit (15) and the function field (bits 0–4, GPIO is 0).
-/// Checked against SDK constants in target builds. Only KM4 drives pads.
+/// the shutdown bit and the function field. Only KM4 drives pads.
 #[cfg(any(not(target_os = "none"), feature = "km4"))]
-pub(crate) const PAD_GPIO_CLEAR: u32 = 1 << 15 | 0x1f;
+pub(crate) const PAD_GPIO_CLEAR: u32 = PAD_SHUTDOWN | PAD_FUNCTION_MASK;
 
 /// One read of the log UART's receive side.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

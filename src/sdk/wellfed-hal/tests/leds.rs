@@ -341,3 +341,12 @@ fn blocked_low_write_cannot_hide_behind_a_low_input() {
     });
     assert!(!leds::all_low());
 }
+
+/// The names and masks come from the board's pins: the PLAF103's
+/// indicators print as their pads and fill exactly these bits.
+#[test]
+fn names_and_masks_follow_the_board() {
+    let names = Led::ALL.map(|led| led.name().to_string());
+    assert_eq!(names, ["PA0", "PA2", "PA4", "PB22"]);
+    assert_eq!((leds::PA_MASK, leds::PB_MASK), (0b1_0101, 1 << 22));
+}

@@ -3,8 +3,27 @@
 use crate::sdk::{self, IrqGuard};
 use crate::stopped;
 
-pub const PA_MASK: u32 = (1 << 0) | (1 << 2) | (1 << 4);
-pub const PB_MASK: u32 = 1 << 22;
+/// Each port's indicator bits, from the board's pins.
+pub const PA_MASK: u32 = port_mask(0);
+pub const PB_MASK: u32 = port_mask(1);
+
+const fn port_mask(port: u32) -> u32 {
+    let mut mask = 0;
+    let mut index = 0;
+    while index < Led::ALL.len() {
+        let pin = Led::ALL[index].pin();
+        if pin >> 5 == port {
+            mask |= 1 << (pin & 31);
+        }
+        index += 1;
+    }
+    mask
+}
+
+/// What an indicator's pad must not show while it drives the light: a
+/// function other than GPIO, a pull, or the pad shut down.
+const PAD_NOT_INDICATOR: u32 =
+    sdk::PAD_FUNCTION_MASK | sdk::PAD_PULL_UP | sdk::PAD_PULL_DOWN | sdk::PAD_SHUTDOWN;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Led {
@@ -26,19 +45,26 @@ impl Led {
         }
     }
 
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Connection => "PA0",
-            Self::Food => "PA2",
-            Self::Lock => "PA4",
-            Self::Fault => "PB22",
-        }
+    /// Its pin's name, as the logs and prompts print it (`PA0`, `PB22`).
+    pub const fn name(self) -> PinName {
+        PinName(self.pin())
     }
 
     /// PA0-PA7 read LOW at KM0 startup before any supply step and while lit, so
     /// these indicators are output-only on the tested unit. Only PB22 has input readback.
     pub const fn input_readable(self) -> bool {
         matches!(self, Self::Fault)
+    }
+}
+
+/// A pin's name: its port's letter and its bit (`PA0`, `PB22`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PinName(u32);
+
+impl core::fmt::Display for PinName {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let port = if self.0 >> 5 == 0 { 'A' } else { 'B' };
+        write!(f, "P{port}{}", self.0 & 31)
     }
 }
 
@@ -151,7 +177,7 @@ impl Readback {
         if self.latch_high != high
             || !self.directions_ok
             || !self.stopped_ok
-            || self.pad & (0x1f | (1 << 15) | (3 << 8)) != 0
+            || self.pad & PAD_NOT_INDICATOR != 0
         {
             return Decision::Abort;
         }

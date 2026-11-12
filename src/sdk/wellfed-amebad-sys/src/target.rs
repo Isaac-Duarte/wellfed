@@ -103,7 +103,10 @@ const _: () = assert!(
 const _: () = assert!(k::WELLFED_BIT_SWD_PMUX == super::SWD_PMUX_BIT);
 
 const _: () = assert!(
-    k::WELLFED_PAD_SHUTDOWN | k::WELLFED_PAD_FUNCTION_MASK == super::PAD_GPIO_CLEAR
+    k::WELLFED_PAD_SHUTDOWN == super::PAD_SHUTDOWN
+        && k::WELLFED_PAD_FUNCTION_MASK == super::PAD_FUNCTION_MASK
+        && k::WELLFED_PAD_PULL_UP == super::PAD_PULL_UP
+        && k::WELLFED_PAD_PULL_DOWN == super::PAD_PULL_DOWN
         && k::WELLFED_PINMUX_GPIO == 0
 );
 
