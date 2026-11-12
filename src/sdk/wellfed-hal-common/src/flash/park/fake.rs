@@ -11,13 +11,14 @@ use std::cell::RefCell;
 
 use super::{KM0_IPC, KM4_IPC, Mmio};
 
-/// The USR words each core's model keeps.
-const WORDS: usize = 12;
+/// The USR words each core's model keeps: the one count the register
+/// offsets and the array length both come from.
+const USR_WORDS: u32 = 12;
+const WORDS: usize = USR_WORDS as usize;
 /// Where USR word 0 sits in a core's IPC block, and where the modelled
 /// words end.
 const USR: u32 = 0x20;
-const USR_END: u32 = USR + 4 * 12;
-const _: () = assert!(WORDS == 12);
+const USR_END: u32 = USR + 4 * USR_WORDS;
 
 thread_local! {
     /// USR words 0..11 per core: index 0 KM0, 1 KM4.
