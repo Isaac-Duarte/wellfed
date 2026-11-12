@@ -303,3 +303,100 @@ fn unknown_code(what: &str, row: &mut Row) -> bool {
     *column = "nonsense".into();
     true
 }
+
+/// The tables an archive leaves out, and why.
+const NOT_EXPORTED: &[(&str, &str)] = &[
+    ("sessions", "a credential's hash"),
+    ("tokens", "a credential's hash"),
+    ("job_runs", "this server's schedule"),
+    (
+        "feeder_alerts",
+        "a copy of the feeder's RAM, read again from it",
+    ),
+    ("_sqlx_migrations", "the schema's own history"),
+    (
+        "sqlite_sequence",
+        "SQLite's, which the imported ids move on",
+    ),
+];
+
+/// The columns of exported tables an archive leaves out, and why.
+const COLUMNS_NOT_EXPORTED: &[(&str, &str, &str)] = &[
+    ("users", "password_hash", "a credential's hash"),
+    (
+        "feeders",
+        "key_nonce",
+        "the server's sealed key: adopted again",
+    ),
+    (
+        "feeders",
+        "key_sealed",
+        "the server's sealed key: adopted again",
+    ),
+    ("feeders", "kind", "the model's, which the row names"),
+    (
+        "feeders",
+        "archived_ms",
+        "every imported feeder is archived",
+    ),
+    ("homes", "single", "the one home's fixed key"),
+    ("projection_version", "id", "the one row's fixed key"),
+    ("sample_marks", "id", "the one row's fixed key"),
+    (
+        "commands",
+        "call_before",
+        "a meal-call write's retry after a move finds none and settles superseded",
+    ),
+    (
+        "commands",
+        "call_started",
+        "a meal-call write's retry after a move finds none and settles superseded",
+    ),
+];
+
+/// Every table and column of the database is exported, or listed above
+/// with its reason: a migration that adds one fails here until it is
+/// either in the archive or said to be left out.
+#[tokio::test]
+async fn every_column_is_exported_or_left_out_on_purpose() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_store, pool) = open(&dir, "schema.db").await;
+    let tables: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+    let mut missing = Vec::new();
+    for name in &tables {
+        let Some(&table) = Table::ALL.iter().find(|table| table.name() == name) else {
+            if !NOT_EXPORTED.iter().any(|(left, _)| left == name) {
+                missing.push(name.clone());
+            }
+            continue;
+        };
+        let columns: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info(?) ORDER BY cid")
+                .bind(name)
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        for column in columns {
+            let exported = table.columns().contains(&column.as_str());
+            let left_out = COLUMNS_NOT_EXPORTED
+                .iter()
+                .any(|(left, col, _)| left == name && *col == column);
+            if !exported && !left_out {
+                missing.push(format!("{name}.{column}"));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "neither exported nor left out: {missing:?}"
+    );
+
+    for (name, _) in NOT_EXPORTED {
+        assert!(tables.contains(&(*name).to_owned()), "{name} is a table");
+    }
+}
