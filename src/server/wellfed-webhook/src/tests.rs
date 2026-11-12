@@ -59,3 +59,24 @@ fn every_try_of_a_change_has_one_id_and_each_change_its_own() {
 }
 
 mod delivery;
+
+/// A failed send names its cause, never the URL: a refused connection
+/// reads as one, not only as reqwest's "error sending request".
+#[test]
+fn a_failed_send_names_its_cause_without_the_url() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    runtime.block_on(async {
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = closed.local_addr().unwrap();
+        drop(closed);
+
+        let url = format!("http://{address}/api/webhook/secret");
+        let error = reqwest::Client::new().post(url).send().await.unwrap_err();
+        let words = without_url(error);
+        assert!(words.to_lowercase().contains("refused"), "{words}");
+        assert!(!words.contains("secret"), "{words}");
+    });
+}
