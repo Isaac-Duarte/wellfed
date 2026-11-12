@@ -473,6 +473,9 @@ pub struct Install {
     pub finished_ms: Option<i64>,
     /// What it writes: `release`, or `stock` from the kept backup.
     pub target: String,
+    /// Whether the feeder took its offer, so a stop before its end leaves
+    /// it uncertain.
+    pub offered: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

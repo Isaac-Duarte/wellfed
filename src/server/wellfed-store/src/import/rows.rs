@@ -286,8 +286,8 @@ pub(super) async fn audit(tx: &mut SqliteConnection, entry: &AuditEntry) -> Resu
 pub(super) async fn install(tx: &mut SqliteConnection, install: &Install) -> Result<()> {
     sqlx::query!(
         "INSERT INTO installs (id, feeder_id, release_id, version, user_id, started_ms, state,
-                               written, image_len, failure, finished_ms, target)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                               written, image_len, failure, finished_ms, target, offered)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         install.id,
         install.feeder_id,
         install.release_id,
@@ -300,6 +300,7 @@ pub(super) async fn install(tx: &mut SqliteConnection, install: &Install) -> Res
         install.failure,
         install.finished_ms,
         install.target,
+        install.offered,
     )
     .execute(tx)
     .await?;

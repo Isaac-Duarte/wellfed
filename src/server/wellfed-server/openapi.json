@@ -12490,7 +12490,7 @@
           },
           {
             "type": "object",
-            "description": "The feeder stopped answering. With `offered`, the offer went out,\nso bank 1 may be partly written, or activated with its answer lost:\nthe feeder's status tells.",
+            "description": "The feeder stopped answering, or the server stopped once the feeder\ntook the offer. With `offered`, the offer went out, so bank 1 may be\npartly written, or activated with its answer lost: the feeder's\nstatus tells.",
             "required": [
               "offered",
               "reason"
@@ -12524,7 +12524,7 @@
           },
           {
             "type": "object",
-            "description": "The server stopped while it ran. The feeder stops a transfer that\ngets no chunk for a minute, and another install resumes one still\nreceiving this release.",
+            "description": "The server stopped while it ran, before the feeder took the offer,\nso the feeder keeps running the build it had. (One stopped after is\n`unreachable` with `offered`.)",
             "required": [
               "reason"
             ],

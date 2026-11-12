@@ -6,25 +6,27 @@
 //! service's one slot: a second request while it runs is
 //! [`InstallError::Running`]. The slot also holds the running install's
 //! progress, which `GET` reads and the stream carries; the store keeps each
-//! install when it starts and when it ends, so a restart finds the one that
-//! was running and marks it failed (`interrupted`), and the claim, being in
-//! memory, is free again. An end the store would not take, even a second
-//! time, is kept in memory for `GET` until the server restarts and marks
-//! its row interrupted.
+//! install when it starts, when the feeder takes its offer, and when it
+//! ends, so a restart finds the one that was running and marks it failed,
+//! and the claim, being in memory, is free again. That end is `interrupted`
+//! when the offer never took, and otherwise uncertain (`unreachable`,
+//! `offered`): bank 1 may be partly written, or activated with its answer
+//! lost. An end the store would not take, even a second time, is kept in
+//! memory for `GET` until the server restarts and marks its row so.
 //!
 //! Nothing is offered again on the owner's behalf. The driver resumes a
 //! transfer across a dropped session (chunks are idempotent by offset), but
 //! an offer the feeder refuses, an install it stops, or a feeder that never
 //! comes back ends the install; another is another request.
 
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tracing::{Instrument, info, info_span, warn};
 use wellfed_api::{
     ClientRole, Connection as Link, FeederId, FeederRefusal, Install, InstallFailure, InstallId,
     InstallRequest, InstallState, InstallTarget, StreamEvent,
 };
 use wellfed_mirror::{PushError, Pushed, Restore, Update, UpdateError};
-use wellfed_model::{Refusal, UpdateView};
+use wellfed_model::{Refusal, UpdatePhase, UpdateView};
 use wellfed_releases::{STOCK_VERSION, StockBackup};
 
 use crate::{Caller, CommandError, Error, InternalError, Resource, Result, Service, lock};
@@ -154,8 +156,7 @@ impl Service {
                 let _unheard = kept.send(Ok(()));
 
                 // On shutdown the push stops and the row stays `running`
-                // until the next start marks it interrupted, as after a
-                // crash. Cancellation is looked at first: shutting down also
+                // until the next start marks it failed, as after a crash. Cancellation is looked at first: shutting down also
                 // ends the mirror's session, and a push polled after that
                 // would end `unreachable` and store it, though the server
                 // stopped it.
@@ -220,12 +221,13 @@ impl Service {
         Ok(self.unsaved(last))
     }
 
-    /// Mark the install a stopped server left running failed.
+    /// Mark the install a stopped server left running failed:
+    /// `interrupted`, or uncertain once its offer took.
     pub(crate) async fn interrupt_installs(&self) -> Result<()> {
         let now = self.shared.clock.now();
         let interrupted = self.shared.store.interrupt_installs(now).await?;
         if interrupted > 0 {
-            warn!("an install was running when the server stopped: marked interrupted");
+            warn!("an install was running when the server stopped: marked failed");
         }
         Ok(())
     }
@@ -305,8 +307,17 @@ impl Service {
             return Ok(Pushed::Gone { offered: false });
         };
 
+        // Once the feeder took the offer, the row says so, so a restart
+        // before the end reads the install as uncertain, not as one that
+        // changed nothing. The note is kept beside the push, which a store
+        // write must not hold up; the push's end is kept only after it.
+        let install = claim.install.id;
+        let (took, mut taken) = watch::channel(false);
         let mut published = 0;
-        let progress = |view: &UpdateView| {
+        let progress = move |view: &UpdateView| {
+            if view.phase != UpdatePhase::Idle && !*took.borrow() {
+                took.send_replace(true);
+            }
             let install = claim.update(|install| install.written = view.written);
             let step = |written: u32| written / PROGRESS_STEP;
             let done = view.written == install.image_len;
@@ -315,28 +326,41 @@ impl Service {
                 self.publish_install(install);
             }
         };
-        match offer {
-            Offer::Release { file, build } => {
-                let update = Update {
-                    file,
-                    build: *build,
-                };
-                operation.install(update, progress).await
-            }
-            Offer::Stock {
-                manifest,
-                downgrade,
-                backup,
-            } => {
-                let restore = Restore {
+        let pushing = async {
+            match offer {
+                Offer::Release { file, build } => {
+                    let update = Update {
+                        file,
+                        build: *build,
+                    };
+                    operation.install(update, progress).await
+                }
+                Offer::Stock {
                     manifest,
                     downgrade,
-                    payload: backup.payload(),
-                    build: backup.payload_sha256(),
-                };
-                Ok(operation.restore(restore, progress).await?)
+                    backup,
+                } => {
+                    let restore = Restore {
+                        manifest,
+                        downgrade,
+                        payload: backup.payload(),
+                        build: backup.payload_sha256(),
+                    };
+                    Ok(operation.restore(restore, progress).await?)
+                }
             }
-        }
+        };
+        // The sender goes with the push, so the note ends with it at the
+        // latest.
+        let note = async {
+            if taken.wait_for(|took| *took).await.is_ok()
+                && let Err(error) = self.shared.store.install_offered(install).await
+            {
+                warn!("that the feeder took the offer was not stored: {error}");
+            }
+        };
+        let (pushed, ()) = tokio::join!(pushing, note);
+        pushed
     }
 
     fn publish_install(&self, install: Install) {

@@ -1,7 +1,8 @@
 //! An install across a server restart: the one running when the server
-//! stopped is failed (`interrupted`) and readable after it starts again,
-//! the slot is free, and the next install takes up the transfer the feeder
-//! kept receiving.
+//! stopped is failed and readable after it starts again, `interrupted` if
+//! the feeder never took its offer and uncertain once it did; the slot is
+//! free, and the next install takes up the transfer the feeder kept
+//! receiving.
 
 use std::time::Duration;
 
@@ -31,7 +32,7 @@ async fn ended(service: &Service, id: wellfed_api::FeederId) -> wellfed_api::Ins
 }
 
 #[test]
-fn a_restart_mid_install_fails_it_frees_the_slot_and_the_next_activates() {
+fn a_restart_mid_transfer_ends_it_uncertain_and_the_next_activates() {
     local(async {
         let banks = Banks::new();
         let sim = feeder::start_updatable(&banks).await;
@@ -64,10 +65,13 @@ fn a_restart_mid_install_fails_it_frees_the_slot_and_the_next_activates() {
         relay.resume();
 
         let server = TestService::open(store, release::trusting(config())).await;
+        // Half of bank 1 is written over: the feeder no longer has the
+        // build it had to keep running, so the end is not `interrupted`.
         let interrupted = server.service().install_state(id).await.unwrap();
         assert_eq!(interrupted.id, first.id);
         assert_eq!(interrupted.state, InstallState::Failed);
-        assert_eq!(interrupted.failure, Some(InstallFailure::Interrupted));
+        let uncertain = InstallFailure::Unreachable { offered: true };
+        assert_eq!(interrupted.failure, Some(uncertain));
         assert!(interrupted.finished.is_some());
 
         // The feeder keeps a quiet transfer for a minute: offered again, the
@@ -88,6 +92,58 @@ fn a_restart_mid_install_fails_it_frees_the_slot_and_the_next_activates() {
             banks.borrow().bank1_build == BUILD
         })
         .await;
+
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A server stopped before its offer reached the feeder changed nothing
+/// there: that install is `interrupted`, and the feeder keeps its build.
+#[test]
+fn a_restart_before_the_offer_took_is_interrupted() {
+    local(async {
+        let banks = Banks::new();
+        let sim = feeder::start_updatable(&banks).await;
+        let server = TestService::start_with(release::trusting(config())).await;
+        let relay = Relay::start(sim.address).await;
+        let address = relay.address.to_string();
+        let id = server.adopt_as(&sim, &address, ClientRole::Owner).await;
+        server.link(id, Link::Online).await;
+        let had = banks.borrow().bank1_build;
+        let file = signed(&project(), 7, BUILD, LEN);
+        let (release, _) = server.service().upload_release(file).await.unwrap();
+        let request = InstallRequest {
+            release: release.id,
+        };
+
+        // The install reads the feeder's update state before it starts,
+        // and the push reads it again before any offer. One read's size
+        // lets the first through whole and holds the second's answer, so
+        // the push stands before its offer however fast the host is.
+        let before = relay.passed();
+        server.service().stock(&ada().into(), id).await.unwrap();
+        let read = relay.passed() - before;
+        relay.hold_answers_after(read + 1);
+        let first = server
+            .service()
+            .install(&ada().into(), id, request)
+            .await
+            .unwrap();
+        until("the push's first read is held", || async {
+            relay.holding_answers()
+        })
+        .await;
+        let store = server.stop().await;
+        relay.cut();
+        relay.resume();
+
+        let server = TestService::open(store, release::trusting(config())).await;
+        let interrupted = server.service().install_state(id).await.unwrap();
+        assert_eq!(interrupted.id, first.id);
+        assert_eq!(interrupted.state, InstallState::Failed);
+        assert_eq!(interrupted.failure, Some(InstallFailure::Interrupted));
+        assert_eq!(banks.borrow().bank1_build, had);
 
         server.shutdown().await;
         sim.stop().await;

@@ -275,7 +275,7 @@ An owner installs a cached release on one feeder with `POST /feeders/{id}/instal
 
 The driver is `wellfed_connect::update::push`, which the CLI also runs. On the server every step goes out on the feeder's long lane, so feeds and status reads keep working. When the session drops, as when the feeder restarts into its new bank, the driver waits for the link and reads the status from the new session. Chunks are idempotent by offset, so a dropped session resumes where the feeder says, and an offer is never sent again behind the owner's back.
 
-One install runs at a time per server. The stream carries `install` updates (the start, progress every 32 KiB, and the end), and an install a restart cut short reads as `interrupted`.
+One install runs at a time per server. The stream carries `install` updates (the start, progress every 32 KiB, and the end), and an install a restart cut short reads as `interrupted` if the feeder never took its offer. Once it took the offer, bank 1 may be partly written or activated, so the install reads as uncertain (`unreachable` with `offered`) and only the feeder's status tells.
 
 ## Stock backup and restore
 

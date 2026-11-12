@@ -265,7 +265,8 @@ impl Snapshot {
                     Install,
                     r#"SELECT id AS "id: Uuid", feeder_id AS "feeder_id: Uuid", release_id,
                               version, user_id AS "user_id: Uuid", started_ms, state, written,
-                              image_len, failure, finished_ms, target
+                              image_len, failure, finished_ms, target,
+                              offered AS "offered: bool"
                        FROM installs ORDER BY id"#
                 )
                 .fetch(tx),
