@@ -21,19 +21,12 @@ class InstallStoppedPage extends StatelessWidget {
   final InstallStopped state;
 
   /// The design's other ways an install stops, for the owner who meets one
-  /// later. The one on the screen is not listed again.
-  static const _others = [
-    (
-      'Different vendor firmware',
-      'Wellfed installs over 1.1.15 only, for now. Nothing on the feeder '
-          'changed.',
-    ),
-    ('Two feeders answered', "We can't tell which one is yours. Unplug the others and start again."),
-    (
-      "The backup didn't match",
-      "Wellfed won't make itself permanent without a good backup, so this "
-          'stop changed nothing on the feeder.',
-    ),
+  /// later. The stop on the screen, `shown`, is not listed again.
+  List<(String, String)> _others(StopCase shown) => [
+    if (shown is! StopCase_OtherFirmware)
+      ('Different vendor firmware', 'Wellfed installs over 1.1.15 only, for now. Nothing on the feeder changed.'),
+    if (shown is! StopCase_TwoFeeders) _words(const StopCase.twoFeeders()),
+    if (shown is! StopCase_BackupMismatch) _words(const StopCase.backupMismatch()),
   ];
 
   /// What the feeder holds beside Wellfed, as far as this install knows: a
@@ -287,10 +280,7 @@ class InstallStoppedPage extends StatelessWidget {
     final (String title, String body) = _words(stop.case_);
     final bool listening = uncertain && state.listening == Listening.running;
     final int minutes = state.listened.inMinutes;
-    final List<(String, String)> others = [
-      for (final other in _others)
-        if (other.$1 != title) other,
-    ];
+    final List<(String, String)> others = _others(stop.case_);
 
     return StepScaffold(
       leading: Leading.close,
