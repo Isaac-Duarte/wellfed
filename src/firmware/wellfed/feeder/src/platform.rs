@@ -616,7 +616,7 @@ impl Platform for Plaf103 {
         // Setup's first step follows in this pass, ahead of the owner's next
         // step, which is what would otherwise see setup and end a reading.
         #[cfg(target_os = "none")]
-        crate::feeding::Feeding::yield_food_read();
+        crate::feeding::yield_food_read();
         self.ble = BleSetup::new();
     }
 
