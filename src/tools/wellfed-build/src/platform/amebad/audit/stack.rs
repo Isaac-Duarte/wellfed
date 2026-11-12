@@ -16,7 +16,10 @@
 //! a register's value is refused ([`StackError::Variable`]): `sub sp, rN`
 //! anywhere, and `mov sp, rN` or `add sp, rN` unless the frame's restore
 //! (`pop`, `vpop`, `ldm sp!`) comes next, as in an epilogue's
-//! `mov sp, r7; pop {r7, pc}`. A linker veneer
+//! `mov sp, r7; pop {r7, pc}`. The one bounded exception is aligning the
+//! stack down (`mov r0, sp; bic r0, r0, #7; mov sp, r0`, as the vendor's
+//! `app_start` does), which lowers it by at most the mask and counts as that
+//! much frame. A linker veneer
 //! (`__name_veneer`, the long branch into RAM or ROM) leads to its target.
 //! Recursion is cut at the cycle.
 //!
@@ -461,6 +464,21 @@ static SUB_REGISTER: LazyLock<Regex> =
 static SET_REGISTER: LazyLock<Regex> = LazyLock::new(|| {
     pattern(r"^(?:mov|add)s?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?(?:r\d+|sb|sl|fp|ip|lr)\b")
 });
+/// The stack pointer copied to a register, the first step of aligning it.
+static COPY_SP: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^movs?{C}(?:\.w)?\s+(r\d+|sb|sl|fp|ip|lr),\s*sp\s*(?:;|$)"));
+/// A register's low bits cleared (`bic r0, r0, #7`): aligning it down.
+static CLEAR_LOW: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(
+        r"^bics?{C}(?:\.w)?\s+(r\d+|sb|sl|fp|ip|lr),\s*(r\d+|sb|sl|fp|ip|lr),\s*#(\d+)\s*(?:;|$)",
+    )
+});
+/// The stack set back from a register (`mov sp, r0`): which register.
+static SET_FROM: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^movs?{C}(?:\.w)?\s+sp,\s*(r\d+|sb|sl|fp|ip|lr)\s*(?:;|$)"));
+/// The widest alignment the audit takes as bounded: a page.
+const MAX_ALIGN_MASK: u64 = 4095;
+
 /// What ends a frame: a restore of saved registers from the stack.
 static RESTORE: LazyLock<Regex> = LazyLock::new(|| {
     pattern(r"^(?:pop{C}(?:\.w)?|vpop{C}|ldmia{C}(?:\.w)?\s+sp!,|ldm{C}(?:\.w)?\s+sp!,)")
@@ -652,6 +670,9 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
     // A `mov sp, rN` waiting for the next instruction to show it restores
     // the frame; otherwise, or at the function's end, it is variable.
     let mut setting: Option<(u64, String)> = None;
+    // The register holding the stack pointer as it is being aligned down,
+    // with the mask cleared so far (0 until the `bic`).
+    let mut aligning: Option<(String, u64)> = None;
     let unrestored = |functions: &mut Vec<(String, Function)>,
                       setting: &mut Option<(u64, String)>| {
         if let (Some((_, f)), Some(set)) = (functions.last_mut(), setting.take()) {
@@ -670,6 +691,7 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
             };
             functions.push((heading[2].to_string(), f));
             low.clear();
+            aligning = None;
             continue;
         }
         let Some((name, f)) = functions.last_mut() else {
@@ -710,6 +732,30 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
             && !RESTORE.is_match(insn)
         {
             f.variable.get_or_insert(set);
+        }
+        // Aligning the stack down lowers it by at most the mask: only the
+        // exact copy, clear and set back, in a row, counts so.
+        let step = aligning.take();
+        if let Some(copy) = COPY_SP.captures(insn) {
+            aligning = Some((copy[1].to_string(), 0));
+            continue;
+        }
+        if let (Some(clear), Some((register, 0))) = (CLEAR_LOW.captures(insn), &step)
+            && clear[1] == **register
+            && clear[2] == **register
+            && let Ok(mask) = clear[3].parse::<u64>()
+            && mask <= MAX_ALIGN_MASK
+            && (mask + 1).is_power_of_two()
+        {
+            aligning = Some((register.clone(), mask));
+            continue;
+        }
+        if let (Some(set), Some((register, mask))) = (SET_FROM.captures(insn), &step)
+            && set[1] == **register
+            && *mask > 0
+        {
+            f.frame += mask;
+            continue;
         }
         if SET_REGISTER.is_match(insn) {
             setting = Some((address, line.trim().to_string()));
@@ -1847,6 +1893,53 @@ mod tests {
             frames(epilogue, &code_only()).into_iter().collect();
         assert_eq!(functions["fn"].variable, None);
         assert_eq!(functions["fn"].frame, 8);
+    }
+
+    /// The vendor's `app_start` aligns its stack down to 8 bytes: that
+    /// lowers it by at most 7, which counts, and only the exact sequence
+    /// does.
+    #[test]
+    fn aligning_the_stack_down_counts_its_mask() {
+        let aligned = "\
+00001000 <app_start>:
+    1000:\tb500      \tpush\t{lr}
+    1002:\t4668      \tmov\tr0, sp
+    1004:\tf020 0007 \tbic.w\tr0, r0, #7
+    1008:\t4685      \tmov\tsp, r0
+    100a:\tf000 f800 \tbl\t2000 <other>
+";
+        let functions: HashMap<String, Function> =
+            frames(aligned, &code_only()).into_iter().collect();
+        assert_eq!(functions["app_start"].variable, None);
+        assert_eq!(functions["app_start"].frame, 4 + 7);
+
+        for (copy, clear) in [
+            // Another register cleared than the one copied.
+            ("4668      \tmov\tr0, sp", "f021 0007 \tbic.w\tr1, r1, #7"),
+            // Not an alignment mask.
+            ("4668      \tmov\tr0, sp", "f020 0006 \tbic.w\tr0, r0, #6"),
+            // Not the stack pointer copied.
+            ("4608      \tmov\tr0, r1", "f020 0007 \tbic.w\tr0, r0, #7"),
+            // Something between the clear and the set.
+            ("f020 0007 \tbic.w\tr0, r0, #7", "3804      \tsubs\tr0, #4"),
+        ] {
+            let listing = format!(
+                "00001000 <fn>:\n    1000:\tb500      \tpush\t{{lr}}\n    \
+                 1002:\t{copy}\n    1004:\t{clear}\n    1008:\t4685      \tmov\tsp, r0\n    \
+                 100a:\tf000 f800 \tbl\t2000 <other>\n"
+            );
+            let error = refused(&listing, &code_only());
+            assert!(
+                matches!(
+                    &error,
+                    StackError::Variable {
+                        address: 0x1008,
+                        ..
+                    }
+                ),
+                "{copy} then {clear}: {error:?}"
+            );
+        }
     }
 
     /// What the pinned objdump hides, once decoded, counts.
