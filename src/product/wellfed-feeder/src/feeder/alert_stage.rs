@@ -310,7 +310,7 @@ impl AlertStage {
         let since = *self.given_way_since.get_or_insert(now_ms);
         if now_ms.wrapping_sub(since) >= GIVEN_WAY_MS {
             let body = EventBody::UpdateStop {
-                stop: UpdateStop::Timeout,
+                stop: UpdateStop::Timeout.into(),
             };
             self.given_way_noted = events::record_or_wait(platform, now_ms, body);
         }
