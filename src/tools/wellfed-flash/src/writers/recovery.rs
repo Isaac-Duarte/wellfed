@@ -41,6 +41,10 @@ pub enum RecoveryError {
     NotBaseline,
     #[error("Target marker is still valid; refuse an in-place rewrite of a bootable bank")]
     MarkerStillValid,
+    #[error(
+        "Bank 1's marker sector already matches the backup while the sector at {offset:#x} differs; a recovery commits the marker sector last, so this one cannot run"
+    )]
+    MarkerSectorUnchanged { offset: usize },
 
     #[error("Reviewed plan required")]
     ReviewedPlanMissing,
@@ -200,6 +204,18 @@ pub fn plan(pinned: &Baseline, current: &[u8]) -> Result<Plan> {
         sectors.is_empty() || !pinned.bootable(&current[START..START + 8]),
         || RecoveryError::MarkerStillValid,
     )?;
+    // The run restores every sector, then commits the marker sector's
+    // withheld bytes last. A plan without that sector (the fountain's stock
+    // marker is not bootable, so its first sector can already match) would
+    // erase and write the others and only then refuse, unverified; refuse
+    // it here, before anything is written.
+    if let Some(first) = sectors.first() {
+        require(sectors.iter().any(|entry| entry.offset == START), || {
+            RecoveryError::MarkerSectorUnchanged {
+                offset: first.offset,
+            }
+        })?;
+    }
     for entry in &sectors {
         pinned
             .pins()

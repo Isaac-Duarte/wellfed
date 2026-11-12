@@ -553,3 +553,44 @@ fn stock_recovery_refuses_a_wiped_ftl() {
     current[START..START + SECTOR].fill(0xff);
     assert!(recovery::plan(&unit.baseline, &current).is_ok());
 }
+
+/// The fountain's stock marker is not bootable, so a read whose first bank-1
+/// sector already matches the backup while a later one differs would plan
+/// a recovery without the marker sector, which the run commits last. The
+/// plan refuses it, so the run refuses before its first erase.
+#[test]
+fn a_recovery_without_the_marker_sector_is_refused_before_any_write() {
+    let (_checkout, root) = private_root();
+    let unit = fountain();
+    let mut current = unit.flash.clone();
+    current[START + SECTOR + 17] ^= 1;
+    assert!(matches!(
+        recovery::plan(&unit.baseline, &current),
+        Err(crate::Error::Recovery(RecoveryError::MarkerSectorUnchanged {
+            offset
+        })) if offset == START + SECTOR
+    ));
+
+    // A plan written before this refusal is refused at the run, before the
+    // journal and with the flash untouched.
+    let mut changed = current.clone();
+    changed[START] ^= 1;
+    let mut plan = serde_json::to_value(recovery::plan(&unit.baseline, &changed).unwrap()).unwrap();
+    plan["current_snapshot_sha256"] = serde_json::json!(sha256(&current));
+    let mut port = Fake::new(current.clone());
+    let mut snapshot = |port: &mut dyn Port| protocol::read_region(port, 0, CAPACITY);
+    assert!(
+        recovery::run_transaction(
+            &mut port,
+            &root,
+            &unit.baseline,
+            &current,
+            &plan,
+            &mut snapshot,
+            &root.join("private/recovery"),
+        )
+        .is_err()
+    );
+    assert!(port.0.borrow().flash == current);
+    assert!(!root.join("private/recovery").exists());
+}
