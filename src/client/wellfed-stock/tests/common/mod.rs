@@ -39,7 +39,6 @@ pub fn config() -> Config {
         mqtt_listen: "127.0.0.1:18883".parse().unwrap(),
         http_listen: "127.0.0.1:18765".parse().unwrap(),
         timezone: chrono_tz::America::Denver,
-        plans: Some(vec![]),
         binding_response: None,
         hotspot_interface: Some("wlan1".to_owned()),
         target_mac: Some("02:00:00:00:00:42".to_owned()),
@@ -54,8 +53,7 @@ pub fn load(path: PathBuf) -> anyhow::Result<Controller> {
 
 /// A server in this process, as the app runs one, with
 /// the loopback API these tests speak. It alone can enable the trial, which
-/// needs [`allow_unreviewed`], or serve a plan snapshot, which the binary
-/// refuses. Needs a runtime.
+/// needs [`allow_unreviewed`]. Needs a runtime.
 pub fn in_process(path: &std::path::Path, trial: OtaTrial) -> Server {
     Server::start(
         &path.canonicalize().unwrap(),

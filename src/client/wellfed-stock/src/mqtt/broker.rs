@@ -432,7 +432,7 @@ mod tests {
             "device_username":"dev","device_password":"pw",
             "server_password":"s".repeat(32),"api_token":"t".repeat(32),
             "mqtt_listen":"127.0.0.1:1883","http_listen":"127.0.0.1:8765",
-            "timezone":"UTC","plans":[],"binding_response":null,
+            "timezone":"UTC","binding_response":null,
             "hotspot_interface":"wlan1","target_mac":"02:00:00:00:00:01"
         }))
         .unwrap();

@@ -135,7 +135,6 @@ fn an_out_of_range_device_time_leaves_no_clock_offset() {
     assert_eq!(c.status.clock_offset_seconds, None);
 
     let calibration = wellfed_stock::clock::calibration(
-        None,
         wellfed_stock::clock::StockPlans::Erased,
         Some(i64::MIN),
         Utc::now(),

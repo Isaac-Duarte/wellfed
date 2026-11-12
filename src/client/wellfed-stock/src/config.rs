@@ -1,7 +1,9 @@
 //! The stock server's private configuration (`private/installer.json`, or a
 //! captured file named by `--config`; format version 1): stock's captured
-//! device credentials and plans, if any, and the server's own secrets and
-//! addresses.
+//! device credentials, if any, and the server's own secrets and addresses.
+//! It holds no plan table: stock replaces its stored plans with whatever a
+//! reply carries, so the server never sends one, and a config with a `plans`
+//! key is refused.
 //!
 //! It holds working device credentials, so it is written mode 0600 and has
 //! no `Debug`. Edit it only while the service is
@@ -49,15 +51,6 @@ pub struct Config {
     pub http_listen: SocketAddr,
 
     pub timezone: Tz,
-    /// Stock's plan table as a capture recorded the cloud sending it,
-    /// replayed verbatim to `GET_FEEDING_PLAN_EVENT`. `None` when nothing
-    /// was captured (an installer's config): the request then goes
-    /// unanswered, since stock erases and rewrites its stored table on any
-    /// reply with a `plans` key, and an empty list would erase the owner's
-    /// plans before the installer imports them. `Some([])` is a captured
-    /// empty table, answered as captured.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plans: Option<Vec<Value>>,
     /// The captured cloud `BINDING` reply, replayed verbatim.
     #[serde(default)]
     pub binding_response: Option<Map<String, Value>>,
@@ -322,7 +315,7 @@ mod tests {
         "server_password":"ssssssssssssssssssssssssssssssss",
         "api_token":"tttttttttttttttttttttttttttttttt",
         "mqtt_listen":"127.0.0.1:1883","http_listen":"127.0.0.1:8765",
-        "timezone":"UTC","plans":[],"binding_response":null,
+        "timezone":"UTC","binding_response":null,
         "hotspot_interface":"wlan1","target_mac":"02:00:00:00:00:01""#;
 
     const INSTALLER: &str = r#"{"version":1,
@@ -366,10 +359,6 @@ mod tests {
         assert_eq!(config.device_password, "its-own");
         assert_eq!(config.device_address, Some("192.168.4.20".parse().unwrap()));
         assert!(config.hotspot().is_err(), "no redirect for an installer");
-        assert_eq!(
-            config.plans, None,
-            "no snapshot: stock's plans are left alone"
-        );
     }
 
     #[test]

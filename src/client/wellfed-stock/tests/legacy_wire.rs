@@ -130,7 +130,9 @@ async fn captured_legacy_connect_and_both_subscriptions_reach_local_clock_servic
             if topic == config.topic("ntp/sub") {
                 assert_eq!(message["cmd"], "NTP");
                 assert_eq!(message["code"], 0);
-                assert_eq!(message["calibrationTag"], true);
+                // No setup frame went out here, so stock may hold plans
+                // and its clock is left as it reads.
+                assert_eq!(message["calibrationTag"], false);
                 calibrated = true;
             } else {
                 assert_eq!(message["cmd"], "ATTR_GET_SERVICE");

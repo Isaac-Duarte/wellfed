@@ -8,6 +8,7 @@ mod common;
 use chrono::{TimeZone, Utc};
 use serde_json::{Value, json};
 use uuid::Uuid;
+use wellfed_stock::clock::StockPlans;
 use wellfed_stock::{
     ota,
     protocol::{self, Reply, plaf103},
@@ -25,6 +26,16 @@ fn bytes(reply: &Reply) -> String {
 }
 
 fn answer(config: &wellfed_stock::config::Config, channel: &str, message: Value) -> String {
+    answer_with(config, channel, message, StockPlans::Erased)
+}
+
+/// [`answer`], with what is known of stock's own plans.
+fn answer_with(
+    config: &wellfed_stock::config::Config,
+    channel: &str,
+    message: Value,
+    plans: StockPlans,
+) -> String {
     let (channel, message) = protocol::parse(
         config,
         &config.topic(&format!("{channel}/post")),
@@ -32,21 +43,12 @@ fn answer(config: &wellfed_stock::config::Config, channel: &str, message: Value)
     )
     .unwrap();
     let now = Utc.with_ymd_and_hms(2026, 10, 17, 21, 17, 41).unwrap();
-    bytes(
-        &plaf103::reply(
-            config,
-            channel,
-            &message,
-            now,
-            wellfed_stock::clock::StockPlans::Erased,
-        )
-        .unwrap(),
-    )
+    bytes(&plaf103::reply(config, channel, &message, now, plans).unwrap())
 }
 
 #[test]
 fn acknowledgements() {
-    let mut config = common::config();
+    let config = common::config();
 
     assert_eq!(
         answer(
@@ -77,16 +79,6 @@ fn acknowledgements() {
         ),
         r#"{"cmd":"GRAIN_OUTPUT_EVENT","code":0,"execStep":{"a":[2],"b":1},"linkId":"LINK","ts":1792271861000}"#
     );
-
-    config.plans = Some(vec![json!({"z":1,"id":"p"}), json!(3)]);
-    assert_eq!(
-        answer(
-            &config,
-            "event",
-            json!({"cmd":"GET_FEEDING_PLAN_EVENT","msgId":"m3"})
-        ),
-        r#"{"cmd":"GET_FEEDING_PLAN_EVENT","code":0,"linkId":"LINK","msgId":"m3","plans":[{"id":"p","z":1},3],"ts":1792271861000}"#
-    );
 }
 
 #[test]
@@ -97,10 +89,9 @@ fn clock() {
         r#"{"calibrationTag":true,"cmd":"NTP","code":0,"linkId":"LINK","nextDSTOffsetSeconds":-25200,"nextDSTTransitionTs":1793520000000,"secondNextDSTOffsetSeconds":-21600,"secondNextDSTTransitionTs":1805014800000,"timezone":-6.0,"timezoneOffsetSeconds":-21600,"ts":1792271861000}"#
     );
 
-    config.plans = Some(vec![json!({})]);
     config.timezone = chrono_tz::UTC;
     assert_eq!(
-        answer(&config, "ntp", json!({"cmd":"NTP"})),
+        answer_with(&config, "ntp", json!({"cmd":"NTP"}), StockPlans::Unknown),
         r#"{"calibrationTag":false,"cmd":"NTP","code":0,"linkId":"LINK","nextDSTOffsetSeconds":0,"nextDSTTransitionTs":0,"secondNextDSTOffsetSeconds":0,"secondNextDSTTransitionTs":0,"timezone":0.0,"timezoneOffsetSeconds":0,"ts":1792271861000}"#
     );
 }

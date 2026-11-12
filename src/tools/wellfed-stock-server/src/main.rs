@@ -12,7 +12,7 @@
 
 use std::{path::PathBuf, time::Duration};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use reqwest::Method;
 use serde::Serialize;
@@ -288,20 +288,6 @@ fn bench_lease(config: &std::path::Path) -> Result<Lease> {
 }
 
 async fn serve(path: PathBuf, enroll_minutes: Option<u64>) -> Result<()> {
-    // Stock replaces its stored table with whatever a plan reply carries, an
-    // empty list included, as soon as it connects. The library still replays
-    // a snapshot; this command never starts on one.
-    let state =
-        wellfed_stock::config::state(&path).with_context(|| format!("read {}", path.display()))?;
-    if let wellfed_stock::config::State::Device(config) = &state
-        && config.plans.is_some()
-    {
-        bail!(
-            "{} holds a plan snapshot, which this server would send stock in place of its own plans; nothing was started. Use an installer's config (wellfed-stock init-installer), or remove the `plans` key",
-            path.display()
-        );
-    }
-
     let path = path.canonicalize()?;
     let mut server = Server::start(
         &path,
@@ -400,8 +386,8 @@ mod tests {
         Cli::command().debug_assert();
     }
 
-    /// Every command reads the same ledger, and never a captured file with a
-    /// plan snapshot.
+    /// Every command reads the same ledger: the installer's config unless
+    /// told otherwise.
     #[test]
     fn every_command_defaults_to_the_installers_config() {
         let id = "00000000-0000-0000-0000-000000000000";

@@ -113,7 +113,7 @@ fn refused(c: &mut Controller, input: ota::trial::Input, now: DateTime<Utc>) -> 
 }
 
 #[test]
-fn default_disabled_and_guarded_by_version_power_and_plans() {
+fn default_disabled_and_guarded_by_version_and_power() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = common::load(dir.path().join("ledger.json")).unwrap();
     ready(&mut c, "1.1.15");
@@ -136,15 +136,9 @@ fn default_disabled_and_guarded_by_version_power_and_plans() {
     c.status.attributes.insert("powerType".to_owned(), json!(2));
     assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
 
-    c.status.attributes.insert("powerType".to_owned(), json!(1));
-    c.config.plans = Some(vec![json!({"id":"plan"})]);
-    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
-
     assert!(c.status.ota_trials.is_empty());
 
-    // No snapshot (an installer's config): stock's own plans are left for
-    // the installer to import, so the trial may go ahead.
-    c.config.plans = None;
+    c.status.attributes.insert("powerType".to_owned(), json!(1));
     assert!(submit(&mut c, input(), Utc::now()).is_ok());
 }
 

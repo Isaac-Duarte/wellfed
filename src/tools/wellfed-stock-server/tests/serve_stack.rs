@@ -113,8 +113,8 @@ async fn real_broker_api_and_simulated_stock_session_without_commands() {
         .await
         .unwrap()
         .unwrap();
-    // `serve` sends no setup frame and holds no snapshot, so stock may still
-    // hold plans: it answers with the time but leaves stock's clock alone.
+    // `serve` sends no setup frame, so stock may still hold plans: it answers
+    // with the time but leaves stock's clock alone.
     assert_eq!(ntp["calibrationTag"], false);
     assert!(ntp["ts"].as_i64().unwrap() > 1_700_000_000_000);
 

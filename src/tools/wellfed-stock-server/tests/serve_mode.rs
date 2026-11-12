@@ -1,5 +1,6 @@
 //! What the `serve` binary refuses: it never asks stock to install, and it
-//! never starts on a plan snapshot, whose replay would erase stock's plans.
+//! never starts on a config with a plan table, whose replay would erase
+//! stock's plans.
 
 mod common;
 
@@ -34,17 +35,18 @@ async fn serve_refuses_trial_publication() {
     drop(service);
 }
 
-/// Stock replaces its table with whatever a reply carries, so an empty
-/// snapshot is refused as surely as a full one.
+/// Stock replaces its table with whatever a reply carries, so a config with
+/// a plan table, even an empty one, is not a config this server reads.
 #[test]
-fn serve_refuses_a_plan_snapshot() {
-    for plans in [vec![], vec![serde_json::json!({"id": 1})]] {
+fn serve_refuses_a_config_with_a_plan_table() {
+    for plans in [serde_json::json!([]), serde_json::json!([{"id": 1}])] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("server.json");
         let mut config = common::config();
-        config.plans = Some(plans);
         [config.mqtt_listen, config.http_listen] = common::addresses().unwrap();
-        storage::write_json(&path, &config).unwrap();
+        let mut file = serde_json::to_value(&config).unwrap();
+        file["plans"] = plans;
+        storage::write_json(&path, &file).unwrap();
 
         let output = Command::new(env!("CARGO_BIN_EXE_wellfed-stock"))
             .args(["--device", "plaf103"])
@@ -55,6 +57,6 @@ fn serve_refuses_a_plan_snapshot() {
 
         assert!(!output.status.success());
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("holds a plan snapshot"), "{stderr}");
+        assert!(stderr.contains("plans"), "{stderr}");
     }
 }
