@@ -56,7 +56,11 @@ async fn main(spawner: Spawner) {
         Irqs,
         UART_TX.init([0; 1024]),
         UART_RX.init([0; 4096]),
-        embassy_rp::uart::Config::default(),
+        {
+            let mut config = embassy_rp::uart::Config::default();
+            config.baudrate = bridge::START_BAUD;
+            config
+        },
     );
     // ADP_RXD floats while the feeder-TX buffer is disabled; hold it idle-high
     // so the UART does not see framing noise.

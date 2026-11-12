@@ -96,7 +96,7 @@ At power-up, and after any reset including the 2 s watchdog, all four channels a
 
 - The default is 115200 8N1. The baud rate follows the host's setting; data bits, parity and stop bits are always 8N1.
 - The bridge never resets or gates on DTR or RTS. `wellfed-flash` opens and closes the port many times in one session while the feeder keeps running.
-- When the host opens the port, UART bytes that queued up while nobody was reading are dropped, so a new process sees only fresh traffic.
+- When the host opens the port, UART bytes that queued up while nobody was reading are dropped, apart from at most one 64-byte USB packet already handed to the controller. The flash writer refuses unexpected bytes, so a stale packet fails a step rather than corrupt it.
 
 ## LEDs and buttons
 
