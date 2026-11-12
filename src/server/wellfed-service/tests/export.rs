@@ -159,13 +159,19 @@ async fn an_export_held_unread_ends_and_frees_the_slot() {
         !matches!(second, Err(Error::Export(ExportError::Running)))
     })
     .await;
+    // What was queued, then an error rather than a clean end: a reader
+    // back from its pause never takes the cut archive for a whole one.
     let mut read = 0;
-    while let Some(chunk) = chunks.try_next().await.unwrap() {
-        read += chunk.len();
-    }
+    let ended = loop {
+        match chunks.next().await {
+            Some(Ok(chunk)) => read += chunk.len(),
+            other => break other,
+        }
+    };
+    assert!(read <= 4 * EXPORT_CHUNK, "only what was queued");
     assert!(
-        read <= 4 * EXPORT_CHUNK,
-        "only what was queued, then the end"
+        matches!(ended, Some(Err(Error::Export(ExportError::Stalled)))),
+        "{ended:?}"
     );
 
     store.close().await;
