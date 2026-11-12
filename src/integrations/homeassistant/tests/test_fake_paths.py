@@ -271,11 +271,16 @@ async def test_a_lost_feed_whose_write_ends_after_a_reload_is_still_kept(
     feeder.gate = threading.Event()
     feeder.feed_result = fake.uncertain(lost)
     pressed = hass.async_create_task(session.feed(1))
-    await _until(hass, lambda: ("feed", (1,)) in feeder.calls)
+    try:
+        # Not `_until`: waiting for every task would wait for this feed.
+        async with asyncio.timeout(WAIT):
+            while ("feed", (1,)) not in feeder.calls:
+                await asyncio.sleep(0.05)
 
-    # The entry reloads while the feed is out; its answer is lost after.
-    assert await hass.config_entries.async_unload(entry.entry_id)
-    feeder.gate.set()
+        # The entry reloads while the feed is out; its answer is lost after.
+        assert await hass.config_entries.async_unload(entry.entry_id)
+    finally:
+        feeder.gate.set()
     with pytest.raises(HomeAssistantError):
         await pressed
 
