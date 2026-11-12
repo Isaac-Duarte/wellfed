@@ -44,8 +44,10 @@ class SetupLink implements BleLink {
     requireLocationServicesEnabled: false,
   );
 
-  /// Connect to `device`, then enable notifications before anything is
-  /// written: the feeder answers the first message at once.
+  /// Connect to `device` and ask for notifications. The plugin does not
+  /// say when the subscription lands, so a first write may arrive before
+  /// it; the feeder holds the message until the link opens and answers
+  /// then.
   static Future<SetupLink> open(DiscoveredDevice device) async {
     final ble = FlutterReactiveBle();
     final connected = Completer<void>();
