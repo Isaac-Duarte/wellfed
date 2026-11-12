@@ -36,7 +36,7 @@ pub fn config() -> Config {
             answer: Duration::from_secs(12),
             sample_wait: Duration::from_millis(100),
             session: Duration::from_secs(3600),
-            upload_idle: Duration::from_secs(30),
+            transfer_idle: Duration::from_secs(30),
             // The simulator writes a sector within a pass or two, and
             // restarts a second after it answers a give-way, as the update
             // stage does, where the board takes seconds more.

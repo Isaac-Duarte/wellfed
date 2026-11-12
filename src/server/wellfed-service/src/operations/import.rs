@@ -47,7 +47,7 @@ impl Service {
         loop {
             // The import holds the one writer: an upload gone quiet gives it
             // back rather than holding it.
-            let idle = self.shared.config.timing.upload_idle;
+            let idle = self.shared.config.timing.transfer_idle;
             let next = tokio::time::timeout(idle, upload.next()).await;
             let next = next.map_err(|idle| ExportError::Upload(Box::new(idle)))?;
             let Some(chunk) = next else {

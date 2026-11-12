@@ -8,10 +8,14 @@
 //! so they see the same rows, and the second checks that it wrote what the
 //! first counted. The second pass runs in a task that hands the caller
 //! chunks of at most [`CHUNK`] bytes through a queue of [`QUEUE`], so at
-//! most those and one row are held however large the database is; a caller
-//! that stops reading stops the task.
+//! most those and one row are held however large the database is. A caller
+//! that drops the stream stops the task, and so does one that holds it
+//! without taking a chunk for the transfer's idle time (a paused download
+//! on a connection kept open): the stream then ends cut, which the
+//! manifest's sizes show.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::{Stream, TryStreamExt};
 use tokio::sync::mpsc;
@@ -80,7 +84,8 @@ impl Service {
     /// returns; their bytes follow as the caller reads.
     ///
     /// One export is written at a time: another while it runs is
-    /// [`ExportError::Running`]. A caller that stops reading frees it.
+    /// [`ExportError::Running`]. A caller that stops reading frees it, at
+    /// the latest once the transfer's idle time passes.
     pub async fn export(
         &self,
         format: ExportFormat,
@@ -111,12 +116,19 @@ impl Service {
             sender,
             buffer: Vec::with_capacity(CHUNK),
             cancel: self.cancel.child_token(),
+            idle: self.shared.config.timing.transfer_idle,
         };
         self.tasks.spawn(async move {
             let _slot = slot;
             let written = write_archive(&mut snapshot, &manifest, &mut out).await;
             match written {
                 Ok(()) | Err(Stop::Gone) => {}
+                Err(Stop::Idle) => {
+                    tracing::warn!(
+                        "export: the download took nothing for {:?}; ended",
+                        out.idle
+                    );
+                }
                 Err(Stop::Failed(error)) => {
                     // The caller sees the stream end in it; the tar is cut.
                     tracing::error!("export: {error}");
@@ -130,8 +142,10 @@ impl Service {
 
 /// Why writing stopped.
 enum Stop {
-    /// The caller stopped reading, or the server is stopping.
+    /// The caller dropped the stream, or the server is stopping.
     Gone,
+    /// The caller held the stream without reading.
+    Idle,
     Failed(crate::Error),
 }
 
@@ -164,6 +178,8 @@ struct Out {
     sender: mpsc::Sender<Result<Vec<u8>>>,
     buffer: Vec<u8>,
     cancel: CancellationToken,
+    /// The longest a full queue may wait for the caller.
+    idle: Duration,
 }
 
 impl Out {
@@ -178,11 +194,14 @@ impl Out {
     /// Hand the caller what is buffered, in chunks of at most [`CHUNK`].
     async fn flush(&mut self) -> Result<(), Stop> {
         for chunk in self.buffer.chunks(CHUNK) {
+            let send = self.sender.send(Ok(chunk.to_vec()));
             let sent = self
                 .cancel
-                .run_until_cancelled(self.sender.send(Ok(chunk.to_vec())));
-            if !matches!(sent.await, Some(Ok(()))) {
-                return Err(Stop::Gone);
+                .run_until_cancelled(tokio::time::timeout(self.idle, send));
+            match sent.await {
+                Some(Ok(Ok(()))) => {}
+                Some(Err(_elapsed)) => return Err(Stop::Idle),
+                None | Some(Ok(Err(_))) => return Err(Stop::Gone),
             }
         }
         self.buffer.clear();
