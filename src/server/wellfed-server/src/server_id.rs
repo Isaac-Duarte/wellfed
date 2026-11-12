@@ -17,9 +17,6 @@ use std::fmt;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize as _;
-use serde::de::IntoDeserializer as _;
-use serde::de::value::StrDeserializer;
 use wellfed_api::Hex;
 use wellfed_service::Random;
 
@@ -45,8 +42,7 @@ impl ServerId {
     }
 
     fn parse(text: &str) -> Option<Self> {
-        let hex: StrDeserializer<'_, serde::de::value::Error> = text.into_deserializer();
-        Hex::<8>::deserialize(hex).ok().map(Self)
+        text.parse().ok().map(Self)
     }
 }
 

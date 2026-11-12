@@ -17,8 +17,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use serde::de::IntoDeserializer as _;
-use serde::de::value::StrDeserializer;
 use serde::{Deserialize, Serialize};
 use wellfed_api::{Release, ReleaseSigner, ReleaseSource};
 use wellfed_client::release::{self, KeyId, ReleaseError, Signer};
@@ -279,8 +277,7 @@ fn write_entry(record: &Path, entry: &Entry) -> Result<(), Error> {
 
 /// A page cursor: a release id in hex.
 pub(crate) fn id(text: &str) -> Result<Hex<32>, Error> {
-    let text: StrDeserializer<'_, serde::de::value::Error> = text.into_deserializer();
-    Hex::deserialize(text).map_err(|_| Error::Cursor)
+    text.parse().map_err(|_| Error::Cursor)
 }
 
 fn verify(file: &[u8], keys: &Keys) -> Result<release::Verified, Error> {

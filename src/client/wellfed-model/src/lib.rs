@@ -164,18 +164,45 @@ impl<const N: usize> Serialize for Hex<N> {
     }
 }
 
+/// Text that is not the bytes of a [`Hex`] in lowercase hex.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("not {len} bytes of lowercase hex")]
+pub struct NotHex {
+    pub len: usize,
+}
+
+impl<const N: usize> std::str::FromStr for Hex<N> {
+    type Err = NotHex;
+
+    fn from_str(text: &str) -> Result<Self, NotHex> {
+        wellfed_session::hex::decode_array(text.as_bytes())
+            .map(Self)
+            .ok_or(NotHex { len: N })
+    }
+}
+
 impl<'de, const N: usize> Deserialize<'de> for Hex<N> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        wellfed_session::hex::decode_array(text.as_bytes())
-            .map(Self)
-            .ok_or_else(|| serde::de::Error::custom(format!("not {N} bytes of lowercase hex")))
+        text.parse().map_err(serde::de::Error::custom)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hex_parses_as_it_reads_from_json() {
+        assert_eq!("ab01".parse::<Hex<2>>(), Ok(Hex([0xab, 0x01])));
+        for refused in ["AB01", "ab0", "ab0102", "zz01", ""] {
+            assert_eq!(
+                refused.parse::<Hex<2>>(),
+                Err(NotHex { len: 2 }),
+                "{refused}"
+            );
+        }
+    }
 
     #[test]
     fn hex_is_lowercase_and_exact_length() {
