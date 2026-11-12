@@ -106,10 +106,15 @@ fn oracle(log: &EventLog<FlashIo>, f: &FakeJournalFlash, after: Option<u64>) -> 
     if want < oldest {
         out.push((want, oldest - 1 + 1000));
     }
-    out.extend(
-        kept.range(want.max(oldest)..)
-            .map(|(&seq, &body)| (seq, body)),
-    );
+    // A number missing below a later record is a gap.
+    let mut expected = want.max(oldest);
+    for (&seq, &body) in kept.range(want.max(oldest)..) {
+        if seq > expected {
+            out.push((expected, seq - 1 + 1000));
+        }
+        out.push((seq, body));
+        expected = seq + 1;
+    }
     out
 }
 
@@ -209,6 +214,30 @@ fn a_full_ring_drops_its_oldest_unit_and_reports_the_gap() {
     assert_eq!(read.last(), Some(&(20, 20)));
     assert_eq!(read_all(&log, None).len(), 16);
     batches_match(&log, &f);
+}
+
+/// A record lost at a unit's top or inside it reads as a gap, and the
+/// records after it are still read.
+#[test]
+fn a_lost_record_reads_as_a_gap_and_later_ones_still_read() {
+    for lost in [4, 6] {
+        let mut f = FakeJournalFlash::with_units(UNIT, UNITS);
+        let mut log = open(&mut f);
+        for n in 1..=10 {
+            log.append(None, &body(n)).unwrap();
+        }
+        // Record `lost` decays: its check no longer holds.
+        let unit = usize::try_from((lost - 1) / 4).unwrap();
+        let at = usize::try_from((lost - 1) % 4).unwrap() * RECORD_BYTES + 28;
+        f.bytes[unit][at] ^= 0xff;
+
+        let log = open(&mut f);
+        let read = read_all(&log, Some(lost - 1));
+        assert_eq!(read[0], (lost, lost + 1000), "lost {lost}");
+        assert_eq!(read[1], (lost + 1, lost + 1));
+        assert_eq!(read.last(), Some(&(10, 10)));
+        batches_match(&log, &f);
+    }
 }
 
 #[test]
