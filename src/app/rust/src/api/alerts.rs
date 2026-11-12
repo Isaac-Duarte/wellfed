@@ -299,7 +299,7 @@ pub async fn catch_up_with(
     network: PhoneNetwork,
     server: Option<AlertServer>,
 ) -> Result<CatchUp, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     let target = Target {
         keys: key.keypair(),
         identity: feeder,
@@ -326,7 +326,7 @@ pub async fn confirm_notices(
     posted: Vec<PostedNotice>,
     removed: Vec<i32>,
 ) -> Result<Vec<i32>, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     alerts::change(Path::new(&dir), |state| {
         state.confirm(&identity, &feeder, (&posted, &removed), Timestamp::now())
     })
@@ -335,7 +335,7 @@ pub async fn confirm_notices(
 
 /// The feeder's alerts as this phone lists them.
 pub async fn feeder_alerts(dir: String, identity: String) -> Result<FeederAlerts, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     let state = alerts::read(Path::new(&dir)).await?;
     let Some(watched) = state.watched(&identity) else {
         return Ok(FeederAlerts {
@@ -362,7 +362,7 @@ pub async fn dismiss_notice(
     identity: String,
     id: i32,
 ) -> Result<Vec<NoticeChange>, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     let changes = alerts::change(Path::new(&dir), |state| {
         let Some(watched) = state.watched_mut(&identity) else {
             return Vec::new();
@@ -430,7 +430,7 @@ pub async fn pending_notices(dir: String) -> Result<Vec<FeederNotices>, BridgeEr
         .feeders
         .iter()
         .map(|watched| {
-            let feeder = identity_of(&watched.identity)?;
+            let (feeder, _) = identity_of(&watched.identity)?;
             Ok(FeederNotices {
                 identity: watched.identity.clone(),
                 changes: views(&feeder, &watched.watch.changes()),
@@ -472,7 +472,7 @@ pub async fn set_mute(
     changed
         .into_iter()
         .map(|(identity, changes)| {
-            let feeder = identity_of(&identity)?;
+            let (feeder, identity) = identity_of(&identity)?;
             Ok(FeederNotices {
                 changes: views(&feeder, &changes),
                 identity,
@@ -500,7 +500,7 @@ fn toggle<T: PartialEq>(list: &mut Vec<T>, item: T, on: bool) {
 /// Forget the feeder `identity`'s alerts, as the phone forgets the feeder:
 /// the ids of every notification it may have on the phone, to take off.
 pub async fn forget_alerts(dir: String, identity: String) -> Result<Vec<i32>, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     alerts::change(Path::new(&dir), |state| {
         state
             .forget(&identity)
@@ -535,7 +535,7 @@ pub async fn alerts_to_sweep(dir: String, showing: Vec<i32>) -> Result<Vec<i32>,
         }
         let mut known = Vec::new();
         for watched in &state.feeders {
-            let feeder = identity_of(&watched.identity)?;
+            let (feeder, _) = identity_of(&watched.identity)?;
             known.extend(
                 watched
                     .watch
@@ -581,9 +581,12 @@ fn server_route(server: &AlertServer, identity: &str) -> Option<ServerRoute> {
     Some(ServerRoute { client, feeder })
 }
 
-fn identity_of(identity: &str) -> Result<[u8; 32], BridgeError> {
-    wellfed_session::hex::decode_array_either_case::<32>(identity.as_bytes())
-        .ok_or_else(|| BridgeError::new(ErrorKind::Key, "a feeder identity is 64 hex digits"))
+/// The feeder `identity` names, and its spelling in lowercase, the one the
+/// alerts file keys feeders by whichever case Dart passed.
+fn identity_of(identity: &str) -> Result<([u8; 32], String), BridgeError> {
+    let feeder = wellfed_session::hex::decode_array_either_case::<32>(identity.as_bytes())
+        .ok_or_else(|| BridgeError::new(ErrorKind::Key, "a feeder identity is 64 hex digits"))?;
+    Ok((feeder, wellfed_session::hex::Lower(&feeder).to_string()))
 }
 
 fn views(feeder: &[u8; 32], changes: &[Change]) -> Vec<NoticeChange> {

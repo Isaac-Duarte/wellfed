@@ -171,19 +171,28 @@ fn a_failed_meal_posts_once_and_a_dismissal_stays_on_the_phone() {
         assert_eq!(again.end, CatchUpEnd::Unchanged);
         assert_eq!(posts(&again), [NoticeKind::MealFailed]);
 
-        confirm_notices(
+        // Dart may spell the feeder in either case; the file keys it once.
+        let shouted = identity.to_uppercase();
+        let taken_off = confirm_notices(
             dir.clone(),
-            identity.clone(),
+            shouted.clone(),
             vec![PostedNotice::from(notice)],
             vec![],
         )
         .await
         .unwrap();
+        assert_eq!(
+            taken_off,
+            Vec::<i32>::new(),
+            "confirmed, and left on the phone"
+        );
+        let listed = feeder_alerts(dir.clone(), shouted.clone()).await.unwrap();
+        assert_eq!(listed.notices.len(), 1);
         let quiet = catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
         assert_eq!(quiet.end, CatchUpEnd::Unchanged);
         assert_eq!(quiet.changes, [], "posted once");
 
-        let dismissed = dismiss_notice(dir.clone(), identity.clone(), notice.id)
+        let dismissed = dismiss_notice(dir.clone(), shouted.clone(), notice.id)
             .await
             .unwrap();
         assert_eq!(dismissed, [NoticeChange::Remove { id: notice.id }]);
