@@ -38,7 +38,7 @@ The tokens come from one file, `assets/brand/tokens.json`, which the Flutter the
 Set in [pnpm-workspace.yaml](../../src/web/pnpm-workspace.yaml) and checked on every install and in `make check-web`:
 
 - **Exact versions and a frozen lockfile.** `savePrefix: ""` pins what `pnpm add` writes; every check installs with `--frozen-lockfile`.
-- **A week before install.** `minimumReleaseAge` is 7 days, so a compromised release is usually pulled before it reaches the lockfile, and pnpm re-verifies the lockfile against it on install. An exception names the exact version and when it can be dropped.
+- **A week before install.** `minimumReleaseAge` is 7 days, so a compromised release is usually pulled before it reaches the lockfile, and pnpm re-verifies the lockfile against it on install. An exception names the exact version and when it can be dropped; `cargo xtask check-repository` refuses a bare name or a pattern, which would exempt every release to come.
 - **No install scripts** unless a package is listed under `allowBuilds` (none today), with `strictDepBuilds` failing the install otherwise.
 - **Licenses.** `pnpm run licenses` ([scripts/licenses.ts](../../src/web/scripts/licenses.ts)) checks every installed package, dev tools included, against the same permissive set as [deny.toml](../../deny.toml), plus 0BSD, BlueOak, CC-BY-4.0 (data) and OFL-1.1 (the bundled fonts).
 - **Justify each package** in the change that adds it: what it does that the platform or an existing package doesn't.

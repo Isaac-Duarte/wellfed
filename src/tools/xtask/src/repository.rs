@@ -55,6 +55,9 @@ const FLASH_CLIENT: &str = "src/tools/wellfed-flash/Cargo.toml";
 /// (it takes the nearest file and merges none), so it must repeat every root
 /// setting before adding its own.
 const SERVER_CLIPPY: &str = "src/server/clippy.toml";
+/// The web workspace's dependency policy, whose release-age exceptions
+/// each name one exact version.
+const PNPM_WORKSPACE: &str = "src/web/pnpm-workspace.yaml";
 /// The server's release build, which names its own Rust image and
 /// toolchain: they must be the one `rust-toolchain.toml` pins, or a release
 /// builds with a compiler `make check` never ran.
@@ -264,6 +267,14 @@ fn check_file(root: &Path, name: &str, published: &BTreeSet<&str>, summary: &mut
         }
     }
 
+    if name == PNPM_WORKSPACE {
+        for entry in unpinned_exceptions(&content) {
+            summary.errors.push(format!(
+                "{name}: the release-age exception {entry} names no exact version; write name@version"
+            ));
+        }
+    }
+
     if name == SERVER_CLIPPY {
         match fs::read_to_string(root.join("clippy.toml")) {
             Ok(root_settings) => {
@@ -306,6 +317,30 @@ fn check_file(root: &Path, name: &str, published: &BTreeSet<&str>, summary: &mut
             }
         }
     }
+}
+
+/// The `minimumReleaseAgeExclude` entries that are not one package at one
+/// exact version: a bare name or a pattern exempts every release to come.
+fn unpinned_exceptions(workspace: &str) -> Vec<&str> {
+    workspace
+        .lines()
+        .skip_while(|line| !line.starts_with("minimumReleaseAgeExclude:"))
+        .skip(1)
+        .take_while(|line| line.starts_with(' ') || line.is_empty())
+        .filter_map(|line| line.trim().strip_prefix("- "))
+        .filter(|entry| {
+            let entry = entry.trim().trim_matches(['"', '\'']);
+            let name = entry.strip_prefix('@').unwrap_or(entry);
+            !name.split_once('@').is_some_and(|(package, version)| {
+                !package.is_empty()
+                    && !package.contains('*')
+                    && version.starts_with(|c: char| c.is_ascii_digit())
+                    && version
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'))
+            })
+        })
+        .collect()
 }
 
 /// Whether `dest`, relative to the root, is a published file or a folder
@@ -848,6 +883,26 @@ mod tests {
 
     fn lines(count: usize) -> String {
         "x\n".repeat(count)
+    }
+
+    #[test]
+    fn a_release_age_exception_names_one_exact_version() {
+        let workspace = "\
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - vite@8.3.5
+  - \"@oxc-project/types@0.155.0\"
+  # A comment.
+  - \"@rolldown/binding-*\"
+  - rolldown
+  - postcss@^8
+savePrefix: \"\"
+";
+        assert_eq!(
+            unpinned_exceptions(workspace),
+            ["\"@rolldown/binding-*\"", "rolldown", "postcss@^8"]
+        );
+        assert!(unpinned_exceptions("minimumReleaseAge: 10080\n").is_empty());
     }
 
     /// A link resolves for every reader only to a file a clone has: one
