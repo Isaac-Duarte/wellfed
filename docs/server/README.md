@@ -128,7 +128,7 @@ Set `webhook.url` ([settings](running.md#settings)) and the server POSTs a small
 
 - **`event`** is `opened` or `cleared`. **`key`** is the same in both, so a receiver pairs a clear with its open.
 - **`kind`** is one of the feeder's alert kinds, or `unreachable`, the server's own. **`level`** is `urgent`, `soon` or `security`.
-- **`words`** is one plain English sentence. **`at`** is the feeder's time for the alert, `null` without a valid clock; **`time`** is when the server saw the change.
+- **`words`** is one plain English sentence. **`at`** is the feeder's time for the alert, `null` without a valid clock; **`time`** is when the server saw the change: for an opening, when it judged the alert open; for a clear, when it first tried to send it, which an earlier change still being retried can delay.
 - **The body only grows.** A newer server adds fields and never changes these; `version` moves only if a field's meaning must.
 
 Delivery is at least once, under one `id` per change:

@@ -19,7 +19,9 @@ pub struct Delivery {
     /// whose answer was lost can tell the next one is no new change.
     pub id: String,
     pub event: Transition,
-    /// When the server saw the change.
+    /// When the server saw the change: an opening's when it first judged
+    /// the alert open, a clear's when it first tried to send it, which a
+    /// change ahead of it in the queue can delay.
     pub time: Timestamp,
     pub feeder: FeederRef,
     pub alert: AlertRef,
@@ -122,7 +124,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_alert_has_words() {
+    fn food_low_reads_plainly() {
         let open = OpenAlert {
             at: None,
             alert: Alert::FoodLow,
