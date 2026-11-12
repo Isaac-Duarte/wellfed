@@ -7187,16 +7187,6 @@
         "operationId": "logout",
         "responses": {
           "204": {},
-          "401": {
-            "description": "No valid login or token: `unauthenticated`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
           "403": {
             "description": "A write from another site's page: `cross_origin`, or a refusal of the route's own",
             "content": {

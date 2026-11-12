@@ -14,6 +14,8 @@ const OPEN: &[(&str, Method)] = &[
     ("/setup", Method::Post),
     ("/import", Method::Post),
     ("/session", Method::Post),
+    // A logout without a login has nothing to end, and answers as one.
+    ("/session", Method::Delete),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]

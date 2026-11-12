@@ -14292,15 +14292,6 @@
           "operationId": "logout",
           "responses": {
             "204": {},
-            "401": {
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/Problem"
-                  }
-                }
-              }
-            },
             "403": {
               "content": {
                 "application/json": {
