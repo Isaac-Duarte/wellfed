@@ -54,9 +54,11 @@ impl Link {
             deframer: Deframer::default(),
         })
     }
+}
 
+impl SetupLink for Link {
     /// Send one message, framed. Each piece is acknowledged before the next.
-    pub(crate) async fn send(&mut self, message: &[u8]) -> Result<()> {
+    async fn send(&mut self, message: &[u8]) -> Result<(), PlatformError> {
         for piece in frame(message)?.chunks(CONTROL_CHUNK) {
             timeout(CONNECT_TIMEOUT, self.connection.write(piece))
                 .await
@@ -67,11 +69,11 @@ impl Link {
     }
 
     /// The next message, waiting at most `wait`.
-    pub(crate) async fn receive(&mut self, wait: Duration) -> Result<Vec<u8>> {
-        timeout(wait, async {
+    async fn receive(&mut self, wait: Duration) -> Result<Vec<u8>, PlatformError> {
+        let message = timeout(wait, async {
             loop {
                 if let Some(message) = self.deframer.next_message()? {
-                    return Ok(message);
+                    return Ok::<_, anyhow::Error>(message);
                 }
                 let notification = self
                     .notifications
@@ -82,26 +84,13 @@ impl Link {
             }
         })
         .await
-        .context("no answer from the feeder in time")?
+        .context("no answer from the feeder in time")??;
+        Ok(message)
     }
 
     /// Hang up, bounded: a stack can stall disconnecting a device the feeder
     /// already dropped.
-    pub(crate) async fn close(self) {
-        self.connection.disconnect(CLOSE_TIMEOUT).await;
-    }
-}
-
-impl SetupLink for Link {
-    async fn send(&mut self, message: &[u8]) -> Result<(), PlatformError> {
-        Ok(Self::send(self, message).await?)
-    }
-
-    async fn receive(&mut self, wait: Duration) -> Result<Vec<u8>, PlatformError> {
-        Ok(Self::receive(self, wait).await?)
-    }
-
     async fn close(self) {
-        Self::close(self).await;
+        self.connection.disconnect(CLOSE_TIMEOUT).await;
     }
 }
