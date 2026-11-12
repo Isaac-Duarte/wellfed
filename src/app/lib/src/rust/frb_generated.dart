@@ -6652,6 +6652,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NtpChoice dco_decode_box_autoadd_ntp_choice(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_ntp_choice(raw);
+  }
+
+  @protected
   NtpResult dco_decode_box_autoadd_ntp_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_ntp_result(raw);
@@ -7489,7 +7495,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return FeederRequest_PutTime(
           base: dco_decode_u_32(raw[1]),
           zone: dco_decode_opt_box_autoadd_zone_change(raw[2]),
-          ntp: dco_decode_opt_String(raw[3]),
+          ntp: dco_decode_opt_box_autoadd_ntp_choice(raw[3]),
         );
       case 9:
         return FeederRequest_CreateInvite(role: dco_decode_client_role(raw[1]));
@@ -8524,6 +8530,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NtpChoice dco_decode_ntp_choice(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return NtpChoice_Gateway();
+      case 1:
+        return NtpChoice_Off();
+      case 2:
+        return NtpChoice_Address(address: dco_decode_String(raw[1]));
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
   NtpResult dco_decode_ntp_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return NtpResult.values[raw as int];
@@ -8677,6 +8698,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   NextMealView? dco_decode_opt_box_autoadd_next_meal_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_next_meal_view(raw);
+  }
+
+  @protected
+  NtpChoice? dco_decode_opt_box_autoadd_ntp_choice(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_ntp_choice(raw);
   }
 
   @protected
@@ -11505,6 +11532,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NtpChoice sse_decode_box_autoadd_ntp_choice(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_ntp_choice(deserializer));
+  }
+
+  @protected
   NtpResult sse_decode_box_autoadd_ntp_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_ntp_result(deserializer));
@@ -12452,7 +12485,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 8:
         var var_base = sse_decode_u_32(deserializer);
         var var_zone = sse_decode_opt_box_autoadd_zone_change(deserializer);
-        var var_ntp = sse_decode_opt_String(deserializer);
+        var var_ntp = sse_decode_opt_box_autoadd_ntp_choice(deserializer);
         return FeederRequest_PutTime(
           base: var_base,
           zone: var_zone,
@@ -13805,6 +13838,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NtpChoice sse_decode_ntp_choice(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return NtpChoice_Gateway();
+      case 1:
+        return NtpChoice_Off();
+      case 2:
+        var var_address = sse_decode_String(deserializer);
+        return NtpChoice_Address(address: var_address);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   NtpResult sse_decode_ntp_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -14078,6 +14129,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_next_meal_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  NtpChoice? sse_decode_opt_box_autoadd_ntp_choice(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_ntp_choice(deserializer));
     } else {
       return null;
     }
@@ -17486,6 +17550,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_ntp_choice(
+    NtpChoice self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_ntp_choice(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_ntp_result(
     NtpResult self,
     SseSerializer serializer,
@@ -18380,7 +18453,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(8, serializer);
         sse_encode_u_32(base, serializer);
         sse_encode_opt_box_autoadd_zone_change(zone, serializer);
-        sse_encode_opt_String(ntp, serializer);
+        sse_encode_opt_box_autoadd_ntp_choice(ntp, serializer);
       case FeederRequest_CreateInvite(role: final role):
         sse_encode_i_32(9, serializer);
         sse_encode_client_role(role, serializer);
@@ -19558,6 +19631,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_ntp_choice(NtpChoice self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case NtpChoice_Gateway():
+        sse_encode_i_32(0, serializer);
+      case NtpChoice_Off():
+        sse_encode_i_32(1, serializer);
+      case NtpChoice_Address(address: final address):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(address, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_ntp_result(NtpResult self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -19834,6 +19921,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_next_meal_view(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_ntp_choice(
+    NtpChoice? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_ntp_choice(self, serializer);
     }
   }
 

@@ -140,7 +140,7 @@ void main() {
       await tapIn(tester, find.text('Phones only'));
       final put = session.requests.first as FeederRequest_PutTime;
       expect(put.base, 8);
-      expect(put.ntp, 'off');
+      expect(put.ntp, const NtpChoice.off());
       expect(put.zone, isNull);
     });
 
@@ -197,7 +197,7 @@ void main() {
       await tapIn(tester, find.widgetWithText(ListTile, 'Cloudflare'));
 
       final put = session.requests.first as FeederRequest_PutTime;
-      expect(put.ntp, '162.159.200.1');
+      expect(put.ntp, const NtpChoice.address(address: '162.159.200.1'));
     });
 
     testWidgets('a bad address and an unanswered change say so', (tester) async {

@@ -506,6 +506,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NoticeView dco_decode_box_autoadd_notice_view(dynamic raw);
 
   @protected
+  NtpChoice dco_decode_box_autoadd_ntp_choice(dynamic raw);
+
+  @protected
   NtpResult dco_decode_box_autoadd_ntp_result(dynamic raw);
 
   @protected
@@ -1005,6 +1008,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NoticeView dco_decode_notice_view(dynamic raw);
 
   @protected
+  NtpChoice dco_decode_ntp_choice(dynamic raw);
+
+  @protected
   NtpResult dco_decode_ntp_result(dynamic raw);
 
   @protected
@@ -1072,6 +1078,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NextMealView? dco_decode_opt_box_autoadd_next_meal_view(dynamic raw);
+
+  @protected
+  NtpChoice? dco_decode_opt_box_autoadd_ntp_choice(dynamic raw);
 
   @protected
   NtpResult? dco_decode_opt_box_autoadd_ntp_result(dynamic raw);
@@ -1948,6 +1957,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NoticeView sse_decode_box_autoadd_notice_view(SseDeserializer deserializer);
 
   @protected
+  NtpChoice sse_decode_box_autoadd_ntp_choice(SseDeserializer deserializer);
+
+  @protected
   NtpResult sse_decode_box_autoadd_ntp_result(SseDeserializer deserializer);
 
   @protected
@@ -2515,6 +2527,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NoticeView sse_decode_notice_view(SseDeserializer deserializer);
 
   @protected
+  NtpChoice sse_decode_ntp_choice(SseDeserializer deserializer);
+
+  @protected
   NtpResult sse_decode_ntp_result(SseDeserializer deserializer);
 
   @protected
@@ -2604,6 +2619,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NextMealView? sse_decode_opt_box_autoadd_next_meal_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NtpChoice? sse_decode_opt_box_autoadd_ntp_choice(
     SseDeserializer deserializer,
   );
 
@@ -3651,6 +3671,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_ntp_choice(
+    NtpChoice self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_ntp_result(
     NtpResult self,
     SseSerializer serializer,
@@ -4383,6 +4409,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_notice_view(NoticeView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ntp_choice(NtpChoice self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ntp_result(NtpResult self, SseSerializer serializer);
 
   @protected
@@ -4499,6 +4528,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_next_meal_view(
     NextMealView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_ntp_choice(
+    NtpChoice? self,
     SseSerializer serializer,
   );
 

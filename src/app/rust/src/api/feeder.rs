@@ -43,8 +43,7 @@ pub enum FeederRequest {
     PutTime {
         base: u32,
         zone: Option<ZoneChange>,
-        /// As `wellfed time --ntp` takes it: `off`, `gateway`, or an address.
-        ntp: Option<String>,
+        ntp: Option<NtpChoice>,
     },
     CreateInvite {
         role: ClientRole,
@@ -115,6 +114,17 @@ pub struct SettingsChanges {
     pub sound_window: Option<Window>,
     pub desiccant_days: Option<u8>,
     pub meal_reminder: Option<MealReminder>,
+}
+
+/// Where the feeder asks the time.
+pub enum NtpChoice {
+    /// The router that gave it its address.
+    Gateway,
+    /// Nowhere: it keeps the time phones give it.
+    Off,
+    /// The server at `address`, an IPv4 address with an optional port. A
+    /// word is not an address: `off` and `gateway` are refused here.
+    Address { address: String },
 }
 
 pub enum ZoneChange {

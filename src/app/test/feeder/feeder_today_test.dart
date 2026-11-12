@@ -126,7 +126,7 @@ void main() {
       await tapIn(tester, find.widgetWithText(FilledButton, 'Use Cloudflare'));
       final put = session.requests.first as FeederRequest_PutTime;
       expect(put.base, 4);
-      expect(put.ntp, '162.159.200.1');
+      expect(put.ntp, const NtpChoice.address(address: '162.159.200.1'));
       expect(session.requests.last, const FeederRequest.getTime());
     });
 

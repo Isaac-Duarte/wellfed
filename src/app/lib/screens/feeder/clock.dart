@@ -41,7 +41,7 @@ class _ClockScreenState extends State<ClockScreen> {
     unawaited(widget.feeder.ask(const FeederRequest.getTime()));
   }
 
-  Future<void> _time({ZoneChange? zone, String? ntp}) async {
+  Future<void> _time({ZoneChange? zone, NtpChoice? ntp}) async {
     final TimeInfo? time = widget.feeder.state.card?.time;
     if (time == null) return;
     setState(() => _asking = true);
@@ -61,7 +61,7 @@ class _ClockScreenState extends State<ClockScreen> {
 
   Future<void> _address() async {
     final String? address = await askNtpServer(context);
-    if (address != null && mounted) await _time(ntp: address);
+    if (address != null && mounted) await _time(ntp: NtpChoice.address(address: address));
   }
 
   @override
@@ -128,7 +128,7 @@ class _ClockScreenState extends State<ClockScreen> {
                     "Asks your router's time server",
                     first: true,
                     chosen: time?.ntp is NtpView_Gateway,
-                    onTap: can ? () => unawaited(_time(ntp: 'gateway')) : null,
+                    onTap: can ? () => unawaited(_time(ntp: const NtpChoice.gateway())) : null,
                   ),
                   _Source(
                     'A time server',
@@ -143,7 +143,7 @@ class _ClockScreenState extends State<ClockScreen> {
                     'Phones only',
                     'Set each time a phone connects',
                     chosen: time?.ntp is NtpView_Off,
-                    onTap: can ? () => unawaited(_time(ntp: 'off')) : null,
+                    onTap: can ? () => unawaited(_time(ntp: const NtpChoice.off())) : null,
                   ),
                 ],
               ),

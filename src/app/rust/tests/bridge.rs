@@ -15,8 +15,8 @@ use tokio::sync::{Notify, mpsc};
 use tokio::task::LocalSet;
 use wellfed_app_bridge::api::error::ErrorKind;
 use wellfed_app_bridge::api::feeder::{
-    FeederRefusal, FeederReply, FeederRequest, NotAsked, PlanEdit, PlanView, PortionChange,
-    SettingsChanges,
+    FeederRefusal, FeederReply, FeederRequest, NotAsked, NtpChoice, PlanEdit, PlanView,
+    PortionChange, SettingsChanges,
 };
 use wellfed_app_bridge::api::join::{JoinAnswer, invite_feeder, join_feeder};
 use wellfed_app_bridge::api::keys::ClientKey;
@@ -893,7 +893,7 @@ fn a_screens_read_of_the_time_reaches_the_card() {
             FeederRequest::PutTime {
                 base: time.generation,
                 zone: None,
-                ntp: Some("off".into()),
+                ntp: Some(NtpChoice::Off),
             },
         )
         .await;
@@ -1023,7 +1023,9 @@ fn requests_read_and_change_the_feeder_through_the_session() {
         let reply = ask(FeederRequest::PutTime {
             base: time.generation,
             zone: None,
-            ntp: Some("pool.ntp.org".into()),
+            ntp: Some(NtpChoice::Address {
+                address: "pool.ntp.org".into(),
+            }),
         })
         .await;
         assert_eq!(

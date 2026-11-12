@@ -8812,7 +8812,7 @@ impl SseDecode for crate::api::feeder::FeederRequest {
                 let mut var_base = <u32>::sse_decode(deserializer);
                 let mut var_zone =
                     <Option<crate::api::feeder::ZoneChange>>::sse_decode(deserializer);
-                let mut var_ntp = <Option<String>>::sse_decode(deserializer);
+                let mut var_ntp = <Option<crate::api::feeder::NtpChoice>>::sse_decode(deserializer);
                 return crate::api::feeder::FeederRequest::PutTime {
                     base: var_base,
                     zone: var_zone,
@@ -10490,6 +10490,30 @@ impl SseDecode for crate::api::alerts::NoticeView {
     }
 }
 
+impl SseDecode for crate::api::feeder::NtpChoice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::api::feeder::NtpChoice::Gateway;
+            }
+            1 => {
+                return crate::api::feeder::NtpChoice::Off;
+            }
+            2 => {
+                let mut var_address = <String>::sse_decode(deserializer);
+                return crate::api::feeder::NtpChoice::Address {
+                    address: var_address,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseDecode for crate::api::model::NtpResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10764,6 +10788,17 @@ impl SseDecode for Option<crate::api::session::NextMealView> {
             return Some(<crate::api::session::NextMealView>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::feeder::NtpChoice> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::feeder::NtpChoice>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -16750,6 +16785,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::alerts::NoticeView>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::feeder::NtpChoice {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::feeder::NtpChoice::Gateway => [0.into_dart()].into_dart(),
+            crate::api::feeder::NtpChoice::Off => [1.into_dart()].into_dart(),
+            crate::api::feeder::NtpChoice::Address { address } => {
+                [2.into_dart(), address.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::feeder::NtpChoice {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::feeder::NtpChoice>
+    for crate::api::feeder::NtpChoice
+{
+    fn into_into_dart(self) -> crate::api::feeder::NtpChoice {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::NtpResult> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -20970,7 +21028,7 @@ impl SseEncode for crate::api::feeder::FeederRequest {
                 <i32>::sse_encode(8, serializer);
                 <u32>::sse_encode(base, serializer);
                 <Option<crate::api::feeder::ZoneChange>>::sse_encode(zone, serializer);
-                <Option<String>>::sse_encode(ntp, serializer);
+                <Option<crate::api::feeder::NtpChoice>>::sse_encode(ntp, serializer);
             }
             crate::api::feeder::FeederRequest::CreateInvite { role } => {
                 <i32>::sse_encode(9, serializer);
@@ -22377,6 +22435,27 @@ impl SseEncode for crate::api::alerts::NoticeView {
     }
 }
 
+impl SseEncode for crate::api::feeder::NtpChoice {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::feeder::NtpChoice::Gateway => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::api::feeder::NtpChoice::Off => {
+                <i32>::sse_encode(1, serializer);
+            }
+            crate::api::feeder::NtpChoice::Address { address } => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(address, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseEncode for crate::api::model::NtpResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -22623,6 +22702,16 @@ impl SseEncode for Option<crate::api::session::NextMealView> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::session::NextMealView>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::feeder::NtpChoice> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::feeder::NtpChoice>::sse_encode(value, serializer);
         }
     }
 }

@@ -221,9 +221,7 @@ sealed class FeederRequest with _$FeederRequest {
   const factory FeederRequest.putTime({
     required int base,
     ZoneChange? zone,
-
-    /// As `wellfed time --ntp` takes it: `off`, `gateway`, or an address.
-    String? ntp,
+    NtpChoice? ntp,
   }) = FeederRequest_PutTime;
   const factory FeederRequest.createInvite({required ClientRole role}) =
       FeederRequest_CreateInvite;
@@ -347,6 +345,22 @@ enum NotAsked {
   /// one out did not land, so the generation it would go on is not known,
   /// or it was read from another generation than the one out went on.
   held,
+}
+
+@freezed
+sealed class NtpChoice with _$NtpChoice {
+  const NtpChoice._();
+
+  /// The router that gave it its address.
+  const factory NtpChoice.gateway() = NtpChoice_Gateway;
+
+  /// Nowhere: it keeps the time phones give it.
+  const factory NtpChoice.off() = NtpChoice_Off;
+
+  /// The server at `address`, an IPv4 address with an optional port. A
+  /// word is not an address: `off` and `gateway` are refused here.
+  const factory NtpChoice.address({required String address}) =
+      NtpChoice_Address;
 }
 
 @freezed

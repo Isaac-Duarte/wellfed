@@ -23,8 +23,8 @@ use wellfed_model::{
 
 use crate::api::feeder::{
     CalibrationInfo, CallInfo, ClientView, FeederRefusal, FeederReply, FeederRequest, InviteView,
-    NotAsked, NtpView, PlanEdit, PlanView, PlansView, PortionChange, SettingsChanges, SettingsView,
-    TimeInfo, TraceView, UpdateInfo, ZoneChange, ZoneView,
+    NotAsked, NtpChoice, NtpView, PlanEdit, PlanView, PlansView, PortionChange, SettingsChanges,
+    SettingsView, TimeInfo, TraceView, UpdateInfo, ZoneChange, ZoneView,
 };
 use crate::api::router::NotSentReason;
 use crate::session::{Command, Heard};
@@ -302,7 +302,7 @@ async fn upload_call(commands: &mpsc::UnboundedSender<Command>, wav: &[u8]) -> F
 
 pub(crate) fn time_changes(
     zone: Option<ZoneChange>,
-    ntp: Option<String>,
+    ntp: Option<NtpChoice>,
 ) -> Result<TimeChanges, NotAsked> {
     let now = Timestamp::now();
     let named = |name: &str| {
@@ -318,9 +318,18 @@ pub(crate) fn time_changes(
             Some(named(system.iana_name().ok_or(NotAsked::BadZone)?)?)
         }
     };
-    let ntp = ntp
-        .map(|text| NtpServer::from_str(&text).map_err(|_| NotAsked::BadNtp))
-        .transpose()?;
+    // The words go through the parser the CLI uses, so the port a choice
+    // implies is decided in one place.
+    let parsed = |text: &str| NtpServer::from_str(text).map_err(|_| NotAsked::BadNtp);
+    let ntp = match ntp {
+        None => None,
+        Some(NtpChoice::Gateway) => Some(parsed("gateway")?),
+        Some(NtpChoice::Off) => Some(parsed("off")?),
+        Some(NtpChoice::Address { address }) => match parsed(&address)? {
+            server @ NtpServer::Address { .. } => Some(server),
+            NtpServer::Off | NtpServer::Gateway { .. } => return Err(NotAsked::BadNtp),
+        },
+    };
     Ok(TimeChanges { zone, ntp })
 }
 
@@ -700,6 +709,36 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    /// A choice of where to ask the time is its kind; an address field that
+    /// holds a word is refused, not read as that word.
+    #[test]
+    fn a_time_server_choice_is_its_kind_and_an_address_is_one() {
+        let ntp = |choice| time_changes(None, Some(choice)).map(|changes| changes.ntp);
+
+        assert!(matches!(ntp(NtpChoice::Off), Ok(Some(NtpServer::Off))));
+        assert!(matches!(
+            ntp(NtpChoice::Gateway),
+            Ok(Some(NtpServer::Gateway { .. }))
+        ));
+        assert!(matches!(
+            ntp(NtpChoice::Address {
+                address: "162.159.200.1".into()
+            }),
+            Ok(Some(NtpServer::Address { .. }))
+        ));
+        for word in ["off", "gateway", "pool.ntp.org"] {
+            assert!(
+                matches!(
+                    ntp(NtpChoice::Address {
+                        address: word.into()
+                    }),
+                    Err(NotAsked::BadNtp)
+                ),
+                "{word}"
+            );
+        }
+    }
 
     fn read_at(read_at: Timestamp, read_mono: Instant) -> TimeRead {
         TimeRead::new(
