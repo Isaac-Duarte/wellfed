@@ -12,23 +12,15 @@
 //! Each view and the queued change are whole structs, copied in and out
 //! with interrupts masked, so a reader never sees half a publish.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 pub use wellfed_core::settings::{
     KindSettings, SaveOutcome, Saved, SettingsFields, SettingsResult, SettingsView, Window,
 };
 
 use crate::cell::TaskCell;
+use crate::handoff::{Handoff, Taken};
 use crate::sdk::IrqGuard;
-
-/// Who holds a mailbox's pending change, as its `state` stores it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Hand {
-    Empty = 0,
-    Filling = 1,
-    Queued = 2,
-}
 
 const NO_VIEW: SettingsView = view_before_load(());
 
@@ -77,6 +69,7 @@ pub fn publish(view: SettingsView) {
 }
 
 /// Forget the device's published settings (host tests).
+#[cfg(not(target_os = "none"))]
 pub fn reset() {
     DEVICE_LOADED.store(false, Ordering::Release);
     let _guard = IrqGuard::lock();
@@ -87,10 +80,8 @@ pub fn reset() {
 /// The settings mailbox between the device API and the writer, for a kind
 /// whose own settings are `K`. One static per firmware, the kind runtime's.
 pub struct Mailbox<K: KindSettings> {
-    /// The queued change; written only by the claimant of `state` (`Empty`
-    /// to `Filling`), read only by the writer after `Queued`.
-    pending: TaskCell<SettingsFields<K>>,
-    state: AtomicU8,
+    /// The queued change, from the device API to the writer.
+    pending: Handoff<SettingsFields<K>>,
     /// What NOR holds, once the writer has loaded it.
     view: TaskCell<SettingsView<K>>,
     loaded: AtomicBool,
@@ -99,8 +90,7 @@ pub struct Mailbox<K: KindSettings> {
 impl<K: KindSettings> Mailbox<K> {
     pub const fn new() -> Self {
         Self {
-            pending: TaskCell::new(SettingsFields::NONE),
-            state: AtomicU8::new(Hand::Empty as u8),
+            pending: Handoff::new(SettingsFields::NONE),
             view: TaskCell::new(view_before_load(K::DEFAULT)),
             loaded: AtomicBool::new(false),
         }
@@ -122,28 +112,16 @@ impl<K: KindSettings> Mailbox<K> {
             return SettingsResult::Busy;
         };
         if !fields.changes() {
-            let pending = self.state.load(Ordering::Acquire) != Hand::Empty as u8;
+            let pending = self.pending.waiting();
             return SettingsResult::Current { view, pending };
         }
         if !view.writable {
             return SettingsResult::ReadOnly;
         }
 
-        if self
-            .state
-            .compare_exchange(
-                Hand::Empty as u8,
-                Hand::Filling as u8,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .is_err()
-        {
+        if !self.pending.offer(|pending| *pending = fields) {
             return SettingsResult::Busy;
         }
-        // SAFETY: `Filling` makes this the only accessor until `Queued`.
-        unsafe { *self.pending.get() = fields };
-        self.state.store(Hand::Queued as u8, Ordering::Release);
         crate::writer_wake::wake();
         SettingsResult::Current {
             view,
@@ -168,27 +146,33 @@ impl<K: KindSettings> Mailbox<K> {
         self.loaded.store(true, Ordering::Release);
     }
 
-    /// The queued change, if any; it stays queued until [`Self::finish`].
-    pub fn pending(&self) -> Option<SettingsFields<K>> {
-        // SAFETY: `Queued` hands the value to the writer until `finish`.
-        (self.state.load(Ordering::Acquire) == Hand::Queued as u8)
-            .then(|| unsafe { *self.pending.get() })
+    /// Whether a change is on its way to the store: queued, being written
+    /// or taken by the writer.
+    pub fn waiting(&self) -> bool {
+        self.pending.waiting()
     }
 
-    /// The writer applied (or gave up on) the queued change: `failed`
+    /// The writer's half: the queued change, held until [`Self::finish`];
+    /// a guard dropped unfinished leaves it queued.
+    pub fn take(&self) -> Option<Taken<'_, SettingsFields<K>>> {
+        self.pending.take()
+    }
+
+    /// The writer applied (or gave up on) the taken change: `failed`
     /// when it saved none of it, or only part. The outcome is in the view
     /// before the mailbox frees, so a client's write waiting on it finds
     /// it as soon as nothing is pending ([`Saved::outcome`]).
-    pub fn finish(&self, failed: bool) {
+    pub fn finish(&self, taken: Taken<'_, SettingsFields<K>>, failed: bool) {
         {
             let _guard = IrqGuard::lock();
             // SAFETY: interrupts are masked, so this is the only reference.
             unsafe { (*self.view.get()).saved.finish(failed) };
         }
-        self.state.store(Hand::Empty as u8, Ordering::Release);
+        taken.finish();
     }
 
     /// Forget everything, the device's part included (host tests).
+    #[cfg(not(target_os = "none"))]
     pub fn reset(&self) {
         reset();
         self.loaded.store(false, Ordering::Release);
@@ -197,7 +181,7 @@ impl<K: KindSettings> Mailbox<K> {
             // SAFETY: interrupts are masked, so this is the only reference.
             unsafe { *self.view.get() = view_before_load(K::DEFAULT) };
         }
-        self.state.store(Hand::Empty as u8, Ordering::Release);
+        self.pending.clear();
     }
 }
 

@@ -876,7 +876,7 @@ fn a_queued_store_write_does_not_hold_a_tune() {
         matches!(queued, SettingsResult::Current { .. }),
         "{queued:?}"
     );
-    assert!(SETTINGS.pending().is_some());
+    assert!(SETTINGS.waiting());
 
     assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
 }

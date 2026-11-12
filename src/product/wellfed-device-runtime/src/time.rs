@@ -7,126 +7,81 @@
 //! clock's zone rule and the NTP exchange's server. Nothing here writes
 //! flash.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
-
 use wellfed_core::store::slot::SlotIo;
 use wellfed_device::store::time::TimeStore;
-use wellfed_device_api::mailbox::{TimeSettings, TimeSettingsResult, TimeSettingsView};
-use wellfed_hal::cell::TaskCell;
-use wellfed_hal::sdk::IrqGuard;
+use wellfed_device_api::mailbox::{NtpServer, TimeSettings, TimeSettingsResult, TimeSettingsView};
+use wellfed_hal::handoff::{Handoff, Published, Taken};
 
 /// The time settings' slots within the storage region.
 pub const TIME_BASE: u32 = wellfed_hal::board::storage::TIME.first;
 
-/// Who holds `PENDING`, as `STATE` stores it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Hand {
-    Empty = 0,
-    Filling = 1,
-    Queued = 2,
-}
-
-/// The queued change; written only by the claimant of `STATE` (`Empty` to
-/// `Filling`), read only by the writer after `Queued`.
-static PENDING: TaskCell<TimeSettings> = TaskCell::new(TimeSettings {
+/// The queued change, from the device API to the writer.
+static PENDING: Handoff<TimeSettings> = Handoff::new(TimeSettings {
     zone: None,
-    ntp: wellfed_device_api::mailbox::NtpServer::Off,
+    ntp: NtpServer::Off,
 });
-static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
 
-/// What NOR holds, published by the writer. The settings are larger than
-/// an atomic, so they are copied in and out with interrupts masked.
-static PUBLISHED: TaskCell<TimeSettings> = TaskCell::new(TimeSettings {
-    zone: None,
-    ntp: wellfed_device_api::mailbox::NtpServer::Off,
-});
-static LOADED: AtomicBool = AtomicBool::new(false);
-static WRITABLE: AtomicBool = AtomicBool::new(false);
-static GENERATION: AtomicU32 = AtomicU32::new(0);
+/// What NOR holds, published by the writer as one view, so a reader never
+/// pairs one generation with another's settings.
+static PUBLISHED: Published<TimeSettingsView> = Published::new(EMPTY);
 
-fn view() -> TimeSettingsView {
-    let settings = {
-        let _guard = IrqGuard::lock();
-        // SAFETY: interrupts are masked, so this is the only reference.
-        unsafe { *PUBLISHED.get() }
-    };
-    TimeSettingsView {
-        settings,
-        generation: GENERATION.load(Ordering::Acquire),
-        writable: WRITABLE.load(Ordering::Acquire),
-    }
-}
+const EMPTY: TimeSettingsView = TimeSettingsView {
+    settings: TimeSettings {
+        zone: None,
+        ntp: NtpServer::Off,
+    },
+    generation: 0,
+    writable: false,
+};
 
 /// The settings as the writer last published them, and whether a change
 /// waits; `Busy` until the writer has opened the store.
 pub fn current() -> TimeSettingsResult {
-    if !LOADED.load(Ordering::Acquire) {
+    let Some(view) = PUBLISHED.get() else {
         return TimeSettingsResult::Busy;
-    }
+    };
     TimeSettingsResult::Current {
-        view: view(),
-        pending: STATE.load(Ordering::Acquire) != Hand::Empty as u8,
+        view,
+        pending: PENDING.waiting(),
     }
 }
 
 /// The device API's half: queue the whole new settings for the writer.
 pub fn change(settings: TimeSettings) -> TimeSettingsResult {
-    if !LOADED.load(Ordering::Acquire) {
+    let Some(view) = PUBLISHED.get() else {
         return TimeSettingsResult::Busy;
-    }
-    if !WRITABLE.load(Ordering::Acquire) {
+    };
+    if !view.writable {
         return TimeSettingsResult::ReadOnly;
     }
-    if STATE
-        .compare_exchange(
-            Hand::Empty as u8,
-            Hand::Filling as u8,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-        .is_err()
-    {
+    if !PENDING.offer(|pending| *pending = settings) {
         return TimeSettingsResult::Busy;
     }
-    // SAFETY: `Filling` makes this the only accessor until `Queued`.
-    unsafe { *PENDING.get() = settings };
-    STATE.store(Hand::Queued as u8, Ordering::Release);
     wellfed_hal::writer_wake::wake();
     TimeSettingsResult::Current {
-        view: view(),
+        view,
         pending: true,
     }
 }
 
-/// The writer's half: the queued change, if any.
-pub fn pending() -> Option<TimeSettings> {
-    // SAFETY: `Queued` hands the value to the writer until `finish`.
-    (STATE.load(Ordering::Acquire) == Hand::Queued as u8).then(|| unsafe { *PENDING.get() })
-}
-
-pub fn finish() {
-    STATE.store(Hand::Empty as u8, Ordering::Release);
+/// The writer's half: the queued change, held until the guard is finished.
+pub fn take() -> Option<Taken<'static, TimeSettings>> {
+    PENDING.take()
 }
 
 /// The writer publishes what NOR holds; writable only once it is `armed`.
 pub fn publish<I: SlotIo>(store: &TimeStore<I>, armed: bool) {
-    {
-        let _guard = IrqGuard::lock();
-        // SAFETY: interrupts are masked, so this is the only reference.
-        unsafe { *PUBLISHED.get() = store.settings };
-    }
-    // Reported as 32 bits; saturate rather than wrap to an old value.
-    let generation = u32::try_from(store.generation).unwrap_or(u32::MAX);
-    GENERATION.store(generation, Ordering::Release);
-    WRITABLE.store(armed && store.writable(), Ordering::Release);
-    LOADED.store(true, Ordering::Release);
+    PUBLISHED.publish(TimeSettingsView {
+        settings: store.settings,
+        // Reported as 32 bits; saturate rather than wrap to an old value.
+        generation: u32::try_from(store.generation).unwrap_or(u32::MAX),
+        writable: armed && store.writable(),
+    });
 }
 
 /// Forget everything (host tests).
+#[cfg(not(target_os = "none"))]
 pub fn reset() {
-    LOADED.store(false, Ordering::Release);
-    WRITABLE.store(false, Ordering::Release);
-    GENERATION.store(0, Ordering::Release);
-    STATE.store(Hand::Empty as u8, Ordering::Release);
+    PUBLISHED.clear(EMPTY);
+    PENDING.clear();
 }

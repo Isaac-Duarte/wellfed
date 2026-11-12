@@ -117,7 +117,7 @@ fn changes_are_saved_once_each_inside_a_marked_attempt() {
         "the attempt is cleared after"
     );
     assert_eq!(current(), (false, true, 20, 1, true));
-    assert_eq!(SETTINGS.pending(), None);
+    assert!(!SETTINGS.waiting());
 
     let base = SETTINGS_BASE as usize * 4096;
     assert_eq!(
@@ -166,8 +166,10 @@ fn an_unwritable_store_reads_but_refuses_changes() {
 
 #[test]
 fn wifi_credentials_are_saved_inside_a_marked_attempt_and_cleared() {
+    use wellfed_core::store::slot::crc32;
     use wellfed_device_api::mailbox::WifiResult;
     use wellfed_device_api::wifi::Credentials;
+
     let (_guard, mut writer, mut provider) = start();
     step(&mut writer, &mut provider); // open
     step(&mut writer, &mut provider); // net open
@@ -192,10 +194,15 @@ fn wifi_credentials_are_saved_inside_a_marked_attempt_and_cleared() {
     );
     assert!(ATTEMPT_SEEN.with(Cell::get));
     assert_eq!(sdk::backup_read(MARKER_REGISTER), 0);
-    assert!(matches!(
-        network::current(),
-        WifiResult::Current { view, pending: false } if view.stored_ssid_crc.is_some()
-    ));
+    // The view is published whole: each generation reads with its SSID.
+    let stored = |expected| match network::current() {
+        WifiResult::Current {
+            view,
+            pending: false,
+        } => assert_eq!((view.stored_ssid_crc, view.generation), expected),
+        other => panic!("not published: {other:?}"),
+    };
+    stored((Some(crc32(b"net")), 1));
 
     network::change(None, None);
     assert_eq!(
@@ -206,6 +213,7 @@ fn wifi_credentials_are_saved_inside_a_marked_attempt_and_cleared() {
             event: WriteEvent::None,
         })
     );
+    stored((None, 2));
 }
 
 /// A Wi-Fi save the flash refuses is published as failed, so a client's

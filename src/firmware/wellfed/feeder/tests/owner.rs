@@ -342,7 +342,7 @@ fn an_unlocked_reset_hold_queues_the_key_reset() {
         })],
         "a locked panel keeps the keys"
     );
-    assert_eq!(keys::pending(), None);
+    assert_eq!(keys::take().map(|taken| *taken.get()), None);
 
     step(&mut owner, now, &[lock_hold()], None, true);
     let (_, records) = step(&mut owner, now, &[hold(&[Button::Reset])], None, true);
@@ -358,7 +358,7 @@ fn an_unlocked_reset_hold_queues_the_key_reset() {
             },
         ]
     );
-    assert_eq!(keys::pending(), Some(Change::Reset));
+    assert_eq!(keys::take().map(|taken| *taken.get()), Some(Change::Reset));
 
     let (_, records) = step(&mut owner, now, &[hold(&[Button::Reset])], None, true);
     assert_eq!(
@@ -371,7 +371,9 @@ fn an_unlocked_reset_hold_queues_the_key_reset() {
     assert!(!owner.reboot_due(now), "nothing marked yet");
 
     // The writer marked the reset: the loop restarts to finish it.
-    keys::finish(KeyResult::Done);
+    if let Some(taken) = keys::take() {
+        keys::finish(taken, KeyResult::Done);
+    }
     let (_, records) = step(&mut owner, now, &[], None, true);
     assert_eq!(
         records,
@@ -402,12 +404,18 @@ fn a_reset_hold_during_a_feed_is_refused_and_a_failed_one_does_not_restart() {
             },
         ]
     );
-    assert_eq!(keys::pending(), None, "nothing queued for the writer");
+    assert_eq!(
+        keys::take().map(|taken| *taken.get()),
+        None,
+        "nothing queued for the writer"
+    );
 
     owner.feeding = false;
     step(&mut owner, now, &[hold(&[Button::Reset])], None, true);
-    assert_eq!(keys::pending(), Some(Change::Reset));
-    keys::finish(KeyResult::Io);
+    assert_eq!(keys::take().map(|taken| *taken.get()), Some(Change::Reset));
+    if let Some(taken) = keys::take() {
+        keys::finish(taken, KeyResult::Io);
+    }
     let (_, records) = step(&mut owner, now, &[], None, true);
     assert_eq!(
         records,

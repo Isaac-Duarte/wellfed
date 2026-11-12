@@ -135,6 +135,7 @@ async fn run(cli: Cli, flash: Rc<Flash>, owner: Option<([u8; 32], Label)>) -> Re
         Event::Sim(record) => eprintln!("{record}"),
         Event::Prepare(error) => eprintln!("--enroll-owner: {error}."),
         Event::Accept(kind) => eprintln!("Accept failed ({kind}); pausing the listener."),
+        Event::HoldWrite(waits) => eprintln!("Hold write refused: {waits}."),
         Event::Pace { .. } => {}
     })
     .await?;

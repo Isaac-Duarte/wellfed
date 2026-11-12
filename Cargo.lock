@@ -5455,6 +5455,7 @@ dependencies = [
  "wellfed-feeder",
  "wellfed-feeder-sim",
  "wellfed-formats",
+ "wellfed-fw-feeder",
  "wellfed-hal",
  "wellfed-hal-feeder",
  "wellfed-model",

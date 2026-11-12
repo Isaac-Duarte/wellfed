@@ -13,6 +13,7 @@ pub use wellfed_amebad_sys as sdk;
 
 pub mod cell;
 pub mod flash;
+pub mod handoff;
 #[cfg(target_os = "none")]
 mod panic;
 pub mod trial;

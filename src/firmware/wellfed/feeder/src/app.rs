@@ -2,10 +2,10 @@
 //! other of its two tasks.
 
 use wellfed_core::clock::wall::Restart;
-use wellfed_feeder::feeder::{Feeder, Feeds, Marks, RefusedClaim};
+use wellfed_feeder::feeder::{Feeder, Feeds};
 use wellfed_feeder::panel::BUTTONS;
 use wellfed_feeder::stats::reset_cause;
-use wellfed_proto::api::{Blocked, EventBody, Refusal, ResetCause, Source, TraceSummary};
+use wellfed_proto::api::{EventBody, ResetCause, TraceSummary};
 use wellfed_sdk::hal::sdk;
 use wellfed_sdk::hal::supervision::config::SYSTIMER_HZ;
 use wellfed_sdk::{Slot, Startup, log};
@@ -71,68 +71,6 @@ static FEEDING: Slot<Feeding> = Slot::new();
 #[cfg(feature = "entropy")]
 static CAPTURE: Slot<crate::entropy::Capture> = Slot::filled(crate::entropy::Capture::new());
 
-impl Feeds for Feeding {
-    fn feeding(&self) -> bool {
-        Feeding::feeding(self)
-    }
-
-    fn busy(&self) -> bool {
-        Feeding::busy(self)
-    }
-
-    fn blocked(&self) -> Option<Blocked> {
-        Feeding::blocked(self)
-    }
-
-    fn below_floor(&self) -> Option<bool> {
-        Feeding::below_floor(self)
-    }
-
-    fn high_water(&self) -> Option<u32> {
-        Feeding::high_water(self)
-    }
-
-    #[cfg(not(feature = "gap-probe"))]
-    fn submit(&mut self, portions: u8, by: Source) -> Result<u32, Refusal> {
-        Feeding::submit(self, portions, by, |record| {
-            log(format_args!("PLOWN1 {record}\r\n"));
-        })
-    }
-
-    /// The scheduling measurement runs with nobody at the motor, so its
-    /// image cannot start a feed: the owner stays at rest.
-    #[cfg(feature = "gap-probe")]
-    fn submit(&mut self, _: u8, _: Source) -> Result<u32, Refusal> {
-        Err(Refusal::Unavailable)
-    }
-
-    fn claiming(&self) -> Option<Source> {
-        Feeding::claiming(self)
-    }
-
-    fn claim_step(&mut self, hold: Option<Blocked>) -> Option<RefusedClaim> {
-        Feeding::claim_step(self, hold, |record| {
-            log(format_args!("PLOWN1 {record}\r\n"));
-        })
-    }
-
-    fn reserved(&self, feed: u32) -> Option<Result<(), Refusal>> {
-        Feeding::reserved(self, feed)
-    }
-
-    fn cancel(&self, feed: u32) -> bool {
-        Feeding::cancel(self, feed)
-    }
-
-    fn food(&self) -> Option<bool> {
-        Feeding::food(self)
-    }
-
-    fn marks(&self) -> Option<Marks> {
-        Feeding::marks(self)
-    }
-}
-
 #[wellfed_sdk::task(name = "wellfed-loop", stack = LOOP_STACK_WORDS, priority = 2)]
 fn loop_task() -> u32 {
     let (Some(mut feeder), Some(mut feeding)) =
@@ -153,11 +91,7 @@ fn loop_task() -> u32 {
     let buzzer_delay = buzzer::step(&feeding);
     let began = sdk::systimer_ticks();
     let setup = feeder.setup_on();
-    let mut feed_delay = feeding.step(
-        setup,
-        |record| log(format_args!("PLOWN1 {record}\r\n")),
-        |body, trace| outcome(&mut feeder, body, trace),
-    );
+    let mut feed_delay = feeding.step(setup, |body, trace| outcome(&mut feeder, body, trace));
 
     let now_ms = sdk::uptime_ms();
     let mut delay_ms = feeder.pass(now_ms, &mut *feeding, |record| {
@@ -172,11 +106,7 @@ fn loop_task() -> u32 {
     if feeding.feeding() && feeder.handshook() {
         feeding.handshook();
         let setup = feeder.setup_on();
-        feed_delay = feeding.step(
-            setup,
-            |record| log(format_args!("PLOWN1 {record}\r\n")),
-            |body, trace| outcome(&mut feeder, body, trace),
-        );
+        feed_delay = feeding.step(setup, |body, trace| outcome(&mut feeder, body, trace));
     }
     if let Some(feed_delay) = feed_delay {
         delay_ms = delay_ms.min(feed_delay);

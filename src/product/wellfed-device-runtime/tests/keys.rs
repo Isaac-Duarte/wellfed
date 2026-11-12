@@ -20,7 +20,7 @@ fn start() -> MutexGuard<'static, ()> {
 #[test]
 fn one_change_waits_for_the_writer() {
     let _guard = start();
-    assert_eq!(keys::pending(), None);
+    assert!(keys::take().is_none());
 
     assert_eq!(keys::request(Change::Reset), Requested::Queued);
     let enroll = Change::Key {
@@ -38,16 +38,26 @@ fn one_change_waits_for_the_writer() {
         Requested::Busy,
         "never queued behind"
     );
-    assert_eq!(keys::pending(), Some(Change::Reset));
-    assert_eq!(keys::pending(), Some(Change::Reset), "held until finish");
+    let taken = keys::take().expect("queued");
+    assert_eq!(*taken.get(), Change::Reset);
+    assert!(keys::take().is_none(), "one taker at a time");
+    drop(taken);
+    let taken = keys::take().expect("held until finish");
+    assert_eq!(*taken.get(), Change::Reset);
 
     let ticket = keys::ticket();
     assert_eq!(keys::outcome(ticket), None, "not finished yet");
-    keys::finish(KeyResult::Done);
+    keys::finish(taken, KeyResult::Done);
     assert_eq!(keys::outcome(ticket), Some(KeyResult::Done));
-    assert_eq!(keys::pending(), None);
+    assert!(keys::take().is_none());
     assert_eq!(keys::request(enroll), Requested::Queued);
-    assert_eq!(keys::pending(), Some(enroll));
+    assert_eq!(keys::take().map(|taken| *taken.get()), Some(enroll));
+}
+
+/// The writer's own finish: take the queued change and finish it with
+/// `result`.
+fn finish(result: KeyResult) {
+    keys::finish(keys::take().expect("a change waits"), result);
 }
 
 /// A waiter that has not looked yet still finds its result after newer
@@ -65,16 +75,16 @@ fn earlier_results_outlive_later_changes() {
 
     assert_eq!(keys::request(revoke(1)), Requested::Queued);
     let first = keys::ticket();
-    keys::finish(KeyResult::Done);
+    finish(KeyResult::Done);
     assert_eq!(keys::request(revoke(2)), Requested::Queued);
     let second = keys::ticket();
-    keys::finish(KeyResult::NotFound);
+    finish(KeyResult::NotFound);
     assert_eq!(keys::outcome(first), Some(KeyResult::Done));
     assert_eq!(keys::outcome(second), Some(KeyResult::NotFound));
 
     for key in 3..=u8::try_from(KEYS_FINISHED).unwrap() {
         assert_eq!(keys::request(revoke(key)), Requested::Queued);
-        keys::finish(KeyResult::Full);
+        finish(KeyResult::Full);
     }
     assert_eq!(
         keys::outcome(first),
@@ -82,7 +92,7 @@ fn earlier_results_outlive_later_changes() {
         "the oldest kept"
     );
     assert_eq!(keys::request(revoke(0)), Requested::Queued);
-    keys::finish(KeyResult::Full);
+    finish(KeyResult::Full);
     assert_eq!(keys::outcome(first), None, "one more pushes it out");
     assert_eq!(keys::outcome(second), Some(KeyResult::NotFound));
 }

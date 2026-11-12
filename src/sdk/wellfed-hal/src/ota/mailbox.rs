@@ -28,6 +28,7 @@ use wellfed_core::ota::install::{Progress, Refused};
 use wellfed_signed::offer::{DOWNGRADE_BODY, MANIFEST_LEN, SIGNATURE_LEN, STATEMENT_MAX};
 
 use crate::cell::TaskCell;
+use crate::handoff::Handoff;
 use crate::sdk;
 
 /// A downgrade statement's whole length.
@@ -89,7 +90,10 @@ impl Request {
     }
 }
 
-/// Who holds a slot, as its state byte stores it.
+/// Who holds a chunk slot, as its state byte stores it. The chunks keep
+/// their own two-slot pool rather than a [`Handoff`] each: the loop reads a
+/// queued chunk's offset for [`progress`], which a hand-off's producer
+/// never does.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Hand {
@@ -111,8 +115,9 @@ fn claim(state: &AtomicU8) -> bool {
         .is_ok()
 }
 
-static REQUEST: TaskCell<Option<Request>> = TaskCell::new(None);
-static REQUEST_STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
+/// The queued request; the stage peeks at it each step and frees it with
+/// [`finish`].
+static PENDING: Handoff<Request> = Handoff::new(Request::Cancel);
 static TICKET: AtomicU32 = AtomicU32::new(0);
 /// The last finished request's ticket and answer; written by the stage
 /// with the scheduler paused.
@@ -147,21 +152,19 @@ static TOOK: AtomicBool = AtomicBool::new(false);
 /// The loop's half: queue one request; its ticket. It takes the install
 /// lease with it; only a cancel goes in while an install holds it.
 pub fn request(request: Request) -> Result<u32, Refused> {
-    if !claim(&REQUEST_STATE) {
-        return Err(Refused::Busy);
-    }
-    let took = !LEASE.swap(true, Ordering::AcqRel);
-    if !took && !matches!(request, Request::Cancel) {
-        REQUEST_STATE.store(Hand::Empty as u8, Ordering::Release);
-        return Err(Refused::Installing);
-    }
-    TOOK.store(took, Ordering::Release);
-    // SAFETY: `Filling` makes this the only accessor until `Queued`.
-    unsafe { *REQUEST.get() = Some(request) };
-    let ticket = TICKET.load(Ordering::Acquire).wrapping_add(1).max(1);
-    TICKET.store(ticket, Ordering::Release);
-    REQUEST_STATE.store(Hand::Queued as u8, Ordering::Release);
-    Ok(ticket)
+    PENDING
+        .try_offer(|pending| {
+            let took = !LEASE.swap(true, Ordering::AcqRel);
+            if !took && !matches!(request, Request::Cancel) {
+                return Err(Refused::Installing);
+            }
+            TOOK.store(took, Ordering::Release);
+            *pending = request;
+            let ticket = TICKET.load(Ordering::Acquire).wrapping_add(1).max(1);
+            TICKET.store(ticket, Ordering::Release);
+            Ok(ticket)
+        })
+        .unwrap_or(Err(Refused::Busy))
 }
 
 /// The loop's half: the answer to the request with `ticket`, once done.
@@ -242,18 +245,17 @@ pub fn installing() -> bool {
 
 /// The stage's half: the queued request, if any.
 pub fn pending() -> Option<Request> {
-    if REQUEST_STATE.load(Ordering::Acquire) != Hand::Queued as u8 {
-        return None;
-    }
-    // SAFETY: `Queued` hands the value to the stage until `finish`.
-    unsafe { *REQUEST.get() }
+    // Dropped unfinished, the guard leaves the request queued for `finish`.
+    PENDING.take().map(|taken| *taken.get())
 }
 
 /// The stage's half: the request is answered; free the slot. The lease it
 /// took goes with it, unless it was an offer the stage accepted.
 pub fn finish(answer: Result<Answer, Refused>) {
-    // SAFETY: `Queued` hands the slot to the stage until here.
-    let offer = matches!(unsafe { *REQUEST.get() }, Some(Request::Offer { .. }));
+    let taken = PENDING.take();
+    let offer = taken
+        .as_ref()
+        .is_some_and(|taken| matches!(taken.get(), Request::Offer { .. }));
     let ticket = TICKET.load(Ordering::Acquire);
     sdk::unscheduled(|| {
         // Cleared with the outcome, so the loop never reads the new answer
@@ -266,7 +268,9 @@ pub fn finish(answer: Result<Answer, Refused>) {
     if TOOK.swap(false, Ordering::AcqRel) && !(offer && answer.is_ok()) {
         release();
     }
-    REQUEST_STATE.store(Hand::Empty as u8, Ordering::Release);
+    if let Some(taken) = taken {
+        taken.finish();
+    }
 }
 
 /// The stage's half: whether the loop has read the last outcome.
@@ -319,7 +323,7 @@ pub fn release() {
 /// Forget everything (host tests).
 #[cfg(not(target_os = "none"))]
 pub fn reset() {
-    REQUEST_STATE.store(Hand::Empty as u8, Ordering::Release);
+    PENDING.clear();
     TICKET.store(0, Ordering::Release);
     TAKEN.store(false, Ordering::Release);
     PUBLISHED.store(false, Ordering::Release);
@@ -330,7 +334,6 @@ pub fn reset() {
     }
     // SAFETY: host tests serialize on this module's state.
     unsafe {
-        *REQUEST.get() = None;
         *OUTCOME.get() = None;
         *PROGRESS.get() = Progress::idle(0, 0);
     }

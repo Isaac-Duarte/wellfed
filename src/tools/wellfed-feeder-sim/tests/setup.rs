@@ -296,7 +296,7 @@ fn a_press_behind_a_write_feeds_when_its_claim_is_taken() {
     let mut feeder = Feeder::first_boot();
     feeder.run(1_000);
     feeder.hold(&[Button::Lock]);
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.press(Button::Dispense);
     assert!(matches!(feeder.dispensed()[..], [Ok(1)]));
     assert!(!feeder.sim.feed_outputs_claimed());
@@ -307,7 +307,7 @@ fn a_press_behind_a_write_feeds_when_its_claim_is_taken() {
         [Ok(1), Err(Refusal::Busy)]
     ));
 
-    feeder.sim.hold_write(false);
+    feeder.sim.hold_write(false).unwrap();
     feeder.run(30);
     assert!(feeder.sim.feed_outputs_claimed(), "taken on a later pass");
     feeder.run(5_000);
@@ -321,7 +321,7 @@ fn a_press_past_its_claim_s_deadline_is_refused_as_any_press_is() {
     let mut feeder = Feeder::first_boot();
     feeder.run(1_000);
     feeder.hold(&[Button::Lock]);
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.press(Button::Dispense);
     feeder.run(WRITE_WAIT_MS + 100);
 
@@ -337,7 +337,7 @@ fn a_press_past_its_claim_s_deadline_is_refused_as_any_press_is() {
     );
 
     // The feeder takes the next press, under the same number.
-    feeder.sim.hold_write(false);
+    feeder.sim.hold_write(false).unwrap();
     feeder.press(Button::Dispense);
     assert!(matches!(
         feeder.dispensed()[..],
@@ -356,7 +356,7 @@ fn at_first_reading(press: Option<u32>) -> (Feeder, u32) {
     let mut feeder = Feeder::first_boot();
     feeder.run(1_000);
     feeder.hold(&[Button::Lock]);
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     loop {
         let at = feeder.now;
         if press == Some(at) {
@@ -399,7 +399,7 @@ fn a_refused_claim_leaves_the_first_food_reading_a_baseline() {
         [Ok(1), Err(Refusal::Busy)]
     ));
     assert_eq!(feeding_journal(&feeder), Some(0), "it never ran");
-    feeder.sim.hold_write(false);
+    feeder.sim.hold_write(false).unwrap();
     feeder.run(1_000);
     let food = harness::events(&mut feeder.sim)
         .into_iter()
@@ -416,7 +416,7 @@ fn setup_started_while_a_press_waits_stops_its_claim() {
     let mut feeder = Feeder::new(BuildWifi::Present);
     feeder.run(1_000);
     feeder.hold(&[Button::Lock]);
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.press(Button::Dispense);
     assert!(matches!(feeder.dispensed()[..], [Ok(1)]));
 
@@ -426,7 +426,7 @@ fn setup_started_while_a_press_waits_stops_its_claim() {
         feeder.dispensed()[..],
         [Ok(1), Err(Refusal::Busy)]
     ));
-    feeder.sim.hold_write(false);
+    feeder.sim.hold_write(false).unwrap();
     feeder.run(1_000);
     assert!(!feeder.sim.feed_outputs_claimed());
     assert_eq!(feeding_journal(&feeder), Some(0), "it never ran");

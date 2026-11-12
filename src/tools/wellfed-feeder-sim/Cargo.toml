@@ -22,6 +22,7 @@ wellfed-feeder.workspace = true
 wellfed-formats.workspace = true
 wellfed-hal.workspace = true
 wellfed-hal-feeder.workspace = true
+wellfed-fw-feeder.workspace = true
 sha2 = { version = "0.10", default-features = false }
 wellfed-proto.workspace = true
 wellfed-session.workspace = true

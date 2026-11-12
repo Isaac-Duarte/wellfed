@@ -84,6 +84,7 @@ use wellfed_hal::board::storage::{
 use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash_lock::arming::{self, Arming, Hooks, Poll};
 use wellfed_hal::flash_lock::provider::Provider;
+use wellfed_hal::handoff::Taken;
 use wellfed_hal::interlock::{INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn};
 use wellfed_hal::settings::{KindSettings, Mailbox};
 use wellfed_hal::{rng, sdk, supervision};
@@ -929,7 +930,12 @@ impl<F: FlashOps> Core<F> {
     /// event comes straight to the ring, not through the loop's queue, so a
     /// full queue cannot drop it either; the loop's alert rules hear of it
     /// through [`events::take_written`].
-    fn change<P: Product<F>, R>(&mut self, change: Change, writable: bool) -> Record<R> {
+    fn change<P: Product<F>, R>(
+        &mut self,
+        taken: Taken<'static, Change>,
+        writable: bool,
+    ) -> Record<R> {
+        let change = *taken.get();
         let kind = match change {
             Change::Key {
                 change: ApiChange::Enroll { .. },
@@ -997,7 +1003,7 @@ impl<F: FlashOps> Core<F> {
         } else {
             keys::publish_clients(self.clients.clients().copied());
         }
-        keys::finish(result);
+        keys::finish(taken, result);
         Record::KeysChanged {
             change: kind,
             result,
@@ -1533,7 +1539,8 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             return next(POLL_MS, Some(Record::Product(record)));
         }
         let core = &mut self.core;
-        if let Some(change) = keys::pending() {
+        // A change left untaken (its guard dropped) waits for the next pass.
+        if let Some(taken) = keys::take() {
             let writable = core.stage == Stage::Idle && H::armed();
             let turn = if writable {
                 let Some(turn) = core.take_turn() else {
@@ -1543,11 +1550,12 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             } else {
                 None
             };
-            let record = core.change::<P, _>(change, writable);
+            let record = core.change::<P, _>(taken, writable);
             drop(turn);
             return next(POLL_MS, Some(record));
         }
-        if let Some(credentials) = network::pending() {
+        if let Some(taken) = network::take() {
+            let network::Asked { credentials, asked } = *taken.get();
             let record = if core.unarmed::<H>() {
                 Record::NetError {
                     stage: ErrorStage::Unarmed,
@@ -1562,7 +1570,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 if saved {
                     // The client's event in the same turn, after the save
                     // ([`Core::append_written`]).
-                    let event = match network::asked() {
+                    let event = match asked {
                         Some(asked) => {
                             let generation = generation(core.net.generation);
                             let body = EventBody::Wifi {
@@ -1586,10 +1594,11 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             };
             let failed = matches!(record, Record::NetError { .. });
             self.publish();
-            network::finish(failed);
+            network::finish(taken, failed);
             return next(POLL_MS, Some(record));
         }
-        if let Some(settings) = time::pending() {
+        if let Some(taken) = time::take() {
+            let settings = *taken.get();
             let record = if core.unarmed::<H>() {
                 Record::TimeError {
                     stage: ErrorStage::Unarmed,
@@ -1616,14 +1625,14 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 }
             };
             self.publish();
-            time::finish();
+            taken.finish();
             return next(POLL_MS, Some(record));
         }
         if let Some(step) = self.product.mailboxes::<H>(&mut self.core) {
             return step;
         }
         let mailbox = P::settings_mailbox();
-        let Some(fields) = mailbox.pending() else {
+        let Some(taken) = mailbox.take() else {
             let core = &mut self.core;
             let writable = core.stage == Stage::Idle && H::armed();
             if let Some(step) = self.product.rest(&mut self.core, writable) {
@@ -1635,11 +1644,13 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             }
             return self.events_step(writable);
         };
+        let fields = *taken.get();
+        // A change that waits for its turn is left queued as its guard drops.
         let Some((record, failed)) = self.save_settings::<H>(&fields) else {
             return self.core.waiting();
         };
         self.publish();
-        asked::finish_settings(mailbox, failed);
+        asked::finish_settings(mailbox, taken, failed);
         next(POLL_MS, Some(record))
     }
 

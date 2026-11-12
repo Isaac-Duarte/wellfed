@@ -855,18 +855,38 @@ fn a_client_s_table_waits_while_a_meal_is_taken_and_no_release_enables_it() {
 #[test]
 fn a_meal_behind_a_write_runs_once_when_its_claim_is_taken() {
     let mut feeder = breakfast();
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
     assert_eq!(feeder.claims, 1);
     assert!(feeder.plans().claim.is_some());
     assert!(!feeder.sim.feed_outputs_claimed(), "the write goes on");
     assert!(feeder.fed().is_empty());
 
-    feeder.sim.hold_write(false);
+    feeder.sim.hold_write(false).unwrap();
     feeder.run(10_000);
     assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert_eq!(feeder.claims, 1, "claimed once");
     assert!(feeder.missed().is_empty());
+}
+
+/// A second hold refused while the first is held leaves no waiting writer
+/// behind: once the first ends, the meal's claim is taken at once rather
+/// than held back for a writer that never comes.
+#[test]
+fn a_refused_second_hold_leaves_no_writer_waiting() {
+    let mut feeder = breakfast();
+    feeder.sim.hold_write(true).unwrap();
+    assert!(feeder.sim.hold_write(true).is_err(), "one write at a time");
+    feeder.sim.hold_write(false).unwrap();
+
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
+    assert_eq!(feeder.claims, 1);
+    assert!(
+        feeder.sim.feed_outputs_claimed() || !feeder.fed().is_empty(),
+        "the claim is taken with no write in its way"
+    );
+    feeder.run(10_000);
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
 }
 
 /// A meal whose claim is refused past the wait is not lost: the occurrence goes
@@ -875,7 +895,7 @@ fn a_meal_behind_a_write_runs_once_when_its_claim_is_taken() {
 #[test]
 fn a_meal_past_its_claim_s_deadline_gives_its_occurrence_back_and_retries() {
     let mut feeder = breakfast();
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + u64::from(WRITE_WAIT_MS) - 1_000);
     assert!(feeder.plans().claim.is_some(), "still within its wait");
     feeder.run(2_000);
@@ -883,14 +903,14 @@ fn a_meal_past_its_claim_s_deadline_gives_its_occurrence_back_and_retries() {
     assert_eq!(feeder.claims, 1);
     assert!(feeder.fed().is_empty());
 
-    feeder.sim.hold_write(false);
+    feeder.sim.hold_write(false).unwrap();
     feeder.run(u64::from(schedule::RETRY_MS) + 5_000);
     assert_eq!(feeder.claims, 2, "claimed again after the retry's wait");
     assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert!(feeder.missed().is_empty());
 
     let mut feeder = breakfast();
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 50 * MINUTE_MS);
     let due = seconds(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS);
     assert_eq!(
@@ -905,7 +925,7 @@ fn a_meal_past_its_claim_s_deadline_gives_its_occurrence_back_and_retries() {
 #[test]
 fn a_cut_while_a_meal_waits_for_its_claim_is_missed_and_never_fed() {
     let mut feeder = breakfast();
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
     assert!(feeder.plans().claim.is_some());
 
@@ -924,12 +944,12 @@ fn a_cut_while_a_meal_waits_for_its_claim_is_missed_and_never_fed() {
 #[test]
 fn a_cancel_leaves_a_meal_waiting_for_its_claim_to_run_once() {
     let mut feeder = breakfast();
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
     assert_eq!(feeder.claims, 1);
     assert!(!feeder.sim.cancel_feed(1), "nothing is running yet");
 
-    feeder.sim.hold_write(false);
+    feeder.sim.hold_write(false).unwrap();
     feeder.run(10_000);
     assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert_eq!(feeder.claims, 1);
@@ -945,10 +965,10 @@ fn a_meal_due_while_another_waits_for_its_claim_runs_after_it() {
     feeder.sync(WEDNESDAY + 7 * HOUR_MS);
     let meals = table(&[(0, plan(7 * 60 + 30, 1)), (1, plan(7 * 60 + 30, 2))]);
     feeder.put(meals);
-    feeder.sim.hold_write(true);
+    feeder.sim.hold_write(true).unwrap();
     feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
     assert_eq!(feeder.claims, 1, "nothing is decided around a waiting feed");
-    feeder.sim.hold_write(false);
+    feeder.sim.hold_write(false).unwrap();
     feeder.run(30_000);
 
     assert_eq!(

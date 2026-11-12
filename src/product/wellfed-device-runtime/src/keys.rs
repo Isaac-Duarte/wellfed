@@ -5,7 +5,7 @@
 //! 10), and the loop task alone runs handshakes and reads the panel. So the
 //! loop queues a change here with [`request`] (an enrollment once a
 //! handshake admits a client, a revocation, or the reset), and the
-//! writer takes it with [`pending`] and frees the slot with [`finish`],
+//! writer takes it with [`take`] and frees the slot with [`finish`],
 //! naming the [`KeyResult`]. A second change before the writer takes the
 //! first is [`Requested::Busy`], never queued behind it. A caller that must
 //! know the result (BLE setup answers its client) keeps the [`ticket`] of
@@ -25,7 +25,7 @@
 //! publishes the enrolled clients ([`publish_clients`]), which the device
 //! API reads to admit a session.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use wellfed_device_api::clients::{CLIENTS as STORE_CLIENTS, Client, Role};
 pub use wellfed_device_api::mailbox::{
@@ -33,27 +33,15 @@ pub use wellfed_device_api::mailbox::{
 };
 
 use wellfed_hal::cell::TaskCell;
+use wellfed_hal::handoff::{Handoff, Taken};
 use wellfed_hal::ota::signers;
 use wellfed_hal::sdk;
 
 // Every update key the store can hold reaches the update stage.
 const _: () = assert!(STORE_CLIENTS <= signers::SIGNERS);
 
-/// Who holds `PENDING`, as `STATE` stores it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Hand {
-    Empty = 0,
-    /// The claimant is writing the change.
-    Filling = 1,
-    /// Handed to the writer until `finish`.
-    Queued = 2,
-}
-
-/// Written only by the claimant of `STATE` (`Empty` to `Filling`), read only
-/// by the writer after `Queued`.
-static PENDING: TaskCell<Option<Change>> = TaskCell::new(None);
-static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
+/// The queued change, from the loop to the writer.
+static PENDING: Handoff<Change> = Handoff::new(Change::Reset);
 /// The latest queued change's ticket; only the claimant writes it.
 static TICKET: AtomicU32 = AtomicU32::new(0);
 /// The last finished changes, a ring the writer fills at `NEXT`: each its
@@ -71,31 +59,24 @@ static GENERATION: AtomicU32 = AtomicU32::new(0);
 
 /// The loop's half: queue one change for the writer.
 pub fn request(change: Change) -> Requested {
-    if STATE
-        .compare_exchange(
-            Hand::Empty as u8,
-            Hand::Filling as u8,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-        .is_err()
-    {
+    // The ticket moves while the slot is claimed, so it names this change.
+    let queued = PENDING.offer(|pending| {
+        *pending = change;
+        TICKET.store(
+            TICKET.load(Ordering::Acquire).wrapping_add(1),
+            Ordering::Release,
+        );
+    });
+    if !queued {
         return Requested::Busy;
     }
-    // SAFETY: `Filling` makes this the only accessor until `Queued`.
-    unsafe { *PENDING.get() = Some(change) };
-    TICKET.store(
-        TICKET.load(Ordering::Acquire).wrapping_add(1),
-        Ordering::Release,
-    );
-    STATE.store(Hand::Queued as u8, Ordering::Release);
     wellfed_hal::writer_wake::wake();
     Requested::Queued
 }
 
-/// Whether a change waits for the writer (queued or being written).
+/// Whether a change waits for the writer (queued, being written or taken).
 pub fn queued() -> bool {
-    STATE.load(Ordering::Acquire) != Hand::Empty as u8
+    PENDING.waiting()
 }
 
 /// The ticket of the change `request` last queued.
@@ -113,17 +94,14 @@ pub fn outcome(ticket: u32) -> Option<KeyResult> {
     KeyResult::ALL.get(index).copied()
 }
 
-/// The writer's half: the queued change, if any.
-pub fn pending() -> Option<Change> {
-    if STATE.load(Ordering::Acquire) != Hand::Queued as u8 {
-        return None;
-    }
-    // SAFETY: `Queued` hands the value to the writer until `finish`.
-    unsafe { *PENDING.get() }
+/// The writer's half: the queued change, held until [`finish`].
+pub fn take() -> Option<Taken<'static, Change>> {
+    PENDING.take()
 }
 
-/// The writer's half: the change is applied or refused; free the slot.
-pub fn finish(result: KeyResult) {
+/// The writer's half: the taken change is applied or refused; record its
+/// result, then free the slot.
+pub fn finish(taken: Taken<'static, Change>, result: KeyResult) {
     let index = KeyResult::ALL
         .iter()
         .position(|&r| r == result)
@@ -136,7 +114,7 @@ pub fn finish(result: KeyResult) {
         Ordering::Release,
     );
     NEXT.store(next.wrapping_add(1), Ordering::Release);
-    STATE.store(Hand::Empty as u8, Ordering::Release);
+    taken.finish();
 }
 
 /// The writer's half: the identity the store now holds.
@@ -225,7 +203,7 @@ pub fn restart_wanted() -> bool {
 #[cfg(not(target_os = "none"))]
 pub fn reset() {
     RESTART.store(false, Ordering::Release);
-    STATE.store(Hand::Empty as u8, Ordering::Release);
+    PENDING.clear();
     TICKET.store(0, Ordering::Release);
     for entry in &FINISHED {
         entry.store(0, Ordering::Release);

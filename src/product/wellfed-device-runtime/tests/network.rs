@@ -315,12 +315,13 @@ fn changes_queue_checked_credentials_or_a_clear() {
         current(),
         WifiResult::Current { pending: true, .. }
     ));
-    let queued = pending().unwrap().unwrap();
+    let taken = take().unwrap();
+    let queued = taken.get().credentials.unwrap();
     assert_eq!(
         (queued.ssid(), queued.psk()),
         (&b"net"[..], &b"password"[..])
     );
-    finish(true);
+    finish(taken, true);
 
     // Each change finishes as the number its queue named, and a failed save
     // reads as failed after the writer is done, not as saved.
@@ -333,8 +334,9 @@ fn changes_queue_checked_credentials_or_a_clear() {
     };
     let second = view.saved.next();
     assert_eq!(second, first.wrapping_add(1));
-    assert_eq!(pending(), Some(None));
-    finish(false);
+    let taken = take().unwrap();
+    assert_eq!(taken.get().credentials, None);
+    finish(taken, false);
     let WifiResult::Current {
         pending: false,
         view,

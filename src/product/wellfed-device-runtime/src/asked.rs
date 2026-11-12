@@ -6,13 +6,14 @@
 //! The loop task is the only one that queues a settings change, and only it
 //! moves the mailbox from empty to queued. So a mailbox it finds empty
 //! stays empty until its own request: the stamp written then is the one
-//! the writer reads with that change. The writer reads it while the change
-//! is queued, as many times as it must wait for its write turn, and clears
+//! the writer reads with that change. The writer reads it while it holds
+//! the change, as many times as it must wait for its write turn, and clears
 //! it as it frees the mailbox ([`finish_settings`]). A firmware has one
 //! mailbox, so one stamp serves it.
 
 use wellfed_device_api::mailbox::Stamp;
 use wellfed_hal::cell::TaskCell;
+use wellfed_hal::handoff::Taken;
 use wellfed_hal::settings::{KindSettings, Mailbox, SettingsFields, SettingsResult};
 
 /// Written by the loop only while the mailbox is empty, read and cleared
@@ -32,7 +33,7 @@ pub fn settings_request<K: KindSettings>(
     fields: SettingsFields<K>,
     asked: Option<Stamp>,
 ) -> SettingsResult<K> {
-    if fields.changes() && mailbox.pending().is_none() {
+    if fields.changes() && !mailbox.waiting() {
         // SAFETY: the mailbox is empty, so the writer is not reading this
         // (see the module's docs), and only the loop task writes it.
         unsafe { *SETTINGS.get() = asked };
@@ -40,12 +41,14 @@ pub fn settings_request<K: KindSettings>(
     mailbox.request(fields)
 }
 
-/// The writer's half: who asked for the queued settings change, while
-/// [`Mailbox::pending`] holds it. It stays until [`finish_settings`], so
-/// a change that waits a turn for the outputs still has it when it saves.
+/// The writer's half: who asked for the settings change it holds. It stays
+/// until [`finish_settings`], so a change that waits a turn for the
+/// outputs still has it when it saves.
 pub fn settings<K: KindSettings>(mailbox: &Mailbox<K>) -> Option<Stamp> {
-    mailbox.pending()?;
-    // SAFETY: a change is queued, so the loop does not touch this until
+    if !mailbox.waiting() {
+        return None;
+    }
+    // SAFETY: a change is on its way, so the loop does not touch this until
     // the writer frees the mailbox.
     unsafe { *SETTINGS.get() }
 }
@@ -55,11 +58,13 @@ pub fn settings<K: KindSettings>(mailbox: &Mailbox<K>) -> Option<Stamp> {
 /// stamp left behind would be read with the next change queued straight
 /// into the SDK's mailbox without one (a host test's), and name a client
 /// who never asked for it.
-pub fn finish_settings<K: KindSettings>(mailbox: &Mailbox<K>, failed: bool) {
-    if mailbox.pending().is_some() {
-        // SAFETY: the change is still queued, so the loop does not touch
-        // this until `finish` below frees the mailbox.
-        unsafe { *SETTINGS.get() = None };
-    }
-    mailbox.finish(failed);
+pub fn finish_settings<K: KindSettings>(
+    mailbox: &Mailbox<K>,
+    taken: Taken<'_, SettingsFields<K>>,
+    failed: bool,
+) {
+    // SAFETY: the writer holds the change, so the loop does not touch this
+    // until `finish` below frees the mailbox.
+    unsafe { *SETTINGS.get() = None };
+    mailbox.finish(taken, failed);
 }

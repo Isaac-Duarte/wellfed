@@ -127,9 +127,9 @@ fn writes_during_a_feed_are_refused_busy_and_reads_still_answer() {
     ));
     assert_eq!(keys_request(revoke), None);
     // Nothing was queued for the writer.
-    assert_eq!(SETTINGS.pending(), None);
+    assert!(!SETTINGS.waiting());
     assert!(!network::saving());
-    assert_eq!(keys::pending(), None);
+    assert_eq!(keys::take().map(|taken| *taken.get()), None);
 
     // At rest each is queued for the writer.
     INTERLOCK.release_feed();
@@ -208,9 +208,15 @@ fn a_change_queued_just_before_a_feed_goes_first() {
             assert!(!interlock.outputs_claimed(), "the writer can go on");
             now.set(now.get() + 10);
             if now.get() == 200 {
-                SETTINGS.finish(false);
-                network::finish(false);
-                keys::finish(keys::KeyResult::Done);
+                if let Some(taken) = SETTINGS.take() {
+                    SETTINGS.finish(taken, false);
+                }
+                if let Some(taken) = network::take() {
+                    network::finish(taken, false);
+                }
+                if let Some(taken) = keys::take() {
+                    keys::finish(taken, keys::KeyResult::Done);
+                }
             }
         }
         assert_eq!(now.get(), 200, "claimed once the change was written");

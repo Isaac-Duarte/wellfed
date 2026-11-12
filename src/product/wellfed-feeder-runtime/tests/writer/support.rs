@@ -169,7 +169,11 @@ pub(crate) fn change(
 ) -> Record {
     assert_eq!(keys::request(change), Requested::Queued);
     let record = step(writer, provider).expect("the change record");
-    assert_eq!(keys::pending(), None, "the slot is free again");
+    assert_eq!(
+        keys::take().map(|taken| *taken.get()),
+        None,
+        "the slot is free again"
+    );
     record
 }
 
