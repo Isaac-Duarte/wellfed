@@ -4,7 +4,7 @@
 //! and is never sent again, an install followed to its end, the feeder's
 //! stock backup read, shown and exported, and never signed when it is not
 //! stock's pinned image, and a feeder's clients and restart, and an export saved
-//! whole.
+//! whole, never over an earlier one.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -528,6 +528,7 @@ fn export_saves_the_archive_once_it_is_whole() {
             .await;
         let bodies: Vec<serde_json::Value> = saved.exited(0).bodies();
         let archive = std::fs::read(&file).unwrap();
+        let first = archive.clone();
         assert_eq!(bodies[0]["bytes"], archive.len());
         assert!(!home.0.path().join("home.tar.partial").exists());
         // The archive the server streamed, whole: it imports.
@@ -542,6 +543,19 @@ fn export_saves_the_archive_once_it_is_whole() {
         assert!(saved.exited(0).stdout.starts_with("Saved "));
         let archive = std::fs::read(&csv).unwrap();
         assert!(archive.windows(9).any(|name| name == b"users.csv"));
+
+        // An earlier archive is never replaced.
+        let again = home.run(&["export", file.to_str().unwrap()], "").await;
+        assert!(
+            again.exited(1).stderr.contains("exists"),
+            "{}",
+            again.stderr
+        );
+        assert_eq!(
+            std::fs::read(&file).unwrap(),
+            first,
+            "the first archive is kept"
+        );
 
         fresh.stop().await;
         server.stop().await;
