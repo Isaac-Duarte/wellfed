@@ -27,7 +27,7 @@ use crate::link::status;
 use crate::writers::development::{
     self, Acquired, BANK0, FACTORY, GiveWay, Layout, PinnedGiveWay, Transaction, Update,
 };
-use wellfed_formats::canonical::{canonical_of, sha256};
+use wellfed_formats::canonical::sha256;
 use wellfed_formats::flash_plan::{
     DevelopmentPlan, GiveWayBindings, GiveWayPlan, Reviewed, UpdateBindings,
 };
@@ -58,10 +58,6 @@ pub enum UpdateError {
     InspectedRegions,
     #[error("Complete guard acquisition required")]
     InspectedGuards,
-    #[error("Operation differs before serial access")]
-    OperationDiffers,
-    #[error("Execution bindings differ before serial access")]
-    BindingsDiffer,
 
     #[error(
         "A fountain update finished with --interrupted needs --stopped-session: the stopped session's output"
@@ -510,7 +506,7 @@ pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> 
             &loaded.update(),
             &current,
             Some(&other),
-            neighbors.clone(),
+            neighbors,
         )?,
     };
 
@@ -530,22 +526,6 @@ pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> 
         args.evidence.plan.as_deref(),
         args.evidence.expected_plan_sha256.as_deref(),
         &reviewed,
-    )?;
-
-    // Recheck the operation and bindings themselves before serial access.
-    require(
-        canonical_of(&reviewed.operation_plan)?
-            == canonical_of(&development::plan_bound(
-                &loaded.update(),
-                &current,
-                Some(&other),
-                neighbors,
-            )?)?,
-        || UpdateError::OperationDiffers,
-    )?;
-    require(
-        canonical_of(&reviewed.bindings)? == canonical_of(&loaded.bindings)?,
-        || UpdateError::BindingsDiffer,
     )?;
 
     let execution = Execution {

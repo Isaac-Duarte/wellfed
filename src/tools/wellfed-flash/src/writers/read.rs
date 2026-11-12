@@ -172,9 +172,11 @@ struct Summary<'a> {
     error: Option<String>,
 }
 
-/// Two fixed status observations, each kept before stability is checked.
+/// Two fixed status observations, each kept before stability is checked,
+/// and what they permit across `model`'s bank 1.
 pub fn inspect_status(
     port: &mut dyn Port,
+    model: Model,
     record: &mut dyn FnMut([u8; 3]) -> Result<()>,
 ) -> Result<StatusInspection> {
     let mut observations = Vec::new();
@@ -196,7 +198,10 @@ pub fn inspect_status(
     })?;
 
     Ok(StatusInspection {
-        bank1_assessment: status::assess_range(second, 0x186000, 0x2D6000)?,
+        bank1_assessment: {
+            let (start, end) = crate::device::pins(model).bank1;
+            status::assess_range(second, start, end)?
+        },
         observations,
         matching: true,
         status_write_commands: false,
@@ -323,11 +328,14 @@ pub fn run(context: &Context, args: &Args) -> Result<Outcome> {
             }
 
             Mode::Status => {
+                let Some(model) = args.device else {
+                    return Err(ReadError::DeviceMissing.into());
+                };
                 report.update(|r| {
                     continuing(&mut r.details);
                     r.details.status_observations = Some(Vec::new());
                 })?;
-                inspect_status(&mut port, &mut |values| {
+                inspect_status(&mut port, model, &mut |values| {
                     report.update(|r| {
                         r.details
                             .status_observations

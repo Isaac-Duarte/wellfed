@@ -423,6 +423,10 @@ impl Journal {
     }
 }
 
+/// The events a transaction ends on once it verified: a development
+/// update's or a recovery's, and a give-way's, which ends on its own.
+const VERIFIED: [&str; 2] = ["transaction_verified", "give_way_verified"];
+
 /// What a journal shows, as `inspect_journal` in Python reports it. The
 /// copied fields are whatever the writer stored, so they stay JSON.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -453,7 +457,7 @@ pub fn inspect(data: &[u8]) -> Result<Receipt> {
         head_sha256: head.clone(),
         first_event: first.clone(),
         transaction_id: opening.get("transaction_id").cloned(),
-        verified_terminal: last == "transaction_verified",
+        verified_terminal: VERIFIED.contains(&last.as_str()),
         terminal_event: last.clone(),
         terminal_snapshot_sha256: terminal.get("snapshot_sha256").cloned(),
         mutation_intent_recorded: events

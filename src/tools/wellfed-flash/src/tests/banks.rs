@@ -521,6 +521,9 @@ fn give_way_then_restore_marker_round_trip() {
 
     assert_eq!(port.0.borrow().flash[START], 0);
     assert!(port.0.borrow().erased.is_empty(), "a give-way never erases");
+    let given = receipt(&root, "give-way");
+    assert_eq!(given.terminal_event, "give_way_verified");
+    assert!(given.verified_terminal);
 
     // Restoring needs the explicit mode; a plain update refuses.
     let plain = update(Some(&installed), &installed, BANK1);

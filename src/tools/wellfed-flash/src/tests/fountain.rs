@@ -594,3 +594,20 @@ fn a_recovery_without_the_marker_sector_is_refused_before_any_write() {
     assert!(port.0.borrow().flash == current);
     assert!(!root.join("private/recovery").exists());
 }
+
+/// A status read assesses the bank 1 of the model it reads, not the
+/// feeder's for every model.
+#[test]
+fn a_status_read_assesses_the_models_own_bank_1() {
+    for (model, end) in [(Model::Plaf103, BANK1.end), (Model::Plwf106, END)] {
+        let mut port = Fake::new(fountain().flash);
+        let inspection =
+            crate::writers::read::inspect_status(&mut port, model, &mut |_| Ok(())).unwrap();
+        let range = inspection.bank1_assessment.range;
+        assert_eq!(
+            (range.start, range.end_exclusive),
+            (START, end),
+            "{model:?}"
+        );
+    }
+}
