@@ -2054,6 +2054,76 @@ mod tests {
         });
     }
 
+    /// A store write that has its answer is done even when the store's
+    /// re-read can no longer be asked: the session ends, and the known end
+    /// is never turned into an uncertain one.
+    #[test]
+    fn a_store_write_answered_stays_done_when_its_re_read_cannot_go() {
+        use wellfed_feeder_sim::harness::{Relay, Threaded};
+
+        let sim = Threaded::start(*wellfed_session::noise::Keypair::from_secret(OWNER).public());
+        let relays = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let relay = relays.block_on(Relay::start(sim.address));
+        runtime().block_on(async {
+            let (updates, _heard) = std_mpsc::channel();
+            let mut memory = Memory::default();
+            // A feeder silent for a second ends the session.
+            let timing = Timing {
+                keepalive: Duration::from_millis(300),
+                silence: Duration::from_secs(1),
+                ..Timing::DEFAULT
+            };
+            let keys = wellfed_session::noise::Keypair::from_secret(OWNER);
+            let connection = Connection::open_with(
+                &keys,
+                sim.identity,
+                relay.address,
+                random().unwrap(),
+                timing,
+            )
+            .await
+            .unwrap();
+            let mut session = Session::new(connection, [0; 4], &mut memory, &updates, SETTLE);
+            session.read(Read::Settings).unwrap();
+            while !session.pending.is_empty() {
+                let received = session.connection.receive(Duration::from_secs(10));
+                if let Received::Answer { id, answer } = received.await.unwrap() {
+                    session.answered(id, answer).unwrap();
+                }
+            }
+
+            let (reply, written) = oneshot::channel();
+            let louder = FeederSettingsPatch {
+                volume: Some(3),
+                ..FeederSettingsPatch::default()
+            };
+            session.write(Write::Settings(louder), reply).unwrap();
+            let (id, answer) = loop {
+                let received = session.connection.receive(Duration::from_secs(10));
+                if let Received::Answer { id, answer } = received.await.unwrap() {
+                    break (id, answer);
+                }
+            };
+
+            // The feeder falls silent before the answer is handled, and
+            // the session ends.
+            relay.pause();
+            while session
+                .connection
+                .receive(Duration::from_secs(10))
+                .await
+                .is_ok()
+            {}
+            assert!(answer.is_some());
+            assert!(session.answered(id, answer).is_err(), "the session ends");
+            assert_eq!(written.await.unwrap(), Written::done());
+        });
+    }
+
     /// Only a status asked after a feed's answer was lost says it never
     /// ran: one asked before may have gone ahead of the feed.
     #[test]
