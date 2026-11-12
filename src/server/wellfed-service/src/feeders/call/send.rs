@@ -218,15 +218,18 @@ impl Service {
         Ok(outcome)
     }
 
-    /// `error` for an attempt that wrote nothing to the feeder. A first
+    /// The error for an attempt that wrote nothing to the feeder. A first
     /// attempt's entry is dropped, so its key is free for the same write
-    /// later; a retry's stays as it was.
+    /// later, and the caller hears `error`. A retry's stays unknown, as
+    /// the first send left it, and so does its answer: this attempt
+    /// sending nothing does not make the first one nothing.
     async fn nothing_sent(&self, key: &IdempotencyKey, attempt: Attempt, error: Error) -> Error {
-        if matches!(attempt, Attempt::First)
-            && let Err(forget) = self.shared.store.forget_unsent(key).await
-        {
-            return forget.into();
+        match attempt {
+            Attempt::First => match self.shared.store.forget_unsent(key).await {
+                Ok(()) => error,
+                Err(forget) => forget.into(),
+            },
+            Attempt::Retry => CommandError::Unknown.into(),
         }
-        error
     }
 }

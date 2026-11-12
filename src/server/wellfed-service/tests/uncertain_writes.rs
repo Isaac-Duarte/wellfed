@@ -1,8 +1,8 @@
 //! Writes whose outcome the server cannot know stay unknown, and are never
 //! answered as if they were known: an answer from a newer feeder that the
-//! server cannot read, and a resend's refusal after the feeder forgot the
-//! first send. A write the feeder answered without settling it is never
-//! sent again.
+//! server cannot read, a resend's refusal after the feeder forgot the
+//! first send, and a retry that finds the feeder offline. A write the
+//! feeder answered without settling it is never sent again.
 
 use std::time::Duration;
 
@@ -60,6 +60,18 @@ async fn volume(service: &Service, id: FeederId) -> u8 {
         Settings::Feeder(settings) => settings.volume,
         Settings::Unknown => panic!("a feeder's settings"),
     }
+}
+
+/// Wait until the server has no session with the feeder: one it may
+/// still be trying to open is no session.
+async fn not_online(server: &TestService, id: FeederId) {
+    wellfed_server_testkit::until("the feeder is not online", || async {
+        let feeders = server.service().feeders().await.unwrap();
+        feeders
+            .iter()
+            .any(|f| f.id == id && f.connection != Link::Online)
+    })
+    .await;
 }
 
 /// The writes of `key` the server's uncertain list holds.
@@ -174,6 +186,48 @@ fn a_resend_refused_after_a_restart_is_unknown_not_stale() {
             .await;
         assert!(unknown(&third), "{third:?}");
         assert_eq!(service.settings(id).await.unwrap().generation(), changes);
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A write whose answer was lost is retried while the feeder is offline.
+/// The retry sends nothing, but the first send may have run: it is
+/// answered unknown, never `feeder_offline`, which a client reads as
+/// nothing ran, and the entry stays unknown for a retry once the feeder is
+/// back.
+#[test]
+fn a_retry_that_finds_the_feeder_offline_is_unknown() {
+    local(async {
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let server = TestService::start_with(quick()).await;
+        let id = server.adopt_at(&sim, &relay.address.to_string()).await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+
+        let key: IdempotencyKey = [0x0f; 16];
+        let caller = ada().into();
+        relay.hold_answers();
+        let first = service.set_lock(&caller, id, true, Some(key)).await;
+        assert!(unknown(&first), "{first:?}");
+        relay.pause();
+        relay.cut();
+        not_online(&server, id).await;
+
+        let offline = service.set_lock(&caller, id, true, Some(key)).await;
+        assert!(unknown(&offline), "{offline:?}");
+        let entry = service.command(&ada(), key).await.unwrap();
+        assert_eq!((entry.state, entry.outcome), (CommandState::Unknown, None));
+
+        relay.resume();
+        server.link(id, Link::Online).await;
+        service
+            .set_lock(&caller, id, true, Some(key))
+            .await
+            .unwrap();
+        let entry = service.command(&ada(), key).await.unwrap();
+        assert_eq!(entry.state, CommandState::Answered);
         server.shutdown().await;
         sim.stop().await;
     });

@@ -17,9 +17,10 @@
 //!   A settings change resent after the feeder forgot its id (a restart)
 //!   runs again against its base, which the first run may have moved
 //!   past, so a resend's refusal says nothing of the first send: the entry
-//!   stays unknown. A meal call's upload runs on the long lane instead
-//!   (`feeders/call.rs`), and its retry picks up where the feeder's upload
-//!   stands.
+//!   stays unknown. A resend that finds the feeder offline sent nothing
+//!   new, and is unknown too. A meal call's upload runs on the long lane
+//!   instead (`feeders/call.rs`), and its retry picks up where the
+//!   feeder's upload stands.
 //! - An unknown write the feeder answered without settling it (an answer
 //!   this server could not read, or a resend's refusal) is never sent
 //!   again: a retry is answered unknown, unsent.
@@ -317,10 +318,16 @@ impl Service {
                 | AskError::Legacy
                 | AskError::Unsendable),
             ) => {
-                if matches!(attempt, Attempt::First) {
-                    store.forget_unsent(&key).await?;
-                }
-                return Err(Error::from(unsent));
+                return Err(match attempt {
+                    Attempt::First => {
+                        store.forget_unsent(&key).await?;
+                        Error::from(unsent)
+                    }
+                    // The entry stays unknown, since the first send may
+                    // have run: this attempt sending nothing does not make
+                    // it nothing.
+                    Attempt::Retry => CommandError::Unknown.into(),
+                });
             }
         };
         self.record_answer(&key, &outcome, now).await?;
