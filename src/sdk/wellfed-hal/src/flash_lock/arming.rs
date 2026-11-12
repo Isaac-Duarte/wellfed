@@ -115,14 +115,15 @@ impl Arming {
                     return self.fail(Event::Clock);
                 };
 
-                match handshake.step::<M>(now) {
-                    Handshaking::Waiting => Poll::Pending(None),
-                    Handshaking::TimedOut => self.fail(Event::Timeout),
-                    Handshaking::Ready { bound: None, .. } => self.fail(Event::Clock),
-                    Handshaking::Ready {
-                        inactive,
-                        bound: Some((coord, reply)),
-                    } => {
+                let answer = match handshake.step::<M>(now) {
+                    Handshaking::Waiting => return Poll::Pending(None),
+                    Handshaking::TimedOut => return self.fail(Event::Timeout),
+                    Handshaking::Ready(answer) => answer,
+                };
+                let inactive = answer.inactive();
+                match answer.bound() {
+                    None => self.fail(Event::Clock),
+                    Some((coord, reply)) => {
                         let authority = handshake.authority();
                         // SAFETY: the caller's contract; no hook is armed yet.
                         unsafe { *provider = Provider::bound(coord, self.clock, authority) };

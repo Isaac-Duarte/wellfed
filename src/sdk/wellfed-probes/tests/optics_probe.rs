@@ -389,6 +389,30 @@ fn no_peer_times_out_with_emitters_never_on() {
     assert!(stopped::observe().verified());
 }
 
+/// KM0 answers while an emitter reads back on: the coordinator refuses the
+/// bind, and the probe ends without attaching it or turning anything on.
+#[test]
+fn a_refused_coordinator_is_never_attached() {
+    let mut b = bench(0, true);
+    b.run(|_, _| fake::with(|h| h.output[0] |= 1 << 15));
+
+    let [
+        Record::Open {
+            board: true,
+            ready: false,
+            attached: false,
+            events: false,
+            inputs: false,
+            ..
+        },
+    ] = b.records[..]
+    else {
+        panic!("{:?}", b.records);
+    };
+    assert!(b.probe.flash.is_none());
+    assert!(!b.probe.board.view().opened);
+}
+
 #[test]
 fn a_lost_owner_lease_mid_window_ends_the_probe_stopped() {
     let mut b = bench(0, true);

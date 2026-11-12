@@ -30,26 +30,32 @@ fn answered(handshake: Handshake, now_ms: u32) -> Handshaking {
 fn an_authority_is_bound_only_with_the_outputs_verified_stopped() {
     fresh();
     let handshake = Handshake::start::<Ipc<false>>(0).expect("started");
-    let Handshaking::Ready {
-        inactive,
-        bound: Some((_, reply)),
-    } = answered(handshake, 1)
-    else {
+    let Handshaking::Ready(answer) = answered(handshake, 1) else {
         panic!("KM0 answered");
     };
-    assert!(!inactive, "nothing verified the outputs");
-    assert_ne!(reply, FlashReply::Accepted);
+    assert!(!answer.inactive(), "nothing verified the outputs");
+    assert!(
+        answer
+            .reply()
+            .is_some_and(|reply| reply != FlashReply::Accepted)
+    );
+    assert!(
+        answer.accepted().is_none(),
+        "a refused coordinator is not handed out"
+    );
 
     fresh();
     assert!(stopped::initialize().verified());
     let handshake = Handshake::start::<Ipc<false>>(0).expect("started");
-    let Handshaking::Ready {
-        inactive: true,
-        bound: Some((_, FlashReply::Accepted)),
-    } = answered(handshake, 1)
-    else {
-        panic!("bound with the outputs verified stopped");
+    let Handshaking::Ready(answer) = answered(handshake, 1) else {
+        panic!("KM0 answered");
     };
+    assert!(answer.inactive());
+    assert_eq!(answer.reply(), Some(FlashReply::Accepted));
+    assert!(
+        answer.accepted().is_some(),
+        "bound with the outputs verified stopped"
+    );
 }
 
 #[test]

@@ -26,7 +26,7 @@
 
 use core::fmt;
 
-use wellfed_core::flash_coord::{FlashCoord, FlashReply};
+use wellfed_core::flash_coord::FlashCoord;
 use wellfed_core_feeder::feed::controller::{FeedController, FeedLimits};
 use wellfed_core_feeder::feed::sensor_inputs::{
     SensorFilter, SensorInputs, SensorLimits, SensorReading,
@@ -558,19 +558,16 @@ impl Probe {
 
     fn wait<M: Mmio>(&mut self, handshake: Handshake) -> Step {
         let ms = elapsed_ms(self.begin_raw);
-        let bound = match handshake.step::<M>(ms) {
-            Handshaking::Ready { bound, .. } => bound,
+        let answer = match handshake.step::<M>(ms) {
+            Handshaking::Ready(answer) => answer,
             Handshaking::TimedOut => {
                 self.board.close();
                 return self.end(Record::Timeout { ms });
             }
             Handshaking::Waiting => return next(WAIT_MS, None),
         };
-        let accepted = bound
-            .filter(|&(_, reply)| reply == FlashReply::Accepted)
-            .map(|(coord, _)| coord);
 
-        self.flash = accepted;
+        self.flash = answer.accepted();
         let flash = self
             .flash
             .as_mut()

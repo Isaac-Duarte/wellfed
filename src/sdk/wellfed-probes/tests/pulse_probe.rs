@@ -157,6 +157,30 @@ fn one_bounded_pulse_after_the_delay_with_feedback_and_current() {
     }
 }
 
+/// KM0 answers while an emitter reads back on: the coordinator refuses the
+/// bind, and the probe ends without attaching it or driving the motor.
+#[test]
+fn a_refused_coordinator_is_never_attached() {
+    let mut b = bench();
+    b.run(|_| fake::with(|h| h.output[0] |= 1 << 15));
+
+    let [
+        Record::Open {
+            board: true,
+            ready: false,
+            attached: false,
+            events: false,
+            capture: false,
+            ..
+        },
+    ] = b.records[..]
+    else {
+        panic!("{:?}", b.records);
+    };
+    assert!(b.probe.flash.is_none());
+    assert!(b.trace.iter().all(|&pins| pins == MOTOR_MASK));
+}
+
 #[test]
 fn a_stalled_task_mid_pulse_is_stopped_by_the_timer_within_the_lease() {
     let mut b = bench();

@@ -34,14 +34,47 @@ pub enum Handshaking {
     Waiting,
     /// KM0 never answered within [`READY_TIMEOUT_MS`].
     TimedOut,
-    /// KM0 answered. `inactive` is whether STOP and infrared OFF read back
-    /// verified, which the coordinator was told; `bound` is the coordinator
-    /// and its reply, `None` when the clock gave none. Only an
-    /// [`FlashReply::Accepted`] reply may be installed.
-    Ready {
-        inactive: bool,
-        bound: Option<(FlashCoord, FlashReply)>,
-    },
+    /// KM0 answered, and its session was bound into a coordinator.
+    Ready(Answer),
+}
+
+/// KM0's answer, bound under the handshake's session. The coordinator was
+/// told whether STOP and infrared OFF read back verified, and refuses the
+/// bind when they did not; [`Answer::accepted`] hands it out only when it
+/// accepted, so a caller cannot attach a refused one.
+#[derive(Clone, Copy, Debug)]
+pub struct Answer {
+    inactive: bool,
+    /// `None` when the clock gave no coordinator.
+    bound: Option<(FlashCoord, FlashReply)>,
+}
+
+impl Answer {
+    /// Whether STOP and infrared OFF read back verified.
+    pub const fn inactive(&self) -> bool {
+        self.inactive
+    }
+
+    /// The coordinator's reply to the bind, for a report; `None` when the
+    /// clock gave no coordinator.
+    pub fn reply(&self) -> Option<FlashReply> {
+        self.bound.map(|(_, reply)| reply)
+    }
+
+    /// The coordinator to attach or arm: only one that accepted the bind.
+    pub fn accepted(self) -> Option<FlashCoord> {
+        self.bound
+            .filter(|&(_, reply)| reply == FlashReply::Accepted)
+            .map(|(coord, _)| coord)
+    }
+
+    /// The coordinator whatever it replied, for arming alone: it keeps even
+    /// a refused one in its provider, which the feeding owner reads its
+    /// outputs' leases from. A refused coordinator is never idle, so it
+    /// grants no lease, and its phase and fault say why it refused.
+    pub(crate) fn bound(self) -> Option<(FlashCoord, FlashReply)> {
+        self.bound
+    }
 }
 
 /// One handshake, from its hello until KM0's reply.
@@ -87,6 +120,6 @@ impl Handshake {
             let reply = coord.ready(self.authority, peer, inactive, now_ms);
             (coord, reply)
         });
-        Handshaking::Ready { inactive, bound }
+        Handshaking::Ready(Answer { inactive, bound })
     }
 }
