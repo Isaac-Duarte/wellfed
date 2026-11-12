@@ -293,6 +293,9 @@ pub struct Hardware {
     pub ble_notify_fails: bool,
     pub ble_disconnects: u32,
     pub ble_stats: BleStats,
+    /// Run once, as the next `ble_stats` reads: the stack moving between
+    /// the link's last poll and its read of the stats.
+    pub ble_stats_hook: Option<fn()>,
     /// Bytes waiting in the log UART's receive FIFO, and whether it
     /// overran before the next is read.
     pub log_uart_rx: VecDeque<u8>,
@@ -499,6 +502,7 @@ impl Default for Hardware {
             ble_notify_fails: false,
             ble_disconnects: 0,
             ble_stats: BleStats::default(),
+            ble_stats_hook: None,
             log_uart_rx: VecDeque::new(),
             log_uart_overrun: false,
             log_uart_overrun_kept: false,

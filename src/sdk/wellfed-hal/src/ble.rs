@@ -318,9 +318,16 @@ impl BleSetup {
     /// After lost events, with every event still held read: match the link
     /// to the stack's, which changes its state and posts the event together.
     /// A lost disconnect closes the session here; a lost connect leaves a
-    /// host this side never saw, which is dropped so it starts over.
+    /// host this side never saw, which is dropped so it starts over. An
+    /// event posted since the last poll may be what changed the stats (a
+    /// host that just connected), so the stats count only while none is
+    /// waiting; otherwise the events go first and the check comes again.
     fn reconcile(&mut self) -> Option<Link> {
         let connected = sdk::ble_stats().connected != 0;
+        if !matches!(sdk::ble_event(self.seq), BlePoll::Pending) {
+            self.reconcile = true;
+            return None;
+        }
         match (connected, self.connection.is_some()) {
             (false, true) => {
                 self.connection = None;

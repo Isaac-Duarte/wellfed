@@ -1163,6 +1163,9 @@ pub fn ble_disconnect() -> bool {
 }
 
 pub fn ble_stats() -> BleStats {
+    if let Some(hook) = with(|h| h.ble_stats_hook.take()) {
+        hook();
+    }
     with(|h| h.ble_stats)
 }
 

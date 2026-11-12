@@ -301,3 +301,28 @@ fn lost_events_the_ring_still_answers_need_no_repair() {
     assert_eq!(link(&mut setup), Link::Opened);
     assert_eq!(fake::with(|h| h.ble_disconnects), 0);
 }
+
+/// A host that connects between the link's last poll and its read of the
+/// stack's stats is not taken for one it never saw: its connect event goes
+/// first, and nobody is dropped.
+#[test]
+fn a_connect_racing_the_repair_is_not_dropped() {
+    let mut setup = start();
+    for _ in 0..17 {
+        ble_record(BleEvent::ADVERTISING, 0, 1);
+    }
+    fake::with(|h| {
+        h.ble_stats_hook = Some(|| {
+            ble_record(BleEvent::CONNECT, 0, 12);
+            fake::with(|h| h.ble_stats.connected = 1);
+        });
+    });
+
+    let records = records(&mut setup, 20);
+    assert!(records.contains(&Record::Lost), "{records:?}");
+    assert!(
+        records.contains(&Record::Connect { interval: 12 }),
+        "{records:?}"
+    );
+    assert_eq!(fake::with(|h| h.ble_disconnects), 0);
+}
