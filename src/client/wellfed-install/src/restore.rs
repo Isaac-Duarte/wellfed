@@ -28,8 +28,9 @@
 //! floor stays where it was) and writes stock into bank 1. Within the push the
 //! shared installer offers again where the update protocol needs it, but
 //! nothing offers once the push has returned: a refusal ends the restore, and
-//! a feeder that stops answering after an offer went out leaves the result
-//! uncertain, since stock serves no device API to ask.
+//! a feeder that stops answering after an offer went out, or answers in a way
+//! this build cannot read, leaves the result uncertain, since stock serves no
+//! device API to ask.
 //!
 //! [rollback]: ../../../../docs/firmware/consumer-installation.md#rollback
 
@@ -152,7 +153,8 @@ pub enum Restored {
 /// Why a restore's end is not known.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Uncertainty {
-    /// The feeder stopped answering after the offer went out.
+    /// The feeder stopped answering after the offer went out, or answered
+    /// in a way this build cannot read.
     Gone,
     /// The owner stopped the run once an offer may have gone out; it may not
     /// have, since the mark goes up before anything is sent.

@@ -274,9 +274,9 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
         ),
         Restored::Uncertain(why) => {
             let what = match why {
-                Uncertainty::Gone => {
-                    "the feeder stopped answering after the offer went out".to_string()
-                }
+                Uncertainty::Gone => "the feeder stopped answering after the offer went out, or \
+                                      answered in a way this build cannot read"
+                    .to_string(),
                 Uncertainty::Stopped(by) => {
                     format!("stopped on {by} as the offer was going out, or after it had")
                 }
