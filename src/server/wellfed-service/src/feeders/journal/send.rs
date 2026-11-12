@@ -25,12 +25,20 @@ impl Service {
         // A revocation resent after the first landed finds the key gone,
         // which is what it asked: its `not_found` settles it either way.
         let revokes = matches!(op, Op::RevokeClient { .. });
+        let settles = Settles::of(&op);
         let answer = self.mirror.ask(feeder, request, op).await;
         let store = &self.shared.store;
         let now = self.shared.clock.now();
 
         let mut invite = None;
         let outcome = match answer {
+            // A settling answer of another write's shape (a feed answered
+            // done, say) fits no write, as below.
+            Ok(ref answer @ (Answer::Done { .. } | Answer::Invite(_) | Answer::Feeding { .. }))
+                if !settles.fits(answer) =>
+            {
+                return Err(self.unsettled(&key, now).await);
+            }
             Ok(Answer::Done { .. }) => CommandOutcome::Done,
             Ok(Answer::Invite(made)) => {
                 invite = Some(made);
@@ -112,5 +120,65 @@ impl Service {
             }
         }
         CommandError::Unknown.into()
+    }
+}
+
+/// The answer that settles a write: a feed's reservation, an invite, or
+/// done for every other write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Settles {
+    Feeding,
+    Invite,
+    Done,
+}
+
+impl Settles {
+    fn of(op: &Op) -> Self {
+        match op {
+            Op::Feed { .. } => Self::Feeding,
+            Op::CreateInvite { .. } | Op::CreateBoundInvite { .. } => Self::Invite,
+            _ => Self::Done,
+        }
+    }
+
+    /// Whether `answer` is the one this write is settled by.
+    const fn fits(self, answer: &Answer) -> bool {
+        matches!(
+            (self, answer),
+            (Self::Feeding, Answer::Feeding { .. })
+                | (Self::Invite, Answer::Invite(_))
+                | (Self::Done, Answer::Done { .. })
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_model::ClientRole;
+
+    use super::*;
+
+    /// A feed is settled by its reservation alone: a feed answered done,
+    /// or a lock answered with a reservation, fits no write and stays
+    /// unknown.
+    #[test]
+    fn a_write_is_settled_only_by_its_own_answer() {
+        let done = Answer::Done { generation: None };
+        let feeding = Answer::Feeding { feed: 3 };
+
+        let feed = Settles::of(&Op::Feed { portions: 1 });
+        assert_eq!(feed, Settles::Feeding);
+        assert!(feed.fits(&feeding));
+        assert!(!feed.fits(&done));
+
+        let lock = Settles::of(&Op::SetLock { locked: true });
+        assert!(lock.fits(&done));
+        assert!(!lock.fits(&feeding));
+
+        let invite = Settles::of(&Op::CreateInvite {
+            role: ClientRole::Member,
+        });
+        assert_eq!(invite, Settles::Invite);
+        assert!(!invite.fits(&done));
     }
 }

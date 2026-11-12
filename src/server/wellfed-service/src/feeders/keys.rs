@@ -28,7 +28,7 @@ pub fn seal(
                 aad: &aad,
             },
         )
-        .map_err(|_| InternalError::Unseal)?;
+        .map_err(|_| InternalError::Seal)?;
     Ok(SealedKey { nonce, sealed })
 }
 
