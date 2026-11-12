@@ -345,16 +345,23 @@ impl<'a> Simulation<'a> {
             self.armed = true;
         }
 
+        let boots = self.boots;
         let events = worker.command(command)?;
         self.consume(events)?;
 
         if let Command::Submit { .. } = command {
-            let response = self.latest.response;
-            let submission = Submission::from_index(response);
-            require(submission.is_some(), || HarnessError::Submission {
-                response,
-            })?;
-            self.last_submission = submission;
+            // A reset during the command rebooted the worker in `consume`,
+            // so the status is the new boot's, which never heard of it.
+            self.last_submission = if self.boots == boots {
+                let response = self.latest.response;
+                let submission = Submission::from_index(response);
+                require(submission.is_some(), || HarnessError::Submission {
+                    response,
+                })?;
+                submission
+            } else {
+                None
+            };
         }
 
         Ok(())
