@@ -99,7 +99,10 @@ impl Reader {
                         return Ok(None);
                     };
                     let size = match header {
-                        Header::File { name, size } if name == MANIFEST && size <= MAX_MANIFEST => {
+                        Header::File { name, size } if name == MANIFEST => {
+                            if size > MAX_MANIFEST {
+                                return Err(ArchiveError::ManifestTooLarge { size });
+                            }
                             size
                         }
                         Header::File { name, .. } => return Err(ArchiveError::NoManifest(name)),

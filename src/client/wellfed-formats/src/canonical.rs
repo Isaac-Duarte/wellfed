@@ -79,7 +79,7 @@ fn write(value: &Value, out: &mut Vec<u8>) -> Result<()> {
 }
 
 /// Python's default `ensure_ascii` escaping of a JSON string, quotes included.
-pub fn string(text: &str, out: &mut Vec<u8>) {
+fn string(text: &str, out: &mut Vec<u8>) {
     out.push(b'"');
     for c in text.chars() {
         match c {

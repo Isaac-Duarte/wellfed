@@ -28,7 +28,7 @@ impl std::fmt::Debug for WifiCredential {
 /// owner's key and the release key share the format: each is an Ed25519
 /// seed that signs the same version 2 manifests, and they differ only in how
 /// a feeder comes to trust them, which `scope` names.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OtaKeyFile {
     pub version: u32,
     /// What the key may sign.
@@ -37,6 +37,16 @@ pub struct OtaKeyFile {
     pub seed: String,
     /// Hex; the firmware build embeds it.
     pub public_key: String,
+}
+
+impl std::fmt::Debug for OtaKeyFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OtaKeyFile")
+            .field("version", &self.version)
+            .field("scope", &self.scope)
+            .field("public_key", &self.public_key)
+            .finish_non_exhaustive()
+    }
 }
 
 /// What an update-signing key is for.
@@ -97,6 +107,19 @@ mod tests {
             "cd".repeat(32)
         );
         assert!(serde_json::from_str::<ReleaseKeyFile>(&with_seed).is_err());
+    }
+
+    #[test]
+    fn an_update_key_s_debug_names_the_public_key_but_not_the_seed() {
+        let key = OtaKeyFile {
+            version: 1,
+            scope: KeyScope::Owner,
+            seed: "5eed5eed".into(),
+            public_key: "9ab1c".into(),
+        };
+        let debug = format!("{key:?}");
+        assert!(debug.contains("9ab1c"), "{debug}");
+        assert!(!debug.contains("5eed"), "{debug}");
     }
 
     #[test]

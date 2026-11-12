@@ -200,6 +200,8 @@ pub enum ArchiveError {
     Truncated,
     #[error("the archive's first entry is {0:?}, not {MANIFEST}")]
     NoManifest(String),
+    #[error("the archive's {MANIFEST} is {size} bytes, past the {MAX_MANIFEST} a manifest takes")]
+    ManifestTooLarge { size: u64 },
     #[error("the manifest does not read: {0}")]
     Manifest(serde_json::Error),
     #[error("archive format {found}; this server reads format {FORMAT_VERSION}")]

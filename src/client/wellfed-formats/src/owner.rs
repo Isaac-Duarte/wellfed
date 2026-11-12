@@ -34,7 +34,7 @@ pub enum OwnerError {
 }
 
 /// No field is denied: a newer minor's additions are skipped.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OwnerKeyFile {
     pub version: u32,
     /// The client's X25519 static secret, hex.
@@ -43,6 +43,16 @@ pub struct OwnerKeyFile {
     pub label: String,
     /// The feeders that enrolled this key.
     pub feeders: Vec<EnrolledFeeder>,
+}
+
+impl std::fmt::Debug for OwnerKeyFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OwnerKeyFile")
+            .field("version", &self.version)
+            .field("label", &self.label)
+            .field("feeders", &self.feeders)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Kept for OwnerKeyFile {
@@ -91,6 +101,14 @@ mod tests {
     use super::*;
 
     const SAMPLE: &str = include_str!("../tests/fixtures/owner-v1.json");
+
+    #[test]
+    fn a_key_file_s_debug_names_its_label_but_not_its_secret() {
+        let file = read(SAMPLE.as_bytes()).unwrap();
+        let debug = format!("{file:?}");
+        assert!(debug.contains("laptop"), "{debug}");
+        assert!(!debug.contains(&"11".repeat(32)), "{debug}");
+    }
 
     #[test]
     fn version_1_reads_as_its_sample() {
