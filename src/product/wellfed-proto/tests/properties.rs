@@ -300,14 +300,21 @@ macro_rules! round_trip {
     }};
 }
 
-/// Decode any bytes as `$ty`; whatever decodes re-encodes to bytes that
-/// decode to the same value.
+/// Decode any bytes as `$ty`; whatever decodes re-encodes, and its
+/// re-encoding is a fixed point: it decodes to a value that encodes to the
+/// same bytes. The first decode may hold what an encode drops on purpose,
+/// a carried tail or a count of skipped alerts, so it is the encodings
+/// that are compared ([`a_carried_tail_and_skipped_alerts_are_not_written_back`]).
 macro_rules! stable {
     ($ty:ty, $bytes:expr) => {{
         if let Ok(value) = decode::<$ty>($bytes) {
-            let mut out = [0u8; 4 * FRAME_MAX];
-            let len = encode(&value, &mut out).unwrap();
-            prop_assert_eq!(decode::<$ty>(&out[..len]), Ok(value));
+            let mut once = [0u8; 4 * FRAME_MAX];
+            let len = encode(&value, &mut once).unwrap();
+            let again = decode::<$ty>(&once[..len]);
+            prop_assert!(again.is_ok(), "{:?} does not decode again", value);
+            let mut twice = [0u8; 4 * FRAME_MAX];
+            let again_len = encode(&again.unwrap(), &mut twice).unwrap();
+            prop_assert_eq!(&once[..len], &twice[..again_len]);
         }
     }};
 }
@@ -481,4 +488,67 @@ proptest! {
             prop_assert_eq!(&out[..len], &body[..len]);
         }
     }
+}
+
+/// What an encode drops on purpose: a struct's tail a later build filled
+/// is read as carried and written back empty, and a skipped alert is
+/// counted on reading and not written. So a newer feeder's answer decodes,
+/// and its re-encoding is the fixed point [`stable!`] compares.
+#[test]
+fn a_carried_tail_and_skipped_alerts_are_not_written_back() {
+    fn hex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap())
+            .collect()
+    }
+
+    // `outcome-settings` from `fixtures/v1.txt`, its empty tail (the last
+    // byte) replaced by one a newer build filled.
+    let pinned =
+        hex("00111111111111111111111111111111110a000a0100280001e003b0091501cabe02010a0100");
+    let mut newer = pinned[..pinned.len() - 1].to_vec();
+    newer.extend_from_slice(&[0x01, 0xff]);
+    let Ok(DeviceMessage::Response {
+        result: Outcome::Feeder(FeederOutcome::Settings(settings)),
+        ..
+    }) = decode::<DeviceMessage<'_>>(&newer)
+    else {
+        panic!("a newer feeder's settings don't decode");
+    };
+    assert!(!settings.ext.is_empty());
+    let mut out = [0u8; FRAME_MAX];
+    let message = decode::<DeviceMessage<'_>>(&newer).unwrap();
+    let len = encode(&message, &mut out).unwrap();
+    assert_eq!(&out[..len], &pinned[..]);
+
+    // A table with an entry this build can't read between two it can.
+    #[derive(serde::Serialize)]
+    struct Wire<'a> {
+        epoch: u32,
+        generation: u32,
+        more: bool,
+        settling: bool,
+        alerts: &'a [EncodedAlert<'a>],
+    }
+    let at = core::num::NonZeroU32::new(5);
+    let entry = |alert| EncodedAlert { at, alert };
+    let len = encode(
+        &Wire {
+            epoch: 1,
+            generation: 2,
+            more: false,
+            settling: false,
+            alerts: &[entry(&[12]), entry(&[0x70, 0x01]), entry(&[12])],
+        },
+        &mut out,
+    )
+    .unwrap();
+    let read: AlertsView = decode(&out[..len]).unwrap();
+    assert_eq!(read.alerts.skipped, 1);
+    let mut again = [0u8; FRAME_MAX];
+    let len = encode(&read, &mut again).unwrap();
+    let written: AlertsView = decode(&again[..len]).unwrap();
+    assert_eq!(written.alerts.skipped, 0);
+    assert_eq!(written.alerts.entries, read.alerts.entries);
 }

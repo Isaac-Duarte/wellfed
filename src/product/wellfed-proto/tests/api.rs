@@ -193,12 +193,165 @@ fn shrunk(stored: &Registry, current: &Registry) -> Vec<String> {
     broken
 }
 
+/// The enums an older reader survives a new variant of, though a message
+/// reaches them plainly, each for its own reason. Every other enum a
+/// message reaches is closed ([`closed`]).
+const OPEN: &[(&str, &str)] = &[
+    (
+        "DeviceMessage",
+        "a client skips a kind of message it doesn't know",
+    ),
+    ("Outcome", "a new answer only answers a new op"),
+    ("FeederOutcome", "a new answer only answers a new op"),
+    ("Stats", "a new section only answers a new StatsSection"),
+    (
+        "Refusal",
+        "a refusal a client can't read is Refused(Unknown)",
+    ),
+    (
+        "UpdatePhase",
+        "frozen: grows at its end, read Unreadable by older",
+    ),
+    (
+        "UpdateStop",
+        "frozen: grows at its end, read Unreadable by older",
+    ),
+    (
+        "UpdateCandidate",
+        "frozen: grows at its end, read Unreadable by older",
+    ),
+    (
+        "Bank0Check",
+        "frozen: grows at its end, read Unreadable by older",
+    ),
+    (
+        "Bank0Blocked",
+        "frozen: grows at its end, read Unreadable by older",
+    ),
+];
+
+/// The enums an older reader can't survive a new variant of, so they never
+/// gain one: every enum an answer or a subscription reaches plainly, past
+/// [`OPEN`]'s. An answer holding a variant its reader doesn't know reads
+/// as `Unreadable` whole (a `Status` with a newer battery state would be
+/// no status at all), a live sample ends the session it came in, and a
+/// newer client's `Subscribe` ends an older feeder's. A lenient enum
+/// (behind its `Lenient` newtype) and anything behind a length (an event
+/// body, an alert entry, a trace page, a tail) is not reached. A request's
+/// op is not walked either: a device refuses an op it can't decode
+/// `Unavailable` and keeps the session. Such an enum grows by a new op, a
+/// new kind of message, a struct's tail or a lenient field instead.
+fn closed(registry: &Registry) -> BTreeMap<String, usize> {
+    fn walk(registry: &Registry, format: &Format, found: &mut BTreeMap<String, usize>) {
+        match format {
+            Format::TypeName(name) => container(registry, name, found),
+            Format::Option(inner) | Format::Seq(inner) => walk(registry, inner, found),
+            Format::TupleArray { content, .. } => walk(registry, content, found),
+            Format::Map { key, value } => {
+                walk(registry, key, found);
+                walk(registry, value, found);
+            }
+            Format::Tuple(formats) => {
+                for format in formats {
+                    walk(registry, format, found);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn fields(
+        registry: &Registry,
+        fields: &[serde_reflection::Named<Format>],
+        found: &mut BTreeMap<String, usize>,
+    ) {
+        for field in fields {
+            walk(registry, &field.value, found);
+        }
+    }
+    fn container(registry: &Registry, name: &str, found: &mut BTreeMap<String, usize>) {
+        if name.starts_with("Lenient") || name == "Tail" {
+            return;
+        }
+        match registry.get(name) {
+            Some(ContainerFormat::Enum(variants)) => {
+                let open = OPEN.iter().any(|(open, _)| *open == name);
+                if !open && found.insert(name.to_owned(), variants.len()).is_some() {
+                    return;
+                }
+                if open && name == "Refusal" {
+                    return;
+                }
+                for variant in variants.values() {
+                    variant_fields(registry, &variant.value, found);
+                }
+            }
+            Some(ContainerFormat::Struct(named)) => fields(registry, named, found),
+            Some(ContainerFormat::NewTypeStruct(inner)) => walk(registry, inner, found),
+            Some(ContainerFormat::TupleStruct(formats)) => {
+                for format in formats {
+                    walk(registry, format, found);
+                }
+            }
+            Some(ContainerFormat::UnitStruct) | None => {}
+        }
+    }
+    fn variant_fields(
+        registry: &Registry,
+        variant: &serde_reflection::VariantFormat,
+        found: &mut BTreeMap<String, usize>,
+    ) {
+        use serde_reflection::VariantFormat;
+        match variant {
+            VariantFormat::NewType(inner) => walk(registry, inner, found),
+            VariantFormat::Tuple(formats) => {
+                for format in formats {
+                    walk(registry, format, found);
+                }
+            }
+            VariantFormat::Struct(named) => fields(registry, named, found),
+            VariantFormat::Unit | VariantFormat::Variable(_) => {}
+        }
+    }
+
+    let mut found = BTreeMap::new();
+    container(registry, "DeviceMessage", &mut found);
+    let Some(ContainerFormat::Enum(client)) = registry.get("ClientMessage") else {
+        panic!("ClientMessage is not traced as an enum");
+    };
+    for variant in client.values().filter(|variant| variant.name != "Request") {
+        variant_fields(registry, &variant.value, &mut found);
+    }
+    found
+}
+
+/// What in `current` grew a closed enum of `stored`'s ([`closed`]).
+fn opened(stored: &Registry, current: &Registry) -> Vec<String> {
+    let mut grown = Vec::new();
+    for (name, now) in closed(current) {
+        if let Some(ContainerFormat::Enum(then)) = stored.get(&name)
+            && then.len() != now
+        {
+            grown.push(format!(
+                "{name} grew from {} to {now} variants, which an older reader can't read",
+                then.len()
+            ));
+        }
+    }
+    grown
+}
+
 /// The device API only grows, and each growth is a new revision.
 #[test]
 fn the_api_only_grows() {
     let current = registry();
     let stored: Stored = serde_json::from_str(&std::fs::read_to_string(STORED).unwrap()).unwrap();
 
+    let grown = opened(&stored.registry, &current);
+    assert!(
+        grown.is_empty(),
+        "a closed enum grew: add a new op, a new kind of message, a field in a struct's tail \
+         or a lenient field instead. {grown:#?}"
+    );
     let broken = shrunk(&stored.registry, &current);
     assert!(
         broken.is_empty(),
@@ -279,6 +432,60 @@ fn a_change_in_place_is_refused_and_a_new_variant_taken() {
     assert_eq!(shrunk(&stored, &gone), ["Plan is gone"]);
 }
 
+/// The enums an answer or a subscription reaches plainly are closed, and
+/// a new variant in one is refused; one only a request's op reaches takes
+/// it, as does an open one.
+#[test]
+fn a_closed_enum_takes_no_new_variant() {
+    let stored = registry();
+    let closed = closed(&stored);
+    for name in [
+        "Metric",
+        "Battery",
+        "Desiccant",
+        "Window",
+        "MealReminder",
+        "NtpServer",
+        "CallClip",
+        "Samples",
+        "DeviceStatus",
+    ] {
+        assert!(closed.contains_key(name), "{name} is not closed");
+    }
+    for name in [
+        "Tune",
+        "Op",
+        "FeederOp",
+        "Outcome",
+        "Refusal",
+        "UpdateRefusal",
+    ] {
+        assert!(!closed.contains_key(name), "{name} is closed");
+    }
+    for (name, _) in OPEN {
+        assert!(stored.contains_key(*name), "{name} is open but not traced");
+    }
+
+    let fanfare = serde_reflection::Named {
+        name: "Fanfare".to_owned(),
+        value: serde_reflection::VariantFormat::Unit,
+    };
+    let grow = |name: &str| {
+        let mut grown = stored.clone();
+        let Some(ContainerFormat::Enum(variants)) = grown.get_mut(name) else {
+            panic!("{name} is not an enum");
+        };
+        let next = u32::try_from(variants.len()).unwrap();
+        variants.insert(next, fanfare.clone());
+        grown
+    };
+    assert_eq!(opened(&stored, &grow("Battery")).len(), 1);
+    assert_eq!(opened(&stored, &grow("Metric")).len(), 1);
+    assert_eq!(opened(&stored, &grow("Samples")).len(), 1);
+    assert_eq!(opened(&stored, &grow("Tune")), Vec::<String>::new());
+    assert_eq!(opened(&stored, &grow("Outcome")), Vec::<String>::new());
+}
+
 /// The enums an answer carries leniently: an older reader reads a variant
 /// a newer build added as unknown.
 fn lenient() -> Vec<(&'static str, &'static [&'static str])> {
@@ -323,6 +530,24 @@ fn every_lenient_enum_is_unit_only_in_its_encoded_order() {
         assert!(
             registry.contains_key(&format!("Lenient{name}")),
             "no answer carries {name} leniently"
+        );
+    }
+
+    // A `Lenient` is traced as its index alone, so the enum behind one
+    // reaches the trace only as a root: one missing from both lists would
+    // have its variants unpinned.
+    let listed: Vec<&str> = lenient().iter().map(|(name, _)| *name).collect();
+    for key in registry.keys() {
+        let Some(name) = key.strip_prefix("Lenient") else {
+            continue;
+        };
+        assert!(
+            listed.contains(&name),
+            "{key} carries {name}, which lenient() doesn't list"
+        );
+        assert!(
+            matches!(registry.get(name), Some(ContainerFormat::Enum(_))),
+            "{key} carries {name}, which is not traced: add it to roots()"
         );
     }
 }

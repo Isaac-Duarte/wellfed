@@ -1961,8 +1961,9 @@ pub struct AlertsView {
 pub struct AlertTable {
     /// Oldest first, the free slots last.
     pub entries: [Option<OpenAlert>; ALERTS_MAX],
-    /// Entries this build could not read, skipped: a newer build's alerts.
-    /// Only a reader counts them; a device sends none.
+    /// Entries this build could not read, skipped: a newer build's alerts,
+    /// and any past this build's [`ALERTS_MAX`] when a newer build holds
+    /// more. Only a reader counts them; a device sends none.
     pub skipped: u8,
 }
 
@@ -2005,15 +2006,13 @@ impl<'de> Deserialize<'de> for AlertTable {
             type Value = AlertTable;
 
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                f.write_str("at most ALERTS_MAX alerts")
+                f.write_str("a table of alerts")
             }
 
             fn visit_seq<A: serde::de::SeqAccess<'de>>(
                 self,
                 mut seq: A,
             ) -> Result<AlertTable, A::Error> {
-                use serde::de::Error;
-
                 let mut table = AlertTable::default();
                 let mut slots = table.entries.iter_mut();
                 while let Some(entry) = seq.next_element::<EncodedAlert<'de>>()? {
@@ -2023,13 +2022,17 @@ impl<'de> Deserialize<'de> for AlertTable {
                     // from those, and the frame around it authenticated,
                     // so it is counted the same rather than failing the
                     // whole table.
-                    let Ok(alert) = crate::decode::<Alert>(entry.alert) else {
+                    //
+                    // A newer build may also hold more alerts than this one
+                    // has room for; those past it are counted the same.
+                    let Some(slot) = crate::decode::<Alert>(entry.alert)
+                        .ok()
+                        .and_then(|alert| Some((alert, slots.next()?)))
+                    else {
                         table.skipped = table.skipped.saturating_add(1);
                         continue;
                     };
-                    let slot = slots
-                        .next()
-                        .ok_or_else(|| A::Error::invalid_length(ALERTS_MAX + 1, &self))?;
+                    let (alert, slot) = slot;
                     *slot = Some(OpenAlert {
                         at: entry.at,
                         alert,
@@ -3035,6 +3038,43 @@ mod tests {
         };
         assert_eq!(view.alerts.skipped, 1);
         assert_eq!(view.alerts.entries[..3], [Some(open), Some(open), None]);
+    }
+
+    /// A newer build that holds more alerts than this one has room for is
+    /// read to this build's room, and the rest counted, not the whole table
+    /// refused.
+    #[test]
+    fn alerts_past_this_build_s_room_are_counted() {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            epoch: u32,
+            generation: u32,
+            more: bool,
+            settling: bool,
+            alerts: &'a [EncodedAlert<'a>],
+        }
+        let food_low = [12];
+        let entry = EncodedAlert {
+            at: NonZeroU32::new(5),
+            alert: &food_low,
+        };
+        let mut out = [0; 128];
+        let len = encode(
+            &Wire {
+                epoch: 1,
+                generation: 2,
+                more: false,
+                settling: false,
+                alerts: &[entry; ALERTS_MAX + 2],
+            },
+            &mut out,
+        )
+        .unwrap();
+
+        let view: AlertsView = decode(&out[..len]).unwrap();
+
+        assert_eq!(view.alerts.skipped, 2);
+        assert!(view.alerts.entries.iter().all(Option::is_some));
     }
 
     /// A summary with every field at its largest encoding.
