@@ -1937,7 +1937,13 @@ fn a_viewer_never_feeds_direct_while_its_cold_start_waits_for_the_server() {
             }],
             account: Some(viewer.clone()),
         });
-        let kept = Rc::new(ServerSession::restore(link, "secret".into()).unwrap());
+        // The silent server is given up on after GIVE_UP, so the test sees
+        // the moment its wait ends, when a direct fallback would tempt most.
+        let timeouts = Timeouts {
+            read: Some(GIVE_UP),
+            request: Some(GIVE_UP),
+        };
+        let kept = Rc::new(ServerSession::restore_with(link, "secret".into(), timeouts).unwrap());
         // The app's sessions attach as the server is asked.
         let _direct = phone.open(&sim, sim.address).await;
         let resuming = {
@@ -1946,23 +1952,30 @@ fn a_viewer_never_feeds_direct_while_its_cold_start_waits_for_the_server() {
                 let _ = phone.router.resume_server(&kept, Some(viewer)).await;
             })
         };
+        let no_direct_feed = async |when: &str| {
+            assert_ne!(
+                phone.router.path(kitchen.clone()),
+                Some(RoutePath::Direct),
+                "{when}"
+            );
+            assert!(
+                !matches!(
+                    phone.router.feed(kitchen.clone(), 1).await,
+                    RoutedFeed::Started { .. }
+                ),
+                "a viewer feeds through the server or not at all: {when}"
+            );
+        };
         tokio::time::sleep(Duration::from_millis(300)).await;
-        assert_ne!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
-        assert!(
-            !matches!(
-                phone.router.feed(kitchen.clone(), 1).await,
-                RoutedFeed::Started { .. }
-            ),
-            "a viewer feeds through the server or not at all"
-        );
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        no_direct_feed("while the server is asked").await;
+        tokio::time::timeout(GIVE_UP * 4, resuming)
+            .await
+            .expect("the cold start gives up on the silent server")
+            .unwrap();
+        no_direct_feed("once the server was given up on").await;
         let feeds = feeder::feeds(&flash);
-        resuming.abort();
         sim.stop().await;
-        assert_eq!(
-            feeds, 0,
-            "a viewer fed on the phone's own key while the server was asked"
-        );
+        assert_eq!(feeds, 0, "a viewer fed on the phone's own key");
     });
 }
 

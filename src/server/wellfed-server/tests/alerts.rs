@@ -142,9 +142,18 @@ fn a_new_client_is_served_and_sent_to_the_webhook_once() {
             "{body}"
         );
 
-        // Reading the same table again sends nothing more.
+        // Reading the same table again sends nothing more: the next body is
+        // the next joining's, not this one's again.
         tokio::time::sleep(Duration::from_millis(500)).await;
         assert!(bodies.try_recv().is_err());
+        let invite = feeder::invite(&sim, ClientRole::Member).await;
+        feeder::join_phone(&sim, &invite, [0x43; 32]).await;
+        let body = next(&mut bodies).await;
+        let second = hex(&feeder::phone_key([0x43; 32])[..4]);
+        assert!(
+            body["alert"]["words"].as_str().unwrap().contains(&second),
+            "{body}"
+        );
 
         server.stop().await;
     });
@@ -248,6 +257,12 @@ fn a_feeder_adopted_again_starts_afresh_and_quietly() {
         assert_eq!(
             (body["event"].as_str(), body["alert"]["kind"].as_str()),
             (Some("opened"), Some("client_joined"))
+        );
+        // This joining's, so nothing for the old row came before it.
+        let joined = hex(&feeder::phone_key([0x43; 32])[..4]);
+        assert!(
+            body["alert"]["words"].as_str().unwrap().contains(&joined),
+            "{body}"
         );
         server.stop().await;
     });
