@@ -17,10 +17,11 @@ use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     Asked, Calibration, CalibrationResult, CalibrationView, LockResult, MealSkip, Origin,
     PlansResult, PlansView, PlayResult, Saved, SettingsFields, SettingsResult, SettingsView,
-    TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState,
+    Lock, TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState,
     WifiResult, WifiSource, WifiView,
 };
-use wellfed_device_api::pairing::{Config, Pairing};
+use wellfed_core::buttons::{Button, Buttons, Gesture};
+use wellfed_device_api::pairing::{Config, Event as PairingEvent, Pairing};
 use wellfed_device_api::setup::{Received, Responder};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{
@@ -41,6 +42,9 @@ use wellfed_session::setup_code::{Code, Exchange, Round, Side};
 pub const FEEDER: [u8; 32] = [0x10; 32];
 pub const OWNER: [u8; 32] = [0x20; 32];
 pub const MEMBER: [u8; 32] = [0x30; 32];
+/// The live invite every rig holds: its id and its secret.
+pub const INVITE_ID: u32 = 1;
+pub const INVITE_SECRET: [u8; 32] = [0x40; 32];
 /// Passes a driver runs after its input is spent, for answers to leave.
 const SETTLE: usize = 8;
 
@@ -565,7 +569,8 @@ impl Device for Fountain {
     }
 }
 
-/// The server with one enrolled owner and the recovery window open.
+/// The server with one enrolled owner, the recovery window open and a
+/// member's invite live, so a peer's bytes reach every handshake.
 pub struct Rig<D = Fake> {
     server: Box<Server>,
     device: D,
@@ -604,7 +609,22 @@ impl<D: Faked> Rig<D> {
             now: 1_000,
             records: Vec::new(),
         };
-        rig.pairing.recovery(rig.now);
+        // As the device opens it: the recovery chord held, unlocked.
+        let hold = Gesture::Hold {
+            chord: Buttons::of(Button::Lock).with(Button::Dispense),
+            level: Config::DEFAULT.hold_level,
+        };
+        let opened = rig.pairing.gesture(rig.now, hold, Lock::Unlocked);
+        assert_eq!(opened, Some(PairingEvent::RecoveryOpened));
+        let invited = rig.pairing.invite(
+            rig.now,
+            Role::Owner,
+            *Keypair::from_secret(OWNER).public(),
+            Role::Member,
+            None,
+            INVITE_SECRET,
+        );
+        assert_eq!(invited, PairingEvent::Invited { id: INVITE_ID });
 
         let mut table = [None; CLIENTS];
         table[0] = Some(Client {

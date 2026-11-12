@@ -12,10 +12,11 @@ use wellfed_device_api::wifi::Credentials;
 use wellfed_proto::api::FRAME_MAX;
 use wellfed_proto::setup::{self, Request};
 
-/// A clear opening frame the server takes (session, invite or recovery),
-/// then arbitrary bytes, so the cases reach the handshakes behind it.
+/// A clear opening frame the server takes (session, the rig's live invite
+/// or another, or recovery), then arbitrary bytes, so the cases reach the
+/// handshakes behind it.
 fn opening() -> impl Strategy<Value = Vec<u8>> {
-    let open = proptest::sample::select(vec![vec![0u8], vec![1, 0], vec![1, 7], vec![2]]);
+    let open = proptest::sample::select(vec![vec![0u8], vec![1, 1], vec![1, 7], vec![2]]);
     let body = proptest::collection::vec(any::<u8>(), 0..160);
     (open, body, any::<bool>()).prop_map(|(open, body, framed)| {
         let mut bytes = support::framed(&open);
@@ -26,6 +27,60 @@ fn opening() -> impl Strategy<Value = Vec<u8>> {
         }
         bytes
     })
+}
+
+/// The rig holds the recovery window open and a live invite, as the
+/// device would, so the handshakes behind them meet a peer's bytes: each
+/// answers a first message with its second, rather than ending the
+/// connection at the opening frame. XX's first message is a bare key;
+/// XXpsk3's carries a tag over it, so a genuine initiator writes it.
+#[test]
+fn the_recovery_and_invite_handshakes_answer_a_first_message() {
+    use wellfed_device_api::Reason;
+    use wellfed_proto::api::{Open, PROLOGUE};
+    use wellfed_session::noise::{Handshake, Keypair, Pattern, Role};
+
+    let mut joiner = Handshake::new(
+        Pattern::XxPsk3,
+        Role::Initiator,
+        PROLOGUE,
+        &Keypair::from_secret(support::MEMBER),
+        None,
+        [0x5b; 32],
+    )
+    .unwrap();
+    joiner.set_psk(support::INVITE_SECRET);
+    let mut first = [0; 64];
+    let len = joiner.write_message(&[], &mut first).unwrap();
+    let invite = (
+        Open::Invite {
+            id: support::INVITE_ID,
+        },
+        first[..len].to_vec(),
+    );
+
+    for (open, message) in [(Open::Recovery, vec![0x5a; 32]), invite] {
+        let mut rig = support::Rig::new();
+        let slot = rig.accept().unwrap();
+        let mut encoded = [0; 8];
+        let len = wellfed_proto::encode(&open, &mut encoded).unwrap();
+        let mut bytes = support::framed(&encoded[..len]);
+        bytes.extend(support::framed(&message));
+
+        rig.deliver(slot, &bytes);
+        let mut frames = Vec::new();
+        for _ in 0..8 {
+            rig.pass();
+            frames.extend(rig.collect(slot));
+        }
+
+        let ended = rig.ended_for();
+        assert_eq!(frames.len(), 1, "{open:?}: {ended:?}");
+        assert!(
+            !ended.contains(&Reason::Recovery) && !ended.contains(&Reason::Invite),
+            "{open:?}: {ended:?}"
+        );
+    }
 }
 
 /// A sealed request: arbitrary, or a request tag, an id and an op tag in
