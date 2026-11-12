@@ -182,22 +182,13 @@ pub fn publish(pin_mv: u32, adapter: bool, at_ms: u32) {
 /// The latest sample, if fresh at `now_ms`. A publish between the two reads
 /// of the value reads as unknown for that one health.
 pub fn health(now_ms: u32) -> Option<PowerHealth> {
-    let packed = SAMPLE.load(Ordering::Acquire);
-    let at = SAMPLED_AT_MS.load(Ordering::Acquire);
-    if SAMPLE.load(Ordering::Acquire) != packed || packed & HELD == 0 {
-        return None;
-    }
-
-    let age_ms = now_ms.wrapping_sub(at);
-    if age_ms > STALE_MS {
-        return None;
-    }
-    let pin_mv = packed & MV_MASK;
-    Some(PowerHealth {
-        adapter: packed & ADAPTER != 0,
-        battery_mv: pack_mv(pin_mv),
-        age_ms,
-    })
+    latest(now_ms)
+        .filter(|sample| sample.age_ms <= STALE_MS)
+        .map(|sample| PowerHealth {
+            adapter: sample.adapter,
+            battery_mv: pack_mv(sample.pin_mv),
+            age_ms: sample.age_ms,
+        })
 }
 
 /// The pack's millivolts from the pin's, `None` when no pack is fitted:
@@ -208,7 +199,8 @@ pub fn pack_mv(pin_mv: u32) -> Option<u32> {
 }
 
 /// The latest sample, however old: `None` before the first, or after the
-/// monitor stopped on a failed ADC.
+/// monitor stopped on a failed ADC. The value is read on both sides of its
+/// time, so a publish between them reads as no sample this once.
 pub fn latest(now_ms: u32) -> Option<supply::Sample> {
     let packed = SAMPLE.load(Ordering::Acquire);
     let at = SAMPLED_AT_MS.load(Ordering::Acquire);
