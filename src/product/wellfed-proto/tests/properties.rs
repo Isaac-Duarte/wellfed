@@ -300,21 +300,36 @@ macro_rules! round_trip {
     }};
 }
 
-/// Decode any bytes as `$ty`; whatever decodes re-encodes, and its
-/// re-encoding is a fixed point: it decodes to a value that encodes to the
-/// same bytes. The first decode may hold what an encode drops on purpose,
-/// a carried tail or a count of skipped alerts, so it is the encodings
-/// that are compared ([`a_carried_tail_and_skipped_alerts_are_not_written_back`]).
+/// Decode any bytes as `$ty`; whatever decodes re-encodes, and one pass of
+/// encoding and decoding is a fixed point, by value and by bytes. The first
+/// decode may hold what an encode drops on purpose, a carried tail or a
+/// count of skipped alerts ([`a_carried_tail_and_skipped_alerts_are_not_written_back`]),
+/// so the pass normalises it: the value it decodes to must then decode
+/// back to itself, and encode to the same bytes, which a decoder that lost
+/// or invented anything else would not.
 macro_rules! stable {
+    // A type that carries nothing an encode drops: the first decode is
+    // already the fixed point.
+    (exact $ty:ty, $bytes:expr) => {{
+        stable!($ty, $bytes);
+        if let Ok(value) = decode::<$ty>($bytes) {
+            let mut out = [0u8; 4 * FRAME_MAX];
+            let len = encode(&value, &mut out).unwrap();
+            prop_assert_eq!(decode::<$ty>(&out[..len]), Ok(value));
+        }
+    }};
     ($ty:ty, $bytes:expr) => {{
         if let Ok(value) = decode::<$ty>($bytes) {
             let mut once = [0u8; 4 * FRAME_MAX];
             let len = encode(&value, &mut once).unwrap();
-            let again = decode::<$ty>(&once[..len]);
-            prop_assert!(again.is_ok(), "{:?} does not decode again", value);
+            let normal = decode::<$ty>(&once[..len]);
+            prop_assert!(normal.is_ok(), "{:?} does not decode again", value);
+            let normal = normal.unwrap();
+
             let mut twice = [0u8; 4 * FRAME_MAX];
-            let again_len = encode(&again.unwrap(), &mut twice).unwrap();
+            let again_len = encode(&normal, &mut twice).unwrap();
             prop_assert_eq!(&once[..len], &twice[..again_len]);
+            prop_assert_eq!(decode::<$ty>(&twice[..again_len]), Ok(normal));
         }
     }};
 }
@@ -371,22 +386,22 @@ proptest! {
     /// handshake payloads, and each sealed request.
     #[test]
     fn feeder_side_decoders_survive_any_bytes(bytes in wire()) {
-        stable!(Open, &bytes);
-        stable!(Hello, &bytes);
-        stable!(Join<'_>, &bytes);
-        stable!(ClientMessage<'_>, &bytes);
-        stable!(Request<'_>, &bytes);
-        stable!(Answer<'_>, &bytes);
+        stable!(exact Open, &bytes);
+        stable!(exact Hello, &bytes);
+        stable!(exact Join<'_>, &bytes);
+        stable!(exact ClientMessage<'_>, &bytes);
+        stable!(exact Request<'_>, &bytes);
+        stable!(exact Answer<'_>, &bytes);
     }
 
     /// What a client decodes from a feeder, or from anything answering on
     /// its address.
     #[test]
     fn client_side_decoders_survive_any_bytes(bytes in wire()) {
-        stable!(Welcome<'_>, &bytes);
-        stable!(Joined, &bytes);
+        stable!(exact Welcome<'_>, &bytes);
+        stable!(exact Joined, &bytes);
         stable!(DeviceMessage<'_>, &bytes);
-        stable!(Reply, &bytes);
+        stable!(exact Reply, &bytes);
 
         // A batch's bytes are read only when it is walked: any bytes as a
         // batch walk to an end, and every event they yield re-encodes to
