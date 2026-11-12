@@ -67,7 +67,7 @@ The server keeps everything in one directory, given by `--data` or `WELLFED_SERV
 | `server.db` | The database. |
 | `server.toml` | The settings. Optional: every key has a default. |
 | `server.id` | The server's id, 16 hex digits made on the first start and not a secret, by which the app recognizes the server ([find it from the app](#find-it-from-the-app)). If it's missing, unreadable or damaged, the server makes a new one and warns. |
-| `keys/server.key` | The sealing key that seals every feeder key in the database: 32 bytes, mode 0600, in a 0700 directory. |
+| `keys/server.key` | The sealing key that seals every feeder key in the database: 32 bytes, mode 0600, in a 0700 directory. A key or directory that others can read is tightened at start, with a warning; if the server can't change them (another user owns them, or a read-only mount), it refuses to start. |
 | `backups/` | Daily copies of the database (mode 0700, each copy 0600), with a `README.txt` saying where the key is and how to restore. |
 | `releases/` | Verified firmware releases, each with a record. |
 | `stock/` | Each feeder's stock firmware backup: `stock/<identity>/stock-1.1.15.bin` (the vendor's container) and its `.json` record. |
