@@ -66,6 +66,33 @@ async fn a_jobs_last_run_replaces_the_one_before() {
     );
 }
 
+/// A newer server's job, or a newer outcome, in the table after a
+/// downgrade: the rows this build knows still read.
+#[tokio::test]
+async fn a_job_row_of_a_newer_server_is_left_out() {
+    let (dir, store) = fresh().await;
+    store
+        .record_job_run(&run(Job::Expiry, 100, JobOutcome::Succeeded))
+        .await
+        .unwrap();
+    let pool = sqlx::SqlitePool::connect(&format!(
+        "sqlite://{}",
+        dir.path().join("server.db").display()
+    ))
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO job_runs VALUES ('compaction', 1, 2, 'succeeded'), ('backup', 1, 2, 'skipped')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+
+    assert_eq!(
+        store.job_runs().await.unwrap(),
+        [run(Job::Expiry, 100, JobOutcome::Succeeded)]
+    );
+}
+
 #[tokio::test]
 async fn idle_sessions_and_an_expired_accounts_sessions_end() {
     let (_dir, store) = fresh().await;
