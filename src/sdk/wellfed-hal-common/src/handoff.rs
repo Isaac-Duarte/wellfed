@@ -48,7 +48,7 @@ pub struct Handoff<T> {
     value: TaskCell<T>,
 }
 
-impl<T: Send> Handoff<T> {
+impl<T> Handoff<T> {
     /// An empty slot; `empty` is a placeholder no consumer ever reads.
     pub const fn new(empty: T) -> Self {
         Self {
@@ -153,7 +153,7 @@ pub struct Published<V> {
 }
 
 #[cfg(any(not(target_os = "none"), feature = "km4"))]
-impl<V: Copy + Send> Published<V> {
+impl<V: Copy> Published<V> {
     /// Nothing published; `empty` is what [`Self::clear`] leaves behind and
     /// no reader sees.
     pub const fn new(empty: V) -> Self {

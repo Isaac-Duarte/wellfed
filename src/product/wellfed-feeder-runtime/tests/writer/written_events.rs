@@ -343,7 +343,7 @@ fn client_writes_record_their_events_in_the_writers_turn() {
     for _ in 0..3 {
         step(&mut writer, &mut provider);
     }
-    assert_eq!(SETTINGS.pending(), None);
+    assert!(!SETTINGS.waiting());
     assert_eq!(events::last_seq(), Some(last + 3), "past the full queue");
 
     assert_eq!(events::take_written(), None, "no alert rule acts on these");
@@ -410,7 +410,7 @@ fn a_settings_change_that_waits_out_a_feed_keeps_its_event() {
     for _ in 0..5 {
         assert_eq!(step(&mut writer, &mut provider), None, "waits its turn");
     }
-    assert!(SETTINGS.pending().is_some());
+    assert!(SETTINGS.waiting());
 
     INTERLOCK.release_feed();
     let Some(Record::Saved { event, .. }) = step(&mut writer, &mut provider) else {

@@ -1632,7 +1632,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             return step;
         }
         let mailbox = P::settings_mailbox();
-        let Some(fields) = mailbox.pending() else {
+        let Some(taken) = mailbox.take() else {
             let core = &mut self.core;
             let writable = core.stage == Stage::Idle && H::armed();
             if let Some(step) = self.product.rest(&mut self.core, writable) {
@@ -1644,11 +1644,13 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             }
             return self.events_step(writable);
         };
+        let fields = *taken.get();
+        // A change that waits for its turn is left queued as its guard drops.
         let Some((record, failed)) = self.save_settings::<H>(&fields) else {
             return self.core.waiting();
         };
         self.publish();
-        asked::finish_settings(mailbox, failed);
+        asked::finish_settings(mailbox, taken, failed);
         next(POLL_MS, Some(record))
     }
 

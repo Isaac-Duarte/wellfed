@@ -117,7 +117,7 @@ fn changes_are_saved_once_each_inside_a_marked_attempt() {
         "the attempt is cleared after"
     );
     assert_eq!(current(), (false, true, 20, 1, true));
-    assert_eq!(SETTINGS.pending(), None);
+    assert!(!SETTINGS.waiting());
 
     let base = SETTINGS_BASE as usize * 4096;
     assert_eq!(
