@@ -5,6 +5,7 @@
 
 use std::fmt;
 
+use wellfed_client::history::Delivered;
 use wellfed_model::{CurrentUnit, Trace, TraceEntry, TraceMotor, TraceSummary};
 
 /// The text form of a trace.
@@ -26,14 +27,15 @@ impl fmt::Display for Text<'_> {
 }
 
 fn summary_lines(s: &TraceSummary, stored: bool, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    // Through Delivered, as every line that shows a feed's result: an
+    // uncertain feed is a range, never a count.
+    let delivered = Delivered::of(s.outcome, s.completed, s.requested);
     writeln!(
         f,
-        "feed {}: {:?} ({:?}), {} of {} portions, drive {} ms, {}",
+        "feed {}: {} ({}), drive {} ms, {}",
         s.feed,
-        s.outcome,
-        s.reason,
-        s.completed,
-        s.requested,
+        delivered.describe(s.requested, s.outcome),
+        s.reason.code(),
         s.drive_ms,
         if stored { "stored" } else { "in RAM only" }
     )?;
@@ -113,11 +115,16 @@ fn optional(value: Option<impl fmt::Display>, f: &mut fmt::Formatter<'_>) -> fmt
 }
 
 fn ordinal(stride: u16) -> String {
+    let suffix = match (stride % 10, stride % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
     match stride {
         1 => "poll's reading".to_owned(),
-        2 => "2nd reading".to_owned(),
-        3 => "3rd reading".to_owned(),
-        n => format!("{n}th reading"),
+        n => format!("{n}{suffix} reading"),
     }
 }
 
@@ -165,12 +172,40 @@ mod tests {
         };
         assert_eq!(
             Text(&trace).to_string(),
-            "feed 9: Done (Done), 3 of 3 portions, drive 27241 ms, stored\n\
+            "feed 9: 3 of 3 portions, done (done), drive 27241 ms, stored\n\
              current: peak 168, mean 59 (scaled, not yet mA) over 903 polls; every 4th reading kept\n\
              marks: 3 rising, 3 falling, first at 7840 ms; beam breaks 0; reversals 0\n\
              battery: none mV at rest, none mV lowest\n\
              \x20      0 motor drive0\n\
              \x20   7840 mark low edges=1\n"
         );
+
+        // An uncertain feed is a range of portions, never a count.
+        let mut uncertain = trace;
+        uncertain.summary.outcome = FeedOutcome::Uncertain;
+        uncertain.summary.reason = FeedReason::Interrupted;
+        uncertain.summary.completed = 1;
+        let text = Text(&uncertain).to_string();
+        assert!(
+            text.starts_with("feed 9: 1 to 3 of 3 portions, uncertain (interrupted),"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn strides_read_as_ordinals() {
+        for (stride, words) in [
+            (1, "poll's reading"),
+            (2, "2nd reading"),
+            (4, "4th reading"),
+            (11, "11th reading"),
+            (12, "12th reading"),
+            (21, "21st reading"),
+            (22, "22nd reading"),
+            (23, "23rd reading"),
+            (111, "111th reading"),
+        ] {
+            assert_eq!(ordinal(stride), words);
+        }
     }
 }
