@@ -7,7 +7,9 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use wellfed_api::{AuditAction, Credentials, ErrorCode, NewToken, PREFIX, PageQuery};
+use wellfed_api::{
+    AuditAction, Credentials, ErrorCode, NewToken, PREFIX, PageQuery, PasswordChange,
+};
 use wellfed_server_client::reqwest;
 use wellfed_server_client::reqwest::header::SET_COOKIE;
 use wellfed_server_client::{Auth, Client, Error, Method, StatusCode, expect_status};
@@ -105,6 +107,48 @@ fn a_name_takes_five_failures_a_minute_and_nothing_else_stops() {
 
         clock.advance(Duration::from_secs(12));
         server.client().login(&ada_login()).await.unwrap();
+        server.stop().await;
+    });
+}
+
+/// Guessing the current password through a password change counts against
+/// the name as a failed login does: past five, the change is answered
+/// `429 login_limited` with its wait, which the client reads, before the
+/// guess is checked.
+#[test]
+fn a_password_change_past_the_limit_is_answered_with_its_wait() {
+    local(async {
+        let clock = ManualClock::new();
+        let server = TestServer::start_with_clock(Arc::new(clock.clone())).await;
+        let owner = owner(&server).await;
+        let guess = |current: &str| PasswordChange {
+            current: current.into(),
+            password: "a new password".into(),
+        };
+
+        for _ in 0..5 {
+            refused(
+                owner.change_password(&guess("not the password")).await,
+                StatusCode::UNAUTHORIZED,
+                ErrorCode::BadCredentials,
+            );
+        }
+        let limited = owner.change_password(&guess(&ada_login().password)).await;
+        assert_eq!(
+            limited.as_ref().err().and_then(Error::retry_after),
+            Some(Duration::from_secs(12))
+        );
+        refused(
+            limited,
+            StatusCode::TOO_MANY_REQUESTS,
+            ErrorCode::LoginLimited,
+        );
+
+        clock.advance(Duration::from_secs(12));
+        owner
+            .change_password(&guess(&ada_login().password))
+            .await
+            .unwrap();
         server.stop().await;
     });
 }
