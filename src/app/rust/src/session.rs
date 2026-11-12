@@ -899,7 +899,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
     fn news(&mut self, pushed: &Pushed, fed: Option<&Feed>) -> Result<bool, BridgeError> {
         if let Pushed::Event(event) = pushed {
             match event.body {
-                ref body if moves_plans(body) => self.request(&Op::GetPlans, Asked::Plans)?,
+                ref body if body.moves_plans() => self.request(&Op::GetPlans, Asked::Plans)?,
                 EventBody::Feeder(FeederEvent::Settings { .. }) => {
                     self.request(&Op::GetSettings, Asked::Settings)?
                 }
@@ -954,22 +954,6 @@ fn feed_answered(what: Asked, answer: Option<Answer>) -> Option<SessionUpdate> {
     }
 }
 
-/// Whether `body` may mean the plans moved. A one-off plan disables itself when
-/// it is claimed or passed, which moves the generation with no `Plans` event:
-/// the feed or the missed meal is the only news of it. A skip and its undo
-/// move a meal's skip (and a one-off plan's switch) with no `Plans` event
-/// either, and a skipped plan's next meal ends its skip.
-const fn moves_plans(body: &EventBody) -> bool {
-    matches!(
-        body,
-        EventBody::Feeder(FeederEvent::Plans { .. })
-            | EventBody::Feeder(FeederEvent::Fed { .. })
-            | EventBody::Feeder(FeederEvent::Missed { .. })
-            | EventBody::Feeder(FeederEvent::Skipped { .. })
-            | EventBody::Feeder(FeederEvent::Unskipped { .. })
-    )
-}
-
 /// Whether the feeder runs a valid clock with no local offset. Plans hold
 /// then, and nothing says so: an NTP fix carries no offset, and one a
 /// client's sync gave lives in RAM. So a feeder with no zone set that lost
@@ -996,8 +980,7 @@ fn zone_for(time: &wellfed_model::TimeView) -> Option<Op> {
 
 #[cfg(test)]
 mod tests {
-    use jiff::Timestamp;
-    use wellfed_model::{FeedOutcome, FeedReason, FoodLevel, Generation, MissedReason, Source};
+    use wellfed_model::Generation;
 
     use super::*;
 
@@ -1081,44 +1064,5 @@ mod tests {
         assert!(time_read_due(Duration::from_secs(60), false, false));
         assert!(!time_read_due(Duration::from_secs(60), true, false));
         assert!(!time_read_due(Duration::from_secs(60), false, true));
-    }
-
-    #[test]
-    fn a_feed_a_missed_meal_or_a_skip_reads_the_plans_again() {
-        let fed = EventBody::Feeder(FeederEvent::Fed {
-            feed: 1,
-            requested: 1,
-            completed: 1,
-            outcome: FeedOutcome::Done,
-            reason: FeedReason::Done,
-            hopper: FoodLevel::Present,
-            by: Source::Schedule { plan: 0 },
-        });
-        let missed = EventBody::Feeder(FeederEvent::Missed {
-            plan: 0,
-            due: Timestamp::UNIX_EPOCH,
-            reason: MissedReason::Late,
-        });
-
-        assert!(moves_plans(&fed));
-        assert!(moves_plans(&missed));
-        for skip in [
-            FeederEvent::Skipped {
-                plan: 0,
-                due: Timestamp::UNIX_EPOCH,
-                by: Source::Feeder,
-            },
-            FeederEvent::Unskipped {
-                plan: 0,
-                due: Timestamp::UNIX_EPOCH,
-                by: Source::Feeder,
-            },
-        ] {
-            assert!(moves_plans(&EventBody::Feeder(skip)), "a skip or its undo");
-        }
-        assert!(!moves_plans(&EventBody::Feeder(FeederEvent::Settings {
-            generation: Generation(1),
-            by: Source::Feeder,
-        })));
     }
 }
