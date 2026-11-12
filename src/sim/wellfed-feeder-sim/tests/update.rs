@@ -720,29 +720,27 @@ fn an_enrolled_owner_key_signs_updates_a_feeder_without_a_built_in_key_takes() {
     });
 }
 
-/// A key enrolled as a session key is never an update signer too: after
-/// the press the feeder refuses it with a refusal of its own, even from a
-/// client that never read the list, and the key stays an owner's.
+/// A session key is never an update signer too. The owner's X25519 key
+/// here does not decode as an Ed25519 point, so the feeder refuses it
+/// `Invalid` at once, asking for no press, and the key stays an owner's.
+/// (A session key that does decode is refused after the press with a
+/// refusal of its own: `wellfed-client`'s update tests.)
 #[test]
-fn a_session_key_offered_as_a_signer_is_refused_after_the_press() {
+fn a_session_key_offered_as_a_signer_is_refused() {
     paused(async {
         let mut rig = Rig::trusting(None).await;
         let mut connection = rig.open().await;
         rig.sim.type_line("hold lock").unwrap();
         let own = *Keypair::from_secret(OWNER).public();
+        assert!(!wellfed_signed::offer::strong_key(&own));
         let op = Op::EnrollUpdateKey {
             key: own,
             label: "mine".into(),
         };
         let id = rig.id();
-        let sim = &rig.sim;
-        let (answer, ()) = tokio::join!(connection.ask(id, &op), async {
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            sim.type_line("press dispense").unwrap();
-        });
         assert_eq!(
-            answer.unwrap(),
-            Answer::Refused(Refusal::Update(UpdateRefusal::HeldAsSessionKey))
+            connection.ask(id, &op).await.unwrap(),
+            Answer::Refused(Refusal::Invalid)
         );
         let listed = clients(&mut rig).await;
         let entry = listed.iter().find(|c| c.key.0 == own).unwrap();
