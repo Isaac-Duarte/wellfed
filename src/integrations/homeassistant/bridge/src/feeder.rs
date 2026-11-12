@@ -908,6 +908,14 @@ impl<'a> Session<'a> {
                 self.pending.insert(id, write);
                 Ok(())
             }
+            // `Connection::request` only queues: an error from it means
+            // nothing of this request was queued, whether or not the session
+            // survives ([`wellfed_connect::Error::keeps_session`]), as `ask`
+            // reads the same errors `Unsent`. So a feed refused here never
+            // went and is cleared. A feed whose request was queued may have
+            // run; it is lost when its answer never comes, or when the
+            // session ends with it outstanding ([`Session::serve`]).
+            //
             // Refused before any byte went out, on a session that goes on:
             // the writes still out stay out.
             Err(error) if error.keeps_session() => {
