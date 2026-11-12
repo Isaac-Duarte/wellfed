@@ -26,4 +26,9 @@ void main() {
     }
     expect(fedKind(_fed(FeedOutcome.uncertain, confirmed: 2, uncertain: true)), FedKind.unsure);
   });
+
+  test('a reminder one day past says day, and more say days', () {
+    expect(overdueText(1), '1 day overdue');
+    expect(overdueText(2), '2 days overdue');
+  });
 }

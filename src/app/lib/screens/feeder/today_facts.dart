@@ -8,6 +8,7 @@ import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// The facts under the drawing. Only what needs the owner shows by itself:
 /// running on batteries or low on them, a weak signal, no clock, a desiccant
@@ -238,7 +239,7 @@ class _DesiccantValueState extends State<_DesiccantValue> {
         days == 1 ? 'Change in 1 day' : 'Change in $days days',
         c.text,
       ),
-      Desiccant_Remaining(:final days) => (days == -1 ? '1 day overdue' : '${-days} days overdue', c.warning),
+      Desiccant_Remaining(:final days) => (overdueText(-days), c.warning),
     };
     final bool offer = switch (desiccant) {
       Desiccant_Unset() => true,

@@ -11,6 +11,7 @@ import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/settings_list.dart';
+import 'package:wellfed/widgets/when.dart';
 
 class SettingsVolumeRow extends StatelessWidget {
   const SettingsVolumeRow({
@@ -186,7 +187,7 @@ class _DesiccantRowState extends State<SettingsDesiccantRow> {
       Desiccant_Remaining(days: 0) => 'Change today',
       Desiccant_Remaining(days: 1) => 'Next change in 1 day',
       Desiccant_Remaining(:final days) when days > 1 => 'Next change in $days days',
-      Desiccant_Remaining(:final days) => '${-days} days overdue',
+      Desiccant_Remaining(:final days) => overdueText(-days),
       Desiccant_Unset() => 'Not started',
       Desiccant_Unknown() => 'Unknown until the clock is set',
       null => null,

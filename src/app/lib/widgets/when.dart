@@ -68,6 +68,9 @@ String fedAmountText(FeedResult fed) => fed.uncertain || fed.confirmed != fed.re
     ? '${deliveredText(fed)} ${portionWord(fed.requested)}'
     : portionsText(fed.confirmed);
 
+/// A reminder `days` past its day: `1 day overdue`, `3 days overdue`.
+String overdueText(int days) => days == 1 ? '1 day overdue' : '$days days overdue';
+
 /// How a feed ended, as every screen marks it.
 enum FedKind {
   /// It ran to its end and gave every portion asked.
