@@ -101,8 +101,8 @@ impl<S: OwnerStorage> OwnerTask<S> {
 
         let clock = self.events().now_ms();
         let _guard = IrqGuard::lock();
-        value.flash_phase = self.flash().phase;
-        value.flash_fault = self.flash().fault;
+        value.flash_phase = self.flash().phase();
+        value.flash_fault = self.flash().fault();
         self.shared(|shared| {
             value.food_reading = shared.food_read_at.is_some();
             value.food_reads = shared.food_reads;
@@ -301,11 +301,11 @@ impl<S: OwnerStorage> OwnerTask<S> {
         let _guard = IrqGuard::lock();
         let c = self.flash();
         let blocked = c.outputs_blocked();
-        let mut broken = !c.initialized
-            || c.fault != FlashFault::Ok
-            || c.phase == FlashPhase::Boot
-            || c.phase == FlashPhase::Closing
-            || c.phase == FlashPhase::Closed;
+        let mut broken = !c.initialized()
+            || c.fault() != FlashFault::Ok
+            || c.phase() == FlashPhase::Boot
+            || c.phase() == FlashPhase::Closing
+            || c.phase() == FlashPhase::Closed;
         let interrupted = blocked
             && (self.state == OwnerState::Feeding
                 || (self.state == OwnerState::Preparing && self.optics_started)

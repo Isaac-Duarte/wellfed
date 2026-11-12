@@ -335,7 +335,7 @@ impl<S: OwnerStorage> Owner<S> {
 
         let _guard = IrqGuard::lock();
         // SAFETY: the contract requires a live authority; null fails here.
-        let fits = unsafe { config.flash.as_ref() }.is_some_and(|f| config.lease_fits(&f.limits));
+        let fits = unsafe { config.flash.as_ref() }.is_some_and(|f| config.lease_fits(f.limits()));
         if !active().is_null() || board::outputs_blocked(config.flash) || !fits {
             return false;
         }

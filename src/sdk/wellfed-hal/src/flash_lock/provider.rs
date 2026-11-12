@@ -255,12 +255,12 @@ impl Provider {
             self.failure = Some((stage, reply));
             let elapsed_ms = match stage {
                 LeaseStage::Request => 0,
-                _ => self.now().wrapping_sub(self.coord.requested_at),
+                _ => self.now().wrapping_sub(self.coord.requested_at()),
             };
             LeaseFault {
                 stage,
-                phase: self.coord.phase,
-                fault: self.coord.fault,
+                phase: self.coord.phase(),
+                fault: self.coord.fault(),
                 reply,
                 elapsed_ms,
             }
@@ -271,7 +271,7 @@ impl Provider {
 
     /// Hook `ready`: a bound, idle, unfaulted coordinator.
     pub fn ready(&self) -> bool {
-        self.coord.phase == FlashPhase::Idle && self.coord.fault == FlashFault::Ok
+        self.coord.phase() == FlashPhase::Idle && self.coord.fault() == FlashFault::Ok
     }
 
     /// Hook `acquire`, task context with IRQs enabled: mask IRQs, reserve
@@ -287,7 +287,7 @@ impl Provider {
         sdk::disable_irq();
         self.masked_at = sdk::systimer_ticks();
         let now = self.now();
-        let id = self.coord.token.lease + 1;
+        let id = self.coord.token().lease + 1;
         let reply = self
             .coord
             .request(FlashParty::Local, self.authority, id, now);
@@ -295,7 +295,7 @@ impl Provider {
             return self.fail(LeaseStage::Request, reply);
         }
 
-        let token = self.coord.token;
+        let token = self.coord.token();
         let reply = self
             .coord
             .quiesced(&token, stopped::observe().verified(), now);
@@ -337,8 +337,8 @@ impl Provider {
     /// operation returned the controller to XIP: release the exact ticket's
     /// lease and verify stopped outputs. Returns with IRQs still masked.
     pub fn release<M: Mmio>(&mut self, ticket: &HookTicket) -> bool {
-        let token = self.coord.token;
-        if ticket.id != token.lease || self.coord.phase != FlashPhase::Active {
+        let token = self.coord.token();
+        if ticket.id != token.lease || self.coord.phase() != FlashPhase::Active {
             return self.fail(LeaseStage::Ticket, FlashReply::Stale);
         }
 

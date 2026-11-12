@@ -236,7 +236,7 @@ impl Fixture {
     }
 
     pub fn release_hold(&mut self) {
-        let t = self.authority.token;
+        let t = self.authority.token();
         let inactive = self.owner.board().flash_quiesce();
         let c = &mut self.authority;
         assert_eq!(c.quiesced(&t, inactive, 1), FlashReply::Accepted);

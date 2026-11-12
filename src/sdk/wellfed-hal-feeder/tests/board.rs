@@ -113,7 +113,7 @@ fn missing_authority_and_rebinding_never_enable_outputs() {
     assert!(b.flash_quiesce() && !b.view().faulted);
     assert!(optics_off());
 
-    let t = c.token;
+    let t = c.token();
     assert_eq!(c.quiesced(&t, true, 1), FlashReply::Accepted);
     assert_eq!(c.parked(&t, FlashParty::Peer, 2), FlashReply::Accepted);
     assert_eq!(c.complete(&t, FlashParty::Local, 3), FlashReply::Accepted);
@@ -146,7 +146,7 @@ fn hold_cancels_pending_or_active_output_and_never_resumes_it() {
         assert!(b.flash_quiesce());
         assert!(motor_pins() == MOTOR_MASK && optics_off());
 
-        let t = c.token;
+        let t = c.token();
         assert_eq!(c.quiesced(&t, true, 1), FlashReply::Accepted);
         assert_eq!(c.parked(&t, FlashParty::Peer, 2), FlashReply::Accepted);
         assert_eq!(c.complete(&t, FlashParty::Local, 3), FlashReply::Accepted);
@@ -176,9 +176,9 @@ fn failed_quiescence_cannot_acknowledge_flash_permission() {
 
         let inactive = b.flash_quiesce();
         assert!(!inactive && b.view().faulted);
-        let t = c.token;
+        let t = c.token();
         assert_eq!(c.quiesced(&t, inactive, 1), FlashReply::Failed);
-        assert_eq!(c.fault, FlashFault::Output);
+        assert_eq!(c.fault(), FlashFault::Output);
         assert!(!c.may_access(&t, FlashParty::Peer, 2));
 
         hw(|h| {

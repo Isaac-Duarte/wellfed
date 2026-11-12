@@ -27,7 +27,7 @@ fn flash_hold_waits_before_outputs_and_release_allows_new_work() {
     assert!(f.status().state == OwnerState::Feeding && f.reserve_calls == 1);
     assert!(beats() > refreshes);
     f.stop();
-    assert_eq!(f.authority.phase, FlashPhase::Idle); // Global authority outlives the owner.
+    assert_eq!(f.authority.phase(), FlashPhase::Idle); // Global authority outlives the owner.
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn flash_interruption_latches_failure_even_after_release() {
             assert!(
                 f.status().fault == OwnerFault::Flash && f.status().state == OwnerState::Reporting
             );
-            assert!(f.authority.fault == FlashFault::Output && !f.status().stopped);
+            assert!(f.authority.fault() == FlashFault::Output && !f.status().stopped);
             assert!(
                 f.finish_calls == 0
                     && f.owner.running()

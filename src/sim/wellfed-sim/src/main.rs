@@ -663,7 +663,7 @@ fn take_lease(ms: u64) {
         let id = (*world).writer.request;
         let granted =
             (*authority).request(FlashParty::Local, SESSION, id, now) == FlashReply::Accepted && {
-                let token = (*authority).token;
+                let token = (*authority).token();
                 (*authority).quiesced(&token, inactive, now) == FlashReply::Accepted
                     && (*authority).parked(&token, FlashParty::Peer, now) == FlashReply::Accepted
             };
@@ -672,7 +672,7 @@ fn take_lease(ms: u64) {
             active: true,
         });
         if granted {
-            (*world).writer.lease = Some(((*authority).token, ms + LEASE_MS));
+            (*world).writer.lease = Some(((*authority).token(), ms + LEASE_MS));
         } else {
             end_write(false);
         }

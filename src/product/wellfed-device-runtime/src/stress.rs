@@ -249,8 +249,8 @@ impl<F: FlashOps> Probe<F> {
                 let record = Record::Ready {
                     peer: answer.peer(),
                     reply,
-                    phase: coord.phase,
-                    fault: coord.fault,
+                    phase: coord.phase(),
+                    fault: coord.fault(),
                     inactive: answer.inactive(),
                 };
 
@@ -365,8 +365,8 @@ impl<F: FlashOps> Probe<F> {
                     generation: self.settings.generation,
                     leases: p.leases,
                     frozen: p.frozen,
-                    phase: p.coord.phase,
-                    fault: p.coord.fault,
+                    phase: p.coord.phase(),
+                    fault: p.coord.fault(),
                 }),
             );
         }

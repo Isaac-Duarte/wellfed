@@ -200,7 +200,7 @@ unsafe extern "C-unwind" fn provider_acquire(
             a.request(FlashParty::Local, 17, id, now),
             FlashReply::Accepted
         );
-        let t = a.token;
+        let t = a.token();
         assert_eq!(a.quiesced(&t, true, now + 1), FlashReply::Accepted);
         assert_eq!(
             a.parked(&t, FlashParty::Peer, now + 2),
@@ -248,7 +248,7 @@ unsafe extern "C-unwind" fn provider_release(
     assert!(context == authority_ptr());
     assert!(m(|m| m.irq_mask == 1 && m.systick == 0 && m.ipsr == 0));
     // SAFETY: the interposer passes its private ticket, live for the call.
-    assert_eq!(unsafe { (*ticket).id }, authority(|a| a.token.lease));
+    assert_eq!(unsafe { (*ticket).id }, authority(|a| a.token().lease));
 
     let (bad, now) = m(|m| {
         m.release_calls += 1;
@@ -260,7 +260,7 @@ unsafe extern "C-unwind" fn provider_release(
     }
 
     authority(|a| {
-        let t = a.token;
+        let t = a.token();
         assert_eq!(a.complete(&t, FlashParty::Local, now), FlashReply::Accepted);
         assert_eq!(
             a.released(&t, FlashParty::Peer, true, now + 1),
@@ -428,7 +428,7 @@ fn active_lease_and_tick_restore() {
             && m.legacy_locks == 0));
         assert!(
             m(|m| m.irq_mask == 1 && m.systick == 0)
-                && authority(|a| a.phase) == FlashPhase::Active
+                && authority(|a| a.phase()) == FlashPhase::Active
         );
 
         write_unlock::<Fake>();
@@ -436,7 +436,7 @@ fn active_lease_and_tick_restore() {
             && m.legacy_unlocks == 0
             && m.irq_mask == 0
             && m.systick == initial));
-        assert_eq!(authority(|a| a.phase), FlashPhase::Idle);
+        assert_eq!(authority(|a| a.phase()), FlashPhase::Idle);
     }
 
     reset();
@@ -445,7 +445,7 @@ fn active_lease_and_tick_restore() {
     write_lock::<Fake>();
     write_unlock::<Fake>();
     assert!(
-        m(|m| m.acquire_calls == 2 && m.release_calls == 2) && authority(|a| a.token.lease) == 2
+        m(|m| m.acquire_calls == 2 && m.release_calls == 2) && authority(|a| a.token().lease) == 2
     );
 
     reset();
@@ -574,7 +574,7 @@ fn countflag_left_by_a_disabled_systick_is_not_a_context_fault() {
     m(|m| m.countflag = true);
     write_lock::<Fake>();
     assert!(
-        m(|m| m.irq_mask == 1 && m.systick == 0) && authority(|a| a.phase) == FlashPhase::Active
+        m(|m| m.irq_mask == 1 && m.systick == 0) && authority(|a| a.phase()) == FlashPhase::Active
     );
 
     m(|m| m.countflag = true);
@@ -582,7 +582,7 @@ fn countflag_left_by_a_disabled_systick_is_not_a_context_fault() {
     assert!(m(|m| m.release_calls == 1
         && m.irq_mask == 0
         && m.systick == 7));
-    assert_eq!(authority(|a| a.phase), FlashPhase::Idle);
+    assert_eq!(authority(|a| a.phase()), FlashPhase::Idle);
 
     // An enabled SysTick after acquire still halts.
     reset();

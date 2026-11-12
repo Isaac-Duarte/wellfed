@@ -653,7 +653,7 @@ fn stale_ticket_is_refused() {
     let boot = platform_boot([0; 8], blank(), false, EXPECTED_ID);
     let mut provider = boot.provider;
     let ticket = HookTicket {
-        id: provider.coord.token.lease + 7,
+        id: provider.coord.token().lease + 7,
         saved_systick: 0,
     };
 
