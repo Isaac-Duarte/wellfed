@@ -213,7 +213,7 @@ fn a_failed_meal_posts_once_and_a_dismissal_stays_on_the_phone() {
         let listed = feeder_alerts(dir.clone(), identity.clone()).await.unwrap();
         assert_eq!(listed.notices, []);
 
-        assert_eq!(feeding::reserved(&flash), Some(1), "the owner's feed alone");
+        assert_eq!(feeding::reserved(&flash), Ok(1), "the owner's feed alone");
         sim.stop().await;
     });
 }

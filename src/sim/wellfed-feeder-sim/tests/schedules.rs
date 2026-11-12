@@ -1295,7 +1295,7 @@ fn a_restart_asked_for_while_a_meal_is_claimed_waits_for_the_meal() {
 
     feeder.restart();
     feeder.run(10_000);
-    assert_eq!(feeding::reserved(&feeder.flash), Some(1), "fed once");
+    assert_eq!(feeding::reserved(&feeder.flash), Ok(1), "fed once");
     assert!(feeder.fed().is_empty(), "the reset's new history");
     assert!(feeder.missed().is_empty());
 }

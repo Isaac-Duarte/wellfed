@@ -108,7 +108,7 @@ fn a_feed_is_numbered_by_the_journal_and_ends_in_its_fed_event() {
         let next = owner.ask([4; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(next, Answer::Feeding { feed: 2 });
         next_fed(&mut owner).await;
-        assert_eq!(feeding::reserved(&flash), Some(2));
+        assert_eq!(feeding::reserved(&flash), Ok(2));
         sim.stop().await;
     });
 }
@@ -296,7 +296,7 @@ fn a_restart_mid_feed_resolves_it_as_uncertain_under_its_own_number() {
         // is a new feed now, under the next number: never the same one.
         let resent = owner.ask([1; 16], &Op::Feed { portions: 2 }).await.unwrap();
         assert_eq!(resent, Answer::Feeding { feed: 2 });
-        assert_eq!(feeding::reserved(&flash), Some(2));
+        assert_eq!(feeding::reserved(&flash), Ok(2));
         sim.stop().await;
     });
 }
@@ -444,7 +444,7 @@ fn a_blocked_outlet_or_a_jam_ends_the_feed_by_name_with_its_portions_so_far() {
         };
         assert_eq!(outcome, FeedOutcome::Done);
         assert_eq!(feed_fault(&mut owner, id + 1).await, None);
-        assert_eq!(feeding::reserved(&flash), Some(3));
+        assert_eq!(feeding::reserved(&flash), Ok(3));
         sim.stop().await;
     });
 }
@@ -543,14 +543,14 @@ fn a_feed_behind_a_write_is_answered_once_it_runs_and_the_loop_serves_meanwhile(
             };
             let change = other.ask([5; 16], &change).await.unwrap();
             assert_eq!(change, Answer::Refused(Refusal::Busy));
-            assert_eq!(feeding::reserved(&flash), Some(0), "nothing reserved yet");
+            assert_eq!(feeding::reserved(&flash), Ok(0), "nothing reserved yet");
 
             sim.control(Control::HoldWrite(false));
         };
         let (answer, ()) = tokio::join!(feed, meanwhile);
 
         assert_eq!(answer.unwrap(), Answer::Feeding { feed: 1 });
-        assert_eq!(feeding::reserved(&flash), Some(1));
+        assert_eq!(feeding::reserved(&flash), Ok(1));
         let again = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(again, Answer::Feeding { feed: 1 }, "the same feed");
         let EventBody::Feeder(FeederEvent::Fed {
@@ -560,7 +560,7 @@ fn a_feed_behind_a_write_is_answered_once_it_runs_and_the_loop_serves_meanwhile(
             panic!("a feed");
         };
         assert_eq!((feed, requested), (1, 1));
-        assert_eq!(feeding::reserved(&flash), Some(1), "and no other");
+        assert_eq!(feeding::reserved(&flash), Ok(1), "and no other");
         sim.stop().await;
     });
 }
@@ -578,7 +578,7 @@ fn a_feed_past_its_claim_s_deadline_is_refused_and_its_id_stays_refused() {
         let answer = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(answer, Answer::Refused(Refusal::Busy));
         assert!(begun.elapsed() >= Duration::from_millis(2_900), "its wait");
-        assert_eq!(feeding::reserved(&flash), Some(0), "nothing reserved");
+        assert_eq!(feeding::reserved(&flash), Ok(0), "nothing reserved");
         assert_eq!(readiness(&mut owner, 2).await, Readiness::Ready);
         sim.control(Control::HoldWrite(false));
 
@@ -588,7 +588,7 @@ fn a_feed_past_its_claim_s_deadline_is_refused_and_its_id_stays_refused() {
         let again = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(again, Answer::Refused(Refusal::Busy), "the first answer");
         next_fed(&mut owner).await;
-        assert_eq!(feeding::reserved(&flash), Some(1));
+        assert_eq!(feeding::reserved(&flash), Ok(1));
         sim.stop().await;
     });
 }
@@ -641,7 +641,7 @@ fn a_client_gone_while_its_claim_waited_hears_its_feed_on_a_retry() {
         let mut owner = open(&sim).await;
         let retry = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(retry, Answer::Feeding { feed: 1 });
-        assert_eq!(feeding::reserved(&flash), Some(1), "one feed");
+        assert_eq!(feeding::reserved(&flash), Ok(1), "one feed");
         sim.stop().await;
     });
 }
@@ -681,7 +681,7 @@ fn a_cancel_of_a_feed_waiting_for_its_claim_is_not_found_and_the_feed_runs() {
             panic!("a feed");
         };
         assert_eq!((feed, completed, outcome), (1, 2, FeedOutcome::Done));
-        assert_eq!(feeding::reserved(&flash), Some(1), "one feed");
+        assert_eq!(feeding::reserved(&flash), Ok(1), "one feed");
         assert_eq!(readiness(&mut other, 3).await, Readiness::Ready);
         sim.stop().await;
     });
