@@ -1,6 +1,12 @@
 //! A table as RFC 4180 CSV: a header row of its columns, then a record per
 //! row with the cells in the same order. A null is an empty cell; a cell
 //! holding a comma, a quote or a line break is quoted, its quotes doubled.
+//!
+//! The file is for a spreadsheet, which runs a cell that starts with `=`,
+//! `+`, `-` or `@` (or a tab or carriage return before one) as a formula.
+//! A text cell can hold any name an account entered, so one that starts so
+//! is written behind a `'`, which a spreadsheet shows as text. Numbers are
+//! written as they are.
 
 use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
@@ -28,7 +34,7 @@ pub(super) fn record(columns: &[&str], row: &Value, out: &mut Vec<u8>) {
         }
         match row.get(column) {
             None | Some(Value::Null) => {}
-            Some(Value::String(text)) => cell(text, out),
+            Some(Value::String(text)) => text_cell(text, out),
             Some(Value::Bool(flag)) => {
                 out.extend_from_slice(if *flag { b"true" } else { b"false" })
             }
@@ -36,6 +42,15 @@ pub(super) fn record(columns: &[&str], row: &Value, out: &mut Vec<u8>) {
         }
     }
     out.extend_from_slice(b"\r\n");
+}
+
+/// Owner-entered text, never read as a formula.
+fn text_cell(text: &str, out: &mut Vec<u8>) {
+    if text.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        cell(&format!("'{text}"), out);
+    } else {
+        cell(text, out);
+    }
 }
 
 fn cell(text: &str, out: &mut Vec<u8>) {
@@ -117,6 +132,28 @@ mod tests {
     #[test]
     fn a_structs_fields_are_its_columns_in_order() {
         assert_eq!(field_names::<Pair>(), ["first", "second"]);
+    }
+
+    /// A name that a spreadsheet would run as a formula is written as text;
+    /// a negative number stays a number.
+    #[test]
+    fn a_text_cell_is_never_a_formula() {
+        let columns = ["a", "b", "c", "d", "e"];
+        let row = json!({
+            "a": "=HYPERLINK(\"https://x\",\"open\")",
+            "b": "+1",
+            "c": "@SUM(A1)",
+            "d": "-2",
+            "e": -60,
+        });
+
+        let mut out = Vec::new();
+        record(&columns, &row, &mut out);
+
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "\"'=HYPERLINK(\"\"https://x\"\",\"\"open\"\")\",'+1,'@SUM(A1),'-2,-60\r\n"
+        );
     }
 
     #[test]
