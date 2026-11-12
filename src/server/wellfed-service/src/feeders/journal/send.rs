@@ -2,7 +2,7 @@
 //! in the journal: an outcome, unknown when none came, or unknown for good
 //! when the answer settled nothing.
 
-use tracing::warn;
+use tracing::debug;
 use uuid::Uuid;
 use wellfed_api::{CommandOutcome, FeederId};
 use wellfed_mirror::AskError;
@@ -102,8 +102,9 @@ impl Service {
     pub(crate) async fn unsettled(&self, key: &IdempotencyKey, now: jiff::Timestamp) -> Error {
         match self.shared.store.command_unsettled(key, now).await {
             Ok(true) => self.published(key).await,
+            // Another attempt answered it first, which stands.
             Ok(false) => {
-                warn!(key = %Uuid::from_bytes(*key), "an unsettled write's entry was not open");
+                debug!(key = %Uuid::from_bytes(*key), "an unsettled write was answered already");
             }
             Err(error) => {
                 self.unknown_best_effort(key).await;
