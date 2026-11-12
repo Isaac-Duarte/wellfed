@@ -666,7 +666,9 @@ impl WifiTask {
                 let event = self.event(Kind::On, on, 0, since(begin));
                 act(At::BootReported { on }, event)
             }
-            At::BootReported { on } if on != SUCCESS => act(At::Stopped, Action::Stop),
+            // 0 started, 1 already running (something brought the radio up
+            // first), as battery mode reads it; below 0 the driver failed.
+            At::BootReported { on } if on < 0 => act(At::Stopped, Action::Stop),
             At::BootReported { .. } => act(At::Top, Action::PowerSaveOff),
 
             // Between attempts no join holds the network: one that got no

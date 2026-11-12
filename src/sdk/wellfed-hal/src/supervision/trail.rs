@@ -376,12 +376,14 @@ impl<W: Words + ?Sized> fmt::Display for Trail<'_, W> {
     }
 }
 
-/// Hand the last boot's trail, read in place, to `report`, then start an
-/// empty one for this boot, which notes from here on. Call once at
-/// startup, before the scheduler starts and before the flash hooks arm
-/// (which counts this boot).
+/// Count this boot, hand the last boot's trail, read in place, to
+/// `report`, then start an empty one for this boot, which notes from here
+/// on. Call once at startup, before the scheduler starts. Only here counts
+/// a boot, so a boot whose arming failed and armed again, or never armed,
+/// still leaves its trail to the next.
 pub fn take(report: impl FnOnce(Result<Trail<'_, Ram>, Refusal>)) {
-    let current = sdk::backup_read(BOOT_COUNT_REGISTER);
+    let current = sdk::backup_read(BOOT_COUNT_REGISTER).wrapping_add(1);
+    sdk::backup_write(BOOT_COUNT_REGISTER, current);
     report(Trail::decode(&Ram, current));
     sdk::trail_start(current);
 }

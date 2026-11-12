@@ -27,7 +27,37 @@ fn flash_hold_waits_before_outputs_and_release_allows_new_work() {
     assert!(f.status().state == OwnerState::Feeding && f.reserve_calls == 1);
     assert!(beats() > refreshes);
     f.stop();
-    assert_eq!(f.authority.phase, FlashPhase::Idle); // Global authority outlives the owner.
+    assert_eq!(f.authority.phase(), FlashPhase::Idle); // Global authority outlives the owner.
+}
+
+/// A request taken after the loop was held off at rest gets its fresh
+/// rest beat even when a lease blocked the outputs as it came.
+#[test]
+fn a_request_behind_a_lease_after_a_rest_hold_off_still_feeds() {
+    fake::reset_hardware();
+    let mut f = Box::new(Fixture::new(PHASE_KNOWN));
+    f.config.idle_gap_ms = 200;
+    f.create();
+    f.step();
+    f.advance(3);
+
+    // Held off past the active gap, within the idle one, as a lease begins.
+    fake::advance(120 * 32, true);
+    f.hold();
+    f.step(); // The loop's pass, which the lease keeps from beating.
+    assert_eq!(f.status().fault, OwnerFault::Ok);
+    assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+    f.step();
+    assert_eq!(f.status().fault, OwnerFault::Ok);
+    assert_eq!(f.status().state, OwnerState::Preparing);
+    assert!(f.task().rest_beat_owed);
+
+    f.release_hold();
+    f.step();
+    f.advance(5);
+    assert_eq!(f.status().fault, OwnerFault::Ok);
+    assert_eq!(f.status().state, OwnerState::Feeding);
+    f.stop();
 }
 
 #[test]
@@ -56,7 +86,7 @@ fn flash_interruption_latches_failure_even_after_release() {
             assert!(
                 f.status().fault == OwnerFault::Flash && f.status().state == OwnerState::Reporting
             );
-            assert!(f.authority.fault == FlashFault::Output && !f.status().stopped);
+            assert!(f.authority.fault() == FlashFault::Output && !f.status().stopped);
             assert!(
                 f.finish_calls == 0
                     && f.owner.running()

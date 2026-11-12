@@ -218,8 +218,8 @@ pub enum SaveBoth {
 /// The boot's repair, and the writer's retry after a failed save: when
 /// the records do not share a generation, save both again with what each
 /// holds at [`wellfed_core::settings::repair_generation`], two past the
-/// larger. The record that read cleanly goes first (the device's when both
-/// did, or neither), so a repair that fails on the other, erasing its torn
+/// larger. The device's record goes first when it read cleanly, and the
+/// kind's otherwise, including when neither did, so a repair that fails on the other, erasing its torn
 /// slot, leaves the new generation in a valid slot. The caller holds the
 /// write turn and the attempt marker. A failed save reads both again, as
 /// [`save_both`] does.

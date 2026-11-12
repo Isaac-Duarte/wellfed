@@ -72,6 +72,29 @@ fn a_feed_beats_supervised_and_a_late_result_never_beats_again() {
     f.stop();
 }
 
+/// At rest the gap is longer, but a result write that ran past the active
+/// deadline its feed promised still loses the beat.
+#[test]
+fn a_late_result_never_beats_again_under_a_longer_idle_gap() {
+    fake::reset_hardware();
+    let mut f = Box::new(Fixture::new(PHASE_KNOWN));
+    f.config.idle_gap_ms = 200;
+    f.create();
+    f.step();
+    f.advance(3);
+    f.start_feed();
+
+    f.finish_delay_ticks = 51 * 32;
+    f.complete();
+    assert_eq!(f.status().fault, OwnerFault::Progress);
+    assert_eq!(f.status().result.outcome, OwnerOutcome::Done);
+    assert!(f.status().result_durable && f.task().beat_lost);
+    let after = beats();
+    f.advance(5);
+    assert_eq!(beats(), after, "no beat after the missed deadline");
+    f.stop();
+}
+
 #[test]
 fn submit_waits_for_the_first_step() {
     fake::reset_hardware();

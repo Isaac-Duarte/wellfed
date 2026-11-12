@@ -239,3 +239,26 @@ fn a_reread_that_reads_an_older_record_after_a_failed_save_is_a_misread() {
     assert!(!s.save(&settings(4)), "closed to writes");
     assert_eq!(open(&mut f).settings, settings(2));
 }
+
+/// A value the record can't carry is refused before anything is written,
+/// rather than saved and then read back as nothing.
+#[test]
+fn a_port_of_zero_is_refused_and_writes_nothing() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&settings(1)));
+    let before = f.mutations;
+
+    for ntp in [
+        NtpServer::Gateway { port: 0 },
+        NtpServer::Address {
+            ip: [10, 0, 0, 1],
+            port: 0,
+        },
+    ] {
+        let zero = TimeSettings { zone: None, ntp };
+        assert!(!s.save(&zero), "{ntp:?}");
+    }
+    assert_eq!(f.mutations, before);
+    assert_eq!(open(&mut f).settings, settings(1));
+}

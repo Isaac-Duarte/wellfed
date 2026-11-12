@@ -117,15 +117,35 @@ fn a_claim_never_released_holds_a_join_only_for_its_bound() {
 
     assert_eq!(start, JoinStart::Forced { ms: BOUND_MS });
     assert_eq!(clock.waits.get(), BOUND_MS / JOIN_POLL_MS);
-    assert_eq!(interlock.turn(), Turn::Joining);
+    assert_eq!(interlock.turn(), Turn::JoiningOverClaim);
     assert_eq!(interlock.status().forced, 1);
+
+    // The claim stands through the join, and the loop's next claim waits
+    // for the join.
+    assert!(interlock.outputs_claimed());
+    assert_eq!(interlock.claim_feed(BOUND_MS), Err(Held::Joining));
 
     // The stale claim's release does not end the join; the join's end
     // frees the turn for the next feed.
     interlock.release_feed();
     assert_eq!(interlock.turn(), Turn::Joining);
+    assert!(!interlock.outputs_claimed());
     interlock.end_join();
     assert_eq!(interlock.claim_feed(BOUND_MS), Ok(()));
+}
+
+#[test]
+fn a_join_forced_over_a_claim_ends_back_on_the_claim() {
+    let interlock = Interlock::new();
+    let clock = Clock::new();
+    interlock.claim_feed(BOUND_MS).unwrap();
+    clock.join(&interlock, |_| {});
+
+    interlock.end_join();
+    assert_eq!(interlock.turn(), Turn::Feeding);
+    assert!(interlock.outputs_claimed());
+    interlock.release_feed();
+    assert_eq!(interlock.turn(), Turn::Free);
 }
 
 #[test]
@@ -148,6 +168,7 @@ fn every_turn_round_trips_its_byte() {
         Turn::Joining,
         Turn::Feeding,
         Turn::FeedingJoinWaits,
+        Turn::JoiningOverClaim,
     ] {
         assert_eq!(Turn::from_byte(turn.code()), turn);
     }
@@ -526,6 +547,48 @@ mod writes {
             turn.begin(&interlock, WRITE_WAIT_MS + 1, || true),
             WriteStep::Go(WriteStart::Waited { .. })
         ));
+    }
+
+    /// A forced join keeps the claim, so a write waiting behind it still
+    /// goes ahead only past the claim's bound and on stopped outputs.
+    #[test]
+    fn a_forced_join_keeps_a_write_on_the_stopped_check() {
+        let interlock = Interlock::new();
+        interlock.claim_feed(BOUND_MS).unwrap();
+        let mut turn = WriteTurn::new();
+        assert_eq!(turn.begin(&interlock, 0, || false), WriteStep::Wait);
+
+        let clock = Clock::new();
+        assert_eq!(
+            clock.join(&interlock, |_| {}),
+            JoinStart::Forced { ms: BOUND_MS }
+        );
+        assert_eq!(turn.begin(&interlock, BOUND_MS, || false), WriteStep::Wait);
+        assert!(!interlock.writing());
+        assert_eq!(
+            turn.begin(&interlock, BOUND_MS, || true),
+            WriteStep::Go(WriteStart::Forced { ms: BOUND_MS })
+        );
+    }
+
+    /// A writer that stops asking leaves the count: later claims and food
+    /// readings are not held off for it.
+    #[test]
+    fn a_withdrawn_wait_holds_off_no_later_claim() {
+        let interlock = Interlock::new();
+        let mut turn = WriteTurn::new();
+        interlock.claim_feed(BOUND_MS).unwrap();
+        assert_eq!(turn.begin(&interlock, 0, || true), WriteStep::Wait);
+        interlock.release_feed();
+        assert!(interlock.holds_reading());
+
+        turn.withdraw(&interlock);
+        turn.withdraw(&interlock);
+        assert!(!interlock.holds_reading());
+        let now = Cell::new(0);
+        assert_eq!(claim(&interlock, &now, |_| {}), Ok(()));
+        assert_eq!(now.get(), 0);
+        assert_eq!(interlock.status().feeds_delayed, 0);
     }
 
     #[test]

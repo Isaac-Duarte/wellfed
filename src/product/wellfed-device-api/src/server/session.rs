@@ -216,6 +216,12 @@ impl Server {
             pending: Some(_), ..
         } = self.slots[index].phase
         {
+            // A frame that won't read ends the session, but only once the
+            // pending write's answer has gone out: the read after it finds
+            // the same bytes and fails then.
+            if matches!(self.slots[index].wire.frame(), Ok(Some(_))) {
+                self.held[index] = true;
+            }
             return Ok(false);
         }
 
@@ -230,7 +236,9 @@ impl Server {
                 .map_err(|_| Reason::Noise)?;
             slot.wire.consume(len);
             slot.since_ms = now_ms;
-            self.message(index, read, now_ms, device, pairing, record)?;
+            let answered = self.message(index, read, now_ms, device, pairing, record);
+            self.held[index] = false;
+            answered?;
             return Ok(true);
         }
         if deadline_passed(now_ms, slot.since_ms.wrapping_add(IDLE_MS)) {

@@ -192,19 +192,21 @@ impl Default for FlashToken {
     }
 }
 
+/// The state is private: outputs stay blocked outside IDLE and a fault
+/// latches only because nothing but these methods moves it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlashCoord {
-    pub limits: FlashLimits,
-    pub token: FlashToken,
-    pub last_request: [u64; 2],
+    limits: FlashLimits,
+    token: FlashToken,
+    last_request: [u64; 2],
 
-    pub observed_at: u32,
-    pub phase_at: u32,
-    pub requested_at: u32,
+    observed_at: u32,
+    phase_at: u32,
+    requested_at: u32,
 
-    pub phase: FlashPhase,
-    pub fault: FlashFault,
-    pub initialized: bool,
+    phase: FlashPhase,
+    fault: FlashFault,
+    initialized: bool,
 }
 
 impl Default for FlashCoord {
@@ -256,6 +258,34 @@ impl FlashCoord {
             initialized: true,
             ..Self::default()
         })
+    }
+
+    pub fn phase(&self) -> FlashPhase {
+        self.phase
+    }
+
+    /// The latched fault, `Ok` while none.
+    pub fn fault(&self) -> FlashFault {
+        self.fault
+    }
+
+    /// The current lease's token, as granted.
+    pub fn token(&self) -> FlashToken {
+        self.token
+    }
+
+    /// Set up by [`Self::new`]; an unset authority refuses everything.
+    pub fn initialized(&self) -> bool {
+        self.initialized
+    }
+
+    pub fn limits(&self) -> &FlashLimits {
+        &self.limits
+    }
+
+    /// When the current lease was requested.
+    pub fn requested_at(&self) -> u32 {
+        self.requested_at
     }
 
     pub fn trip(&mut self, reason: FlashFault) {
@@ -571,5 +601,29 @@ impl FlashCoord {
 
         self.set_phase(FlashPhase::Closed, now);
         FlashReply::Accepted
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The lease counter is never reused: at its end every request fails
+    /// and the authority latches `Exhausted`.
+    #[test]
+    fn an_exhausted_lease_counter_fails_closed() {
+        let limits = FlashLimits {
+            quiesce_ms: 10,
+            park_ms: 10,
+            active_ms: 10,
+            release_ms: 10,
+            total_ms: 30,
+        };
+        let mut c = FlashCoord::new(&limits, 17, 0).unwrap();
+        assert_eq!(c.ready(17, 29, true, 0), FlashReply::Accepted);
+        c.token.lease = u64::MAX;
+
+        assert_eq!(c.request(FlashParty::Local, 17, 1, 0), FlashReply::Failed);
+        assert!(c.fault() == FlashFault::Exhausted && !c.may_actuate(0));
     }
 }

@@ -176,6 +176,12 @@ impl<I: SlotIo> TimeStore<I> {
         if !self.writable() || !self.units.writable() {
             return false;
         }
+        // A value the record can't carry (a port of 0) would save and then
+        // read back as nothing, so the next boot would fall back to the
+        // older record: refuse it before any write.
+        if decode(&encode(1, settings)) != Some((1, *settings)) {
+            return false;
+        }
         let saved = self
             .units
             .save_newest(self.generation, self.slot, |generation| {

@@ -431,9 +431,12 @@ impl WallClock {
                     self.learn(point);
                 } else {
                     // The clock was wrong, so its rate may be: what it was
-                    // measured against says nothing more.
+                    // measured against says nothing more. Nor is this fix a
+                    // baseline: the clock or the fix is wrong, and a fix
+                    // read late would teach every later rate its error, so
+                    // the next owner's fix starts one.
                     self.forget_rate();
-                    self.base = Some(point);
+                    self.base = None;
                 }
                 classify(delta)
             }
@@ -550,6 +553,34 @@ impl WallClock {
         self.rate_bound_ppb =
             (uncertainty + moved).clamp(LEARNED_FLOOR_PPM * 1000, UNLEARNED_PPM * 1000);
         self.learned = true;
+    }
+
+    /// Retire what the uptime count can no longer place: an anchor, a
+    /// rate's baseline or the last fix's time once half the count's range
+    /// old. Past that `project` reads them as nothing, but a full range
+    /// later the count comes round and they would read as new: a clock
+    /// expired for 50 days would read valid and precise again. The caller
+    /// runs this at least every half range of the count, while the clock
+    /// is invalid too. An anchor still bounds NTP until then.
+    pub fn retire(&mut self, now: u32) {
+        let old = |anchor: Option<Anchor>| {
+            anchor.is_some_and(|anchor| now.wrapping_sub(anchor.uptime_ms) >= crate::HALF_RANGE)
+        };
+        if old(self.trust) || old(self.centre) {
+            self.trust = None;
+            self.centre = None;
+            self.disjoint = 0;
+            self.contested = false;
+        }
+        if old(self.base) {
+            self.base = None;
+        }
+        if self
+            .last
+            .is_some_and(|(_, at)| now.wrapping_sub(at) >= crate::HALF_RANGE)
+        {
+            self.last = None;
+        }
     }
 
     /// Set or clear the zone's rule.

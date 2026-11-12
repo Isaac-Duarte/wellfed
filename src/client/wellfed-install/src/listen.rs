@@ -145,13 +145,20 @@ async fn watch(
         let elapsed = started.elapsed();
         tick(Listening { elapsed, stock });
         if elapsed >= wait {
-            return Some(if stock {
-                Listened::StockStayed { resolved: false }
-            } else {
-                Listened::Silent
-            });
+            return Some(waited_out(stock));
         }
         tokio::time::sleep(POLL.min(wait.saturating_sub(elapsed))).await;
+    }
+}
+
+/// What a whole wait with no install and no closed request says: stock
+/// that reported after the request stayed, though its ledger has not closed
+/// the request; otherwise nothing is known.
+fn waited_out(stock: bool) -> Listened {
+    if stock {
+        Listened::StockStayed { resolved: false }
+    } else {
+        Listened::Silent
     }
 }
 
@@ -345,9 +352,11 @@ mod tests {
         })
     }
 
-    /// Stock coming back says it stayed. Its ledger will not close the request
-    /// without 10 quiet minutes, so the end says that too, and a connected
-    /// stock has heard only read-only queries and replies to its own reports.
+    /// Stock coming back says it stayed, and a connected stock hears only
+    /// read-only queries and replies to its own reports. The listener sees
+    /// stock's report at a look, every five seconds, and the server's query
+    /// reaches stock once its subscription lands, so the test ends on both
+    /// having happened rather than on a window a loaded host can outrun.
     #[cfg_attr(
         not(target_os = "linux"),
         ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
@@ -355,24 +364,44 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn stock_coming_back_says_it_stayed_and_hears_no_install() {
         let dir = tempfile::tempdir().unwrap();
-        let listen = SocketAddr::from(([127, 41, 7, 5], 21_883));
+        let listen_at = SocketAddr::from(([127, 41, 7, 5], 21_883));
         let path = installer(dir.path(), [127, 41, 7, 5]);
         enroll(&path, "AF_TEST", "127.41.7.6");
         open_trial(&path, "AF_TEST");
 
-        let heard = std::sync::Arc::default();
-        let client = stock_client(listen, "AF_TEST", std::sync::Arc::clone(&heard));
-        // Stock connects and reports within a fraction of a second here, and
-        // the listener only says it stayed once the whole wait has passed.
-        let mut saw_stock = false;
-        let listened = listen_for(&path, Duration::from_secs(3), &mut saw_stock).await;
+        let heard = std::sync::Arc::<std::sync::Mutex<Vec<String>>>::default();
+        let client = stock_client(listen_at, "AF_TEST", std::sync::Arc::clone(&heard));
+        let saw_stock = std::rc::Rc::new(std::cell::Cell::new(false));
+        let seen = {
+            let (heard, saw_stock) = (
+                std::sync::Arc::clone(&heard),
+                std::rc::Rc::clone(&saw_stock),
+            );
+            async move {
+                while !(saw_stock.get() && !heard.lock().unwrap().is_empty()) {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Stop::Terminate
+            }
+        };
+        let tick = {
+            let saw_stock = std::rc::Rc::clone(&saw_stock);
+            move |tick: Listening| saw_stock.set(saw_stock.get() | tick.stock)
+        };
+        let error = listen(&path, UNCERTAIN_WAIT, tick, seen).await.unwrap_err();
         client.abort();
 
-        assert_eq!(listened.unwrap(), Listened::StockStayed { resolved: false });
-        assert!(saw_stock);
-        let heard = heard.lock().unwrap();
-        assert!(!heard.is_empty(), "the server's session reached stock");
-        for command in heard.iter() {
+        assert!(
+            matches!(
+                error,
+                Error::Stopped(Stopped {
+                    by: Stop::Terminate,
+                    ..
+                })
+            ),
+            "{error:?}"
+        );
+        for command in heard.lock().unwrap().iter() {
             assert!(
                 matches!(command.as_str(), "ATTR_GET_SERVICE" | "DEVICE_START_EVENT"),
                 "stock heard {command}"
@@ -380,18 +409,13 @@ mod tests {
         }
     }
 
-    async fn listen_for(
-        path: &Path,
-        wait: Duration,
-        saw_stock: &mut bool,
-    ) -> Result<Listened, Error> {
-        listen(
-            path,
-            wait,
-            |tick| *saw_stock |= tick.stock,
-            std::future::pending(),
-        )
-        .await
+    /// A wait that ran out says stock stayed if it reported, though its ledger
+    /// will not close the request without 10 quiet minutes, and nothing
+    /// otherwise.
+    #[test]
+    fn a_wait_that_ran_out_says_what_stock_did() {
+        assert_eq!(waited_out(true), Listened::StockStayed { resolved: false });
+        assert_eq!(waited_out(false), Listened::Silent);
     }
 
     /// The device API answering where stock connected from says it installed.

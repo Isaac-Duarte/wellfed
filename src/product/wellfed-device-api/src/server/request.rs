@@ -77,14 +77,16 @@ impl Server {
                 Ok(change) => return self.queued(index, id, action, Wait::Wifi { change }),
                 Err(refusal) => Reply::Refused(refusal),
             },
-            Action::TimeSync(fields) => match device.time_sync(fields, origin(role)) {
-                TimeResult::Synced { jump_ms } => {
-                    let jump_ms = jump_ms.map(saturate);
-                    device.record(now_ms, EventBody::ClockSync { by, jump_ms });
-                    Reply::Done(None)
+            Action::TimeSync(fields) => {
+                match device.time_sync(fields, self.sync_origin(index, role)) {
+                    TimeResult::Synced { jump_ms } => {
+                        let jump_ms = jump_ms.map(saturate);
+                        device.record(now_ms, EventBody::ClockSync { by, jump_ms });
+                        Reply::Done(None)
+                    }
+                    TimeResult::Refused(_) => Reply::Refused(Refusal::Time),
                 }
-                TimeResult::Refused(_) => Reply::Refused(Refusal::Time),
-            },
+            }
             Action::CreateInvite {
                 role: invited,
                 key: bound,
@@ -323,6 +325,21 @@ fn put_time<D: Device>(
 }
 
 /// An owner's sync may step the clock; anyone else's only narrows it.
+impl Server {
+    /// Who a time sync counts as. A sync whose frame waited behind a write
+    /// of its own session was stamped before that wait, however long it
+    /// was, so it may be late by more than a sync's allowance: even an
+    /// owner's only narrows the clock then, as any client's does, and sets
+    /// neither the anchor nor a rate.
+    fn sync_origin(&self, index: usize, role: Role) -> Origin {
+        if self.held.get(index).copied().unwrap_or(false) {
+            Origin::Client
+        } else {
+            origin(role)
+        }
+    }
+}
+
 const fn origin(role: Role) -> Origin {
     match role {
         Role::Owner => Origin::Owner,
@@ -484,9 +501,12 @@ fn update_action(op: UpdateOp<'_>) -> Action {
         }
         UpdateOp::State => Action::UpdateState,
         UpdateOp::Cancel => Action::CancelUpdate,
+        // A weak key is refused before any press is asked for.
         UpdateOp::EnrollKey { key, label } => match Label::new(label.as_bytes()) {
-            Some(label) => Action::EnrollUpdateKey { key, label },
-            None => Action::Invalid,
+            Some(label) if wellfed_signed::offer::strong_key(&key) => {
+                Action::EnrollUpdateKey { key, label }
+            }
+            _ => Action::Invalid,
         },
         UpdateOp::KeyStatement { .. } => Action::UpdateKeyStatement,
     }

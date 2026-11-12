@@ -48,6 +48,31 @@ thread_local! {
     /// how many SYSTIMER ticks it holds the writer off.
     static PREEMPT: Cell<Option<(u32, u32)>> = const { Cell::new(None) };
     static PREEMPT_TICKS: Cell<u32> = const { Cell::new(0) };
+    /// Leases left before one that follows a long idle stretch, the
+    /// stretch's SYSTIMER ticks, and how many ticks that lease's operation
+    /// takes.
+    static GAP: Cell<Option<(u32, u32, u32)>> = const { Cell::new(None) };
+}
+
+/// The idle stretch before this lease and its operation's length, when this
+/// is the lease `GAP` names. Only SYSTIMER moves: the watchdog is fed
+/// through an idle stretch.
+fn gap_now() -> Option<(u32, u32)> {
+    GAP.with(|c| match c.get() {
+        Some((0, idle, op)) => {
+            c.set(None);
+            Some((idle, op))
+        }
+        Some((n, idle, op)) => {
+            c.set(Some((n - 1, idle, op)));
+            None
+        }
+        None => None,
+    })
+}
+
+fn systimer_skip(ticks: u32) {
+    fake::with(|h| h.raw_ticks = h.raw_ticks.wrapping_add(ticks));
 }
 
 /// The preempting interrupt (or the higher-priority task it wakes): time
@@ -214,8 +239,15 @@ fn leased<R>(op: impl FnOnce() -> R) -> R {
     let p = unsafe { &mut *provider };
 
     preempt_now();
+    let gap = gap_now();
+    if let Some((idle, _)) = gap {
+        systimer_skip(idle);
+    }
     if !p.acquire::<Core<false>>(&mut ticket) {
         std::panic::panic_any(HookFault);
+    }
+    if let Some((_, op)) = gap {
+        systimer_skip(op);
     }
 
     assert_eq!(sdk::primask(), 1, "acquire returns with IRQs masked");
@@ -318,14 +350,21 @@ fn platform_boot_cut(
     id: [u8; 3],
     cut: Option<u32>,
 ) -> Boot {
-    platform_boot_with(backup, storage, deaf, id, cut, None)
+    platform_boot_with(backup, storage, deaf, id, cut, None, None)
 }
 
 /// A boot whose lease number `lease` (0 first) is preempted for `ms`
 /// inside its acquire.
 fn platform_boot_preempted(lease: u32, ms: u32) -> Boot {
     let preempt = Some((lease, ms * 32_768 / 1000));
-    platform_boot_with([0; 8], blank(), false, EXPECTED_ID, None, preempt)
+    platform_boot_with([0; 8], blank(), false, EXPECTED_ID, None, preempt, None)
+}
+
+/// A boot whose lease number `lease` comes after `idle_ticks` with no
+/// lease and holds the flash for `op_ms`.
+fn platform_boot_after_idle(lease: u32, idle_ticks: u32, op_ms: u32) -> Boot {
+    let gap = Some((lease, idle_ticks, op_ms * 32_768 / 1000));
+    platform_boot_with([0; 8], blank(), false, EXPECTED_ID, None, None, gap)
 }
 
 fn platform_boot_with(
@@ -335,6 +374,7 @@ fn platform_boot_with(
     id: [u8; 3],
     cut: Option<u32>,
     preempt: Option<(u32, u32)>,
+    gap: Option<(u32, u32, u32)>,
 ) -> Boot {
     std::thread::spawn(move || {
         fake::reset_hardware();
@@ -356,6 +396,7 @@ fn platform_boot_with(
         fake::with(|h| h.storage = storage);
         CUT.with(|c| c.set(cut));
         PREEMPT.with(|c| c.set(preempt));
+        GAP.with(|c| c.set(gap));
         POWER_LOST.with(|p| p.set(false));
 
         let mut probe = Box::<Probe<Hooks>>::default();
@@ -600,9 +641,29 @@ fn the_runtime_takes_the_lease_fault_once_and_leaves_the_attempt_bits() {
     .join()
     .unwrap();
 
-    assert_eq!(fault.map(|f| f.stage), Some(LeaseStage::Begin));
+    assert_eq!(
+        fault.map(|f| f.map(|f| f.stage)),
+        Some(Ok(LeaseStage::Begin))
+    );
     assert_eq!(left, ATTEMPT_BIT, "the attempt bit still decides the skip");
     assert_eq!(again, None, "reported once");
+}
+
+#[test]
+fn a_lease_fault_that_does_not_decode_is_reported_raw_and_cleared() {
+    let (fault, left) = std::thread::spawn(|| {
+        fake::reset_hardware();
+        // An unknown phase code (15) with the attempt bit.
+        let raw = (1 << 31) | (15 << 24);
+        fake::with(|h| h.backup[MARKER_REGISTER as usize] = raw | ATTEMPT_BIT);
+        let fault = LeaseFault::take();
+        (fault, fake::with(|h| h.backup[MARKER_REGISTER as usize]))
+    })
+    .join()
+    .unwrap();
+
+    assert_eq!(fault, Some(Err((1 << 31) | (15 << 24))));
+    assert_eq!(left, ATTEMPT_BIT);
 }
 
 #[test]
@@ -648,12 +709,35 @@ fn a_preemption_inside_acquire_does_not_fault_the_lease() {
     }
 }
 
+/// The lease clock is read only inside leases, so a long stretch with no
+/// write leaves it unable to tell how long passed. That idle time is no
+/// lease's: the next lease runs, and its own budget still binds.
+#[test]
+fn a_lease_after_a_long_idle_stretch_keeps_its_budget() {
+    // Past half the SYSTIMER range: about 18 hours with no flash write.
+    let idle = (1 << 31) + 32_768;
+
+    let boot = platform_boot_after_idle(1, idle, 5);
+    assert!(!boot.faulted, "{:?}", boot.provider.failure);
+    assert_eq!(boot.provider.failure, None);
+    assert_eq!(boot.backup[MARKER_REGISTER as usize], 0);
+
+    // 600 ms of erase against the 500 ms active budget.
+    let boot = platform_boot_after_idle(1, idle, 600);
+    assert!(boot.faulted);
+    assert_eq!(
+        boot.provider.failure,
+        Some((LeaseStage::Complete, FlashReply::Failed))
+    );
+    assert_eq!(boot.provider.coord.fault(), FlashFault::Timeout);
+}
+
 #[test]
 fn stale_ticket_is_refused() {
     let boot = platform_boot([0; 8], blank(), false, EXPECTED_ID);
     let mut provider = boot.provider;
     let ticket = HookTicket {
-        id: provider.coord.token.lease + 7,
+        id: provider.coord.token().lease + 7,
         saved_systick: 0,
     };
 

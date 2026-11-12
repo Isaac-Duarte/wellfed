@@ -674,6 +674,16 @@ impl<D: Faked> Rig<D> {
         self.device.fake().writes_held = held;
     }
 
+    /// Who the clock's last accepted fix came from.
+    pub fn clock_origin(&mut self) -> Option<wellfed_core::clock::wall::Origin> {
+        self.device
+            .fake()
+            .clock
+            .state(1)
+            .last
+            .map(|(origin, _)| origin)
+    }
+
     /// Have the writer fail each settings write, or save it.
     pub fn fail_settings(&mut self, fail: bool) {
         self.device.fake().settings_fail = fail;

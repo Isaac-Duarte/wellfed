@@ -664,6 +664,9 @@ pub struct Core<F> {
     time_opened: bool,
     armed: bool,
     seed: SeedStore<Slots<F, SEED_BASE>>,
+    /// The epoch an event ring created this boot takes, once stored with
+    /// the boot's seed ([`ring_epoch`]).
+    ring_epoch: Option<u32>,
     clients: ClientStore<Slots<F, CLIENTS_BASE>>,
     keys_opened: bool,
     events: EventLog<Region<F, EVENTS_BASE, EVENTS_UNITS>>,
@@ -725,6 +728,7 @@ impl<F> Default for Core<F> {
             time_opened: false,
             armed: false,
             seed: SeedStore::default(),
+            ring_epoch: None,
             clients: ClientStore::default(),
             keys_opened: false,
             events: EventLog::default(),
@@ -765,19 +769,29 @@ fn generation(generation: u64) -> u32 {
     u32::try_from(generation).unwrap_or(u32::MAX)
 }
 
-/// The epoch a new event ring takes, drawn after the seed is mixed in and
-/// never 0, which a ring written before epochs reads as. A boot without a
-/// generator holds no session either (every handshake needs one), so its
-/// fallback only has to differ from 0; a later ring re-created with a
-/// generator draws again.
-fn fresh_epoch() -> u32 {
+/// The epoch a ring created after `last` takes: past it by a random
+/// stride, so the epochs the seed record carries only rise and no ring
+/// takes one an earlier ring had (a client's history keys its events by
+/// epoch and number, and keeps the first it hears of each). With none
+/// stored yet it is drawn whole. Never 0, which a ring written before
+/// epochs reads as.
+fn ring_epoch(last: u32, random: u32) -> u32 {
+    let next = if last == 0 {
+        random
+    } else {
+        last.wrapping_add(1 + (random & 0xffff))
+    };
+    next.max(1)
+}
+
+/// A random word from the generator, 0 without one.
+fn random_word() -> u32 {
     let mut bytes = [0; 4];
-    let drawn = if rng::fill(&mut bytes) {
+    if rng::fill(&mut bytes) {
         u32::from_le_bytes(bytes)
     } else {
         0
-    };
-    drawn.max(1)
+    }
 }
 
 impl<F: FlashOps> Core<F> {
@@ -869,13 +883,24 @@ impl<F: FlashOps> Core<F> {
     fn keys<R>(&mut self, writable: bool) -> Record<R> {
         self.seed.open(Slots::new());
         let mixed = self.seed.seed().is_some_and(|seed| rng::mix(seed));
-        let saved = writable
-            && rng::bytes().is_some_and(|next| {
+        // The ring's epoch moves on with every boot's seed, stored before
+        // any ring could take it. Without a generator the stored seed stays
+        // (no boot has used it yet) and only the epoch moves. With neither,
+        // nothing is stored: such a boot opens no session (every handshake
+        // needs the generator), and no earlier boot did either, so no client
+        // has heard a ring an epoch of 1 could repeat.
+        let epoch = ring_epoch(self.seed.epoch(), random_word());
+        let next = rng::bytes();
+        let seed = next.or(self.seed.seed().copied());
+        let stored = writable
+            && seed.is_some_and(|seed| {
                 arming::set_attempt();
-                let saved = self.seed.save(&next);
+                let stored = self.seed.save(&seed, epoch);
                 arming::clear_attempt();
-                saved
+                stored
             });
+        let saved = stored && next.is_some();
+        self.ring_epoch = stored.then_some(epoch);
 
         self.clients.open(Slots::new());
         let identity = if self.clients.identity().is_some() {
@@ -1173,6 +1198,11 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         };
         let mut step = next(delay_ms, record);
         step.rested = !served && !appended && !deferred;
+        if step.rested {
+            // Nothing left that waits for a turn (an event this boot may
+            // not write was dropped): stop counting among the waiters.
+            core.turn.withdraw(&INTERLOCK);
+        }
         step
     }
 
@@ -1539,8 +1569,14 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             // record they take logs its own line.
             self.product.open_with_events();
             let core = &mut self.core;
+            // Without a stored one (a boot that may not write), the epoch
+            // still moves past the last stored; only the next boot's could
+            // then meet it, by a 1 in 65,536 stride.
+            let fresh = core
+                .ring_epoch
+                .unwrap_or_else(|| ring_epoch(core.seed.epoch(), random_word()));
             core.events
-                .open(Region::new(), EVENTS_UNITS as usize, fresh_epoch());
+                .open(Region::new(), EVENTS_UNITS as usize, fresh);
             events::publish_open(core.events.epoch(), core.events.last_seq());
             self.publish_fill();
             let core = &self.core;

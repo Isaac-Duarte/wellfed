@@ -962,3 +962,94 @@ fn a_contested_record_carries_a_grown_error_up_to_its_limit() {
     assert!(claiming(10_000_000_000).is_ok());
     assert_eq!(claiming(20_000_000_000), Err(NoResume::Corrupt));
 }
+
+/// A clock with no fix for longer than the uptime count's range stays
+/// invalid as the count comes round, learned or not, with its maintenance
+/// run hourly as the loop runs it each pass; NTP keeps its bound while the
+/// anchor can still be placed, and a fix sets the clock again.
+#[test]
+fn an_expired_clock_stays_invalid_across_uptime_wraps() {
+    for learned in [false, true] {
+        let mut clock = WallClock::default();
+        clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+        if learned {
+            for i in 1..=7u32 {
+                let now = i * 1_024_000;
+                let truth = NOON + u64::from(now);
+                clock.fix(now, fix(truth, 20, Origin::Owner)).unwrap();
+            }
+            assert!(clock.state(7_168_000).learned);
+        }
+
+        let last_fix = if learned { 7_168_000 } else { 0 };
+        // Three wraps of the 32-bit millisecond count, an hour at a time.
+        let hours = 3 * (1u64 << 32) / u64::from(HOUR_MS) + 2;
+        for hour in 8..=hours {
+            let truth = hour * u64::from(HOUR_MS);
+            let now = u32::try_from(truth % (1 << 32)).unwrap();
+            clock.retire(now);
+            if hour > 24 * 8 {
+                assert_eq!(clock.read(now), None, "hour {hour}, learned {learned}");
+            }
+            // The last fix's age is its true age, or none at all.
+            if let Some((_, age)) = clock.state(now).last {
+                assert_eq!(u64::from(age), truth - last_fix, "hour {hour}");
+            }
+        }
+
+        // Its anchor retired, NTP sets it as a first fix again.
+        let truth = hours * u64::from(HOUR_MS) + 1_000;
+        let now = u32::try_from(truth % (1 << 32)).unwrap();
+        assert_eq!(clock.fix(now, ntp(NOON + truth, 25)), Ok(Jump::First));
+        honest(clock.read(now).unwrap(), NOON + truth, "after the fix");
+    }
+}
+
+/// While the anchor can still be placed it stays NTP's bound: an expired
+/// clock is not re-set to any time an answer names.
+#[test]
+fn retiring_keeps_an_expired_anchor_bounding_ntp_while_it_can_be_placed() {
+    let mut clock = WallClock::default();
+    clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+    let now = 10 * 24 * HOUR_MS;
+    clock.retire(now);
+    assert_eq!(clock.read(now), None);
+    let far = NOON + u64::from(now) + 30 * 24 * u64::from(HOUR_MS);
+    assert_eq!(clock.fix(now, ntp(far, 25)), Err(SyncError::Bounded));
+}
+
+/// An owner's sync read late disagrees with the clock: it moves the clock,
+/// but it is no baseline, so the rate later syncs measure carries none of
+/// its error.
+#[test]
+fn a_late_owner_sync_teaches_no_rate() {
+    let mut clock = WallClock::default();
+    clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+
+    // Stamped 30 s before the feeder read it.
+    let late = HOUR_MS;
+    let stale = NOON + u64::from(late) - 30_000;
+    assert!(matches!(
+        clock.sync(late, sync(stale), Origin::Owner),
+        Ok(Jump::Jumped(_))
+    ));
+
+    // A true sync after the clock expired: no rate from the late one.
+    let later = 13 * HOUR_MS;
+    let owner = |now: u32| fix(NOON + u64::from(now), 20, Origin::Owner);
+    clock.fix(later, owner(later)).unwrap();
+    assert!(!clock.state(later).learned);
+
+    // True syncs from there teach the true rate, and the clock stays honest.
+    for i in 1..=7u32 {
+        let now = later + i * 1_024_000;
+        clock.fix(now, owner(now)).unwrap();
+    }
+    let state = clock.state(later + 7 * 1_024_000);
+    assert!(
+        state.learned && state.rate_ppb.unsigned_abs() < 1_000,
+        "{state:?}"
+    );
+    let day = later + 7 * 1_024_000 + 24 * HOUR_MS;
+    honest(clock.read(day).unwrap(), NOON + u64::from(day), "a day on");
+}

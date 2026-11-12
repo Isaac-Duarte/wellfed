@@ -399,7 +399,10 @@ impl<I: SlotIo> StatsStore<I> {
         if !self.may_save(kind) || !self.units.writable() {
             return false;
         }
-        let generation = self.generation + 1;
+        let Some(generation) = self.generation.checked_add(1) else {
+            self.status = StatsStatus::Io;
+            return false;
+        };
         let slot = self.next_slot();
         let budget = self.budget.after(kind);
         let from = (self.generation > 0).then_some(self.slot);

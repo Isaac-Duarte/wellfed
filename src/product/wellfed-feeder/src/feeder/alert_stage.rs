@@ -34,11 +34,25 @@
 //! are written before the marker changes, and this boot reads it. A build
 //! this boot activated that then confirms clears the candidate with no
 //! restart, so that is recorded too, as `UpdateConfirmed`.
+//!
+//! **A give-way no install followed.** Bank 1 gives way to bank 0 for an
+//! install, and bank 0 then waits for the client to send the image. A
+//! client that never comes back (dropped, killed, or a server restarted)
+//! leaves the feeder on bank 0's recovery copy, with the candidate pending
+//! and nothing installing, for as long as no other client offers one.
+//! After [`GIVEN_WAY_MS`] of that the stage records the install as stopped
+//! for want of a chunk, which the rules report as a failed update: the
+//! feeder keeps running bank 0. It does so only on the give-way's own boot
+//! (as the boot read judged it) and only if no install ran and stopped
+//! since, so a stop is never reported twice and a later boot still holding
+//! the candidate reports nothing new.
 
 use wellfed_core_feeder::schedule::latest_due;
 use wellfed_device_api::SESSIONS;
 use wellfed_device_api::mailbox::{PLANS, PlansResult};
 use wellfed_proto::api::{Blocked, EventBody, Readiness, Supply, UpdateCandidate, UpdateStop};
+
+use wellfed_core::ota::install::Phase as InstallPhase;
 
 use super::alerts::History;
 use super::alerts::Readings;
@@ -62,6 +76,10 @@ pub const WELCOME_MS: u32 = 10_000;
 const READ_PER_PASS: usize = 32;
 /// How often the conditions are looked at: their thresholds are minutes.
 const LOOK_MS: u32 = 1_000;
+/// How long bank 0 holds a give-way's candidate with nothing installing
+/// before it says the install stopped. An installer reconnects within a
+/// boot and a discovery, well inside it.
+pub const GIVEN_WAY_MS: u32 = 10 * 60 * 1000;
 const MINUTE_MS: u64 = 60_000;
 
 /// A reader outside the session slots: it takes no turn from any.
@@ -124,6 +142,11 @@ pub struct AlertStage {
     on_trial: bool,
     /// The next look at whether it has.
     trial_look_ms: Option<u32>,
+    /// Since when bank 0 has held a give-way's candidate with nothing
+    /// installing, and whether this boot recorded it.
+    given_way_since: Option<u32>,
+    given_way_noted: bool,
+    given_way_look_ms: Option<u32>,
 }
 
 impl Default for AlertStage {
@@ -145,6 +168,9 @@ impl AlertStage {
             candidate_noted: false,
             on_trial: false,
             trial_look_ms: None,
+            given_way_since: None,
+            given_way_noted: false,
+            given_way_look_ms: None,
         }
     }
 
@@ -154,6 +180,7 @@ impl AlertStage {
         self.watch_install(platform, now_ms);
         self.note_candidate(platform, now_ms, inputs.booted);
         self.watch_trial(platform, now_ms);
+        self.watch_given_way(platform, now_ms);
 
         if !platform.alerts_on() {
             platform.alerts_mut().restored(now_ms, History::Whole);
@@ -258,6 +285,42 @@ impl AlertStage {
         };
         if wellfed_device::update::candidate(progress.candidate) == UpdateCandidate::None {
             self.on_trial = !events::record_or_wait(platform, now_ms, EventBody::UpdateConfirmed);
+        }
+    }
+
+    /// Records a give-way that no install followed, once a boot. Looked at
+    /// once a second, as the progress is a copy under a paused scheduler.
+    #[inline(never)]
+    fn watch_given_way<P: Platform>(&mut self, platform: &mut P, now_ms: u32) {
+        let due = self
+            .given_way_look_ms
+            .is_none_or(|at| wellfed_core::deadline_passed(now_ms, at));
+        if self.given_way_noted || !due {
+            return;
+        }
+        self.given_way_look_ms = Some(now_ms.wrapping_add(LOOK_MS));
+        // Only on the give-way's own boot, and only while no install has
+        // run and stopped since: a stop is recorded as itself, and a later
+        // boot still holding the candidate was reported already.
+        let waiting = platform.alerts().gave_way()
+            && !platform.installing()
+            && platform.update_progress().is_some_and(|progress| {
+                progress.bank == 0
+                    && progress.phase == InstallPhase::Idle
+                    && progress.stopped.is_none()
+                    && wellfed_device::update::candidate(progress.candidate)
+                        == UpdateCandidate::Pending
+            });
+        if !waiting {
+            self.given_way_since = None;
+            return;
+        }
+        let since = *self.given_way_since.get_or_insert(now_ms);
+        if now_ms.wrapping_sub(since) >= GIVEN_WAY_MS {
+            let body = EventBody::UpdateStop {
+                stop: UpdateStop::Timeout.into(),
+            };
+            self.given_way_noted = events::record_or_wait(platform, now_ms, body);
         }
     }
 

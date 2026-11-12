@@ -161,7 +161,10 @@ impl<I: SlotIo> CalibrationStore<I> {
         if !self.writable() || !self.units.writable() || !calibration.valid() {
             return false;
         }
-        let generation = self.generation + 1;
+        let Some(generation) = self.generation.checked_add(1) else {
+            self.status = CalibrationStatus::Io;
+            return false;
+        };
         let slot = target(self.generation, self.slot);
         let from = (self.generation > 0).then_some(self.slot);
         if !self

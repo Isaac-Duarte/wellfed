@@ -224,6 +224,9 @@ pub struct Alerts {
     /// This boot's build confirmed before the read ended, which only means
     /// something once this boot's update record is judged.
     this_confirmed: bool,
+    /// This boot was judged an install's give-way: bank 0 holding a
+    /// pending candidate, after a boot on bank 1.
+    gave_way: bool,
     /// The thresholds that began at boot have run out.
     settled: bool,
     settling: bool,
@@ -283,6 +286,7 @@ impl Alerts {
             newest_s: 0,
             this_boot: None,
             this_candidate: None,
+            gave_way: false,
             this_restarting: false,
             this_confirmed: false,
             settled: false,
@@ -371,7 +375,7 @@ impl Alerts {
             self.booted(now_ms, at, bank, reset_flags);
         }
         if let Some(candidate) = self.this_candidate.take() {
-            self.judge_boot(now_ms, None, candidate);
+            self.gave_way = self.judge_boot(now_ms, None, candidate);
         }
         self.restart_asked |= core::mem::take(&mut self.this_restarting);
         if core::mem::take(&mut self.this_confirmed) {
@@ -779,9 +783,10 @@ impl Alerts {
 
     /// What the update store held as the newest boot came up: whether that
     /// boot was an install's own restart, or a fall back to bank 0.
-    fn judge_boot(&mut self, now_ms: u32, at: Stamp, candidate: UpdateCandidate) {
+    /// Whether the boot was an install's give-way, from bank 1.
+    fn judge_boot(&mut self, now_ms: u32, at: Stamp, candidate: UpdateCandidate) -> bool {
         let (Some(bank), Some(unplanned)) = (self.bank, self.unjudged.take()) else {
-            return;
+            return false;
         };
         // A record on bank 0 says bank 0 runs a build that records; one on
         // bank 1 says nothing of it.
@@ -818,6 +823,13 @@ impl Alerts {
         if unplanned && !install {
             self.restarted(self.boot_at);
         }
+        (bank, candidate) == (0, UpdateCandidate::Pending) && bank_before == Some(1)
+    }
+
+    /// This boot is an install's give-way: bank 0 holding a pending
+    /// candidate after a boot on bank 1, as the boot read judged it.
+    pub const fn gave_way(&self) -> bool {
+        self.gave_way
     }
 
     /// One more unplanned boot. A boot is stamped only with a valid clock,

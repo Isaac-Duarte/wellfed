@@ -702,7 +702,9 @@ impl<R: Runtime> Feeds for Feeding<R> {
             return Some(Blocked::Battery);
         }
         match rt.interlock().turn() {
-            Turn::Joining | Turn::FeedingJoinWaits => Some(Blocked::Joining),
+            Turn::Joining | Turn::FeedingJoinWaits | Turn::JoiningOverClaim => {
+                Some(Blocked::Joining)
+            }
             Turn::Free | Turn::Feeding => None,
         }
     }

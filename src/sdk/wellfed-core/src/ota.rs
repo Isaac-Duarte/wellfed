@@ -139,9 +139,15 @@ impl Writer {
             })
     }
 
-    /// Image bytes before the staged sector: written and read back.
+    /// Image bytes before the staged sector: written and read back. A
+    /// partial last sector counts only the image bytes it holds.
     pub fn written(&self) -> u32 {
-        self.sector_offset
+        self.sector_offset.min(self.manifest.image_len)
+    }
+
+    /// A sector is handed to the port and its readback not yet reported.
+    pub fn programming(&self) -> bool {
+        self.phase == Phase::Programming
     }
 
     /// Whether the chunk at `offset` is already in: in a sector written

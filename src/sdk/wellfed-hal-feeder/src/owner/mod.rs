@@ -248,9 +248,15 @@ pub struct OwnerTask<S> {
     pub fault: OwnerFault,
     /// SYSTIMER at the last beat, or at open.
     pub beat_raw: u32,
+    /// The gap the last beat promised; `u32::MAX` before the first. No
+    /// later state's longer gap extends a deadline already promised.
+    pub beat_gap_ms: u32,
     /// A beat came due after the gap had passed; latched, so no later beat
     /// is ever published.
     pub beat_lost: bool,
+    /// A request was taken while a lease kept its rest beat back: the rest
+    /// gap applies until that beat is published.
+    pub rest_beat_owed: bool,
     pub queued_at: u32,
 
     pub initialized: bool,
@@ -297,7 +303,9 @@ impl<S> Default for OwnerTask<S> {
             state: OwnerState::default(),
             fault: OwnerFault::default(),
             beat_raw: 0,
+            beat_gap_ms: u32::MAX,
             beat_lost: false,
+            rest_beat_owed: false,
             queued_at: 0,
             initialized: false,
             board_attempted: false,
@@ -335,7 +343,7 @@ impl<S: OwnerStorage> Owner<S> {
 
         let _guard = IrqGuard::lock();
         // SAFETY: the contract requires a live authority; null fails here.
-        let fits = unsafe { config.flash.as_ref() }.is_some_and(|f| config.lease_fits(&f.limits));
+        let fits = unsafe { config.flash.as_ref() }.is_some_and(|f| config.lease_fits(f.limits()));
         if !active().is_null() || board::outputs_blocked(config.flash) || !fits {
             return false;
         }

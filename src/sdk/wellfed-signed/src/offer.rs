@@ -22,7 +22,11 @@
 //! (`min_version`, kept in the update store), and every stock image, needs a
 //! [`DOWNGRADE_MAGIC`] statement bound to this feeder's identity, the exact
 //! manifest and the current floor. A replayed old manifest, or a statement
-//! made for another feeder or before the floor last rose, is refused.
+//! made for another feeder or at another floor, is refused. The binding is
+//! to the floor's value, not to when it was set: the handover from stock's
+//! activation sets the floor back to 0, so a statement made at a floor of
+//! that same value reads as current again, for that feeder and that exact
+//! manifest only.
 //!
 //! Each statement starts with its own magic, so no signed message can be
 //! read as another kind. Verification is sans-IO and allocation-free; it
@@ -32,7 +36,7 @@
 use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
 
-use super::{BANK1_BYTES, Manifest, RETIRED_MAGIC, SECTOR_BYTES};
+use super::{Manifest, RETIRED_MAGIC};
 
 pub const MAGIC: [u8; 8] = *b"PLOTA2\0\0";
 pub const KEY_ADD_MAGIC: [u8; 8] = *b"PLKEY1\0\0";
@@ -57,6 +61,15 @@ pub const REVOKE_BODY: usize = STATEMENT_HEADER + KEY_ID_LEN;
 pub const DOWNGRADE_BODY: usize = STATEMENT_HEADER + 32 + 32 + 4;
 /// The longest statement, signature included.
 pub const STATEMENT_MAX: usize = DOWNGRADE_BODY + SIGNATURE_LEN;
+
+/// Whether `public` is a key worth enrolling: a point that decodes, and
+/// not one of small order. Verification is strict, so a weak key signs
+/// nothing anyway; refusing it at enrollment keeps a slot from holding a
+/// key that can never sign, or that a laxer check would let anyone sign
+/// with.
+pub fn strong_key(public: &[u8; 32]) -> bool {
+    VerifyingKey::from_bytes(public).is_ok_and(|key| !key.is_weak())
+}
 
 /// The first 8 bytes of SHA-256 over an Ed25519 public key.
 pub type KeyId = [u8; KEY_ID_LEN];
@@ -386,7 +399,7 @@ pub fn admit_offer(
     if m.target_bank != 1 {
         return Err(OfferError::Bank);
     }
-    if m.image_len < SECTOR_BYTES || m.image_len > BANK1_BYTES {
+    if !crate::image_len_fits(m.image_len) {
         return Err(OfferError::Size);
     }
     if context.running == Some(m.build_id) {
@@ -453,8 +466,9 @@ pub enum KeyStatement {
     Add([u8; 32]),
 }
 
-/// Accept a key statement only if a built-in key that is not retired
-/// signed it.
+/// Accept a key statement only if a key that may sign one signed it: a
+/// built-in key or the release slot's key, either not retired. An owner's
+/// enrolled key never does.
 pub fn admit_statement(
     statement: &[u8],
     ring: &KeyRing<'_>,

@@ -440,10 +440,12 @@ impl Install {
         self.stop(stop);
     }
 
-    /// End a quiet install once [`IDLE_MS`] passed without a chunk.
+    /// End a quiet install once [`IDLE_MS`] passed without a chunk. A
+    /// sector out to the port is the port's to finish, so the wait for its
+    /// readback never times out.
     pub fn tick(&mut self, now_ms: u32) -> Option<Stop> {
         let quiet = now_ms.wrapping_sub(self.heard_ms) >= IDLE_MS;
-        (self.receiving() && quiet).then(|| self.stop(Stop::Timeout))
+        (self.receiving() && !self.writer.programming() && quiet).then(|| self.stop(Stop::Timeout))
     }
 
     /// One chunk at `offset`.
@@ -466,6 +468,11 @@ impl Install {
     /// The staged sector's readback. Once the last one passes the whole
     /// image's hash, the install is [`Self::ready`].
     pub fn programmed(&mut self, readback_ok: bool) -> Result<(), Stop> {
+        // A readback reported after a stop never revives the install: the
+        // marker is never written once it stopped.
+        if let Some(earlier) = self.stopped() {
+            return Err(earlier);
+        }
         if let Err(error) = self.writer.programmed(readback_ok) {
             return Err(self.stop(Stop::of(error)));
         }

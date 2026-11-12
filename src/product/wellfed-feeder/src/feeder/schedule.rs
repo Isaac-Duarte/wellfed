@@ -46,7 +46,7 @@
 
 use core::fmt;
 
-use wellfed_core::clock::wall::{Occurrence, occurrence};
+use wellfed_core::clock::wall::{MISSED_GRACE_MS, Occurrence, occurrence};
 use wellfed_core_feeder::schedule::{Plan, latest_due, same_day_again};
 use wellfed_device_api::mailbox::{Claim, PLANS, PlansChange, PlansResult, PlansView, PlayResult};
 use wellfed_proto::api::{Blocked, EventBody, MissedReason, Readiness, Refusal, Source};
@@ -80,8 +80,9 @@ enum Step {
 enum Expect {
     Claimed(Claim),
     Released(Claim),
-    /// An interrupted claim settled, reported once it is.
-    Settled(Claim),
+    /// A claim whose feed was never queued settled, reported once it is
+    /// with the reason it never ran.
+    Settled(Claim, MissedReason),
     /// A missed occurrence passed; reported once it is, if `report`.
     Passed {
         plan: u8,
@@ -162,8 +163,10 @@ pub struct Schedule {
     dues: [Option<u64>; PLANS],
     /// The wall-clock minute and the table revision `dues` are for.
     computed: Option<(u64, u32)>,
-    /// The occurrence held while the feeder cannot feed, and why.
-    waiting: Option<(u8, u64, Blocked)>,
+    /// Each slot's occurrence held while the feeder cannot feed, and why:
+    /// every plan due together waits on the same reason, and is missed with
+    /// it.
+    waiting: [Option<(u64, Blocked)>; PLANS],
     /// No claim before this uptime: the owner refused the last claimed
     /// feed.
     retry_at: Option<u32>,
@@ -188,7 +191,7 @@ impl Schedule {
             step: Step::Boot,
             dues: [None; PLANS],
             computed: None,
-            waiting: None,
+            waiting: [None; PLANS],
             retry_at: None,
             marked: [None; PLANS],
             again: [None; PLANS],
@@ -229,11 +232,12 @@ impl Schedule {
     }
 
     /// Why the schedule is holding a meal it could not start, if it is.
-    pub const fn meal_held(&self) -> Option<Blocked> {
-        match self.waiting {
-            Some((_, _, reason)) => Some(reason),
-            None => None,
-        }
+    pub fn meal_held(&self) -> Option<Blocked> {
+        self.waiting
+            .iter()
+            .flatten()
+            .map(|&(_, reason)| reason)
+            .next()
     }
 
     /// One pass at `now_ms`; `ready` is the feeder's readiness without the
@@ -291,7 +295,8 @@ impl Schedule {
             return;
         };
         self.step = if high_water == claim.high_water {
-            Step::Queue(PlansChange::Settle { claim }, Expect::Settled(claim))
+            let settled = Expect::Settled(claim, MissedReason::Interrupted);
+            Step::Queue(PlansChange::Settle { claim }, settled)
         } else {
             Step::Idle
         };
@@ -326,10 +331,24 @@ impl Schedule {
                         Step::Queue(PlansChange::Release { claim: held }, Expect::Released(held));
                     return;
                 };
+                // Claimed in time, but the claim's write can outlast the
+                // grace (a stalled writer), or the clock can be set ahead
+                // meanwhile: an occurrence that late never runs. Its claim
+                // is spent and cleared, and the meal reported missed.
+                let due_ms = u64::from(held.due_s) * 1000;
+                let late = platform
+                    .wall_ms(now_ms)
+                    .is_some_and(|wall| wall.saturating_sub(due_ms) > MISSED_GRACE_MS);
+                if late {
+                    self.waiting[usize::from(held.plan)] = None;
+                    let settled = Expect::Settled(held, MissedReason::Late);
+                    self.step = Step::Queue(PlansChange::Settle { claim: held }, settled);
+                    return;
+                }
                 let by = Source::Schedule(held.plan);
                 match feeding::queue(feeds, ready, plan.portions, by) {
                     Ok(feed) => {
-                        self.waiting = None;
+                        self.waiting[usize::from(held.plan)] = None;
                         record(Record::Queued {
                             plan: held.plan,
                             feed,
@@ -339,9 +358,8 @@ impl Schedule {
                 }
             }
             Expect::Released(_) => {}
-            Expect::Settled(claim) => {
+            Expect::Settled(claim, reason) => {
                 if view.claim.is_none() {
-                    let reason = MissedReason::Interrupted;
                     missed(platform, now_ms, claim.plan, claim.due_s, reason, record);
                 }
             }
@@ -357,8 +375,8 @@ impl Schedule {
                     record(Record::Dropped);
                     return;
                 }
-                if self.waiting.is_some_and(|(slot, _, _)| slot == plan) {
-                    self.waiting = None;
+                if let Some(waiting) = self.waiting.get_mut(usize::from(plan)) {
+                    *waiting = None;
                 }
                 if let Some(reason) = report {
                     missed(platform, now_ms, plan, due_s, reason, record);
@@ -381,7 +399,9 @@ impl Schedule {
             refusal,
         });
         let due = u64::from(held.due_s) * 1000;
-        self.waiting = Some((held.plan, due, blocked(refusal)));
+        if let Some(waiting) = self.waiting.get_mut(usize::from(held.plan)) {
+            *waiting = Some((due, blocked(refusal)));
+        }
         self.retry_at = Some(now_ms.wrapping_add(RETRY_MS));
         self.step = Step::Queue(PlansChange::Release { claim: held }, Expect::Released(held));
     }
@@ -424,11 +444,17 @@ impl Schedule {
             return;
         }
         let Some(wall_ms) = platform.wall_ms(now_ms) else {
-            self.waiting = None;
+            self.waiting = [None; PLANS];
             self.retry_at = None;
             return;
         };
         self.compute(view, platform, wall_ms);
+        // A plan changed or moved on to its next occurrence holds nothing.
+        for (waiting, due) in self.waiting.iter_mut().zip(self.dues) {
+            if waiting.is_some_and(|(held, _)| Some(held) != due) {
+                *waiting = None;
+            }
+        }
         if self.pass_again(view, platform) {
             return;
         }
@@ -448,7 +474,15 @@ impl Schedule {
         let first = |wanted| judged.iter().flatten().find(|j| j.2 == wanted).copied();
 
         if let Some((slot, due, _)) = first(Occurrence::Run) {
-            self.run(view, platform, feeds, (slot, due), now_ms, ready, record);
+            // Every plan due with the first waits on what holds it.
+            let held = self.run(view, platform, feeds, (slot, due), now_ms, ready, record);
+            if let Some(reason) = held {
+                for &(slot, due, judged) in judged.iter().flatten() {
+                    if judged == Occurrence::Run {
+                        self.waiting[slot] = Some((due, reason));
+                    }
+                }
+            }
             return;
         }
         // The refused occurrence is past running: a deadline kept longer
@@ -456,10 +490,8 @@ impl Schedule {
         self.retry_at = None;
         if let Some((slot, due, _)) = first(Occurrence::Missed) {
             let plan = u8::try_from(slot).unwrap_or(u8::MAX);
-            let reason = match self.waiting {
-                Some((held, held_due, blocked)) if held == plan && held_due == due => {
-                    MissedReason::Blocked(blocked)
-                }
+            let reason = match self.waiting[slot] {
+                Some((held_due, blocked)) if held_due == due => MissedReason::Blocked(blocked),
                 _ => MissedReason::Late,
             };
             // A plan saved without a valid clock has no mark: its first
@@ -483,7 +515,7 @@ impl Schedule {
     }
 
     /// Claim slot `slot`'s occurrence `due` if the feeder can feed now;
-    /// otherwise hold it, and why.
+    /// otherwise what holds it.
     #[expect(clippy::too_many_arguments, reason = "one pass's whole context")]
     fn run<P: Platform, F: Feeds>(
         &mut self,
@@ -494,11 +526,12 @@ impl Schedule {
         now_ms: u32,
         ready: Readiness,
         record: &mut impl FnMut(Record),
-    ) {
+    ) -> Option<Blocked> {
         let plan = u8::try_from(slot).unwrap_or(u8::MAX);
         if let Some(at) = self.retry_at {
             if !wellfed_core::deadline_passed(now_ms, at) {
-                return;
+                // What the owner's refusal of this occurrence held it on.
+                return self.waiting[slot].map(|(_, reason)| reason);
             }
             self.retry_at = None;
         }
@@ -509,8 +542,7 @@ impl Schedule {
         };
         let high_water = feeds.high_water();
         let (None, Some(high_water)) = (blocked, high_water) else {
-            self.waiting = Some((plan, due, blocked.unwrap_or(Blocked::Starting)));
-            return;
+            return Some(blocked.unwrap_or(Blocked::Starting));
         };
 
         let claim = Claim {
@@ -530,6 +562,7 @@ impl Schedule {
                 due_s: claim.due_s,
             });
         }
+        None
     }
 
     /// Each enabled plan's latest occurrence, worked out again only when

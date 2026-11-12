@@ -101,8 +101,8 @@ impl<S: OwnerStorage> OwnerTask<S> {
 
         let clock = self.events().now_ms();
         let _guard = IrqGuard::lock();
-        value.flash_phase = self.flash().phase;
-        value.flash_fault = self.flash().fault;
+        value.flash_phase = self.flash().phase();
+        value.flash_fault = self.flash().fault();
         self.shared(|shared| {
             value.food_reading = shared.food_read_at.is_some();
             value.food_reads = shared.food_reads;
@@ -245,9 +245,12 @@ impl<S: OwnerStorage> OwnerTask<S> {
         }
     }
 
-    /// The gap that applies now: the active one while outputs may move.
+    /// The gap that applies now: the active one while outputs may move,
+    /// once a new request's rest beat is published.
     fn gap_ms(&self) -> u32 {
-        if self.active_phase() || self.state == OwnerState::Reporting {
+        if self.rest_beat_owed {
+            self.config.idle_gap_ms
+        } else if self.active_phase() || self.state == OwnerState::Reporting {
             self.config.max_progress_gap_ms
         } else {
             self.config.idle_gap_ms
@@ -255,11 +258,15 @@ impl<S: OwnerStorage> OwnerTask<S> {
     }
 
     /// Whether the owner's own last beat (or its open) is at least the
-    /// current gap old, the same edge as `Beat::fresh`.
+    /// current gap old, the same edge as `Beat::fresh`. The gap is the
+    /// shorter of the one in force and the one that beat promised, so a
+    /// step that ends past an active deadline (a slow result write, after
+    /// which the owner is at rest) still finds it missed.
     fn overdue(&self) -> bool {
         let ticks = sdk::systimer_ticks().wrapping_sub(self.beat_raw);
         let tps = u64::from(self.config.events.ticks_per_second);
-        u64::from(ticks) * 1000 >= u64::from(self.gap_ms()) * tps
+        let gap = self.gap_ms().min(self.beat_gap_ms);
+        u64::from(ticks) * 1000 >= u64::from(gap) * tps
     }
 
     /// A step that blocked past the gap faults the owner: by then the
@@ -289,10 +296,22 @@ impl<S: OwnerStorage> OwnerTask<S> {
             return false;
         }
         if !self.flash().outputs_blocked() {
-            beat::beat(sdk::uptime_ms(), self.gap_ms(), supervised);
+            let gap = self.gap_ms();
+            beat::beat(sdk::uptime_ms(), gap, supervised);
             self.beat_raw = sdk::systimer_ticks();
+            self.beat_gap_ms = gap;
+            self.rest_beat_owed = false;
         }
         true
+    }
+
+    /// The rest beat a request taken under a lease could not publish, at
+    /// the first step the lease lets it: before the active gap applies and
+    /// before any output can be enabled.
+    fn pay_rest_beat(&mut self) {
+        if self.rest_beat_owed {
+            let _ = self.beat(false);
+        }
     }
 
     /// Authority time is owned by the global transport, not the event-clock
@@ -301,11 +320,11 @@ impl<S: OwnerStorage> OwnerTask<S> {
         let _guard = IrqGuard::lock();
         let c = self.flash();
         let blocked = c.outputs_blocked();
-        let mut broken = !c.initialized
-            || c.fault != FlashFault::Ok
-            || c.phase == FlashPhase::Boot
-            || c.phase == FlashPhase::Closing
-            || c.phase == FlashPhase::Closed;
+        let mut broken = !c.initialized()
+            || c.fault() != FlashFault::Ok
+            || c.phase() == FlashPhase::Boot
+            || c.phase() == FlashPhase::Closing
+            || c.phase() == FlashPhase::Closed;
         let interrupted = blocked
             && (self.state == OwnerState::Feeding
                 || (self.state == OwnerState::Preparing && self.optics_started)
@@ -523,7 +542,10 @@ impl<S: OwnerStorage> OwnerTask<S> {
                 ..OwnerResult::default()
             };
             // A fresh beat at rest before the active gap applies, so a loop
-            // held off just before the request does not fault the feed.
+            // held off just before the request does not fault the feed. A
+            // lease blocking the outputs holds it back, and the rest gap
+            // stays until it is paid ([`Self::pay_rest_beat`]).
+            self.rest_beat_owed = true;
             let _ = self.beat(false);
             self.state = OwnerState::Preparing;
             let (state, result) = (self.state, self.result);
@@ -800,6 +822,7 @@ impl<S: OwnerStorage> OwnerTask<S> {
             }
 
             (*this).take_request();
+            (*this).pay_rest_beat();
             if (*this).fault == OwnerFault::Ok {
                 (*this).check_progress(); // A reservation can block.
             }

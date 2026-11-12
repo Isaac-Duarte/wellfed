@@ -493,14 +493,11 @@ fn a_newer_minor_is_read_for_the_fields_this_build_knows() {
 
 /// This build's record grown by a minor: fields at 12..21 and 24..28.
 const GROWN: Layout = Layout::new(*b"PLFTEST1", Version::new(3, 2), 28, Extent::Record);
-/// A build that moved to major 4 and still reads major 3.
-const MOVED: Layout = Layout {
-    oldest_major: 3,
-    ..Layout::new(*b"PLFTEST1", Version::new(4, 0), 24, Extent::Unit)
-};
+/// A build that moved to major 4.
+const MOVED: Layout = Layout::new(*b"PLFTEST1", Version::new(4, 0), 24, Extent::Unit);
 
 #[test]
-fn an_older_minor_or_a_previous_major_reaches_the_decoder() {
+fn an_older_minor_reaches_the_decoder_and_an_older_major_is_superseded() {
     // A shorter record of an older minor: what it lacks reads as zero.
     let mut short: [u8; 64] = UNIT.record();
     put_u64::<12, _>(&mut short, 5);
@@ -535,20 +532,10 @@ fn an_older_minor_or_a_previous_major_reaches_the_decoder() {
     assert_eq!(scan(&mut f, &UNIT, 0), Found::Invalid);
     assert_eq!(scan(&mut f, &RECORD, 0), Found::Invalid);
 
-    // A previous major the layout still reads goes to its decoder with
-    // its version; one older than that is superseded.
+    // A previous major never reaches the decoder: it is superseded.
     let mut f = FakeJournalFlash::with_unit(256);
     place(&mut f, 0, &record(&UNIT, 5, 6));
-    assert_eq!(
-        scan_versioned(&mut f, &MOVED, 0),
-        Found::Valid((Version::new(3, 0), 5, 6))
-    );
-    let only_four = Layout {
-        oldest_major: 4,
-        ..MOVED
-    };
-    let only_four: &'static Layout = Box::leak(Box::new(only_four));
-    assert_eq!(scan(&mut f, only_four, 0), Found::Older);
+    assert_eq!(scan(&mut f, &MOVED, 0), Found::Older);
 }
 
 #[test]

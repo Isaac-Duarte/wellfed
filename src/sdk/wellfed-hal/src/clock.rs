@@ -213,13 +213,16 @@ pub fn resume(restart: Restart) {
 /// Store the clock for a warm reset if the last store is `KEEP_MS` old,
 /// and log a count that lost its place since the last pass. The loop
 /// calls it every pass, which also keeps the SysTimer's extension read
-/// well inside its half range (about 18 h).
+/// well inside its half range (about 18 h), and retires anchors the
+/// millisecond count can no longer place (`WallClock::retire`), valid or
+/// not.
 pub fn keep() {
     let (due, lost) = {
         let _guard = IrqGuard::lock();
         // SAFETY: interrupts are masked, so this is the only reference.
         let kept = unsafe { &mut *CLOCK.get() };
         let now = count(kept);
+        kept.clock.retire(now);
         (now.wrapping_sub(kept.kept_at) >= KEEP_MS, kept.lost.take())
     };
     if let Some(lost) = lost {

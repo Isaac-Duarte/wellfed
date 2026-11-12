@@ -149,3 +149,24 @@ fn records_that_fail_their_checks_are_not_read() {
         );
     }
 }
+
+/// A record at the last generation takes no later save: the next one could
+/// never read as newer.
+#[test]
+fn a_record_at_the_last_generation_takes_no_save() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&weighed(9_800)));
+    rewrite(&mut f, |r| {
+        r[12..20].copy_from_slice(&u64::MAX.to_le_bytes())
+    });
+
+    let mut r = open(&mut f);
+    assert_eq!(
+        (r.status, r.generation),
+        (CalibrationStatus::Loaded, u64::MAX)
+    );
+    assert!(!r.save(&weighed(9_900)));
+    assert_eq!(r.status, CalibrationStatus::Io);
+    assert_eq!(open(&mut f).calibration, weighed(9_800));
+}

@@ -27,8 +27,8 @@ use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::serve::Control;
 use wellfed_model::{
-    Alert, AlertsView, Answer, Client, ClientRole, Joined, Model, Op, Refusal, UpdatePhase,
-    UpdateRefusal, UpdateStop, UpdateView,
+    Alert, AlertsView, Answer, Client, ClientRole, CoreEvent, EventBody, Joined, Model, Op, Pushed,
+    Refusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
@@ -720,29 +720,27 @@ fn an_enrolled_owner_key_signs_updates_a_feeder_without_a_built_in_key_takes() {
     });
 }
 
-/// A key enrolled as a session key is never an update signer too: after
-/// the press the feeder refuses it with a refusal of its own, even from a
-/// client that never read the list, and the key stays an owner's.
+/// A session key is never an update signer too. The owner's X25519 key
+/// here does not decode as an Ed25519 point, so the feeder refuses it
+/// `Invalid` at once, asking for no press, and the key stays an owner's.
+/// (A session key that does decode is refused after the press with a
+/// refusal of its own: `wellfed-client`'s update tests.)
 #[test]
-fn a_session_key_offered_as_a_signer_is_refused_after_the_press() {
+fn a_session_key_offered_as_a_signer_is_refused() {
     paused(async {
         let mut rig = Rig::trusting(None).await;
         let mut connection = rig.open().await;
         rig.sim.type_line("hold lock").unwrap();
         let own = *Keypair::from_secret(OWNER).public();
+        assert!(!wellfed_signed::offer::strong_key(&own));
         let op = Op::EnrollUpdateKey {
             key: own,
             label: "mine".into(),
         };
         let id = rig.id();
-        let sim = &rig.sim;
-        let (answer, ()) = tokio::join!(connection.ask(id, &op), async {
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            sim.type_line("press dispense").unwrap();
-        });
         assert_eq!(
-            answer.unwrap(),
-            Answer::Refused(Refusal::Update(UpdateRefusal::HeldAsSessionKey))
+            connection.ask(id, &op).await.unwrap(),
+            Answer::Refused(Refusal::Invalid)
         );
         let listed = clients(&mut rig).await;
         let entry = listed.iter().find(|c| c.key.0 == own).unwrap();
@@ -857,6 +855,118 @@ fn only_an_owner_enrolls_an_update_key() {
                 role: ClientRole::Owner
             })
         );
+        rig.sim.stop().await;
+    });
+}
+
+/// Install a first build, then start an install of `offer` that gives way
+/// to bank 0, and leave it there as a client that never came back.
+async fn give_way_and_leave(rig: &mut Rig, offer: &Offer) {
+    let first = Offer::new(7, 0x77, 2 * SECTOR);
+    update(rig, first.image(), &mut Faults::default())
+        .await
+        .unwrap();
+    assert_eq!(rig.bank().await, 1);
+
+    let mut installer = Installer::new(offer.image());
+    let mut connection = rig.open().await;
+    installer.opened(rig.state(&mut connection).await.bank);
+    loop {
+        match installer.poll() {
+            Next::Send(sent, op) => {
+                let answer = connection.ask(rig.id(), &op).await.unwrap();
+                installer.answer(sent, &answer).unwrap();
+            }
+            Next::Wait => tokio::time::sleep(Duration::from_millis(5)).await,
+            Next::Reconnect => break,
+            next => panic!("{next:?}"),
+        }
+    }
+    drop(connection);
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert_eq!(rig.bank().await, 0);
+}
+
+/// The `UpdateStop` events naming `stop` in the feeder's whole history.
+async fn stops(rig: &mut Rig, stop: UpdateStop) -> usize {
+    let mut connection = rig.open().await;
+    connection.subscribe(None, false).await.unwrap();
+    let mut count = 0;
+    while let Ok(message) = connection.next(Duration::from_millis(500)).await {
+        if let Pushed::Event(event) = message
+            && event.body == EventBody::Core(CoreEvent::UpdateStop { stop })
+        {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// The open `UpdateFailed` alerts that name `stop`.
+fn failed(view: &AlertsView, stop: UpdateStop) -> usize {
+    view.alerts
+        .iter()
+        .filter(|open| open.alert == Alert::UpdateFailed { stop })
+        .count()
+}
+
+/// A give-way whose installer never comes back leaves the feeder on bank
+/// 0's recovery copy; after a while it says the update stopped, once. A
+/// later boot still holding the candidate says nothing new.
+#[test]
+fn a_give_way_no_install_follows_is_reported_as_a_failed_update() {
+    use wellfed_feeder::feeder::alert_stage::GIVEN_WAY_MS;
+    let wait = |times: u64| Duration::from_millis(u64::from(GIVEN_WAY_MS) * times);
+
+    paused(async {
+        let mut rig = Rig::start().await;
+        give_way_and_leave(&mut rig, &Offer::new(8, 0x78, 2 * SECTOR)).await;
+
+        tokio::time::sleep(wait(1) / 2).await;
+        assert_eq!(
+            failed(&rig.alerts().await, UpdateStop::Timeout),
+            0,
+            "not yet"
+        );
+        tokio::time::sleep(wait(1)).await;
+        assert_eq!(failed(&rig.alerts().await, UpdateStop::Timeout), 1);
+        tokio::time::sleep(wait(2)).await;
+        assert_eq!(failed(&rig.alerts().await, UpdateStop::Timeout), 1, "once");
+        assert!(!rig.rolled_back().await);
+
+        rig.sim.control(Control::Reboot);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(rig.bank().await, 0);
+        tokio::time::sleep(wait(2)).await;
+        assert_eq!(
+            stops(&mut rig, UpdateStop::Timeout).await,
+            1,
+            "a later boot holding the candidate"
+        );
+        rig.sim.stop().await;
+    });
+}
+
+/// After a give-way, an install that comes back and stops reports its own
+/// stop, and the give-way watch adds nothing to it.
+#[test]
+fn a_give_way_whose_install_stops_reports_only_that_stop() {
+    use wellfed_feeder::feeder::alert_stage::GIVEN_WAY_MS;
+
+    paused(async {
+        let mut rig = Rig::start().await;
+        let mut offer = Offer::new(8, 0x78, 2 * SECTOR);
+        give_way_and_leave(&mut rig, &offer).await;
+
+        offer.payload[SECTOR + 3] ^= 0x40;
+        let stopped = update(&mut rig, offer.image(), &mut Faults::default()).await;
+        assert_eq!(stopped, Err(InstallError::Stopped(UpdateStop::Hash)));
+        tokio::time::sleep(Duration::from_millis(u64::from(GIVEN_WAY_MS) * 2)).await;
+
+        let view = rig.alerts().await;
+        assert_eq!(failed(&view, UpdateStop::Hash), 1);
+        assert_eq!(failed(&view, UpdateStop::Timeout), 0);
+        assert_eq!(stops(&mut rig, UpdateStop::Timeout).await, 0);
         rig.sim.stop().await;
     });
 }

@@ -49,20 +49,20 @@ pub fn stopping() {
 /// write out of the reset's way (see the module documentation). A second
 /// request keeps the first one's start.
 pub fn begin_restart_grace(now_ms: u32) {
-    if !GRACE.swap(true, Ordering::AcqRel) {
-        GRACE_AT.store(now_ms, Ordering::Release);
-    }
+    // One word holds both "asked" and the start, so no reader sees the one
+    // without the other: a start of 0 would end the grace at once.
+    let _ = GRACE_AT.compare_exchange(0, now_ms | 1, Ordering::AcqRel, Ordering::Acquire);
 }
 
 /// Whether an intentional restart was asked for this boot: its grace runs,
 /// or has ended and the reset is coming.
 pub fn restart_requested() -> bool {
-    GRACE.load(Ordering::Acquire)
+    GRACE_AT.load(Ordering::Acquire) != 0
 }
 
 /// Whether an intentional restart's grace runs: save now.
 pub fn restart_grace() -> bool {
-    GRACE.load(Ordering::Acquire) && !GRACE_ENDED.load(Ordering::Acquire)
+    restart_requested() && !GRACE_ENDED.load(Ordering::Acquire)
 }
 
 /// The writer saved what the restart should keep, or has nothing to save.
@@ -71,11 +71,17 @@ pub fn restart_flushed() {
 }
 
 /// The watchdog feeder's half: true once, when the grace has ended, the
-/// writer flushed or the grace ran out; the caller then restarts.
+/// writer flushed or the grace ran out; the caller then restarts. A `now_ms`
+/// read before the grace began (another task's, a moment stale) is no time
+/// at all into it.
 pub fn restart_grace_over(now_ms: u32) -> bool {
-    let over = GRACE.load(Ordering::Acquire)
-        && (FLUSHED.load(Ordering::Acquire)
-            || now_ms.wrapping_sub(GRACE_AT.load(Ordering::Acquire)) >= RESTART_GRACE_MS);
+    let at = GRACE_AT.load(Ordering::Acquire);
+    if at == 0 {
+        return false;
+    }
+    let elapsed = now_ms.wrapping_sub(at & !1);
+    let ran_out = (RESTART_GRACE_MS..HALF_RANGE_MS).contains(&elapsed);
+    let over = FLUSHED.load(Ordering::Acquire) || ran_out;
     over && !GRACE_ENDED.swap(true, Ordering::AcqRel)
 }
 
@@ -83,7 +89,12 @@ pub fn restart_grace_over(now_ms: u32) -> bool {
 /// at its worst after a writer poll, with room to spare.
 pub const RESTART_GRACE_MS: u32 = 2_000;
 
-static GRACE: AtomicBool = AtomicBool::new(false);
+/// Past this an uptime difference reads as negative: a time before the
+/// grace began.
+const HALF_RANGE_MS: u32 = 1 << 31;
+
+/// When the intentional restart's grace began, with the low bit set so a
+/// start at uptime 0 still reads as asked; 0 while none was asked.
 static GRACE_AT: AtomicU32 = AtomicU32::new(0);
 static FLUSHED: AtomicBool = AtomicBool::new(false);
 static GRACE_ENDED: AtomicBool = AtomicBool::new(false);
@@ -142,7 +153,7 @@ pub fn reset_certain(restarting: bool, checkpoint_refused: bool) -> bool {
 pub fn reset() {
     STOP_OPEN.store(false, Ordering::Relaxed);
     STOPPING.store(false, Ordering::Relaxed);
-    GRACE.store(false, Ordering::Relaxed);
+    GRACE_AT.store(0, Ordering::Relaxed);
     FLUSHED.store(false, Ordering::Relaxed);
     GRACE_ENDED.store(false, Ordering::Relaxed);
 }

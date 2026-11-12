@@ -33,9 +33,17 @@ fn offer() -> Op {
     }
 }
 
+/// An owner's update key: a real Ed25519 key, since the feeder refuses a
+/// key that doesn't decode or is weak before it asks for a press.
+fn laptop_key() -> [u8; 32] {
+    ed25519_dalek::SigningKey::from_bytes(&[0x5e; 32])
+        .verifying_key()
+        .to_bytes()
+}
+
 fn enroll_laptop() -> Op {
     Op::EnrollUpdateKey {
-        key: [0x5e; 32],
+        key: laptop_key(),
         label: "laptop".into(),
     }
 }
@@ -51,10 +59,7 @@ fn only_an_owner_may_update() {
         },
         Op::UpdateState,
         Op::CancelUpdate,
-        Op::EnrollUpdateKey {
-            key: [3; 32],
-            label: "laptop".into(),
-        },
+        enroll_laptop(),
         Op::UpdateKeyStatement {
             statement: vec![4; 88],
         },
@@ -401,7 +406,7 @@ fn an_update_key_enrolls_only_once_dispense_is_pressed() {
         ask_within(&mut rig, &mut owner, 1, enroll_laptop(), 50),
         None
     );
-    assert!(!rig.device.clients.iter().any(|c| c.key == [0x5e; 32]));
+    assert!(!rig.device.clients.iter().any(|c| c.key == laptop_key()));
 
     // A second offer while the first waits for its press.
     let mut other = open(&mut rig, OWNER);
@@ -412,7 +417,7 @@ fn an_update_key_enrolls_only_once_dispense_is_pressed() {
     assert!(matches!(rig.signer, Some(PairingEvent::Admit { .. })));
     let done = poll_answer(&mut rig, &mut owner, 1, 50).unwrap();
     assert_eq!(done, Answer::Done { generation: None });
-    let enrolled = rig.device.clients.iter().find(|c| c.key == [0x5e; 32]);
+    let enrolled = rig.device.clients.iter().find(|c| c.key == laptop_key());
     assert_eq!(enrolled.map(|c| c.role), Some(Role::UpdateSigner));
     assert!(rig.records.iter().any(|r| matches!(
         r,
@@ -489,7 +494,7 @@ fn a_pressed_key_whose_session_left_is_still_in_the_history() {
     rig.device.write();
     rig.pass();
     rig.pass();
-    assert!(rig.device.clients.iter().any(|c| c.key == [0x5e; 32]));
+    assert!(rig.device.clients.iter().any(|c| c.key == laptop_key()));
     assert_eq!(enrolled(&rig), 1);
 }
 
@@ -523,5 +528,5 @@ fn an_unpressed_update_key_is_refused_and_a_closed_session_cancels_its_offer() {
         None,
         "no offer is pending any more"
     );
-    assert!(!rig.device.clients.iter().any(|c| c.key == [0x5e; 32]));
+    assert!(!rig.device.clients.iter().any(|c| c.key == laptop_key()));
 }

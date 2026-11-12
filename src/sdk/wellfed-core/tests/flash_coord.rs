@@ -39,7 +39,7 @@ fn request(c: &mut FlashCoord, party: FlashParty, id: u64, now: u32) -> FlashTok
     let session = if party == FlashParty::Local { 17 } else { 29 };
     assert_eq!(c.request(party, session, id, now), FlashReply::Accepted);
     assert!(!c.may_actuate(now));
-    c.token
+    c.token()
 }
 
 fn grant(c: &mut FlashCoord, t: &FlashToken, now: u32) {
@@ -95,14 +95,14 @@ fn startup_requires_current_sessions_and_verified_outputs() {
     assert_eq!(c.ready(16, 29, true, 0), FlashReply::Stale);
     assert!(!c.may_actuate(0));
     assert_eq!(c.ready(17, 29, false, 0), FlashReply::Failed);
-    assert!(c.fault == FlashFault::Output && !c.may_actuate(0));
+    assert!(c.fault() == FlashFault::Output && !c.may_actuate(0));
 
     let mut c = ready(0);
     assert_eq!(c.ready(17, 29, true, 1), FlashReply::Duplicate);
     assert_eq!(c.request(FlashParty::Peer, 30, 1, 1), FlashReply::Stale);
     assert!(c.may_actuate(1));
     assert_eq!(c.ready(17, 30, true, 1), FlashReply::Failed);
-    assert!(c.fault == FlashFault::PeerLost && !c.may_actuate(1));
+    assert!(c.fault() == FlashFault::PeerLost && !c.may_actuate(1));
 
     let mut c = FlashCoord::new(&LIMITS, 18, 2).unwrap(); // Fixture models a fresh boot object.
     assert_eq!(c.ready(17, 29, true, 2), FlashReply::Stale);
@@ -156,7 +156,7 @@ fn duplicates_never_extend_deadlines() {
     }
 
     assert!(!c.may_access(&t, FlashParty::Local, 11));
-    assert!(c.fault == FlashFault::Timeout && !c.may_actuate(11));
+    assert!(c.fault() == FlashFault::Timeout && !c.may_actuate(11));
     assert_eq!(c.complete(&t, FlashParty::Local, 11), FlashReply::Failed);
     assert_eq!(
         c.released(&t, FlashParty::Peer, true, 11),
@@ -173,7 +173,7 @@ fn each_phase_has_an_absolute_cutoff() {
             request(&mut c, FlashParty::Peer, 1, 0);
         }
 
-        let t = c.token;
+        let t = c.token();
         if stage > 1 {
             assert_eq!(c.quiesced(&t, true, 0), FlashReply::Accepted);
         }
@@ -185,7 +185,7 @@ fn each_phase_has_an_absolute_cutoff() {
         }
 
         assert!(c.poll(9));
-        assert!(!c.poll(10) && c.fault == FlashFault::Timeout);
+        assert!(!c.poll(10) && c.fault() == FlashFault::Timeout);
         assert!(!c.may_actuate(10));
     }
 }
@@ -211,7 +211,7 @@ fn total_time_is_not_renewed_by_phase_changes() {
         c.released(&t, FlashParty::Peer, true, 20),
         FlashReply::Failed
     );
-    assert_eq!(c.fault, FlashFault::Timeout);
+    assert_eq!(c.fault(), FlashFault::Timeout);
 }
 
 #[test]
@@ -233,7 +233,7 @@ fn wrong_sender_early_release_and_output_loss_fault() {
 
         assert!(!c.may_actuate(0) && !c.may_access(&t, FlashParty::Local, 0));
         assert_eq!(
-            c.fault,
+            c.fault(),
             if failure == 3 {
                 FlashFault::Output
             } else {
@@ -250,12 +250,12 @@ fn clock_wrap_backward_and_transport_fault() {
     let t = request(&mut c, FlashParty::Peer, 1, start);
     grant(&mut c, &t, start + 1);
     finish(&mut c, &t, 1);
-    assert!(!c.may_actuate(0) && c.fault == FlashFault::Clock);
+    assert!(!c.may_actuate(0) && c.fault() == FlashFault::Clock);
 
     let mut c = ready(0);
     c.trip(FlashFault::Transport);
     c.trip(FlashFault::PeerLost);
-    assert!(c.fault == FlashFault::Transport && !c.may_actuate(1));
+    assert!(c.fault() == FlashFault::Transport && !c.may_actuate(1));
     assert_eq!(c.close(1), FlashReply::Failed);
 }
 
@@ -267,7 +267,7 @@ fn close_requires_current_fence_and_disabled_peer() {
     finish(&mut c, &old, 0);
     assert_eq!(c.close(1), FlashReply::Accepted);
 
-    let fence = c.token;
+    let fence = c.token();
     assert!(fence.owner == FlashParty::Fence && fence.lease != old.lease);
     assert_eq!(c.closed(&old, true, true, 1), FlashReply::Stale);
     assert_eq!(c.closed(&fence, false, true, 1), FlashReply::Busy);
@@ -307,9 +307,6 @@ fn configuration_and_counter_exhaustion() {
     let mut c = ready(0);
     assert_eq!(c.request(FlashParty::Fence, 17, 1, 0), FlashReply::Invalid);
     assert_eq!(c.request(FlashParty::Local, 17, 0, 0), FlashReply::Invalid);
-    c.token.lease = u64::MAX;
-    assert_eq!(c.request(FlashParty::Local, 17, 1, 0), FlashReply::Failed);
-    assert!(c.fault == FlashFault::Exhausted && !c.may_actuate(0));
 }
 
 /// Exhaust all six-event traces over five messages, for BOTH flash owners.

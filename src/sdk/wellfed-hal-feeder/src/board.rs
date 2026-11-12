@@ -448,7 +448,7 @@ impl Board {
     /// the SAME IRQ serialization as this board, for the board's lifetime.
     pub unsafe fn attach_flash(&self, flash: *mut FlashCoord) -> bool {
         // SAFETY: caller supplies null or a live authority.
-        let initialized = unsafe { flash.as_ref() }.is_some_and(|f| f.initialized);
+        let initialized = unsafe { flash.as_ref() }.is_some_and(FlashCoord::initialized);
         self.with(|state| {
             let ok = initialized
                 && state.opened

@@ -154,6 +154,21 @@ impl<H: Hooks> Flash for SdkFlash<H> {
     }
 }
 
+/// Whether the activated candidate `c` never reached bank 1's marker: a
+/// replacement whose marker bytes all still read erased, past any cache. A
+/// cut between recording the activation and programming the marker leaves
+/// that, and the loader never booted the build, so it did not fail: the
+/// same offer installs again. A give-way clears the marker's first byte
+/// and a cut program leaves some bit down, so a build that ran, or may
+/// have, still reads as failed. A stock activation keeps its own rule (the
+/// handover's), so it is never taken back here.
+fn never_marked(c: &Candidate, flash: &mut impl Flash) -> bool {
+    let mut marker = [0u8; 8];
+    c.kind == ImageKind::Replacement
+        && flash.read_uncached(0, 0, &mut marker)
+        && marker == [0xff; 8]
+}
+
 /// The handover wrote a new update record under the stage's feet. Both run on
 /// the service task, one step at a time, and an offer waits for what the
 /// handover holds back from being published, so the stage reads it again
@@ -748,10 +763,14 @@ impl<I: SlotIo + Clone> Update<I> {
     /// being answered, no install, no check, no restart on its way.
     fn settle_turn(&mut self) {
         let busy = self.install.is_some() || !matches!(self.work, Work::Idle);
-        if self.holding && !busy && mailbox::pending().is_none() {
+        if busy || mailbox::pending().is_some() {
+            return;
+        }
+        if self.holding {
             self.holding = false;
             INTERLOCK.end_write();
         }
+        self.turn.withdraw(&INTERLOCK);
     }
 
     /// One step; `now` is uptime in milliseconds.
@@ -1007,7 +1026,7 @@ impl<I: SlotIo + Clone> Update<I> {
         if self.bank == 1 {
             return self.check_bank0(admitted, flash, version);
         }
-        self.start_install(admitted, now)
+        self.start_install(admitted, flash, now)
     }
 
     /// Bank 1: bank 0 must hold a valid marker and exactly the image it
@@ -1086,13 +1105,13 @@ impl<I: SlotIo + Clone> Update<I> {
 
     /// Bank 0: install the pending manifest, or this one when none is
     /// pending.
-    fn start_install(&mut self, admitted: Admitted, now: u32) -> Step {
+    fn start_install(&mut self, admitted: Admitted, flash: &mut impl Flash, now: u32) -> Step {
         let candidate = candidate(&admitted);
         match self.store.record().state {
             State::Pending(c) if c.digest != candidate.digest => {
                 return self.refuse(Refused::Pending);
             }
-            State::Activated(c) if c.digest == candidate.digest => {
+            State::Activated(c) if c.digest == candidate.digest && !never_marked(&c, flash) => {
                 return self.refuse(Refused::Failed);
             }
             State::Pending(_) => {}
@@ -1161,7 +1180,14 @@ impl<I: SlotIo + Clone> Update<I> {
         }
         let record = self.install.is_some().then(|| self.stop(Stop::Cancelled));
         if recorded && under_marker(|| self.store.clear()).is_err() {
-            return self.refuse(Refused::Store(wellfed_core::store::update::UpdateError::Io));
+            let refused = Refused::Store(wellfed_core::store::update::UpdateError::Io);
+            // An install that ran has stopped all the same: its stop is the
+            // record, and the refusal says the candidate is still held.
+            let Some(record) = record else {
+                return self.refuse(refused);
+            };
+            mailbox::finish(Err(refused));
+            return next(IDLE_MS, Some(record));
         }
         self.stopped = record.map(|_| Stop::Cancelled);
         mailbox::finish(Ok(Answer::Progress(self.progress())));
@@ -1269,7 +1295,7 @@ impl<I: SlotIo + Clone> Update<I> {
         let stock = candidate.kind == ImageKind::Stock;
         if stock && !under_marker(|| flash.mark_handover()) {
             let _ = under_marker(|| flash.clear_handover());
-            let _ = under_marker(|| self.store.set_pending(candidate));
+            self.unactivate(candidate);
             let record = self.stop(Stop::Store);
             return next(IDLE_MS, Some(record));
         }
@@ -1281,9 +1307,11 @@ impl<I: SlotIo + Clone> Update<I> {
         // program or its readback reported, so the activation and the
         // handover mark stand and the restart decides: the new build
         // boots and raises the floor when it confirms, or this bank boots
-        // again with the manifest activated, as after a failed trial, and
-        // never takes it again. Unarmed hooks refuse the program before
-        // it touches flash, so that is never written.
+        // again with the manifest activated. Then a marker with any bit
+        // down reads as a build that failed and is refused, while one still
+        // wholly erased never booted and may install again (`never_marked`).
+        // Unarmed hooks refuse the program before it touches flash, so that
+        // is never written.
         let marking = match install.commit() {
             Ok((offset, _)) if offset == BANK1_OFFSET && !flash.armed() => Marking::Unwritten,
             Ok((offset, marker)) if offset == BANK1_OFFSET => {
@@ -1300,7 +1328,7 @@ impl<I: SlotIo + Clone> Update<I> {
         if install.marked(marking).is_err() {
             // Bank 1 stays invalid: a later offer of the same manifest may
             // try again, as it never ran. This feeder also keeps its owner.
-            let _ = under_marker(|| self.store.set_pending(candidate));
+            self.unactivate(candidate);
             if stock {
                 let _ = under_marker(|| flash.clear_handover());
             }
@@ -1323,6 +1351,17 @@ impl<I: SlotIo + Clone> Update<I> {
                 marking,
             }),
         )
+    }
+
+    /// Take an activation whose marker was never written back to pending,
+    /// so the same offer may try again. A store that won't take the write
+    /// reads `Io` for the rest of the boot, so every offer is refused
+    /// unreadable; the next boot reads it still activated over an erased
+    /// marker, which never booted, so the same offer installs again
+    /// (`never_marked`). A stock activation stays refused; a cancel clears
+    /// it.
+    fn unactivate(&mut self, candidate: Candidate) {
+        let _ = under_marker(|| self.store.set_pending(candidate));
     }
 
     /// Restart once the answer is out: after bank 1's give-way answer was

@@ -110,8 +110,9 @@ impl Rule {
             return self.std_offset_s;
         };
 
-        // The year as standard local time sees it; transitions never sit
-        // within a day of New Year, so the neighbouring year's never apply.
+        // The year as standard local time sees it; the parser refuses a
+        // transition within a day of New Year, so the neighbouring year's
+        // never apply.
         let local_days = (unix_s + i64::from(self.std_offset_s)).div_euclid(86_400);
         let (year, _, _) = civil_from_days(local_days);
         let start = dst.start.utc_s(year, self.std_offset_s);
@@ -151,6 +152,46 @@ impl Rule {
         }
         best.map(|at| (at, self.offset_at(at)))
     }
+}
+
+/// Years that between them start on every weekday, leap and common: a
+/// transition's place in a year depends only on those two things.
+const CALENDAR_YEARS: core::ops::RangeInclusive<i64> = 2000..=2027;
+const DAY_S: i64 = 86_400;
+
+impl Dst {
+    /// Daylight time all year, written as a span from New Year to New Year
+    /// (`EST5EDT,0/0,J365/25`, as zic writes permanent daylight time): the
+    /// zone has one offset.
+    fn all_year(&self, std_offset_s: i32) -> bool {
+        CALENDAR_YEARS.into_iter().all(|year| {
+            self.start.utc_s(year, std_offset_s) <= new_year(year, std_offset_s)
+                && self.end.utc_s(year, self.offset_s) >= new_year(year + 1, std_offset_s)
+        })
+    }
+
+    /// Whether the evaluators can place this rule's changes. [`Rule::offset_at`]
+    /// reads each year's two transitions alone, so neither may sit within a
+    /// day of New Year, where the neighbouring year's would apply; and a
+    /// schedule's local-to-UTC step looks a day either side of a minute, so
+    /// the two must lie at least two days apart. No zone in the tzdb comes
+    /// near either; only a hand-written rule could.
+    fn placeable(&self, std_offset_s: i32) -> bool {
+        CALENDAR_YEARS.into_iter().all(|year| {
+            let inside =
+                new_year(year, std_offset_s) + DAY_S..new_year(year + 1, std_offset_s) - DAY_S;
+            let start = self.start.utc_s(year, std_offset_s);
+            let end = self.end.utc_s(year, self.offset_s);
+            inside.contains(&start)
+                && inside.contains(&end)
+                && start.abs_diff(end) >= 2 * DAY_S.unsigned_abs()
+        })
+    }
+}
+
+/// New Year of `year` in local standard time, as a UTC instant.
+fn new_year(year: i64, std_offset_s: i32) -> i64 {
+    days_from_civil(year, 1, 1) * DAY_S - i64::from(std_offset_s)
 }
 
 impl Transition {
@@ -257,13 +298,23 @@ impl Parser<'_> {
         if !self.done() {
             return Err(Invalid);
         }
+        let dst = Dst {
+            offset_s,
+            start,
+            end,
+        };
+        if dst.all_year(std_offset_s) {
+            return Ok(Rule {
+                std_offset_s: offset_s,
+                dst: None,
+            });
+        }
+        if !dst.placeable(std_offset_s) {
+            return Err(Invalid);
+        }
         Ok(Rule {
             std_offset_s,
-            dst: Some(Dst {
-                offset_s,
-                start,
-                end,
-            }),
+            dst: Some(dst),
         })
     }
 

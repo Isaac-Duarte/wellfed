@@ -374,11 +374,45 @@ impl<I: SlotIo> EventLog<I> {
             if out.get(..len).and_then(|held| held.first()).map(|r| r.seq) != Some(want) {
                 len = self.scan_from(index, 0, want, last, out);
             }
-            if len > 0 {
-                return Batch::Records(len);
+            match out.get(..len).and_then(|held| held.first()) {
+                // A record lost inside the span (decayed, or torn by a cut
+                // erase) is a gap the reader learns of, as one older than
+                // the ring is.
+                Some(found) if found.seq > want => {
+                    return Batch::Gap {
+                        from: want,
+                        to: found.seq - 1,
+                    };
+                }
+                // Up to the first hole, which the next batch answers.
+                Some(_) => {
+                    let run = out[..len]
+                        .iter()
+                        .zip(want..)
+                        .take_while(|(record, seq)| record.seq == *seq)
+                        .count();
+                    return Batch::Records(run);
+                }
+                None => {}
             }
         }
-        Batch::End
+
+        // No unit holds `want` though later records exist: it was lost at
+        // a unit's top. Answering the end would hold the reader below the
+        // hole until the ring wraps past it.
+        let next = self.table[..self.units]
+            .iter()
+            .filter_map(|unit| unit.span)
+            .map(|(first, _)| first)
+            .filter(|&first| first > want)
+            .min();
+        match next {
+            Some(first) => Batch::Gap {
+                from: want,
+                to: first - 1,
+            },
+            None => Batch::End,
+        }
     }
 
     /// The smallest `out.len()` records of unit `index` numbered `want` to

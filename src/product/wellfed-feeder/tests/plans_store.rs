@@ -1173,3 +1173,18 @@ mod sequences {
         }
     }
 }
+
+/// A skip beside mark 0 is no record this store writes; read from flash,
+/// its undo is dropped rather than wrapping the mark.
+#[test]
+fn an_undo_of_a_skip_at_mark_zero_is_dropped() {
+    let mut plans = breakfast(1_000);
+    plans.marks[0] = 0;
+    plans.skips = 1;
+    let unskip = PlansChange::Unskip {
+        plan: 0,
+        due_s: 0,
+        revision: plans.revision,
+    };
+    assert_eq!(plans.changed(&unskip), None);
+}

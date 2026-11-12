@@ -437,6 +437,28 @@ fn a_meal_due_during_a_long_feed_waits_and_is_missed_past_the_grace() {
     assert_eq!(feeder.fed().len(), 1, "only the first meal fed");
 }
 
+/// Two meals due together behind the same long feed both wait on it, and
+/// both are missed with that reason.
+#[test]
+fn meals_due_together_behind_a_feed_are_missed_with_its_reason() {
+    let mut feeder = breakfast();
+    feeder.put(table(&[
+        (0, plan(7 * 60 + 29, 2)),
+        (1, plan(7 * 60 + 30, 1)),
+        (2, plan(7 * 60 + 30, 1)),
+    ]));
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 29 * MINUTE_MS + 100);
+    feeder.sim.stall_feeds(true);
+    feeder.run(20 * MINUTE_MS);
+    feeder.sim.stall_feeds(false);
+    feeder.run(MINUTE_MS);
+
+    let due = seconds(BREAKFAST);
+    let feeding = MissedReason::Blocked(Blocked::Feeding);
+    assert_eq!(feeder.missed(), [(1, due, feeding), (2, due, feeding)]);
+    assert_eq!(feeder.fed().len(), 1, "only the first meal fed");
+}
+
 #[test]
 fn a_cut_between_the_claim_and_the_feed_is_missed_and_never_fed() {
     let mut feeder = breakfast();
@@ -1841,4 +1863,56 @@ fn a_skip_queued_as_the_call_s_lead_begins_plays_no_call() {
     feeder.run(MINUTE_MS);
     assert!(feeder.calls.is_empty());
     assert_eq!(feeder.claims, 0, "plan 0's meal never fed");
+}
+
+/// A claim taken in time whose write the writer holds past the grace is
+/// never fed: the occurrence is spent and reported missed.
+#[test]
+fn a_claim_written_past_the_grace_never_feeds() {
+    let mut feeder = breakfast();
+    feeder.run_until(BREAKFAST - 2_000);
+    feeder.sim.platform().hold_plans(true);
+    feeder.run(4_000);
+    assert_eq!(feeder.claims, 1, "claimed in time");
+
+    feeder.run(20 * MINUTE_MS);
+    feeder.sim.platform().hold_plans(false);
+    feeder.run(5 * MINUTE_MS);
+    assert!(feeder.fed().is_empty());
+    assert_eq!(
+        feeder.missed(),
+        [(0, seconds(BREAKFAST), MissedReason::Late)]
+    );
+    assert!(feeder.plans().claim.is_none());
+
+    // Spent: nothing runs it later.
+    feeder.run(20 * MINUTE_MS);
+    assert!(feeder.fed().is_empty());
+    assert_eq!(feeder.claims, 1);
+}
+
+/// A clock set ahead while a claim is being written: past the grace the
+/// meal never runs; within it, it still feeds once.
+#[test]
+fn a_clock_set_ahead_under_a_claim_feeds_only_within_the_grace() {
+    for (ahead, fed) in [(20 * MINUTE_MS, false), (14 * MINUTE_MS, true)] {
+        let mut feeder = breakfast();
+        feeder.run_until(BREAKFAST - 2_000);
+        feeder.sim.platform().hold_plans(true);
+        feeder.run(4_000);
+        assert_eq!(feeder.claims, 1);
+
+        feeder.sync(BREAKFAST + ahead);
+        feeder.sim.platform().hold_plans(false);
+        feeder.run(MINUTE_MS);
+        assert_eq!(feeder.fed().len(), usize::from(fed), "{ahead}");
+        let missed = if fed {
+            vec![]
+        } else {
+            vec![(0, seconds(BREAKFAST), MissedReason::Late)]
+        };
+        assert_eq!(feeder.missed(), missed, "{ahead}");
+        feeder.run(30 * MINUTE_MS);
+        assert_eq!(feeder.fed().len(), usize::from(fed), "once: {ahead}");
+    }
 }

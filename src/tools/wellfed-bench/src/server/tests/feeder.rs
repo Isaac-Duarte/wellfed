@@ -18,7 +18,13 @@ use crate::server::feeder::{ClockSync, DeviceOptions};
 
 const OWNER: [u8; 32] = [0x22; 32];
 /// An update key, as `wellfed update-key enroll` sends it.
-const KEY: [u8; 32] = [0x5a; 32];
+/// An update key the feeder takes: the Ed25519 base point, which decodes
+/// and is not of small order.
+const KEY: [u8; 32] = {
+    let mut key = [0x66; 32];
+    key[0] = 0x58;
+    key
+};
 const BUILT: &str = "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1";
 const OTHER: &str = "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2";
 

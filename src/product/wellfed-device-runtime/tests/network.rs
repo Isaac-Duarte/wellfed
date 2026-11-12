@@ -369,9 +369,15 @@ fn an_attempt_holds_the_join_turn_from_select_to_outcome() {
     let before = wellfed_hal::sdk::uptime_ms();
     select();
     assert_eq!(wellfed_hal::sdk::uptime_ms() - before, 1000);
-    assert_eq!(INTERLOCK.turn(), Turn::Joining);
+    assert_eq!(INTERLOCK.turn(), Turn::JoiningOverClaim);
     assert_eq!(INTERLOCK.status().forced, 1);
     outcome(Attempt::Failed);
+    assert_eq!(
+        INTERLOCK.turn(),
+        Turn::Feeding,
+        "the claim outlives the join"
+    );
+    INTERLOCK.release_feed();
     assert_eq!(INTERLOCK.turn(), Turn::Free);
     forget();
 }
