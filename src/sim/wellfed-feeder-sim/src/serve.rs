@@ -58,6 +58,10 @@ pub enum Control {
     /// Leave a queued plans change in the writer's slot (`true`), as a slow
     /// flash write would, or let the writer take it.
     HoldPlans(bool),
+    /// Leave a queued client change (a join's enrollment) in the writer's
+    /// slot (`true`), as a key-store write made late, or let the writer
+    /// take it.
+    HoldKeys(bool),
     /// The adapter fitted (`true`) or pulled, from now on and across
     /// restarts.
     Adapter(bool),
@@ -178,6 +182,7 @@ pub async fn serve(
                     }
                 }
                 Some(Control::HoldPlans(held)) => booted.sim.platform().hold_plans(held),
+                Some(Control::HoldKeys(held)) => booted.sim.platform().hold_keys(held),
                 Some(Control::Adapter(adapter)) => {
                     supply.adapter = adapter;
                     booted.sim.platform().set_supply(supply);
