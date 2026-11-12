@@ -400,7 +400,11 @@ fn the_replacements_answer_closes_only_the_latest_open_install() {
     // No trial with that ID.
     assert_eq!(
         c.replacement_answered(answered(request.request_id), now),
-        Err(Rejection::Conflict)
+        Err(Rejection::UnknownRequest)
+    );
+    assert_eq!(
+        c.resolve_trial(resolve(request.request_id), now),
+        Err(Rejection::UnknownRequest)
     );
 
     submit(&mut c, request.clone(), now).unwrap();
@@ -417,7 +421,7 @@ fn the_replacements_answer_closes_only_the_latest_open_install() {
     };
     assert_eq!(
         c.replacement_answered(blank, now + Duration::seconds(200)),
-        Err(Rejection::Conflict)
+        Err(Rejection::InvalidNote)
     );
     assert_eq!(c.status.ota_trials[0].phase, Phase::Submitted);
 
@@ -621,7 +625,7 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
     };
     assert!(matches!(
         c.resolve_trial(blank, at),
-        Err(Rejection::Conflict)
+        Err(Rejection::InvalidNote)
     ));
 
     let record = c.resolve_trial(resolve(request.request_id), at).unwrap();

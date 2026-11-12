@@ -84,6 +84,12 @@ pub enum Rejection {
     Offline,
     #[error("request ID conflicts with a different operation")]
     Conflict,
+    /// The operator's note is empty or longer than 512 bytes.
+    #[error("the note must be 1 to 512 bytes and not blank")]
+    InvalidNote,
+    /// No trial has this request ID.
+    #[error("no trial has this request ID")]
+    UnknownRequest,
     #[error("operation ledger is full; archive it explicitly before continuing")]
     Full,
     #[error("persistent storage failed; command was not authorized")]
@@ -564,7 +570,7 @@ impl Controller {
             return Err(Rejection::Storage);
         }
         if answer.note.trim().is_empty() || answer.note.len() > 512 {
-            return Err(Rejection::Conflict);
+            return Err(Rejection::InvalidNote);
         }
 
         self.refresh(now);
@@ -579,7 +585,7 @@ impl Controller {
             .ledger
             .ota_trials
             .get_mut(&answer.request_id)
-            .ok_or(Rejection::Conflict)?;
+            .ok_or(Rejection::UnknownRequest)?;
         if record.phase == TrialPhase::ReplacementHealthy
             && record.resolution_note.as_ref() == Some(&answer.note)
             && record.build == answer.build
@@ -624,7 +630,7 @@ impl Controller {
             return Err(Rejection::Storage);
         }
         if request.note.trim().is_empty() || request.note.len() > 512 {
-            return Err(Rejection::Conflict);
+            return Err(Rejection::InvalidNote);
         }
 
         self.refresh(now);
@@ -641,7 +647,7 @@ impl Controller {
             .ledger
             .ota_trials
             .get_mut(&request.request_id)
-            .ok_or(Rejection::Conflict)?;
+            .ok_or(Rejection::UnknownRequest)?;
         if !matches!(
             record.phase,
             TrialPhase::Uncertain | TrialPhase::ReportedError
