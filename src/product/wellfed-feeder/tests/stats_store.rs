@@ -313,3 +313,21 @@ const PINNED: &[&str] = &[
     "8f00000090000000910000009200000093000000010000009400000095000000",
     "0000000000000000000000000000000000000000000000005f4d53e5434d4954",
 ];
+
+/// A record at the last generation takes no later save: the next one could
+/// never read as newer.
+#[test]
+fn a_record_at_the_last_generation_takes_no_save() {
+    let mut f = FakeJournalFlash::with_unit(512);
+    let mut s = open(&mut f);
+    assert!(s.save(&totals(1), Settled));
+    rewrite(&mut f, |r| {
+        r[12..20].copy_from_slice(&u64::MAX.to_le_bytes())
+    });
+
+    let mut r = open(&mut f);
+    assert_eq!((r.status, r.generation), (StatsStatus::Loaded, u64::MAX));
+    assert!(!r.save(&totals(2), Settled));
+    assert_eq!(r.status, StatsStatus::Io);
+    assert_eq!(open(&mut f).totals, totals(1));
+}

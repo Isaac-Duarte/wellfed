@@ -265,8 +265,9 @@ impl Plans {
                 }
                 // The mark before the skip was below `due_s`, so this is
                 // never lower than it, and no occurrence of the plan lies
-                // between the two: the meal runs, and nothing else does.
-                *mark = due_s - 1;
+                // between the two: the meal runs, and nothing else does. A
+                // skip at 0 is no record this store writes.
+                *mark = due_s.checked_sub(1)?;
                 next.set_skip(slot, false);
                 next.set_fed(slot, false);
                 if found.days.once() {
