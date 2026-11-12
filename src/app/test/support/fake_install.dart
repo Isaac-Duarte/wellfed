@@ -212,8 +212,13 @@ class FakeInstallPorts implements InstallPorts {
     if (linkFails case final error?) throw error;
     this.onBytes = onBytes;
     this.onLost = onLost;
+    await linkGate?.future;
     return link;
   }
+
+  /// While set, a link opens only once it completes: a scan and a connect
+  /// still out.
+  Completer<void>? linkGate;
 
   @override
   Stream<void> setupHeard() => heard.stream;
