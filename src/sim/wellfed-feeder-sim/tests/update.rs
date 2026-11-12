@@ -894,7 +894,7 @@ async fn stops(rig: &mut Rig, stop: UpdateStop) -> usize {
     let mut count = 0;
     while let Ok(message) = connection.next(Duration::from_millis(500)).await {
         if let Pushed::Event(event) = message
-            && event.body == EventBody::Core(CoreEvent::UpdateStop { stop: stop.into() })
+            && event.body == EventBody::Core(CoreEvent::UpdateStop { stop })
         {
             count += 1;
         }
@@ -906,7 +906,7 @@ async fn stops(rig: &mut Rig, stop: UpdateStop) -> usize {
 fn failed(view: &AlertsView, stop: UpdateStop) -> usize {
     view.alerts
         .iter()
-        .filter(|open| open.alert == Alert::UpdateFailed { stop: stop.into() })
+        .filter(|open| open.alert == Alert::UpdateFailed { stop })
         .count()
 }
 
