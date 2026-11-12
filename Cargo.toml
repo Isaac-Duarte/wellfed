@@ -27,6 +27,7 @@ publish = false
 [workspace.dependencies]
 wellfed-hal = { path = "src/sdk/wellfed-hal" }
 wellfed-hal-feeder = { path = "src/sdk/wellfed-hal-feeder" }
+wellfed-fw-feeder = { path = "src/firmware/wellfed/feeder" }
 wellfed-hal-common = { path = "src/sdk/wellfed-hal-common" }
 wellfed-amebad-sys = { path = "src/sdk/wellfed-amebad-sys" }
 wellfed-board = { path = "src/sdk/wellfed-board" }

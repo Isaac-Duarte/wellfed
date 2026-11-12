@@ -24,8 +24,9 @@ use wellfed_feeder_sim::sim::Record;
 use wellfed_model::{
     Answer, Bowl, Calibration, CalibrationView, ClientRole, CoreEvent, Desiccant, EventBody,
     FeederEvent, FeederSettings, FeederSettingsPatch, Generation, Joined, MealReminder, MetricKind,
-    Model, NtpResult, NtpServer, Op, PLANS, Plan, Plans, Pushed, Refusal, SampleValue, Settings,
-    Source, Stats, StatsSection, Status, TimeChanges, TimeSource, TimeSync, Tune, Weekdays, Wifi,
+    Model, NtpResult, NtpServer, Op, PLANS, Phase, Plan, Plans, Pushed, Refusal, SampleValue,
+    Settings, Source, Stats, StatsSection, Status, TimeChanges, TimeSource, TimeSync, Tune,
+    Weekdays, Wifi,
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
@@ -1203,7 +1204,11 @@ fn an_owner_stores_the_portion_weight_and_only_the_verified_bowl() {
                 bowl: Bowl::Single
             }
         );
-        assert_eq!(before.phase, None, "the simulator has no feeding owner");
+        assert_eq!(
+            before.phase,
+            Some(Phase::Unknown),
+            "the simulated owner has no rotor, so it never rests at a mark"
+        );
 
         let put = |portion_mg, bowl, base| Op::PutCalibration {
             base: Generation(base),

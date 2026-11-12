@@ -169,7 +169,7 @@ impl Sim {
     /// simulator has no speaker, so one that reaches it answers `Muted`, and
     /// `Busy` means the loop refused it first.
     pub fn play(&mut self, now_ms: u32, tune: Tune) -> PlayResult {
-        self.feeder.device(now_ms, &mut self.feeds).play(tune)
+        self.feeder.device(now_ms, self.feeds.feeds()).play(tune)
     }
 
     /// The client `by`'s skip of slot `slot`'s meal due at `due_s`, or its
@@ -183,7 +183,7 @@ impl Sim {
         skip: Asked<MealSkip>,
     ) -> Result<(), wellfed_proto::api::Refusal> {
         self.feeder
-            .device(now_ms, &mut self.feeds)
+            .device(now_ms, self.feeds.feeds())
             .skip_meal(slot, due_s, skip, now_ms)
     }
 
@@ -191,14 +191,14 @@ impl Sim {
     /// once its base matched: queued for the writer, or refused.
     pub fn put_plans(&mut self, now_ms: u32, table: Asked<Table>) -> PlansResult {
         self.feeder
-            .device(now_ms, &mut self.feeds)
+            .device(now_ms, self.feeds.feeds())
             .plans(Some(table))
     }
 
     /// The epoch a session connecting at `now_ms` is welcomed under, as the
     /// device API asks it: `None` while none is welcomed.
     pub fn welcome_epoch(&mut self, now_ms: u32) -> Option<u32> {
-        let device = self.feeder.device(now_ms, &mut self.feeds);
+        let device = self.feeder.device(now_ms, self.feeds.feeds());
         wellfed_device_api::Device::epoch(&device)
     }
 
@@ -241,12 +241,12 @@ impl Sim {
 
     /// The food beam's latest reading (`true` with food), once one is taken.
     pub fn food(&self) -> Option<bool> {
-        wellfed_feeder::feeder::Feeds::food(&self.feeds)
+        wellfed_feeder::feeder::Feeds::food(self.feeds.adapter())
     }
 
     /// A client's cancel of the feed numbered `feed`: whether it found it.
     pub fn cancel_feed(&self, feed: u32) -> bool {
-        wellfed_feeder::feeder::Feeds::cancel(&self.feeds, feed)
+        wellfed_feeder::feeder::Feeds::cancel(self.feeds.adapter(), feed)
     }
 
     /// Hold a storage write in the way of a feed's claim, or end it.
@@ -303,7 +303,7 @@ impl Sim {
         }
         let delay = self
             .feeder
-            .pass(now_ms, &mut self.feeds, |r| record(Record::Feeder(r)));
+            .pass(now_ms, self.feeds.feeds(), |r| record(Record::Feeder(r)));
         self.platform().answer_read();
         let delay = feed_delay.map_or(delay, |feed| delay.min(feed));
         if let Some(result) = self.platform().write() {
