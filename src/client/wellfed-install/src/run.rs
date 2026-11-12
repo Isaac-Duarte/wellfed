@@ -85,8 +85,8 @@ const UPDATE_KEY_LABEL: &str = "installer";
 /// Where an install starts.
 #[derive(Debug, Clone)]
 pub enum Start {
-    /// From stock, reached as `Provision` says: by a DNS override, the
-    /// setup frame, or already.
+    /// From stock, reached as `Provision` says: by the setup frame, or
+    /// already.
     Stock(Provision),
     /// The replacement is already on bank 0 from an earlier run: start at
     /// pairing, and ask stock nothing.
@@ -138,10 +138,11 @@ pub struct Plan {
     /// and no address uses a feeder the keys know only when this names it: the
     /// keys may know other feeders of the owner's, and nothing else says which.
     pub feeder: Option<String>,
-    /// The replacement's address; where it answered or stock connected
-    /// from otherwise.
     /// What to do about a paired feeder that never joined.
     pub unjoined: Unjoined,
+    /// The replacement's address; where it answered or stock connected
+    /// from otherwise. Given to a run from bank 0, a feeder answering there
+    /// is used but not recorded as this device's install.
     pub address: Option<SocketAddr>,
     /// The owner's data directory: one subdirectory per feeder, and the
     /// resume record ([`crate::storage`]).
@@ -233,8 +234,14 @@ fn places_first(
 /// Whether this run has a place of its own to find its feeder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Located {
-    /// Stock connected from it, or it was given.
-    Yes,
+    /// A run from stock: where stock connected from, or an address given
+    /// with it.
+    Stock,
+    /// A run from bank 0 given an address: the owner's, or where the stock
+    /// listener found something answering at stock's old address. What
+    /// answers there proves only that it holds a key this client knows, not
+    /// that stock's request went to it.
+    Given,
     /// A run from bank 0 with no address given.
     No,
 }
@@ -256,6 +263,12 @@ enum Lookup {
     /// only where this run knows its feeder is, never by discovery, and
     /// setup follows if it does not answer.
     KeyFile { identity: [u8; 32] },
+    /// The key's known feeder at an address given to a run from bank 0:
+    /// tried there as a `KeyFile` is, but its answering is not recorded as
+    /// this device's install, as a `Picked` feeder's is not. An address can
+    /// pass to another of the owner's feeders (a DHCP lease), and a record
+    /// would close this device's trial on that feeder's word.
+    Given { identity: [u8; 32] },
     /// The feeder the owner named for a run from bank 0: looked for as a
     /// record's is. Its not answering stops the run, since setup could only
     /// reach another feeder.
@@ -286,7 +299,8 @@ fn lookup(
             last: record.address,
         },
         (None, Some(identity)) => match (located, prefix) {
-            (Located::Yes, _) => Lookup::KeyFile { identity },
+            (Located::Stock, _) => Lookup::KeyFile { identity },
+            (Located::Given, _) => Lookup::Given { identity },
             (Located::No, Some(_)) => Lookup::Picked { identity },
             (Located::No, None) => Lookup::Setup,
         },
@@ -318,6 +332,7 @@ fn looked_up(
         (
             Lookup::Recorded { identity, .. }
             | Lookup::KeyFile { identity }
+            | Lookup::Given { identity }
             | Lookup::Picked { identity },
             Some(address),
         ) => Ok(Looked::Paired(identity, address)),
@@ -334,7 +349,7 @@ fn looked_up(
         (Lookup::Recorded { identity, .. } | Lookup::Picked { identity }, None) => {
             Err(Error::NotAnswering { feeder: identity })
         }
-        (Lookup::KeyFile { .. } | Lookup::Setup, _) => Ok(Looked::SetUp),
+        (Lookup::KeyFile { .. } | Lookup::Given { .. } | Lookup::Setup, _) => Ok(Looked::SetUp),
     }
 }
 
@@ -535,10 +550,10 @@ where
             promotion,
         };
 
-        let located = if matches!(plan.start, Start::Stock(_)) || plan.address.is_some() {
-            Located::Yes
-        } else {
-            Located::No
+        let located = match (&plan.start, plan.address) {
+            (Start::Stock(_), _) => Located::Stock,
+            (Start::Bank0, Some(_)) => Located::Given,
+            (Start::Bank0, None) => Located::No,
         };
         let build = plan.review.build().to_string();
         let mut install = match plan.start {
@@ -909,7 +924,13 @@ where
                     Ok(_) => {
                         self.io.report.event(Event::KeyKnown);
                         self.identity = Some(identity);
-                        self.record_paired(identity, Some(address))?;
+                        // As in setup: a feeder answering at a given address is
+                        // not recorded as this device's install.
+                        if self.located == Located::Given {
+                            self.found = Some(address);
+                        } else {
+                            self.record_paired(identity, Some(address))?;
+                        }
                         install.paired();
                         return Ok(());
                     }
@@ -985,7 +1006,9 @@ where
                 self.answering(identity, Look::Discovered, last).await
             }
             Lookup::Picked { identity } => self.answering(identity, Look::Discovered, None).await,
-            Lookup::KeyFile { identity } => self.answering(identity, Look::Known, None).await,
+            Lookup::KeyFile { identity } | Lookup::Given { identity } => {
+                self.answering(identity, Look::Known, None).await
+            }
             Lookup::Setup => None,
         };
         match looked_up(lookup, answered, self.unjoined)? {
@@ -997,8 +1020,9 @@ where
                 // install went, so it is not recorded as that device's: a
                 // record is what closes the device's trial on a feeder's word,
                 // and a trial left open only makes a later run wait. A record
-                // that names it already is a `Recorded` lookup, not this.
-                if matches!(lookup, Lookup::Picked { .. }) {
+                // that names it already is a `Recorded` lookup, not this. Nor
+                // is one that answered at a given address.
+                if matches!(lookup, Lookup::Picked { .. } | Lookup::Given { .. }) {
                     self.identity = Some(identity);
                     self.found = Some(address);
                 } else {
@@ -1767,7 +1791,7 @@ mod tests {
             identity: [0xab; 32],
             last: recorded.address,
         };
-        let yes = Located::Yes;
+        let yes = Located::Stock;
         assert_eq!(
             lookup(Some(&recorded), Some("AF_A"), None, known, yes),
             ours
@@ -1811,6 +1835,29 @@ mod tests {
             looked_up(picked, None, Unjoined::Wait),
             Err(Error::NotAnswering { .. })
         ));
+
+        // From bank 0 at a given address, as the stock listener resumes a run
+        // where something answered at stock's old address, the keys' feeder is
+        // tried there but never taken as this device's install, and setup
+        // follows if it does not answer.
+        let given = Located::Given;
+        let at_given = Lookup::Given {
+            identity: [0xcd; 32],
+        };
+        assert_eq!(lookup(None, Some("AF_A"), None, known, given), at_given);
+        assert_eq!(
+            lookup(Some(&recorded), Some("AF_B"), None, known, given),
+            at_given
+        );
+        assert_eq!(
+            lookup(Some(&recorded), Some("AF_A"), None, known, given),
+            ours,
+            "this install's own record still names its feeder"
+        );
+        assert_eq!(
+            looked_up(at_given, None, Unjoined::Wait).unwrap(),
+            Looked::SetUp
+        );
 
         // This install's feeder not answering stops the run.
         let here: SocketAddr = "192.168.4.31:7100".parse().unwrap();
