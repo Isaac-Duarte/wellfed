@@ -419,17 +419,22 @@ class InstallFlow extends ChangeNotifier {
         confirming: _confirming,
       ),
       InstallStage.done => InstallDone(facts, backupPath: _backupPath),
-      InstallStage.stopped => InstallStopped(
-        facts,
-        stop: _stop,
-        listening: _listening,
-        listened: _listened,
-        listeningForEarlier: _listeningForEarlier,
-        stockSeen: _stockSeen,
-        setupSeen: _setupSeen,
-        listenerDetail: _listenerDetail,
-        promotionMayHaveGone: _promotionMayHaveGone,
-      ),
+      InstallStage.stopped => switch (_stop) {
+        final InstallEnd_Stopped stop => InstallStopped(
+          facts,
+          stop: stop,
+          listening: _listening,
+          listened: _listened,
+          listeningForEarlier: _listeningForEarlier,
+          stockSeen: _stockSeen,
+          setupSeen: _setupSeen,
+          listenerDetail: _listenerDetail,
+          promotionMayHaveGone: _promotionMayHaveGone,
+        ),
+        // Every way into the stage sets the stop first; should one ever not,
+        // the first screen stands in rather than a page with no way out.
+        null => InstallBefore(facts, image: _image, build: _build),
+      },
     };
   }
 

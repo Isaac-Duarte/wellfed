@@ -44,7 +44,7 @@ class InstallStoppedPage extends StatelessWidget {
 
   (String, String) _words(StopCase stop) => switch (stop) {
     StopCase_Uncertain() => switch (state.listening) {
-      Listening.stockStayed when state.stop?.resume == Resume.fromStart => (
+      Listening.stockStayed when state.stop.resume == Resume.fromStart => (
         "It didn't install",
         'The feeder came back on its original firmware, and nothing changed '
             'on it. You can start again.',
@@ -282,8 +282,7 @@ class InstallStoppedPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final InstallEnd_Stopped? stop = state.stop;
-    if (stop == null) return const SizedBox.shrink();
+    final InstallEnd_Stopped stop = state.stop;
     final uncertain = stop.case_ is StopCase_Uncertain;
     final (String title, String body) = _words(stop.case_);
     final bool listening = uncertain && state.listening == Listening.running;

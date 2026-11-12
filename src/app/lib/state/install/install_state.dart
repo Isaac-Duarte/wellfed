@@ -351,7 +351,7 @@ final class InstallStopped extends InstallState {
   });
 
   /// How it ended.
-  final InstallEnd_Stopped? stop;
+  final InstallEnd_Stopped stop;
 
   /// An earlier run of this install stopped unsure whether its promotion
   /// went in, so the feeder may no longer hold its original firmware.
