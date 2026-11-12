@@ -24,7 +24,7 @@ use wellfed_rig::commands::{
 };
 use wellfed_rig::tools::{Children, Processes};
 
-use wellfed_core::buttons::Buttons;
+use wellfed_core::buttons::{Button, Buttons};
 
 use crate::server::api::Refusal;
 use crate::server::board::SharedBoard;
@@ -57,6 +57,14 @@ pub enum JobCommand {
         #[arg(long, default_value_t = wellfed_core::virtual_panel::DEFAULT_HOLD_MS,
               value_parser = clap::value_parser!(u32).range(1..=i64::from(wellfed_core::virtual_panel::MAX_HOLD_MS)))]
         hold_ms: u32,
+        /// Required for a chord with Dispense, which feeds outside a setup
+        /// or enrollment window: the hopper is empty.
+        #[arg(long)]
+        confirm_motion: bool,
+        /// Required for a Reset hold over 1000 ms: one of 5 s erases the
+        /// enrolled keys on an unlocked panel.
+        #[arg(long)]
+        confirm_destructive: bool,
     },
     /// Cold boot into the application while capturing.
     Boot {
@@ -256,6 +264,7 @@ pub(crate) fn parse(argv: &[String]) -> Result<JobSpec, Refusal> {
             what: "itest --list".into(),
         });
     }
+    confirmed(&line.command)?;
     if let Some(name) = line.command.name()
         && !plain_name(name)
     {
@@ -271,6 +280,52 @@ pub(crate) fn parse(argv: &[String]) -> Result<JobSpec, Refusal> {
         command: line.command,
         options: line.options,
     })
+}
+
+/// Whether the words parse as a job, as a post of them would be answered:
+/// for a client that checks its words before it posts them.
+pub fn check(argv: &[String]) -> Result<(), Refusal> {
+    parse(argv).map(|_| ())
+}
+
+/// The longest Reset hold a press may make without `--confirm-destructive`:
+/// far enough below the panel's 5 s factory restore that no stall in the
+/// button task can carry a hold to it.
+pub(crate) const RESET_HOLD_MS: u32 = 1_000;
+
+/// Refuse motion and destructive work the words do not confirm. The checks
+/// live here, where every client's words are parsed, so a shell, a script
+/// and the MCP adapter all meet the same rule.
+fn confirmed(command: &JobCommand) -> Result<(), Refusal> {
+    match command {
+        JobCommand::Press {
+            chord,
+            hold_ms,
+            confirm_motion,
+            confirm_destructive,
+        } => {
+            if chord.contains(Button::Dispense) && !confirm_motion {
+                return Err(Refusal::UnconfirmedMotion {
+                    what: "press with Dispense".into(),
+                });
+            }
+            if chord.contains(Button::Reset) && *hold_ms > RESET_HOLD_MS && !confirm_destructive {
+                return Err(Refusal::UnconfirmedReset { hold_ms: *hold_ms });
+            }
+        }
+        JobCommand::RestoreStock(args) if args.virtual_panel && !args.confirm_motion => {
+            return Err(Refusal::UnconfirmedMotion {
+                what: "restore-stock --virtual-panel".into(),
+            });
+        }
+        JobCommand::Itest(args) if args.destructive && !args.confirm_destructive => {
+            return Err(Refusal::UnconfirmedDestructive {
+                what: "itest --destructive".into(),
+            });
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// The tool binaries every job runs.
@@ -468,7 +523,7 @@ fn dispatch(
                 bench.capture(name, length)
             })
         }
-        JobCommand::Press { chord, hold_ms } => bench.press(&press_name(), *chord, *hold_ms),
+        JobCommand::Press { chord, hold_ms, .. } => bench.press(&press_name(), *chord, *hold_ms),
         JobCommand::Boot { name, seconds } => seconds_arg("--seconds", *seconds)
             .and_then(|length| bench.boot(&captures.join(name), length))
             .map(|_| 0),
@@ -501,6 +556,76 @@ mod tests {
 
     fn words(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| (*word).to_string()).collect()
+    }
+
+    /// Whatever client posts them, words that can feed or erase are refused
+    /// unless they confirm it.
+    #[test]
+    fn motion_and_destructive_words_are_refused_unless_confirmed() {
+        let refused = |line: &[&str]| parse(&words(line)).err();
+
+        for line in [
+            &["press", "dispense"][..],
+            &["press", "lock+dispense", "--hold-ms", "5200"],
+            &["press", "dispense", "--confirm-destructive"],
+            &["restore-stock", "--virtual-panel"],
+        ] {
+            assert!(
+                matches!(refused(line), Some(Refusal::UnconfirmedMotion { .. })),
+                "{line:?}"
+            );
+        }
+        for line in [
+            &["press", "reset", "--hold-ms", "1001"][..],
+            &[
+                "press",
+                "reset+mic",
+                "--hold-ms",
+                "15000",
+                "--confirm-motion",
+            ],
+        ] {
+            assert!(
+                matches!(refused(line), Some(Refusal::UnconfirmedReset { .. })),
+                "{line:?}"
+            );
+        }
+        assert!(matches!(
+            refused(&["itest", "i", "--power", "--destructive"]),
+            Some(Refusal::UnconfirmedDestructive { .. })
+        ));
+
+        for line in [
+            &["press", "dispense", "--confirm-motion"][..],
+            &[
+                "press",
+                "lock+dispense",
+                "--hold-ms",
+                "5200",
+                "--confirm-motion",
+            ],
+            &["press", "reset", "--hold-ms", "1000"],
+            &[
+                "press",
+                "reset",
+                "--hold-ms",
+                "5200",
+                "--confirm-destructive",
+            ],
+            &["press", "lock", "--hold-ms", "15000"],
+            &["restore-stock"],
+            &["restore-stock", "--virtual-panel", "--confirm-motion"],
+            &["itest", "i", "--power"],
+            &[
+                "itest",
+                "i",
+                "--power",
+                "--destructive",
+                "--confirm-destructive",
+            ],
+        ] {
+            assert!(refused(line).is_none(), "{line:?}");
+        }
     }
 
     struct Discard;

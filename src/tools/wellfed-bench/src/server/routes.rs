@@ -76,6 +76,9 @@ impl IntoResponse for Refusal {
             Self::Unparsed { .. }
             | Self::NotAJob { .. }
             | Self::OtherCheckout { .. }
+            | Self::UnconfirmedMotion { .. }
+            | Self::UnconfirmedReset { .. }
+            | Self::UnconfirmedDestructive { .. }
             | Self::BadName { .. }
             | Self::BadLength { .. }
             | Self::Seed { .. }

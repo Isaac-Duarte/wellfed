@@ -1,16 +1,16 @@
 //! The MCP tools: their names, what each physically does, their arguments,
 //! and the command line each hardware tool posts.
 //!
-//! A hardware tool builds the same words a person types and posts them as a
-//! job, so the server's parse and every check behind it apply unchanged.
-//! What a tool cannot express is refused here, before any words exist:
-//! motion that needs a person at the bench (`--attended-motion`, the
-//! suite's `--feeds`), breaking the lease, and a destructive suite run
-//! without its explicit confirmation, and an answer to a job's
-//! question that only a person at the feeder may give: whether it is the
-//! owner's feeder, and that its recovery window is open. No string a
-//! hardware tool takes may
-//! start with `-`, so none reads as a flag, and the session name comes
+//! A hardware tool builds the same words a person types and checks them with
+//! the server's own parse before it posts them, so every check behind it,
+//! the confirmations of motion and destructive work included, applies
+//! unchanged and is refused before anything is posted. What a tool cannot
+//! express at all is refused here, before any words exist: motion that
+//! needs a person at the bench (`--attended-motion`, the suite's
+//! `--feeds`), breaking the lease, and an answer to a job's question that
+//! only a person at the feeder may give: whether it is the owner's feeder,
+//! and that its recovery window is open. No string a hardware tool takes
+//! may start with `-`, so none reads as a flag, and the session name comes
 //! after `--`. The note tools build their notes directly: their text is
 //! free, dashes included, and goes through no command line.
 
@@ -23,7 +23,8 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use wellfed_bench::server::api::DuringWrite;
+use wellfed_bench::server::api::{DuringWrite, Refusal};
+use wellfed_bench::server::jobs;
 use wellfed_install::prompt::{Answer, Prompt};
 
 use crate::note::{self, NoteArgs, What};
@@ -50,24 +51,11 @@ pub(crate) enum ToolError {
         "{tool}: break_lease is refused over MCP: only a person who has looked at the bench may free its lease (`wellfed-bench status --break-lease`)"
     )]
     BreakLease { tool: String },
-    #[error(
-        "{tool}: destructive is refused over MCP without confirm_destructive: power cuts mid-update may leave a feeder only a UART flash recovers; set confirm_destructive to true to mean it"
-    )]
-    UnconfirmedDestructive { tool: String },
-    #[error(
-        "{tool}: a dispense press is refused over MCP without confirm_motion: outside a setup or enrollment window it is a feed on an unlocked panel; with the hopper empty, set confirm_motion to true to mean it"
-    )]
-    UnconfirmedMotion { tool: String },
-    /// The job's own presses include Dispense: the update key's
-    /// enrollment, and any setup code with Dispense in it.
-    #[error(
-        "{tool}: virtual_panel is refused over MCP without confirm_motion: the job presses Dispense itself (the update key's enrollment, and any setup code that holds it), which outside a window is a feed on an unlocked panel; with the hopper empty, set confirm_motion to true to mean it"
-    )]
-    UnconfirmedPanel { tool: String },
-    #[error(
-        "{tool}: a reset hold over 1000 ms is refused over MCP without confirm_destructive: one of 5 s on an unlocked panel erases the feeder's enrolled keys, the bench's included; set confirm_destructive to true to mean it"
-    )]
-    UnconfirmedReset { tool: String },
+    /// The server's parse refused the words: the same refusal a post of
+    /// them would get, the confirmations of motion and destructive work
+    /// among them.
+    #[error("{tool}: {refusal}")]
+    Refused { tool: String, refusal: Refusal },
     #[error("{tool}: a press names each button once")]
     RepeatedButton { tool: String },
     #[error("{tool}: a press names at least one button")]
@@ -373,11 +361,6 @@ struct PressArgs {
     confirm_destructive: bool,
 }
 
-/// The longest Reset hold allowed without `confirm_destructive`: far
-/// enough below the panel's 5 s factory restore that no stall in the
-/// button task can carry a hold to it.
-const RESET_HOLD_MS: u32 = 1_000;
-
 #[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct TimedArgs {
@@ -492,7 +475,7 @@ struct ItestArgs {
     build: bool,
     #[serde(default)]
     rebuild: bool,
-    /// smoke, standard or full.
+    /// smoke, standard or soak.
     tier: Option<String>,
     /// Only these scenarios.
     only: Option<Vec<String>>,
@@ -518,7 +501,7 @@ struct TransientArgs {
     cycles: Option<u32>,
     /// boot or loader.
     mode: Option<String>,
-    /// driver or motor.
+    /// driver or outputs.
     probes: Option<String>,
     seconds: Option<f64>,
     samplerate: Option<u64>,
@@ -943,7 +926,6 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
         }
         "press" => {
             let args: PressArgs = parse(name, args)?;
-            let has = |button| args.buttons.contains(&button);
             let mut words: Vec<&str> = args.buttons.iter().map(|b| b.word()).collect();
             words.sort_unstable();
             words.dedup();
@@ -953,15 +935,6 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
             if words.len() != args.buttons.len() {
                 return Err(ToolError::RepeatedButton { tool: name.into() });
             }
-            if has(PanelButton::Dispense) && !args.confirm_motion {
-                return Err(ToolError::UnconfirmedMotion { tool: name.into() });
-            }
-            if has(PanelButton::Reset)
-                && args.hold_ms.is_some_and(|ms| ms > RESET_HOLD_MS)
-                && !args.confirm_destructive
-            {
-                return Err(ToolError::UnconfirmedReset { tool: name.into() });
-            }
             let chord = args
                 .buttons
                 .iter()
@@ -970,6 +943,8 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
                 .join("+");
             Line::new(&["press"])
                 .value("--hold-ms", args.hold_ms)
+                .switch("--confirm-motion", args.confirm_motion)
+                .switch("--confirm-destructive", args.confirm_destructive)
                 .word(chord)
         }
         "loader" | "dump" => Line::new(&[name]).word(parse::<NamedArgs>(name, args)?.name),
@@ -1036,9 +1011,6 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
         }
         "itest" => {
             let args: ItestArgs = parse(name, args)?;
-            if args.destructive && !args.confirm_destructive {
-                return Err(ToolError::UnconfirmedDestructive { tool: name.into() });
-            }
             Line::new(&["itest"])
                 .word(args.name)
                 .value("--review", args.review)
@@ -1048,6 +1020,7 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
                 .value("--only", args.only.map(|only| only.join(",")))
                 .switch("--power", args.power)
                 .switch("--destructive", args.destructive)
+                .switch("--confirm-destructive", args.confirm_destructive)
                 .switch("--keep-going", args.keep_going)
                 .value("--sustained-cycles", args.sustained_cycles)
         }
@@ -1063,21 +1036,25 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
         }
         "restore_stock" => {
             let args: RestoreStockArgs = parse(name, args)?;
-            if args.virtual_panel && !args.confirm_motion {
-                return Err(ToolError::UnconfirmedPanel { tool: name.into() });
-            }
             Line::new(&["restore-stock"])
                 .value("--backup", args.backup)
                 .value("--key", args.key)
                 .value("--version", args.version)
                 .switch("--virtual-panel", args.virtual_panel)
+                .switch("--confirm-motion", args.confirm_motion)
                 .value("--keys", args.keys)
                 .value("--feeder", args.feeder)
                 .value("--address", args.address)
         }
         _ => return Err(ToolError::Unknown { name: name.into() }),
     };
-    Ok(line.finish())
+
+    let words = line.finish();
+    jobs::check(&words).map_err(|refusal| ToolError::Refused {
+        tool: name.into(),
+        refusal,
+    })?;
+    Ok(words)
 }
 
 #[cfg(test)]
@@ -1192,7 +1169,10 @@ mod tests {
         let restore = serde_json::json!({"virtual_panel": true});
         assert!(matches!(
             call("restore_stock", args(restore)),
-            Err(ToolError::UnconfirmedPanel { .. })
+            Err(ToolError::Refused {
+                refusal: Refusal::UnconfirmedMotion { .. },
+                ..
+            })
         ));
         assert_eq!(
             call(
@@ -1201,7 +1181,7 @@ mod tests {
             )
             .unwrap(),
             Call::Job(
-                ["restore-stock", "--virtual-panel"]
+                ["restore-stock", "--virtual-panel", "--confirm-motion"]
                     .map(String::from)
                     .to_vec()
             )
@@ -1278,7 +1258,10 @@ mod tests {
                 "itest",
                 serde_json::json!({"name": "i", "power": true, "destructive": true})
             ),
-            ToolError::UnconfirmedDestructive { .. }
+            ToolError::Refused {
+                refusal: Refusal::UnconfirmedDestructive { .. },
+                ..
+            }
         ));
 
         // A plan hash is not optional, and nothing unknown slips through.
@@ -1302,24 +1285,126 @@ mod tests {
         ));
     }
 
+    /// The argument structs here mirror the rig's by hand: every field, and
+    /// every value a field's doc names, must build words the server parses.
+    #[test]
+    fn every_hardware_tool_s_fullest_words_parse_as_the_server_s_job() {
+        let calls = [
+            ("power", serde_json::json!({"state": "on"})),
+            ("power", serde_json::json!({"state": "off"})),
+            ("boot", serde_json::json!({"name": "b", "seconds": 12.5})),
+            ("capture", serde_json::json!({"name": "c", "seconds": 5})),
+            (
+                "press",
+                serde_json::json!({"buttons": ["reset", "mic", "dispense", "lock"], "hold_ms": 15000, "confirm_motion": true, "confirm_destructive": true}),
+            ),
+            ("loader", serde_json::json!({"name": "l"})),
+            ("dump", serde_json::json!({"name": "d"})),
+            (
+                "flash_prepare",
+                serde_json::json!({"name": "u", "target": "t", "source": "s", "bank": 0, "original_read": "r", "interrupted": true, "restore_marker": true, "bank1_source": "b"}),
+            ),
+            (
+                "flash_execute",
+                serde_json::json!({"name": "u", "target": "t", "source": "s", "bank": 1, "original_read": "r", "interrupted": true, "restore_marker": true, "bank1_source": "b", "plan_sha256": "00", "boot_seconds": 30}),
+            ),
+            (
+                "give_way_prepare",
+                serde_json::json!({"name": "g", "fallback": "f"}),
+            ),
+            (
+                "give_way_execute",
+                serde_json::json!({"name": "g", "fallback": "f", "plan_sha256": "00", "boot_seconds": 30}),
+            ),
+            (
+                "stock_prepare",
+                serde_json::json!({"name": "s", "fallback": "f"}),
+            ),
+            (
+                "stock_execute",
+                serde_json::json!({"name": "s", "fallback": "f", "plan_sha256": "00", "boot_seconds": 30}),
+            ),
+            (
+                "ota",
+                serde_json::json!({"name": "o", "build": true, "rebuild": true, "firmware": "feeder", "variant": "virtual-panel", "version": 7, "minutes": 2.5, "downgrade": true, "fault": "corrupt@100"}),
+            ),
+            (
+                "ota",
+                serde_json::json!({"name": "o", "review": "r", "fault": "give-way-only"}),
+            ),
+            ("ota", serde_json::json!({"name": "o", "cancel": true})),
+            (
+                "itest",
+                serde_json::json!({"name": "i", "build": true, "rebuild": true, "tier": "soak", "only": ["ota-update", "sustained"], "power": true, "destructive": true, "confirm_destructive": true, "keep_going": true, "sustained_cycles": 2}),
+            ),
+            (
+                "itest",
+                serde_json::json!({"name": "i", "review": "r", "tier": "smoke"}),
+            ),
+            (
+                "itest",
+                serde_json::json!({"name": "i", "review": "r", "tier": "standard"}),
+            ),
+            (
+                "transients",
+                serde_json::json!({"name": "t", "cycles": 3, "mode": "loader", "probes": "outputs", "seconds": 4, "samplerate": 1000000}),
+            ),
+            (
+                "transients",
+                serde_json::json!({"name": "t", "mode": "boot", "probes": "driver"}),
+            ),
+            (
+                "restore_stock",
+                serde_json::json!({"backup": "b", "key": "k", "version": 9, "virtual_panel": true, "confirm_motion": true, "keys": "c", "feeder": "ab", "address": "192.168.1.31"}),
+            ),
+        ];
+
+        for (tool, value) in &calls {
+            let called = call(tool, args(value.clone()));
+            assert!(
+                matches!(called, Ok(Call::Job(_))),
+                "{tool} {value}: {called:?}"
+            );
+        }
+
+        // Every hardware tool is above, and nothing else.
+        for spec in SPECS {
+            let hardware = !matches!(
+                job_words(spec.name, JsonObject::new()),
+                Err(ToolError::Unknown { .. })
+            );
+            let tested = calls.iter().any(|(tool, _)| *tool == spec.name);
+            assert_eq!(hardware, tested, "{}", spec.name);
+        }
+    }
+
     #[test]
     fn a_press_that_can_feed_or_erase_keys_needs_its_confirmation() {
         let press = |value| call("press", args(value));
         assert!(matches!(
             press(serde_json::json!({"buttons": ["dispense"]})),
-            Err(ToolError::UnconfirmedMotion { .. })
+            Err(ToolError::Refused {
+                refusal: Refusal::UnconfirmedMotion { .. },
+                ..
+            })
         ));
         assert!(matches!(
             press(serde_json::json!({"buttons": ["lock", "dispense"], "hold_ms": 5200})),
-            Err(ToolError::UnconfirmedMotion { .. })
+            Err(ToolError::Refused {
+                refusal: Refusal::UnconfirmedMotion { .. },
+                ..
+            })
         ));
         assert!(matches!(
             press(serde_json::json!({"buttons": ["lock", "dispense"], "hold_ms": 5200, "confirm_motion": true})),
-            Ok(Call::Job(words)) if words == ["press", "--hold-ms", "5200", "--", "lock+dispense"]
+            Ok(Call::Job(words)) if words == ["press", "--hold-ms", "5200", "--confirm-motion", "--", "lock+dispense"]
         ));
         assert!(matches!(
             press(serde_json::json!({"buttons": ["reset"], "hold_ms": 1001})),
-            Err(ToolError::UnconfirmedReset { .. })
+            Err(ToolError::Refused {
+                refusal: Refusal::UnconfirmedReset { hold_ms: 1001 },
+                ..
+            })
         ));
         assert!(matches!(
             press(serde_json::json!({"buttons": ["reset"], "hold_ms": 1000})),

@@ -95,7 +95,7 @@ Dependencies run down the table. Their shared shapes (the bench config, progress
 | `mcp` | The bench's tools for an agent, over the [Model Context Protocol](bench-server.md#mcp) on stdio, as a client of the server |
 | `on`, `off` | Power the feeder with the strap released, or cut power and release the strap |
 | `capture NAME` | Receive-only recording of the running feeder; power untouched |
-| `press CHORD` | Hold panel buttons on a running `virtual-panel` build ([below](#virtual-panel)): `dispense`, or several joined by `+` (`lock+dispense`), for `--hold-ms` (150 by default, at most 15000); power untouched |
+| `press CHORD` | Hold panel buttons on a running `virtual-panel` build ([below](#virtual-panel)): `dispense`, or several joined by `+` (`lock+dispense`), for `--hold-ms` (150 by default, at most 15000); power untouched. A chord with Dispense can feed, so it needs `--confirm-motion` (the hopper empty), and a Reset hold over 1000 ms can reach the 5 s factory restore, so it needs `--confirm-destructive`: the server refuses either without it, whichever client posts it |
 | `boot NAME` | Power off, start a receive-only capture, confirm it holds the port, then power on |
 | `loader NAME` | The same, with the strap held for 2 s across power-on. Requires the download banner and a NAK run, or powers off |
 | `rom-inspect NAME --candidate-rom ROM` | `boot`, then `wellfed-flash read inspect-rom` on the stock console it reached, into `private/captures/NAME/rom`. The report names the model whose console answered, which every later read of that model needs. `--candidate-rom` repeats; `--seconds` (20) is the boot capture's length. Stops, powered and with nothing retried, on a boot that reached the loader or a failed inspection |
@@ -271,7 +271,7 @@ target/release/wellfed-bench stock-execute NAME --expected-plan-sha256 <sha>
 
 ### Restore as a job
 
-`restore-stock` runs `wellfed restore-stock` ([rollback](../../firmware/consumer-installation.md#rollback)) as the server's job, so the server never stops for it: a fresh update key enrolled with a Dispense press (unless `--key` names one the feeder trusts), then stock over the device API. Nothing is offered twice, and a feeder gone after the offer ends it uncertain. `--backup`, `--key`, `--version`, `--keys`, `--feeder` and `--address` pass through; `--virtual-panel` is the server's own.
+`restore-stock` runs `wellfed restore-stock` ([rollback](../../firmware/consumer-installation.md#rollback)) as the server's job, so the server never stops for it: a fresh update key enrolled with a Dispense press (unless `--key` names one the feeder trusts), then stock over the device API. Nothing is offered twice, and a feeder gone after the offer ends it uncertain. `--backup`, `--key`, `--version`, `--keys`, `--feeder` and `--address` pass through; `--virtual-panel` is the server's own, and needs `--confirm-motion` (the hopper empty), since the job's Dispense press can feed outside the enrollment window.
 
 ```sh
 target/release/wellfed-bench restore-stock --key private/ota-key.json
