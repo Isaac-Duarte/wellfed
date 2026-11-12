@@ -201,7 +201,10 @@ fn a_kept_invitee_is_detached_from_its_inviter() {
         assert_eq!(owner_of(service, id, 11).await, Some(ClientOwner::Kept));
 
         let phone = token_of(service, ada.user.clone()).await;
-        let claim = PhoneClaim { key: Hex(key(11)) };
+        let claim = PhoneClaim {
+            key: Hex(key(11)),
+            proof: None,
+        };
         let claimed = service.claim_phone(&phone, id, claim).await;
         assert!(
             matches!(claimed, Err(Error::Client(ClientError::PhoneKeyKept))),
@@ -289,7 +292,10 @@ fn a_claimed_phone_takes_only_the_invites_it_makes_after() {
 
         clock.advance(Duration::from_secs(60));
         let phone = token_of(service, ada.user.clone()).await;
-        let claim = PhoneClaim { key: Hex(key(30)) };
+        let claim = PhoneClaim {
+            key: Hex(key(30)),
+            proof: None,
+        };
         service.claim_phone(&phone, id, claim).await.unwrap();
         invite_directly(&sim, 30, 32).await;
         attributed(service, id, &phone, 32).await;

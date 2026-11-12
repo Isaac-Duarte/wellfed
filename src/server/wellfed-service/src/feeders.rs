@@ -44,6 +44,8 @@ pub(crate) struct State {
     /// watcher and a feed's answer take turns.
     resolving: Arc<Mutex<HashMap<FeederId, Arc<tokio::sync::Mutex<()>>>>>,
     revocations: phones::Revocations,
+    /// The challenges phones answer to prove they hold their keys.
+    challenges: phones::Challenges,
     adopting: Arc<tokio::sync::Mutex<()>>,
 }
 

@@ -12,7 +12,9 @@
 //! the server read it, or one on a feeder too old to report it, is not
 //! attributed: that key shows unowned until an owner revokes or keeps it.
 //! A phone that already holds a key (paired before the server, or one whose
-//! adoption named it) claims it, and [`claim`] records it the same way. A
+//! adoption named it) claims it, and [`claim`] records it the same way; a
+//! claim of a key a logout left with no token answers a [`proof`]
+//! challenge. A
 //! viewer, and an account or token with an expiry, holds no key: the
 //! server alone enforces its limits. Revoking them is [`revoke`]'s.
 
@@ -27,8 +29,11 @@ use wellfed_store::{NewPhone, Recorded, Whose};
 
 mod claim;
 mod invitees;
+mod proof;
 mod revoke;
 
+pub(crate) use proof::Challenges;
+pub(in crate::feeders) use proof::Possession;
 pub(crate) use revoke::{Revocations, own_revoke, rank, revocation};
 
 use crate::feeders::journal::Write;

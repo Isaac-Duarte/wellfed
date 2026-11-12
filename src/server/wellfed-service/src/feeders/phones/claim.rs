@@ -10,7 +10,10 @@
 //! person's key could then revoke it, by claiming another key under the
 //! same token or revoking the token. A member's phone that paired before
 //! the server gets a key of its own through an invite instead. Asking again
-//! for a key already recorded is answered for any role. What an owner's
+//! for a key already recorded is answered for any role. A key of the
+//! account's that a logout left with no token goes under the claiming token
+//! only with a proof that the phone holds its secret ([`super::proof`]).
+//! What an owner's
 //! claim cannot take: a key the feeder does not list, the server's own, one
 //! an owner kept as a client of its own, and one listed with a role no
 //! phone holds (a server's or an update signer's).
@@ -19,6 +22,7 @@ use tracing::warn;
 use wellfed_api::{ClientRole, FeederId, PhoneClaim, PhoneKey, RevokeReason, Role, TokenId};
 use wellfed_store::{NewPhone, Recorded, Whose};
 
+use super::Possession;
 use crate::{Caller, ClientError, Result, Service};
 
 /// Who may hold a key of their own: a phone's token, and the role its key
@@ -41,8 +45,10 @@ impl Service {
         claim: PhoneClaim,
     ) -> Result<PhoneKey> {
         let holder = self.direct_key_holder(caller).await?;
+        let possession = self.possession(holder, &claim.key.0, claim.proof)?;
         self.live_row(id).await?;
-        self.confirm_phone(caller, holder, id, claim.key.0).await
+        self.confirm_phone(caller, holder, id, claim.key.0, possession)
+            .await
     }
 
     /// Record `key` as `holder`'s phone key on the feeder once its live
@@ -55,6 +61,7 @@ impl Service {
         holder: Holder,
         id: FeederId,
         key: [u8; 32],
+        possession: Possession,
     ) -> Result<PhoneKey> {
         let store = &self.shared.store;
         if let Some(phone) = store.phone(id, &key).await? {
@@ -63,12 +70,19 @@ impl Service {
             }
             // The account's own key, left with no token by a logout: the
             // phone logged in again, and its key follows the new token, so
-            // revoking that token (a lost phone) revokes it.
-            let tokenless = phone.token.is_none() && phone.user == caller.user.id;
-            if !tokenless
-                || !store
-                    .attach_token(id, &key, caller.user.id, holder.token)
-                    .await?
+            // revoking that token (a lost phone) revokes it. Only the phone
+            // holding the key moves it: any token of the account may claim,
+            // and a stolen one must not take the key to revoke it with
+            // itself.
+            if phone.token.is_some() || phone.user != caller.user.id {
+                return Err(ClientError::KeyTaken.into());
+            }
+            if possession != Possession::Proven {
+                return Err(ClientError::PhoneKeyProofRequired.into());
+            }
+            if !store
+                .attach_token(id, &key, caller.user.id, holder.token)
+                .await?
             {
                 return Err(ClientError::KeyTaken.into());
             }

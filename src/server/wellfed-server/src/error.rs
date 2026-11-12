@@ -171,7 +171,9 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::AccountDisabled
         | ErrorCode::TokenRequired
         | ErrorCode::DirectKeyRefused
-        | ErrorCode::PhoneClaimOwnersOnly => StatusCode::FORBIDDEN,
+        | ErrorCode::PhoneClaimOwnersOnly
+        | ErrorCode::PhoneKeyProofRequired
+        | ErrorCode::PhoneKeyProofRefused => StatusCode::FORBIDDEN,
         ErrorCode::ZoneUnsupported => StatusCode::UNPROCESSABLE_ENTITY,
         ErrorCode::UnknownHost => StatusCode::MISDIRECTED_REQUEST,
         ErrorCode::NotFound => StatusCode::NOT_FOUND,

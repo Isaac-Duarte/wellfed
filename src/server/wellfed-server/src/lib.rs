@@ -130,6 +130,7 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(clients::keep_client))
         .routes(routes!(clients::invite_phone))
         .routes(routes!(clients::claim_phone))
+        .routes(routes!(clients::phone_challenge))
         .routes(routes!(clients::phones))
         .routes(routes!(admin::put_wifi))
         .routes(routes!(admin::reboot))

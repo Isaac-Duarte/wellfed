@@ -2515,7 +2515,7 @@
         "tags": [
           "feeders"
         ],
-        "summary": "Claim a key the caller's phone already holds on the feeder (paired\nbefore the server, or named by an adoption whose claim did not settle)\nas the caller's phone key, once the feeder lists it. A phone's token\nwith no expiry on it or the account, as for an invite; and only an\nowner claims a key the server has not recorded, since the feeder cannot\nprove whose a key is. A member's phone that paired before the server\nasks for an invite (`POST /feeders/{id}/invites`) and joins with a new\nkey instead. The token that recorded a key asking again, whatever its\nrole, is answered that record, so a lost answer or\n`phone_key_unconfirmed` is settled by asking again.",
+        "summary": "Claim a key the caller's phone already holds on the feeder (paired\nbefore the server, or named by an adoption whose claim did not settle)\nas the caller's phone key, once the feeder lists it. A phone's token\nwith no expiry on it or the account, as for an invite; and only an\nowner claims a key the server has not recorded, since the feeder cannot\nprove whose a key is. A member's phone that paired before the server\nasks for an invite (`POST /feeders/{id}/invites`) and joins with a new\nkey instead. The token that recorded a key asking again, whatever its\nrole, is answered that record, so a lost answer or\n`phone_key_unconfirmed` is settled by asking again. A key of the\naccount's that a logout left with no token goes under the caller's\ntoken only with a `proof` that the phone holds its secret\n(`POST /phones/challenge`); a proof given is checked either way.",
         "operationId": "claim_phone",
         "parameters": [
           {
@@ -2558,7 +2558,7 @@
             }
           },
           "403": {
-            "description": "forbidden (a viewer), token_required, direct_key_refused, or phone_claim_owners_only (a member's claim of a key not recorded)",
+            "description": "forbidden (a viewer), token_required, direct_key_refused, phone_claim_owners_only (a member's claim of a key not recorded), phone_key_proof_required (a key a logout left with no token) or phone_key_proof_refused",
             "content": {
               "application/json": {
                 "schema": {
@@ -5008,6 +5008,45 @@
             }
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/phones/challenge": {
+      "post": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "A challenge for the caller's phone to prove it holds its key's secret,\nanswered in a claim's `proof` by the same token, once, before it\nexpires. A phone's token with no expiry on it or the account, as for a\nclaim.",
+        "operationId": "phone_challenge",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneChallenge"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden (a viewer), token_required or direct_key_refused",
             "content": {
               "application/json": {
                 "schema": {
@@ -8268,6 +8307,8 @@
           "import_closed",
           "archive_invalid",
           "export_running",
+          "phone_key_proof_required",
+          "phone_key_proof_refused",
           "internal",
           "unknown"
         ]
@@ -10583,6 +10624,25 @@
           }
         }
       },
+      "KeyProof": {
+        "type": "object",
+        "description": "A phone's answer to a [`PhoneChallenge`].",
+        "required": [
+          "challenge",
+          "mac"
+        ],
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The challenge's `id`."
+          },
+          "mac": {
+            "type": "string",
+            "description": "The MAC, 64 hex digits."
+          }
+        }
+      },
       "KeyRemoval": {
         "oneOf": [
           {
@@ -10737,7 +10797,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Each a public key, 64 hex digits."
+            "description": "Each a public key, 64 hex digits; at most [`LOGOUT_KEYS_MAX`]."
           }
         }
       },
@@ -11332,6 +11392,33 @@
           "newer"
         ]
       },
+      "PhoneChallenge": {
+        "type": "object",
+        "description": "A challenge for the caller's phone to prove it holds its key's secret\n(`POST /phones/challenge`), answered once, before `expires`, in a\nclaim by the same token. The proof is an HMAC-SHA256 over `nonce`, the\ntoken's id (its 16 bytes) and the phone's public key, keyed by\nHMAC-SHA256 of the label `wellfed client key proof v1` under the\nX25519 of the phone's secret and `key`.",
+        "required": [
+          "id",
+          "key",
+          "nonce",
+          "expires"
+        ],
+        "properties": {
+          "expires": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "description": "The server's one-use X25519 public key, 64 hex digits."
+          },
+          "nonce": {
+            "type": "string"
+          }
+        }
+      },
       "PhoneClaim": {
         "type": "object",
         "description": "A key the caller's phone already holds on the feeder, claimed as the\ncaller's phone key: one it paired before the server, or one an\nadoption named whose claim did not settle.",
@@ -11341,6 +11428,17 @@
         "properties": {
           "key": {
             "type": "string"
+          },
+          "proof": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/KeyProof",
+                "description": "That the phone holds the key's secret, answering a challenge\n(`POST /phones/challenge`). Required to put under the caller's token\na key of the account's that a logout left with no token, so another\ntoken of the account cannot take it; checked whenever given."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

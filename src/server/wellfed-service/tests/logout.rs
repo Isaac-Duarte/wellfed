@@ -11,13 +11,15 @@
 use std::time::Duration;
 
 use wellfed_api::{
-    ClientOwner, ClientRole, Connection as Link, FeederId, Hex, LOGOUT_KEYS_MAX, LogOut,
+    ClientOwner, ClientRole, Connection as Link, FeederId, Hex, KeyProof, LOGOUT_KEYS_MAX, LogOut,
     NewPhoneInvite, NewToken, NewUser, PhoneClaim, RevokeReason, Role, User, UserPatch,
 };
 use wellfed_server_testkit::feeder::{self, Relay, Running};
 use wellfed_server_testkit::fixed::FixedClock;
 use wellfed_server_testkit::{TestService, ada_setup, local, until};
 use wellfed_service::{AccountError, Caller, Error, Invalid, Service};
+use wellfed_session::noise::Keypair;
+use wellfed_session::proof::prove;
 
 fn secret(n: u8) -> [u8; 32] {
     [n; 32]
@@ -371,8 +373,9 @@ fn a_thief_on_the_phones_feeder_replaces_its_key_and_goes_at_logout_with_its_inv
 /// A key with no token stays so through a restart (the reconcile at start
 /// and at each connect) and through the account's new phone token getting
 /// a key of its own on the feeder (one key per token replaces only that
-/// token's). A claim by the account's phone puts it under the claiming
-/// token again, so revoking that token revokes it.
+/// token's). A claim by the account's phone, proving it holds the key,
+/// puts it under the claiming token again, so revoking that token revokes
+/// it.
 #[test]
 fn a_key_with_no_token_survives_the_reconcile_and_is_claimed_again() {
     local(async {
@@ -394,10 +397,23 @@ fn a_key_with_no_token_survives_the_reconcile_and_is_claimed_again() {
         join(service, &sim, id, &again, 92).await;
         tokenless(service, id, &ada.user, 90).await;
 
-        let claimed = service
-            .claim_phone(&again, id, PhoneClaim { key: Hex(key(90)) })
-            .await
-            .unwrap();
+        let challenge = service.phone_challenge(&again).await.unwrap();
+        let holder = Keypair::from_secret(secret(90));
+        let token = again.token.unwrap().0;
+        let mac = prove(
+            &holder,
+            &challenge.key.0,
+            &challenge.nonce.0,
+            token.as_bytes(),
+        );
+        let claim = PhoneClaim {
+            key: Hex(key(90)),
+            proof: Some(KeyProof {
+                challenge: challenge.id,
+                mac: Hex(mac.unwrap()),
+            }),
+        };
+        let claimed = service.claim_phone(&again, id, claim).await.unwrap();
         assert_eq!(claimed.token, again.token);
         // One key per token: the claimed key replaces the token's other.
         revoked(&sim, &[92]).await;

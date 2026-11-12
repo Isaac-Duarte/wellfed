@@ -1,5 +1,5 @@
 {
-  "revision": 4,
+  "revision": 5,
   "document": {
     "components": {
       "schemas": {
@@ -2129,6 +2129,8 @@
             "import_closed",
             "archive_invalid",
             "export_running",
+            "phone_key_proof_required",
+            "phone_key_proof_refused",
             "internal",
             "unknown"
           ],
@@ -4274,6 +4276,22 @@
           ],
           "type": "object"
         },
+        "KeyProof": {
+          "properties": {
+            "challenge": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "mac": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "challenge",
+            "mac"
+          ],
+          "type": "object"
+        },
         "KeyRemoval": {
           "oneOf": [
             {
@@ -4968,10 +4986,45 @@
           ],
           "type": "string"
         },
+        "PhoneChallenge": {
+          "properties": {
+            "expires": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "nonce": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "key",
+            "nonce",
+            "expires"
+          ],
+          "type": "object"
+        },
         "PhoneClaim": {
           "properties": {
             "key": {
               "type": "string"
+            },
+            "proof": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/KeyProof"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -12417,6 +12470,40 @@
               }
             },
             "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/phones/challenge": {
+        "post": {
+          "operationId": "phone_challenge",
+          "responses": {
+            "201": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PhoneChallenge"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
               "content": {
                 "application/json": {
                   "schema": {

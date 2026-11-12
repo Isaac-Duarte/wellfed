@@ -65,7 +65,14 @@ async fn claim(
     key: [u8; 32],
 ) -> Result<PhoneKey> {
     service
-        .claim_phone(caller, id, PhoneClaim { key: Hex(key) })
+        .claim_phone(
+            caller,
+            id,
+            PhoneClaim {
+                key: Hex(key),
+                proof: None,
+            },
+        )
         .await
 }
 

@@ -46,6 +46,14 @@ pub enum ClientError {
         "only an owner claims a key the server has not recorded: ask for an invite for your phone instead"
     )]
     PhoneClaimOwnersOnly,
+    #[error(
+        "that key is your account's, left with no token by a logout: prove your phone holds it (a challenge's proof) to claim it"
+    )]
+    PhoneKeyProofRequired,
+    #[error(
+        "the proof does not answer a challenge of this token's (unknown, used, expired or another token's) with that key: ask for a new challenge"
+    )]
+    PhoneKeyProofRefused,
 }
 
 impl ClientError {
@@ -60,6 +68,8 @@ impl ClientError {
             Self::PhoneKeyKept => ErrorCode::PhoneKeyKept,
             Self::PhoneKeyNotAPhone => ErrorCode::PhoneKeyNotAPhone,
             Self::PhoneClaimOwnersOnly => ErrorCode::PhoneClaimOwnersOnly,
+            Self::PhoneKeyProofRequired => ErrorCode::PhoneKeyProofRequired,
+            Self::PhoneKeyProofRefused => ErrorCode::PhoneKeyProofRefused,
         }
     }
 }
