@@ -472,3 +472,33 @@ async fn an_alert_whose_kind_changes_while_its_open_is_in_flight_is_sent_again()
     let event = |kind: &str| ("opened".to_owned(), kind.to_owned());
     assert_eq!(events, [event("meal_no_record"), event("meal_missed")]);
 }
+
+#[tokio::test]
+async fn a_new_kind_refused_still_clears_the_open_the_receiver_took() {
+    let (url, mut bodies) = receiver(vec![200, 400, 200]).await;
+    let (_dir, store, mut webhook) = webhook(url).await;
+    let due = Timestamp::UNIX_EPOCH;
+    read(&store, 1, &[]).await;
+    read(&store, 2, &[Alert::MealNoRecord { plan: 1, due }]).await;
+    drain(&mut webhook, &store).await;
+    let missed = Alert::MealMissed {
+        plan: 1,
+        due,
+        reason: wellfed_model::MissedReason::Late,
+    };
+    read(&store, 3, &[missed]).await;
+    drain(&mut webhook, &store).await;
+    read(&store, 4, &[]).await;
+    drain(&mut webhook, &store).await;
+
+    let event = |event: &str, kind: &str| (event.to_owned(), kind.to_owned());
+    assert_eq!(
+        events(&mut bodies),
+        [
+            event("opened", "meal_no_record"),
+            event("opened", "meal_missed"),
+            event("cleared", "meal_no_record"),
+        ],
+        "the receiver still held the first opening"
+    );
+}
