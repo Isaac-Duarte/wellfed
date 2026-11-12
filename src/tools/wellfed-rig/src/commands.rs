@@ -67,8 +67,8 @@ enum PressStep {
 }
 
 /// The relay board's power-cut count when the feeder entered the loader,
-/// `None` from a board that does not count them; the execute in that
-/// helper session requires the same answer.
+/// `None` from the SH-UR04A, which cannot cut power by itself; the execute
+/// in that helper session requires the same answer.
 #[derive(Serialize, Deserialize)]
 struct PowerAtLoader {
     power_cuts: Option<u32>,
@@ -1202,18 +1202,21 @@ impl Bench {
     /// the board's power-cut count recorded for that execute to check.
     fn helper_session(&mut self, p: &Paths) -> Result<()> {
         self.fresh(&p.power)?;
+        // A board that cannot be checked is refused before a relay moves.
+        self.relay.power_cuts()?;
         self.loader(&p.loader)?;
 
         let power_cuts = self.relay.power_cuts()?;
         if let Some(parent) = p.power.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&p.power, serde_json::to_vec(&PowerAtLoader { power_cuts })?)?;
+        let record = serde_json::to_vec(&PowerAtLoader { power_cuts })?;
+        wellfed_formats::private::write_new_whole(&p.power, &record)?;
         Ok(())
     }
 
-    /// The relays show the supply on and the strap released, and a board
-    /// that counts its power cuts has made none since loader entry: the
+    /// The relays show the supply on and the strap released, and the
+    /// Wellfed Bench board has made no power cut since loader entry: the
     /// Wellfed Bench board's RECOVER button cycles the power by itself and
     /// leaves the relays as they were. It cannot rule out a brownout.
     fn require_unbroken_power(&mut self, p: &Paths) -> Result<()> {

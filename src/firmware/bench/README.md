@@ -88,7 +88,7 @@ Send one line ending in CR, LF or CRLF, and you get exactly one line back ending
 | `AT+TXV?` | `OK+TXV=3290` | Feeder TX line level, in mV |
 | `AT+ALIVE?` | `OK+ALIVE=1` | The feeder MCU is powered (its TX idles high). `1` with CH1 off means the D-cells are still in |
 | `AT+STAT?` | `OK+STAT=CH:1011;VBUS:…;CUR:…;SRC:…;FLT:…;TXV:…;ALIVE:…` | Everything above at once |
-| `AT+CUTS?` | `OK+CUTS=2914730551` | Feeder power cuts the board has made, from either port or RECOVER, counted from a random start at each board boot. `wellfed-bench` records it when it leaves the feeder in the loader and refuses to write if it moved |
+| `AT+CUTS?` | `OK+CUTS=2914730551` | Feeder power cuts the board has made, from either port or RECOVER, counted from a random start at each board boot. `wellfed-bench` records it when it leaves the feeder in the loader and refuses to write if it moved, and enters no session on a board whose firmware does not answer it |
 | `AT+BOOTSEL` | `OK` | Cuts feeder power, then reboots into the UF2 bootloader |
 
 At power-up, and after any reset including the 2 s watchdog, all four channels are off. That matches an unpowered relay board. The board's pull resistors hold the same state while the RP2040 is in reset.

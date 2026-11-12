@@ -28,6 +28,13 @@ pub enum Error {
     /// The power-cut count's reply was not a count.
     #[error("Relay power-cut count {reply:?}")]
     Cuts { reply: String },
+    /// A Wellfed Bench board (it answers `AT+VER?` as `version`) whose
+    /// firmware predates the power-cut count: its RECOVER button could
+    /// cycle the feeder's power unseen, so nothing writes until it counts.
+    #[error(
+        "The Wellfed Bench board ({version}) does not count power cuts: reflash the bench board"
+    )]
+    Uncounted { version: String },
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error("Serial port: {0}")]
@@ -126,10 +133,11 @@ pub trait Board: Send {
     /// The channel's state as the board reports it.
     fn get(&mut self, channel: u8) -> Result<bool>;
     /// The feeder power cuts the board has made, whoever asked for them,
-    /// or `None` from a board that does not count them (the SH-UR04A,
-    /// whose relays move only on a host command). The Wellfed Bench
-    /// board's RECOVER button cycles the power by itself, which the
-    /// channels alone cannot show once the feeder is back on.
+    /// or `None` from the SH-UR04A, whose relays move only on a host
+    /// command. The Wellfed Bench board's RECOVER button cycles the power
+    /// by itself, which the channels alone cannot show once the feeder is
+    /// back on, so a Wellfed board that does not count is an error
+    /// ([`Error::Uncounted`]), never `None`.
     fn power_cuts(&mut self) -> Result<Option<u32>>;
 }
 
@@ -224,11 +232,20 @@ impl Board for AtBoard {
     }
 
     fn power_cuts(&mut self) -> Result<Option<u32>> {
-        // The SH-UR04A answers a command it lacks with an error, or not at
-        // all, and either is a board that does not count.
+        // A refusal is the SH-UR04A, which has no such query, or a Wellfed
+        // board on firmware older than the count. Only the Wellfed board
+        // answers `AT+VER?`, and it never passes as the SH-UR04A.
         let reply = match self.command("AT+CUTS?") {
             Ok(reply) => reply,
-            Err(Error::Refused { .. }) => return Ok(None),
+            Err(Error::Refused { .. }) => {
+                return match self.command("AT+VER?") {
+                    Ok(version) => Err(Error::Uncounted {
+                        version: String::from_utf8_lossy(&version).into_owned(),
+                    }),
+                    Err(Error::Refused { .. }) => Ok(None),
+                    Err(error) => Err(error),
+                };
+            }
             Err(error) => return Err(error),
         };
         let count = reply
@@ -280,6 +297,9 @@ pub struct FakeState {
     /// answers `AT+CUTS?` with an error, as the SH-UR04A does. Switching
     /// CH1 off from on adds one.
     pub cuts: Option<u32>,
+    /// What `AT+VER?` answers after `OK+VER=`, as the Wellfed Bench board
+    /// does; `None` answers it with an error, as the SH-UR04A does.
+    pub version: Option<String>,
 }
 
 #[cfg(any(test, feature = "fake"))]
@@ -308,6 +328,12 @@ impl Link for FakeBoard {
         if line == "AT+CUTS?" {
             return Ok(match s.cuts {
                 Some(cuts) => format!("OK+CUTS={cuts}\r\n\0").into_bytes(),
+                None => b"Error\r\n\0".to_vec(),
+            });
+        }
+        if line == "AT+VER?" {
+            return Ok(match &s.version {
+                Some(version) => format!("OK+VER={version}\r\n\0").into_bytes(),
                 None => b"Error\r\n\0".to_vec(),
             });
         }
@@ -367,6 +393,22 @@ mod tests {
         );
         relay.set(POWER, Switch::Off).unwrap();
         assert_eq!(relay.power_cuts().unwrap(), Some(0), "the count wraps");
+    }
+
+    /// A Wellfed board on firmware from before the count is told from the
+    /// SH-UR04A by its version answer, and refused rather than trusted.
+    #[test]
+    fn a_wellfed_board_that_does_not_count_is_an_error() {
+        let board = FakeBoard::default();
+        board.lock().version = Some("0.1.0 revB".into());
+        let mut relay = Relay::new(Box::new(board));
+
+        let error = relay.power_cuts().unwrap_err();
+        assert!(
+            matches!(&error, Error::Uncounted { version } if version == "OK+VER=0.1.0 revB"),
+            "{error:?}"
+        );
+        assert!(error.to_string().contains("reflash the bench board"));
     }
 
     #[test]

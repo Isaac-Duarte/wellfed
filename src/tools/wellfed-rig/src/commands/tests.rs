@@ -859,6 +859,25 @@ fn a_power_cut_the_board_made_since_prepare_refuses_the_execute() {
     assert_eq!(unbroken.bench.give_way_execute(&execute).unwrap(), 0);
 }
 
+/// A Wellfed Bench board on firmware from before the power-cut count is
+/// refused before any relay moves: its RECOVER button could cycle the
+/// feeder unseen, so no session is entered for a write until it counts.
+#[test]
+fn a_wellfed_board_that_does_not_count_power_cuts_enters_no_session() {
+    let mut rig = rig();
+    rig.board.lock().version = Some("0.1.0 revB".into());
+    fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
+    let args = GiveWayArgs {
+        name: "gw".into(),
+        fallback: "f".into(),
+    };
+
+    let error = rig.bench.give_way_prepare(&args).unwrap_err();
+    assert_matches!(error, Error::Relay(wellfed_relay::Error::Uncounted { .. }));
+    assert!(rig.board.log().is_empty());
+    assert!(rig.tools.0.borrow().flash.is_empty());
+}
+
 /// A plan with no record of the loader entry it runs in is no session this
 /// build entered, and neither is one a board that counts did not count.
 #[test]
