@@ -5,13 +5,13 @@
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum_extra::extract::WithRejection;
 use wellfed_api::{FeederId, Install, Problem, StockBackup, StockRestore, StockState};
 use wellfed_service::ReleaseAdded;
 
-use super::{ApiResult, IdPath, JsonBody, TAG_FEEDERS};
+use super::{ApiResult, IdPath, JsonBody, TAG_FEEDERS, added_status, insert};
 use crate::AppState;
 use crate::auth::{Allowed, need};
 use crate::error::ApiError;
@@ -67,14 +67,13 @@ pub(crate) async fn export_stock(
     let (backup, file) = state.service.stock_file(id).await?;
     let name = format!("attachment; filename=\"stock-{}.bin\"", backup.version);
     let mut response = file.into_response();
-    let headers = response.headers_mut();
-    headers.insert(
+    insert(
+        &mut response,
         header::CONTENT_TYPE,
-        HeaderValue::from_static("application/octet-stream"),
+        "application/octet-stream",
     );
-    if let Ok(name) = HeaderValue::from_str(&name) {
-        headers.insert(header::CONTENT_DISPOSITION, name);
-    }
+    // A version is digits and dots, so the name always makes a header.
+    insert(&mut response, header::CONTENT_DISPOSITION, &name);
     Ok(response)
 }
 
@@ -170,9 +169,5 @@ pub(crate) async fn restore_stock(
 }
 
 fn kept_status((backup, added): (StockBackup, ReleaseAdded)) -> (StatusCode, Json<StockBackup>) {
-    let status = match added {
-        ReleaseAdded::New => StatusCode::CREATED,
-        ReleaseAdded::Known => StatusCode::OK,
-    };
-    (status, Json(backup))
+    (added_status(added), Json(backup))
 }

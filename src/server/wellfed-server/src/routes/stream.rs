@@ -23,7 +23,7 @@ use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use wellfed_api::{ErrorCode, MetricKind, Problem, Role, StreamEvent, StreamQuery, User};
 use wellfed_service::{Permission, Resume, Stamped, StreamId, can};
 
-use super::TAG_FEEDERS;
+use super::{TAG_FEEDERS, json_event};
 use crate::AppState;
 use crate::auth::{self, Allowed, Credential, need};
 use crate::error::ApiError;
@@ -156,11 +156,7 @@ fn resync() -> Event {
 }
 
 fn encode(event: &StreamEvent) -> Event {
-    // These types serialize without fail; a comment keeps the stream going
-    // if one ever did not.
-    Event::default()
-        .json_data(event)
-        .unwrap_or_else(|_| Event::default().comment("unencodable update"))
+    json_event(event)
 }
 
 #[cfg(test)]

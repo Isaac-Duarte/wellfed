@@ -13,7 +13,7 @@ use futures_util::{Stream, StreamExt, stream};
 use wellfed_api::{FeedTrace, FeederAlerts, FeederId, FeederStats, LogEvent, Problem, TraceQuery};
 
 use super::stream::caller_changed;
-use super::{ApiResult, IdPath, TAG_FEEDERS};
+use super::{ApiResult, IdPath, TAG_FEEDERS, json_event};
 use crate::AppState;
 use crate::auth::{self, Allowed, need};
 use crate::error::ApiError;
@@ -117,9 +117,5 @@ pub(crate) async fn log(
 }
 
 fn encode(event: &LogEvent) -> Event {
-    // These types serialize without fail; a comment keeps the stream going
-    // if one ever did not.
-    Event::default()
-        .json_data(event)
-        .unwrap_or_else(|_| Event::default().comment("unencodable log batch"))
+    json_event(event)
 }
