@@ -88,6 +88,9 @@ pub enum Error {
     Migrate(#[from] sqlx::migrate::MigrateError),
     #[error("a stored {0} is out of range")]
     Corrupt(&'static str),
+    /// A value to be written that the store's readers would refuse.
+    #[error("{0} names a value this server does not know")]
+    Unknown(&'static str),
     #[error("{0} does not fit the database")]
     TooLarge(&'static str),
     #[error("that {0} already exists")]

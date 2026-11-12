@@ -33,7 +33,7 @@ INSERT INTO feeders (id, home_id, kind, model, identity, name, role, address, ke
 INSERT INTO phone_keys VALUES (x'0192c5d0000070008000000000000003', x'5151', x'0192c5d0000070008000000000000001',
     x'0192c5d0000070008000000000000009', 'member', 60, 61, 'token_revoked', 62, '{}', x'5353', 3);
 INSERT INTO phone_keys VALUES (x'0192c5d0000070008000000000000003', x'5050', x'0192c5d0000070008000000000000002',
-    NULL, 'viewer', 63, 64, NULL, NULL, NULL, NULL, 0);
+    NULL, 'owner', 63, 64, NULL, NULL, NULL, NULL, 0);
 INSERT INTO kept_clients VALUES (x'0192c5d0000070008000000000000003', x'5252', 65);
 INSERT INTO invitations VALUES (4, x'0192c5d0000070008000000000000003', 9, 10, x'5151', x'5353', 66, 67);
 INSERT INTO invitations VALUES (7, x'0192c5d0000070008000000000000003', 9, 11, x'5454', x'5353', 68, NULL);
@@ -80,9 +80,11 @@ INSERT INTO commands (seq, key, user_id, token_id, feeder_id, kind, body_hash, r
     VALUES (2, x'12', x'0192c5d0000070008000000000000002', NULL,
         x'0192c5d0000070008000000000000003', 'lock', x'23', x'34', NULL, 'unknown', NULL, NULL, 22, 23, NULL, NULL);
 INSERT INTO installs VALUES (x'0192c5d0000070008000000000000005', x'0192c5d0000070008000000000000003',
-    x'44', 7, x'0192c5d0000070008000000000000001', 24, 'failed', 10, 20, '{\"kind\":\"lost\"}', 25, 'release');
+    x'4444444444444444444444444444444444444444444444444444444444444444', 7,
+    x'0192c5d0000070008000000000000001', 24, 'failed', 10, 20, '{\"kind\":\"lost\"}', 25, 'release');
 INSERT INTO installs VALUES (x'0192c5d0000070008000000000000006', x'0192c5d0000070008000000000000003',
-    x'45', 8, x'0192c5d0000070008000000000000001', 26, 'activated', 20, 20, NULL, NULL, 'stock');
+    x'4545454545454545454545454545454545454545454545454545454545454545', 8,
+    x'0192c5d0000070008000000000000001', 26, 'activated', 20, 20, NULL, NULL, 'stock');
 INSERT INTO pets VALUES (x'0192c5d0000070008000000000000007', 'Tom', 'cat', '2020-01-02', 250, 27);
 INSERT INTO pets VALUES (x'0192c5d0000070008000000000000008', 'Rex', 'dog', NULL, NULL, 28);
 INSERT INTO pet_weights VALUES (x'0192c5d000007000800000000000000a', x'0192c5d0000070008000000000000007', 29, 4200);
@@ -217,4 +219,87 @@ async fn an_import_is_refused_where_an_account_exists_and_rolls_back_when_droppe
         .unwrap();
     assert_eq!(users, 0);
     assert!(second.begin_import("").await.unwrap().is_some());
+}
+
+/// A row with a value the store's readers would refuse is refused before it
+/// goes in, and the import rolls back whole: an archive with such a value
+/// would otherwise commit a server whose start or logins fail on it.
+#[tokio::test]
+async fn a_value_the_readers_refuse_is_refused_and_nothing_is_imported() {
+    let dir = tempfile::tempdir().unwrap();
+    let (first, pool) = open(&dir, "first.db").await;
+    sqlx::raw_sql(FILL).execute(&pool).await.unwrap();
+    let exported = export(&first).await;
+
+    let edits = [
+        "account role",
+        "units",
+        "time format",
+        "feeder role",
+        "phone role",
+        "revoke reason",
+        "command kind",
+        "command state",
+        "install state",
+        "install target",
+        "species",
+        "event epoch",
+    ];
+    for (i, what) in edits.into_iter().enumerate() {
+        let (second, raw) = open(&dir, &format!("second-{i}.db")).await;
+        let mut import = second.begin_import("").await.unwrap().unwrap();
+
+        let mut refused = None;
+        let mut edited = false;
+        'rows: for (_, rows) in &exported {
+            for row in rows {
+                let mut row = row.clone();
+                if !edited {
+                    edited = unknown_code(what, &mut row);
+                }
+                if let Err(error) = import.insert(&row).await {
+                    refused = Some(error);
+                    break 'rows;
+                }
+            }
+        }
+        drop(import);
+
+        assert!(edited, "{what}: a row to edit");
+        assert!(
+            matches!(refused, Some(wellfed_store::Error::Unknown(named)) if named == what),
+            "{what}: {refused:?}"
+        );
+        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&raw)
+            .await
+            .unwrap();
+        assert_eq!(users, 0, "{what}: nothing kept");
+        assert!(second.begin_import("").await.unwrap().is_some(), "{what}");
+    }
+}
+
+/// Give `row` a value the readers refuse in the column `what` names, if it
+/// has that column.
+fn unknown_code(what: &str, row: &mut Row) -> bool {
+    let column = match (what, row) {
+        ("event epoch", Row::Events(event)) => {
+            event.epoch = i64::from(u32::MAX) + 1;
+            return true;
+        }
+        ("account role", Row::Users(user)) => &mut user.role,
+        ("units", Row::Homes(home)) => &mut home.units,
+        ("time format", Row::Homes(home)) => &mut home.time_format,
+        ("feeder role", Row::Feeders(feeder)) => &mut feeder.role,
+        ("phone role", Row::PhoneKeys(phone)) => &mut phone.role,
+        ("revoke reason", Row::PhoneKeys(phone)) => phone.revoke.get_or_insert_default(),
+        ("command kind", Row::Commands(command)) => &mut command.kind,
+        ("command state", Row::Commands(command)) => &mut command.state,
+        ("install state", Row::Installs(install)) => &mut install.state,
+        ("install target", Row::Installs(install)) => &mut install.target,
+        ("species", Row::Pets(pet)) => &mut pet.species,
+        _ => return false,
+    };
+    *column = "nonsense".into();
+    true
 }
