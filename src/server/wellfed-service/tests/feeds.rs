@@ -8,13 +8,16 @@ mod feeding;
 
 use std::time::Duration;
 
+use std::sync::Arc;
+
 use wellfed_api::{
-    CommandOutcome, CommandState, Connection as Link, FeedOutcome, FeedReason, FeederRefusal,
-    StreamEvent,
+    ClientRole, CommandOutcome, CommandState, Connection as Link, FeedOutcome, FeedReason,
+    FeederRefusal, Hex, NewPhoneInvite, NewToken, StreamEvent,
 };
 use wellfed_server_testkit::feeder::{self, Control, Flash, Relay};
-use wellfed_server_testkit::{TestService, ada, local, until};
-use wellfed_service::{CommandError, Error, IdempotencyKey};
+use wellfed_server_testkit::fixed::ManualClock;
+use wellfed_server_testkit::{TestService, ada, ada_setup, local, until};
+use wellfed_service::{Caller, CommandError, Error, IdempotencyKey};
 
 use self::feeding::{done, fed_events, one_feed, quick, resolved, unknown};
 
@@ -112,14 +115,48 @@ fn a_retry_after_a_dropped_answer_feeds_once() {
 /// The server stops with the feed on its way: the feed is unknown at the
 /// restart, the feeder runs it with no one to answer, and the history the
 /// restarted server syncs settles it.
+///
+/// The feeder holds a phone key the server recorded, so each connect asks
+/// it for its clients to follow up a revoke on the LAN. That request must
+/// be answered before the relay pauses, or the relay holds it instead of
+/// the feed, which then never leaves the server. The key's invite was
+/// never redeemed and has expired, so the follow-up forgets it: once it is
+/// gone, the follow-up's request is answered.
 #[test]
 fn a_server_restart_mid_feed_feeds_once() {
     local(async {
         let flash = Flash::memory();
         let sim = feeder::start_on(&flash).await;
         let relay = Relay::start(sim.address).await;
-        let server = TestService::start().await;
-        let id = server.adopt_at(&sim, &relay.address.to_string()).await;
+        let clock = ManualClock::new();
+        let server = TestService::start_with_clock(Arc::new(clock.clone())).await;
+        // An owner's server, which may invite a phone.
+        let address = relay.address.to_string();
+        let id = server.adopt_as(&sim, &address, ClientRole::Owner).await;
+        server.link(id, Link::Online).await;
+
+        let login = Caller::from(server.service().setup(ada_setup()).await.unwrap().0);
+        let new = NewToken {
+            name: "phone".into(),
+            expires: None,
+        };
+        let token = server.service().create_token(&login, new).await.unwrap();
+        let phone = Caller {
+            user: login.user,
+            token: Some(token.token.id),
+        };
+        let unredeemed = NewPhoneInvite {
+            key: Hex(feeder::phone_key([0x5e; 32])),
+        };
+        let service = server.service();
+        service.invite_phone(&phone, id, unredeemed).await.unwrap();
+        clock.advance(Duration::from_secs(86_400));
+        relay.cut();
+        until(
+            "the connect's follow-up forgets the unredeemed key",
+            || async { service.phones(&phone.user).await.unwrap().is_empty() },
+        )
+        .await;
         server.link(id, Link::Online).await;
 
         relay.pause();
