@@ -43,6 +43,8 @@ pub enum AmebadError {
     UnknownCore { core: String },
     #[error("Rust firmware build failed")]
     RustBuild { status: std::process::ExitStatus },
+    #[error("Rust firmware lint failed: Clippy refused the target code")]
+    RustLint { status: std::process::ExitStatus },
     #[error("OTA container is shorter than its header")]
     ShortContainer,
     #[error("OTA container does not match the combined image")]
@@ -262,9 +264,28 @@ fn cargo_environment(
     environment
 }
 
+/// The lints `make check-rust` holds host libraries to (the root Makefile's
+/// `PRODUCTION_LINTS`), with warnings denied. Code under
+/// `cfg(target_os = "none")`, the C and MMIO edge among it, compiles only
+/// here, so the archive build lints it before it builds.
+const TARGET_LINTS: [&str; 10] = [
+    "-D",
+    "warnings",
+    "-D",
+    "clippy::unwrap_used",
+    "-D",
+    "clippy::cast_possible_truncation",
+    "-D",
+    "clippy::needless_pass_by_value",
+    "-D",
+    "unreachable_pub",
+];
+
 /// Cross-compile one firmware archive per core and stage it beside the SDK:
 /// KM0's from `wellfed-hal-common`, KM4's from the firmware crate, which links
-/// the SDK runtime, with the variant's feature.
+/// the SDK runtime, with the variant's feature. Each is linted first, with
+/// the same features, so every workspace crate either core links is checked
+/// as it builds for the target.
 fn build_rust(
     repo: &Repo,
     sdk: &Path,
@@ -287,17 +308,28 @@ fn build_rust(
             Some(variant) if core == Core::Hp => format!("{},{variant}", core.feature()),
             _ => core.feature().to_string(),
         };
-        let status = Command::new("cargo")
-            .args(["build", "--locked", "--profile", "firmware", "-p", &package])
-            .args(["--target", core.target(), "--features", &features])
-            .arg("--target-dir")
-            .arg(&target_dir)
-            .current_dir(&repo.root)
-            .env_clear()
-            .envs(environment)
-            .stdout(log.try_clone()?)
-            .stderr(log.try_clone()?)
-            .status()?;
+        let cargo = |command: &str| -> Result<std::process::ExitStatus> {
+            let mut cargo = Command::new("cargo");
+            cargo
+                .args([command, "--locked", "--profile", "firmware", "-p", &package])
+                .args(["--target", core.target(), "--features", &features])
+                .arg("--target-dir")
+                .arg(&target_dir);
+            if command == "clippy" {
+                cargo.args(["--lib", "--"]).args(TARGET_LINTS);
+            }
+            Ok(cargo
+                .current_dir(&repo.root)
+                .env_clear()
+                .envs(environment)
+                .stdout(log.try_clone()?)
+                .stderr(log.try_clone()?)
+                .status()?)
+        };
+
+        let status = cargo("clippy")?;
+        require(status.success(), || AmebadError::RustLint { status })?;
+        let status = cargo("build")?;
         require(status.success(), || AmebadError::RustBuild { status })?;
 
         let staged = rust_archive(sdk, core);
@@ -495,7 +527,12 @@ impl Build<'_> {
                 job.firmware,
                 job.variant.map(|v| v.name()),
             )
-            .map_err(|_| logged("Rust firmware build failed"))?;
+            .map_err(|error| match error {
+                Error::Amebad(AmebadError::RustLint { .. }) => {
+                    logged("Rust firmware lint failed: Clippy refused the target code")
+                }
+                _ => logged("Rust firmware build failed"),
+            })?;
         }
 
         for core in Core::BOTH {
@@ -786,6 +823,26 @@ impl Amebad {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The archive build's lints are the root Makefile's production lints,
+    /// with warnings denied: one rule set for host and target code.
+    #[test]
+    fn the_target_lints_are_the_production_lints() {
+        let makefile =
+            fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Makefile"))
+                .unwrap();
+        let start = makefile.find("PRODUCTION_LINTS = ").unwrap();
+        let mut lints = String::new();
+        for line in makefile[start + "PRODUCTION_LINTS = ".len()..].lines() {
+            lints.push_str(line.trim_end_matches('\\'));
+            if !line.ends_with('\\') {
+                break;
+            }
+        }
+        let production: Vec<&str> = lints.split_whitespace().collect();
+        assert_eq!(&TARGET_LINTS[..2], ["-D", "warnings"]);
+        assert_eq!(TARGET_LINTS[2..], production[..]);
+    }
 
     /// The Rust build is told of build Wi-Fi exactly when the header the
     /// entry includes names a network, for every provisioning.
