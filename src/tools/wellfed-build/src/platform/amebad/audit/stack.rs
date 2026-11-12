@@ -12,8 +12,11 @@
 //! it walks the direct call graph from the task's entry function and
 //! sums the frames along the deepest path. A function's frame is the sum of
 //! every stack decrement in it (`push`, `stmdb sp!`, `vpush`, `str [sp, #-n]!`,
-//! `sub sp, #n`), not only the prologue's, and one that lowers the stack by a
-//! register's value is refused ([`StackError::Variable`]). A linker veneer
+//! `sub sp, #n`), not only the prologue's, and one that sets the stack from
+//! a register's value is refused ([`StackError::Variable`]): `sub sp, rN`
+//! anywhere, and `mov sp, rN` or `add sp, rN` unless the frame's restore
+//! (`pop`, `vpop`, `ldm sp!`) comes next, as in an epilogue's
+//! `mov sp, r7; pop {r7, pc}`. A linker veneer
 //! (`__name_veneer`, the long branch into RAM or ROM) leads to its target.
 //! Recursion is cut at the cycle.
 //!
@@ -138,9 +141,9 @@ pub enum StackError {
         address: u64,
         line: String,
     },
-    /// A stack decrement by a register, whose size only the run knows.
+    /// The stack set from a register, to a depth only the run knows.
     #[error(
-        "{function} lowers the stack by a register's value ({line:?} at {address:#x}): \
+        "{function} sets the stack from a register's value ({line:?} at {address:#x}): \
          the stack audit cannot bound a frame sized at run time"
     )]
     Variable {
@@ -452,6 +455,17 @@ static SUB: LazyLock<Regex> = LazyLock::new(|| {
 static SUB_REGISTER: LazyLock<Regex> =
     LazyLock::new(|| pattern(r"^subs?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?(?:r\d+|sb|sl|fp|ip|lr)\b"));
 
+/// The stack pointer set from a register (`mov sp, r7`, `add sp, sp, r3`):
+/// an epilogue's restore when the frame's pop follows, anything else a
+/// stack the listing cannot bound.
+static SET_REGISTER: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(r"^(?:mov|add)s?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?(?:r\d+|sb|sl|fp|ip|lr)\b")
+});
+/// What ends a frame: a restore of saved registers from the stack.
+static RESTORE: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(r"^(?:pop{C}(?:\.w)?|vpop{C}|ldmia{C}(?:\.w)?\s+sp!,|ldm{C}(?:\.w)?\s+sp!,)")
+});
+
 /// {entry function name: (task name, stack bytes)} from the task sources.
 ///
 /// A task the audit cannot resolve is refused rather than skipped, since a
@@ -618,8 +632,9 @@ struct Function {
     frame: u64,
     calls: BTreeSet<String>,
     indirect: bool,
-    /// The first stack decrement by a register (`sub sp, r3`), whose size
-    /// no listing shows: its address and text.
+    /// The first stack pointer set from a register (`sub sp, r3`, or a
+    /// `mov sp, r0` no restore follows), whose depth no listing shows: its
+    /// address and text.
     variable: Option<(u64, String)>,
     /// Addresses the function builds or loads (`movw`/`movt` pairs and
     /// literal words): the formatting methods and vtables it passes on.
@@ -634,10 +649,20 @@ struct Function {
 fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
     let mut functions: Vec<(String, Function)> = Vec::new();
     let mut low: HashMap<String, u64> = HashMap::new();
+    // A `mov sp, rN` waiting for the next instruction to show it restores
+    // the frame; otherwise, or at the function's end, it is variable.
+    let mut setting: Option<(u64, String)> = None;
+    let unrestored = |functions: &mut Vec<(String, Function)>,
+                      setting: &mut Option<(u64, String)>| {
+        if let (Some((_, f)), Some(set)) = (functions.last_mut(), setting.take()) {
+            f.variable.get_or_insert(set);
+        }
+    };
     // The low half of a literal word, waiting for its high half.
     let mut low_half: Option<(u64, u16)> = None;
     for line in listing.lines() {
         if let Some(heading) = HEADING.captures(line) {
+            unrestored(&mut functions, &mut setting);
             let address = u64::from_str_radix(&heading[1], 16).unwrap_or_default();
             let f = Function {
                 address,
@@ -678,6 +703,16 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
         if !decoded || !map.all(address, byte_len(bytes), Mapped::Thumb) {
             f.undecoded
                 .get_or_insert_with(|| (address, line.trim().to_string()));
+            continue;
+        }
+
+        if let Some(set) = setting.take()
+            && !RESTORE.is_match(insn)
+        {
+            f.variable.get_or_insert(set);
+        }
+        if SET_REGISTER.is_match(insn) {
+            setting = Some((address, line.trim().to_string()));
             continue;
         }
 
@@ -722,6 +757,7 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
             }
         }
     }
+    unrestored(&mut functions, &mut setting);
     functions
 }
 
@@ -1776,6 +1812,41 @@ mod tests {
                 "{error:?}"
             );
         }
+    }
+
+    /// The stack set from a register is refused unless the frame's restore
+    /// follows at once, as in an epilogue; the reset entry's switch to its
+    /// own stack (`mov sp, r0` then a call) is one.
+    #[test]
+    fn a_stack_set_from_a_register_outside_an_epilogue_is_refused() {
+        for (set, next) in [
+            ("4685      \tmov\tsp, r0", "f000 f800 \tbl\t2000 <other>"),
+            ("eb0d 0d03 \tadd.w\tsp, sp, r3", "4770      \tbx\tlr"),
+            ("4685      \tmov\tsp, r0", ""),
+        ] {
+            let mut listing =
+                format!("00001000 <fn>:\n    1000:\tb500      \tpush\t{{lr}}\n    1002:\t{set}\n");
+            if !next.is_empty() {
+                listing.push_str(&format!("    1004:\t{next}\n"));
+            }
+            let error = refused(&listing, &code_only());
+            assert!(
+                matches!(&error, StackError::Variable { function, address: 0x1002, .. } if function == "fn"),
+                "{set} then {next:?}: {error:?}"
+            );
+        }
+
+        let epilogue = "\
+00001000 <fn>:
+    1000:\tb580      \tpush\t{r7, lr}
+    1002:\taf00      \tadd\tr7, sp, #0
+    1004:\t46bd      \tmov\tsp, r7
+    1006:\tbd80      \tpop\t{r7, pc}
+";
+        let functions: HashMap<String, Function> =
+            frames(epilogue, &code_only()).into_iter().collect();
+        assert_eq!(functions["fn"].variable, None);
+        assert_eq!(functions["fn"].frame, 8);
     }
 
     /// What the pinned objdump hides, once decoded, counts.
