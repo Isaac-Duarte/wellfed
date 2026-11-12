@@ -45,7 +45,9 @@ use wellfed_server_client::api::{
     self as server, CommandOutcome, Connection, ErrorCode, EventQuery, FeederDetail, FeederId,
     HistoryEvent, PlansChange, ServerSkew, StreamEvent, StreamQuery,
 };
-use wellfed_server_client::{Auth, Client, Failure, Lock, PlainHttp, Timeouts, Updates, Url};
+use wellfed_server_client::{
+    Auth, Client, Failure, Lock, PlainHttp, Settled, Timeouts, Updates, Url,
+};
 
 pub use account::{
     Login, Refused, ServerFeeder, address, client_listed, feeder, feeders, login, revoke_client,
@@ -884,18 +886,18 @@ impl<'a> Session<'a> {
             return Ok(());
         };
 
-        match command.outcome {
-            Some(CommandOutcome::Refused { .. }) => {
+        match wellfed_server_client::settled(command.state, command.outcome.as_ref()) {
+            Some(Settled::Refused(_)) => {
                 let uncertain = self.memory.uncertain.remove(index);
                 self.send(Update::settled_unfed(uncertain.pending))
             }
-            Some(CommandOutcome::Unrecorded) => {
+            Some(Settled::Unrecorded) => {
                 let uncertain = self.memory.uncertain.remove(index);
                 self.send(Update::still_unknown(uncertain.pending))
             }
             // The journal has the feed's end: settled now, whether or not
             // its event has come.
-            Some(CommandOutcome::Fed {
+            Some(Settled::Fed {
                 feed,
                 requested,
                 completed,
@@ -913,7 +915,9 @@ impl<'a> Session<'a> {
                 );
                 self.send(Update::settled(fed, uncertain.pending))
             }
-            _ => {
+            // Started, or not yet answered: its `Fed` settles it once the
+            // journal names its number.
+            Some(Settled::Started { .. } | Settled::Done | Settled::Superseded) | None => {
                 let feed = command
                     .feed
                     .or_else(|| command.outcome.as_ref().and_then(CommandOutcome::feed));

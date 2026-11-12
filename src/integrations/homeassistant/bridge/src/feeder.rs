@@ -22,17 +22,18 @@
 //!   again. A change to a store goes on the generation last read, one at a
 //!   time per store ([`writes`]).
 //! - **Uncertain feeds.** A feed whose answer never came may have run. The
-//!   session keeps it, and settles it when a later `Fed` event names this
-//!   client as its source and is not a feed it was already answered for;
-//!   it reports [`UpdateKind::StillUnknown`](crate::api::UpdateKind) when
-//!   the history holds no such feed, never a guessed count. A `Fed` names
-//!   the client, not the request, so while one feed is uncertain (or a
-//!   feed's answer is still awaited) a new feed is not sent
-//!   ([`NotSent::Held`]): the next `Fed` this client is named in can then
-//!   settle only that one. Every number this client has the end of goes to
-//!   the integration ([`UpdateKind::Answered`](crate::api::UpdateKind)),
-//!   which hands them to the next session, so a replayed `Fed` of a feed
-//!   settled before a restart settles nothing either.
+//!   session keeps it, and settles it by the one `Fed` the rule the app
+//!   shares picks ([`wellfed_client::settle`]): this client's, of the same
+//!   portions, after the feed went out, not a feed it has the end of, and
+//!   no other feed's it could be. It reports
+//!   [`UpdateKind::StillUnknown`](crate::api::UpdateKind) when the history
+//!   holds no such feed, never a guessed count. A `Fed` names the client,
+//!   not the request, so while one feed is uncertain (or a feed's answer is
+//!   still awaited) a new feed is not sent ([`NotSent::Held`]). Every
+//!   number this client has the end of goes to the integration
+//!   ([`UpdateKind::Answered`](crate::api::UpdateKind)), which hands them
+//!   to the next session, so a replayed `Fed` of a feed settled before a
+//!   restart settles nothing either.
 //! - **Revocation.** A key the feeder no longer knows ends the session for
 //!   good: it is reported once and the thread stops reconnecting.
 
@@ -46,11 +47,12 @@ use jiff::tz::TimeZone;
 use tokio::sync::{mpsc, oneshot};
 use wellfed_client::alerts::{Cursor as AlertCursor, FeederClock};
 use wellfed_client::history::{Backlog, Entry, Feed};
+use wellfed_client::settle::{self, After, Lost};
 use wellfed_client::today::Facts;
 use wellfed_connect::{Connection, Cursor, Received, Timing};
 use wellfed_model::{
     AlertsView, Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
-    FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Skew, Source, Status,
+    FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Skew, Status,
 };
 
 use crate::Error;
@@ -512,6 +514,9 @@ enum Outstanding {
         kind: Kind,
         /// What went out, to put on the facts once it lands.
         op: Op,
+        /// The newest event known when it went out: a feed's `Fed` comes
+        /// after it.
+        after: Option<u64>,
     },
     Read(Read),
 }
@@ -561,8 +566,11 @@ impl<'a> Session<'a> {
         let outstanding: Vec<Outstanding> =
             self.pending.drain().map(|(_, pending)| pending).collect();
         for pending in outstanding {
-            if let Outstanding::Write { reply, kind, .. } = pending {
-                let _ = reply.send(self.unanswered(kind));
+            if let Outstanding::Write {
+                reply, kind, after, ..
+            } = pending
+            {
+                let _ = reply.send(self.unanswered(kind, after));
             }
         }
         ended
@@ -723,8 +731,14 @@ impl<'a> Session<'a> {
         let id = random().map_err(lost)?;
         match self.connection.request(id, &op) {
             Ok(()) => {
-                self.pending
-                    .insert(id, Outstanding::Write { reply, kind, op });
+                let after = self.newest();
+                let write = Outstanding::Write {
+                    reply,
+                    kind,
+                    op,
+                    after,
+                };
+                self.pending.insert(id, write);
                 Ok(())
             }
             // Refused before any byte went out, on a session that goes on:
@@ -767,20 +781,34 @@ impl<'a> Session<'a> {
 
     fn answered(&mut self, id: RequestId, answer: Option<Answer>) -> Step {
         match self.pending.remove(&id) {
-            Some(Outstanding::Write { reply, kind, op }) => {
-                let written = self.written(kind, &op, answer.as_ref())?;
+            Some(Outstanding::Write {
+                reply,
+                kind,
+                op,
+                after,
+            }) => {
+                let written = self.written(kind, &op, after, answer.as_ref())?;
                 let _ = reply.send(written);
-                Ok(())
+                // A feed that ends here no longer keeps a lost one from a
+                // `Fed` it could have claimed.
+                self.settle()
             }
             Some(Outstanding::Read(read)) => self.fact(read, answer),
             None => Ok(()),
         }
     }
 
-    /// How the write of `kind` ended, by its answer.
-    fn written(&mut self, kind: Kind, op: &Op, answer: Option<&Answer>) -> Result<Written, Ended> {
+    /// How the write of `kind`, sent after event `after`, ended, by its
+    /// answer.
+    fn written(
+        &mut self,
+        kind: Kind,
+        op: &Op,
+        after: Option<u64>,
+        answer: Option<&Answer>,
+    ) -> Result<Written, Ended> {
         let Some(answer) = readable(answer) else {
-            return Ok(self.unanswered(kind));
+            return Ok(self.unanswered(kind, after));
         };
         match kind {
             Kind::Once | Kind::Feed { .. } => {
@@ -800,7 +828,7 @@ impl<'a> Session<'a> {
                         Written::done()
                     }
                     Landed::Stale | Landed::Refused(_) => once(answer),
-                    Landed::Unknown => self.unanswered(kind),
+                    Landed::Unknown => self.unanswered(kind, after),
                 })
             }
         }
@@ -842,19 +870,26 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// A write of `kind` went out and its answer never came: uncertain,
-    /// and a feed is kept until its `Fed` settles it.
-    fn unanswered(&mut self, kind: Kind) -> Written {
+    /// The newest event this session knows the feeder holds: the cursor,
+    /// or the newest the status named, whichever is later (the backlog may
+    /// still be on its way).
+    fn newest(&self) -> Option<u64> {
+        let cursor = self.memory.cursor.map(|cursor| cursor.seq);
+        let status = self
+            .memory
+            .facts
+            .status
+            .as_ref()
+            .and_then(|status| status.last_event);
+        cursor.max(status)
+    }
+
+    /// A write of `kind`, sent after event `after`, went out and its answer
+    /// never came: uncertain, and a feed is kept until its `Fed` settles it.
+    fn unanswered(&mut self, kind: Kind, after: Option<u64>) -> Written {
         let Kind::Feed { portions } = kind else {
             return Written::uncertain();
         };
-        let after = self.memory.cursor.map(|cursor| cursor.seq).or_else(|| {
-            self.memory
-                .facts
-                .status
-                .as_ref()
-                .and_then(|status| status.last_event)
-        });
         let pending = Pending {
             id: uuid::Uuid::new_v4().to_string(),
             portions,
@@ -905,7 +940,7 @@ impl<'a> Session<'a> {
 
         if let Some(Entry::Feed(feed)) = Entry::from_pushed(pushed) {
             self.memory.fed(feed);
-            self.settle(&feed)?;
+            self.settle()?;
         }
         match pushed {
             Pushed::Event(event) => {
@@ -1014,26 +1049,49 @@ impl<'a> Session<'a> {
         self.state()
     }
 
-    /// A `Fed` this client asked for and was never answered about settles
-    /// the oldest uncertain feed it can be.
-    fn settle(&mut self, feed: &Feed) -> Step {
-        let ours =
-            matches!(feed.by, Some(Source::Client { client }) if client.0 == self.fingerprint);
-        if !ours || self.memory.answered.contains(&feed.feed) {
-            return Ok(());
-        }
-        let found = self
+    /// Settle each uncertain feed the history read gives the one `Fed` of,
+    /// by the rule the app shares ([`settle`]): a feed this client has the
+    /// end of is no lost one's, and a feed still waiting on its answer keeps
+    /// a lost one from a `Fed` that may be its own.
+    fn settle(&mut self) -> Step {
+        let answered: Vec<u32> = self.memory.answered.iter().copied().collect();
+        let lost = |portions: u8, after: Option<u64>| Lost {
+            portions,
+            after: after.map_or(After::Start, After::Event),
+            excluded: &answered,
+        };
+        let uncertain = self.memory.uncertain.len();
+        let mut feeds: Vec<Lost<'_>> = self
             .memory
             .uncertain
             .iter()
-            .position(|uncertain| uncertain.pending.after.is_none_or(|after| feed.seq > after));
-        let Some(found) = found else {
-            return Ok(());
-        };
+            .map(|uncertain| lost(uncertain.pending.portions, uncertain.pending.after))
+            .collect();
+        feeds.extend(self.pending.values().filter_map(|pending| match pending {
+            Outstanding::Write {
+                kind: Kind::Feed { portions },
+                after,
+                ..
+            } => Some(lost(*portions, *after)),
+            _ => None,
+        }));
 
-        let uncertain = self.memory.uncertain.remove(found);
-        self.answer(feed.feed);
-        self.send(Update::settled(api::Feed::from(feed), uncertain.pending))
+        let ends = settle::settled(&feeds, &self.memory.facts.feeds, self.fingerprint);
+        let settled: Vec<(usize, Feed)> = ends
+            .into_iter()
+            .take(uncertain)
+            .enumerate()
+            .filter_map(|(index, fed)| fed.map(|fed| (index, *fed)))
+            .collect();
+        let mut ended = Vec::with_capacity(settled.len());
+        for (index, fed) in settled.into_iter().rev() {
+            ended.push((self.memory.uncertain.remove(index), fed));
+        }
+        for (uncertain, fed) in ended.into_iter().rev() {
+            self.answer(fed.feed);
+            self.send(Update::settled(api::Feed::from(&fed), uncertain.pending))?;
+        }
+        Ok(())
     }
 
     /// This client has the end of the feed numbered `feed`: a `Fed` for it
