@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice;
 import 'package:go_router/go_router.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -392,7 +393,7 @@ class _Failed extends StatelessWidget {
     ),
     PairingFailure.input => (
       'Check the names and Wi-Fi',
-      'The $deviceName name is 1 to 16 characters. A Wi-Fi password is 8 to 63 '
+      'The $deviceName name is 1 to ${Limits.labelBytesMost} bytes. A Wi-Fi password is 8 to 63 '
           'characters.',
     ),
     PairingFailure.other => ("Setup didn't finish", state.message ?? 'Try again.'),

@@ -29,4 +29,7 @@ abstract final class Limits {
 
   /// The longest desiccant reminder period the feeder takes, in days.
   static const desiccantDaysMost = 90;
+
+  /// The most bytes of a phone's name a feeder keeps, from 1.
+  static const labelBytesMost = 16;
 }

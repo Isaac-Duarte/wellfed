@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/server/server_screens.dart';
-import 'package:wellfed/screens/setup/name_step.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
@@ -80,8 +80,9 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
     final String trimmed = name.trim();
     final int bytes = utf8.encode(trimmed).length;
-    if (bytes < 1 || bytes > NameStep.maxBytes) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A $deviceName name is 1 to 16 bytes.')));
+    if (bytes < 1 || bytes > Limits.labelBytesMost) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('A $deviceName name is 1 to ${Limits.labelBytesMost} bytes.')));
       return;
     }
     await widget.book.setLabel(trimmed);

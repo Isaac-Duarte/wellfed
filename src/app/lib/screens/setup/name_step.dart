@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/desktop.dart';
@@ -10,7 +11,7 @@ import 'package:wellfed/widgets/layout.dart';
 
 /// Name things: what this phone calls the feeder (only this phone keeps
 /// it) and how the feeder lists this phone among its clients, which it
-/// keeps in at most 16 bytes.
+/// keeps in at most [Limits.labelBytesMost] bytes.
 class NameStep extends StatefulWidget {
   const NameStep({
     super.key,
@@ -41,8 +42,6 @@ class NameStep extends StatefulWidget {
   /// keeps the owner on this step, or null.
   final Future<String?> Function(String label, String? feeder) onDone;
 
-  static const maxBytes = 16;
-
   @override
   State<NameStep> createState() => _NameStepState();
 }
@@ -66,7 +65,7 @@ class _NameStepState extends State<NameStep> {
     final String? suggested = await widget.suggest();
     if (suggested == null || !mounted || _name.text.isNotEmpty) return;
     String model = suggested;
-    while (utf8.encode(model).length > NameStep.maxBytes) {
+    while (utf8.encode(model).length > Limits.labelBytesMost) {
       model = model.substring(0, model.length - 1);
     }
     setState(() => _name.text = model);
@@ -97,7 +96,7 @@ class _NameStepState extends State<NameStep> {
   }
 
   bool get _valid =>
-      _bytes >= 1 && _bytes <= NameStep.maxBytes && (widget.feeder == null || _feeder.text.trim().isNotEmpty);
+      _bytes >= 1 && _bytes <= Limits.labelBytesMost && (widget.feeder == null || _feeder.text.trim().isNotEmpty);
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +123,7 @@ class _NameStepState extends State<NameStep> {
         LabeledField(
           label: 'This $deviceName, as the feeder shows it',
           hint: "Others see it in the feeder's People list and its history.",
-          counter: '$_bytes/${NameStep.maxBytes}',
+          counter: '$_bytes/${Limits.labelBytesMost}',
           child: TextField(
             controller: _name,
             autofocus: widget.initial.isEmpty && !asksFeeder,

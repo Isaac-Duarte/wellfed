@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:wellfed/platform/join_ports.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/join.dart';
@@ -147,7 +148,7 @@ class JoinFlow extends ChangeNotifier {
         ErrorKind.closed =>
           'The feeder turned this invite down: it has expired or been used. '
               'Ask for a new one.',
-        ErrorKind.label => 'A phone name is 1 to 16 bytes.',
+        ErrorKind.label => 'A phone name is 1 to ${Limits.labelBytesMost} bytes.',
         ErrorKind.store => 'Joined, but this $deviceName could not save it.',
         ErrorKind.interrupted =>
           'The connection broke, so you may or may not have joined. Wellfed '

@@ -27,7 +27,7 @@ fn root() -> PathBuf {
 }
 
 /// Each limit as Dart names it, with its doc comment.
-fn limits() -> [(&'static str, &'static str, u32); 9] {
+fn limits() -> [(&'static str, &'static str, u32); 10] {
     use wellfed_model::{
         CALL_PLAYS_MAX, CLIENTS_MAX, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, PLANS, PORTION_MG_MAX,
         PORTION_MG_MIN, PORTIONS_MAX, PORTIONS_MIN,
@@ -75,6 +75,11 @@ fn limits() -> [(&'static str, &'static str, u32); 9] {
             "desiccantDaysMost",
             "The longest desiccant reminder period the feeder takes, in days.",
             u32::from(DESICCANT_DAYS_MAX),
+        ),
+        (
+            "labelBytesMost",
+            "The most bytes of a phone's name a feeder keeps, from 1.",
+            count(wellfed_proto::setup::LABEL_MAX),
         ),
     ]
 }

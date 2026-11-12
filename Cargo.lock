@@ -5164,6 +5164,7 @@ dependencies = [
  "wellfed-formats",
  "wellfed-install",
  "wellfed-model",
+ "wellfed-proto",
  "wellfed-server-client",
  "wellfed-server-testkit",
  "wellfed-service",
