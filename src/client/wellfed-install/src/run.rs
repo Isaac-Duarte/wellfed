@@ -12,7 +12,9 @@
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use tokio::time::Instant;
 
 use crate::prompt::Prompt;
 use wellfed_client::install::{
@@ -59,6 +61,8 @@ const REPLACEMENT_WAIT: Duration = Duration::from_secs(5 * 60);
 /// The stock server refuses to close its record while stock's telemetry is
 /// current (90 s after its last report).
 const CLOSE_WAIT: Duration = Duration::from_secs(150);
+/// Polls between activation and the first look at bank 1.
+const ACTIVATION_POLLS: u32 = 4;
 /// Bank 1's trial boot confirms within a few minutes of activation.
 const CONFIRM_WAIT: Duration = Duration::from_secs(6 * 60);
 /// Reading after an unanswered write may wait for a session to open again.
@@ -1471,7 +1475,10 @@ where
 
     /// Until bank 1 runs the build and reports its version confirmed.
     async fn await_confirm(&self, install: &mut Install) -> Result<(), Error> {
-        tokio::time::sleep(Duration::from_secs(20)).await;
+        // Bank 0 restarts into bank 1 after activating; nothing answers for
+        // the first moments, so the first look waits a few polls (20 s at
+        // [`POLL`], less on loopback).
+        tokio::time::sleep(self.poll * ACTIVATION_POLLS).await;
         let deadline = Instant::now() + CONFIRM_WAIT;
         while Instant::now() < deadline {
             // The bank from the update state and the build from the welcome,
@@ -1516,10 +1523,10 @@ async fn again_while_lost<T>(
     poll: Duration,
     mut read: impl AsyncFnMut() -> Result<T, Error>,
 ) -> Result<T, Error> {
-    let deadline = tokio::time::Instant::now() + BACKUP_RECONNECT;
+    let deadline = Instant::now() + BACKUP_RECONNECT;
     loop {
         match read().await {
-            Err(error) if error.is_connection_lost() && tokio::time::Instant::now() < deadline => {
+            Err(error) if error.is_connection_lost() && Instant::now() < deadline => {
                 report.event(Event::SessionDropped {
                     error: crate::text(&error),
                 });
@@ -1611,7 +1618,7 @@ mod tests {
         assert!(matches!(read.await, Err(Error::Unverified)));
         assert_eq!(reads, 1);
 
-        let began = tokio::time::Instant::now();
+        let began = Instant::now();
         let read = again_while_lost(&report, POLL, async || -> Result<(), Error> { Err(lost()) });
         assert!(read.await.unwrap_err().is_connection_lost());
         assert!(began.elapsed() >= BACKUP_RECONNECT);
