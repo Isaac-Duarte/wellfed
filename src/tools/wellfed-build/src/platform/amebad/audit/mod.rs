@@ -22,6 +22,7 @@ use wellfed_formats::audit::{
 use super::{Core, PROJECT, binutils};
 use crate::device::StockPaths;
 use crate::{Firmware, Repo, Result, relative, text};
+use wellfed_formats::manifest::Audits;
 use wellfed_formats::require;
 use wellfed_proto::device::Model;
 
@@ -204,7 +205,7 @@ pub type Archives = [(Core, PathBuf)];
 
 /// The audits of a finished first-boot build, keyed as its manifest
 /// records them.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct Linked {
     pub(crate) layout_audit: LayoutAudit,
     pub(crate) km0_pinmap_audit: PinmapAudit,
@@ -215,8 +216,49 @@ pub struct Linked {
     pub(crate) stack_audit: StackAudit,
 }
 
+impl Linked {
+    /// The first audit, by the manifest's name for it, that `recorded` does
+    /// not hold as this rerun found it.
+    pub(crate) fn differs_from(&self, recorded: &Audits) -> Option<&'static str> {
+        let same = [
+            (
+                "layout_audit",
+                recorded.layout_audit.as_ref() == Some(&self.layout_audit),
+            ),
+            (
+                "km0_pinmap_audit",
+                recorded.km0_pinmap_audit.as_ref() == Some(&self.km0_pinmap_audit),
+            ),
+            (
+                "ram_park_audit",
+                recorded.ram_park_audit.as_ref() == Some(&self.ram_park_audit),
+            ),
+            (
+                "sdk_hook_audit",
+                recorded.sdk_hook_audit.as_ref() == Some(&self.sdk_hook_audit),
+            ),
+            (
+                "firstboot_startup_audit",
+                recorded.firstboot_startup_audit.as_ref() == Some(&self.firstboot_startup_audit),
+            ),
+            (
+                "wifi_link_audit",
+                recorded.wifi_link_audit.as_ref() == Some(&self.wifi_link_audit),
+            ),
+            (
+                "stack_audit",
+                recorded.stack_audit.as_ref() == Some(&self.stack_audit),
+            ),
+        ];
+        same.into_iter()
+            .find(|(_, same)| !same)
+            .map(|(name, _)| name)
+    }
+}
+
 /// Run every linked-image audit of a first-boot build against `objects`,
-/// the KM0/KM4 Rust archives it linked.
+/// the KM0/KM4 Rust archives it linked, after the retained-RAM check the
+/// build makes, which records nothing.
 pub(crate) fn linked(
     repo: &Repo,
     stock: &StockPaths,
@@ -232,6 +274,7 @@ pub(crate) fn linked(
     let stock_image = fs::read(&stock.image)?;
     let image = fs::read(ota_image(&sdk))?;
     let app = stack::task_sources(repo, firmware)?;
+    retained_ram(&sdk, &binutils)?;
 
     Ok(Linked {
         layout_audit: layout::audit(&ota_image(&sdk), &stock.image, &stock.layout, model)?,
@@ -270,6 +313,38 @@ pub(crate) fn archive_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The review compares all seven audits: a recorded stack bound or
+    /// writes record the rerun does not reproduce is named, not passed.
+    #[test]
+    fn every_recorded_audit_is_compared_with_the_rerun() {
+        let fresh = Linked::default();
+        let recorded = Audits {
+            layout_audit: Some(LayoutAudit::default()),
+            km0_pinmap_audit: Some(PinmapAudit::default()),
+            ram_park_audit: Some(ParkAudit::default()),
+            sdk_hook_audit: Some(HookAudit::default()),
+            firstboot_startup_audit: Some(MainsAudit::default()),
+            wifi_link_audit: Some(WritesAudit::default()),
+            stack_audit: Some(StackAudit::default()),
+        };
+        assert_eq!(fresh.differs_from(&recorded), None);
+
+        let mut stack = recorded.clone();
+        stack.stack_audit = Some(StackAudit {
+            margin: 0.1,
+            ..StackAudit::default()
+        });
+        assert_eq!(fresh.differs_from(&stack), Some("stack_audit"));
+
+        let mut writes = recorded.clone();
+        writes.wifi_link_audit = None;
+        assert_eq!(fresh.differs_from(&writes), Some("wifi_link_audit"));
+
+        let mut layout = recorded;
+        layout.layout_audit = None;
+        assert_eq!(fresh.differs_from(&layout), Some("layout_audit"));
+    }
 
     #[test]
     fn the_trail_size_is_the_shims() {

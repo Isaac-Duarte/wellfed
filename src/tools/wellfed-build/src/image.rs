@@ -39,12 +39,31 @@ pub enum ImageError {
     CompilerChanged,
     #[error("The build manifest names no firmware; rebuild it")]
     NoFirmware,
+    /// Another build or review holds the profile's output directory. Every
+    /// variant of a profile builds into the one directory, so two at once
+    /// would record one's hashes beside the other's image.
+    #[error("{} is in use by another build or review; wait for it", output.display())]
+    Busy { output: PathBuf },
+}
+
+/// Hold `output` for this process alone until the returned handle drops: an
+/// advisory lock every build and review of the directory takes, never
+/// waited on.
+pub(crate) fn hold_output(output: &Path) -> Result<fs::File> {
+    let directory = fs::File::open(output)?;
+    rustix::fs::flock(
+        &directory,
+        rustix::fs::FlockOperation::NonBlockingLockExclusive,
+    )
+    .map_err(|_| ImageError::Busy {
+        output: output.to_path_buf(),
+    })?;
+    Ok(directory)
 }
 
 /// Remove a previous build's manifest before anything else, so a failed
 /// build never leaves one describing other outputs.
 fn remove_manifest(output: &Path) -> Result<()> {
-    fs::create_dir_all(output)?;
     match fs::remove_file(output.join("manifest.json")) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
         _ => Ok(()),
@@ -126,6 +145,8 @@ pub fn build(repo: &Repo, request: &Request, toolchain: &Path) -> Result<PathBuf
     // its output.
     let ota_key = ota_public_key(repo, profile, provisioning)?;
     let output = device.output(repo, profile, provisioning);
+    fs::create_dir_all(&output)?;
+    let _held = hold_output(&output)?;
     remove_manifest(&output)?;
 
     let rust = if profile.has(Stage::Rust) {
@@ -265,6 +286,24 @@ pub fn audit_build(repo: &Repo, build: &Path) -> Result<Linked> {
 mod tests {
     use super::*;
     use crate::Error;
+
+    /// Two builds of one output directory, say two variants of a firmware,
+    /// never run at once: the second is refused, and the directory is free
+    /// again once the first lets go.
+    #[test]
+    fn a_held_output_directory_refuses_a_second_build() {
+        let output = tempfile::tempdir().unwrap();
+        let held = hold_output(output.path()).unwrap();
+
+        let error = hold_output(output.path()).unwrap_err();
+        assert!(
+            matches!(&error, Error::Image(ImageError::Busy { output: busy }) if busy == output.path()),
+            "{error:?}"
+        );
+
+        drop(held);
+        hold_output(output.path()).unwrap();
+    }
 
     /// A variant is a bench test build: asking for one for consumers is
     /// refused before any build work, and the same variant builds for the

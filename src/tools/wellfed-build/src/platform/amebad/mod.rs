@@ -21,7 +21,7 @@ use wellfed_formats::device::AmebadMains;
 use wellfed_formats::lock::SdkLock;
 use wellfed_formats::manifest::{Artifact, Audits, CompiledArchive};
 
-use self::audit::{Archives, Binutils, park, word};
+use self::audit::{Archives, Binutils, park};
 use self::sdk::{Overrides, Staged, check_sdk_worktree, checked_worktree, prepare, rust_archive};
 use self::toolchain::{toolchain_lock, verify_toolchain};
 use super::{Built, Job};
@@ -45,12 +45,8 @@ pub enum AmebadError {
     RustBuild { status: std::process::ExitStatus },
     #[error("Rust firmware lint failed: Clippy refused the target code")]
     RustLint { status: std::process::ExitStatus },
-    #[error("OTA container is shorter than its header")]
-    ShortContainer,
     #[error("OTA container does not match the combined image")]
     Container,
-    #[error("OTA container checksum does not match")]
-    Checksum,
     #[error("Missing build artifact: {}", path.display())]
     MissingArtifact { path: PathBuf },
     /// The Rust banner is in the image exactly when the profile links Rust.
@@ -426,41 +422,12 @@ fn staged_diagnostics(log: &Path, profile: Profile) -> Vec<String> {
     found
 }
 
-/// The OTA container must hold exactly the combined image, with its checksum.
+/// The OTA container must hold exactly the combined image, by the parser the
+/// installers and the review use.
 fn check_container(ota: &[u8], combined: &[u8]) -> Result<()> {
-    let header: Vec<u64> = (0..8).filter_map(|i| word(ota, i * 4)).collect();
-    let [
-        version,
-        count,
-        magic,
-        entry,
-        checksum,
-        size,
-        offset,
-        address,
-    ] = header[..]
-    else {
-        return Err(AmebadError::ShortContainer.into());
-    };
-    require(
-        (version, count, magic, entry, offset, address)
-            == (
-                0xffff_ffff,
-                1,
-                u64::from(u32::from_le_bytes(*b"OTA1")),
-                24,
-                32,
-                0xffff_ffff,
-            )
-            && size == combined.len() as u64
-            && &ota[32..] == combined,
-        || AmebadError::Container,
-    )?;
-
-    let sum = combined
-        .iter()
-        .fold(0u32, |s, b| s.wrapping_add(u32::from(*b)));
-    require(u64::from(sum) == checksum, || AmebadError::Checksum)?;
+    require(wellfed_image::ota::container(ota)? == combined, || {
+        AmebadError::Container
+    })?;
     Ok(())
 }
 
@@ -482,6 +449,9 @@ const ARTIFACTS: [(Core, &str); 4] = [
 /// An audit as the manifest records it: the same serialization
 /// `wellfed-build audit` prints, which the frozen review compares.
 /// One profile's build in its SDK worktree.
+/// The packaged artifacts' bytes, by file name.
+type Packaged = BTreeMap<&'static str, Vec<u8>>;
+
 struct Build<'a> {
     job: &'a Job<'a>,
     /// Present for a profile with the stock-layout stage.
@@ -567,48 +537,53 @@ impl Build<'_> {
         Ok(archives)
     }
 
-    fn artifacts(&self) -> Result<Vec<Artifact>> {
+    /// The packaged artifacts as the manifest records them, and their bytes
+    /// by file name: each is read once, so the bytes the image checks read
+    /// are the bytes the manifest hashed.
+    fn artifacts(&self) -> Result<(Vec<Artifact>, Packaged)> {
         let mut artifacts = Vec::new();
+        let mut files = BTreeMap::new();
         for (core, name) in ARTIFACTS {
             let path = self
                 .sdk
                 .join(PROJECT)
                 .join(format!("project_{}/asdk/image", core.dir()))
                 .join(name);
-            let bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            require(path.is_file() && bytes > 0, || {
-                AmebadError::MissingArtifact { path: path.clone() }
+            let bytes = fs::read(&path).unwrap_or_default();
+            require(!bytes.is_empty(), || AmebadError::MissingArtifact {
+                path: path.clone(),
             })?;
             artifacts.push(Artifact {
                 path: relative(&path, &self.job.output)?,
-                bytes,
-                sha256: digest(&path)?,
+                bytes: bytes.len() as u64,
+                sha256: wellfed_formats::canonical::sha256(&bytes),
             });
+            files.insert(name, bytes);
         }
-        Ok(artifacts)
+        Ok((artifacts, files))
     }
 
     /// The OTA container holds the combined image, which runs the requested
-    /// application and embeds the identity. Returns the OTA and whether the
-    /// Rust banner is present.
-    fn check_image(&self) -> Result<(Vec<u8>, bool)> {
-        let combined = fs::read(self.image_directory().join("km0_km4_image2.bin"))?;
-        let ota = fs::read(self.image_directory().join("OTA_All.bin"))?;
-        check_container(&ota, &combined)?;
+    /// application, embeds the identity and carries the update key the
+    /// build set. Returns whether the Rust banner is present.
+    fn check_image(&self, files: &Packaged) -> Result<bool> {
+        let file = |name: &str| files.get(name).map_or(&[][..], Vec::as_slice);
+        let (combined, ota) = (file("km0_km4_image2.bin"), file("OTA_All.bin"));
+        check_container(ota, combined)?;
 
         let rust = self.job.profile.has(Stage::Rust);
-        let banner = contains(&combined, b"Wellfed local firmware: Rust bringup");
+        let banner = contains(combined, b"Wellfed local firmware: Rust bringup");
         require(banner == rust, || AmebadError::Banner)?;
         require(
             !rust
                 || contains(
-                    &combined,
+                    combined,
                     format!("{} start build={} ", Tag::Start, self.job.identity).as_bytes(),
                 ),
             || AmebadError::NoIdentity,
         )?;
-        carries_key(&combined, self.job.ota_key)?;
-        Ok((ota, banner))
+        carries_key(combined, self.job.ota_key)?;
+        Ok(banner)
     }
 
     /// The linked KM4 image must contain the Rust application entry and the
@@ -804,8 +779,9 @@ impl Amebad {
         };
 
         let archives = build.compile()?;
-        let artifacts = build.artifacts()?;
-        let (ota, banner) = build.check_image()?;
+        let (artifacts, files) = build.artifacts()?;
+        let banner = build.check_image(&files)?;
+        let ota = files.get("OTA_All.bin").cloned().unwrap_or_default();
         let (required_symbols, compiled_archives) = if job.profile.has(Stage::Rust) {
             build.check_symbols(&archives)?
         } else {

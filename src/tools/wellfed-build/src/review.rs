@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use wellfed_core::record::Tag;
 use wellfed_emu::BANKS;
 use wellfed_emu::factory::{self, Entry};
 use wellfed_formats::canonical::{canonical_of, sha256};
@@ -29,10 +30,9 @@ use wellfed_image::bank::{BANK1, PLWF106_BANK1};
 use wellfed_image::ota::{STOCK_SHA256, container, images};
 use wellfed_image::root::Root;
 use wellfed_proto::device::Model;
-use wellfed_signed::SECTOR;
 
 use crate::identity::current_inputs;
-use crate::image::audit_build;
+use crate::image::{audit_build, hold_output};
 use crate::platform::{Linked, amebad};
 use crate::{Device, Firmware, Profile, Repo, Result, digest, revision};
 
@@ -46,9 +46,7 @@ pub enum ReviewError {
     Stock,
     #[error("Private build required")]
     PrivateBuild,
-    #[error("Development image exceeds aligned bank-1 footprint")]
-    Footprint { bytes: usize },
-    #[error("Only a reviewed UART startup profile is supported")]
+    #[error("Only a reviewed UART startup profile is supported, not {device} {profile}")]
     Profile { device: String, profile: String },
     #[error("The fountain's flash fixture is not its pinned backup")]
     Backup,
@@ -58,44 +56,62 @@ pub enum ReviewError {
     SdkToolchain,
     #[error("SDK worktree revision differs")]
     SdkRevision,
-    #[error("Build inputs are stale or incomplete; rebuild before review")]
-    StaleInputs,
-    #[error("Build input differs")]
+    /// The manifest's inputs are not the ones a build of the current
+    /// sources would have; `name` is the first that differs or is missing
+    /// on either side.
+    #[error("Build input {name} is stale or missing; rebuild before review")]
+    StaleInputs { name: String },
+    #[error("Build input {name} differs")]
     Input { name: String },
-    #[error("SDK overlay differs")]
+    #[error("SDK overlay {name} differs")]
     Overlay { name: String },
+    /// The manifest's startup identity is not the one its own device,
+    /// sources, firmware, variant, provisioning and key give.
+    #[error("Build manifest's startup identity {recorded:?} is not its sources' {derived}")]
+    Identity {
+        recorded: Option<String>,
+        derived: String,
+    },
+    /// The image does not print the identity its manifest records, so the
+    /// manifest does not describe it.
+    #[error("The image does not carry its manifest's startup identity {identity}")]
+    NoIdentity { identity: String },
     #[error("Both core packages must exactly compose the OTA payload")]
     Composition,
-    #[error("Duplicate core archive")]
+    #[error("Duplicate core archive {core}")]
     DuplicateCore { core: String },
-    #[error("Compiled archive differs")]
+    #[error("Compiled archive {path} differs")]
     Archive { path: String },
     #[error("Both compiled cores required")]
     Cores,
-    #[error("Linked-code audits differ from build manifest")]
-    Audits,
-    #[error("Linked pad table differs")]
-    PadTable,
+    /// A rerun audit differs from the one the build recorded, by the
+    /// manifest's name for it.
+    #[error("The rerun {audit} differs from the build manifest's")]
+    Audits { audit: &'static str },
     /// The audits and emulation take long enough for an edit to land.
     #[error("Build changed during review")]
     Changed,
-    #[error("Artifact changed during review")]
+    #[error("Artifact {path} changed during review")]
     ArtifactChanged { path: String },
-    #[error("Build artifact differs")]
+    #[error("Build artifact {path} differs")]
     Artifact { path: String },
     #[error("Incomplete packaged artifacts")]
     Artifacts,
-    #[error("Manifest file escapes its root")]
+    #[error("Manifest file {name} escapes its root")]
     Escapes { name: String },
     #[error("Missing km4_xip image")]
     NoKm4Xip,
-    #[error("Actual factory instructions reject diagnostic headers")]
+    /// The flash image a loader case starts from is too short to hold the
+    /// image in the bank the case places it in.
+    #[error("The flash image is {bytes} bytes, short of the {needed} the bank case needs")]
+    ShortFlash { bytes: usize, needed: usize },
+    #[error("Bank {bank}: the actual factory instructions reject the diagnostic headers")]
     FactoryCheck { bank: u8 },
-    #[error("Unexpected factory mapper sequence")]
+    #[error("Bank {bank}: unexpected factory mapper sequence")]
     MapperSequence { bank: u8 },
-    #[error("Factory mapping does not cover packaged diagnostic")]
+    #[error("Bank {bank}: the factory mapping does not cover packaged core {core}")]
     Mapping { bank: u8, core: usize },
-    #[error("Single-valid diagnostic bank selection differs")]
+    #[error("Bank {bank}: the single-valid diagnostic bank selection differs")]
     Selection { bank: u8 },
     /// With the pinned flash's bank 0 left valid and the image in bank 1, as
     /// an install leaves them, the loader did not choose bank 1.
@@ -187,28 +203,20 @@ pub fn bank_payload(image: &[u8]) -> Result<&[u8]> {
     model_payload(image, Model::Plaf103)
 }
 
-/// [`bank_payload`] within `model`'s bank-1 window.
+/// [`bank_payload`] within `model`'s bank-1 window, by the check the flash
+/// client makes of the same image.
 fn model_payload(image: &[u8], model: Model) -> Result<&[u8]> {
-    // A development image must fit the model's bank-1 window sector-aligned.
     let bank = match model {
-        Model::Plaf103 => BANK1,
-        Model::Plwf106 => PLWF106_BANK1,
+        Model::Plaf103 => &BANK1,
+        Model::Plwf106 => &PLWF106_BANK1,
     };
-    let bank = bank.end - bank.start;
-    let payload = container(image)?;
-    require(
-        !payload.is_empty() && payload.len() <= bank && payload.len() % SECTOR == 0,
-        || ReviewError::Footprint {
-            bytes: payload.len(),
-        },
-    )?;
-    images(payload)?;
-    Ok(payload)
+    Ok(wellfed_image::bank::payload(image, bank)?)
 }
 
 /// Everything a build review checks, returning the image, the exact manifest
 /// bytes, the review details and the model the build is for.
 fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails, Model)> {
+    let _held = hold_output(build)?;
     let raw = fs::read(build.join("manifest.json"))?;
     let m: BuildManifest = serde_json::from_slice(&raw)?;
     let lock = amebad::lock(repo)?;
@@ -238,7 +246,9 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails, 
 
     // Inputs, overlays, artifacts and archives, each re-hashed.
     let inputs = current_inputs(repo, &device, Profile::Firstboot, m.provisioning, &firmware)?;
-    require(m.inputs == inputs, || ReviewError::StaleInputs)?;
+    if let Some(name) = first_difference(&m.inputs, &inputs) {
+        return Err(ReviewError::StaleInputs { name }.into());
+    }
     for (name, expected) in &m.inputs {
         require(digest(&local(&repo.root, name)?)? == *expected, || {
             ReviewError::Input { name: name.clone() }
@@ -253,6 +263,7 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails, 
     let file = |name: &str| files.get(name).map_or(&[][..], Vec::as_slice);
     let image = file("OTA_All.bin").to_vec();
     let payload = model_payload(&image, model)?;
+    identity(&m, payload)?;
     require(
         payload == file("km0_km4_image2.bin")
             && payload == [file("km0_image2_all.bin"), file("km4_image2_all.bin")].concat(),
@@ -274,19 +285,12 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails, 
     cores.sort_unstable();
     require(cores == ["KM0", "KM4"], || ReviewError::Cores)?;
 
-    // The linked-code audits, rerun, must be the ones the build recorded.
+    // The linked-code audits, rerun, must be the ones the build recorded:
+    // every one, so a record nothing reconciled cannot ride in a review.
     let Linked::Amebad(fresh) = audit_build(repo, build)?;
-    let recorded = &m.audits;
-    require(
-        recorded.firstboot_startup_audit.as_ref() == Some(&fresh.firstboot_startup_audit)
-            && recorded.ram_park_audit.as_ref() == Some(&fresh.ram_park_audit)
-            && recorded.sdk_hook_audit.as_ref() == Some(&fresh.sdk_hook_audit),
-        || ReviewError::Audits,
-    )?;
-    require(
-        recorded.km0_pinmap_audit.as_ref() == Some(&fresh.km0_pinmap_audit),
-        || ReviewError::PadTable,
-    )?;
+    if let Some(audit) = fresh.differs_from(&m.audits) {
+        return Err(ReviewError::Audits { audit }.into());
+    }
 
     let (baseline, rom) = match model {
         Model::Plaf103 => factory::inputs(&repo.root)?,
@@ -326,6 +330,45 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails, 
         scope: SCOPE.into(),
     };
     Ok((image, raw, details, model))
+}
+
+/// The first key, in order, that `recorded` and `current` do not both hold
+/// with one digest.
+fn first_difference(
+    recorded: &BTreeMap<String, String>,
+    current: &BTreeMap<String, String>,
+) -> Option<String> {
+    recorded
+        .keys()
+        .chain(current.keys())
+        .filter(|name| recorded.get(*name) != current.get(*name))
+        .min()
+        .cloned()
+}
+
+/// Refuse a manifest whose startup identity is not the one its own fields
+/// give, or that the image's payload does not print. Together they bind the
+/// variant, the provisioning and the update key the manifest declares to the
+/// image being frozen.
+fn identity(m: &BuildManifest, payload: &[u8]) -> Result<()> {
+    let derived = m.source_identity()?;
+    require(
+        m.startup_identity.as_deref() == Some(derived.as_str()),
+        || ReviewError::Identity {
+            recorded: m.startup_identity.clone(),
+            derived: derived.clone(),
+        },
+    )?;
+    let marker = format!("{} start build={derived} ", Tag::Start);
+    require(
+        payload
+            .windows(marker.len())
+            .any(|window| window == marker.as_bytes()),
+        || ReviewError::NoIdentity {
+            identity: derived.clone(),
+        },
+    )?;
+    Ok(())
 }
 
 /// The four packaged artifacts by file name, each matching its manifest entry.
@@ -374,11 +417,17 @@ pub fn mapping_cases(current: &[u8], rom: &[u8], image: &[u8]) -> Result<Vec<Map
     let mut cases = Vec::new();
     for (bank, start) in (0u8..).zip(BANKS) {
         let start = start as usize;
-        let mut fixture = current.to_vec();
-        fixture[start..start + payload.len()].copy_from_slice(payload);
+        let mut fixture = placed(current, start, payload)?;
         // This fixture deliberately selects just this bank.
         let other = BANKS[usize::from(1 - bank)] as usize;
-        fixture[other..other + 8].fill(0);
+        let Some(header) = fixture.get_mut(other..other + 8) else {
+            return Err(ReviewError::ShortFlash {
+                bytes: current.len(),
+                needed: other + 8,
+            }
+            .into());
+        };
+        header.fill(0);
 
         let checked = factory::execute(&fixture, rom, Entry::Check(bank))?;
         require(
@@ -424,9 +473,7 @@ pub fn mapping_cases(current: &[u8], rom: &[u8], image: &[u8]) -> Result<Vec<Map
 /// loader accepts, so its case shows only the selection.
 pub fn installed_selection(current: &[u8], rom: &[u8], image: &[u8], model: Model) -> Result<()> {
     let payload = container(image)?;
-    let start = BANKS[1] as usize;
-    let mut fixture = current.to_vec();
-    fixture[start..start + payload.len()].copy_from_slice(payload);
+    let fixture = placed(current, BANKS[1] as usize, payload)?;
 
     if model == Model::Plwf106 {
         let stock = factory::execute(&fixture, rom, Entry::Check(0))?;
@@ -445,6 +492,22 @@ pub fn installed_selection(current: &[u8], rom: &[u8], image: &[u8], model: Mode
         }
     })?;
     Ok(())
+}
+
+/// `current` with `payload` written at `start`, refused when it does not
+/// reach that far.
+fn placed(current: &[u8], start: usize, payload: &[u8]) -> Result<Vec<u8>> {
+    let mut fixture = current.to_vec();
+    let needed = start + payload.len();
+    let Some(bank) = fixture.get_mut(start..needed) else {
+        return Err(ReviewError::ShortFlash {
+            bytes: current.len(),
+            needed,
+        }
+        .into());
+    };
+    bank.copy_from_slice(payload);
+    Ok(fixture)
 }
 
 /// Whether core `index`'s final mapping covers `length` bytes at flash
@@ -478,6 +541,73 @@ mod tests {
     fn payload_must_be_a_valid_container_that_fits_the_aligned_bank() {
         assert!(bank_payload(b"OTA").is_err());
         assert!(bank_payload(&[0; 64]).is_err());
+    }
+
+    /// A manifest is bound to the image it freezes: its startup identity
+    /// must be the one its own fields give, and the image must print it. An
+    /// edited identity, or a manifest beside another variant's image, is
+    /// refused.
+    #[test]
+    fn a_manifest_that_does_not_describe_the_image_is_refused() {
+        let mut m = BuildManifest {
+            device: "plaf103".into(),
+            profile: "firstboot".into(),
+            firmware: Some("feeder".into()),
+            ..BuildManifest::default()
+        };
+        let derived = m.source_identity().unwrap();
+        m.startup_identity = Some(derived.clone());
+        let image = format!("code {} start build={derived} rest", Tag::Start).into_bytes();
+        identity(&m, &image).unwrap();
+
+        let printed_by_another = format!("code {} start build={} ", Tag::Start, "0".repeat(64));
+        let error = identity(&m, printed_by_another.as_bytes()).unwrap_err();
+        assert!(
+            matches!(&error, Error::Review(ReviewError::NoIdentity { identity }) if *identity == derived),
+            "{error:?}"
+        );
+
+        let mut pulse = m.clone();
+        pulse.variant = Some("pulse".into());
+        let error = identity(&pulse, &image).unwrap_err();
+        assert!(
+            matches!(&error, Error::Review(ReviewError::Identity { recorded: Some(recorded), .. }) if *recorded == derived),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn stale_inputs_name_the_first_that_differs() {
+        let recorded =
+            BTreeMap::from([("a".to_string(), "1".to_string()), ("c".into(), "3".into())]);
+        let mut current = recorded.clone();
+        assert_eq!(first_difference(&recorded, &current), None);
+        current.insert("b".into(), "2".into());
+        assert_eq!(first_difference(&recorded, &current).as_deref(), Some("b"));
+        current.remove("b");
+        current.insert("c".into(), "4".into());
+        assert_eq!(first_difference(&recorded, &current).as_deref(), Some("c"));
+    }
+
+    /// A flash read too short for the bank a case places the image in is
+    /// refused, not a panic.
+    #[test]
+    fn a_short_flash_image_is_refused() {
+        assert_eq!(
+            placed(&[0; 8], 2, &[1, 2]).unwrap(),
+            [0, 0, 1, 2, 0, 0, 0, 0]
+        );
+        let error = placed(&[0; 0x1000], 0x1000, &[1]).unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                Error::Review(ReviewError::ShortFlash {
+                    bytes: 0x1000,
+                    needed: 0x1001
+                })
+            ),
+            "{error:?}"
+        );
     }
 
     #[test]
