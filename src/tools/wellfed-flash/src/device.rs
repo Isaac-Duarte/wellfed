@@ -115,6 +115,11 @@ pub const PLAF103: Pins = Pins {
 
 /// The fountain on our bench: two matching full reads, and the minimum
 /// preservation map of `docs/devices/plwf106/flash-layout.md`.
+// Marker withholding, the staged image and the commit frame use bank 1's
+// start as one constant for every model; only where bank 1 ends is each
+// model's own.
+const _: () = assert!(PLWF106_BANK1.start == BANK1.start);
+
 pub const PLWF106: Pins = Pins {
     model: Model::Plwf106,
     baseline_sha256: "fe2516e378a67616777a6c86f480f642254a12c726a3f352ff51a1d17966376f",

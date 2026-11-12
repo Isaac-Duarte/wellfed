@@ -1,9 +1,11 @@
 //! `wellfed-flash`: the UART flash client.
 //!
 //! Progress goes to stderr; stdout carries exactly one JSON summary, so a
-//! script or agent can act on the result. Exit status: 0 complete, 1 stopped
-//! after the port was opened (inspect the evidence; nothing is retried), 2
-//! refused before any serial access.
+//! script or agent can act on the result. Exit status: 0 complete; 1 stopped
+//! once the serial session began, whether or not the port opened (inspect
+//! the evidence; nothing is retried); 2 refused before the session began; 3
+//! a bank-0 write that verified but is a step, not the write's end (its
+//! summary names the steps that finish it).
 
 #![forbid(unsafe_code)]
 
@@ -33,7 +35,9 @@ use wellfed_proto::device::Model;
     long_about = "UART flash reads, development updates and stock recovery for the PLAF103 and PLWF106 research units.\n\n\
         Every device command continues the supervised bench procedure in docs/development/uart-development.md: \
         nothing here enters the loader, controls power, retries or boots. Progress goes to stderr and one JSON \
-        summary to stdout. Exit status: 0 complete, 1 stopped after the port opened, 2 refused before serial access."
+        summary to stdout. Exit status: 0 complete; 1 stopped once the serial session began, whether or not the port opened; \
+        2 refused before the session began; 3 a bank-0 write that verified but is a step, not the write's end \
+        (the summary names the steps that finish it)."
 )]
 struct Cli {
     /// Repository checkout whose ignored private/ holds all evidence.

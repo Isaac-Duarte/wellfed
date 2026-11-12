@@ -781,9 +781,10 @@ pub fn inspect_rom(
     start: Core,
 ) -> Result<RomInspection> {
     let initial = collect(port, Duration::from_millis(500))?;
-    require(!contains(&initial, b"Hard Fault"), || {
-        ProtocolError::PreexistingFault
-    })?;
+    require(
+        !FAULTS.iter().any(|fault| contains(&initial, fault)),
+        || ProtocolError::PreexistingFault,
+    )?;
 
     let mut opened = None;
     if start == Core::Km4 {
@@ -1017,6 +1018,26 @@ mod tests {
         let unwatched =
             console_query_until(&mut script(), b"?\r\n", window, help_ended, Duration::ZERO);
         assert!(unwatched.is_ok(), "{unwatched:?}");
+    }
+
+    /// A console already faulting before the inspection asks anything is
+    /// refused, whichever of the fault lines it printed.
+    #[test]
+    fn a_fault_printed_before_the_inspection_refuses_it() {
+        for fault in FAULTS {
+            let mut port = Scripted {
+                start: Some(Instant::now()),
+                pieces: vec![(Duration::ZERO, fault)],
+            };
+            assert!(
+                matches!(
+                    inspect_rom(&mut port, &[], Core::Km4),
+                    Err(crate::Error::Protocol(ProtocolError::PreexistingFault))
+                ),
+                "{}",
+                String::from_utf8_lossy(fault)
+            );
+        }
     }
 
     #[test]
