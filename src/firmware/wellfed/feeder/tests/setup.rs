@@ -326,7 +326,7 @@ fn a_proven_ask_enrolls_saves_the_wifi_and_reboots() {
                 inviter,
             },
         ..
-    }) = keys::pending()
+    }) = keys::take().map(|taken| *taken.get())
     else {
         panic!("an enrollment is queued")
     };
@@ -338,18 +338,22 @@ fn a_proven_ask_enrolls_saves_the_wifi_and_reboots() {
     // and no client invited it.
     assert_eq!(path, wellfed_proto::api::Path::Setup);
     assert_eq!(inviter, None);
-    keys::finish(KeyResult::Done);
+    if let Some(taken) = keys::take() {
+        keys::finish(taken, KeyResult::Done);
+    }
     bench.step(None);
     assert!(bench.records.contains(&Record::Enroll {
         result: KeyResult::Done
     }));
 
     // Then saves the Wi-Fi.
-    let Some(Some(credentials)) = network::pending() else {
+    let Some(Some(credentials)) = network::take().map(|taken| taken.get().credentials) else {
         panic!("the credentials are queued")
     };
     assert_eq!(credentials.ssid(), b"Lab-B");
-    network::finish(false);
+    if let Some(taken) = network::take() {
+        network::finish(taken, false);
+    }
     publish(1, Some(credentials));
     bench.step(None);
 
@@ -396,7 +400,7 @@ fn an_unanswered_ask_is_refused_and_enrolls_nothing() {
         session.receive(&reply).unwrap(),
         ClientStep::Reply(model(Reply::Refused(Refusal::Unconfirmed)))
     );
-    assert_eq!(keys::pending(), None);
+    assert_eq!(keys::take().map(|taken| *taken.get()), None);
     assert_eq!(
         fake::with(|h| h.ble_disconnects),
         0,
@@ -433,8 +437,8 @@ fn a_wrong_code_enrolls_nothing_and_shares_no_wifi() {
     assert!(bench.records.contains(&Record::Replied {
         reply: Reply::Refused(Refusal::Unconfirmed)
     }));
-    assert_eq!(keys::pending(), None);
-    assert_eq!(network::pending(), None);
+    assert_eq!(keys::take().map(|taken| *taken.get()), None);
+    assert_eq!(network::take().map(|taken| taken.get().credentials), None);
     assert!(!bench.setup.reboot_due(bench.now()));
 }
 
@@ -485,7 +489,7 @@ fn a_proven_ask_completes_even_if_the_client_leaves_and_returns() {
     let mut session = bench.ask(&Keypair::from_secret([2; 32]));
     bench.confirm(&mut session);
     assert!(matches!(
-        keys::pending(),
+        keys::take().map(|taken| *taken.get()),
         Some(Change::Key {
             change: KeyChange::Enroll { .. },
             ..
@@ -504,12 +508,16 @@ fn a_proven_ask_completes_even_if_the_client_leaves_and_returns() {
         fault: setup::Fault::Busy
     }));
 
-    keys::finish(KeyResult::Done);
+    if let Some(taken) = keys::take() {
+        keys::finish(taken, KeyResult::Done);
+    }
     bench.step(None);
-    let Some(Some(credentials)) = network::pending() else {
+    let Some(Some(credentials)) = network::take().map(|taken| taken.get().credentials) else {
         panic!("the Wi-Fi still follows the enrollment")
     };
-    network::finish(false);
+    if let Some(taken) = network::take() {
+        network::finish(taken, false);
+    }
     publish(1, Some(credentials));
     bench.step(None);
     assert!(
@@ -525,12 +533,16 @@ fn the_owner_hears_each_press_then_the_outcome() {
     bench.sound(true);
     let mut session = bench.ask(&Keypair::from_secret([2; 32]));
     bench.confirm(&mut session);
-    keys::finish(KeyResult::Done);
+    if let Some(taken) = keys::take() {
+        keys::finish(taken, KeyResult::Done);
+    }
     bench.step(None);
-    let Some(Some(credentials)) = network::pending() else {
+    let Some(Some(credentials)) = network::take().map(|taken| taken.get().credentials) else {
         panic!("the credentials are queued")
     };
-    network::finish(false);
+    if let Some(taken) = network::take() {
+        network::finish(taken, false);
+    }
     publish(1, Some(credentials));
 
     let mut expected = vec![Tune::Key; PRESSES];

@@ -39,6 +39,7 @@ use wellfed_device_api::wifi::Credentials;
 
 use wellfed_core::wifi_task::Attempt;
 use wellfed_hal::cell::TaskCell;
+use wellfed_hal::handoff::{Handoff, Taken};
 use wellfed_hal::interlock::INTERLOCK;
 pub use wellfed_hal::sdk::JoinCredentials;
 use wellfed_hal::{link, sdk};
@@ -95,25 +96,18 @@ pub fn choose(
     }
 }
 
-/// Who holds `PENDING`, as `STATE` stores it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Hand {
-    /// Free for the device API to claim.
-    Empty = 0,
-    /// The claimant is writing the change.
-    Filling = 1,
-    /// Handed to the writer until `finish`.
-    Queued = 2,
+/// The queued change (`None` clears), and who asked for it, for its `Wifi`
+/// event; `None` for BLE setup's save.
+#[derive(Clone, Copy)]
+pub struct Asked {
+    pub credentials: Option<Credentials>,
+    pub asked: Option<Stamp>,
 }
 
-/// The queued change; written only by the claimant of `STATE` (`Empty` to
-/// `Filling`), read only by the writer after `Queued`.
-static PENDING: TaskCell<Option<Credentials>> = TaskCell::new(None);
-/// Who asked for the queued change, for its `Wifi` event; `None` for BLE
-/// setup's save. Written and read as `PENDING` is.
-static ASKED: TaskCell<Option<Stamp>> = TaskCell::new(None);
-static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
+static PENDING: Handoff<Asked> = Handoff::new(Asked {
+    credentials: None,
+    asked: None,
+});
 
 /// What NOR holds, published by the writer.
 static LOADED: AtomicBool = AtomicBool::new(false);
@@ -160,7 +154,7 @@ pub fn current() -> WifiResult {
     }
     WifiResult::Current {
         view: view(),
-        pending: STATE.load(Ordering::Acquire) != Hand::Empty as u8,
+        pending: PENDING.waiting(),
     }
 }
 
@@ -184,30 +178,21 @@ pub fn change(credentials: Option<Credentials>, asked: Option<Stamp>) -> WifiRes
 
 /// Whether a queued change still waits for the writer.
 pub fn saving() -> bool {
-    STATE.load(Ordering::Acquire) != Hand::Empty as u8
+    PENDING.waiting()
 }
 
 fn queue(credentials: Option<Credentials>, asked: Option<Stamp>) -> WifiResult {
-    if STATE
-        .compare_exchange(
-            Hand::Empty as u8,
-            Hand::Filling as u8,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-        .is_err()
-    {
+    // The view is read while the slot is claimed, before the writer can
+    // take the change: its `saved.next()` is the number this change
+    // finishes as, which a client's write waits on.
+    let mut view = None;
+    let queued = PENDING.offer(|pending| {
+        *pending = Asked { credentials, asked };
+        view = Some(self::view());
+    });
+    let Some(view) = view.filter(|_| queued) else {
         return WifiResult::Busy;
-    }
-    // SAFETY: `Filling` makes this the only accessor until `Queued`.
-    unsafe {
-        *PENDING.get() = credentials;
-        *ASKED.get() = asked;
-    }
-    // Read before the writer can take the change: its `saved.next()` is the
-    // number this change finishes as, which a client's write waits on.
-    let view = view();
-    STATE.store(Hand::Queued as u8, Ordering::Release);
+    };
     wellfed_hal::writer_wake::wake();
     WifiResult::Current {
         view,
@@ -215,31 +200,23 @@ fn queue(credentials: Option<Credentials>, asked: Option<Stamp>) -> WifiResult {
     }
 }
 
-/// The writer's half: the queued change (`Some(None)` clears), if any.
-pub fn pending() -> Option<Option<Credentials>> {
-    // SAFETY: `Queued` hands the value to the writer until `finish`.
-    (STATE.load(Ordering::Acquire) == Hand::Queued as u8).then(|| unsafe { *PENDING.get() })
+/// The writer's half: the queued change and who asked, held until
+/// [`finish`].
+pub fn take() -> Option<Taken<'static, Asked>> {
+    PENDING.take()
 }
 
-/// The writer's half: who asked for the queued change, if anyone.
-pub fn asked() -> Option<Stamp> {
-    // SAFETY: as in `pending`.
-    (STATE.load(Ordering::Acquire) == Hand::Queued as u8)
-        .then(|| unsafe { *ASKED.get() })
-        .flatten()
-}
-
-/// The writer's half: the queued change is done, saved or `failed`
+/// The writer's half: the taken change is done, saved or `failed`
 /// (unarmed, or the store refused the save). Its outcome is published
 /// before the slot frees, so the next change queued finishes as the next
 /// number.
-pub fn finish(failed: bool) {
+pub fn finish(taken: Taken<'static, Asked>, failed: bool) {
     sdk::unscheduled(|| {
         // SAFETY: with the scheduler paused no loop read of it runs, and
         // no interrupt handler reaches it.
         unsafe { (*SAVED.get()).finish(failed) };
     });
-    STATE.store(Hand::Empty as u8, Ordering::Release);
+    taken.finish();
 }
 
 /// The writer publishes what NOR holds; writable only once it is `armed`.
@@ -275,7 +252,7 @@ pub unsafe fn reset() {
     }
     GENERATION.store(0, Ordering::Release);
     SOURCE.store(WifiSource::Build.code(), Ordering::Release);
-    STATE.store(Hand::Empty as u8, Ordering::Release);
+    PENDING.clear();
     // SAFETY: the caller's contract: no writer task is running either.
     unsafe { *SAVED.get() = Saved::default() };
     // SAFETY: the caller's contract: no Wi-Fi task holds `JOIN`.
