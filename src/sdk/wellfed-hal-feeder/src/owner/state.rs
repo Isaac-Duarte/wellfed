@@ -255,11 +255,15 @@ impl<S: OwnerStorage> OwnerTask<S> {
     }
 
     /// Whether the owner's own last beat (or its open) is at least the
-    /// current gap old, the same edge as `Beat::fresh`.
+    /// current gap old, the same edge as `Beat::fresh`. The gap is the
+    /// shorter of the one in force and the one that beat promised, so a
+    /// step that ends past an active deadline (a slow result write, after
+    /// which the owner is at rest) still finds it missed.
     fn overdue(&self) -> bool {
         let ticks = sdk::systimer_ticks().wrapping_sub(self.beat_raw);
         let tps = u64::from(self.config.events.ticks_per_second);
-        u64::from(ticks) * 1000 >= u64::from(self.gap_ms()) * tps
+        let gap = self.gap_ms().min(self.beat_gap_ms);
+        u64::from(ticks) * 1000 >= u64::from(gap) * tps
     }
 
     /// A step that blocked past the gap faults the owner: by then the
@@ -289,8 +293,10 @@ impl<S: OwnerStorage> OwnerTask<S> {
             return false;
         }
         if !self.flash().outputs_blocked() {
-            beat::beat(sdk::uptime_ms(), self.gap_ms(), supervised);
+            let gap = self.gap_ms();
+            beat::beat(sdk::uptime_ms(), gap, supervised);
             self.beat_raw = sdk::systimer_ticks();
+            self.beat_gap_ms = gap;
         }
         true
     }

@@ -248,6 +248,9 @@ pub struct OwnerTask<S> {
     pub fault: OwnerFault,
     /// SYSTIMER at the last beat, or at open.
     pub beat_raw: u32,
+    /// The gap the last beat promised; `u32::MAX` before the first. No
+    /// later state's longer gap extends a deadline already promised.
+    pub beat_gap_ms: u32,
     /// A beat came due after the gap had passed; latched, so no later beat
     /// is ever published.
     pub beat_lost: bool,
@@ -297,6 +300,7 @@ impl<S> Default for OwnerTask<S> {
             state: OwnerState::default(),
             fault: OwnerFault::default(),
             beat_raw: 0,
+            beat_gap_ms: u32::MAX,
             beat_lost: false,
             queued_at: 0,
             initialized: false,
