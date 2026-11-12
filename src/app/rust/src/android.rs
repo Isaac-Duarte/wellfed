@@ -17,6 +17,10 @@
 //! its runs is left to let go. A run's thread that still lives (an update
 //! pushing chunks or waiting out the restart, an install's listener) keeps
 //! its own hold until it ends.
+//!
+//! `Uplink` calls the third whenever the network to reach the owner's server
+//! by changes: the default network's handle while the Wi-Fi the process is
+//! bound to has no validated internet, zero otherwise (`relay.rs`).
 
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
@@ -46,4 +50,17 @@ pub extern "system" fn Java_io_github_isaacduarte_wellfed_RustHolds_clear<'calle
     _class: JClass<'caller>,
 ) {
     crate::alerts::clear_holds();
+}
+
+/// `Uplink.set(handle)`, a static native method.
+// SAFETY: the JVM resolves `Uplink.set` to this exact name, and the
+// signature is a static method's (`JNIEnv*`, `jclass`, `jlong`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_isaacduarte_wellfed_Uplink_set<'caller>(
+    _env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    handle: jni::sys::jlong,
+) {
+    // A `net_handle_t` is unsigned; Java has only the signed long.
+    crate::relay::set_uplink(u64::from_ne_bytes(handle.to_ne_bytes()));
 }

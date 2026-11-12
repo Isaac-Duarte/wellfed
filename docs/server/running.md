@@ -205,6 +205,15 @@ Caddy obtains and renews the certificate, preserves `Host` and sets `X-Forwarded
 
 The public name goes in `hosts`, since the server refuses names it wasn't given. The `Origin` check compares the request's `Origin` with `Host`, so the proxy must pass the client's `Host` on, as Caddy does. nginx does not by default: add `proxy_set_header Host $host;`, or every login and setup is refused `403 cross_origin`. A request's own `x-request-id` is kept when it is one plain id (at most 64 bytes of letters, digits, `.`, `_` and `-`), so the proxy's id appears in both logs; anything else gets a fresh UUID.
 
+### A phone on a Wi-Fi with no way out
+
+The Android app keeps its connections on the Wi-Fi, so it reaches feeders there even while that Wi-Fi has no internet: a feeder's own network, a hotspot with no uplink, a captive portal. Android then routes the rest of the phone over mobile data. A server reached by a public name would be out of reach, so for it alone the app goes over mobile data instead, through a relay inside the app.
+
+- **When.** Only while the Wi-Fi the app uses has no validated internet and another network has, and only for a server whose address is off the home network. A server at a home-network address, and every feeder, stay on the Wi-Fi.
+- **How.** The relay is a SOCKS5 proxy on the phone's loopback, open only to the app (it takes a user and password the app makes at each start). It opens each connection, and looks up each name, on the network Android routes by default. The request is the same HTTPS as ever, end to end with the server.
+
+The CLI and Home Assistant run on machines that route on their own, so they have no relay.
+
 ## Add a member's phone
 
 1. As an owner, from a login, add an account for the person with a temporary password (`POST /api/v1/users`) and the member role. A viewer can only read; an account can carry an expiry, for a pet sitter.

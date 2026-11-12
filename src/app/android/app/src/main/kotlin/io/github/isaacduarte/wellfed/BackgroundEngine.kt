@@ -31,6 +31,7 @@ class BackgroundEngine(private val context: Context) {
     // nothing.
     init {
         TlsVerifier.start(context.applicationContext)
+        Uplink.start(context.applicationContext)
     }
 
     private val engine = FlutterEngine(context, null, false)

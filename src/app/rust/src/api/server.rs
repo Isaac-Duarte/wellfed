@@ -726,7 +726,9 @@ fn options(key: Option<[u8; 32]>, timeouts: Timeouts) -> Options {
         timeouts,
         plain: PlainHttp::Refused,
         trust: key.map_or(Trust::Platform, Trust::Pinned),
-        proxy: None,
+        // Around a Wi-Fi with no way out, for a server off the home
+        // network only: the relay decides per request.
+        proxy: Some(crate::relay::proxy()),
     }
 }
 
