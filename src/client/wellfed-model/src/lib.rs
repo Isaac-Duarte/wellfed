@@ -45,8 +45,8 @@ pub use plan::{
     Weekdays, WeekdaysError,
 };
 pub use request::{
-    Answer, Bowl, Calibration, CalibrationView, Client, Invite, NtpResult, NtpServer, Op, Phase,
-    Refusal, TimeChanges, TimeSource, TimeSync, TimeView, Tune, Wifi,
+    Answer, Bowl, Calibration, CalibrationView, Client, Invite, NtpResult, NtpServer,
+    NtpServerError, Op, Phase, Refusal, TimeChanges, TimeSource, TimeSync, TimeView, Tune, Wifi,
 };
 pub use session::{
     DeviceKind, DeviceName, Hello, Joined, LEGACY_SCHEMA_FROM, MaybeKnown, Model, OpenRefusal,
@@ -96,6 +96,11 @@ impl Generation {
     /// A feeder's settings generation as it reports it: `None` for
     /// [`wellfed_proto::api::NO_SETTINGS_GENERATION`], which it reports,
     /// read-only, while its two settings records share none.
+    ///
+    /// That value is `u32::MAX`, so `Some(Generation(u32::MAX))` reads back
+    /// as `None` in JSON too. The feeder reports the same for a store that
+    /// counted that far, some four billion writes on, so the two never
+    /// disagree; nothing guards it beyond that count.
     pub const fn settings(raw: u32) -> Option<Self> {
         if raw == wellfed_proto::api::NO_SETTINGS_GENERATION {
             None

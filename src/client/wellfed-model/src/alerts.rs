@@ -4,6 +4,7 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use wellfed_proto::api as proto;
 
 use crate::event::{ClientRole, EnrollPath, FeedOutcome, FeedReason, MissedReason, Source};
 use crate::{Blocked, Generation, Hex, UpdateStop};
@@ -253,42 +254,64 @@ impl AlertKind {
     ];
 
     /// How soon it wants the owner, as the feeder ranks it when room runs
-    /// out.
+    /// out: the feeder's own rule.
     pub const fn level(self) -> AlertLevel {
-        match self {
-            Self::MealFailed
-            | Self::MealUncertain
-            | Self::MealMissed
-            | Self::MealNoRecord
-            | Self::NoClock
-            | Self::CannotFeed
-            | Self::FoodLikelyOut
-            | Self::PlansStuck => AlertLevel::Urgent,
-            Self::FoodLow
-            | Self::DesiccantDue
-            | Self::PowerWasOut
-            | Self::BatteryBelowFloor
-            | Self::UpdateFailed
-            | Self::RolledBack
-            | Self::RepeatedRestarts => AlertLevel::Soon,
-            Self::ClientJoined | Self::ClientRevoked => AlertLevel::Security,
-        }
+        AlertLevel::of_wire(self.wire().level())
     }
 
     /// Whether it is present or absent by its state, ending with it, rather
     /// than a report that lapses. Repeated restarts are tracked this way.
+    /// The feeder's own rule.
     pub const fn is_condition(self) -> bool {
-        matches!(
-            self,
-            Self::RepeatedRestarts
-                | Self::NoClock
-                | Self::CannotFeed
-                | Self::FoodLow
-                | Self::FoodLikelyOut
-                | Self::DesiccantDue
-                | Self::BatteryBelowFloor
-                | Self::PlansStuck
-        )
+        self.wire().is_condition()
+    }
+
+    /// The kind as the device API names it, whose rules the feeder keeps.
+    pub(crate) const fn wire(self) -> proto::AlertKind {
+        match self {
+            Self::MealFailed => proto::AlertKind::MealFailed,
+            Self::MealUncertain => proto::AlertKind::MealUncertain,
+            Self::MealMissed => proto::AlertKind::MealMissed,
+            Self::MealNoRecord => proto::AlertKind::MealNoRecord,
+            Self::PowerWasOut => proto::AlertKind::PowerWasOut,
+            Self::UpdateFailed => proto::AlertKind::UpdateFailed,
+            Self::RolledBack => proto::AlertKind::RolledBack,
+            Self::ClientJoined => proto::AlertKind::ClientJoined,
+            Self::ClientRevoked => proto::AlertKind::ClientRevoked,
+            Self::RepeatedRestarts => proto::AlertKind::RepeatedRestarts,
+            Self::NoClock => proto::AlertKind::NoClock,
+            Self::CannotFeed => proto::AlertKind::CannotFeed,
+            Self::FoodLow => proto::AlertKind::FoodLow,
+            Self::FoodLikelyOut => proto::AlertKind::FoodLikelyOut,
+            Self::DesiccantDue => proto::AlertKind::DesiccantDue,
+            Self::BatteryBelowFloor => proto::AlertKind::BatteryBelowFloor,
+            Self::PlansStuck => proto::AlertKind::PlansStuck,
+        }
+    }
+
+    /// The device API's kind, as this model names it: for the parity test
+    /// with the device's own alerts.
+    #[cfg(test)]
+    pub(crate) const fn of_wire(kind: proto::AlertKind) -> Self {
+        match kind {
+            proto::AlertKind::MealFailed => Self::MealFailed,
+            proto::AlertKind::MealUncertain => Self::MealUncertain,
+            proto::AlertKind::MealMissed => Self::MealMissed,
+            proto::AlertKind::MealNoRecord => Self::MealNoRecord,
+            proto::AlertKind::PowerWasOut => Self::PowerWasOut,
+            proto::AlertKind::UpdateFailed => Self::UpdateFailed,
+            proto::AlertKind::RolledBack => Self::RolledBack,
+            proto::AlertKind::ClientJoined => Self::ClientJoined,
+            proto::AlertKind::ClientRevoked => Self::ClientRevoked,
+            proto::AlertKind::RepeatedRestarts => Self::RepeatedRestarts,
+            proto::AlertKind::NoClock => Self::NoClock,
+            proto::AlertKind::CannotFeed => Self::CannotFeed,
+            proto::AlertKind::FoodLow => Self::FoodLow,
+            proto::AlertKind::FoodLikelyOut => Self::FoodLikelyOut,
+            proto::AlertKind::DesiccantDue => Self::DesiccantDue,
+            proto::AlertKind::BatteryBelowFloor => Self::BatteryBelowFloor,
+            proto::AlertKind::PlansStuck => Self::PlansStuck,
+        }
     }
 }
 
@@ -299,4 +322,15 @@ pub enum AlertLevel {
     Urgent,
     Soon,
     Security,
+}
+
+impl AlertLevel {
+    /// The device API's level, as this model names it.
+    pub(crate) const fn of_wire(level: proto::AlertLevel) -> Self {
+        match level {
+            proto::AlertLevel::Urgent => Self::Urgent,
+            proto::AlertLevel::Soon => Self::Soon,
+            proto::AlertLevel::Security => Self::Security,
+        }
+    }
 }
