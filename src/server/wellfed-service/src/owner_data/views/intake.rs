@@ -100,7 +100,12 @@ pub(crate) fn intake(
     let all_weighed = weights().all(|mg| mg.is_some());
     let days = sums
         .into_iter()
-        .map(|(date, sum)| day(date, sum, any_weighed, daily_kcal.filter(|_| all_weighed)))
+        // With no feeder in the view nothing is weighed, so the share of
+        // the target is as unknown as the intake.
+        .map(|(date, sum)| {
+            let target = daily_kcal.filter(|_| any_weighed && all_weighed);
+            day(date, sum, any_weighed, target)
+        })
         .collect();
     (feeders, days)
 }

@@ -165,3 +165,14 @@ fn one_uncalibrated_feeder_leaves_the_target_unknown() {
     };
     assert_eq!(days[0].unweighed, [unweighed]);
 }
+
+/// A pet with a target and no feeder in the view: nothing is weighed, so
+/// its share of the target is unknown, not 0%.
+#[test]
+fn a_pet_with_no_feeder_has_no_share_of_its_target() {
+    let dates = [date(2026, 1, 1)];
+    let (feeders, days) = intake(pet(0), Some(250), &dates, &TimeZone::UTC, &[]);
+    assert!(feeders.is_empty());
+    assert_eq!(days[0].weighed, None);
+    assert_eq!(days[0].target_percent, None);
+}
