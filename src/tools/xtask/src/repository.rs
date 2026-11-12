@@ -5,6 +5,7 @@
 //! [`Summary::errors`] instead of stopping at the first, so one run reports
 //! everything; only failing to resolve or list the checkout is an `Err`.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -156,8 +157,9 @@ pub(crate) fn check(root: &Path) -> io::Result<Summary> {
         errors: Vec::new(),
     };
 
+    let published: BTreeSet<&str> = names.iter().map(String::as_str).collect();
     for name in &names {
-        check_file(&root, name, &mut summary);
+        check_file(&root, name, &published, &mut summary);
     }
     check_release_toolchain(&root, &mut summary);
     check_container_context(&root, &mut summary);
@@ -176,7 +178,9 @@ pub(crate) fn check(root: &Path) -> io::Result<Summary> {
     Ok(summary)
 }
 
-fn check_file(root: &Path, name: &str, summary: &mut Summary) {
+/// `published` is every file a clone has, so a link resolves for every
+/// reader only to one of them or a folder holding one.
+fn check_file(root: &Path, name: &str, published: &BTreeSet<&str>, summary: &mut Summary) {
     let relative = Path::new(name);
     let first = relative
         .components()
@@ -292,13 +296,32 @@ fn check_file(root: &Path, name: &str, summary: &mut Summary) {
             };
             summary.links += 1;
             let dest = normalize(&path.parent().unwrap_or(root).join(local));
-            if !dest.starts_with(root) || !dest.exists() {
+            if !dest
+                .strip_prefix(root)
+                .is_ok_and(|dest| is_published(dest, published))
+            {
                 summary
                     .errors
                     .push(format!("{name}: missing/nonlocal link {target}"));
             }
         }
     }
+}
+
+/// Whether `dest`, relative to the root, is a published file or a folder
+/// holding one: an ignored file exists only on this disk.
+fn is_published(dest: &Path, published: &BTreeSet<&str>) -> bool {
+    let Some(dest) = dest.to_str() else {
+        return false;
+    };
+    if dest.is_empty() || published.contains(dest) {
+        return true;
+    }
+    let folder = format!("{dest}/");
+    published
+        .range(folder.as_str()..)
+        .next()
+        .is_some_and(|name| name.starts_with(&folder))
 }
 
 /// What the release Containerfile must say for `toolchain`'s channel (the
@@ -788,7 +811,7 @@ mod tests {
             "[dependencies]\nwellfed-image.workspace = true\n\n[dev-dependencies]\nwellfed-flash = { path = \"../wellfed-flash\" }\n",
         )
         .unwrap();
-        for name in [
+        let names = [
             "README.md",
             "private/x.json",
             "dump.bin",
@@ -801,8 +824,10 @@ mod tests {
             "src/tools/page/Cargo.toml",
             "src/tools/client/Cargo.toml",
             "src/tools/auditor/Cargo.toml",
-        ] {
-            check_file(&root, name, &mut summary);
+        ];
+        let published = BTreeSet::from(names);
+        for name in names {
+            check_file(&root, name, &published, &mut summary);
         }
 
         assert_eq!(summary.links, 2);
@@ -823,6 +848,43 @@ mod tests {
 
     fn lines(count: usize) -> String {
         "x\n".repeat(count)
+    }
+
+    /// A link resolves for every reader only to a file a clone has: one
+    /// that exists here but is ignored (private evidence, agent state, a
+    /// build output) is as missing as one that does not exist.
+    #[test]
+    fn a_link_to_an_ignored_file_is_missing() {
+        let checkout = tempfile::tempdir().unwrap();
+        let root = checkout.path().canonicalize().unwrap();
+        for folder in ["private", "docs", ".agents"] {
+            fs::create_dir_all(root.join(folder)).unwrap();
+        }
+        fs::write(root.join("private/x.json"), "{}").unwrap();
+        fs::write(root.join(".agents/RESUME.md"), "x").unwrap();
+        fs::write(root.join("docs/page.md"), "x").unwrap();
+        fs::write(
+            root.join("README.md"),
+            "[x](private/x.json) [resume](.agents/RESUME.md) [page](docs/page.md) [docs](docs) [root](.)\n",
+        )
+        .unwrap();
+
+        let mut summary = Summary {
+            files: 0,
+            links: 0,
+            errors: Vec::new(),
+        };
+        let published = BTreeSet::from(["README.md", "docs/page.md"]);
+        check_file(&root, "README.md", &published, &mut summary);
+
+        assert_eq!(summary.links, 5);
+        assert_eq!(
+            summary.errors,
+            [
+                "README.md: missing/nonlocal link private/x.json",
+                "README.md: missing/nonlocal link .agents/RESUME.md",
+            ]
+        );
     }
 
     #[test]
@@ -922,10 +984,17 @@ mod tests {
             errors: Vec::new(),
         };
 
-        check_file(&root, "src/server/wellfed-server/src/lib.rs", &mut summary);
+        let published = BTreeSet::new();
+        check_file(
+            &root,
+            "src/server/wellfed-server/src/lib.rs",
+            &published,
+            &mut summary,
+        );
         check_file(
             &root,
             "src/server/wellfed-server/openapi.json",
+            &published,
             &mut summary,
         );
 
@@ -982,8 +1051,14 @@ mod tests {
             errors: Vec::new(),
         };
 
-        check_file(&root, SERVER_CLIPPY, &mut summary);
-        check_file(&root, "src/server/wellfed-store/clippy.toml", &mut summary);
+        let published = BTreeSet::new();
+        check_file(&root, SERVER_CLIPPY, &published, &mut summary);
+        check_file(
+            &root,
+            "src/server/wellfed-store/clippy.toml",
+            &published,
+            &mut summary,
+        );
 
         assert_eq!(summary.errors.len(), 2);
         assert!(
