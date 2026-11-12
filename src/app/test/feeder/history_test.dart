@@ -44,7 +44,7 @@ void main() {
         entry(
           1,
           const HistoryBody.missed(slot: 1, dueMs: 0, reason: MissedReason.blocked(reason: Blocked.battery)),
-          at: now.subtract(const Duration(days: 1)),
+          at: DateTime(now.year, now.month, now.day - 1, 12),
         ),
         entry(2, HistoryBody.gap(from: BigInt.from(3), to: BigInt.from(5))),
         entry(3, const HistoryBody.restarted(), at: now),

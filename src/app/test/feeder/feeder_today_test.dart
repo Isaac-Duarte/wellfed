@@ -174,8 +174,8 @@ void main() {
     final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
     await feederShowShell(tester, fleet);
 
-    final DateTime yesterday = DateTime.now().subtract(const Duration(days: 1));
-    final int at = DateTime(yesterday.year, yesterday.month, yesterday.day, 21).millisecondsSinceEpoch;
+    final DateTime now = DateTime.now();
+    final int at = DateTime(now.year, now.month, now.day - 1, 21).millisecondsSinceEpoch;
     session.status(
       fakeCard(
         lastFed: fakeFed(atMs: at),
