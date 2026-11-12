@@ -37,6 +37,19 @@
 //!   ([`UpdateKind::Answered`](crate::api::UpdateKind)), which hands them
 //!   to the next session, so a replayed `Fed` of a feed settled before a
 //!   restart settles nothing either.
+//! - **Known limits.** The integration's store is written on Home
+//!   Assistant's event loop, not before the request goes, so these remain;
+//!   both fail toward "may have run", never toward a wrong settlement except
+//!   the first, and only on a hard kill:
+//!   - A feed's `sending` update reaches the store tens of milliseconds
+//!     after its request is queued. Killed in that gap, the store never had
+//!     the feed, and after the restart its `Fed` could settle an older open
+//!     feed of the same portions. The app writes its pin before it sends.
+//!   - Killed after a feed's answer but before its `cleared` update is
+//!     stored, the restart finds the feed lost though it was answered: a
+//!     false "may have run" repair, and, while it is open (up to a
+//!     week), a `Fed` of the same portions settles no other lost feed. Its own `Fed` never settles it, since its number was kept
+//!     first.
 //! - **Revocation.** A key the feeder no longer knows ends the session for
 //!   good: it is reported once and the thread stops reconnecting.
 
