@@ -48,10 +48,9 @@
 //!   alone) shorter, is read with the fields it lacks as zero, and
 //!   rewritten in the build's own minor.
 //! - **A newer major** is [`Found::Future`]: the store opens read-only.
-//! - **An older major** the build still reads ([`Layout::oldest_major`])
-//!   goes to the decoder with its version, so a store can keep one previous
-//!   decoder for a major it moved on from. Anything older is
-//!   [`Found::Older`].
+//! - **An older major** is [`Found::Older`]: a store that moves to a new
+//!   major moves to new sectors too, and reads its old store from there,
+//!   so no decoder takes a previous major in the same sectors.
 //!
 //! A change that is not additive is a new major, which bank 0 reads as a
 //! newer one and stops writing: so a store bank 0 has to keep using gets a
@@ -226,12 +225,9 @@ impl Version {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Layout {
     pub magic: [u8; 8],
-    /// The version this build writes.
+    /// The version this build writes; a record of an older major is
+    /// [`Found::Older`].
     pub version: Version,
-    /// The oldest major this build's decoder takes; below it a record is
-    /// [`Found::Older`]. The store's own major unless the store keeps a
-    /// previous decoder.
-    pub oldest_major: u8,
     /// Where the fields this build knows end: from here to the checksum,
     /// a record of the build's minor or older is zero, and a newer minor's
     /// bytes are kept but never decoded. A multiple of 4, from 12 to the
@@ -241,14 +237,12 @@ pub struct Layout {
 }
 
 impl Layout {
-    /// A layout reading only its own major; `fields_end` is checked when
-    /// the layout is a constant.
+    /// A layout; `fields_end` is checked when the layout is a constant.
     pub const fn new(magic: [u8; 8], version: Version, fields_end: usize, extent: Extent) -> Self {
         assert!(fields_end >= FIELDS_AT && fields_end.is_multiple_of(4));
         Self {
             magic,
             version,
-            oldest_major: version.major,
             fields_end,
             extent,
         }
@@ -683,21 +677,17 @@ impl<C: SlotIo> Units<'_, C> {
         if version.major > own.major {
             return Class::Future;
         }
-        if version.major < self.layout.oldest_major {
+        if version.major < own.major {
             return Class::Older;
         }
 
         // A newer minor may grow the record; nothing else may outgrow the
         // build's, and the build's own minor is its size exactly.
         let n = p.len();
-        let fits = if version.major < own.major {
-            length <= n
-        } else {
-            match version.minor.cmp(&own.minor) {
-                Ordering::Greater => length >= n,
-                Ordering::Equal => length == n,
-                Ordering::Less => length <= n,
-            }
+        let fits = match version.minor.cmp(&own.minor) {
+            Ordering::Greater => length >= n,
+            Ordering::Equal => length == n,
+            Ordering::Less => length <= n,
         };
         if !fits {
             return Class::Invalid;
@@ -708,15 +698,13 @@ impl<C: SlotIo> Units<'_, C> {
         if let Some(past) = p.get_mut(length.min(n).saturating_sub(TRAILER_BYTES)..) {
             past.fill(0);
         }
-        if version.major == own.major {
-            let Some(unknown) = p.get_mut(self.layout.known(n)..) else {
-                return Class::Invalid;
-            };
-            if version.minor > own.minor {
-                unknown.fill(0);
-            } else if !unknown.iter().all(|&b| b == 0) {
-                return Class::Invalid;
-            }
+        let Some(unknown) = p.get_mut(self.layout.known(n)..) else {
+            return Class::Invalid;
+        };
+        if version.minor > own.minor {
+            unknown.fill(0);
+        } else if !unknown.iter().all(|&b| b == 0) {
+            return Class::Invalid;
         }
         Class::Current(version)
     }
