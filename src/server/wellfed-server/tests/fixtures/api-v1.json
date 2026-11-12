@@ -2132,6 +2132,7 @@
             "phone_key_proof_required",
             "phone_key_proof_refused",
             "key_retired",
+            "feeder_busy",
             "internal",
             "unknown"
           ],

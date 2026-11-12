@@ -178,3 +178,51 @@ fn a_search_for_a_key_never_enrolled_ends_with_the_server() {
         sim.stop().await;
     });
 }
+
+/// A search holds its own feeder alone. Another adoption of it is refused
+/// busy at once rather than queued behind the search, while a removal and
+/// an adoption of other feeders go ahead.
+#[test]
+fn a_search_holds_its_own_feeder_alone() {
+    local(async {
+        let searched = feeder::start().await;
+        let kept = feeder::start().await;
+        let added = feeder::start().await;
+        let mut long = config();
+        long.timing.join_settle = Duration::from_secs(600);
+        let server = TestService::start_with(long).await;
+        let removed = server.adopt(&kept).await;
+        server.link(removed, Link::Online).await;
+        let service = server.service();
+        let caller = owner();
+
+        let real = Invite::parse(&invite(&searched, ClientRole::Member).await).unwrap();
+        let wrong = Invite {
+            secret: [0x77; 32],
+            ..real
+        };
+        let address = searched.address.to_string();
+        let adopted = service
+            .adopt(&caller, adopt(wrong.text(), address.clone()))
+            .await;
+        assert!(uncertain(&adopted), "{adopted:?}");
+
+        let again = tokio::time::timeout(WAIT, service.adopt(&caller, adopt(real.text(), address)));
+        let again = again.await.expect("answered at once");
+        assert!(
+            matches!(again, Err(Error::Feeder(FeederError::Busy))),
+            "{again:?}"
+        );
+        let removal = tokio::time::timeout(WAIT, service.remove_feeder(&caller, removed));
+        let removal = removal.await.expect("the removal went ahead");
+        assert!(removal.unwrap().feeder.archived.is_some());
+        let other = tokio::time::timeout(WAIT, server.adopt(&added));
+        let other = other.await.expect("the other adoption went ahead");
+        assert_ne!(other, removed);
+
+        server.shutdown().await;
+        for sim in [searched, kept, added] {
+            sim.stop().await;
+        }
+    });
+}

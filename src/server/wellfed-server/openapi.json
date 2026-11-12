@@ -506,7 +506,7 @@
             }
           },
           "409": {
-            "description": "already_adopted, feeder_refused, or, with the feeder adopted, a phone_key_* refusal or client_key_taken",
+            "description": "already_adopted, feeder_busy (another adoption or a removal of the feeder is running), feeder_refused, or, with the feeder adopted, a phone_key_* refusal or client_key_taken",
             "content": {
               "application/json": {
                 "schema": {
@@ -10440,6 +10440,7 @@
           "phone_key_proof_required",
           "phone_key_proof_refused",
           "key_retired",
+          "feeder_busy",
           "internal",
           "unknown"
         ]

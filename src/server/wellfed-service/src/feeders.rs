@@ -17,6 +17,7 @@ mod keys;
 mod parity;
 pub(crate) mod phones;
 mod plans;
+mod turns;
 mod updates;
 
 use std::collections::HashMap;
@@ -47,7 +48,8 @@ pub(crate) struct State {
     revocations: phones::Revocations,
     /// The challenges phones answer to prove they hold their keys.
     challenges: phones::Challenges,
-    adopting: Arc<tokio::sync::Mutex<()>>,
+    /// Each feeder's turn to be adopted or removed.
+    adopting: turns::Turns,
 }
 
 impl Service {
@@ -66,6 +68,10 @@ impl Service {
 pub enum FeederError {
     #[error("that feeder is already adopted")]
     AlreadyAdopted,
+    /// Another adoption or a removal of the feeder is running, a search
+    /// for a lost join's key among them: nothing was done.
+    #[error("another adoption or a removal of that feeder is running")]
+    Busy,
     #[error("the feeder was removed: adopt it again to send it anything")]
     Archived,
     #[error(transparent)]
@@ -94,6 +100,7 @@ impl FeederError {
     pub(crate) fn code(&self) -> ErrorCode {
         match self {
             Self::AlreadyAdopted => ErrorCode::AlreadyAdopted,
+            Self::Busy => ErrorCode::FeederBusy,
             Self::Archived => ErrorCode::FeederArchived,
             Self::Invite(_) => ErrorCode::Invalid,
             Self::InviteExpired => ErrorCode::InviteExpired,

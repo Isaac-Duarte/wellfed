@@ -2,9 +2,7 @@
 //! holds it.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
-
-use tokio::sync::{OwnedMutexGuard, oneshot};
+use tokio::sync::oneshot;
 use tracing::{info, warn};
 use wellfed_api::{AdoptFeeder, Connection as Link, EventPage, EventQuery, Feeder, FeederId, Hex};
 use wellfed_mirror::{Enrolled, Invite, Redeemed};
@@ -13,6 +11,7 @@ use wellfed_store::{FeederRow, NewFeeder};
 
 use crate::feeders::keys;
 use crate::feeders::phones::{Holder, Possession};
+use crate::feeders::turns::Turn;
 use crate::names::bounded;
 use crate::{Caller, Error, FeederError, InternalError, Invalid, Resource, Result, Service};
 
@@ -38,6 +37,10 @@ impl Service {
     /// [`FeederError::JoinUncertain`] at once, and the task goes on looking
     /// for the key ([`wellfed_mirror::Mirror::find_joined`]); found, the
     /// feeder is adopted as if the answer had come.
+    ///
+    /// One adoption or removal of a feeder runs at a time, and another
+    /// adoption of it meanwhile is refused [`FeederError::Busy`] at once
+    /// rather than queued behind a search. Other feeders never wait.
     pub async fn adopt(&self, caller: &Caller, request: AdoptFeeder) -> Result<Feeder> {
         let name = feeder_name(&request.name)?.to_owned();
         let invite = Invite::parse(&request.invite).map_err(FeederError::from)?;
@@ -45,6 +48,11 @@ impl Service {
             Some(key) => Some((self.direct_key_holder(caller).await?, key.0)),
             None => None,
         };
+        let turn = self
+            .feeders
+            .adopting
+            .try_take(invite.feeder)
+            .ok_or(FeederError::Busy)?;
 
         let (answer, answered) = oneshot::channel();
         let adoption = Adoption {
@@ -52,6 +60,7 @@ impl Service {
             name,
             phone,
             answer,
+            turn,
         };
         let service = self.clone();
         let cancel = self.cancel.child_token();
@@ -68,14 +77,10 @@ impl Service {
     }
 
     /// The adoption's task: redeem, then store, answering the caller as
-    /// soon as the outcome is known or uncertain.
-    ///
-    /// Adoptions run one at a time: two racing for one feeder would both
-    /// enroll a key, and the loser's would hold a client slot on the feeder
-    /// with nothing on the server to use it. A search for a lost join's key
-    /// holds the turn too, at most its window.
+    /// soon as the outcome is known or uncertain. It holds the feeder's
+    /// turn until the feeder is stored, through a search for a lost join's
+    /// key too, at most that search's window.
     async fn adopting(&self, invite: Invite, address: Option<String>, adoption: Adoption) {
-        let one_at_a_time = Arc::clone(&self.feeders.adopting).lock_owned().await;
         let redeemed = self.redeem(invite, address.as_deref()).await;
         let (place, redeemed) = match redeemed {
             Ok(redeemed) => redeemed,
@@ -92,9 +97,10 @@ impl Service {
                     name,
                     phone,
                     answer,
+                    turn,
                 } = adoption;
                 let adopted = self
-                    .store_adopted(&caller, place, &name, enrolled, phone, one_at_a_time)
+                    .store_adopted(&caller, place, &name, enrolled, phone, turn)
                     .await;
                 let _gone = answer.send(adopted);
             }
@@ -104,6 +110,7 @@ impl Service {
                     name,
                     phone,
                     answer,
+                    turn,
                 } = adoption;
                 let _gone = answer.send(Err(FeederError::JoinUncertain.into()));
                 let place = Place {
@@ -113,7 +120,7 @@ impl Service {
                 match self.mirror.find_joined(&lost).await {
                     Ok(Some(enrolled)) => {
                         let adopted = self
-                            .store_adopted(&caller, place, &name, enrolled, phone, one_at_a_time)
+                            .store_adopted(&caller, place, &name, enrolled, phone, turn)
                             .await;
                         match adopted {
                             Ok(feeder) => {
@@ -164,7 +171,7 @@ impl Service {
         name: &str,
         enrolled: Enrolled,
         phone: Option<(Holder, [u8; 32])>,
-        one_at_a_time: OwnedMutexGuard<()>,
+        turn: Turn,
     ) -> Result<Feeder> {
         // Every device belongs to the home, which setup made.
         let home = self.home().await?.id;
@@ -211,9 +218,9 @@ impl Service {
 
         let row = self.row(id).await?;
         self.spawn(&row).await?;
-        // The feeder is stored: the next adoption may start while this one
+        // The feeder is stored: a removal may start while this adoption
         // waits for its session.
-        drop(one_at_a_time);
+        drop(turn);
         if let Some((holder, key)) = phone {
             // An adoption names a key with no proof: a key a logout left
             // with no token is claimed again with one.
@@ -329,6 +336,8 @@ struct Adoption {
     name: String,
     phone: Option<(Holder, [u8; 32])>,
     answer: oneshot::Sender<Result<Feeder>>,
+    /// The feeder's turn, held until it is stored.
+    turn: Turn,
 }
 
 /// Where a redeemed invite's feeder is, and the key it was redeemed with.

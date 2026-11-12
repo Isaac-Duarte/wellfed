@@ -170,6 +170,11 @@ pub enum ErrorCode {
     /// late never runs behind its client's back. Nothing was sent; send it
     /// under a new key.
     KeyRetired,
+    /// Another adoption or a removal of the feeder is running: nothing was
+    /// done. An adoption whose join answer was lost holds the feeder while
+    /// the server looks for its key, up to twelve minutes; `GET /feeders`
+    /// lists the feeder once it is found.
+    FeederBusy,
     Internal,
     /// A code a newer server added, which this client cannot name. The
     /// server never sends it; a client reads the request as refused by a
