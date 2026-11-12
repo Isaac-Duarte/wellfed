@@ -19,6 +19,12 @@ const LIMITS: FlashLimits = FlashLimits {
     total_ms: 30,
 };
 
+/// What a GPIO enable checks under the authority's lock: the deadlines
+/// enforced, then the interlock.
+fn may_actuate(c: &mut FlashCoord, now: u32) -> bool {
+    c.poll(now) && !c.outputs_blocked()
+}
+
 fn other(party: FlashParty) -> FlashParty {
     if party == FlashParty::Local {
         FlashParty::Peer
@@ -29,16 +35,16 @@ fn other(party: FlashParty) -> FlashParty {
 
 fn ready(now: u32) -> FlashCoord {
     let mut c = FlashCoord::new(&LIMITS, 17, now).unwrap();
-    assert!(!c.may_actuate(now));
+    assert!(!may_actuate(&mut c, now));
     assert_eq!(c.ready(17, 29, true, now), FlashReply::Accepted);
-    assert!(c.may_actuate(now));
+    assert!(may_actuate(&mut c, now));
     c
 }
 
 fn request(c: &mut FlashCoord, party: FlashParty, id: u64, now: u32) -> FlashToken {
     let session = if party == FlashParty::Local { 17 } else { 29 };
     assert_eq!(c.request(party, session, id, now), FlashReply::Accepted);
-    assert!(!c.may_actuate(now));
+    assert!(!may_actuate(c, now));
     c.token()
 }
 
@@ -49,18 +55,18 @@ fn grant(c: &mut FlashCoord, t: &FlashToken, now: u32) {
     assert_eq!(c.parked(t, other(t.owner), now), FlashReply::Accepted);
     assert!(c.may_access(t, t.owner, now));
     assert!(!c.may_access(t, other(t.owner), now));
-    assert!(!c.may_actuate(now));
+    assert!(!may_actuate(c, now));
 }
 
 fn finish(c: &mut FlashCoord, t: &FlashToken, now: u32) {
     assert_eq!(c.complete(t, t.owner, now), FlashReply::Accepted);
     assert!(!c.may_access(t, t.owner, now));
-    assert!(!c.may_actuate(now));
+    assert!(!may_actuate(c, now));
     assert_eq!(
         c.released(t, other(t.owner), true, now),
         FlashReply::Accepted
     );
-    assert!(c.may_actuate(now));
+    assert!(may_actuate(c, now));
 }
 
 #[test]
@@ -93,20 +99,20 @@ fn startup_requires_current_sessions_and_verified_outputs() {
     let mut c = FlashCoord::new(&LIMITS, 17, 0).unwrap();
     assert_eq!(c.request(FlashParty::Local, 17, 1, 0), FlashReply::Busy);
     assert_eq!(c.ready(16, 29, true, 0), FlashReply::Stale);
-    assert!(!c.may_actuate(0));
+    assert!(!may_actuate(&mut c, 0));
     assert_eq!(c.ready(17, 29, false, 0), FlashReply::Failed);
-    assert!(c.fault() == FlashFault::Output && !c.may_actuate(0));
+    assert!(c.fault() == FlashFault::Output && !may_actuate(&mut c, 0));
 
     let mut c = ready(0);
     assert_eq!(c.ready(17, 29, true, 1), FlashReply::Duplicate);
     assert_eq!(c.request(FlashParty::Peer, 30, 1, 1), FlashReply::Stale);
-    assert!(c.may_actuate(1));
+    assert!(may_actuate(&mut c, 1));
     assert_eq!(c.ready(17, 30, true, 1), FlashReply::Failed);
-    assert!(c.fault() == FlashFault::PeerLost && !c.may_actuate(1));
+    assert!(c.fault() == FlashFault::PeerLost && !may_actuate(&mut c, 1));
 
     let mut c = FlashCoord::new(&LIMITS, 18, 2).unwrap(); // Fixture models a fresh boot object.
     assert_eq!(c.ready(17, 29, true, 2), FlashReply::Stale);
-    assert!(!c.may_actuate(2));
+    assert!(!may_actuate(&mut c, 2));
 }
 
 #[test]
@@ -131,13 +137,13 @@ fn token_mutations_cannot_authorize() {
             c.released(&stale, FlashParty::Peer, true, 1),
             FlashReply::Stale
         );
-        assert!(!c.may_actuate(1));
+        assert!(!may_actuate(&mut c, 1));
 
         finish(&mut c, &t, 2);
         let next = request(&mut c, FlashParty::Local, 2, 3);
         assert_ne!(next.lease, t.lease);
         assert_eq!(c.released(&t, FlashParty::Peer, true, 3), FlashReply::Stale);
-        assert!(!c.may_actuate(3));
+        assert!(!may_actuate(&mut c, 3));
     }
 }
 
@@ -156,7 +162,7 @@ fn duplicates_never_extend_deadlines() {
     }
 
     assert!(!c.may_access(&t, FlashParty::Local, 11));
-    assert!(c.fault() == FlashFault::Timeout && !c.may_actuate(11));
+    assert!(c.fault() == FlashFault::Timeout && !may_actuate(&mut c, 11));
     assert_eq!(c.complete(&t, FlashParty::Local, 11), FlashReply::Failed);
     assert_eq!(
         c.released(&t, FlashParty::Peer, true, 11),
@@ -186,7 +192,7 @@ fn each_phase_has_an_absolute_cutoff() {
 
         assert!(c.poll(9));
         assert!(!c.poll(10) && c.fault() == FlashFault::Timeout);
-        assert!(!c.may_actuate(10));
+        assert!(!may_actuate(&mut c, 10));
     }
 }
 
@@ -231,7 +237,7 @@ fn wrong_sender_early_release_and_output_loss_fault() {
             assert_eq!(reply, FlashReply::Failed);
         }
 
-        assert!(!c.may_actuate(0) && !c.may_access(&t, FlashParty::Local, 0));
+        assert!(!may_actuate(&mut c, 0) && !c.may_access(&t, FlashParty::Local, 0));
         assert_eq!(
             c.fault(),
             if failure == 3 {
@@ -250,12 +256,12 @@ fn clock_wrap_backward_and_transport_fault() {
     let t = request(&mut c, FlashParty::Peer, 1, start);
     grant(&mut c, &t, start + 1);
     finish(&mut c, &t, 1);
-    assert!(!c.may_actuate(0) && c.fault() == FlashFault::Clock);
+    assert!(!may_actuate(&mut c, 0) && c.fault() == FlashFault::Clock);
 
     let mut c = ready(0);
     c.trip(FlashFault::Transport);
     c.trip(FlashFault::PeerLost);
-    assert!(c.fault() == FlashFault::Transport && !c.may_actuate(1));
+    assert!(c.fault() == FlashFault::Transport && !may_actuate(&mut c, 1));
     assert_eq!(c.close(1), FlashReply::Failed);
 }
 
@@ -271,10 +277,10 @@ fn close_requires_current_fence_and_disabled_peer() {
     assert!(fence.owner == FlashParty::Fence && fence.lease != old.lease);
     assert_eq!(c.closed(&old, true, true, 1), FlashReply::Stale);
     assert_eq!(c.closed(&fence, false, true, 1), FlashReply::Busy);
-    assert!(!c.may_actuate(1));
+    assert!(!may_actuate(&mut c, 1));
     assert_eq!(c.request(FlashParty::Peer, 29, 1, 1), FlashReply::Busy);
     assert_eq!(c.closed(&fence, true, true, 2), FlashReply::Accepted);
-    assert!(!c.may_actuate(2));
+    assert!(!may_actuate(&mut c, 2));
     assert!(!c.may_access(&old, FlashParty::Local, 2));
 }
 
@@ -361,7 +367,7 @@ fn exhaustive_reordering_and_replay_cannot_create_permission() {
                     assert!(quiet && parked && !complete);
                 }
                 assert!(!c.may_access(&t, other(who), step));
-                if c.may_actuate(step) {
+                if may_actuate(&mut c, step) {
                     assert!(released && complete);
                 }
             }

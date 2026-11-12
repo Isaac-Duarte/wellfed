@@ -92,12 +92,14 @@ impl Health {
     }
 
     /// The Repetition Count Test's cutoff: a run this long fails.
+    #[doc(hidden)]
     pub const fn repetition_cutoff(&self) -> u32 {
         self.rct_cutoff
     }
 
     /// The Adaptive Proportion Test's cutoff: this many matches in one
     /// window fails.
+    #[doc(hidden)]
     pub const fn proportion_cutoff(&self) -> u32 {
         self.apt_cutoff
     }

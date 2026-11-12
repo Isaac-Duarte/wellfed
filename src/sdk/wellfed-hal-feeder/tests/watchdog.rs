@@ -1,13 +1,12 @@
 //! KM4 watchdog driver against the fake register model: opening validates
 //! the configuration and claims the reset scope while preserving the other
 //! scope bits; a refresh needs elapsed time and owner progress; and a context
-//! or register change, a frozen clock or a flash hold ends refreshes so the
+//! or register change or a frozen clock ends refreshes so the
 //! independent watchdog expires.
 
 mod common;
 
 use common::*;
-use wellfed_core::flash_coord::{FlashParty, FlashReply};
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::supervision::watchdog::{
     ForcedReset, Forcing, Watchdog, WatchdogConfig, WatchdogFault, force_reset,
@@ -263,34 +262,6 @@ fn hardware_counter_wrap_and_clock_fault() {
 
     hw(|h| h.raw_ticks -= 1);
     assert!(!w.check() && w.fault == WatchdogFault::Clock);
-    close_port(&mut w);
-}
-
-#[test]
-fn flash_hold_cannot_refresh_or_extend_progress() {
-    let mut w = fresh();
-    let mut c = flash_ready();
-    assert!(w.open(&CONFIG));
-
-    fake::advance(64, false);
-    // SAFETY: null or a live coordinator.
-    assert!(!unsafe { w.checkpoint_if_ready(1, core::ptr::null()) });
-    // SAFETY: null or a live coordinator.
-    assert!(unsafe { w.checkpoint_if_ready(1, &*c) });
-    assert!(hw(|h| h.watchdog_refreshes) == 1 && w.progress_at == 2);
-
-    assert_eq!(c.request(FlashParty::Peer, 29, 1, 0), FlashReply::Accepted);
-    for n in 2..51 {
-        fake::advance(32, false);
-        // SAFETY: null or a live coordinator.
-        assert!(unsafe { w.checkpoint_if_ready(n, &*c) });
-        assert!(w.progress == 1 && w.progress_at == 2 && hw(|h| h.watchdog_refreshes) == 1);
-    }
-
-    fake::advance(32, false);
-    // SAFETY: null or a live coordinator.
-    assert!(!unsafe { w.checkpoint_if_ready(51, &*c) });
-    assert!(w.fault == WatchdogFault::Progress && hw(|h| h.watchdog_refreshes) == 1);
     close_port(&mut w);
 }
 

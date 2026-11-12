@@ -93,7 +93,8 @@ impl Plan {
 /// The plan in each slot.
 pub type Table = [Option<Plan>; PLANS];
 
-/// Whether every plan in `table` is valid.
+/// Whether every plan in `table` is valid. The schedule tests' oracle.
+#[doc(hidden)]
 pub fn table_valid(table: &Table) -> bool {
     table.iter().flatten().all(Plan::valid)
 }

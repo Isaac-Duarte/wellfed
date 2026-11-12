@@ -537,6 +537,9 @@ impl FlashCoord {
         FlashReply::Accepted
     }
 
+    /// Whether `who` holding `t` may touch flash now: the protocol tests'
+    /// oracle across every reordering.
+    #[doc(hidden)]
     pub fn may_access(&mut self, t: &FlashToken, who: FlashParty, now: u32) -> bool {
         self.poll(now)
             && self.phase == FlashPhase::Active
@@ -545,14 +548,10 @@ impl FlashCoord {
             && *t == self.token
     }
 
-    /// GPIO enable must check this and apply its output under the SAME lock.
-    pub fn may_actuate(&mut self, now: u32) -> bool {
-        self.poll(now) && !self.outputs_blocked()
-    }
-
     /// State interlock for the actual GPIO write, under authority
-    /// serialization. It does not read a clock or grant/extend a lease.
-    /// Non-IDLE always blocks.
+    /// serialization. It does not read a clock or grant/extend a lease, so a
+    /// caller that needs the deadlines enforced polls first. Non-IDLE always
+    /// blocks.
     pub fn outputs_blocked(&self) -> bool {
         !self.initialized || self.fault != FlashFault::Ok || self.phase != FlashPhase::Idle
     }
@@ -624,6 +623,6 @@ mod tests {
         c.token.lease = u64::MAX;
 
         assert_eq!(c.request(FlashParty::Local, 17, 1, 0), FlashReply::Failed);
-        assert!(c.fault() == FlashFault::Exhausted && !c.may_actuate(0));
+        assert!(c.fault() == FlashFault::Exhausted && c.outputs_blocked());
     }
 }
