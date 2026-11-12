@@ -168,6 +168,28 @@ void main() {
       expect(next.base, 9);
     });
 
+    testWidgets('the choices wait for the time read back, so a quick second tap goes nowhere', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      final read = Completer<void>();
+      session.answering = (request) async {
+        if (request is FeederRequest_GetTime) await read.future;
+        return const FeederReply.done();
+      };
+      session.status(fakeCard(time: time));
+      await showTab(tester, ClockScreen(feeder: feeder));
+      session.requests.clear();
+
+      await tapIn(tester, find.text('Phones only'));
+      await tapIn(tester, find.text('Your router'));
+      expect(session.requests.whereType<FeederRequest_PutTime>(), hasLength(1), reason: 'the read is still out');
+
+      read.complete();
+      session.status(fakeCard(time: const TimeInfo(generation: 9, writable: true, ntp: NtpView.off(), syncs: 1)));
+      await settle(tester);
+      await tapIn(tester, find.text('Your router'));
+      expect(session.requests.whereType<FeederRequest_PutTime>().last.base, 9);
+    });
+
     testWidgets('a public server picked from the list goes as its address', (tester) async {
       final FakeSession session = await show(tester);
 

@@ -49,13 +49,14 @@ class _ClockScreenState extends State<ClockScreen> {
       FeederRequest.putTime(base: time.generation, zone: zone, ntp: ntp),
     );
     if (!mounted) return;
-    setState(() => _asking = false);
     showProblem(context, reply);
 
     // The feeder writes no event for a time setting, so nothing else would
     // tell the card: its choices would stay as they were, and its old
-    // generation would get the next change refused as stale.
-    unawaited(widget.feeder.ask(const FeederRequest.getTime()));
+    // generation would get the next change refused as stale. The choices
+    // wait for the read, as a second tap would go against the old one.
+    await widget.feeder.ask(const FeederRequest.getTime());
+    if (mounted) setState(() => _asking = false);
   }
 
   Future<void> _address() async {
