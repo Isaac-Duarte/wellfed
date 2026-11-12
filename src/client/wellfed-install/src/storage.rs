@@ -75,12 +75,29 @@ pub fn keep_backup(path: &Path, backup: &StockBackup) -> Result<(), Error> {
 
 /// Write `bytes` as a new file at `path`, whole or not at all, creating its
 /// directory.
+///
+/// A directory made here lasts a power cut only once its parent is synced:
+/// syncing the file's own directory does not keep that directory's entry,
+/// and a stock backup in it may be the only copy left once an install has
+/// written over the feeder's stock.
 pub(crate) fn write_new(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     if let Some(directory) = path.parent() {
-        std::fs::create_dir_all(directory).map_err(|source| Error::Create {
+        let created = |source| Error::Create {
             path: directory.to_path_buf(),
             source,
-        })?;
+        };
+        let missing: Vec<&Path> = directory
+            .ancestors()
+            .take_while(|ancestor| !ancestor.as_os_str().is_empty() && !ancestor.exists())
+            .collect();
+        std::fs::create_dir_all(directory).map_err(created)?;
+        for made in missing {
+            if let Some(parent) = made.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::File::open(parent)
+                    .and_then(|parent| parent.sync_all())
+                    .map_err(created)?;
+            }
+        }
     }
     wellfed_formats::private::write_new_whole(path, bytes).map_err(|source| Error::Write {
         path: path.to_path_buf(),
