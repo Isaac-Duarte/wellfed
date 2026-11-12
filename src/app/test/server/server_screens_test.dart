@@ -54,6 +54,7 @@ void main() {
     await tester.enterText(find.byType(TextField).at(1), 'ada');
     await tester.enterText(find.byType(TextField).at(2), 'hunter2');
     await tester.pump();
+    await tester.ensureVisible(find.text('Log in'));
     await tester.tap(find.text('Log in'));
     await settle(tester);
 
@@ -62,15 +63,31 @@ void main() {
     expect(server.state, isA<ServerLinked>());
   });
 
+  testWidgets('a plain address heard on the network says the password would go unencrypted', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, _) = _server();
+    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+    ports.found.add(const FoundServer(url: 'http://192.168.1.20:8080', name: 'home-1a2b3c4d'));
+    await settle(tester);
+
+    expect(find.text('http://192.168.1.20:8080 · not encrypted'), findsOneWidget);
+    expect(find.textContaining('Not encrypted.', findRichText: true), findsNothing, reason: 'nothing picked yet');
+    await tester.tap(find.text('home-1a2b3c4d'));
+    await tester.pump();
+    expect(find.textContaining('Not encrypted.', findRichText: true), findsOneWidget);
+  });
+
   testWidgets('plain http beyond the home network is refused, and says how to reach the server', (tester) async {
     _phone(tester);
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     ports.loginFails = serverError(ServerErrorKind.plainHttp);
     await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
-    await tester.enterText(find.byType(TextField).at(0), 'http://feeder.example');
+    // The address last: a plain one adds a notice that moves the others.
     await tester.enterText(find.byType(TextField).at(1), 'ada');
     await tester.enterText(find.byType(TextField).at(2), 'hunter2');
+    await tester.enterText(find.byType(TextField).at(0), 'http://feeder.example');
     await tester.pump();
+    await tester.ensureVisible(find.text('Log in'));
     await tester.tap(find.text('Log in'));
     await settle(tester);
 
@@ -84,10 +101,12 @@ void main() {
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     ports.loginFails = serverError(ServerErrorKind.badCredentials);
     await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
-    await tester.enterText(find.byType(TextField).at(0), 'http://home.lan:8080');
+    // The address last: a plain one adds a notice that moves the others.
     await tester.enterText(find.byType(TextField).at(1), 'ada');
     await tester.enterText(find.byType(TextField).at(2), 'wrong');
+    await tester.enterText(find.byType(TextField).at(0), 'http://home.lan:8080');
     await tester.pump();
+    await tester.ensureVisible(find.text('Log in'));
     await tester.tap(find.text('Log in'));
     await settle(tester);
 
