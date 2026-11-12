@@ -11,7 +11,7 @@ use wellfed_api::{
 use crate::convert::{lenient, millis, timestamp};
 use crate::{Error, Result, Store};
 
-pub(crate) mod invitees;
+mod invitees;
 mod logout;
 mod reconcile;
 mod revoke;
@@ -306,4 +306,33 @@ impl Store {
 pub(crate) fn kept_key(key: Vec<u8>) -> Result<[u8; 32]> {
     key.try_into()
         .map_err(|_| Error::Corrupt("kept client key"))
+}
+
+/// An invitation's columns as the readers take them.
+pub(crate) struct StoredInvitation {
+    epoch: u32,
+    seq: u64,
+    invitee: [u8; invitees::PREFIX],
+    inviter: [u8; invitees::PREFIX],
+    received: Timestamp,
+}
+
+pub(crate) fn stored_invitation(
+    epoch: i64,
+    seq: i64,
+    invitee: Vec<u8>,
+    inviter: Vec<u8>,
+    received_ms: i64,
+) -> Result<StoredInvitation> {
+    Ok(StoredInvitation {
+        epoch: u32::try_from(epoch).map_err(|_| Error::Corrupt("invitation epoch"))?,
+        seq: u64::try_from(seq).map_err(|_| Error::Corrupt("invitation seq"))?,
+        invitee: invitee
+            .try_into()
+            .map_err(|_| Error::Corrupt("invitee prefix"))?,
+        inviter: inviter
+            .try_into()
+            .map_err(|_| Error::Corrupt("inviter prefix"))?,
+        received: timestamp(received_ms)?,
+    })
 }

@@ -30,9 +30,10 @@ use sqlx::SqliteConnection;
 use uuid::Uuid;
 use wellfed_api::{ClientRole, FeederId};
 
-use crate::convert::{millis, timestamp, to_i64};
+use super::{StoredInvitation, stored_invitation};
+use crate::convert::{millis, to_i64};
 use crate::projections::Place;
-use crate::{Error, Result, Store};
+use crate::{Result, Store};
 
 /// How many of a key's first bytes an `invited` event names it by.
 pub(super) const PREFIX: usize = 7;
@@ -213,13 +214,13 @@ impl Store {
         .await?;
         rows.into_iter()
             .map(|row| {
-                let Stored {
+                let StoredInvitation {
                     epoch,
                     seq,
                     invitee,
                     inviter,
                     received,
-                } = stored(
+                } = stored_invitation(
                     row.epoch,
                     row.seq,
                     row.invitee,
@@ -369,33 +370,4 @@ impl Store {
         tx.commit().await?;
         Ok(owed)
     }
-}
-
-/// An invitation's columns as the readers take them.
-pub(crate) struct Stored {
-    epoch: u32,
-    seq: u64,
-    invitee: [u8; PREFIX],
-    inviter: [u8; PREFIX],
-    received: Timestamp,
-}
-
-pub(crate) fn stored(
-    epoch: i64,
-    seq: i64,
-    invitee: Vec<u8>,
-    inviter: Vec<u8>,
-    received_ms: i64,
-) -> Result<Stored> {
-    Ok(Stored {
-        epoch: u32::try_from(epoch).map_err(|_| Error::Corrupt("invitation epoch"))?,
-        seq: u64::try_from(seq).map_err(|_| Error::Corrupt("invitation seq"))?,
-        invitee: invitee
-            .try_into()
-            .map_err(|_| Error::Corrupt("invitee prefix"))?,
-        inviter: inviter
-            .try_into()
-            .map_err(|_| Error::Corrupt("inviter prefix"))?,
-        received: timestamp(received_ms)?,
-    })
 }

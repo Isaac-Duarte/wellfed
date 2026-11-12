@@ -13,7 +13,7 @@ use wellfed_api::{Food, Install, PhoneKey};
 use wellfed_formats::export::Row;
 
 use crate::commands::{self, CommandRow};
-use crate::phones::{self, invitees};
+use crate::phones;
 use crate::projections::{Feed, FeedRow, Projected, read};
 use crate::samples::{self, rollups};
 use crate::{
@@ -86,7 +86,7 @@ fn readable(row: &Row) -> Result<()> {
             phones::kept_key(kept.key.clone())?;
         }
         Row::Invitations(row) => {
-            invitees::stored(
+            phones::stored_invitation(
                 row.epoch,
                 row.seq,
                 row.invitee.clone(),
