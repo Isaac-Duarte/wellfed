@@ -257,7 +257,10 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
         report: Printer,
         offering: Offering::default(),
     };
-    match wellfed_install::restore::restore(plan, platform, signalled()?).await? {
+    let restored = wellfed_install::restore::restore(plan, platform, signalled()?)
+        .await
+        .map_err(unsettled)?;
+    match restored {
         Restored::Activated => {
             eprintln!(
                 "Activated: the feeder restarts into stock {STOCK_VERSION} from bank 1, with its \
@@ -294,6 +297,28 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
                  stock's app, and only then hold Reset to set it up there."
             )))
         }
+    }
+}
+
+/// A restore's error as the command reports it. Nothing was offered, but
+/// an enrollment or a cancel whose outcome is unknown may have run, so it
+/// exits [`crate::UNKNOWN`] rather than as a plain failure.
+fn unsettled(error: wellfed_install::Error) -> anyhow::Error {
+    use wellfed_client::update_key::EnrollError;
+    use wellfed_install::Error;
+
+    match error {
+        Error::RestoreEnroll(EnrollError::Uncertain) => crate::uncertain(
+            "no readable answer came to the restore key's enrollment, and the feeder's signers \
+             did not show it: a press may have enrolled it all the same. Nothing was offered; \
+             the next `wellfed restore-stock` reads the signers first",
+        ),
+        Error::RestoreCancelUnknown => crate::uncertain(
+            "the one cancel of an earlier pending install did not show it gone: the cancel may \
+             have run. Nothing was offered; the next `wellfed restore-stock` reads the update \
+             state first",
+        ),
+        other => other.into(),
     }
 }
 
@@ -357,6 +382,31 @@ impl Discovery for Finder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Uncertain;
+
+    /// An enrollment or a cancel whose outcome is unknown exits unknown,
+    /// though nothing was offered; an end that says nothing ran does not.
+    #[test]
+    fn an_uncertain_enrollment_or_cancel_exits_unknown() {
+        use wellfed_client::update_key::EnrollError;
+        use wellfed_install::Error;
+
+        for uncertain in [
+            Error::RestoreEnroll(EnrollError::Uncertain),
+            Error::RestoreCancelUnknown,
+        ] {
+            let error = unsettled(uncertain);
+            assert!(error.downcast_ref::<Uncertain>().is_some(), "{error:#}");
+        }
+        for definite in [
+            Error::RestoreEnroll(EnrollError::Unconfirmed),
+            Error::RestoreEnroll(EnrollError::ListUnanswered),
+            Error::RestoreKeyGone,
+        ] {
+            let error = unsettled(definite);
+            assert!(error.downcast_ref::<Uncertain>().is_none(), "{error:#}");
+        }
+    }
 
     /// A foreign file where the backup is kept is refused, not shown or
     /// exported.
