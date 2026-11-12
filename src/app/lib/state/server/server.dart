@@ -10,7 +10,10 @@ import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/server/log_in.dart';
 import 'package:wellfed/state/server/log_out.dart';
+
+export 'package:wellfed/state/server/log_in.dart';
 
 /// Why the owner's server is not serving this phone right now.
 enum ServerProblem {
@@ -109,26 +112,6 @@ final class OtherDevice {
 
   /// Why the app does not serve it: never [ServerDevice.feeder].
   final ServerDevice device;
-}
-
-/// How a login ended.
-sealed class LoginOutcome {
-  const LoginOutcome();
-}
-
-/// Logged in: the phone's token is kept, and the password is not.
-final class LoginDone extends LoginOutcome {
-  /// A login that went through.
-  const LoginDone();
-}
-
-/// The server refused or could not be reached; `error` says which.
-final class LoginFailed extends LoginOutcome {
-  /// A login that did not go through.
-  const LoginFailed(this.error);
-
-  /// What the server, or the way to it, said.
-  final ServerError error;
 }
 
 /// The owner's server: the login, the phone's token, the feeders it lists
