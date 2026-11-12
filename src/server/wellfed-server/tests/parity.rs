@@ -7,8 +7,10 @@ use wellfed_model::{
 };
 use wellfed_service::{Method, Parity, parity};
 
-/// One operation of each kind. The match in [`kind`] has no wildcard, so
-/// a new operation does not build until it is given a sample here.
+/// One operation of each kind. The match in [`kind`] has no wildcard, so a
+/// new operation does not build until it is given a kind; the kinds the
+/// samples cover must then be every one from 0 to [`LAST`], so it does not
+/// pass until it is given a sample here too.
 fn every_op() -> Vec<Op> {
     let sync = TimeSync {
         unix_ms: 0,
@@ -104,10 +106,17 @@ fn every_op() -> Vec<Op> {
     ];
     let mut kinds: Vec<_> = ops.iter().map(kind).collect();
     kinds.sort_unstable();
-    kinds.dedup();
-    assert_eq!(kinds.len(), ops.len(), "one sample of each operation");
+    assert_eq!(
+        kinds,
+        (0..=LAST).collect::<Vec<_>>(),
+        "one sample of each operation"
+    );
     ops
 }
+
+/// The last kind [`kind`] gives. A new operation takes the next number and
+/// moves this to it.
+const LAST: u8 = 38;
 
 /// The operation's kind, by an exhaustive match.
 fn kind(op: &Op) -> u8 {
@@ -150,7 +159,7 @@ fn kind(op: &Op) -> u8 {
         Op::SkipMeal { .. } => 35,
         Op::UnskipMeal { .. } => 36,
         Op::GetAlerts => 37,
-        Op::CreateBoundInvite { .. } => 38,
+        Op::CreateBoundInvite { .. } => LAST,
     }
 }
 
