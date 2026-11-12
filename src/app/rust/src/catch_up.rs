@@ -16,7 +16,8 @@
 //! feeder last answered; if nothing answers there, the caller looks for it
 //! with NSD and tries again, since a lease may have moved it, and only that
 //! try's failure counts towards "unreachable", only on the network where
-//! the feeder last answered, and only with no owner's server to ask.
+//! the feeder last answered, and only when no owner's server answers for
+//! the feeder.
 //!
 //! Away from home (off the network the feeder last answered on), a feeder
 //! the owner's server holds is read through the server instead
@@ -132,7 +133,7 @@ pub(crate) async fn catch_up(
     let unknown_home = home.is_none() && target.network.is_some();
     let away = !unknown_home && (target.network.is_none() || target.network.as_deref() != home);
     if away && let Some(server) = &target.server {
-        return through_server(dir, target, server, &identity, now).await;
+        return through_server(dir, target, server, &identity, &now).await;
     }
     let tried = match target.attempt {
         Attempt::First => target
@@ -153,13 +154,23 @@ pub(crate) async fn catch_up(
     // A network only looks like home by its gateway and subnet, which a
     // café's can share. So silence on the last try at home goes to the
     // owner's server too: it reads the feeder, or judges it unreachable
-    // itself, and the phone counts a failure only with no server to ask.
+    // itself. Only its answer stands in for the phone's: a server that is
+    // down or turns this phone away leaves the silence at home to count as
+    // the phone's own, so a hung feeder still raises its alert, while a
+    // lookalike's few failures still wait out the alert's thresholds.
     let last = *target.attempt != Attempt::First;
     if (unknown_home || last)
         && matches!(visit, Visit::NoAnswer)
         && let Some(server) = &target.server
     {
-        return through_server(dir, target, server, &identity, now).await;
+        let (end, changes) = through_server(dir, target, server, &identity, &now).await?;
+        let unheard = matches!(
+            end,
+            CatchUpEnd::ServerUnanswered | CatchUpEnd::ServerRefused
+        );
+        if unknown_home || !unheard {
+            return Ok((end, changes));
+        }
     }
     let end = match (&visit, &address) {
         (Visit::Table(..), _) => CatchUpEnd::Read,
@@ -215,7 +226,7 @@ async fn through_server(
     target: &Target<'_>,
     server: &ServerRoute,
     identity: &str,
-    now: impl Fn() -> Timestamp,
+    now: &impl Fn() -> Timestamp,
 ) -> Result<(CatchUpEnd, Vec<Change>), BridgeError> {
     let read = timeout(SITTING, server.client.feeder_alerts(server.feeder)).await;
     let alerts = match read {
@@ -494,5 +505,99 @@ mod tests {
 
         assert!(watch.changes().is_empty());
         assert_eq!(watch.listed().count(), 0);
+    }
+
+    /// At a known home where the feeder is silent, a server that is down or
+    /// turns this phone away answers nothing for it: the phone's own
+    /// silence counts, and past the thresholds the feeder is unreachable.
+    #[test]
+    fn a_silent_feeder_at_home_counts_when_the_server_cannot_answer_for_it() {
+        use std::cell::Cell;
+
+        use wellfed_client::alerts::{Notice, UNREACHABLE_AFTER, UNREACHABLE_FOR};
+        use wellfed_server_testkit::{TestServer, local};
+
+        use crate::api::server_views::ServerLink;
+        use crate::api::store::{self, AppStore, KnownFeeder, swap_store};
+
+        const HOME: &str = "gateway-subnet:home";
+        let identity = [0xab; 32];
+        let hex = "ab".repeat(32);
+
+        local(async {
+            let turning_away = TestServer::start().await;
+            let servers = [
+                "http://127.0.0.1:9".to_owned(),
+                format!("http://{}", turning_away.address()),
+            ];
+            for url in servers {
+                let dir = tempfile::tempdir().unwrap();
+                let dir = dir.path();
+                let feeder = KnownFeeder {
+                    identity: hex.clone(),
+                    name: "Kitchen".into(),
+                    address: None,
+                    manual_address: None,
+                };
+                let store = AppStore {
+                    feeders: vec![feeder],
+                    ..AppStore::default()
+                };
+                let path = dir.join(store::FILE_NAME);
+                let path = path.to_string_lossy();
+                assert!(swap_store(&path, &AppStore::default(), &store).unwrap());
+                alerts::change(dir, |state| {
+                    state.catch_up(dir, &hex, |watched, _| {
+                        watched.watch.reached(Some(HOME.into()), at(0));
+                    })
+                })
+                .await
+                .unwrap()
+                .unwrap();
+
+                let link = ServerLink {
+                    url: url.clone(),
+                    user: "ada".into(),
+                    token_id: "00000000-0000-0000-0000-000000000001".into(),
+                };
+                let keys = Keypair::from_secret([0x31; 32]);
+                let attempt = Attempt::Last {
+                    located: Some("127.0.0.1:9".into()),
+                };
+                let clock = Cell::new(at(60));
+                let mut unreachable = false;
+                for round in 0..UNREACHABLE_AFTER {
+                    let client = crate::api::server::alert_client(
+                        &link,
+                        "wf_0000000000000000000000000000000000000000000",
+                    )
+                    .unwrap();
+                    let target = Target {
+                        keys: &keys,
+                        identity,
+                        manual: None,
+                        known: None,
+                        attempt: &attempt,
+                        network: Some(HOME.into()),
+                        server: Some(ServerRoute {
+                            client,
+                            feeder: crate::server::ids::feeder(
+                                "0192c5d0-3333-7000-8000-000000000001",
+                            )
+                            .unwrap(),
+                        }),
+                    };
+                    let (end, changes) = catch_up(dir, &target, || clock.get()).await.unwrap();
+
+                    assert_eq!(end, CatchUpEnd::Failed, "{url}, round {round}");
+                    unreachable |= changes.iter().any(|change| {
+                        matches!(change, Change::Post(tracked) if matches!(tracked.notice, Notice::Unreachable { .. }))
+                    });
+                    clock.set(clock.get() + UNREACHABLE_FOR);
+                }
+                assert!(unreachable, "{url}: the feeder never read as unreachable");
+            }
+            turning_away.stop().await;
+        });
     }
 }

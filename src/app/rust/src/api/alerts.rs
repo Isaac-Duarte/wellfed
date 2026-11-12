@@ -93,9 +93,10 @@ pub enum CatchUpEnd {
     Away,
     /// Nothing answered the first try: look for the feeder and try again.
     Unanswered,
-    /// Nothing answered the last try, and no owner's server holds the
-    /// feeder. On the feeder's home network that counts towards
-    /// unreachable; anywhere else it counts for nothing.
+    /// Nothing answered the last try, and no owner's server answered for
+    /// the feeder: none holds it, or it was down or turned this phone away.
+    /// On the feeder's home network that counts towards unreachable;
+    /// anywhere else it counts for nothing.
     Failed,
     /// Away from home: it read what the owner's server last read of the
     /// feeder, and applied it.
