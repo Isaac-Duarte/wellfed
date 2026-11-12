@@ -4106,14 +4106,14 @@ return stopped(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int seconds,  bool stock)?  tick,TResult Function( String address)?  replacement,TResult Function( bool resolved)?  stockStayed,TResult Function()?  silent,TResult Function( String detail)?  failed,TResult Function()?  stopped,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int seconds,  bool stock)?  tick,TResult Function( String address)?  replacement,TResult Function( bool resolved)?  stockStayed,TResult Function()?  silent,TResult Function( ListenFailure why,  String detail)?  failed,TResult Function()?  stopped,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ListenUpdate_Tick() when tick != null:
 return tick(_that.seconds,_that.stock);case ListenUpdate_Replacement() when replacement != null:
 return replacement(_that.address);case ListenUpdate_StockStayed() when stockStayed != null:
 return stockStayed(_that.resolved);case ListenUpdate_Silent() when silent != null:
 return silent();case ListenUpdate_Failed() when failed != null:
-return failed(_that.detail);case ListenUpdate_Stopped() when stopped != null:
+return failed(_that.why,_that.detail);case ListenUpdate_Stopped() when stopped != null:
 return stopped();case _:
   return orElse();
 
@@ -4132,14 +4132,14 @@ return stopped();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int seconds,  bool stock)  tick,required TResult Function( String address)  replacement,required TResult Function( bool resolved)  stockStayed,required TResult Function()  silent,required TResult Function( String detail)  failed,required TResult Function()  stopped,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int seconds,  bool stock)  tick,required TResult Function( String address)  replacement,required TResult Function( bool resolved)  stockStayed,required TResult Function()  silent,required TResult Function( ListenFailure why,  String detail)  failed,required TResult Function()  stopped,}) {final _that = this;
 switch (_that) {
 case ListenUpdate_Tick():
 return tick(_that.seconds,_that.stock);case ListenUpdate_Replacement():
 return replacement(_that.address);case ListenUpdate_StockStayed():
 return stockStayed(_that.resolved);case ListenUpdate_Silent():
 return silent();case ListenUpdate_Failed():
-return failed(_that.detail);case ListenUpdate_Stopped():
+return failed(_that.why,_that.detail);case ListenUpdate_Stopped():
 return stopped();}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -4154,14 +4154,14 @@ return stopped();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int seconds,  bool stock)?  tick,TResult? Function( String address)?  replacement,TResult? Function( bool resolved)?  stockStayed,TResult? Function()?  silent,TResult? Function( String detail)?  failed,TResult? Function()?  stopped,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int seconds,  bool stock)?  tick,TResult? Function( String address)?  replacement,TResult? Function( bool resolved)?  stockStayed,TResult? Function()?  silent,TResult? Function( ListenFailure why,  String detail)?  failed,TResult? Function()?  stopped,}) {final _that = this;
 switch (_that) {
 case ListenUpdate_Tick() when tick != null:
 return tick(_that.seconds,_that.stock);case ListenUpdate_Replacement() when replacement != null:
 return replacement(_that.address);case ListenUpdate_StockStayed() when stockStayed != null:
 return stockStayed(_that.resolved);case ListenUpdate_Silent() when silent != null:
 return silent();case ListenUpdate_Failed() when failed != null:
-return failed(_that.detail);case ListenUpdate_Stopped() when stopped != null:
+return failed(_that.why,_that.detail);case ListenUpdate_Stopped() when stopped != null:
 return stopped();case _:
   return null;
 
@@ -4413,9 +4413,10 @@ String toString() {
 
 
 class ListenUpdate_Failed extends ListenUpdate {
-  const ListenUpdate_Failed({required this.detail}): super._();
+  const ListenUpdate_Failed({required this.why, required this.detail}): super._();
   
 
+ final  ListenFailure why;
  final  String detail;
 
 /// Create a copy of ListenUpdate
@@ -4428,18 +4429,18 @@ $ListenUpdate_FailedCopyWith<ListenUpdate_Failed> get copyWith => _$ListenUpdate
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is ListenUpdate_Failed&&(identical(other.detail, detail) || other.detail == detail));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is ListenUpdate_Failed&&(identical(other.why, why) || other.why == why)&&(identical(other.detail, detail) || other.detail == detail));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,detail);
+    return Object.hash(runtimeType,why,detail);
 }
 
 @override
 String toString() {
-    return 'ListenUpdate.failed(detail: $detail)';
+    return 'ListenUpdate.failed(why: $why, detail: $detail)';
 }
 
 
@@ -4450,7 +4451,7 @@ abstract mixin class $ListenUpdate_FailedCopyWith<$Res> implements $ListenUpdate
   factory $ListenUpdate_FailedCopyWith(ListenUpdate_Failed value, $Res Function(ListenUpdate_Failed) _then) = _$ListenUpdate_FailedCopyWithImpl;
 @useResult
 $Res call({
- String detail
+ ListenFailure why, String detail
 });
 
 
@@ -4467,9 +4468,10 @@ class _$ListenUpdate_FailedCopyWithImpl<$Res>
 
 /// Create a copy of ListenUpdate
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? detail = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? why = null,Object? detail = null,}) {
   return _then(ListenUpdate_Failed(
-detail: null == detail ? _self.detail : detail // ignore: cast_nullable_to_non_nullable
+why: null == why ? _self.why : why // ignore: cast_nullable_to_non_nullable
+as ListenFailure,detail: null == detail ? _self.detail : detail // ignore: cast_nullable_to_non_nullable
 as String,
   ));
 }
@@ -4553,7 +4555,7 @@ extension StopCasePatterns on StopCase {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( StopCase_Uncertain value)?  uncertain,TResult Function( StopCase_UncertainWrite value)?  uncertainWrite,TResult Function( StopCase_OtherFirmware value)?  otherFirmware,TResult Function( StopCase_TwoFeeders value)?  twoFeeders,TResult Function( StopCase_BackupMismatch value)?  backupMismatch,TResult Function( StopCase_NotYourFeeder value)?  notYourFeeder,TResult Function( StopCase_NoFeederCame value)?  noFeederCame,TResult Function( StopCase_FrameNotTaken value)?  frameNotTaken,TResult Function( StopCase_HandoverFailed value)?  handoverFailed,TResult Function( StopCase_NotConfirmed value)?  notConfirmed,TResult Function( StopCase_EarlierRequestOpen value)?  earlierRequestOpen,TResult Function( StopCase_RequestRefused value)?  requestRefused,TResult Function( StopCase_StockRefused value)?  stockRefused,TResult Function( StopCase_ClockUnset value)?  clockUnset,TResult Function( StopCase_NoSetupFeeder value)?  noSetupFeeder,TResult Function( StopCase_SetupFailed value)?  setupFailed,TResult Function( StopCase_OtherFeeder value)?  otherFeeder,TResult Function( StopCase_DamagedRecord value)?  damagedRecord,TResult Function( StopCase_LedgerDamaged value)?  ledgerDamaged,TResult Function( StopCase_BackupDamaged value)?  backupDamaged,TResult Function( StopCase_BackupDiffers value)?  backupDiffers,TResult Function( StopCase_NotAnswering value)?  notAnswering,TResult Function( StopCase_NotJoined value)?  notJoined,TResult Function( StopCase_PhoneOffWifi value)?  phoneOffWifi,TResult Function( StopCase_WifiRefused value)?  wifiRefused,TResult Function( StopCase_NoWifiGiven value)?  noWifiGiven,TResult Function( StopCase_PromotionFailed value)?  promotionFailed,TResult Function( StopCase_FellBack value)?  fellBack,TResult Function( StopCase_ServerFailed value)?  serverFailed,TResult Function( StopCase_Cancelled value)?  cancelled,TResult Function( StopCase_Other value)?  other,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( StopCase_Uncertain value)?  uncertain,TResult Function( StopCase_UncertainWrite value)?  uncertainWrite,TResult Function( StopCase_OtherFirmware value)?  otherFirmware,TResult Function( StopCase_TwoFeeders value)?  twoFeeders,TResult Function( StopCase_BackupMismatch value)?  backupMismatch,TResult Function( StopCase_NotYourFeeder value)?  notYourFeeder,TResult Function( StopCase_NoFeederCame value)?  noFeederCame,TResult Function( StopCase_FrameNotTaken value)?  frameNotTaken,TResult Function( StopCase_HandoverFailed value)?  handoverFailed,TResult Function( StopCase_NotConfirmed value)?  notConfirmed,TResult Function( StopCase_EarlierRequestOpen value)?  earlierRequestOpen,TResult Function( StopCase_RequestRefused value)?  requestRefused,TResult Function( StopCase_StockRefused value)?  stockRefused,TResult Function( StopCase_ClockUnset value)?  clockUnset,TResult Function( StopCase_NoSetupFeeder value)?  noSetupFeeder,TResult Function( StopCase_SetupFailed value)?  setupFailed,TResult Function( StopCase_OtherFeeder value)?  otherFeeder,TResult Function( StopCase_DamagedRecord value)?  damagedRecord,TResult Function( StopCase_LedgerDamaged value)?  ledgerDamaged,TResult Function( StopCase_BackupDamaged value)?  backupDamaged,TResult Function( StopCase_BackupDiffers value)?  backupDiffers,TResult Function( StopCase_NotAnswering value)?  notAnswering,TResult Function( StopCase_NotJoined value)?  notJoined,TResult Function( StopCase_PhoneOffWifi value)?  phoneOffWifi,TResult Function( StopCase_WifiRefused value)?  wifiRefused,TResult Function( StopCase_NoWifiGiven value)?  noWifiGiven,TResult Function( StopCase_PromotionFailed value)?  promotionFailed,TResult Function( StopCase_FellBack value)?  fellBack,TResult Function( StopCase_ServerFailed value)?  serverFailed,TResult Function( StopCase_ImageRefused value)?  imageRefused,TResult Function( StopCase_Cancelled value)?  cancelled,TResult Function( StopCase_Other value)?  other,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case StopCase_Uncertain() when uncertain != null:
@@ -4585,7 +4587,8 @@ return wifiRefused(_that);case StopCase_NoWifiGiven() when noWifiGiven != null:
 return noWifiGiven(_that);case StopCase_PromotionFailed() when promotionFailed != null:
 return promotionFailed(_that);case StopCase_FellBack() when fellBack != null:
 return fellBack(_that);case StopCase_ServerFailed() when serverFailed != null:
-return serverFailed(_that);case StopCase_Cancelled() when cancelled != null:
+return serverFailed(_that);case StopCase_ImageRefused() when imageRefused != null:
+return imageRefused(_that);case StopCase_Cancelled() when cancelled != null:
 return cancelled(_that);case StopCase_Other() when other != null:
 return other(_that);case _:
   return orElse();
@@ -4605,7 +4608,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( StopCase_Uncertain value)  uncertain,required TResult Function( StopCase_UncertainWrite value)  uncertainWrite,required TResult Function( StopCase_OtherFirmware value)  otherFirmware,required TResult Function( StopCase_TwoFeeders value)  twoFeeders,required TResult Function( StopCase_BackupMismatch value)  backupMismatch,required TResult Function( StopCase_NotYourFeeder value)  notYourFeeder,required TResult Function( StopCase_NoFeederCame value)  noFeederCame,required TResult Function( StopCase_FrameNotTaken value)  frameNotTaken,required TResult Function( StopCase_HandoverFailed value)  handoverFailed,required TResult Function( StopCase_NotConfirmed value)  notConfirmed,required TResult Function( StopCase_EarlierRequestOpen value)  earlierRequestOpen,required TResult Function( StopCase_RequestRefused value)  requestRefused,required TResult Function( StopCase_StockRefused value)  stockRefused,required TResult Function( StopCase_ClockUnset value)  clockUnset,required TResult Function( StopCase_NoSetupFeeder value)  noSetupFeeder,required TResult Function( StopCase_SetupFailed value)  setupFailed,required TResult Function( StopCase_OtherFeeder value)  otherFeeder,required TResult Function( StopCase_DamagedRecord value)  damagedRecord,required TResult Function( StopCase_LedgerDamaged value)  ledgerDamaged,required TResult Function( StopCase_BackupDamaged value)  backupDamaged,required TResult Function( StopCase_BackupDiffers value)  backupDiffers,required TResult Function( StopCase_NotAnswering value)  notAnswering,required TResult Function( StopCase_NotJoined value)  notJoined,required TResult Function( StopCase_PhoneOffWifi value)  phoneOffWifi,required TResult Function( StopCase_WifiRefused value)  wifiRefused,required TResult Function( StopCase_NoWifiGiven value)  noWifiGiven,required TResult Function( StopCase_PromotionFailed value)  promotionFailed,required TResult Function( StopCase_FellBack value)  fellBack,required TResult Function( StopCase_ServerFailed value)  serverFailed,required TResult Function( StopCase_Cancelled value)  cancelled,required TResult Function( StopCase_Other value)  other,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( StopCase_Uncertain value)  uncertain,required TResult Function( StopCase_UncertainWrite value)  uncertainWrite,required TResult Function( StopCase_OtherFirmware value)  otherFirmware,required TResult Function( StopCase_TwoFeeders value)  twoFeeders,required TResult Function( StopCase_BackupMismatch value)  backupMismatch,required TResult Function( StopCase_NotYourFeeder value)  notYourFeeder,required TResult Function( StopCase_NoFeederCame value)  noFeederCame,required TResult Function( StopCase_FrameNotTaken value)  frameNotTaken,required TResult Function( StopCase_HandoverFailed value)  handoverFailed,required TResult Function( StopCase_NotConfirmed value)  notConfirmed,required TResult Function( StopCase_EarlierRequestOpen value)  earlierRequestOpen,required TResult Function( StopCase_RequestRefused value)  requestRefused,required TResult Function( StopCase_StockRefused value)  stockRefused,required TResult Function( StopCase_ClockUnset value)  clockUnset,required TResult Function( StopCase_NoSetupFeeder value)  noSetupFeeder,required TResult Function( StopCase_SetupFailed value)  setupFailed,required TResult Function( StopCase_OtherFeeder value)  otherFeeder,required TResult Function( StopCase_DamagedRecord value)  damagedRecord,required TResult Function( StopCase_LedgerDamaged value)  ledgerDamaged,required TResult Function( StopCase_BackupDamaged value)  backupDamaged,required TResult Function( StopCase_BackupDiffers value)  backupDiffers,required TResult Function( StopCase_NotAnswering value)  notAnswering,required TResult Function( StopCase_NotJoined value)  notJoined,required TResult Function( StopCase_PhoneOffWifi value)  phoneOffWifi,required TResult Function( StopCase_WifiRefused value)  wifiRefused,required TResult Function( StopCase_NoWifiGiven value)  noWifiGiven,required TResult Function( StopCase_PromotionFailed value)  promotionFailed,required TResult Function( StopCase_FellBack value)  fellBack,required TResult Function( StopCase_ServerFailed value)  serverFailed,required TResult Function( StopCase_ImageRefused value)  imageRefused,required TResult Function( StopCase_Cancelled value)  cancelled,required TResult Function( StopCase_Other value)  other,}){
 final _that = this;
 switch (_that) {
 case StopCase_Uncertain():
@@ -4637,7 +4640,8 @@ return wifiRefused(_that);case StopCase_NoWifiGiven():
 return noWifiGiven(_that);case StopCase_PromotionFailed():
 return promotionFailed(_that);case StopCase_FellBack():
 return fellBack(_that);case StopCase_ServerFailed():
-return serverFailed(_that);case StopCase_Cancelled():
+return serverFailed(_that);case StopCase_ImageRefused():
+return imageRefused(_that);case StopCase_Cancelled():
 return cancelled(_that);case StopCase_Other():
 return other(_that);}
 }
@@ -4653,7 +4657,7 @@ return other(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( StopCase_Uncertain value)?  uncertain,TResult? Function( StopCase_UncertainWrite value)?  uncertainWrite,TResult? Function( StopCase_OtherFirmware value)?  otherFirmware,TResult? Function( StopCase_TwoFeeders value)?  twoFeeders,TResult? Function( StopCase_BackupMismatch value)?  backupMismatch,TResult? Function( StopCase_NotYourFeeder value)?  notYourFeeder,TResult? Function( StopCase_NoFeederCame value)?  noFeederCame,TResult? Function( StopCase_FrameNotTaken value)?  frameNotTaken,TResult? Function( StopCase_HandoverFailed value)?  handoverFailed,TResult? Function( StopCase_NotConfirmed value)?  notConfirmed,TResult? Function( StopCase_EarlierRequestOpen value)?  earlierRequestOpen,TResult? Function( StopCase_RequestRefused value)?  requestRefused,TResult? Function( StopCase_StockRefused value)?  stockRefused,TResult? Function( StopCase_ClockUnset value)?  clockUnset,TResult? Function( StopCase_NoSetupFeeder value)?  noSetupFeeder,TResult? Function( StopCase_SetupFailed value)?  setupFailed,TResult? Function( StopCase_OtherFeeder value)?  otherFeeder,TResult? Function( StopCase_DamagedRecord value)?  damagedRecord,TResult? Function( StopCase_LedgerDamaged value)?  ledgerDamaged,TResult? Function( StopCase_BackupDamaged value)?  backupDamaged,TResult? Function( StopCase_BackupDiffers value)?  backupDiffers,TResult? Function( StopCase_NotAnswering value)?  notAnswering,TResult? Function( StopCase_NotJoined value)?  notJoined,TResult? Function( StopCase_PhoneOffWifi value)?  phoneOffWifi,TResult? Function( StopCase_WifiRefused value)?  wifiRefused,TResult? Function( StopCase_NoWifiGiven value)?  noWifiGiven,TResult? Function( StopCase_PromotionFailed value)?  promotionFailed,TResult? Function( StopCase_FellBack value)?  fellBack,TResult? Function( StopCase_ServerFailed value)?  serverFailed,TResult? Function( StopCase_Cancelled value)?  cancelled,TResult? Function( StopCase_Other value)?  other,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( StopCase_Uncertain value)?  uncertain,TResult? Function( StopCase_UncertainWrite value)?  uncertainWrite,TResult? Function( StopCase_OtherFirmware value)?  otherFirmware,TResult? Function( StopCase_TwoFeeders value)?  twoFeeders,TResult? Function( StopCase_BackupMismatch value)?  backupMismatch,TResult? Function( StopCase_NotYourFeeder value)?  notYourFeeder,TResult? Function( StopCase_NoFeederCame value)?  noFeederCame,TResult? Function( StopCase_FrameNotTaken value)?  frameNotTaken,TResult? Function( StopCase_HandoverFailed value)?  handoverFailed,TResult? Function( StopCase_NotConfirmed value)?  notConfirmed,TResult? Function( StopCase_EarlierRequestOpen value)?  earlierRequestOpen,TResult? Function( StopCase_RequestRefused value)?  requestRefused,TResult? Function( StopCase_StockRefused value)?  stockRefused,TResult? Function( StopCase_ClockUnset value)?  clockUnset,TResult? Function( StopCase_NoSetupFeeder value)?  noSetupFeeder,TResult? Function( StopCase_SetupFailed value)?  setupFailed,TResult? Function( StopCase_OtherFeeder value)?  otherFeeder,TResult? Function( StopCase_DamagedRecord value)?  damagedRecord,TResult? Function( StopCase_LedgerDamaged value)?  ledgerDamaged,TResult? Function( StopCase_BackupDamaged value)?  backupDamaged,TResult? Function( StopCase_BackupDiffers value)?  backupDiffers,TResult? Function( StopCase_NotAnswering value)?  notAnswering,TResult? Function( StopCase_NotJoined value)?  notJoined,TResult? Function( StopCase_PhoneOffWifi value)?  phoneOffWifi,TResult? Function( StopCase_WifiRefused value)?  wifiRefused,TResult? Function( StopCase_NoWifiGiven value)?  noWifiGiven,TResult? Function( StopCase_PromotionFailed value)?  promotionFailed,TResult? Function( StopCase_FellBack value)?  fellBack,TResult? Function( StopCase_ServerFailed value)?  serverFailed,TResult? Function( StopCase_ImageRefused value)?  imageRefused,TResult? Function( StopCase_Cancelled value)?  cancelled,TResult? Function( StopCase_Other value)?  other,}){
 final _that = this;
 switch (_that) {
 case StopCase_Uncertain() when uncertain != null:
@@ -4685,7 +4689,8 @@ return wifiRefused(_that);case StopCase_NoWifiGiven() when noWifiGiven != null:
 return noWifiGiven(_that);case StopCase_PromotionFailed() when promotionFailed != null:
 return promotionFailed(_that);case StopCase_FellBack() when fellBack != null:
 return fellBack(_that);case StopCase_ServerFailed() when serverFailed != null:
-return serverFailed(_that);case StopCase_Cancelled() when cancelled != null:
+return serverFailed(_that);case StopCase_ImageRefused() when imageRefused != null:
+return imageRefused(_that);case StopCase_Cancelled() when cancelled != null:
 return cancelled(_that);case StopCase_Other() when other != null:
 return other(_that);case _:
   return null;
@@ -4704,7 +4709,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  uncertain,TResult Function( UncertainWrite write)?  uncertainWrite,TResult Function( String version)?  otherFirmware,TResult Function()?  twoFeeders,TResult Function()?  backupMismatch,TResult Function()?  notYourFeeder,TResult Function()?  noFeederCame,TResult Function()?  frameNotTaken,TResult Function()?  handoverFailed,TResult Function()?  notConfirmed,TResult Function()?  earlierRequestOpen,TResult Function( RequestRefusal why)?  requestRefused,TResult Function( int? code)?  stockRefused,TResult Function()?  clockUnset,TResult Function()?  noSetupFeeder,TResult Function( SetupRefusal? refusal)?  setupFailed,TResult Function()?  otherFeeder,TResult Function()?  damagedRecord,TResult Function()?  ledgerDamaged,TResult Function( String path)?  backupDamaged,TResult Function( String path)?  backupDiffers,TResult Function()?  notAnswering,TResult Function()?  notJoined,TResult Function()?  phoneOffWifi,TResult Function()?  wifiRefused,TResult Function()?  noWifiGiven,TResult Function()?  promotionFailed,TResult Function()?  fellBack,TResult Function()?  serverFailed,TResult Function()?  cancelled,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  uncertain,TResult Function( UncertainWrite write)?  uncertainWrite,TResult Function( String version)?  otherFirmware,TResult Function()?  twoFeeders,TResult Function()?  backupMismatch,TResult Function()?  notYourFeeder,TResult Function()?  noFeederCame,TResult Function()?  frameNotTaken,TResult Function()?  handoverFailed,TResult Function()?  notConfirmed,TResult Function()?  earlierRequestOpen,TResult Function( RequestRefusal why)?  requestRefused,TResult Function( int? code)?  stockRefused,TResult Function()?  clockUnset,TResult Function()?  noSetupFeeder,TResult Function( SetupRefusal? refusal)?  setupFailed,TResult Function()?  otherFeeder,TResult Function()?  damagedRecord,TResult Function()?  ledgerDamaged,TResult Function( String path)?  backupDamaged,TResult Function( String path)?  backupDiffers,TResult Function()?  notAnswering,TResult Function()?  notJoined,TResult Function()?  phoneOffWifi,TResult Function()?  wifiRefused,TResult Function()?  noWifiGiven,TResult Function()?  promotionFailed,TResult Function()?  fellBack,TResult Function()?  serverFailed,TResult Function( ImageCheck check)?  imageRefused,TResult Function()?  cancelled,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case StopCase_Uncertain() when uncertain != null:
 return uncertain();case StopCase_UncertainWrite() when uncertainWrite != null:
@@ -4735,7 +4740,8 @@ return wifiRefused();case StopCase_NoWifiGiven() when noWifiGiven != null:
 return noWifiGiven();case StopCase_PromotionFailed() when promotionFailed != null:
 return promotionFailed();case StopCase_FellBack() when fellBack != null:
 return fellBack();case StopCase_ServerFailed() when serverFailed != null:
-return serverFailed();case StopCase_Cancelled() when cancelled != null:
+return serverFailed();case StopCase_ImageRefused() when imageRefused != null:
+return imageRefused(_that.check);case StopCase_Cancelled() when cancelled != null:
 return cancelled();case StopCase_Other() when other != null:
 return other();case _:
   return orElse();
@@ -4755,7 +4761,7 @@ return other();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  uncertain,required TResult Function( UncertainWrite write)  uncertainWrite,required TResult Function( String version)  otherFirmware,required TResult Function()  twoFeeders,required TResult Function()  backupMismatch,required TResult Function()  notYourFeeder,required TResult Function()  noFeederCame,required TResult Function()  frameNotTaken,required TResult Function()  handoverFailed,required TResult Function()  notConfirmed,required TResult Function()  earlierRequestOpen,required TResult Function( RequestRefusal why)  requestRefused,required TResult Function( int? code)  stockRefused,required TResult Function()  clockUnset,required TResult Function()  noSetupFeeder,required TResult Function( SetupRefusal? refusal)  setupFailed,required TResult Function()  otherFeeder,required TResult Function()  damagedRecord,required TResult Function()  ledgerDamaged,required TResult Function( String path)  backupDamaged,required TResult Function( String path)  backupDiffers,required TResult Function()  notAnswering,required TResult Function()  notJoined,required TResult Function()  phoneOffWifi,required TResult Function()  wifiRefused,required TResult Function()  noWifiGiven,required TResult Function()  promotionFailed,required TResult Function()  fellBack,required TResult Function()  serverFailed,required TResult Function()  cancelled,required TResult Function()  other,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  uncertain,required TResult Function( UncertainWrite write)  uncertainWrite,required TResult Function( String version)  otherFirmware,required TResult Function()  twoFeeders,required TResult Function()  backupMismatch,required TResult Function()  notYourFeeder,required TResult Function()  noFeederCame,required TResult Function()  frameNotTaken,required TResult Function()  handoverFailed,required TResult Function()  notConfirmed,required TResult Function()  earlierRequestOpen,required TResult Function( RequestRefusal why)  requestRefused,required TResult Function( int? code)  stockRefused,required TResult Function()  clockUnset,required TResult Function()  noSetupFeeder,required TResult Function( SetupRefusal? refusal)  setupFailed,required TResult Function()  otherFeeder,required TResult Function()  damagedRecord,required TResult Function()  ledgerDamaged,required TResult Function( String path)  backupDamaged,required TResult Function( String path)  backupDiffers,required TResult Function()  notAnswering,required TResult Function()  notJoined,required TResult Function()  phoneOffWifi,required TResult Function()  wifiRefused,required TResult Function()  noWifiGiven,required TResult Function()  promotionFailed,required TResult Function()  fellBack,required TResult Function()  serverFailed,required TResult Function( ImageCheck check)  imageRefused,required TResult Function()  cancelled,required TResult Function()  other,}) {final _that = this;
 switch (_that) {
 case StopCase_Uncertain():
 return uncertain();case StopCase_UncertainWrite():
@@ -4786,7 +4792,8 @@ return wifiRefused();case StopCase_NoWifiGiven():
 return noWifiGiven();case StopCase_PromotionFailed():
 return promotionFailed();case StopCase_FellBack():
 return fellBack();case StopCase_ServerFailed():
-return serverFailed();case StopCase_Cancelled():
+return serverFailed();case StopCase_ImageRefused():
+return imageRefused(_that.check);case StopCase_Cancelled():
 return cancelled();case StopCase_Other():
 return other();}
 }
@@ -4802,7 +4809,7 @@ return other();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  uncertain,TResult? Function( UncertainWrite write)?  uncertainWrite,TResult? Function( String version)?  otherFirmware,TResult? Function()?  twoFeeders,TResult? Function()?  backupMismatch,TResult? Function()?  notYourFeeder,TResult? Function()?  noFeederCame,TResult? Function()?  frameNotTaken,TResult? Function()?  handoverFailed,TResult? Function()?  notConfirmed,TResult? Function()?  earlierRequestOpen,TResult? Function( RequestRefusal why)?  requestRefused,TResult? Function( int? code)?  stockRefused,TResult? Function()?  clockUnset,TResult? Function()?  noSetupFeeder,TResult? Function( SetupRefusal? refusal)?  setupFailed,TResult? Function()?  otherFeeder,TResult? Function()?  damagedRecord,TResult? Function()?  ledgerDamaged,TResult? Function( String path)?  backupDamaged,TResult? Function( String path)?  backupDiffers,TResult? Function()?  notAnswering,TResult? Function()?  notJoined,TResult? Function()?  phoneOffWifi,TResult? Function()?  wifiRefused,TResult? Function()?  noWifiGiven,TResult? Function()?  promotionFailed,TResult? Function()?  fellBack,TResult? Function()?  serverFailed,TResult? Function()?  cancelled,TResult? Function()?  other,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  uncertain,TResult? Function( UncertainWrite write)?  uncertainWrite,TResult? Function( String version)?  otherFirmware,TResult? Function()?  twoFeeders,TResult? Function()?  backupMismatch,TResult? Function()?  notYourFeeder,TResult? Function()?  noFeederCame,TResult? Function()?  frameNotTaken,TResult? Function()?  handoverFailed,TResult? Function()?  notConfirmed,TResult? Function()?  earlierRequestOpen,TResult? Function( RequestRefusal why)?  requestRefused,TResult? Function( int? code)?  stockRefused,TResult? Function()?  clockUnset,TResult? Function()?  noSetupFeeder,TResult? Function( SetupRefusal? refusal)?  setupFailed,TResult? Function()?  otherFeeder,TResult? Function()?  damagedRecord,TResult? Function()?  ledgerDamaged,TResult? Function( String path)?  backupDamaged,TResult? Function( String path)?  backupDiffers,TResult? Function()?  notAnswering,TResult? Function()?  notJoined,TResult? Function()?  phoneOffWifi,TResult? Function()?  wifiRefused,TResult? Function()?  noWifiGiven,TResult? Function()?  promotionFailed,TResult? Function()?  fellBack,TResult? Function()?  serverFailed,TResult? Function( ImageCheck check)?  imageRefused,TResult? Function()?  cancelled,TResult? Function()?  other,}) {final _that = this;
 switch (_that) {
 case StopCase_Uncertain() when uncertain != null:
 return uncertain();case StopCase_UncertainWrite() when uncertainWrite != null:
@@ -4833,7 +4840,8 @@ return wifiRefused();case StopCase_NoWifiGiven() when noWifiGiven != null:
 return noWifiGiven();case StopCase_PromotionFailed() when promotionFailed != null:
 return promotionFailed();case StopCase_FellBack() when fellBack != null:
 return fellBack();case StopCase_ServerFailed() when serverFailed != null:
-return serverFailed();case StopCase_Cancelled() when cancelled != null:
+return serverFailed();case StopCase_ImageRefused() when imageRefused != null:
+return imageRefused(_that.check);case StopCase_Cancelled() when cancelled != null:
 return cancelled();case StopCase_Other() when other != null:
 return other();case _:
   return null;
@@ -6022,6 +6030,83 @@ String toString() {
 
 
 
+
+/// @nodoc
+
+
+class StopCase_ImageRefused extends StopCase {
+  const StopCase_ImageRefused({required this.check}): super._();
+  
+
+ final  ImageCheck check;
+
+/// Create a copy of StopCase
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StopCase_ImageRefusedCopyWith<StopCase_ImageRefused> get copyWith => _$StopCase_ImageRefusedCopyWithImpl<StopCase_ImageRefused>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is StopCase_ImageRefused&&(identical(other.check, check) || other.check == check));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,check);
+}
+
+@override
+String toString() {
+    return 'StopCase.imageRefused(check: $check)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StopCase_ImageRefusedCopyWith<$Res> implements $StopCaseCopyWith<$Res> {
+  factory $StopCase_ImageRefusedCopyWith(StopCase_ImageRefused value, $Res Function(StopCase_ImageRefused) _then) = _$StopCase_ImageRefusedCopyWithImpl;
+@useResult
+$Res call({
+ ImageCheck check
+});
+
+
+$ImageCheckCopyWith<$Res> get check;
+
+}
+/// @nodoc
+class _$StopCase_ImageRefusedCopyWithImpl<$Res>
+    implements $StopCase_ImageRefusedCopyWith<$Res> {
+  _$StopCase_ImageRefusedCopyWithImpl(this._self, this._then);
+
+  final StopCase_ImageRefused _self;
+  final $Res Function(StopCase_ImageRefused) _then;
+
+/// Create a copy of StopCase
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? check = null,}) {
+  return _then(StopCase_ImageRefused(
+check: null == check ? _self.check : check // ignore: cast_nullable_to_non_nullable
+as ImageCheck,
+  ));
+}
+
+/// Create a copy of StopCase
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ImageCheckCopyWith<$Res> get check {
+  
+  return $ImageCheckCopyWith<$Res>(_self.check, (value) {
+    return _then(_self.copyWith(check: value));
+  });
+}
+}
 
 /// @nodoc
 

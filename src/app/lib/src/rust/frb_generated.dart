@@ -6556,6 +6556,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ImageCheck dco_decode_box_autoadd_image_check(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_image_check(raw);
+  }
+
+  @protected
   InstallAnswer dco_decode_box_autoadd_install_answer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_install_answer(raw);
@@ -8256,6 +8262,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ListenFailure dco_decode_listen_failure(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ListenFailure.values[raw as int];
+  }
+
+  @protected
   ListenUpdate dco_decode_listen_update(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
@@ -8271,7 +8283,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 3:
         return ListenUpdate_Silent();
       case 4:
-        return ListenUpdate_Failed(detail: dco_decode_String(raw[1]));
+        return ListenUpdate_Failed(
+          why: dco_decode_listen_failure(raw[1]),
+          detail: dco_decode_String(raw[2]),
+        );
       case 5:
         return ListenUpdate_Stopped();
       default:
@@ -10077,8 +10092,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 28:
         return StopCase_ServerFailed();
       case 29:
-        return StopCase_Cancelled();
+        return StopCase_ImageRefused(
+          check: dco_decode_box_autoadd_image_check(raw[1]),
+        );
       case 30:
+        return StopCase_Cancelled();
+      case 31:
         return StopCase_Other();
       default:
         throw Exception("unreachable");
@@ -11375,6 +11394,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_i_64(deserializer));
+  }
+
+  @protected
+  ImageCheck sse_decode_box_autoadd_image_check(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_image_check(deserializer));
   }
 
   @protected
@@ -13468,6 +13493,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ListenFailure sse_decode_listen_failure(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ListenFailure.values[inner];
+  }
+
+  @protected
   ListenUpdate sse_decode_listen_update(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -13486,8 +13518,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 3:
         return ListenUpdate_Silent();
       case 4:
+        var var_why = sse_decode_listen_failure(deserializer);
         var var_detail = sse_decode_String(deserializer);
-        return ListenUpdate_Failed(detail: var_detail);
+        return ListenUpdate_Failed(why: var_why, detail: var_detail);
       case 5:
         return ListenUpdate_Stopped();
       default:
@@ -15851,8 +15884,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 28:
         return StopCase_ServerFailed();
       case 29:
-        return StopCase_Cancelled();
+        var var_check = sse_decode_box_autoadd_image_check(deserializer);
+        return StopCase_ImageRefused(check: var_check);
       case 30:
+        return StopCase_Cancelled();
+      case 31:
         return StopCase_Other();
       default:
         throw UnimplementedError('');
@@ -17315,6 +17351,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_64(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_image_check(
+    ImageCheck self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_image_check(self, serializer);
   }
 
   @protected
@@ -19274,6 +19319,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_listen_failure(ListenFailure self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_listen_update(ListenUpdate self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
@@ -19289,8 +19340,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_bool(resolved, serializer);
       case ListenUpdate_Silent():
         sse_encode_i_32(3, serializer);
-      case ListenUpdate_Failed(detail: final detail):
+      case ListenUpdate_Failed(why: final why, detail: final detail):
         sse_encode_i_32(4, serializer);
+        sse_encode_listen_failure(why, serializer);
         sse_encode_String(detail, serializer);
       case ListenUpdate_Stopped():
         sse_encode_i_32(5, serializer);
@@ -21334,10 +21386,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(27, serializer);
       case StopCase_ServerFailed():
         sse_encode_i_32(28, serializer);
-      case StopCase_Cancelled():
+      case StopCase_ImageRefused(check: final check):
         sse_encode_i_32(29, serializer);
-      case StopCase_Other():
+        sse_encode_box_autoadd_image_check(check, serializer);
+      case StopCase_Cancelled():
         sse_encode_i_32(30, serializer);
+      case StopCase_Other():
+        sse_encode_i_32(31, serializer);
     }
   }
 

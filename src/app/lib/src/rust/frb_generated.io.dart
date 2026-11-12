@@ -458,6 +458,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
+  ImageCheck dco_decode_box_autoadd_image_check(dynamic raw);
+
+  @protected
   InstallAnswer dco_decode_box_autoadd_install_answer(dynamic raw);
 
   @protected
@@ -949,6 +952,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ListedFeeder dco_decode_listed_feeder(dynamic raw);
+
+  @protected
+  ListenFailure dco_decode_listen_failure(dynamic raw);
 
   @protected
   ListenUpdate dco_decode_listen_update(dynamic raw);
@@ -1884,6 +1890,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  ImageCheck sse_decode_box_autoadd_image_check(SseDeserializer deserializer);
+
+  @protected
   InstallAnswer sse_decode_box_autoadd_install_answer(
     SseDeserializer deserializer,
   );
@@ -2453,6 +2462,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ListedFeeder sse_decode_listed_feeder(SseDeserializer deserializer);
+
+  @protected
+  ListenFailure sse_decode_listen_failure(SseDeserializer deserializer);
 
   @protected
   ListenUpdate sse_decode_listen_update(SseDeserializer deserializer);
@@ -3546,6 +3558,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_image_check(
+    ImageCheck self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_install_answer(
     InstallAnswer self,
     SseSerializer serializer,
@@ -4312,6 +4330,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_listed_feeder(ListedFeeder self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_listen_failure(ListenFailure self, SseSerializer serializer);
 
   @protected
   void sse_encode_listen_update(ListenUpdate self, SseSerializer serializer);

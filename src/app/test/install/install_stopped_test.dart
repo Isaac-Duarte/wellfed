@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/screens/install/install_before.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
@@ -110,10 +111,45 @@ void main() {
     testWidgets('a listener that cannot run says why', (tester) async {
       final ports = FakeInstallPorts();
       await installStopped(tester, ports, const StopCase.uncertain());
-      ports.listeners.single.updates.add(const ListenUpdate.failed(detail: 'no enrollment'));
+      ports.listeners.single.updates.add(const ListenUpdate.failed(why: ListenFailure.other, detail: 'no enrollment'));
       await settle(tester);
       expect(find.text("We can't listen for the feeder"), findsOneWidget);
       expect(find.textContaining('no enrollment'), findsOneWidget);
+    });
+
+    testWidgets('a listener whose server cannot start names the port, with its words below', (tester) async {
+      final ports = FakeInstallPorts();
+      await installStopped(tester, ports, const StopCase.uncertain());
+      ports.listeners.single.updates.add(
+        const ListenUpdate.failed(why: ListenFailure.serverFailed, detail: 'address in use'),
+      );
+      await settle(tester);
+      expect(find.text("We can't listen for the feeder"), findsOneWidget);
+      expect(find.textContaining('Another app may hold the port'), findsOneWidget);
+      expect(find.text('address in use'), findsOneWidget);
+      expect(find.text('Listen again'), findsOneWidget);
+    });
+
+    testWidgets('a listener that finds a damaged ledger offers to set it aside', (tester) async {
+      final ports = FakeInstallPorts();
+      await installStopped(tester, ports, const StopCase.uncertain());
+      ports.pendingInstall = PendingInstall.ledgerDamaged;
+      ports.listeners.single.updates.add(
+        const ListenUpdate.failed(why: ListenFailure.ledgerDamaged, detail: 'a stock ledger does not parse'),
+      );
+      await settle(tester);
+      expect(find.textContaining("can't read an install request's record"), findsOneWidget);
+      expect(find.byType(InstallSetAsideLedger), findsOneWidget);
+    });
+
+    testWidgets('a run that finds its image refused says why, and sends nothing', (tester) async {
+      await installStopped(
+        tester,
+        FakeInstallPorts(),
+        const StopCase.imageRefused(check: ImageCheck.mismatch(detail: 'the review hash differs')),
+      );
+      expect(find.text("This build's firmware doesn't check out."), findsOneWidget);
+      expect(find.text('the review hash differs'), findsOneWidget);
     });
 
     testWidgets('different firmware', (tester) async {

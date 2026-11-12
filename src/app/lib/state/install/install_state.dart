@@ -95,6 +95,12 @@ enum Listening {
 
   /// The listener could not run.
   failed,
+
+  /// A stock ledger does not parse: setting it aside lets it listen.
+  ledgerDamaged,
+
+  /// Stock's server could not start: another app may hold its port.
+  serverFailed,
 }
 
 /// What holds across an install's stages.

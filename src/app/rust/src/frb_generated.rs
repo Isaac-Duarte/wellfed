@@ -10054,6 +10054,19 @@ impl SseDecode for crate::api::server_views::ListedFeeder {
     }
 }
 
+impl SseDecode for crate::api::install::ListenFailure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::install::ListenFailure::LedgerDamaged,
+            1 => crate::api::install::ListenFailure::ServerFailed,
+            2 => crate::api::install::ListenFailure::Other,
+            _ => unreachable!("Invalid variant for ListenFailure: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::install::ListenUpdate {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10083,8 +10096,12 @@ impl SseDecode for crate::api::install::ListenUpdate {
                 return crate::api::install::ListenUpdate::Silent;
             }
             4 => {
+                let mut var_why = <crate::api::install::ListenFailure>::sse_decode(deserializer);
                 let mut var_detail = <String>::sse_decode(deserializer);
-                return crate::api::install::ListenUpdate::Failed { detail: var_detail };
+                return crate::api::install::ListenUpdate::Failed {
+                    why: var_why,
+                    detail: var_detail,
+                };
             }
             5 => {
                 return crate::api::install::ListenUpdate::Stopped;
@@ -12956,9 +12973,13 @@ impl SseDecode for crate::api::install::StopCase {
                 return crate::api::install::StopCase::ServerFailed;
             }
             29 => {
-                return crate::api::install::StopCase::Cancelled;
+                let mut var_check = <crate::api::install::ImageCheck>::sse_decode(deserializer);
+                return crate::api::install::StopCase::ImageRefused { check: var_check };
             }
             30 => {
+                return crate::api::install::StopCase::Cancelled;
+            }
+            31 => {
                 return crate::api::install::StopCase::Other;
             }
             _ => {
@@ -16222,6 +16243,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::server_views::ListedFeeder>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::install::ListenFailure {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::LedgerDamaged => 0.into_dart(),
+            Self::ServerFailed => 1.into_dart(),
+            Self::Other => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::install::ListenFailure
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::install::ListenFailure>
+    for crate::api::install::ListenFailure
+{
+    fn into_into_dart(self) -> crate::api::install::ListenFailure {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::install::ListenUpdate {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -16238,9 +16281,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::install::ListenUpdate {
                 [2.into_dart(), resolved.into_into_dart().into_dart()].into_dart()
             }
             crate::api::install::ListenUpdate::Silent => [3.into_dart()].into_dart(),
-            crate::api::install::ListenUpdate::Failed { detail } => {
-                [4.into_dart(), detail.into_into_dart().into_dart()].into_dart()
-            }
+            crate::api::install::ListenUpdate::Failed { why, detail } => [
+                4.into_dart(),
+                why.into_into_dart().into_dart(),
+                detail.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::install::ListenUpdate::Stopped => [5.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
@@ -18898,8 +18944,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::install::StopCase {
             crate::api::install::StopCase::PromotionFailed => [26.into_dart()].into_dart(),
             crate::api::install::StopCase::FellBack => [27.into_dart()].into_dart(),
             crate::api::install::StopCase::ServerFailed => [28.into_dart()].into_dart(),
-            crate::api::install::StopCase::Cancelled => [29.into_dart()].into_dart(),
-            crate::api::install::StopCase::Other => [30.into_dart()].into_dart(),
+            crate::api::install::StopCase::ImageRefused { check } => {
+                [29.into_dart(), check.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::install::StopCase::Cancelled => [30.into_dart()].into_dart(),
+            crate::api::install::StopCase::Other => [31.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -21945,6 +21994,23 @@ impl SseEncode for crate::api::server_views::ListedFeeder {
     }
 }
 
+impl SseEncode for crate::api::install::ListenFailure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::install::ListenFailure::LedgerDamaged => 0,
+                crate::api::install::ListenFailure::ServerFailed => 1,
+                crate::api::install::ListenFailure::Other => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::install::ListenUpdate {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -21965,8 +22031,9 @@ impl SseEncode for crate::api::install::ListenUpdate {
             crate::api::install::ListenUpdate::Silent => {
                 <i32>::sse_encode(3, serializer);
             }
-            crate::api::install::ListenUpdate::Failed { detail } => {
+            crate::api::install::ListenUpdate::Failed { why, detail } => {
                 <i32>::sse_encode(4, serializer);
+                <crate::api::install::ListenFailure>::sse_encode(why, serializer);
                 <String>::sse_encode(detail, serializer);
             }
             crate::api::install::ListenUpdate::Stopped => {
@@ -24424,11 +24491,15 @@ impl SseEncode for crate::api::install::StopCase {
             crate::api::install::StopCase::ServerFailed => {
                 <i32>::sse_encode(28, serializer);
             }
-            crate::api::install::StopCase::Cancelled => {
+            crate::api::install::StopCase::ImageRefused { check } => {
                 <i32>::sse_encode(29, serializer);
+                <crate::api::install::ImageCheck>::sse_encode(check, serializer);
+            }
+            crate::api::install::StopCase::Cancelled => {
+                <i32>::sse_encode(30, serializer);
             }
             crate::api::install::StopCase::Other => {
-                <i32>::sse_encode(30, serializer);
+                <i32>::sse_encode(31, serializer);
             }
             _ => {
                 unimplemented!("");

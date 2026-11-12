@@ -10,6 +10,22 @@ import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
+/// Why this build will not install the image it carries, or `null` when
+/// the image checks out: on the first screen, and on a run that found the
+/// check no longer passing.
+(String, String)? imageRefusal(ImageCheck image) => switch (image) {
+  ImageCheck_Absent() => (
+    'This build has no firmware to install.',
+    'Install a release of the app, or build it with its image.',
+  ),
+  ImageCheck_NotPinned() => (
+    'This build pins no firmware.',
+    'It holds an image it has no pin for, so it will not install it.',
+  ),
+  ImageCheck_Mismatch(:final String detail) => ("This build's firmware doesn't check out.", detail),
+  ImageCheck_Ready() => null,
+};
+
 /// 2.1: what it takes.
 class InstallBeforePage extends StatelessWidget {
   const InstallBeforePage({super.key, required this.flow, required this.state});
@@ -21,15 +37,7 @@ class InstallBeforePage extends StatelessWidget {
   /// sources cannot be reviewed. Refused here, before the feeder is touched.
   (String, String)? _refusal() {
     return switch ((state.image, state.build)) {
-      (ImageCheck_Absent(), _) => (
-        'This build has no firmware to install.',
-        'Install a release of the app, or build it with its image.',
-      ),
-      (ImageCheck_NotPinned(), _) => (
-        'This build pins no firmware.',
-        'It holds an image it has no pin for, so it will not install it.',
-      ),
-      (ImageCheck_Mismatch(:final String detail), _) => ("This build's firmware doesn't check out.", detail),
+      (final ImageCheck image, _) when imageRefusal(image) != null => imageRefusal(image),
       (_, BuildCheck_Unreviewed(:final String commit)) => (
         'This build cannot send an install.',
         'Only a build of a clean commit can, so its sources can be '

@@ -59,9 +59,13 @@ extension InstallListening on InstallFlow {
         _listenEnded(Listening.stockStayed);
       case ListenUpdate_Silent():
         _listenEnded(Listening.silent);
-      case ListenUpdate_Failed(:final detail):
+      case ListenUpdate_Failed(:final why, :final detail):
         _listenerDetail = detail;
-        _listenEnded(Listening.failed);
+        _listenEnded(switch (why) {
+          ListenFailure.ledgerDamaged => Listening.ledgerDamaged,
+          ListenFailure.serverFailed => Listening.serverFailed,
+          ListenFailure.other => Listening.failed,
+        });
       case ListenUpdate_Stopped():
         break;
     }

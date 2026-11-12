@@ -61,6 +61,16 @@ class InstallStoppedPage extends StatelessWidget {
         "We can't listen for the feeder",
         state.listenerDetail ?? 'Something on this $deviceName stopped it.',
       ),
+      Listening.ledgerDamaged => (
+        "This $deviceName can't read an install request's record",
+        'Nothing was sent a second time. Until you set the record aside, '
+            'Wellfed treats that request as still open and cannot listen for it.',
+      ),
+      Listening.serverFailed => (
+        "We can't listen for the feeder",
+        'This $deviceName could not start what listens for it. Another app may '
+            'hold the port it needs. Nothing was sent a second time.',
+      ),
       _ when state.listeningForEarlier => (
         'Waiting to hear from the feeder',
         'This $deviceName never heard how an earlier install ended, even if you have '
@@ -257,6 +267,8 @@ class InstallStoppedPage extends StatelessWidget {
       "This $deviceName couldn't serve the feeder",
       'Another app may hold the port it needs. Nothing was sent.',
     ),
+    StopCase_ImageRefused(:final check) =>
+      imageRefusal(check) ?? ("This build's firmware doesn't check out.", 'Nothing was sent.'),
     StopCase_Cancelled() => ('You stopped the install', 'Nothing is waiting on it.'),
     StopCase_Other() => ('The install stopped', 'See below for what it said.'),
   };
@@ -332,10 +344,15 @@ class InstallStoppedPage extends StatelessWidget {
           const SizedBox(height: Space.s2),
           Notice(tone: Tone.fault, lead: "That didn't work.", text: failed),
         ],
-        if (stop.detail.isNotEmpty && !listening) ...[
+        for (final String detail in [
+          if (stop.detail.isNotEmpty && !listening) stop.detail,
+          // A listener's words, where the body says what to do instead.
+          if (state.listening case Listening.ledgerDamaged || Listening.serverFailed)
+            if (state.listenerDetail case final String detail?) detail,
+        ]) ...[
           const SizedBox(height: Space.s4),
           Text(
-            stop.detail,
+            detail,
             style: TextStyle(fontFamily: Fonts.mono, fontSize: Sizes.xs, height: 1.4, color: c.textMuted),
           ),
         ],

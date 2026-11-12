@@ -38,8 +38,8 @@ use wellfed_session::noise::Keypair;
 
 use crate::api::install::{
     ImageCheck, ImageProvisioning, InstallAnswer, InstallAsk, InstallEnd, InstallEvent,
-    InstallSpec, InstallStart, InstallUpdate, ListenUpdate, PendingInstall, RequestRefusal, Resume,
-    StopCase, UncertainWrite, WaitReason,
+    InstallSpec, InstallStart, InstallUpdate, ListenFailure, ListenUpdate, PendingInstall,
+    RequestRefusal, Resume, StopCase, UncertainWrite, WaitReason,
 };
 use crate::api::model::SetupRefusal;
 use crate::api::setup::CONTROL_PIECE;
@@ -1182,11 +1182,11 @@ fn run_on_this_thread(
                 detail,
             };
         }
-        Err(NotPlanned::Image(refused)) => {
+        Err(NotPlanned::Image(check)) => {
             return InstallEnd::Stopped {
-                case: StopCase::Other,
+                case: StopCase::ImageRefused { check },
                 resume: Resume::Nothing,
-                detail: format!("this build will not install its image: {refused:?}"),
+                detail: String::new(),
             };
         }
         Err(NotPlanned::Run(error)) => {
@@ -1272,12 +1272,16 @@ impl Listener {
                 let _held = held;
                 let last = guarded(
                     || listen_on_this_thread(&config, wait, on_thread.as_ref(), stop),
-                    |detail| ListenUpdate::Failed { detail },
+                    |detail| ListenUpdate::Failed {
+                        why: ListenFailure::Other,
+                        detail,
+                    },
                 );
                 on_thread(last);
             });
         if let Err(error) = thread {
             deliver(ListenUpdate::Failed {
+                why: ListenFailure::Other,
                 detail: format!("no thread for the listener: {error}"),
             });
         }
@@ -1296,6 +1300,7 @@ fn listen_on_this_thread(
 ) -> ListenUpdate {
     if wellfed_install::stock::damaged_ledgers(config) {
         return ListenUpdate::Failed {
+            why: ListenFailure::LedgerDamaged,
             detail: "a stock ledger does not parse".to_string(),
         };
     }
@@ -1307,6 +1312,7 @@ fn listen_on_this_thread(
         Ok(runtime) => runtime,
         Err(error) => {
             return ListenUpdate::Failed {
+                why: ListenFailure::Other,
                 detail: format!("no runtime for the listener: {error}"),
             };
         }
@@ -1326,6 +1332,12 @@ fn listen_on_this_thread(
         Ok(Listened::Silent) => ListenUpdate::Silent,
         Err(Error::Stopped(_)) => ListenUpdate::Stopped,
         Err(error) => ListenUpdate::Failed {
+            // Read as a run's stop reads it, so the two agree on the server.
+            why: if stop_of(&error, false).0 == StopCase::ServerFailed {
+                ListenFailure::ServerFailed
+            } else {
+                ListenFailure::Other
+            },
             detail: text(&error),
         },
     }
