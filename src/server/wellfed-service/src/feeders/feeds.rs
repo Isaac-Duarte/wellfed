@@ -80,9 +80,10 @@ impl Service {
     /// still its `Fed` event, `cancelled` with the portions it gave. One
     /// that has ended, or a number no feed holds yet, is refused
     /// `not_found`. A cancel whose outcome was
-    /// unknown is resent under its request id, and `not_found` then is no
-    /// failure: the first attempt may have stopped the feed, or it ended on
-    /// its own; its `Fed` event says which.
+    /// unknown is resent under its request id, and a refusal then is no
+    /// answer: the first attempt may have stopped the feed, or it ended on
+    /// its own, so the retry is answered unknown and the feed's `Fed` event
+    /// says which.
     pub async fn cancel_feed(
         &self,
         caller: &Caller,

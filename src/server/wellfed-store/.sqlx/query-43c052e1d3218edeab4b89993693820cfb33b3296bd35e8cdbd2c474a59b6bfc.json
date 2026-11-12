@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE commands SET state = ?1, outcome = ?2, updated_ms = ?3\n             WHERE key = ?4 AND state IN (?5, ?1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "43c052e1d3218edeab4b89993693820cfb33b3296bd35e8cdbd2c474a59b6bfc"
+}

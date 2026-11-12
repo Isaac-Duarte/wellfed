@@ -335,80 +335,89 @@ impl Session {
         // A message kind a newer build added comes in a frame of its own,
         // so it is skipped whole and the next one read. Its tag is past
         // every variant this build decodes, so no message it knows is lost.
-        let plain = loop {
+        // So is a live sample this build cannot decode (a metric, or a value
+        // inside one, that a newer build added): samples are never stored
+        // and the next of a kind replaces the last, so it is no loss, and
+        // ending the session over it would leave every write in flight
+        // uncertain.
+        loop {
             let Some(plain) = self.inbox.pop_front() else {
                 return Ok(None);
             };
-            if self.epoch.is_none() || !newer_message(&plain) {
-                break plain;
-            }
-        };
-        let Some(epoch) = self.epoch else {
-            let welcome: Welcome<'_> =
-                wellfed_proto::decode(&plain).map_err(|_| Error::Malformed(Garbled::of(&plain)))?;
-            return Ok(Some(match welcome {
-                Welcome::Open {
-                    major: _,
-                    model,
-                    build,
-                    role,
-                    epoch,
-                    schema,
-                } => {
-                    self.epoch = Some(epoch);
-                    self.legacy = Skew::of(schema, REVISION) == Skew::Legacy;
-                    Incoming::Opened(Opened {
-                        kind: model.kind(),
+            let Some(epoch) = self.epoch else {
+                let welcome: Welcome<'_> = wellfed_proto::decode(&plain)
+                    .map_err(|_| Error::Malformed(Garbled::of(&plain)))?;
+                return Ok(Some(match welcome {
+                    Welcome::Open {
+                        major: _,
                         model,
-                        build: build.to_owned(),
-                        role: role.into(),
+                        build,
+                        role,
                         epoch,
                         schema,
-                    })
+                    } => {
+                        self.epoch = Some(epoch);
+                        self.legacy = Skew::of(schema, REVISION) == Skew::Legacy;
+                        Incoming::Opened(Opened {
+                            kind: model.kind(),
+                            model,
+                            build: build.to_owned(),
+                            role: role.into(),
+                            epoch,
+                            schema,
+                        })
+                    }
+                    Welcome::Refused(refusal) => {
+                        self.state = State::Ended;
+                        self.inbox.clear();
+                        Incoming::Refused(refusal.into())
+                    }
+                }));
+            };
+            if newer_message(&plain) {
+                continue;
+            }
+
+            let message = match wellfed_proto::decode::<DeviceMessage<'_>>(&plain) {
+                Ok(message) => message,
+                Err(_) if plain.first() == Some(&SAMPLE) => continue,
+                Err(_) => {
+                    return unreadable(&plain)
+                        .map(Some)
+                        .ok_or_else(|| Error::Malformed(Garbled::of(&plain)));
                 }
-                Welcome::Refused(refusal) => {
-                    self.state = State::Ended;
-                    self.inbox.clear();
-                    Incoming::Refused(refusal.into())
+            };
+            return Ok(Some(match message {
+                DeviceMessage::Response { id, result } => Incoming::Answer {
+                    id,
+                    answer: result.into(),
+                },
+                // One batch, one event at a time: the whole batch frames
+                // before any of it is handed on, so a garbled one is refused
+                // whole, as any other malformed message is. A body this build
+                // does not know is no fault: it comes out unknown, numbered, so
+                // the cursor moves past it.
+                DeviceMessage::Events(batch) => {
+                    let events = batch
+                        .iter()
+                        .map(|event| event.map(|event| convert::raw_event(epoch, event)))
+                        .collect::<Result<std::collections::VecDeque<_>, _>>()
+                        .map_err(|_| Error::Malformed(Garbled::of(&plain)))?;
+                    self.events = events;
+                    let Some(first) = self.events.pop_front() else {
+                        return Err(Error::Malformed(Garbled::of(&plain)));
+                    };
+                    Incoming::Pushed(first)
+                }
+                DeviceMessage::Gap { from, to } => {
+                    Incoming::Pushed(Pushed::Gap(Gap { epoch, from, to }))
+                }
+                DeviceMessage::Sample(sample) => Incoming::Pushed(Pushed::Sample(sample.into())),
+                DeviceMessage::Log { seq, dropped, text } => {
+                    Incoming::Pushed(Pushed::Log(convert::log(seq, dropped, text)))
                 }
             }));
-        };
-
-        let Ok(message) = wellfed_proto::decode::<DeviceMessage<'_>>(&plain) else {
-            return unreadable(&plain)
-                .map(Some)
-                .ok_or_else(|| Error::Malformed(Garbled::of(&plain)));
-        };
-        Ok(Some(match message {
-            DeviceMessage::Response { id, result } => Incoming::Answer {
-                id,
-                answer: result.into(),
-            },
-            // One batch, one event at a time: the whole batch frames
-            // before any of it is handed on, so a garbled one is refused
-            // whole, as any other malformed message is. A body this build
-            // does not know is no fault: it comes out unknown, numbered, so
-            // the cursor moves past it.
-            DeviceMessage::Events(batch) => {
-                let events = batch
-                    .iter()
-                    .map(|event| event.map(|event| convert::raw_event(epoch, event)))
-                    .collect::<Result<std::collections::VecDeque<_>, _>>()
-                    .map_err(|_| Error::Malformed(Garbled::of(&plain)))?;
-                self.events = events;
-                let Some(first) = self.events.pop_front() else {
-                    return Err(Error::Malformed(Garbled::of(&plain)));
-                };
-                Incoming::Pushed(first)
-            }
-            DeviceMessage::Gap { from, to } => {
-                Incoming::Pushed(Pushed::Gap(Gap { epoch, from, to }))
-            }
-            DeviceMessage::Sample(sample) => Incoming::Pushed(Pushed::Sample(sample.into())),
-            DeviceMessage::Log { seq, dropped, text } => {
-                Incoming::Pushed(Pushed::Log(convert::log(seq, dropped, text)))
-            }
-        }))
+        }
     }
 
     /// One request under `id`, sealed and framed. It goes to a feeder of
@@ -475,6 +484,11 @@ fn newer_message(plain: &[u8]) -> bool {
     }
     false
 }
+
+/// Postcard's one-byte index of [`DeviceMessage::Sample`], which keeps its
+/// index as every message kind does once a build ships: a sample that does
+/// not decode is a newer build's.
+const SAMPLE: u8 = 3;
 
 /// A response this build cannot decode, which a newer build sent: its id
 /// sits right after the message's tag, so the request it answers is still
@@ -699,6 +713,19 @@ mod tests {
             out.extend(frame(&message[..sealed]).unwrap());
         }
         out
+    }
+
+    /// [`SAMPLE`] is the index a sample is written under.
+    #[test]
+    fn a_sample_is_written_under_its_index() {
+        let sample = DeviceMessage::Sample(wellfed_proto::api::Sample {
+            at_ms: 5,
+            metric: wellfed_proto::api::Metric::Rssi(-60),
+        });
+        let mut plain = [0; FRAME_MAX];
+        wellfed_proto::encode(&sample, &mut plain).unwrap();
+
+        assert_eq!(plain[0], SAMPLE);
     }
 
     /// A garbled invite answer may hold the invite's secret: the error's

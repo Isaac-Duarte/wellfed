@@ -183,6 +183,63 @@ fn a_retry_after_a_lost_answer_sends_only_the_rest() {
     });
 }
 
+/// An upload's answers are lost after some chunks, then its retry resumes
+/// and the feeder refuses a chunk (its store failed). The first send's
+/// start erased the clip the feeder held, and the feeder has lost part of
+/// this one, so the refusal is no answer: the retry is unknown, and the
+/// entry stays unknown, never sent again.
+#[test]
+fn a_retry_refused_past_the_start_stays_unknown() {
+    local(async {
+        let flash = feeder::Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let relay = Relay::start(sim.address).await;
+        let server = TestService::start_with(quick()).await;
+        let id = server
+            .adopt_as(&sim, &relay.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let caller = ada().into();
+
+        let key: IdempotencyKey = [6; 16];
+        let clip = stream(4_096);
+        relay.hold_answers_after(1_800);
+        let lost = service
+            .upload_call(&caller, id, clip.clone(), Some(key))
+            .await;
+        assert!(
+            matches!(lost, Err(Error::Command(CommandError::Unknown))),
+            "{lost:?}"
+        );
+        relay.cut();
+        relay.resume();
+        server.link(id, Link::Online).await;
+        until_receiving(service, id).await;
+
+        feeder::fail_call(&flash, true);
+        let refused = service
+            .upload_call(&caller, id, clip.clone(), Some(key))
+            .await;
+        assert!(
+            matches!(refused, Err(Error::Command(CommandError::Unknown))),
+            "{refused:?}"
+        );
+        let entry = service.command(&ada(), key).await.unwrap();
+        assert_eq!((entry.state, entry.outcome), (CommandState::Unknown, None));
+
+        // Never sent again: a resend would find the clip gone with the
+        // store's failure and settle as superseded.
+        let again = service.upload_call(&caller, id, clip, Some(key)).await;
+        assert!(
+            matches!(again, Err(Error::Command(CommandError::Unknown))),
+            "{again:?}"
+        );
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
 /// The bytes the feeder's upload has, once its session answers again.
 async fn until_receiving(service: &wellfed_service::Service, id: wellfed_api::FeederId) -> u32 {
     let received = std::cell::Cell::new(0);

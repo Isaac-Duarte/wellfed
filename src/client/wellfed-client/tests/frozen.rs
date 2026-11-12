@@ -602,3 +602,24 @@ fn a_newer_kind_of_message_is_skipped_and_the_session_kept() {
     ));
     assert!(client.connection.opened().is_some(), "the session is kept");
 }
+
+/// A metric a later build adds goes at the end of `Metric`, and a live
+/// sample of it is skipped whole: samples are never stored, so this build
+/// loses nothing, and ending the session over it would leave a write in
+/// flight uncertain. The write's answer, behind the sample, still comes on
+/// the same session.
+#[test]
+fn a_newer_metric_is_skipped_and_the_session_kept() {
+    let mut device = OldBuild::new(1_000);
+    let mut client = Client::connect(&mut device, Instant::now());
+
+    // `Sample` at index 3, its uptime, then a metric past every one this
+    // build knows, with a value of its own.
+    device.send_plain(&[3, 5, 0x7f, 1, 2]);
+    assert!(matches!(
+        client.ask(&mut device, &ModelOp::CancelUpdate),
+        Answer::Update(_)
+    ));
+    assert_eq!(device.ops.last(), Some(&"cancel"));
+    assert!(client.connection.opened().is_some(), "the session is kept");
+}

@@ -43,6 +43,10 @@ pub struct CommandRow {
     /// was sent.
     pub history: Option<Synced>,
     pub state: CommandState,
+    /// The answer once answered, and the resolution once resolved. On an
+    /// unknown entry, [`CommandOutcome::Unknown`] when the feeder answered
+    /// without settling it ([`Store::command_unsettled`]), and `None` when
+    /// no answer came.
     pub outcome: Option<CommandOutcome>,
     pub feed: Option<u32>,
     pub sent: Timestamp,
@@ -167,6 +171,32 @@ impl Store {
         let done = sqlx::query!(
             "UPDATE commands SET state = ?1, updated_ms = ?2 WHERE key = ?3 AND state IN (?4, ?1)",
             unknown,
+            at,
+            key,
+            sent,
+        )
+        .execute(&self.writer)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// The feeder answered a write, but its answer does not say whether
+    /// the write ran: an answer the server could not read, or a resend's
+    /// refusal, which says nothing of the first send. The entry stays
+    /// unknown, and its outcome reads [`CommandOutcome::Unknown`], which
+    /// tells it from one no answer came for: a retry never sends it again.
+    /// Whether an entry changed, as [`Self::command_unknown`] answers.
+    pub async fn command_unsettled(&self, key: &[u8; 16], at: Timestamp) -> Result<bool> {
+        let key = key.as_slice();
+        let json = serde_json::to_string(&CommandOutcome::Unknown)
+            .map_err(|e| Error::Json("outcome", e))?;
+        let (sent, unknown) = (CommandState::Sent.code(), CommandState::Unknown.code());
+        let at = millis(at);
+        let done = sqlx::query!(
+            "UPDATE commands SET state = ?1, outcome = ?2, updated_ms = ?3
+             WHERE key = ?4 AND state IN (?5, ?1)",
+            unknown,
+            json,
             at,
             key,
             sent,

@@ -14,11 +14,16 @@
 //! - An unknown write goes out again under the request id it was first sent
 //!   under, which the feeder answers from memory if it ran it, but only for
 //!   a kind whose resend rule allows it. A feed never goes out again.
-//!   A settings change resent after the feeder's ring has moved on runs
-//!   again against its base, which the first run moved past, so it comes
-//!   back as a stale refusal although the change was made. A meal call's
-//!   upload runs on the long lane instead (`feeders/call.rs`), and its
-//!   retry picks up where the feeder's upload stands.
+//!   A settings change resent after the feeder forgot its id (a restart)
+//!   runs again against its base, which the first run may have moved
+//!   past, so a resend's refusal says nothing of the first send: the entry
+//!   stays unknown. A resend that finds the feeder offline sent nothing
+//!   new, and is unknown too. A meal call's upload runs on the long lane
+//!   instead (`feeders/call.rs`), and its retry picks up where the
+//!   feeder's upload stands.
+//! - An unknown write the feeder answered without settling it (an answer
+//!   this server could not read, or a resend's refusal) is never sent
+//!   again: a retry is answered unknown, unsent.
 //!
 //! A key that already names another request is refused and nothing is
 //! sent. The send runs in a task of its own, so the entry reaches its
@@ -32,19 +37,18 @@ use tracing::warn;
 use uuid::Uuid;
 use wellfed_api::{CommandKind, CommandOutcome, CommandState, FeederId, StreamEvent};
 use wellfed_formats::canonical::canonical_of;
-use wellfed_mirror::{AskError, Clip};
-use wellfed_model::{Answer, DeviceKind, Invite, Op};
+use wellfed_mirror::Clip;
+use wellfed_model::{DeviceKind, Invite, Op};
 use wellfed_store::{Journaled, NewCommand, Synced};
 
 use self::id::write_id;
 use self::retry::{Retry, retry};
-use crate::{
-    Caller, CommandError, Error, IdempotencyKey, InternalError, RequestId, Result, Service,
-};
+use crate::{Caller, CommandError, IdempotencyKey, InternalError, Result, Service};
 
 mod id;
 mod reads;
 mod retry;
+mod send;
 
 pub(crate) use self::reads::view;
 
@@ -252,71 +256,6 @@ impl Service {
             warn!("{interrupted} writes sent before the last stop are unknown");
         }
         Ok(())
-    }
-
-    /// Send one attempt and record what came of it: the outcome, and an
-    /// invite's secret beside it.
-    pub(crate) async fn send(
-        &self,
-        key: IdempotencyKey,
-        feeder: FeederId,
-        request: RequestId,
-        op: Op,
-        attempt: Attempt,
-    ) -> Result<(CommandOutcome, Option<Invite>)> {
-        let answer = self.mirror.ask(feeder, request, op).await;
-        let store = &self.shared.store;
-        let now = self.shared.clock.now();
-
-        let mut invite = None;
-        let outcome = match answer {
-            Ok(Answer::Done { .. }) => CommandOutcome::Done,
-            Ok(Answer::Invite(made)) => {
-                invite = Some(made);
-                CommandOutcome::Invited {
-                    invite: made.id,
-                    seconds: made.seconds,
-                }
-            }
-            Ok(Answer::Refused(refusal)) => CommandOutcome::Refused {
-                refusal: refusal.into(),
-            },
-            Ok(Answer::Feeding { feed }) => CommandOutcome::Feeding { feed },
-            // An answer that fits no write: what the feeder did is not
-            // known from it.
-            Ok(_) => {
-                self.unknown(&key, now).await?;
-                return Err(InternalError::Unexpected.into());
-            }
-            Err(AskError::Unknown) => {
-                self.unknown(&key, now).await?;
-                return Err(CommandError::Unknown.into());
-            }
-            // Never sent: a first attempt leaves no entry, so the key is
-            // free for the same write later. Only the first attempt sends
-            // while the entry is `sent`, so no other attempt is using it.
-            Err(
-                unsent @ (AskError::NotRunning
-                | AskError::Offline
-                | AskError::Legacy
-                | AskError::Unsendable),
-            ) => {
-                if matches!(attempt, Attempt::First) {
-                    store.forget_unsent(&key).await?;
-                }
-                return Err(Error::from(unsent));
-            }
-        };
-        self.record_answer(&key, &outcome, now).await?;
-        // The feed's `Fed` event may have been stored before its answer
-        // was: look for it now rather than at the next event, beside the
-        // answer rather than ahead of it.
-        if outcome.feed().is_some() {
-            let service = self.clone();
-            self.tasks
-                .spawn(async move { service.reconcile_best_effort(feeder).await });
-        }
-        Ok((outcome, invite))
     }
 
     /// Record the feeder's answer to `key`'s write, and stream the entry.

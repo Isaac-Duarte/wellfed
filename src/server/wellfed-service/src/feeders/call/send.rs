@@ -32,6 +32,15 @@ use crate::feeders::commands::refused;
 use crate::feeders::journal::Attempt;
 use crate::{CommandError, Error, IdempotencyKey, InternalError, RequestId, Result, Service};
 
+/// How far an upload got when it stopped short.
+#[derive(Clone, Copy)]
+enum Reached {
+    /// Its start, which erases the feeder's clip.
+    Start,
+    /// Its chunks, once the feeder took the start.
+    Chunks,
+}
+
 /// What the feeder holds of its meal call, as a journal entry keeps it.
 fn held(view: &CallView) -> CallBefore {
     match view.clip {
@@ -108,7 +117,9 @@ impl Service {
             Some(start) => start,
             None => {
                 if let Err(error) = operation.start_call(clip).await {
-                    return self.upload_failed(&key, attempt, error).await;
+                    return self
+                        .upload_failed(&key, attempt, Reached::Start, error)
+                        .await;
                 }
                 if let Err(error) = self.shared.store.record_call_started(&key).await {
                     self.unknown_best_effort(&key).await;
@@ -125,42 +136,52 @@ impl Service {
                     .await?;
                 Ok(outcome)
             }
-            Err(error) => self.upload_failed(&key, attempt, error).await,
+            Err(error) => {
+                self.upload_failed(&key, attempt, Reached::Chunks, error)
+                    .await
+            }
         }
     }
 
     /// Record what an upload that stopped short leaves of its entry: a
-    /// refusal as its answer, a send that never left as no entry, and
-    /// anything else as unknown, for a retry to read where it stands.
+    /// first attempt's refused start as its answer, a send that never left
+    /// as no entry, and anything else as unknown, for a retry to read where
+    /// it stands. A refusal past the start, or on a retry, is unknown for
+    /// good: the feeder took a start by then, or may have, which erased the
+    /// clip it held and left part of this one.
     async fn upload_failed(
         &self,
         key: &IdempotencyKey,
         attempt: Attempt,
+        reached: Reached,
         error: CallError,
     ) -> Result<CommandOutcome> {
         let now = self.shared.clock.now();
         match error {
             CallError::Failed(UploadFailed::Upload(UploadError::Refused(refusal))) => {
-                let outcome = CommandOutcome::Refused {
-                    refusal: refusal.into(),
-                };
-                self.record_answer(key, &outcome, now).await?;
-                Ok(outcome)
+                if matches!((attempt, reached), (Attempt::First, Reached::Start)) {
+                    let outcome = CommandOutcome::Refused {
+                        refusal: refusal.into(),
+                    };
+                    self.record_answer(key, &outcome, now).await?;
+                    Ok(outcome)
+                } else {
+                    Err(self.unsettled(key, now).await)
+                }
             }
             CallError::Unsent(error) => Err(self.nothing_sent(key, attempt, error.into()).await),
-            CallError::Failed(UploadFailed::Upload(UploadError::Unexpected)) => {
-                self.unknown(key, now).await?;
-                Err(InternalError::Unexpected.into())
-            }
-            // The feeder holds what it received, or its restart forgot it:
-            // a retry under the key reads which and goes on from there.
+            // The feeder holds what it received, or its restart forgot it,
+            // or it answered so this server could not read it: a retry
+            // under the key reads which and goes on from there.
             CallError::Lost(_) | CallError::Failed(_) => {
                 self.unknown(key, now).await?;
                 Err(CommandError::Unknown.into())
             }
-            CallError::Random(failed) => {
+            // The entry is unknown, so is the answer: the feeder may hold
+            // what went before.
+            CallError::Random(_) => {
                 self.unknown_best_effort(key).await;
-                Err(failed.into())
+                Err(CommandError::Unknown.into())
             }
         }
     }
@@ -221,15 +242,18 @@ impl Service {
         Ok(outcome)
     }
 
-    /// `error` for an attempt that wrote nothing to the feeder. A first
+    /// The error for an attempt that wrote nothing to the feeder. A first
     /// attempt's entry is dropped, so its key is free for the same write
-    /// later; a retry's stays as it was.
+    /// later, and the caller hears `error`. A retry's stays unknown, as
+    /// the first send left it, and so does its answer: this attempt
+    /// sending nothing does not make the first one nothing.
     async fn nothing_sent(&self, key: &IdempotencyKey, attempt: Attempt, error: Error) -> Error {
-        if matches!(attempt, Attempt::First)
-            && let Err(forget) = self.shared.store.forget_unsent(key).await
-        {
-            return forget.into();
+        match attempt {
+            Attempt::First => match self.shared.store.forget_unsent(key).await {
+                Ok(()) => error,
+                Err(forget) => forget.into(),
+            },
+            Attempt::Retry => CommandError::Unknown.into(),
         }
-        error
     }
 }

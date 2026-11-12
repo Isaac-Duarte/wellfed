@@ -25,7 +25,7 @@ pub enum CommandError {
          update the feeder"
     )]
     Legacy,
-    #[error("no answer in time: retry with the same key")]
+    #[error("whether the feeder ran it is not known: retry with the same key")]
     Unknown,
     #[error("the Idempotency-Key already names another request; nothing was sent")]
     KeyReused,

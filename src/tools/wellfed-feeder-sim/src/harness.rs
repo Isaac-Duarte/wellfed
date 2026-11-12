@@ -5,6 +5,8 @@
 //! runtime, the relay and the generator are every device's
 //! (`wellfed_device_sim::harness`).
 
+pub mod newer;
+mod peer;
 pub mod pre_revision;
 
 use std::cell::RefCell;
@@ -38,6 +40,14 @@ pub use wellfed_device_sim::harness::{Relay, counter, local};
 /// feeder's settings are read-only with no generation.
 pub fn fail_feeder_settings(flash: &Flash, failing: bool) {
     flash.fail_programs(failing.then_some(storage::FEEDER_SETTINGS));
+}
+
+/// Make every program into the meal call's store on `flash` fail from now
+/// on (`true`), or none: the next chunk an upload writes is lost with the
+/// clip it was part of, and the store refuses later chunks `NotWritable`
+/// until the feeder restarts.
+pub fn fail_call(flash: &Flash, failing: bool) {
+    flash.fail_programs(failing.then_some(storage::CALL));
 }
 
 use crate::banks::Banks;

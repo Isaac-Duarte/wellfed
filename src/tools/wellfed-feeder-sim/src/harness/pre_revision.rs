@@ -4,16 +4,16 @@
 //! keepalive) and refuses anything else, and it records what each client
 //! sent, so a test sees that nothing past the frozen part went out.
 
-use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use wellfed_proto::api::{
-    Bank0Check, ClientMessage, DeviceMessage, FRAME_MAX, Op, Open, Outcome, PROLOGUE,
-    PROTOCOL_MAJOR, Refusal, Role, UpdateOp, UpdatePhase, UpdateView, WANTED_MAX, Welcome,
+    Bank0Check, ClientMessage, DeviceMessage, FRAME_MAX, Op, Outcome, Refusal, UpdateOp,
+    UpdatePhase, UpdateView, WANTED_MAX,
 };
-use wellfed_session::frame::{self, PREFIX};
-use wellfed_session::noise::{Handshake, Keypair, Pattern, Role as Side};
+use wellfed_session::noise::Keypair;
+
+use super::peer::Session;
 
 /// Master's schema hash before API revisions, the last a pre-revision
 /// build sent.
@@ -69,22 +69,6 @@ impl PreRevision {
     }
 }
 
-fn read_frame(stream: &mut TcpStream) -> Option<Vec<u8>> {
-    let mut prefix = [0; PREFIX];
-    stream.read_exact(&mut prefix).ok()?;
-    let len = frame::parse_prefix(prefix, FRAME_MAX)?;
-    let mut body = vec![0; len];
-    stream.read_exact(&mut body).ok()?;
-    Some(body)
-}
-
-fn write_frame(stream: &mut TcpStream, body: &[u8]) -> Option<()> {
-    stream
-        .write_all(&frame::prefix(body.len(), FRAME_MAX)?)
-        .ok()?;
-    stream.write_all(body).ok()
-}
-
 fn idle() -> UpdateView {
     UpdateView {
         phase: UpdatePhase::Idle,
@@ -102,42 +86,11 @@ fn idle() -> UpdateView {
 
 /// One session, until the client closes it. The frozen ops decode the same
 /// under this build's types, so they stand in for the old build's.
-fn serve(mut stream: TcpStream, seen: &Mutex<Vec<Seen>>) -> Option<()> {
-    let identity = Keypair::from_secret(SECRET);
-    let open = read_frame(&mut stream)?;
-    if wellfed_proto::decode::<Open>(&open) != Ok(Open::Session) {
-        return None;
-    }
-    let mut handshake = Handshake::new(
-        Pattern::Ik,
-        Side::Responder,
-        PROLOGUE,
-        &identity,
-        None,
-        [9; 32],
-    )
-    .ok()?;
+fn serve(stream: TcpStream, seen: &Mutex<Vec<Seen>>) -> Option<()> {
+    let mut session = Session::accept(stream, SECRET, "pre-revision", SCHEMA)?;
     let mut plain = [0; FRAME_MAX];
-    let mut sealed = [0; FRAME_MAX];
-    handshake
-        .read_message(&read_frame(&mut stream)?, &mut plain)
-        .ok()?;
-    let welcome = Welcome::Open {
-        major: PROTOCOL_MAJOR,
-        model: wellfed_proto::device::Model::Plaf103,
-        build: "pre-revision",
-        role: Role::Owner,
-        epoch: 1,
-        schema: SCHEMA,
-    };
-    let len = wellfed_proto::encode(&welcome, &mut plain).ok()?;
-    let written = handshake.write_message(&plain[..len], &mut sealed).ok()?;
-    write_frame(&mut stream, &sealed[..written])?;
-    let mut transport = handshake.into_transport().ok()?;
-
     loop {
-        let message = read_frame(&mut stream)?;
-        let len = transport.open(&message, &mut plain).ok()?;
+        let len = session.receive(&mut plain)?;
         let (kind, answer) = match wellfed_proto::decode::<ClientMessage<'_>>(&plain[..len]) {
             Ok(ClientMessage::Request { id, op }) => match op {
                 Op::Update(UpdateOp::State) => (Seen::Update, Some((id, Outcome::Update(idle())))),
@@ -158,9 +111,8 @@ fn serve(mut stream: TcpStream, seen: &Mutex<Vec<Seen>>) -> Option<()> {
         let Some((id, result)) = answer else {
             continue;
         };
-        let len =
-            wellfed_proto::encode(&DeviceMessage::Response { id, result }, &mut plain).ok()?;
-        let written = transport.seal(&plain[..len], &mut sealed).ok()?;
-        write_frame(&mut stream, &sealed[..written])?;
+        let mut out = [0; FRAME_MAX];
+        let len = wellfed_proto::encode(&DeviceMessage::Response { id, result }, &mut out).ok()?;
+        session.send(&out[..len])?;
     }
 }
