@@ -34,6 +34,7 @@ use wellfed_api::{BEARER, ErrorCode, SESSION_COOKIE as COOKIE};
 use wellfed_service::{BearerToken, Caller, Permission, SessionToken, can};
 
 use crate::AppState;
+use crate::config::HostName;
 use crate::error::ApiError;
 use crate::proxy::Scheme;
 
@@ -188,16 +189,11 @@ const fn secure(scheme: Scheme) -> &'static str {
 /// The names this server answers to besides IP addresses and `localhost`,
 /// such as `feeder.lan`.
 #[derive(Clone, Debug, Default)]
-pub struct Hosts(Vec<String>);
+pub struct Hosts(Vec<HostName>);
 
 impl Hosts {
-    pub fn new(names: impl IntoIterator<Item = String>) -> Self {
-        Self(
-            names
-                .into_iter()
-                .map(|name| name.to_ascii_lowercase())
-                .collect(),
-        )
+    pub fn new(names: impl IntoIterator<Item = HostName>) -> Self {
+        Self(names.into_iter().collect())
     }
 
     /// Whether a `Host` header (with or without its port) names this server.
@@ -208,7 +204,10 @@ impl Hosts {
         };
         name.parse::<IpAddr>().is_ok()
             || name.eq_ignore_ascii_case("localhost")
-            || self.0.iter().any(|known| known.eq_ignore_ascii_case(name))
+            || self
+                .0
+                .iter()
+                .any(|known| known.as_str().eq_ignore_ascii_case(name))
     }
 }
 
@@ -286,7 +285,7 @@ mod tests {
 
     #[test]
     fn addresses_localhost_and_named_hosts_are_known() {
-        let hosts = Hosts::new(["Feeder.lan".to_owned()]);
+        let hosts = Hosts::new(["Feeder.lan".parse().unwrap()]);
         for host in [
             "192.0.2.7",
             "192.0.2.7:8080",

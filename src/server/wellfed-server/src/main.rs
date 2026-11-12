@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
         .context("start the feeder connections")?;
 
     let shutdown = CancellationToken::new();
-    let hosts = wellfed_server::Hosts::new(settings.hosts.into_iter().map(String::from));
+    let hosts = wellfed_server::Hosts::new(settings.hosts);
     if !settings.trusted_proxies.is_empty() {
         let proxies: Vec<String> = settings
             .trusted_proxies
