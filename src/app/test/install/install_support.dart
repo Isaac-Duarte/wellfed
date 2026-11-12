@@ -47,7 +47,8 @@ Future<void> installTap(WidgetTester tester, String text) async {
   await settle(tester);
 }
 
-/// From the first screen to a run through the Reset hold.
+/// From the first screen to a run through the Reset hold, with the reset
+/// route's broker running.
 Future<FakeRun> installToRun(WidgetTester tester, FakeInstallPorts ports, {FakeBook? book}) async {
   await installOpen(tester, ports, book: book);
   await installTap(tester, 'Continue');
@@ -98,17 +99,4 @@ Future<FakeRun> installStopped(
   run.stopped(stop, resume: resume, detail: detail);
   await settle(tester);
   return run;
-}
-
-/// From the first screen to the reset route's broker running.
-Future<FakeRun> installToHandover(WidgetTester tester, FakeInstallPorts ports) async {
-  await installOpen(tester, ports);
-  await installTap(tester, 'Continue');
-  await tester.enterText(find.byType(TextField).at(0), 'Maple St');
-  await tester.enterText(find.byType(TextField).at(1), 'correcthorse');
-  await tester.pump();
-  await installTap(tester, 'Continue');
-  await installTap(tester, 'I understand its meals will be erased');
-  await installTap(tester, 'I held Reset');
-  return ports.run;
 }

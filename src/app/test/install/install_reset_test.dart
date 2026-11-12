@@ -154,7 +154,7 @@ void main() {
 
     testWidgets('the phone joins, sends once, comes back and waits', (tester) async {
       final ports = FakeInstallPorts();
-      final FakeRun run = await installToHandover(tester, ports);
+      final FakeRun run = await installToRun(tester, ports);
       expect(ports.specs.single.start, InstallStart.reset);
       expect(ports.specs.single.home?.ssid, 'Maple St');
 
@@ -175,7 +175,7 @@ void main() {
 
     testWidgets('an empty picker lets the owner try again', (tester) async {
       final ports = FakeInstallPorts()..joinFails = 'no network';
-      final FakeRun run = await installToHandover(tester, ports);
+      final FakeRun run = await installToRun(tester, ports);
       run.ask(2, const InstallAsk.joinFeederNetwork());
       await settle(tester);
 
@@ -190,7 +190,7 @@ void main() {
 
     testWidgets('coming back at another address fails the ask', (tester) async {
       final ports = FakeInstallPorts()..ipAfterLeaving = '192.168.1.99';
-      final FakeRun run = await installToHandover(tester, ports);
+      final FakeRun run = await installToRun(tester, ports);
       run.ask(3, const InstallAsk.leaveFeederNetwork());
       await settle(tester);
       expect(run.answers[3], isA<InstallAnswer_Failed>());
@@ -198,7 +198,7 @@ void main() {
 
     testWidgets("a run that ends on the feeder's network leaves it", (tester) async {
       final ports = FakeInstallPorts();
-      final FakeRun run = await installToHandover(tester, ports);
+      final FakeRun run = await installToRun(tester, ports);
       run.ask(2, const InstallAsk.joinFeederNetwork());
       await settle(tester);
       await installTap(tester, "Join the feeder's network");
@@ -210,7 +210,7 @@ void main() {
 
     testWidgets('a frame stock did not keep goes again with no second reset', (tester) async {
       final ports = FakeInstallPorts();
-      final FakeRun run = await installToHandover(tester, ports);
+      final FakeRun run = await installToRun(tester, ports);
       run.stopped(const StopCase.frameNotTaken(), resume: Resume.fromStart);
       await settle(tester);
       expect(find.text("The feeder didn't reach this phone"), findsOneWidget);
@@ -223,7 +223,7 @@ void main() {
 
     testWidgets('a new password goes straight to the handover', (tester) async {
       final ports = FakeInstallPorts();
-      final FakeRun run = await installToHandover(tester, ports);
+      final FakeRun run = await installToRun(tester, ports);
       run.stopped(const StopCase.frameNotTaken(), resume: Resume.fromStart);
       await settle(tester);
 
@@ -238,7 +238,7 @@ void main() {
 
     testWidgets('a stock that kept the frame is only waited for', (tester) async {
       final ports = FakeInstallPorts();
-      final FakeRun run = await installToHandover(tester, ports);
+      final FakeRun run = await installToRun(tester, ports);
       run.ask(4, const InstallAsk.recognizeFeeder(device: 'AF', address: '192.168.1.40'));
       await settle(tester);
       run.stopped(const StopCase.serverFailed(), resume: Resume.fromStart);
@@ -250,7 +250,7 @@ void main() {
 
     testWidgets('a client the owner said no to took no frame of ours', (tester) async {
       final ports = FakeInstallPorts();
-      final FakeRun run = await installToHandover(tester, ports);
+      final FakeRun run = await installToRun(tester, ports);
       run.ask(4, const InstallAsk.recognizeFeeder(device: 'AF', address: '192.168.1.40'));
       await settle(tester);
       await installTap(tester, "That's not my feeder");
