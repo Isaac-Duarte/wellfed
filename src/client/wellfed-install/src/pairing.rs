@@ -208,7 +208,7 @@ mod tests {
     use std::rc::Rc;
     use std::time::Duration;
 
-    use wellfed_device_api::setup::{MAX_MESSAGE, Received, Responder};
+    use wellfed_feeder_sim::harness::SetupFeeder;
     use wellfed_session::noise::Keypair;
 
     use super::*;
@@ -268,54 +268,35 @@ mod tests {
     /// A feeder in setup mode behind a link that drops once the client's
     /// last step arrives: the feeder goes on without it.
     struct Dropping {
-        feeder: Responder,
+        feeder: SetupFeeder,
         keyed: Rc<Cell<Option<Code>>>,
         /// The feeder's next message to the client.
         next: Option<Vec<u8>>,
-        proven: bool,
     }
 
     impl SetupLink for Dropping {
         async fn send(&mut self, message: &[u8]) -> Result<(), PlatformError> {
-            let mut out = [0u8; MAX_MESSAGE];
-            match self
-                .feeder
-                .receive(message, &mut out)
-                .map_err(feeder_error)?
-            {
-                Received::Send(len) => self.next = Some(out[..len].to_vec()),
-                Received::Offer(_) => {
-                    let reply = wellfed_proto::setup::Reply::EnterCode { seconds: 60 };
-                    let len = self.feeder.reply(&reply, &mut out).map_err(feeder_error)?;
-                    self.next = Some(out[..len].to_vec());
-                }
-                Received::Proven { .. } => self.proven = true,
+            let answer = self.feeder.hear(message);
+            if !self.feeder.proven() {
+                self.next = Some(answer);
             }
             Ok(())
         }
 
         async fn receive(&mut self, _wait: Duration) -> Result<Vec<u8>, PlatformError> {
-            if self.proven {
+            if self.feeder.proven() {
                 return Err("the link dropped".into());
             }
             if let Some(next) = self.next.take() {
                 return Ok(next);
             }
+
             // The code is in: the feeder starts the proof.
             let code = self.keyed.take().ok_or("no code was keyed in")?;
-            let mut out = [0u8; MAX_MESSAGE];
-            let len = self
-                .feeder
-                .prove(code, [6; 32], &mut out)
-                .map_err(feeder_error)?;
-            Ok(out[..len].to_vec())
+            Ok(self.feeder.prove(code))
         }
 
         async fn close(self) {}
-    }
-
-    fn feeder_error(error: wellfed_device_api::setup::Error) -> PlatformError {
-        format!("the feeder: {error:?}").into()
     }
 
     #[tokio::test]
@@ -327,10 +308,9 @@ mod tests {
         };
         let keyed = Rc::new(Cell::new(None));
         let link = Dropping {
-            feeder: Responder::new(&feeder, [4; 32]).unwrap(),
+            feeder: SetupFeeder::new(&feeder),
             keyed: Rc::clone(&keyed),
             next: None,
-            proven: false,
         };
         let wifi = Credentials::new(b"Lab".to_vec(), "pass word!".into()).unwrap();
 

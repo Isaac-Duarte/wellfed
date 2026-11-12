@@ -79,7 +79,7 @@ fn limits() -> [(&'static str, &'static str, u32); 10] {
         (
             "labelBytesMost",
             "The most bytes of a phone's name a feeder keeps, from 1.",
-            count(wellfed_proto::setup::LABEL_MAX),
+            count(wellfed_client::update_key::LABEL_MAX),
         ),
     ]
 }

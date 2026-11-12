@@ -304,6 +304,7 @@ impl Drop for Threaded {
 pub struct SetupFeeder {
     responder: Responder,
     out: Box<[u8; MAX_MESSAGE]>,
+    proven: bool,
 }
 
 impl SetupFeeder {
@@ -312,7 +313,14 @@ impl SetupFeeder {
         Self {
             responder: Responder::new(identity, [4; 32]).expect("a fixed ephemeral is a valid key"),
             out: Box::new([0; MAX_MESSAGE]),
+            proven: false,
         }
+    }
+
+    /// The client's last step has arrived and checked out: the feeder holds
+    /// the client whether or not its answer gets back.
+    pub fn proven(&self) -> bool {
+        self.proven
     }
 
     /// The feeder's answer to one whole message from the client, unframed. A
@@ -325,10 +333,13 @@ impl SetupFeeder {
         {
             Received::Send(len) => len,
             Received::Offer(_) => self.reply(&Reply::EnterCode { seconds: 60 }),
-            Received::Proven { .. } => self.reply(&Reply::Done {
-                enrolled: Enrolled::Already,
-                wifi: WifiSaved::Saved,
-            }),
+            Received::Proven { .. } => {
+                self.proven = true;
+                self.reply(&Reply::Done {
+                    enrolled: Enrolled::Already,
+                    wifi: WifiSaved::Saved,
+                })
+            }
         };
         self.out[..len].to_vec()
     }
