@@ -93,6 +93,13 @@ impl fmt::Display for Generation {
 }
 
 impl Generation {
+    /// The generation a store write on this one makes: settings, plans and
+    /// calibration number each write one past the last.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+
     /// A feeder's settings generation as it reports it: `None` for
     /// [`wellfed_proto::api::NO_SETTINGS_GENERATION`], which it reports,
     /// read-only, while its two settings records share none.

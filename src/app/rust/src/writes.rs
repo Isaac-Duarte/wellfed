@@ -34,15 +34,9 @@ use crate::today::Facts;
 /// Where one caller hears how its request ended.
 pub(crate) type Reply = oneshot::Sender<Heard>;
 
-/// The generation a write on `base` makes: settings and plans number each
-/// write the store makes one past the last.
-const fn after(base: Generation) -> Generation {
-    Generation(base.0.wrapping_add(1))
-}
-
 /// Whether `answer` is a `Done` that names what a write on `base` makes.
 fn landed_on(base: Generation, answer: Option<&Answer>) -> bool {
-    matches!(answer, Some(Answer::Done { generation: Some(generation) }) if *generation == after(base))
+    matches!(answer, Some(Answer::Done { generation: Some(generation) }) if *generation == base.next())
 }
 
 /// A write whose `Done` the card takes as soon as it comes, or that waits in
@@ -99,13 +93,11 @@ impl Write {
                 let Some(settings) = facts.settings.as_mut() else {
                     return false;
                 };
-                if settings.generation != Some(base) || !landed_on(base, answer) {
+                if !landed_on(base, answer) || !settings.landed(base, changes) {
                     return false;
                 }
-                settings.apply(changes);
-                settings.generation = Some(after(base));
                 if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
-                    status.settings_generation = Some(after(base));
+                    status.settings_generation = Some(base.next());
                 }
                 true
             }
@@ -113,12 +105,14 @@ impl Write {
                 let (Some(base), Some(settings)) = (base, facts.settings.as_mut()) else {
                     return false;
                 };
-                if settings.generation != Some(base) || !landed_on(base, answer) {
+                // The date shows from the read its event brings; only the
+                // generation moves here.
+                let nothing = FeederSettingsPatch::default();
+                if !landed_on(base, answer) || !settings.landed(base, nothing) {
                     return false;
                 }
-                settings.generation = Some(after(base));
                 if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
-                    status.settings_generation = Some(after(base));
+                    status.settings_generation = Some(base.next());
                 }
                 true
             }
@@ -139,7 +133,7 @@ impl Write {
                     return false;
                 }
                 held.plans = plans;
-                held.generation = after(base);
+                held.generation = base.next();
                 true
             }
         }
@@ -282,7 +276,7 @@ impl SettingsQueue {
     /// The write out was answered with `answer`, or `None` with none.
     pub(crate) fn answered(&mut self, answer: Option<&Answer>) -> Next {
         let landed = match self.out {
-            Out::On(base) if landed_on(base, answer) => Some(after(base)),
+            Out::On(base) if landed_on(base, answer) => Some(base.next()),
             _ => None,
         };
         self.out = Out::Idle;
@@ -383,7 +377,7 @@ impl PlansQueue {
         }
 
         let mut next = Plans {
-            generation: after(base),
+            generation: base.next(),
             writable: true,
             plans: table,
             skipped: wellfed_model::SkippedMeals::NONE,
