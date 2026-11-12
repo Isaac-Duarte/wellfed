@@ -1943,3 +1943,39 @@ fn a_stalled_loop_loses_only_the_reading() {
     let (_, off) = lit_window(&report, 0);
     assert!(off - stall <= 240, "cut {} ms into the stall", off - stall);
 }
+
+/// A watchdog reset while a submit waits for its claim (writes queued ahead
+/// of it) ends the boot before any feed reaches the owner. The harness
+/// reboots the worker inside the submit and must not read the new boot's
+/// status as the submit's answer: no submission is recorded, so even the
+/// expectation of one fails, and nothing drives on the next boot.
+#[test]
+fn a_submit_a_watchdog_reset_cut_short_records_no_submission() {
+    // The owner stalls at 100 ms; the watchdog resets the board at 14 s.
+    let report = run(&scenario(
+        vec![
+            act(100, "owner", &[0]),
+            act(13_900, "write", &[100, 0]),
+            act(13_950, "submit", &[1, 1]),
+            expect(13_950, json!({"submission": "enqueued"})),
+            expect(15_000, json!({"boots": 2, "motor": 0})),
+        ],
+        16_000,
+        "single",
+    ))
+    .unwrap();
+
+    let reset: Vec<u64> = events(&report, "watchdog_reset_requested")
+        .map(|e| e["at_ms"].as_u64().unwrap())
+        .collect();
+    assert_eq!(reset, [14_000], "the reset lands in the claim's wait");
+    let submission = report["assertions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["label"] == "expect.submission")
+        .expect("the submission was checked");
+    assert_eq!(submission["actual"], Value::Null, "{submission}");
+    assert_eq!(submission["passed"], false);
+    assert!(!drove_after_reboot(&report));
+}
