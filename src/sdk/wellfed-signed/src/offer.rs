@@ -62,6 +62,15 @@ pub const DOWNGRADE_BODY: usize = STATEMENT_HEADER + 32 + 32 + 4;
 /// The longest statement, signature included.
 pub const STATEMENT_MAX: usize = DOWNGRADE_BODY + SIGNATURE_LEN;
 
+/// Whether `public` is a key worth enrolling: a point that decodes, and
+/// not one of small order. Verification is strict, so a weak key signs
+/// nothing anyway; refusing it at enrollment keeps a slot from holding a
+/// key that can never sign, or that a laxer check would let anyone sign
+/// with.
+pub fn strong_key(public: &[u8; 32]) -> bool {
+    VerifyingKey::from_bytes(public).is_ok_and(|key| !key.is_weak())
+}
+
 /// The first 8 bytes of SHA-256 over an Ed25519 public key.
 pub type KeyId = [u8; KEY_ID_LEN];
 

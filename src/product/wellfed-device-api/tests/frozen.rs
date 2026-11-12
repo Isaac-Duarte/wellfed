@@ -50,6 +50,41 @@ fn an_op_this_build_does_not_know_is_refused_unavailable() {
     assert!(!rig.ended(slot));
 }
 
+/// A weak update key is refused `Invalid` at once, with no press asked
+/// for; a strong one waits for the press.
+#[test]
+fn a_weak_update_key_is_refused_before_any_press() {
+    let mut identity = [0; 32];
+    identity[0] = 1;
+    // The Ed25519 base point: a strong key.
+    let mut base = [0x66; 32];
+    base[0] = 0x58;
+
+    let mut rig = Rig::new();
+    let (slot, mut transport) = rig.open();
+    let weak = request(
+        [0x51; 16],
+        Op::Update(UpdateOp::EnrollKey {
+            key: identity,
+            label: "weak",
+        }),
+    );
+    let answers = send(&mut rig, slot, &mut transport, &weak);
+    assert_eq!(
+        answer(&answers[0]),
+        ([0x51; 16], Outcome::Refused(Refusal::Invalid))
+    );
+
+    let strong = request(
+        [0x52; 16],
+        Op::Update(UpdateOp::EnrollKey {
+            key: base,
+            label: "strong",
+        }),
+    );
+    assert!(send(&mut rig, slot, &mut transport, &strong).is_empty());
+}
+
 /// Bytes with no readable request id are no request: the session ends as
 /// before.
 #[test]

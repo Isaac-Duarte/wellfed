@@ -679,3 +679,20 @@ fn a_small_order_key_signs_nothing() {
         );
     }
 }
+
+/// Enrollment takes only keys that decode and are not of small order.
+#[test]
+fn only_a_strong_key_is_worth_enrolling() {
+    let identity = {
+        let mut key = [0; 32];
+        key[0] = 1;
+        key
+    };
+    // The point of order 2, y = -1.
+    let mut order_two = [0xff; 32];
+    order_two[0] = 0xec;
+    order_two[31] = 0x7f;
+    assert!(!wellfed_signed::offer::strong_key(&identity));
+    assert!(!wellfed_signed::offer::strong_key(&order_two));
+    assert!(wellfed_signed::offer::strong_key(&public(&keys().bench)));
+}

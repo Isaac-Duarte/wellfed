@@ -134,6 +134,7 @@ Version 1 (`PLOTA1`) is deleted: an offer carrying its magic is refused as the w
 - Only an owner's session that claimed updates may enroll one; the CLI refuses a member before anyone is asked to press.
 - If the feeder already lists the key as an update signer, nothing is sent. If it holds the key as a client that opens sessions, the CLI refuses: an update key is a key of its own.
 - Otherwise the CLI sends `EnrollUpdateKey` and asks you to press Dispense within 60 s. No press in time is refused `Unconfirmed`, and nothing is enrolled.
+- A key that doesn't decode as a point, or one of small order, is refused `Invalid` before any press is asked for. Verification is strict, so such a key could sign nothing anyway.
 - With no answer the outcome is uncertain, since a press the feeder took before the session ended still enrolls the key. The CLI says so and never sends the request again; check with `wellfed update-key show`.
 - `wellfed update-key show` lists the enrolled keys with their key ids; they also appear in `wellfed clients`.
 

@@ -501,9 +501,12 @@ fn update_action(op: UpdateOp<'_>) -> Action {
         }
         UpdateOp::State => Action::UpdateState,
         UpdateOp::Cancel => Action::CancelUpdate,
+        // A weak key is refused before any press is asked for.
         UpdateOp::EnrollKey { key, label } => match Label::new(label.as_bytes()) {
-            Some(label) => Action::EnrollUpdateKey { key, label },
-            None => Action::Invalid,
+            Some(label) if wellfed_signed::offer::strong_key(&key) => {
+                Action::EnrollUpdateKey { key, label }
+            }
+            _ => Action::Invalid,
         },
         UpdateOp::KeyStatement { .. } => Action::UpdateKeyStatement,
     }
