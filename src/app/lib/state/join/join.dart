@@ -121,11 +121,12 @@ class JoinFlow extends ChangeNotifier {
     }
   }
 
-  /// Send the invite, once, under these names.
+  /// Send the invite, once, under these names. One already out, or one
+  /// that may be spent, is never sent again, whoever asks.
   Future<void> join({required String label, required String feederName}) async {
     final String? invite = _invite;
     final JoinState now = _state;
-    if (invite == null || now is! JoinReview) return;
+    if (invite == null || now is! JoinReview || now.joining || now.spent) return;
     final String? address = now.address;
     if (address == null) return;
 

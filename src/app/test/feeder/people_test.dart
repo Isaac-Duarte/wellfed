@@ -272,6 +272,20 @@ void main() {
       expect(button.onPressed, isNull);
     });
 
+    test('the flow itself sends an invite once, whoever asks again', () async {
+      final ports = _FakeJoin()..answers.add(const BridgeError(kind: ErrorKind.interrupted, message: 'reset'));
+      final flow = JoinFlow(FakeBook(), ports);
+      addTearDown(flow.dispose);
+      flow.seen('wellfed-invite:1:x');
+      await flow.find();
+
+      final Future<void> first = flow.join(label: 'phone', feederName: 'Kitchen');
+      await flow.join(label: 'phone', feederName: 'Kitchen');
+      await first;
+      await flow.join(label: 'phone', feederName: 'Kitchen');
+      expect(ports.joins, ['wellfed-invite:1:x'], reason: 'neither while out nor once it may be spent');
+    });
+
     /// The join screen as a Mac shows it, counting the cameras it builds.
     Future<_FakeJoin> desktopJoin(WidgetTester tester, void Function() camera, {bool canScan = true}) async {
       final ports = _FakeJoin();
