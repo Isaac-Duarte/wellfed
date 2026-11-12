@@ -16,16 +16,14 @@
 //! the once-per-power-cycle rule every writer gets.
 
 use wellfed_core::clock::tick::TickClock;
-use wellfed_core::flash_coord::{FlashCoord, FlashReply};
+use wellfed_core::flash_coord::FlashReply;
 
-use crate::flash::park::{self, Mmio, Reply};
+use crate::flash::park::Mmio;
 use crate::flash::peer::MARKER_REGISTER;
-use crate::flash_lock::provider::{
-    ATTEMPT_BIT, BOOT_COUNT_REGISTER, LEASE_FAULT_MASK, Provider, READY_TIMEOUT_MS,
-};
+use crate::flash_lock::handshake::{Handshake, Handshaking, Unstarted};
+use crate::flash_lock::provider::{ATTEMPT_BIT, LEASE_FAULT_MASK, Provider};
 use crate::sdk;
-use crate::stopped;
-use crate::supervision::config::{FLASH_LIMITS, SYSTIMER_HZ};
+use crate::supervision::config::SYSTIMER_HZ;
 
 pub const POLL_MS: u32 = 50;
 
@@ -74,7 +72,7 @@ pub enum Poll {
 enum Stage {
     #[default]
     Hello,
-    Wait,
+    Wait(Handshake),
     Arm,
     Done,
 }
@@ -83,7 +81,6 @@ enum Stage {
 pub struct Arming {
     stage: Stage,
     clock: TickClock,
-    authority: u64,
 }
 
 impl Arming {
@@ -100,38 +97,35 @@ impl Arming {
     pub unsafe fn step<M: Mmio, H: Hooks>(&mut self, provider: *mut Provider) -> Poll {
         match self.stage {
             // Arming sets the attempt marker: not into a decided reset.
-            Stage::Hello if crate::supervision::writes_held() => Poll::Pending(None),
             Stage::Hello => {
-                let count = sdk::backup_read(BOOT_COUNT_REGISTER).wrapping_add(1);
-                sdk::backup_write(BOOT_COUNT_REGISTER, count);
-
                 let raw = sdk::systimer_ticks();
-                self.clock = TickClock::new(SYSTIMER_HZ, raw, 0).unwrap_or_default();
-                self.authority = park::session(count, raw, false);
-                if !park::hello::<M>(self.authority) {
-                    return self.fail(Event::Clock);
-                }
+                let handshake = match Handshake::start::<M>(raw) {
+                    Ok(handshake) => handshake,
+                    Err(Unstarted::Held) => return Poll::Pending(None),
+                    Err(Unstarted::Refused) => return self.fail(Event::Clock),
+                };
 
-                self.stage = Stage::Wait;
+                self.clock = TickClock::new(SYSTIMER_HZ, raw, 0).unwrap_or_default();
+                self.stage = Stage::Wait(handshake);
                 Poll::Pending(None)
             }
 
-            Stage::Wait => {
+            Stage::Wait(handshake) => {
                 let Some(now) = self.clock.read(sdk::systimer_ticks()) else {
                     return self.fail(Event::Clock);
                 };
 
-                match park::reply::<M>(self.authority) {
-                    Reply::Ready(peer) => {
-                        // Bind only with verified STOP and infrared OFF readback.
-                        let inactive = stopped::observe().verified();
-                        let Some(mut coord) = FlashCoord::new(&FLASH_LIMITS, self.authority, now)
-                        else {
-                            return self.fail(Event::Clock);
-                        };
-                        let reply = coord.ready(self.authority, peer, inactive, now);
+                match handshake.step::<M>(now) {
+                    Handshaking::Waiting => Poll::Pending(None),
+                    Handshaking::TimedOut => self.fail(Event::Timeout),
+                    Handshaking::Ready { bound: None, .. } => self.fail(Event::Clock),
+                    Handshaking::Ready {
+                        inactive,
+                        bound: Some((coord, reply)),
+                    } => {
+                        let authority = handshake.authority();
                         // SAFETY: the caller's contract; no hook is armed yet.
-                        unsafe { *provider = Provider::bound(coord, self.clock, self.authority) };
+                        unsafe { *provider = Provider::bound(coord, self.clock, authority) };
 
                         let event = Event::Ready { reply, inactive };
                         if reply != FlashReply::Accepted {
@@ -140,8 +134,6 @@ impl Arming {
                         self.stage = Stage::Arm;
                         Poll::Pending(Some(event))
                     }
-                    _ if now >= READY_TIMEOUT_MS => self.fail(Event::Timeout),
-                    _ => Poll::Pending(None),
                 }
             }
 

@@ -26,17 +26,16 @@ use wellfed_core_feeder::feed::sensor_inputs::SensorReading;
 
 use crate::elapsed_ms;
 use crate::optics::FEED;
-use wellfed_hal::flash::park::{self, Mmio, Reply};
-use wellfed_hal::flash_lock::provider::BOOT_COUNT_REGISTER;
+use wellfed_hal::flash::park::Mmio;
+use wellfed_hal::flash_lock::handshake::{Handshake, Handshaking};
 use wellfed_hal::sdk::{self, GPIO_PORT_A};
 use wellfed_hal::stopped;
-use wellfed_hal::supervision::config::{FLASH_LIMITS, SYSTIMER_HZ};
+use wellfed_hal::supervision::config::SYSTIMER_HZ;
 use wellfed_hal_feeder::board::{Board, MOTOR_MASK};
 use wellfed_hal_feeder::events::{Events, EventsConfig, EventsFault};
 
 pub const POLL_MS: u32 = 2;
 pub const WAIT_MS: u32 = 10;
-pub const READY_TIMEOUT_MS: u32 = 2000;
 
 const DEADTIME_MS: u32 = 50;
 /// Motor command lease and owner lease: a stalled task stops the motor
@@ -249,7 +248,7 @@ pub struct Step {
 enum Stage {
     #[default]
     Start,
-    Wait,
+    Wait(Handshake),
     Delay,
     Driving,
     After,
@@ -263,7 +262,6 @@ pub struct Probe {
     pub flash: Option<FlashCoord>,
     pub controller: FeedController,
     stage: Stage,
-    authority: u64,
     begin_raw: u32,
     armed_at: u32,
     requested_at: u32,
@@ -313,7 +311,7 @@ impl Probe {
     pub fn step<M: Mmio>(&mut self) -> Step {
         match self.stage {
             Stage::Start => self.start::<M>(),
-            Stage::Wait => self.wait::<M>(),
+            Stage::Wait(handshake) => self.wait::<M>(handshake),
             Stage::Delay => self.delay(),
             Stage::Driving => self.driving(),
             Stage::After => self.after(),
@@ -335,15 +333,13 @@ impl Probe {
             return self.end(self.open_record(false, false, false, false, false));
         }
 
-        let count = sdk::backup_read(BOOT_COUNT_REGISTER).wrapping_add(1);
-        sdk::backup_write(BOOT_COUNT_REGISTER, count);
-        self.authority = park::session(count, self.begin_raw, false);
-        if !park::hello::<M>(self.authority) {
+        // Held for a decided reset or refused by KM0, it binds nothing.
+        let Ok(handshake) = Handshake::start::<M>(self.begin_raw) else {
             self.board.close();
             return self.end(self.open_record(true, false, false, false, false));
-        }
+        };
 
-        self.stage = Stage::Wait;
+        self.stage = Stage::Wait(handshake);
         next(WAIT_MS, None)
     }
 
@@ -371,22 +367,20 @@ impl Probe {
             && self.events.process(&mut self.controller, Some(&IDLE))
     }
 
-    fn wait<M: Mmio>(&mut self) -> Step {
+    fn wait<M: Mmio>(&mut self, handshake: Handshake) -> Step {
         let ms = elapsed_ms(self.begin_raw);
-        let peer = match park::reply::<M>(self.authority) {
-            Reply::Ready(peer) => peer,
-            _ if ms >= READY_TIMEOUT_MS => {
+        let bound = match handshake.step::<M>(ms) {
+            Handshaking::Ready { bound, .. } => bound,
+            Handshaking::TimedOut => {
                 self.board.close();
                 return self.end(Record::Timeout { ms });
             }
-            _ => return next(WAIT_MS, None),
+            Handshaking::Waiting => return next(WAIT_MS, None),
         };
-
-        let inactive = stopped::observe().verified();
-        self.flash = FlashCoord::new(&FLASH_LIMITS, self.authority, ms).and_then(|mut coord| {
-            (coord.ready(self.authority, peer, inactive, ms) == FlashReply::Accepted)
-                .then_some(coord)
-        });
+        let accepted = bound
+            .filter(|&(_, reply)| reply == FlashReply::Accepted)
+            .map(|(coord, _)| coord);
+        self.flash = accepted;
 
         let flash = self
             .flash

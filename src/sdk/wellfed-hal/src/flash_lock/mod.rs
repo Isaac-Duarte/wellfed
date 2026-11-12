@@ -3,4 +3,5 @@
 //! runs before installing it.
 
 pub mod arming;
+pub mod handshake;
 pub mod provider;

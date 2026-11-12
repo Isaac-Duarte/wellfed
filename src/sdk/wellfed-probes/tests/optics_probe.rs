@@ -2,9 +2,9 @@
 //! answered through a shared IPC register model and the receivers driven
 //! from the emitter latches by a synthetic optical path.
 
-use std::cell::RefCell;
-
-use wellfed_hal::flash::park::{self, Mmio};
+use wellfed_hal::flash::park;
+use wellfed_hal::flash::park::fake::{self as ipc, Ipc};
+use wellfed_hal::flash_lock::provider::READY_TIMEOUT_MS;
 use wellfed_hal::sdk::fake;
 use wellfed_hal::stopped;
 use wellfed_hal_feeder::board::MOTOR_MASK;
@@ -13,42 +13,8 @@ use wellfed_probes::optics::{
     self, CYCLES, Emitters, LEASE_MS, Probe, Record, State, WINDOWS, Window, plan,
 };
 
-thread_local! {
-    static REGS: RefCell<[[u32; 12]; 2]> = const { RefCell::new([[0; 12]; 2]) };
-}
-
-fn locate(address: u32) -> (usize, usize) {
-    let core = match address & 0xffff_f000 {
-        0x4800_6000 => 0,
-        0x4000_6000 => 1,
-        _ => panic!("unexpected address {address:#x}"),
-    };
-    (core, ((address & 0xfff) - 0x20) as usize / 4)
-}
-
-struct Core<const KM0: bool>;
-
-impl<const KM0: bool> Mmio for Core<KM0> {
-    const KM0: bool = KM0;
-    fn load(address: u32) -> u32 {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow()[c][i])
-    }
-    fn store(address: u32, value: u32) {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow_mut()[c][i] = value);
-    }
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
-}
-
-type Km0 = Core<true>;
-type Km4 = Core<false>;
+type Km0 = Ipc<true>;
+type Km4 = Ipc<false>;
 
 /// About 1 ms of SYSTIMER (32 768 Hz).
 const MS_TICKS: u32 = 33;
@@ -96,7 +62,7 @@ struct Bench {
 
 fn bench(settle_ms: u32, peer: bool) -> Bench {
     fake::reset_hardware();
-    REGS.with(|r| *r.borrow_mut() = [[0; 12]; 2]);
+    ipc::reset();
     assert!(stopped::initialize().verified());
     Bench {
         probe: Box::default(),
@@ -418,7 +384,7 @@ fn no_peer_times_out_with_emitters_never_on() {
         panic!("{:?}", b.records);
     };
 
-    assert!((optics::READY_TIMEOUT_MS..optics::READY_TIMEOUT_MS + 20).contains(&ms));
+    assert!((READY_TIMEOUT_MS..READY_TIMEOUT_MS + 20).contains(&ms));
     assert!(!b.probe.board.view().opened);
     assert!(stopped::observe().verified());
 }

@@ -33,18 +33,17 @@ use wellfed_core_feeder::feed::sensor_inputs::{
 };
 
 use crate::{elapsed_ms, ticks_ms};
-use wellfed_hal::flash::park::{self, Mmio, Reply};
-use wellfed_hal::flash_lock::provider::BOOT_COUNT_REGISTER;
+use wellfed_hal::flash::park::Mmio;
+use wellfed_hal::flash_lock::handshake::{Handshake, Handshaking};
 use wellfed_hal::sdk::{self, GPIO_PORT_A};
 use wellfed_hal::stopped;
-use wellfed_hal::supervision::config::{FLASH_LIMITS, SYSTIMER_HZ};
+use wellfed_hal::supervision::config::SYSTIMER_HZ;
 use wellfed_hal_feeder::board::{self, Board, MOTOR_MASK};
 use wellfed_hal_feeder::events::{Events, EventsConfig, EventsFault, EventsSnapshot};
 
 pub const POLL_MS: u32 = 2;
 /// Handshake polling before the supervisor (and its clock) is open.
 pub const WAIT_MS: u32 = 10;
-pub const READY_TIMEOUT_MS: u32 = 2000;
 
 const DEADTIME_MS: u32 = 50;
 /// Motor lease, and with it the owner lease the timer interrupt enforces.
@@ -424,7 +423,7 @@ pub struct Step {
 enum Stage {
     #[default]
     Start,
-    Wait,
+    Wait(Handshake),
     Run,
     Warm,
     Stall,
@@ -454,7 +453,6 @@ pub struct Probe {
     pub inputs: SensorInputs,
     pub controller: FeedController,
     stage: Stage,
-    authority: u64,
     begin_raw: u32,
     window: Window,
     last_ms: u32,
@@ -519,19 +517,17 @@ impl Probe {
                     return self.end(self.open_record(false, false, false, false, false));
                 }
 
-                let count = sdk::backup_read(BOOT_COUNT_REGISTER).wrapping_add(1);
-                sdk::backup_write(BOOT_COUNT_REGISTER, count);
-                self.authority = park::session(count, self.begin_raw, false);
-                if !park::hello::<M>(self.authority) {
+                // Held for a decided reset or refused by KM0, it binds nothing.
+                let Ok(handshake) = Handshake::start::<M>(self.begin_raw) else {
                     self.board.close();
                     return self.end(self.open_record(true, false, false, false, false));
-                }
+                };
 
-                self.stage = Stage::Wait;
+                self.stage = Stage::Wait(handshake);
                 next(WAIT_MS, None)
             }
 
-            Stage::Wait => self.wait::<M>(),
+            Stage::Wait(handshake) => self.wait::<M>(handshake),
             Stage::Run => self.run(),
             Stage::Warm => self.warm(),
             Stage::Stall => self.stall(),
@@ -560,25 +556,21 @@ impl Probe {
         }
     }
 
-    fn wait<M: Mmio>(&mut self) -> Step {
+    fn wait<M: Mmio>(&mut self, handshake: Handshake) -> Step {
         let ms = elapsed_ms(self.begin_raw);
-        let peer = match park::reply::<M>(self.authority) {
-            Reply::Ready(peer) => peer,
-            _ if ms >= READY_TIMEOUT_MS => {
+        let bound = match handshake.step::<M>(ms) {
+            Handshaking::Ready { bound, .. } => bound,
+            Handshaking::TimedOut => {
                 self.board.close();
                 return self.end(Record::Timeout { ms });
             }
-            _ => return next(WAIT_MS, None),
+            Handshaking::Waiting => return next(WAIT_MS, None),
         };
+        let accepted = bound
+            .filter(|&(_, reply)| reply == FlashReply::Accepted)
+            .map(|(coord, _)| coord);
 
-        // Bind only with verified STOP and infrared OFF readback.
-        let inactive = stopped::observe().verified();
-        let ready = FlashCoord::new(&FLASH_LIMITS, self.authority, ms).and_then(|mut coord| {
-            (coord.ready(self.authority, peer, inactive, ms) == FlashReply::Accepted)
-                .then_some(coord)
-        });
-
-        self.flash = ready;
+        self.flash = accepted;
         let flash = self
             .flash
             .as_mut()
