@@ -76,7 +76,10 @@ pub fn calibration(
 ) -> Calibration {
     let calibration = decide(captured, stock);
 
-    let skew = ts.map(|ts| (ts - now.timestamp_millis()) / 1000);
+    // `ts` is whatever the device sent: out of range, it reads as no skew.
+    let skew = ts
+        .and_then(|ts| ts.checked_sub(now.timestamp_millis()))
+        .map(|ms| ms / 1000);
     info!(stock_ts = ?ts, skew_seconds = ?skew, %calibration, "NTP request");
     // 1214 is wellfed_client's `install::STOCK_CLOCK_UNSET`, the code the
     // installer turns into its own error; this crate does not depend on it.

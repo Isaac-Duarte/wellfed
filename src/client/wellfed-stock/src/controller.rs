@@ -706,8 +706,10 @@ impl Controller {
             self.status.ota_reports.push(report);
         }
 
+        // `ts` is whatever the device sent: one out of range leaves no offset.
         if let Some(ts) = message.ts {
-            self.status.clock_offset_seconds = Some((now.timestamp_millis() - ts) / 1000);
+            self.status.clock_offset_seconds =
+                now.timestamp_millis().checked_sub(ts).map(|ms| ms / 1000);
         }
 
         // Only expose documented telemetry. Never reflect credentials, SSIDs,

@@ -255,8 +255,19 @@ async fn run(
             _ = &mut stop => break,
             _ = connections.join_next(), if !connections.is_empty() => {},
             accepted = listener.accept() => {
-                let (stream, address) = accepted?;
-                if connections.len() >= 4 { continue; }
+                let (stream, address) = match accepted {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
+                        crate::accept_failed(&error).await;
+                        continue;
+                    }
+                };
+                // Only stock's address may hold one of the four slots: any
+                // other host is dropped before it can keep stock's download
+                // out. `response` checks the peer again per request.
+                if address.ip() != std::net::IpAddr::V4(state.peer) || connections.len() >= 4 {
+                    continue;
+                }
                 let state = Arc::clone(&state);
                 connections.spawn(async move {
                     let service = service_fn(move |request| {
@@ -510,14 +521,55 @@ mod tests {
         }
         worker.abort();
 
+        // Another host is dropped at accept, with no answer at all: a close,
+        // or a reset since its request went unread.
         let (address, token, worker) = start(Ipv4Addr::new(127, 0, 0, 2)).await;
-        let reply = exchange(
-            address,
-            &format!("GET /ota/{token}/{ROUTE} HTTP/1.1\r\nHost: lab\r\n\r\n"),
-        )
-        .await;
-        assert!(split(&reply).0.starts_with("HTTP/1.1 404 "));
-        assert!(split(&reply).1.is_empty());
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        let request = format!("GET /ota/{token}/{ROUTE} HTTP/1.1\r\nHost: lab\r\n\r\n");
+        let _ = stream.write_all(request.as_bytes()).await;
+        let mut reply = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut reply))
+            .await
+            .unwrap();
+        assert!(read.is_err() || reply.is_empty(), "{reply:?}");
+        worker.abort();
+    }
+
+    /// Other hosts holding connections open take none of the slots stock's
+    /// download needs.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "connects from a 127.x address other than 127.0.0.1, which only Linux's loopback holds"
+    )]
+    #[tokio::test]
+    async fn other_hosts_cannot_hold_the_slots_stock_needs() {
+        let stock = Ipv4Addr::new(127, 0, 0, 2);
+        let (address, token, worker) = start(stock).await;
+
+        let mut held = Vec::new();
+        for _ in 0..8 {
+            let mut stream = TcpStream::connect(address).await.unwrap();
+            stream.write_all(b"GET /ota/").await.unwrap();
+            held.push(stream);
+        }
+        // The server has seen them all before stock connects.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.bind(SocketAddr::from((stock, 0))).unwrap();
+        let mut stream = socket.connect(address).await.unwrap();
+        stream
+            .write_all(format!("GET /ota/{token}/{ROUTE} HTTP/1.1\r\nHost: lab\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
+        let mut reply = Vec::new();
+        tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut reply))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(split(&reply).0.starts_with("HTTP/1.1 200 OK\r\n"));
+
+        drop(held);
         worker.abort();
     }
 

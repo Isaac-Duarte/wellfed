@@ -127,3 +127,24 @@ fn concurrent_controllers_cannot_share_a_ledger() {
     drop(first);
     assert!(common::load(path).is_ok());
 }
+
+/// `ts` is whatever the device sent: a value whose difference from now does
+/// not fit reads as no offset, never a panic or a wrapped one.
+#[test]
+fn an_out_of_range_device_time_leaves_no_clock_offset() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = common::load(dir.path().join("ledger.json")).unwrap();
+    ready(&mut c);
+    assert!(c.status.clock_offset_seconds.is_some());
+
+    observe(&mut c, "heart", json!({"cmd":"HEARTBEAT","ts":i64::MIN}));
+    assert_eq!(c.status.clock_offset_seconds, None);
+
+    let calibration = wellfed_stock::clock::calibration(
+        None,
+        wellfed_stock::clock::StockPlans::Erased,
+        Some(i64::MIN),
+        Utc::now(),
+    );
+    assert_eq!(calibration, wellfed_stock::clock::Calibration::Sent);
+}

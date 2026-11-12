@@ -52,7 +52,10 @@ pub(crate) async fn run(listener: TcpListener, broker: SocketAddr, peers: Peers)
     loop {
         tokio::select! {
             incoming=listener.accept()=> {
-                let (stream,from)=incoming?;
+                let (stream,from)=match incoming {
+                    Ok(incoming)=>incoming,
+                    Err(error)=>{crate::accept_failed(&error).await; continue}
+                };
                 let Ok(permit)=permits.clone().try_acquire_owned() else {continue};
                 let peers=peers.clone();
                 tasks.spawn(async move {
