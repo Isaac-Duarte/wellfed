@@ -169,12 +169,22 @@ impl SimFeeds {
 
     /// Hold a storage write in the way of a feed's claim, or end it. A
     /// hold is refused while a feed holds the outputs or a write is held
-    /// already, as the firmware's writer would wait.
+    /// already, where the firmware's writer would wait.
     pub fn hold_write(&mut self, held: bool) -> Result<(), WriteWaits> {
         let runtime = self.feeding.runtime();
         if !held {
             runtime.interlock.end_write();
             return Ok(());
+        }
+
+        // Refused before the turn is asked for: a writer the interlock makes
+        // wait counts among its waiters until its turn comes, and a hold
+        // that is refused never asks again, so its count would hold every
+        // later claim back for the boot. The simulator runs on one thread
+        // and nothing here begins a food reading, so these two are all that
+        // would make it wait (bar held writes, which count no waiter).
+        if runtime.interlock.outputs_claimed() || runtime.interlock.writing() {
+            return Err(WriteWaits);
         }
         let now = runtime.owner.now_ms.get();
         match WriteTurn::new().begin(&runtime.interlock, now, || true) {

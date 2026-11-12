@@ -869,6 +869,26 @@ fn a_meal_behind_a_write_runs_once_when_its_claim_is_taken() {
     assert!(feeder.missed().is_empty());
 }
 
+/// A second hold refused while the first is held leaves no waiting writer
+/// behind: once the first ends, the meal's claim is taken at once rather
+/// than held back for a writer that never comes.
+#[test]
+fn a_refused_second_hold_leaves_no_writer_waiting() {
+    let mut feeder = breakfast();
+    feeder.sim.hold_write(true).unwrap();
+    assert!(feeder.sim.hold_write(true).is_err(), "one write at a time");
+    feeder.sim.hold_write(false).unwrap();
+
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
+    assert_eq!(feeder.claims, 1);
+    assert!(
+        feeder.sim.feed_outputs_claimed() || !feeder.fed().is_empty(),
+        "the claim is taken with no write in its way"
+    );
+    feeder.run(10_000);
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
+}
+
 /// A meal whose claim is refused past the wait is not lost: the occurrence goes
 /// back, is claimed again after the retry's wait, and feeds once the write has
 /// gone. Refused for good past the grace, it is missed by name.

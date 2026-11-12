@@ -113,7 +113,8 @@ pub enum Event {
     Prepare(DeviceError),
     /// Accepting a connection failed; the listener pauses.
     Accept(io::ErrorKind),
-    /// A [`Control::HoldWrite`] the interlock made wait; nothing is held.
+    /// A [`Control::HoldWrite`] refused because a feed holds the outputs or
+    /// a write is held already; nothing changed.
     HoldWrite(WriteWaits),
     /// The loop's delay until its next pass changed.
     Pace {
