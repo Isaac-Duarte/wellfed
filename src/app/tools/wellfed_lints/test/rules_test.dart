@@ -14,6 +14,7 @@ void main() {
     defineReflectiveTests(TimersInStateTest);
     defineReflectiveTests(CatchTest);
     defineReflectiveTests(CatchInStateTest);
+    defineReflectiveTests(CatchInTestsTest);
     defineReflectiveTests(NoBangTest);
     defineReflectiveTests(SingleStateTest);
   });
@@ -36,7 +37,13 @@ abstract class _LayerTest extends AnalysisRuleTest {
       ..addFile('lib/widgets/b.dart', 'class B {}')
       ..addFile('lib/platform/c.dart', 'class C {}')
       ..addFile('lib/state/d.dart', 'class D {}')
-      ..addFile('lib/src/rust/api/e.dart', 'class Session { void feed() {} }\nvoid hello() {}');
+      ..addFile(
+        'lib/src/rust/api/e.dart',
+        'class Session { void feed() {} }\nvoid hello() {}\n'
+            'class Browse { factory Browse() => Browse._(); Browse._(); }\n'
+            'class Rate { const Rate(); }\n'
+            'class Fed { const factory Fed() = _Fed; }\nclass _Fed implements Fed { const _Fed(); }\n',
+      );
     super.setUp();
   }
 }
@@ -95,6 +102,17 @@ class UiNoBridgeCallsTest extends _LayerTest {
 
   Future<void> test_naming_a_type() async {
     await assertNoDiagnostics("import 'package:wellfed/src/rust/api/e.dart';\nSession? f(Session? s) => s;\n");
+  }
+
+  Future<void> test_a_factory_that_runs_in_rust() async {
+    const code = "import 'package:wellfed/src/rust/api/e.dart';\nObject f() => Browse();\n";
+    await assertDiagnostics(code, [lint(code.indexOf('Browse()'), 'Browse'.length)]);
+  }
+
+  Future<void> test_a_value_built_in_dart() async {
+    await assertNoDiagnostics(
+      "import 'package:wellfed/src/rust/api/e.dart';\nList<Object> f() => [const Rate(), const Fed()];\n",
+    );
   }
 }
 
@@ -199,6 +217,31 @@ class CatchTest extends _LayerTest {
 
   Future<void> test_catch() async {
     await assertDiagnostics('void f() { try { f(); } on Exception { f(); } }\n', [lint(24, 2)]);
+  }
+
+  Future<void> test_catch_error() async {
+    const code = 'void f(Future<void> x) { x.catchError((Object _) {}); }\n';
+    await assertDiagnostics(code, [lint(code.indexOf('catchError'), 'catchError'.length)]);
+  }
+}
+
+/// A checkout that sits under some other directory named `lib`.
+@reflectiveTest
+class CatchInTestsTest extends AnalysisRuleTest {
+  @override
+  String get testPackageRootPath => '$workspaceRootPath/lib/checkout';
+
+  @override
+  String get testFilePath => '$testPackageRootPath/test/subject_test.dart';
+
+  @override
+  void setUp() {
+    rule = CatchInControllers();
+    super.setUp();
+  }
+
+  Future<void> test_catch() async {
+    await assertNoDiagnostics('void f() { try { f(); } on Exception { f(); } }\n');
   }
 }
 
