@@ -12,9 +12,7 @@ use wellfed_stock::protocol::Message;
 
 fn observe(controller: &mut Controller, channel: &str, value: serde_json::Value) {
     let message: Message = serde_json::from_value(value).unwrap();
-    controller
-        .observe(Channel::from_name(channel).unwrap(), &message, Utc::now())
-        .unwrap();
+    controller.observe(Channel::from_name(channel).unwrap(), &message, Utc::now());
 }
 
 fn ready(controller: &mut Controller) {
@@ -93,7 +91,7 @@ fn ota_status_drops_unbounded_or_private_fields_and_survives_disconnect_as_histo
     assert!(!output.contains("private-url") && !output.contains("secret"));
     assert!(report.received_at <= Utc::now());
 
-    c.disconnected(Utc::now()).unwrap();
+    c.disconnected(Utc::now());
     assert!(!c.status.device_online);
     assert_eq!(c.status.ota_reports.len(), 1);
     observe(&mut c, "heart", json!({"cmd":"HEARTBEAT"}));
@@ -116,7 +114,7 @@ fn stale_telemetry_goes_offline_and_private_attributes_are_not_exposed() {
     assert_eq!(c.status.attributes["volume"], 50);
 
     assert!(c.status.device_online);
-    c.expire(Utc::now() + Duration::seconds(91)).unwrap();
+    c.expire(Utc::now() + Duration::seconds(91));
     assert!(!c.status.device_online);
 }
 

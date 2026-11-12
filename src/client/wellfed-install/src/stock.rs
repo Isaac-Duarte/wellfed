@@ -689,13 +689,11 @@ mod tests {
             controller.status.broker_connected = true;
             let report = json!({"cmd": "ATTR_PUSH_EVENT", "softwareVersion": "1.1.15",
                                 "powerType": 1});
-            controller
-                .observe(
-                    Channel::Event,
-                    &serde_json::from_value(report).unwrap(),
-                    now,
-                )
-                .unwrap();
+            controller.observe(
+                Channel::Event,
+                &serde_json::from_value(report).unwrap(),
+                now,
+            );
             controller.enable_ota_trial();
             let token = uuid::Uuid::new_v4();
             let lease = Lease {

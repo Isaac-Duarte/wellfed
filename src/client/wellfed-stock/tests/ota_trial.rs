@@ -52,8 +52,7 @@ fn submit(
 
 fn observe(c: &mut Controller, channel: &str, value: serde_json::Value, now: DateTime<Utc>) {
     let message: Message = serde_json::from_value(value).unwrap();
-    c.observe(Channel::from_name(channel).unwrap(), &message, now)
-        .unwrap();
+    c.observe(Channel::from_name(channel).unwrap(), &message, now);
 }
 
 /// Simulate continued feeder presence; broker connectivity alone is insufficient.
@@ -80,8 +79,7 @@ fn ready(c: &mut Controller, version: &str) {
         "softwareVersion":version,"powerType":1}))
         .unwrap(),
         Utc::now(),
-    )
-    .unwrap();
+    );
 }
 
 fn input() -> ota::trial::Input {
@@ -152,6 +150,42 @@ fn default_disabled_and_guarded_by_version_power_and_plans() {
     assert!(submit(&mut c, input(), Utc::now()).is_ok());
 }
 
+/// A ledger save that fails on a change the device or the clock caused does
+/// not end the server: its status keeps following stock, and every later
+/// operation is refused for storage, so nothing is sent on a ledger that
+/// could not record it.
+#[test]
+fn a_failed_ledger_save_refuses_operations_but_keeps_observing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut c, request, now) = submitted(&dir);
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    c.expire(now + Duration::seconds(600));
+    assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
+    observe(
+        &mut c,
+        "heart",
+        json!({"cmd":"HEARTBEAT"}),
+        now + Duration::seconds(601),
+    );
+    assert_eq!(
+        c.status.last_seen,
+        Some(now + Duration::seconds(601)),
+        "telemetry still reaches the status"
+    );
+
+    ready(&mut c, "1.1.15");
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::Storage);
+    assert_eq!(
+        c.resolve_trial(resolve(request.request_id), Utc::now()),
+        Err(Rejection::Storage)
+    );
+
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+}
+
 #[test]
 fn journal_before_publish_duplicate_conflict_restart_and_timeout_never_replay() {
     let dir = tempfile::tempdir().unwrap();
@@ -177,7 +211,7 @@ fn journal_before_publish_duplicate_conflict_restart_and_timeout_never_replay() 
     conflicting.server_token = Uuid::new_v4();
     assert_eq!(refused(&mut c, conflicting, now), Rejection::Conflict);
 
-    c.expire(now + Duration::seconds(600)).unwrap();
+    c.expire(now + Duration::seconds(600));
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
 
     drop(c);
@@ -236,12 +270,12 @@ fn progress_and_stale_startup_cannot_close_a_trial() {
         json!({"cmd":"DEVICE_START_EVENT","ts":now.timestamp_millis()-1,"softwareVersion":"2.0.0"}),
     ] {
         let message: Message = serde_json::from_value(value).unwrap();
-        c.observe(Channel::Event, &message, now).unwrap();
+        c.observe(Channel::Event, &message, now);
     }
 
     assert_eq!(c.status.ota_trials[0].phase, Phase::Submitted);
     assert!(c.status.ota_trials[0].download_reported);
-    c.disconnected(now).unwrap();
+    c.disconnected(now);
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
 }
 
@@ -306,8 +340,7 @@ fn an_error_after_progress_stays_failed_across_a_restart() {
             Channel::System,
             &serde_json::from_value(value).unwrap(),
             now,
-        )
-        .unwrap();
+        );
     }
 
     assert!(c.status.ota_trials[0].download_reported);
@@ -440,7 +473,7 @@ fn an_answer_is_refused_while_stock_still_reports() {
     // It dropped mid-download, came back on 1.1.15 and reported its
     // version, then went quiet: the trial stays open for a resolution, even
     // with its telemetry stale and the session gone.
-    c.disconnected(later).unwrap();
+    c.disconnected(later);
     c.connected(later);
     observe(
         &mut c,
@@ -448,7 +481,7 @@ fn an_answer_is_refused_while_stock_still_reports() {
         json!({"cmd":"ATTR_PUSH_EVENT","softwareVersion":"1.1.15","powerType":1}),
         later + Duration::seconds(5),
     );
-    c.disconnected(later + Duration::seconds(10)).unwrap();
+    c.disconnected(later + Duration::seconds(10));
     assert!(c.status.ota_trials[0].stock_reported);
     assert_eq!(
         c.replacement_answered(answered(request.request_id), later + Duration::seconds(300)),
@@ -510,7 +543,7 @@ fn an_uncertain_install_still_closes_on_the_answer() {
     let (mut c, request, now) = submitted(&dir);
 
     // Stock's own session ends when it reboots into the new bank.
-    c.disconnected(now + Duration::seconds(100)).unwrap();
+    c.disconnected(now + Duration::seconds(100));
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
 
     c.replacement_answered(answered(request.request_id), now + Duration::seconds(200))
@@ -552,7 +585,7 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
     ));
 
     keep_connected(&mut c, t0 + Duration::seconds(600));
-    c.expire(t0 + Duration::seconds(600)).unwrap();
+    c.expire(t0 + Duration::seconds(600));
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
 
     let config = json!({"cmd":"GET_CONFIG","softwareVersion":"1.1.15","powerType":1});
@@ -619,7 +652,7 @@ fn feeder_telemetry_gaps_restart_resolution_quiet_time_with_or_without_expiry_ti
             submit(&mut c, request.clone(), t0).unwrap();
 
             keep_connected(&mut c, t0 + Duration::minutes(10));
-            c.expire(t0 + Duration::minutes(10)).unwrap();
+            c.expire(t0 + Duration::minutes(10));
 
             let returning = t0 + Duration::minutes(30);
             keep_connected(&mut c, returning - Duration::seconds(gap_seconds));
@@ -627,7 +660,7 @@ fn feeder_telemetry_gaps_restart_resolution_quiet_time_with_or_without_expiry_ti
             // Only the feeder goes silent. The server stays connected to its
             // own broker; the return must reset quiet time even without a tick.
             if run_expiry_tick {
-                c.expire(returning).unwrap();
+                c.expire(returning);
                 assert!(!c.status.device_online);
             }
 
@@ -673,7 +706,7 @@ fn backwards_host_clock_restarts_the_resolution_observation_interval() {
     submit(&mut c, request.clone(), t0).unwrap();
 
     keep_connected(&mut c, t0 + Duration::minutes(25));
-    c.expire(t0 + Duration::minutes(25)).unwrap();
+    c.expire(t0 + Duration::minutes(25));
 
     let adjusted = t0 + Duration::minutes(20);
     let config = json!({"cmd":"GET_CONFIG","softwareVersion":"1.1.15"});
@@ -877,7 +910,7 @@ fn a_report_holds_through_an_unbroken_session_and_not_past_a_drop() {
         let request = input();
         let sent = Utc::now();
         submit(&mut c, request.clone(), sent).unwrap();
-        c.disconnected(sent + Duration::seconds(10)).unwrap();
+        c.disconnected(sent + Duration::seconds(10));
         (c, request)
     };
     let t0 = Utc::now();
@@ -906,7 +939,7 @@ fn a_report_holds_through_an_unbroken_session_and_not_past_a_drop() {
     observe(&mut c, "event", report.clone(), connect_at);
     let dropped = connect_at + Duration::minutes(5);
     keep_connected(&mut c, dropped);
-    c.disconnected(dropped).unwrap();
+    c.disconnected(dropped);
     c.connected(dropped);
     observe(&mut c, "heart", json!({"cmd":"HEARTBEAT"}), dropped);
     let later = dropped + Duration::minutes(11);

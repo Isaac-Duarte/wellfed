@@ -357,6 +357,18 @@ impl Controller {
         storage::write_json(&self.path, &self.ledger)
     }
 
+    /// Save a change the device or the clock caused. A failure does not end
+    /// the server: stock's telemetry keeps flowing to the status, and every
+    /// later operation is refused as `Storage`. The ledger on disk stays
+    /// conservative, since a submitted trial reads as uncertain at the next
+    /// load.
+    fn save_observed(&mut self) {
+        if let Err(error) = self.save() {
+            tracing::warn!(error = %error, "stock ledger not saved; refusing operations from now on");
+            self.storage_failed = true;
+        }
+    }
+
     fn telemetry_current(&self, now: DateTime<Utc>) -> bool {
         self.status.broker_connected
             && self.status.last_seen.is_some_and(|seen| {
@@ -388,7 +400,7 @@ impl Controller {
         self.telemetry_since = now;
     }
 
-    pub fn disconnected(&mut self, now: DateTime<Utc>) -> Result<()> {
+    pub fn disconnected(&mut self, now: DateTime<Utc>) {
         self.status.broker_connected = false;
         self.status.last_seen = None;
         self.status.version_reported_at = None;
@@ -405,13 +417,12 @@ impl Controller {
         }
 
         if changed {
-            self.save()?;
+            self.save_observed();
         }
         self.refresh(now);
-        Ok(())
     }
 
-    pub fn expire(&mut self, now: DateTime<Utc>) -> Result<()> {
+    pub fn expire(&mut self, now: DateTime<Utc>) {
         let mut changed = false;
         for trial in self.ledger.ota_trials.values_mut() {
             if trial.phase == TrialPhase::Submitted && (now - trial.created_at).num_seconds() >= 600
@@ -423,10 +434,9 @@ impl Controller {
         }
 
         if changed {
-            self.save()?;
+            self.save_observed();
         }
         self.refresh(now);
-        Ok(())
     }
 
     pub fn enable_ota_trial(&mut self) {
@@ -667,19 +677,13 @@ impl Controller {
         Ok(result)
     }
 
-    pub fn observe(
-        &mut self,
-        channel: Channel,
-        message: &Message,
-        now: DateTime<Utc>,
-    ) -> Result<()> {
+    pub fn observe(&mut self, channel: Channel, message: &Message, now: DateTime<Utc>) {
         self.observe_telemetry(message, now);
 
         if self.observe_trial(channel, message, now) {
-            self.save()?;
+            self.save_observed();
         }
         self.refresh(now);
-        Ok(())
     }
 
     fn observe_telemetry(&mut self, message: &Message, now: DateTime<Utc>) {
