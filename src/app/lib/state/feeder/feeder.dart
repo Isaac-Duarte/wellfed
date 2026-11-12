@@ -240,7 +240,7 @@ class FeederController extends ChangeNotifier {
   /// goes at all, as a write the router cannot pin must not.
   Future<FeederReply> ask(FeederRequest request) async {
     final PathRouter? router = _ports.router;
-    if (router == null) return const FeederReply.notSent();
+    if (router == null) return const FeederReply.notSent(reason: NotSentReason.store);
     final RoutedReply routed = await router.ask(feeder: _state.known.identity, request: request);
     if (_disposed) return routed.reply;
     _keep(request, routed.reply);

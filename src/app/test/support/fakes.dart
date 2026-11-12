@@ -183,7 +183,7 @@ class FakeSession with FakeOpaque implements FeederSession {
     requests.add(request);
     final Future<FeederReply> Function(FeederRequest)? answer = answering;
     if (answer != null) return answer(request);
-    if (updates.isClosed) return const FeederReply.notSent();
+    if (updates.isClosed) return const FeederReply.notSent(reason: NotSentReason.session);
     return replies.isEmpty ? const FeederReply.done() : replies.removeAt(0);
   }
 

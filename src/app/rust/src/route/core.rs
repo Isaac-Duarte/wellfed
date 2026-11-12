@@ -207,11 +207,11 @@ pub(crate) const fn server_ended(failure: ServerFailure) -> Ended {
     }
 }
 
-/// What the phone's own session's `reply` to a write says of it, and why it
-/// never went if it didn't. Only an answer that names the write's end is
-/// definite; anything else (no answer, one this build can't read, or the
-/// wrong one) may follow a write that ran, so it stays pinned, uncertain.
-pub(crate) const fn direct_ended(reply: &FeederReply) -> (Ended, Option<NotSentReason>) {
+/// What the phone's own session's `reply` to a write says of it. Only an
+/// answer that names the write's end is definite; anything else (no answer,
+/// one this build can't read, or the wrong one) may follow a write that ran,
+/// so it stays pinned, uncertain.
+pub(crate) const fn direct_ended(reply: &FeederReply) -> Ended {
     match reply {
         FeederReply::Done { .. }
         | FeederReply::Settings { .. }
@@ -223,15 +223,56 @@ pub(crate) const fn direct_ended(reply: &FeederReply) -> (Ended, Option<NotSentR
         | FeederReply::Call { .. }
         | FeederReply::Stats { .. }
         | FeederReply::Trace { .. }
-        | FeederReply::Update { .. } => (Ended::Answered, None),
-        FeederReply::NotSent
+        | FeederReply::Update { .. } => Ended::Answered,
+        FeederReply::NotSent { .. }
         | FeederReply::NotAsked {
             reason: NotAsked::Held,
-        } => (Ended::Unsent, Some(NotSentReason::Session)),
-        FeederReply::Refused { .. } | FeederReply::NotAsked { .. } => (Ended::Refused, None),
+        } => Ended::Unsent,
+        FeederReply::Refused { .. } | FeederReply::NotAsked { .. } => Ended::Refused,
         FeederReply::Unanswered | FeederReply::Unexpected | FeederReply::Unreadable => {
-            (Ended::Uncertain, None)
+            Ended::Uncertain
         }
+    }
+}
+
+/// The reply a write's call that ended unanswered gets once the server's
+/// stream has told what became of it, so the screen says that and not "it may
+/// have run". A settlement only a feed has, or a call write another overtook,
+/// leaves it unanswered: whether this one took effect does not show.
+pub(crate) fn settled_reply(settlement: &Settlement) -> FeederReply {
+    use crate::api::feeder::FeederRefusal;
+    use crate::api::server::ServerRefusal;
+
+    match settlement {
+        Settlement::Done => FeederReply::Done { generation: None },
+        Settlement::Refused { refusal } => FeederReply::Refused {
+            refusal: match refusal {
+                ServerRefusal::Forbidden => FeederRefusal::Forbidden,
+                ServerRefusal::Busy => FeederRefusal::Busy,
+                // The server's refusal does not carry the generation.
+                ServerRefusal::Stale => FeederRefusal::Stale { current: 0 },
+                ServerRefusal::Unavailable => FeederRefusal::Unavailable,
+                ServerRefusal::Invalid => FeederRefusal::Invalid,
+                ServerRefusal::NotWritable => FeederRefusal::NotWritable,
+                ServerRefusal::Full => FeederRefusal::Full,
+                ServerRefusal::NotFound => FeederRefusal::NotFound,
+                ServerRefusal::Muted => FeederRefusal::Muted,
+                ServerRefusal::Time => FeederRefusal::Time,
+                ServerRefusal::Fault => FeederRefusal::Fault,
+                ServerRefusal::Portions => FeederRefusal::Portions { asked: 0 },
+                ServerRefusal::NoClock => FeederRefusal::NoClock,
+                ServerRefusal::Unverified => FeederRefusal::Unverified,
+                ServerRefusal::Unknown => FeederRefusal::Unknown,
+            },
+        },
+        Settlement::NotSent => FeederReply::NotSent {
+            reason: NotSentReason::Server,
+            server: None,
+        },
+        Settlement::Started { .. }
+        | Settlement::Fed { .. }
+        | Settlement::Unrecorded
+        | Settlement::Superseded => FeederReply::Unanswered,
     }
 }
 

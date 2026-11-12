@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 
 import '../support/fakes.dart';
@@ -296,7 +297,7 @@ void main() {
           unawaited(session.updates.close());
           return const FeederReply.unanswered();
         }
-        if (session.updates.isClosed) return const FeederReply.notSent();
+        if (session.updates.isClosed) return const FeederReply.notSent(reason: NotSentReason.session);
         return stored;
       };
     }
@@ -421,7 +422,7 @@ void main() {
     });
 
     testWidgets('a reopened screen reads even after an upload not sent', (tester) async {
-      await reopenedUntil(tester, const FeederReply.notSent(), stored);
+      await reopenedUntil(tester, const FeederReply.notSent(reason: NotSentReason.session), stored);
 
       expect(find.textContaining('before this went out'), findsOneWidget);
       expect(find.text('3.5 s'), findsOneWidget);

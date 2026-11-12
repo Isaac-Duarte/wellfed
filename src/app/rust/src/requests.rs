@@ -26,6 +26,7 @@ use crate::api::feeder::{
     NotAsked, NtpView, PlanEdit, PlanView, PlansView, PortionChange, SettingsChanges, SettingsView,
     TimeInfo, TraceView, UpdateInfo, ZoneChange, ZoneView,
 };
+use crate::api::router::NotSentReason;
 use crate::session::{Command, Heard};
 
 /// How a request's one op ended, short of an answer.
@@ -40,7 +41,10 @@ impl From<Lost> for FeederReply {
     fn from(lost: Lost) -> Self {
         match lost {
             Lost::Unanswered => Self::Unanswered,
-            Lost::NotSent => Self::NotSent,
+            Lost::NotSent => Self::NotSent {
+                reason: NotSentReason::Session,
+                server: None,
+            },
             Lost::Held => Self::NotAsked {
                 reason: NotAsked::Held,
             },
@@ -770,7 +774,10 @@ mod tests {
         drop(receiver);
         assert!(matches!(
             upload_call(&commands, &wav).await,
-            FeederReply::NotSent
+            FeederReply::NotSent {
+                reason: NotSentReason::Session,
+                server: None
+            }
         ));
 
         // The start went out and was answered, and then the session ended.

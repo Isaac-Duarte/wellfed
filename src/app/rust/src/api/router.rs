@@ -228,16 +228,11 @@ pub struct RoutedReply {
     /// The path it went on; `None` when it went nowhere.
     pub path: Option<RoutePath>,
     /// The feeder's answer. `Unanswered` is a write that may have run, now
-    /// in `pending`; `NotSent` went nowhere, and `server_error` says why
-    /// when the server refused it or could not be reached.
+    /// in `pending`; `NotSent` went nowhere, and says why. A write whose call
+    /// ended unanswered after the server's stream had already said what
+    /// became of it carries that end here instead, and is not pending.
     pub reply: FeederReply,
     pub pending: Option<PendingWrite>,
-    pub server_error: Option<ServerError>,
-    /// Why, when it went nowhere.
-    pub not_sent: Option<NotSentReason>,
-    /// A write whose call ended unanswered while the server's stream had
-    /// already said what became of it: not pending.
-    pub settlement: Option<Settlement>,
 }
 
 /// What a retry of a pending write found.

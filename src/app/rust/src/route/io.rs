@@ -1098,9 +1098,6 @@ impl Router {
                 path: None,
                 reply: FeederReply::NotAsked { reason },
                 pending: None,
-                server_error: None,
-                not_sent: None,
-                settlement: None,
             },
             Shape::Read => self.read(feeder, request).await,
             Shape::Write { write, stream } => {
@@ -1126,7 +1123,7 @@ impl Router {
             match read {
                 Some(Ok(reply)) => {
                     state.reach = ServerReach::Up;
-                    return answered(RoutePath::Server, reply, None);
+                    return answered(RoutePath::Server, reply);
                 }
                 Some(Err(error)) => {
                     let failure = error.failure();
@@ -1138,11 +1135,14 @@ impl Router {
                     // server may have narrowed the account meanwhile.
                     let own = state.access(feeder) == Some(Access::Both);
                     if !(elsewhere && own && state.direct_open(feeder)) {
-                        let reply = calls::refusal(&error)
-                            .map_or(FeederReply::NotSent, |refusal| FeederReply::Refused {
-                                refusal,
-                            });
-                        return answered(RoutePath::Server, reply, Some(error.into()));
+                        let reply = match calls::refusal(&error) {
+                            Some(refusal) => FeederReply::Refused { refusal },
+                            None => FeederReply::NotSent {
+                                reason: NotSentReason::Server,
+                                server: Some(error.into()),
+                            },
+                        };
+                        return answered(RoutePath::Server, reply);
                     }
                     server_error = Some(error.into());
                 }
@@ -1157,7 +1157,7 @@ impl Router {
             return nowhere(NotSentReason::NoPath, server_error);
         };
         let reply = direct(&link, DirectCall::Request(request)).await;
-        answered(RoutePath::Direct, reply, None)
+        answered(RoutePath::Direct, reply)
     }
 
     async fn write(
@@ -1215,7 +1215,14 @@ impl Router {
                     fell_back = true;
                     continue;
                 }
-                tried.not_sent = Some(NotSentReason::Store);
+                let server = match tried.reply {
+                    FeederReply::NotSent { server, .. } => server,
+                    _ => None,
+                };
+                tried.reply = FeederReply::NotSent {
+                    reason: NotSentReason::Store,
+                    server,
+                };
             }
             return self.wrote(&mut state, key, path, tried);
         }
@@ -1229,13 +1236,13 @@ impl Router {
         let early = state.early.remove(&key);
 
         let mut pending = None;
-        let mut settlement = None;
+        let mut reply = tried.reply;
         if tried.ended == Ended::Uncertain {
             match early {
                 // The stream told its end while the call was out.
                 Some(early) => {
                     state.settle_quiet(key, &early);
-                    settlement = Some(early);
+                    reply = core::settled_reply(&early);
                 }
                 None => {
                     pending = state.book.get(key).map(PinRecord::view);
@@ -1248,11 +1255,8 @@ impl Router {
         state.announce();
         RoutedReply {
             path: Some(path),
-            reply: tried.reply,
+            reply,
             pending,
-            server_error: tried.error,
-            not_sent: tried.not_sent,
-            settlement,
         }
     }
 
@@ -1278,8 +1282,6 @@ impl Router {
                 WriteTry {
                     ended: Ended::Answered,
                     reply,
-                    error: None,
-                    not_sent: None,
                 }
             }
             Err(error) => {
@@ -1289,16 +1291,12 @@ impl Router {
                 let reply = match (ended, calls::refusal(&error)) {
                     (Ended::Uncertain, _) => FeederReply::Unanswered,
                     (Ended::Refused, Some(refusal)) => FeederReply::Refused { refusal },
-                    _ => FeederReply::NotSent,
+                    _ => FeederReply::NotSent {
+                        reason: NotSentReason::Server,
+                        server: Some(error.into()),
+                    },
                 };
-                let not_sent =
-                    matches!(reply, FeederReply::NotSent).then_some(NotSentReason::Server);
-                WriteTry {
-                    ended,
-                    reply,
-                    error: Some(error.into()),
-                    not_sent,
-                }
+                WriteTry { ended, reply }
             }
         }
     }
@@ -1584,17 +1582,13 @@ impl FeedTry {
 struct WriteTry {
     ended: Ended,
     reply: FeederReply,
-    error: Option<ServerError>,
-    not_sent: Option<NotSentReason>,
 }
 
 impl WriteTry {
-    const fn unsent(reason: NotSentReason, error: Option<ServerError>) -> Self {
+    const fn unsent(reason: NotSentReason, server: Option<ServerError>) -> Self {
         Self {
             ended: Ended::Unsent,
-            reply: FeederReply::NotSent,
-            error,
-            not_sent: Some(reason),
+            reply: FeederReply::NotSent { reason, server },
         }
     }
 }
@@ -1606,12 +1600,9 @@ const fn not_sent(reason: NotSentReason, error: Option<ServerError>) -> RoutedFe
 /// Run a write on the phone's own session behind `link`.
 async fn direct_write(link: &DirectLink, call: DirectCall) -> WriteTry {
     let reply = direct(link, call).await;
-    let (ended, not_sent) = core::direct_ended(&reply);
     WriteTry {
-        ended,
+        ended: core::direct_ended(&reply),
         reply,
-        error: None,
-        not_sent,
     }
 }
 
@@ -1626,32 +1617,19 @@ async fn direct(link: &DirectLink, call: DirectCall) -> FeederReply {
     }
 }
 
-const fn answered(
-    path: RoutePath,
-    reply: FeederReply,
-    server_error: Option<ServerError>,
-) -> RoutedReply {
+const fn answered(path: RoutePath, reply: FeederReply) -> RoutedReply {
     RoutedReply {
         path: Some(path),
         reply,
         pending: None,
-        server_error,
-        not_sent: None,
-        settlement: None,
     }
 }
 
-pub(crate) const fn nowhere(
-    reason: NotSentReason,
-    server_error: Option<ServerError>,
-) -> RoutedReply {
+pub(crate) const fn nowhere(reason: NotSentReason, server: Option<ServerError>) -> RoutedReply {
     RoutedReply {
         path: None,
-        reply: FeederReply::NotSent,
+        reply: FeederReply::NotSent { reason, server },
         pending: None,
-        server_error,
-        not_sent: Some(reason),
-        settlement: None,
     }
 }
 

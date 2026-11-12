@@ -21,6 +21,7 @@ use wellfed_app_bridge::api::feeder::{
 use wellfed_app_bridge::api::join::{JoinAnswer, invite_feeder, join_feeder};
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::{CallClip, ClientRole, FeedOutcome, StatsSection};
+use wellfed_app_bridge::api::router::NotSentReason;
 use wellfed_app_bridge::api::session::{Card, FedBy, FeedRefusal, HistoryBody, SessionUpdate};
 use wellfed_app_bridge::api::setup::{
     SetupDriver, SetupStep, recover, setup_control, setup_service,
@@ -1248,7 +1249,13 @@ fn a_write_whose_answer_never_comes_says_so_and_a_request_after_the_end_went_now
         .await;
         tokio::time::sleep(Duration::from_millis(50)).await;
         let reply = requests::run(&commands, sim.identity, FeederRequest::Reboot).await;
-        assert_eq!(reply, FeederReply::NotSent);
+        assert_eq!(
+            reply,
+            FeederReply::NotSent {
+                reason: NotSentReason::Session,
+                server: None
+            }
+        );
         sim.stop().await;
     });
 }
@@ -1506,7 +1513,10 @@ fn a_session_nobody_listens_to_still_answers_its_callers() {
         // The change's event may end the session before its answer does;
         // either way the change that waited never went.
         let (_, waiting) = tokio::join!(ask(volume(20)), ask(volume(40)));
-        assert!(matches!(waiting, FeederReply::NotSent), "{waiting:?}");
+        assert!(
+            matches!(waiting, FeederReply::NotSent { .. }),
+            "{waiting:?}"
+        );
         sim.stop().await;
     });
 }

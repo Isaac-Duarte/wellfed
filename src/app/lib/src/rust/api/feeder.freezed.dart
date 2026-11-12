@@ -1038,7 +1038,7 @@ return unreadable(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int? generation)?  done,TResult Function( SettingsView settings)?  settings,TResult Function( TimeInfo time)?  time,TResult Function( PlansView plans)?  plans,TResult Function( List<ClientView> clients)?  clients,TResult Function( InviteView invite)?  invite,TResult Function( CalibrationInfo calibration)?  calibration,TResult Function( CallInfo call)?  call,TResult Function( Stats stats)?  stats,TResult Function( TraceView trace)?  trace,TResult Function( UpdateInfo update)?  update,TResult Function( FeederRefusal refusal)?  refused,TResult Function( NotAsked reason)?  notAsked,TResult Function()?  unanswered,TResult Function()?  notSent,TResult Function()?  unexpected,TResult Function()?  unreadable,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( int? generation)?  done,TResult Function( SettingsView settings)?  settings,TResult Function( TimeInfo time)?  time,TResult Function( PlansView plans)?  plans,TResult Function( List<ClientView> clients)?  clients,TResult Function( InviteView invite)?  invite,TResult Function( CalibrationInfo calibration)?  calibration,TResult Function( CallInfo call)?  call,TResult Function( Stats stats)?  stats,TResult Function( TraceView trace)?  trace,TResult Function( UpdateInfo update)?  update,TResult Function( FeederRefusal refusal)?  refused,TResult Function( NotAsked reason)?  notAsked,TResult Function()?  unanswered,TResult Function( NotSentReason reason,  ServerError? server)?  notSent,TResult Function()?  unexpected,TResult Function()?  unreadable,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case FeederReply_Done() when done != null:
 return done(_that.generation);case FeederReply_Settings() when settings != null:
@@ -1055,7 +1055,7 @@ return update(_that.update);case FeederReply_Refused() when refused != null:
 return refused(_that.refusal);case FeederReply_NotAsked() when notAsked != null:
 return notAsked(_that.reason);case FeederReply_Unanswered() when unanswered != null:
 return unanswered();case FeederReply_NotSent() when notSent != null:
-return notSent();case FeederReply_Unexpected() when unexpected != null:
+return notSent(_that.reason,_that.server);case FeederReply_Unexpected() when unexpected != null:
 return unexpected();case FeederReply_Unreadable() when unreadable != null:
 return unreadable();case _:
   return orElse();
@@ -1075,7 +1075,7 @@ return unreadable();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int? generation)  done,required TResult Function( SettingsView settings)  settings,required TResult Function( TimeInfo time)  time,required TResult Function( PlansView plans)  plans,required TResult Function( List<ClientView> clients)  clients,required TResult Function( InviteView invite)  invite,required TResult Function( CalibrationInfo calibration)  calibration,required TResult Function( CallInfo call)  call,required TResult Function( Stats stats)  stats,required TResult Function( TraceView trace)  trace,required TResult Function( UpdateInfo update)  update,required TResult Function( FeederRefusal refusal)  refused,required TResult Function( NotAsked reason)  notAsked,required TResult Function()  unanswered,required TResult Function()  notSent,required TResult Function()  unexpected,required TResult Function()  unreadable,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( int? generation)  done,required TResult Function( SettingsView settings)  settings,required TResult Function( TimeInfo time)  time,required TResult Function( PlansView plans)  plans,required TResult Function( List<ClientView> clients)  clients,required TResult Function( InviteView invite)  invite,required TResult Function( CalibrationInfo calibration)  calibration,required TResult Function( CallInfo call)  call,required TResult Function( Stats stats)  stats,required TResult Function( TraceView trace)  trace,required TResult Function( UpdateInfo update)  update,required TResult Function( FeederRefusal refusal)  refused,required TResult Function( NotAsked reason)  notAsked,required TResult Function()  unanswered,required TResult Function( NotSentReason reason,  ServerError? server)  notSent,required TResult Function()  unexpected,required TResult Function()  unreadable,}) {final _that = this;
 switch (_that) {
 case FeederReply_Done():
 return done(_that.generation);case FeederReply_Settings():
@@ -1092,7 +1092,7 @@ return update(_that.update);case FeederReply_Refused():
 return refused(_that.refusal);case FeederReply_NotAsked():
 return notAsked(_that.reason);case FeederReply_Unanswered():
 return unanswered();case FeederReply_NotSent():
-return notSent();case FeederReply_Unexpected():
+return notSent(_that.reason,_that.server);case FeederReply_Unexpected():
 return unexpected();case FeederReply_Unreadable():
 return unreadable();}
 }
@@ -1108,7 +1108,7 @@ return unreadable();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int? generation)?  done,TResult? Function( SettingsView settings)?  settings,TResult? Function( TimeInfo time)?  time,TResult? Function( PlansView plans)?  plans,TResult? Function( List<ClientView> clients)?  clients,TResult? Function( InviteView invite)?  invite,TResult? Function( CalibrationInfo calibration)?  calibration,TResult? Function( CallInfo call)?  call,TResult? Function( Stats stats)?  stats,TResult? Function( TraceView trace)?  trace,TResult? Function( UpdateInfo update)?  update,TResult? Function( FeederRefusal refusal)?  refused,TResult? Function( NotAsked reason)?  notAsked,TResult? Function()?  unanswered,TResult? Function()?  notSent,TResult? Function()?  unexpected,TResult? Function()?  unreadable,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( int? generation)?  done,TResult? Function( SettingsView settings)?  settings,TResult? Function( TimeInfo time)?  time,TResult? Function( PlansView plans)?  plans,TResult? Function( List<ClientView> clients)?  clients,TResult? Function( InviteView invite)?  invite,TResult? Function( CalibrationInfo calibration)?  calibration,TResult? Function( CallInfo call)?  call,TResult? Function( Stats stats)?  stats,TResult? Function( TraceView trace)?  trace,TResult? Function( UpdateInfo update)?  update,TResult? Function( FeederRefusal refusal)?  refused,TResult? Function( NotAsked reason)?  notAsked,TResult? Function()?  unanswered,TResult? Function( NotSentReason reason,  ServerError? server)?  notSent,TResult? Function()?  unexpected,TResult? Function()?  unreadable,}) {final _that = this;
 switch (_that) {
 case FeederReply_Done() when done != null:
 return done(_that.generation);case FeederReply_Settings() when settings != null:
@@ -1125,7 +1125,7 @@ return update(_that.update);case FeederReply_Refused() when refused != null:
 return refused(_that.refusal);case FeederReply_NotAsked() when notAsked != null:
 return notAsked(_that.reason);case FeederReply_Unanswered() when unanswered != null:
 return unanswered();case FeederReply_NotSent() when notSent != null:
-return notSent();case FeederReply_Unexpected() when unexpected != null:
+return notSent(_that.reason,_that.server);case FeederReply_Unexpected() when unexpected != null:
 return unexpected();case FeederReply_Unreadable() when unreadable != null:
 return unreadable();case _:
   return null;
@@ -2079,33 +2079,71 @@ String toString() {
 
 
 class FeederReply_NotSent extends FeederReply {
-  const FeederReply_NotSent(): super._();
+  const FeederReply_NotSent({required this.reason, this.server}): super._();
   
 
+ final  NotSentReason reason;
+ final  ServerError? server;
 
-
+/// Create a copy of FeederReply
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$FeederReply_NotSentCopyWith<FeederReply_NotSent> get copyWith => _$FeederReply_NotSentCopyWithImpl<FeederReply_NotSent>(this, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is FeederReply_NotSent);
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is FeederReply_NotSent&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.server, server) || other.server == server));
 }
 
 
 @override
-int get hashCode => runtimeType.hashCode;
+int get hashCode {
+    return Object.hash(runtimeType,reason,server);
+}
 
 @override
 String toString() {
-    return 'FeederReply.notSent()';
+    return 'FeederReply.notSent(reason: $reason, server: $server)';
 }
 
 
 }
 
+/// @nodoc
+abstract mixin class $FeederReply_NotSentCopyWith<$Res> implements $FeederReplyCopyWith<$Res> {
+  factory $FeederReply_NotSentCopyWith(FeederReply_NotSent value, $Res Function(FeederReply_NotSent) _then) = _$FeederReply_NotSentCopyWithImpl;
+@useResult
+$Res call({
+ NotSentReason reason, ServerError? server
+});
 
 
+
+
+}
+/// @nodoc
+class _$FeederReply_NotSentCopyWithImpl<$Res>
+    implements $FeederReply_NotSentCopyWith<$Res> {
+  _$FeederReply_NotSentCopyWithImpl(this._self, this._then);
+
+  final FeederReply_NotSent _self;
+  final $Res Function(FeederReply_NotSent) _then;
+
+/// Create a copy of FeederReply
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? reason = null,Object? server = freezed,}) {
+  return _then(FeederReply_NotSent(
+reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
+as NotSentReason,server: freezed == server ? _self.server : server // ignore: cast_nullable_to_non_nullable
+as ServerError?,
+  ));
+}
+
+
+}
 
 /// @nodoc
 

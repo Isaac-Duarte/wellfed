@@ -1118,11 +1118,14 @@ fn a_server_that_refuses_the_phones_token_closes_the_direct_path_too() {
             .ask(kitchen.clone(), FeederRequest::GetCalibration)
             .await;
         assert_eq!(read.path, Some(RoutePath::Server));
-        assert_eq!(read.reply, FeederReply::NotSent);
-        assert_eq!(
-            read.server_error.map(|error| error.kind),
-            Some(ServerErrorKind::TokenRevoked)
-        );
+        let FeederReply::NotSent {
+            reason: NotSentReason::Server,
+            server: Some(error),
+        } = read.reply
+        else {
+            panic!("the refused token reads nothing: {read:?}");
+        };
+        assert_eq!(error.kind, ServerErrorKind::TokenRevoked);
         let invite = phone
             .router
             .ask(
@@ -1425,7 +1428,16 @@ fn a_router_left_behind_is_fenced_by_the_next_and_sends_no_write() {
             .router
             .ask(kitchen.clone(), FeederRequest::SetLock { locked: true })
             .await;
-        assert_eq!(reply.reply, FeederReply::NotSent);
+        assert!(
+            matches!(
+                reply.reply,
+                FeederReply::NotSent {
+                    reason: NotSentReason::Store,
+                    server: None
+                }
+            ),
+            "{reply:?}"
+        );
         assert_eq!(feeder::feeds(&flash), 0);
 
         // The new one, with its own session, feeds.

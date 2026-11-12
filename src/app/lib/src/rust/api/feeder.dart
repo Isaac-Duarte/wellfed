@@ -8,6 +8,9 @@ import 'model.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+
+import 'router.dart';
+import 'server_error.dart';
 part 'feeder.freezed.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
@@ -173,8 +176,13 @@ sealed class FeederReply with _$FeederReply {
   /// No answer came: a write may have run. It is never sent again.
   const factory FeederReply.unanswered() = FeederReply_Unanswered;
 
-  /// The session ended before the request went out: nothing happened.
-  const factory FeederReply.notSent() = FeederReply_NotSent;
+  /// It never went out, or the server did not pass it on: nothing
+  /// happened. `reason` says why, and `server` what the server said when
+  /// it refused it or could not be reached.
+  const factory FeederReply.notSent({
+    required NotSentReason reason,
+    ServerError? server,
+  }) = FeederReply_NotSent;
 
   /// The feeder answered something else.
   const factory FeederReply.unexpected() = FeederReply_Unexpected;

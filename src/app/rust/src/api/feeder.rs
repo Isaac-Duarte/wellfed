@@ -4,13 +4,16 @@
 //!
 //! Every write goes out once, under a fresh id: an answer that never came is
 //! [`FeederReply::Unanswered`], which says the write may have run, and nothing
-//! sends it again. [`FeederReply::NotSent`] means it never left this phone.
+//! sends it again. [`FeederReply::NotSent`] means it never reached the
+//! feeder, and says why.
 
 pub use crate::api::model::{
     Bank0Blocked, Bank0Check, Blocked, Bowl, CallClip, ClientRole, Desiccant, FeedOutcome,
     FeedReason, FoodLevel, MealReminder, NtpResult, Phase, Stats, StatsSection, TimeSource,
     TraceEntry, TraceSummary, Tune, UpdatePhase, UpdateRefusal, Weekday, Window,
 };
+use crate::api::router::NotSentReason;
+use crate::api::server_error::ServerError;
 
 /// What the owner asks of a feeder.
 pub enum FeederRequest {
@@ -407,8 +410,13 @@ pub enum FeederReply {
     },
     /// No answer came: a write may have run. It is never sent again.
     Unanswered,
-    /// The session ended before the request went out: nothing happened.
-    NotSent,
+    /// It never went out, or the server did not pass it on: nothing
+    /// happened. `reason` says why, and `server` what the server said when
+    /// it refused it or could not be reached.
+    NotSent {
+        reason: NotSentReason,
+        server: Option<ServerError>,
+    },
     /// The feeder answered something else.
     Unexpected,
     /// A newer feeder build answered in a way this app cannot read. The

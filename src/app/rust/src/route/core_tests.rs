@@ -959,7 +959,7 @@ fn a_direct_write_stays_uncertain_unless_its_answer_names_its_end() {
         FeederReply::Unreadable,
         FeederReply::Unexpected,
     ] {
-        assert_eq!(direct_ended(&reply), (Ended::Uncertain, None), "{reply:?}");
+        assert_eq!(direct_ended(&reply), Ended::Uncertain, "{reply:?}");
 
         let mut book = Book::default();
         let pin = PinRecord {
@@ -969,36 +969,66 @@ fn a_direct_write_stays_uncertain_unless_its_answer_names_its_end() {
             ..feed_pin(1, "a", RoutePath::Direct)
         };
         book.admit(pin, NOW).unwrap();
-        book.ended(Uuid::from_u128(1), direct_ended(&reply).0, NOW);
+        book.ended(Uuid::from_u128(1), direct_ended(&reply), NOW);
         assert_eq!(book.pins.len(), 1, "{reply:?}");
         assert_eq!(book.pins[0].state, PinState::Uncertain);
     }
 
     assert_eq!(
         direct_ended(&FeederReply::Done { generation: None }),
-        (Ended::Answered, None)
+        Ended::Answered
     );
     assert_eq!(
         direct_ended(&FeederReply::Refused {
             refusal: crate::api::feeder::FeederRefusal::Busy
         }),
-        (Ended::Refused, None)
+        Ended::Refused
     );
     assert_eq!(
         direct_ended(&FeederReply::NotAsked {
             reason: NotAsked::BadPlan
         }),
-        (Ended::Refused, None)
+        Ended::Refused
     );
     for unsent in [
-        FeederReply::NotSent,
+        FeederReply::NotSent {
+            reason: NotSentReason::Session,
+            server: None,
+        },
         FeederReply::NotAsked {
             reason: NotAsked::Held,
         },
     ] {
-        assert_eq!(
-            direct_ended(&unsent),
-            (Ended::Unsent, Some(NotSentReason::Session))
-        );
+        assert_eq!(direct_ended(&unsent), Ended::Unsent);
+    }
+}
+
+#[test]
+fn a_write_the_stream_settled_while_its_call_was_out_says_how_it_ended() {
+    use crate::api::feeder::FeederRefusal as Refusal;
+
+    assert_eq!(
+        settled_reply(&Settlement::Done),
+        FeederReply::Done { generation: None }
+    );
+    assert_eq!(
+        settled_reply(&Settlement::Refused {
+            refusal: ServerRefusal::Busy
+        }),
+        FeederReply::Refused {
+            refusal: Refusal::Busy
+        }
+    );
+    assert_eq!(
+        settled_reply(&Settlement::NotSent),
+        FeederReply::NotSent {
+            reason: NotSentReason::Server,
+            server: None
+        }
+    );
+
+    // Whether a call write another overtook ever took effect does not show.
+    for unknown in [Settlement::Superseded, Settlement::Unrecorded] {
+        assert_eq!(settled_reply(&unknown), FeederReply::Unanswered);
     }
 }

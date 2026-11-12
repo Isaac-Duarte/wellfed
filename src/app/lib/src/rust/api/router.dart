@@ -373,36 +373,16 @@ class RoutedReply {
   final RoutePath? path;
 
   /// The feeder's answer. `Unanswered` is a write that may have run, now
-  /// in `pending`; `NotSent` went nowhere, and `server_error` says why
-  /// when the server refused it or could not be reached.
+  /// in `pending`; `NotSent` went nowhere, and says why. A write whose call
+  /// ended unanswered after the server's stream had already said what
+  /// became of it carries that end here instead, and is not pending.
   final FeederReply reply;
   final PendingWrite? pending;
-  final ServerError? serverError;
 
-  /// Why, when it went nowhere.
-  final NotSentReason? notSent;
-
-  /// A write whose call ended unanswered while the server's stream had
-  /// already said what became of it: not pending.
-  final Settlement? settlement;
-
-  const RoutedReply({
-    this.path,
-    required this.reply,
-    this.pending,
-    this.serverError,
-    this.notSent,
-    this.settlement,
-  });
+  const RoutedReply({this.path, required this.reply, this.pending});
 
   @override
-  int get hashCode =>
-      path.hashCode ^
-      reply.hashCode ^
-      pending.hashCode ^
-      serverError.hashCode ^
-      notSent.hashCode ^
-      settlement.hashCode;
+  int get hashCode => path.hashCode ^ reply.hashCode ^ pending.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -411,10 +391,7 @@ class RoutedReply {
           runtimeType == other.runtimeType &&
           path == other.path &&
           reply == other.reply &&
-          pending == other.pending &&
-          serverError == other.serverError &&
-          notSent == other.notSent &&
-          settlement == other.settlement;
+          pending == other.pending;
 }
 
 @freezed
