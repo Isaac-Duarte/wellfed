@@ -7,19 +7,12 @@ use wellfed_api::{FeederId, HourSample, RawSample, Resolution, SamplePage, Sampl
 use wellfed_mirror::stored_sample;
 use wellfed_store::{SampleKey, Span};
 
-use crate::{Error, InternalError, Invalid, Resource, Result, Service};
-
-/// Samples or hours per page, unless asked.
-const PAGE: u32 = 100;
-const PAGE_MAX: u32 = 1000;
+use crate::{Error, InternalError, Invalid, Resource, Result, Service, page};
 
 impl Service {
     /// A page of one feeder's samples of one metric, oldest first.
     pub async fn samples(&self, id: FeederId, query: SampleQuery) -> Result<SamplePage> {
-        let limit = query.limit.unwrap_or(PAGE);
-        if !(1..=PAGE_MAX).contains(&limit) {
-            return Err(Invalid::PageLimit.into());
-        }
+        let limit = page::limit(query.limit)?;
         if let (Some(from), Some(to)) = (query.from, query.to)
             && from >= to
         {
@@ -44,13 +37,14 @@ impl Service {
         let ask = limit + 1;
         let page = match resolution {
             Resolution::Raw => {
-                let mut rows = self
+                let rows = self
                     .shared
                     .store
                     .samples(id, query.metric, span, raw_after, ask)
                     .await?;
-                let next = more(&mut rows, limit)
-                    .map(|last| format!("{}.{}", last.key.received_ms, last.key.id));
+                let (rows, next) = page::split(rows, limit, |last| {
+                    format!("{}.{}", last.key.received_ms, last.key.id)
+                });
                 let items = rows
                     .into_iter()
                     .map(|row| {
@@ -67,13 +61,13 @@ impl Service {
                 SamplePage::Raw { items, next }
             }
             Resolution::Hour => {
-                let mut rows = self
+                let rows = self
                     .shared
                     .store
                     .sample_hours(id, query.metric, span, hour_after, ask)
                     .await?;
-                let next =
-                    more(&mut rows, limit).map(|last| last.hour.as_millisecond().to_string());
+                let (rows, next) =
+                    page::split(rows, limit, |last| last.hour.as_millisecond().to_string());
                 let items = rows
                     .into_iter()
                     .map(|row| HourSample {
@@ -117,16 +111,6 @@ impl Service {
         info!("{deleted} raw samples older than {days} days deleted");
         Ok(())
     }
-}
-
-/// Trim `rows` to `limit`, returning the last kept when more followed.
-fn more<T>(rows: &mut Vec<T>, limit: u32) -> Option<&T> {
-    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
-    if rows.len() <= limit {
-        return None;
-    }
-    rows.truncate(limit);
-    rows.last()
 }
 
 fn mean(sum: i64, count: u32) -> f64 {

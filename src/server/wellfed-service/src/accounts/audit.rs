@@ -18,7 +18,7 @@ impl Service {
     /// A page of the log: the caller's own entries, or everyone's for an
     /// owner.
     pub async fn audit(&self, user: &User, query: PageQuery) -> Result<AuditPage> {
-        let limit = page::limit(&query)?;
+        let limit = page::limit(query.limit)?;
         let after = page::after_seq(&query)?;
 
         // One more than the page shows whether another page follows.

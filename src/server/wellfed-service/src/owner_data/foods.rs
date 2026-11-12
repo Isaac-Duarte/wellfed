@@ -14,6 +14,7 @@ use wellfed_api::{
 };
 use wellfed_store::FoodSet;
 
+use crate::error::bounded;
 use crate::page::{self, after_seq};
 use crate::{Error, Invalid, OwnerDataError, Resource, Result, Service};
 
@@ -120,7 +121,7 @@ impl Service {
         feeder: FeederId,
         query: PageQuery,
     ) -> Result<FoodHistoryPage> {
-        let limit = page::limit(&query)?;
+        let limit = page::limit(query.limit)?;
         let after = after_seq(&query)?;
         self.row(feeder).await?;
 
@@ -172,7 +173,7 @@ impl Service {
 
     /// A page of the feeder's refills, in the order they were recorded.
     pub async fn refills(&self, feeder: FeederId, query: PageQuery) -> Result<RefillPage> {
-        let limit = page::limit(&query)?;
+        let limit = page::limit(query.limit)?;
         let after = after_seq(&query)?;
         self.row(feeder).await?;
 
@@ -196,11 +197,7 @@ impl Service {
 
 /// A brand or a name: 1-64 characters, trimmed.
 fn label(text: &str) -> Result<&str, Invalid> {
-    let text = text.trim();
-    if text.is_empty() || text.chars().count() > 64 {
-        return Err(Invalid::FoodName);
-    }
-    Ok(text)
+    bounded(text, Invalid::FoodName)
 }
 
 fn within(value: u32, max: u32, invalid: Invalid) -> Result<u32, Invalid> {

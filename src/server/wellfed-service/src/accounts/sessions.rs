@@ -29,6 +29,7 @@ use wellfed_session::hex;
 use wellfed_store::NewUser;
 
 use crate::accounts::tokens::session_only;
+use crate::error::bounded;
 use crate::{AccountError, Caller, Error, InternalError, Invalid, Resource, Result, Service};
 
 /// Password hashes computed at once.
@@ -334,11 +335,7 @@ fn later(at: Timestamp, after: Duration) -> Result<Timestamp> {
 }
 
 pub(crate) fn user_name(name: &str) -> Result<&str> {
-    let name = name.trim();
-    if name.is_empty() || name.chars().count() > 64 {
-        return Err(Invalid::UserName.into());
-    }
-    Ok(name)
+    Ok(bounded(name, Invalid::UserName)?)
 }
 
 pub(crate) fn password(password: &str) -> Result<()> {

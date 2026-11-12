@@ -10,6 +10,7 @@ use tracing::error;
 use wellfed_api::{AuditAction, Home, HomePatch, Units};
 use wellfed_mirror::Zone;
 
+use crate::error::bounded;
 use crate::{Caller, Error, Invalid, Resource, Result, Service};
 
 impl Service {
@@ -69,9 +70,5 @@ impl Service {
 }
 
 fn home_name(name: &str) -> Result<&str> {
-    let name = name.trim();
-    if name.is_empty() || name.chars().count() > 64 {
-        return Err(Invalid::HomeName.into());
-    }
-    Ok(name)
+    Ok(bounded(name, Invalid::HomeName)?)
 }

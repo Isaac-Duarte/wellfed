@@ -39,14 +39,12 @@ use wellfed_session::hex;
 use wellfed_store::Whose;
 
 use crate::accounts::sessions::{TOUCH, disabled};
+use crate::error::bounded;
 use crate::{AccountError, Error, Invalid, Permission, Resource, Result, Service, can};
 
 /// What every secret starts with, so it is recognisable in a config file
 /// or a leak scan, and never mistaken for a session's.
 const PREFIX: &str = "plt_";
-
-/// The longest device name a token takes.
-const NAME_MAX: usize = 64;
 
 /// Who is asking: the user, and the token they came through (`None` for
 /// a browser session), which the command journal records.
@@ -137,10 +135,7 @@ impl Service {
     /// another. The secret is in the answer and nowhere else.
     pub async fn create_token(&self, caller: &Caller, new: NewToken) -> Result<CreatedToken> {
         session_only(caller)?;
-        let name = new.name.trim();
-        if name.is_empty() || name.chars().count() > NAME_MAX {
-            return Err(Invalid::TokenName.into());
-        }
+        let name = bounded(&new.name, Invalid::TokenName)?;
         let now = self.shared.clock.now();
         if new.expires.is_some_and(|expires| expires <= now) {
             return Err(Invalid::TokenExpiry.into());

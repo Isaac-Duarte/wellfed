@@ -15,8 +15,8 @@ const PAGE_MAX: u32 = 1000;
 const SEQ_MAX: u64 = i64::MAX.unsigned_abs();
 
 /// A page's size, from `?limit=`.
-pub(crate) fn limit(query: &PageQuery) -> Result<u32, Invalid> {
-    let limit = query.limit.unwrap_or(PAGE);
+pub(crate) fn limit(asked: Option<u32>) -> Result<u32, Invalid> {
+    let limit = asked.unwrap_or(PAGE);
     if !(1..=PAGE_MAX).contains(&limit) {
         return Err(Invalid::PageLimit);
     }
@@ -117,12 +117,6 @@ mod tests {
             (vec![1, 2], Some("2".into()))
         );
         assert_eq!(split(vec![1, 2], 2, cursor), (vec![1, 2], None));
-        assert_eq!(
-            limit(&PageQuery {
-                after: None,
-                limit: Some(0)
-            }),
-            Err(Invalid::PageLimit)
-        );
+        assert_eq!(limit(Some(0)), Err(Invalid::PageLimit));
     }
 }
