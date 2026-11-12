@@ -42,6 +42,12 @@ const QUEUE: usize = 4;
 pub enum ExportError {
     #[error("import runs only on a fresh server: an account exists")]
     ImportClosed,
+    /// A fresh server takes an import only for a while after it starts, as
+    /// it does a setup.
+    #[error(
+        "import is closed: it is open for an hour after the server starts, so restart the server and import then"
+    )]
+    ImportExpired,
     #[error(transparent)]
     Archive(#[from] ArchiveError),
     #[error("a row of {table} does not fit the database")]
@@ -67,7 +73,7 @@ pub enum ExportError {
 impl ExportError {
     pub(crate) fn reply(&self) -> Reply {
         match self {
-            Self::ImportClosed => Reply::Code(ErrorCode::ImportClosed),
+            Self::ImportClosed | Self::ImportExpired => Reply::Code(ErrorCode::ImportClosed),
             Self::Running => Reply::Code(ErrorCode::ExportRunning),
             Self::Archive(_) => Reply::Code(ErrorCode::ArchiveInvalid),
             // The database's own words stay in the log; the detail names

@@ -102,6 +102,10 @@ pub struct Timing {
     /// How long an adoption whose join answer was lost looks for its key
     /// enrolled, as a running feed holds the enrollment.
     pub join_settle: Duration,
+    /// How long after it starts a server with no account takes a setup or
+    /// an import: whoever reaches it first could claim it, so the window
+    /// is short, and a restart opens it again.
+    pub setup_window: Duration,
 }
 
 impl Default for Timing {
@@ -118,6 +122,7 @@ impl Default for Timing {
             transfer_idle: Duration::from_secs(30),
             pace: mirror.pace,
             join_settle: mirror.join_settle,
+            setup_window: Duration::from_secs(3600),
         }
     }
 }

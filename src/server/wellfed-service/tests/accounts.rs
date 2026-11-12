@@ -1,9 +1,44 @@
 //! Household accounts: the first owner's setup, login and logout, and the
 //! limit on guessing a password through a password change.
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use wellfed_api::{Credentials, PasswordChange, Role, Setup};
+use wellfed_server_testkit::fixed::ManualClock;
 use wellfed_server_testkit::{HERE, TestService, ada_setup, local};
-use wellfed_service::{AccountError, Error, Invalid};
+use wellfed_service::{AccountError, Error, ExportError, Invalid};
+
+/// A server with no account takes a setup or an import only for an hour
+/// after it starts, whoever reaches it; a restart opens the window again.
+#[test]
+fn setup_and_import_close_an_hour_after_the_start_and_a_restart_reopens_them() {
+    local(async {
+        let clock = ManualClock::new();
+        let server = TestService::start_with_clock(Arc::new(clock.clone())).await;
+        assert!(server.service().setup_open().await.unwrap());
+
+        clock.advance(Duration::from_secs(3600));
+
+        assert!(!server.service().setup_open().await.unwrap());
+        assert!(!server.service().setup_state().await.unwrap().open);
+        assert!(matches!(
+            server.service().setup(ada_setup()).await,
+            Err(Error::Account(AccountError::SetupExpired))
+        ));
+        let upload = futures_util::stream::iter([Ok::<_, std::io::Error>(Vec::<u8>::new())]);
+        assert!(matches!(
+            server.service().import(upload).await,
+            Err(Error::Export(ExportError::ImportExpired))
+        ));
+
+        let store = server.stop().await;
+        let again = TestService::reopen_with_clock(store, Arc::new(clock.clone())).await;
+        assert!(again.service().setup_open().await.unwrap());
+        again.service().setup(ada_setup()).await.unwrap();
+        again.shutdown().await;
+    });
+}
 
 #[test]
 fn the_first_owner_sets_up_once_and_logs_in() {

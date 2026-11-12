@@ -124,6 +124,9 @@ struct Shared {
     hub: Arc<Hub>,
     /// When this run started, by the service's clock.
     started: Timestamp,
+    /// When this run started, by a clock that never steps: a wall clock
+    /// set back never stretches a window counted from the start.
+    started_steady: std::time::Instant,
 }
 
 impl Shared {
@@ -198,6 +201,7 @@ impl Service {
                 random,
                 hub,
                 started,
+                started_steady: std::time::Instant::now(),
             }),
             mirror,
             releases: Arc::new(releases),
@@ -226,6 +230,7 @@ impl Service {
             }
         }
         service.start_webhook()?;
+        service.note_setup_window().await?;
         Ok(service)
     }
 

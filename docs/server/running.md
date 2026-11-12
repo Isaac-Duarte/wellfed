@@ -154,7 +154,7 @@ The server announces itself on the home network over mDNS, so the app can list i
 
 ## Add the first owner
 
-A fresh server has no accounts, and the first visitor creates the first owner, over the API since the server has no web UI. Until then, anyone who reaches the server can claim it, through setup or by importing an archive, so add the owner while it still listens on `127.0.0.1` alone, before you [reach it from outside](#reach-it-from-outside).
+A fresh server has no accounts, and the first visitor creates the first owner, over the API since the server has no web UI. Until then, anyone who reaches the server can claim it, through setup or by importing an archive, so add the owner while it still listens on `127.0.0.1` alone, before you [reach it from outside](#reach-it-from-outside). To keep that window short, a server with no account takes a setup or an import only for an hour after it starts, and its log says so at the start. Past the hour, `GET /api/v1/setup` answers `"open": false` and setup is refused `409 setup_closed`; restart the server to open the hour again.
 
 1. Run `curl http://127.0.0.1:8080/api/v1/setup`. You should see `"open": true`, and the host's time zone as `zone` if it has one.
 2. Create the owner with a name, a password of at least 10 characters, and the home's IANA zone:
@@ -167,7 +167,7 @@ A fresh server has no accounts, and the first visitor creates the first owner, o
 
 3. Run `wellfed server login --server http://127.0.0.1:8080 --name alex` and type the password. You should see the CLI keep a token, after which `wellfed server feeders` works.
 
-Setup closes as soon as any account exists. The zone must be one the feeder can follow on its own, since the server writes its daylight-saving rule to each feeder: a zone with irregular changes no rule describes is refused `422 zone_unsupported`, and an unknown name `400 invalid`.
+Setup closes as soon as any account exists, or an hour after the start with none. The zone must be one the feeder can follow on its own, since the server writes its daylight-saving rule to each feeder: a zone with irregular changes no rule describes is refused `422 zone_unsupported`, and an unknown name `400 invalid`.
 
 ## Reach it from outside
 

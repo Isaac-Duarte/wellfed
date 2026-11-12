@@ -46,6 +46,7 @@ pub fn config() -> Config {
                 restart: Duration::from_millis(1_500),
             },
             join_settle: Duration::from_secs(5),
+            setup_window: Duration::from_secs(3600),
         },
         // The diagnostics' own tests turn them on: elsewhere their reads
         // would share the lanes and the seeded ids with what is tested.

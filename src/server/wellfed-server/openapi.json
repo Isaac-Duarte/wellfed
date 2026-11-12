@@ -5825,7 +5825,7 @@
             }
           },
           "409": {
-            "description": "import_closed: an account exists",
+            "description": "import_closed: an account exists, or the hour after the server started has passed",
             "content": {
               "application/json": {
                 "schema": {
@@ -7387,7 +7387,7 @@
             }
           },
           "409": {
-            "description": "setup_closed",
+            "description": "setup_closed: an account exists, or the hour after the server started has passed",
             "content": {
               "application/json": {
                 "schema": {
@@ -14950,7 +14950,8 @@
         ],
         "properties": {
           "open": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "No account exists, and the server started within the last hour:\na restart opens setup again on a server with no account."
           },
           "zone": {
             "type": [

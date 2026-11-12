@@ -29,7 +29,7 @@ pub(crate) async fn setup_state(State(state): State<AppState>) -> ApiResult<Json
     responses(
         (status = 201, body = User, description = "Created; the session cookie is set"),
         (status = 400, body = Problem, description = "invalid: a name, a password under 10 characters, or an unknown zone"),
-        (status = 409, body = Problem, description = "setup_closed"),
+        (status = 409, body = Problem, description = "setup_closed: an account exists, or the hour after the server started has passed"),
         (status = 422, body = Problem, description = "zone_unsupported: no POSIX rule describes the zone"),
     ),
 )]
