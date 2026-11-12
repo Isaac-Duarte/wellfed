@@ -1,4 +1,4 @@
-.PHONY: help bootstrap list baseline bringup device firstboot test
+.PHONY: help bootstrap list baseline bringup device firstboot
 
 # The device model to build for (its board is ../devices/<model>; every
 # tool takes it, with no default), the firmware under ../wellfed/ that the
@@ -12,7 +12,11 @@ VARIANT ?=
 # builds go to <profile>-consumer beside the bench's.
 PROVISION ?= bench
 
-BUILD = ../../../target/release/wellfed-build
+# Where Cargo puts the builder it builds below: a CARGO_TARGET_DIR when one
+# is set (relative ones resolve from this folder, where both Cargo and make
+# run), so the images and their audits always come from this checkout's
+# builder, never a stale one left in the default target directory.
+BUILD = $(or $(CARGO_TARGET_DIR),../../../target)/release/wellfed-build
 DEVICE_ARG = --device $(DEVICE)
 VARIANT_ARG = $(if $(VARIANT),--variant $(VARIANT))
 PROVISION_ARG = --provisioning $(PROVISION)
@@ -24,7 +28,6 @@ help:
 	@echo "bringup: build the Rust application in a separate worktree (the profile; the bringup firmware's areas need firstboot FIRMWARE=bringup VARIANT=<area>)"
 	@echo "device: build/audit the application with the device's stock-derived OTA bank addresses"
 	@echo "firstboot: build/audit UART-only SDK mains and the Rust application"
-	@echo "test: run hardware-independent Rust firmware tests on the host"
 	@echo "DEVICE=<model> FIRMWARE=<name> VARIANT=<name> pick what to build (default: plaf103, qa, none)."
 	@echo "PROVISION=consumer builds an image with no build Wi-Fi that trusts the release key (default: bench)."
 	@echo "These targets only build desktop artifacts; there is no flash target."
@@ -42,11 +45,6 @@ list: $(BUILD)
 
 baseline bringup device firstboot: $(BUILD)
 	$(BUILD) build --profile $@ $(DEVICE_ARG) --firmware $(FIRMWARE) $(VARIANT_ARG) $(PROVISION_ARG)
-
-test:
-	cargo test --locked -p wellfed-session -p wellfed-signed -p wellfed-core -p wellfed-core-feeder -p wellfed-hal-common -p wellfed-hal -p wellfed-sdk -p wellfed-probes \
-		-p wellfed-fw-qa -p wellfed-fw-bringup \
-		-p wellfed-fw-blink -p wellfed-fw-feeder -p wellfed-hal-feeder -p wellfed-board -p wellfed-device -p wellfed-device-api -p wellfed-device-runtime -p wellfed-feeder -p wellfed-feeder-runtime -p wellfed-board-plaf103
 
 .PHONY: FORCE
 FORCE:

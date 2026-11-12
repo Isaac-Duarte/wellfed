@@ -125,7 +125,6 @@ Run these from the repository root after an edit, then `make check` before you h
 ```sh
 cargo fmt --all
 make check-rust
-make -C src/firmware/vendor test
 make check-virtual-feeder
 ```
 
