@@ -3,7 +3,7 @@
 //! every device command goes through it.
 //!
 //! The server is found by its per-user pointer
-//! (`wellfed_formats::bench::rendezvous`), whatever this command's working
+//! (`wellfed_bench_formats::rendezvous`), whatever this command's working
 //! directory or key file. While the server it names answers:
 //! - a command whose key is the server's goes through its session;
 //! - anything else is refused with [`BenchRefusal`], naming the server:
@@ -37,12 +37,12 @@ use hyper::{Method, Request, StatusCode};
 use hyper_util::rt::TokioIo;
 use serde::de::DeserializeOwned;
 use tokio::net::UnixStream;
-use wellfed_formats::bench::feeder::{
+use wellfed_bench_formats::feeder::{
     Ask, Asked, DeviceUnavailable, Opened, PushedPage, SessionInfo, Stream,
 };
-use wellfed_formats::bench::lease::{self, Holder};
-use wellfed_formats::bench::live::{BenchState, Session};
-use wellfed_formats::bench::rendezvous;
+use wellfed_bench_formats::lease::{self, Holder};
+use wellfed_bench_formats::live::{BenchState, Session};
+use wellfed_bench_formats::rendezvous;
 use wellfed_formats::owner;
 use wellfed_model::{Answer, ClientRole, DeviceKind, Op, Pushed};
 use wellfed_session::noise::Keypair;
@@ -603,9 +603,9 @@ mod tests {
     use axum::routing::{get, post};
     use serde::Deserialize;
     use tokio::sync::Mutex;
+    use wellfed_bench_formats::live::{Pause, Unavailable};
+    use wellfed_bench_formats::rendezvous::Rendezvous;
     use wellfed_feeder_sim::harness::Threaded;
-    use wellfed_formats::bench::live::{Pause, Unavailable};
-    use wellfed_formats::bench::rendezvous::Rendezvous;
     use wellfed_model::{CoreEvent, Event, EventBody, FeederEvent};
 
     use super::*;
@@ -1006,9 +1006,9 @@ mod tests {
 
     /// The server's state with job 7 running (or ended) and its session as
     /// given.
-    fn bench_state(session: wellfed_formats::bench::live::Session, ended: bool) -> BenchState {
-        use wellfed_formats::bench::live::{CancelState, FeederView, JobEnd, JobView, Phase};
-        use wellfed_formats::bench::live::{ServerView, Uart};
+    fn bench_state(session: wellfed_bench_formats::live::Session, ended: bool) -> BenchState {
+        use wellfed_bench_formats::live::{CancelState, FeederView, JobEnd, JobView, Phase};
+        use wellfed_bench_formats::live::{ServerView, Uart};
 
         BenchState {
             now: 0.0,
@@ -1052,7 +1052,7 @@ mod tests {
     /// is refused.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_job_of_the_server_passes_only_while_its_session_is_paused_for_it() {
-        use wellfed_formats::bench::live::Session;
+        use wellfed_bench_formats::live::Session;
 
         let paused_for = |job| Session::Paused {
             pause: Pause::StockInstall { job },

@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 clap.workspace = true
+wellfed-bench-formats = { path = "../wellfed-bench-formats", features = ["clap"] }
 wellfed-rig = { path = "../wellfed-rig" }
 wellfed-core.workspace = true
 wellfed-core-feeder.workspace = true

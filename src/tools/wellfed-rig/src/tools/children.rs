@@ -17,8 +17,8 @@ use std::process::{Child, Command};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use rustix::process::{Pid, Signal, kill_process, kill_process_group};
-use wellfed_formats::bench::live::{Activity, ActivityKind};
-use wellfed_formats::bench::now;
+use wellfed_bench_formats::live::{Activity, ActivityKind};
+use wellfed_bench_formats::now;
 
 /// Told the whole list each time a child starts or is reaped. It runs with
 /// the registry locked, so lists arrive in order; it must not call back in.

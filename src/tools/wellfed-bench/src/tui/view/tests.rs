@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, VecDeque};
 
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
-use wellfed_formats::bench::banks::{Check, Content, Entry, Ledger, Source, Witness};
-use wellfed_formats::bench::live::{
+use wellfed_bench_formats::banks::{Check, Content, Entry, Ledger, Source, Witness};
+use wellfed_bench_formats::live::{
     Activity, ActivityKind, BenchState, CancelState, ClockView, FeederStatus, FeederView, JobView,
     Journal, JournalSource, Phase, ServerView, Session, Uart,
 };
-use wellfed_formats::bench::notes::{CardEvidence, Expect, Operator, Timer, TimerState, Verdict};
-use wellfed_formats::bench::progress::{
+use wellfed_bench_formats::notes::{CardEvidence, Expect, Operator, Timer, TimerState, Verdict};
+use wellfed_bench_formats::progress::{
     BenchCommand, Current, Outcome, Progress, RelayState, Step, StepState, Unit,
 };
 
@@ -71,7 +71,7 @@ fn writing() -> BenchState {
 
     let mut banks = Ledger::default();
     banks.banks.insert(
-        wellfed_formats::bench::banks::Bank::One,
+        wellfed_bench_formats::banks::Bank::One,
         Entry {
             content: Content::Build {
                 id: "4d37c21a00ff9988".into(),
@@ -115,7 +115,7 @@ fn writing() -> BenchState {
         relays,
         feeder: FeederView {
             session: Session::Paused {
-                pause: wellfed_formats::bench::live::Pause::UartJob {
+                pause: wellfed_bench_formats::live::Pause::UartJob {
                     job: 12,
                     label: "flash-execute unit-07".into(),
                 },
@@ -353,7 +353,7 @@ fn a_seen_timer_and_a_write_with_no_count_say_so() {
 #[test]
 fn a_stop_held_for_a_write_shows_in_the_header() {
     let mut state = writing();
-    state.server.stopping = Some(wellfed_formats::bench::live::DeferredStop {
+    state.server.stopping = Some(wellfed_bench_formats::live::DeferredStop {
         job: Some(12),
         since: NOW,
     });
@@ -368,8 +368,8 @@ fn a_stop_held_for_a_write_shows_in_the_header() {
 
 #[test]
 fn a_job_s_question_shows_above_its_output_with_the_command_that_answers_it() {
-    use wellfed_formats::bench::live::PendingPrompt;
-    use wellfed_formats::bench::prompt::Prompt;
+    use wellfed_bench_formats::live::PendingPrompt;
+    use wellfed_install::prompt::Prompt;
 
     let mut state = writing();
     state.uart = Uart::Idle;

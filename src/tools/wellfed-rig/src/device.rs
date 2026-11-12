@@ -34,9 +34,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use wellfed_bench_formats::live::Unavailable;
 use wellfed_client::api::{Error as SessionError, Incoming, Session};
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
-use wellfed_formats::bench::live::Unavailable;
 use wellfed_formats::owner::{self, OwnerKeyFile};
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_model::{

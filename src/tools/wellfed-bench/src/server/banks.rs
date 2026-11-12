@@ -1,4 +1,4 @@
-//! The bank ledger the server keeps (`wellfed_formats::bench::banks`):
+//! The bank ledger the server keeps (`wellfed_bench_formats::banks`):
 //! written from job results, checked against what the feeder reports, and
 //! seeded by `wellfed-bench banks --seed`.
 //!
@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Deserialize;
-use wellfed_formats::bench::banks::{BANKS, Bank, Content, Ledger, Source, Witness, Written};
-use wellfed_formats::bench::{Paths, now};
+use wellfed_bench_formats::banks::{BANKS, Bank, Content, Ledger, Source, Witness, Written};
+use wellfed_bench_formats::{Paths, now};
 
 use crate::server::api::{Seed, SeedError, Seeded, SeededFrom};
 use crate::server::files;
@@ -92,7 +92,7 @@ impl Banks {
     /// `banks --seed`: the dump session's inspection if it names a bank and
     /// a build, else the operator's own.
     pub(crate) fn seed(&self, seed: &Seed) -> Result<Seeded, SeedError> {
-        if !wellfed_formats::bench::plain_name(&seed.session) {
+        if !wellfed_bench_formats::plain_name(&seed.session) {
             return Err(SeedError::BadName {
                 name: seed.session.clone(),
             });
@@ -100,7 +100,7 @@ impl Banks {
         let report = Paths::new(&self.root, &seed.session)
             .inspect
             .join("report.json");
-        let inspection = wellfed_formats::bench::relative(&self.root, &report);
+        let inspection = wellfed_bench_formats::relative(&self.root, &report);
 
         let (bank, build, from) = match (inspected(&report), seed.bank, &seed.build) {
             (Some((bank, build)), _, _) => (bank, build, SeededFrom::Inspection { inspection }),

@@ -10,6 +10,7 @@ The full rules for every Rust crate in the workspace, why each exists, and what 
 | `src/product/` | Product policy shared by the firmware and the server |
 | `src/client/` | The device API values, the sans-IO client and the tokio connector every host client shares, and the libraries host programs share: the installer, the shared file formats (`wellfed-formats`), image checks (`wellfed-image`), update signing (`wellfed-signing`) and stock's protocol (`wellfed-stock`) |
 | `src/server/` | The owner's server |
+| `src/sim/` | The simulated devices ([simulators](../../src/tools/README.md#simulators)), which only the tools, the server's test kit and tests link |
 | `src/tools/wellfed-*`, `src/tools/xtask` | Host tools ([inventory](../../src/tools/README.md)), which no crate outside `src/tools/` links |
 | `src/firmware/wellfed/` | One `no_std` staticlib per firmware ([firmware guide](../../src/firmware/wellfed/README.md)) |
 
@@ -26,7 +27,7 @@ Every crate sets `license.workspace = true` and `publish.workspace = true`, and 
 | **No leftovers.** No `dbg!`, `todo!` or `unimplemented!`. | Each is a debugging aid or a placeholder that panics at run time. | `[workspace.lints.clippy]` (`dbg_macro`, `todo`, `unimplemented`) |
 | **Deliberate exceptions.** A lint exception is `#[expect(lint, reason = "…")]` at the narrowest scope. | `expect` warns when the exception stops being needed, and the reason says why it was. | Review. Older `#[allow]`s without a reason remain; convert them when you touch the code. |
 | **Typed data.** JSON is `#[derive(Serialize, Deserialize)]` structs and enums; `serde_json::Value` only for genuinely opaque JSON, hashed or replayed verbatim, or passed through unread. | A field typo or a missing field fails at the parse, not three calls later. | Review |
-| **Shared formats.** A file one crate writes and another reads has its type in `wellfed-formats`, and anything hashed goes through `wellfed_formats::canonical`. | Two copies of a type drift, and hashed bytes must not depend on field order. | Review |
+| **Shared formats.** A file one crate writes and another reads has its type in `wellfed-formats` (the bench's protocol, which only tools speak, in `wellfed-bench-formats`), and anything hashed goes through `wellfed_formats::canonical`. | Two copies of a type drift, and hashed bytes must not depend on field order. | Review |
 | **Enums, not strings or flags.** Closed sets are enums (`clap::ValueEnum` for CLI options), and prefer a two-variant enum to a `bool` whose meaning isn't clear at the call site. Firmware states and faults are enums with fixed discriminants, not integer wrappers: `code()`, and `from_byte` where flash bytes are decoded. | The compiler checks every match when a variant is added. | Review |
 | **Errors.** See [Errors](#errors) below. | Callers can match on what went wrong, and the operator reads a chain of context. | Review |
 | **One helper, one place.** Search before writing hex, hashing, HMAC, report-writing or serial helpers. | The workspace already has them, and a second copy diverges. | Review |
@@ -85,7 +86,8 @@ Some crates may not be linked at all. cargo-deny cannot ban every dependent with
 - Nothing below `wellfed-server` links axum.
 - Each server crate takes only the workspace crates its arrows name.
 - `wellfed-api` keeps to an allow-list, so it builds for Android ([server design](../server/design.md#allowed-dependencies)).
-- No crate outside `src/tools/` links a crate under it (tests may), so what the app, the server and the firmware build on is a library in its own layer. The one exception is the server's test kit, which serves the server's tests the simulated feeder.
+- No crate outside `src/tools/` links a crate under it (tests may), so what the app, the server and the firmware build on is a library in its own layer.
+- Outside `src/tools/` and `src/sim/`, only `wellfed-server-testkit`, which serves the server's tests the simulated feeder, links a simulator, and only that one; other crates take one for their tests, so no crate that ships carries a simulated device.
 - The SDK's device-neutral crates link no device kind's own crate by any path.
 
 ### The fuzz crate

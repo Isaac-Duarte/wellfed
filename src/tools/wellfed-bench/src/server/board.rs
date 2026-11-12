@@ -8,8 +8,8 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use wellfed_formats::bench::now;
-use wellfed_formats::bench::progress::RelayState;
+use wellfed_bench_formats::now;
+use wellfed_bench_formats::progress::RelayState;
 use wellfed_relay::{Board, Switch};
 
 use crate::server::state::Store;

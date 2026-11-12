@@ -33,15 +33,15 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
-use wellfed_connect::{Connection, Cursor, Received, Resume};
-use wellfed_formats::bench::banks::Witness;
-use wellfed_formats::bench::feeder::{Asked, Opened, PushedPage, SessionInfo, Stream};
-use wellfed_formats::bench::live::{
+use wellfed_bench_formats::banks::Witness;
+use wellfed_bench_formats::feeder::{Asked, Opened, PushedPage, SessionInfo, Stream};
+use wellfed_bench_formats::live::{
     BenchState, ClockView, DEVICE_CURSOR, DEVICE_LOG, DeviceCursor, FeederStatus, Journal,
     JournalSource, Pause, Session, Unavailable, trim_tail,
 };
-use wellfed_formats::bench::notes::Seen;
-use wellfed_formats::bench::now;
+use wellfed_bench_formats::notes::Seen;
+use wellfed_bench_formats::now;
+use wellfed_connect::{Connection, Cursor, Received, Resume};
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_model::{Answer, LogLines, Op, Pushed, Skew, Status};
 use wellfed_rig::device::{self, DeviceError, DeviceLink, Owner};
@@ -92,7 +92,7 @@ pub struct DeviceOptions {
     pub address: Option<SocketAddr>,
     pub clock: ClockSync,
     /// The directories the server's pointer goes in, for the `wellfed` CLI
-    /// to find it from anywhere (`wellfed_formats::bench::rendezvous`).
+    /// to find it from anywhere (`wellfed_bench_formats::rendezvous`).
     /// None publishes none: tests, which must not reach the user's.
     pub rendezvous: Vec<PathBuf>,
 }

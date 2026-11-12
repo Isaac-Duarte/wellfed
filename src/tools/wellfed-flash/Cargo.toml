@@ -11,6 +11,7 @@ publish.workspace = true
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap.workspace = true
 ctrlc.workspace = true
+wellfed-bench-formats = { path = "../wellfed-bench-formats" }
 wellfed-core.workspace = true
 wellfed-formats = { workspace = true, features = ["clap"] }
 wellfed-image.workspace = true

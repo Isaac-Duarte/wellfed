@@ -2,9 +2,9 @@
 //! that write prompt lines, record the answers they read and the signal
 //! that stops them.
 
-use wellfed_formats::bench::banks::{Bank, Content};
-use wellfed_formats::bench::live::{AnswerError, PendingPrompt};
-use wellfed_formats::bench::prompt::{Answer, Prompt};
+use wellfed_bench_formats::banks::{Bank, Content};
+use wellfed_bench_formats::live::{AnswerError, PendingPrompt};
+use wellfed_install::prompt::{Answer, Prompt};
 
 use super::*;
 

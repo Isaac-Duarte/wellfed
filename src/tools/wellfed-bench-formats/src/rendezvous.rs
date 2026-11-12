@@ -44,7 +44,7 @@ pub fn directories() -> Vec<PathBuf> {
 
 /// The pointer in `directory` whose holder still runs.
 pub fn live(directory: &Path) -> Option<Rendezvous> {
-    let pointer: Rendezvous = crate::load(&directory.join(FILE)).ok()?;
+    let pointer: Rendezvous = wellfed_formats::load(&directory.join(FILE)).ok()?;
     matches!(pointer.holder.liveness(), Ok(Liveness::Alive)).then_some(pointer)
 }
 
@@ -54,16 +54,17 @@ pub fn live_in(directories: &[PathBuf]) -> Option<Rendezvous> {
 }
 
 /// Point `directory`'s file at `pointer`, replacing whatever was there.
-pub fn publish(directory: &Path, pointer: &Rendezvous) -> crate::Result<()> {
+pub fn publish(directory: &Path, pointer: &Rendezvous) -> wellfed_formats::Result<()> {
     std::fs::create_dir_all(directory)?;
-    crate::private::write_json(&directory.join(FILE), pointer)
+    wellfed_formats::private::write_json(&directory.join(FILE), pointer)
 }
 
 /// Remove `directory`'s pointer if it is still `holder`'s, so a quitting
 /// server never removes a later server's.
 pub fn withdraw(directory: &Path, holder: &Holder) {
     let path = directory.join(FILE);
-    let ours = crate::load::<Rendezvous>(&path).is_ok_and(|pointer| pointer.holder == *holder);
+    let ours =
+        wellfed_formats::load::<Rendezvous>(&path).is_ok_and(|pointer| pointer.holder == *holder);
     if ours {
         let _ = std::fs::remove_file(path);
     }

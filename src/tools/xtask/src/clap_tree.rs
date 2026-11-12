@@ -84,7 +84,7 @@ pub(crate) const TOOLS: [Tool; 8] = [
     },
     Tool {
         name: "wellfed-feeder-sim",
-        sources: &["src/tools/wellfed-feeder-sim/src/"],
+        sources: &["src/sim/wellfed-feeder-sim/src/"],
     },
 ];
 

@@ -8,12 +8,12 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Wrap};
-use wellfed_formats::bench::banks::Bank;
-use wellfed_formats::bench::live::{
+use wellfed_bench_formats::banks::Bank;
+use wellfed_bench_formats::live::{
     BenchState, CancelState, JournalSource, PendingPrompt, Phase, Session, Uart,
 };
-use wellfed_formats::bench::notes::{Expect, Timer, TimerState, Verdict};
-use wellfed_formats::bench::progress::StepState;
+use wellfed_bench_formats::notes::{Expect, Timer, TimerState, Verdict};
+use wellfed_bench_formats::progress::StepState;
 
 use crate::cli::{bank_number, entry_text};
 use crate::note::clock;

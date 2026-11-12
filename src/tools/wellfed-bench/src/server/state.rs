@@ -11,8 +11,8 @@ use std::io::{BufWriter, Write};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::watch;
-use wellfed_formats::bench::live::{BenchState, JobEnd, JobId};
-use wellfed_formats::bench::now;
+use wellfed_bench_formats::live::{BenchState, JobEnd, JobId};
+use wellfed_bench_formats::now;
 
 /// The live state, shared.
 #[derive(Clone)]

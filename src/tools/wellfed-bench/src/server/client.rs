@@ -17,16 +17,16 @@ use hyper_util::rt::TokioIo;
 use serde::de::DeserializeOwned;
 use tokio::net::UnixStream;
 use tokio::sync::mpsc;
-use wellfed_formats::bench::live::{AnswerRequest, BenchState, JobEnd, JobEvent, JobId};
-use wellfed_formats::bench::prompt::Answer;
+use wellfed_bench_formats::live::{AnswerRequest, BenchState, JobEnd, JobEvent, JobId};
+use wellfed_install::prompt::Answer;
 
 use std::time::{Duration, Instant};
 
-use wellfed_formats::bench::banks::Ledger;
-use wellfed_formats::bench::feeder::{
+use wellfed_bench_formats::banks::Ledger;
+use wellfed_bench_formats::feeder::{
     Ask, Asked, DeviceUnavailable, PushedPage, SessionInfo, Stream,
 };
-use wellfed_formats::bench::notes::{Body, Note};
+use wellfed_bench_formats::notes::{Body, Note};
 use wellfed_model::Op;
 
 use crate::server::api::{

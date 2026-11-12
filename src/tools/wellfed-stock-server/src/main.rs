@@ -17,11 +17,9 @@ use clap::{Parser, Subcommand};
 use reqwest::Method;
 use serde::Serialize;
 use tracing::info;
+use wellfed_bench_formats::lease::Lease;
 use wellfed_client::install::{SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
-use wellfed_formats::{
-    bench::lease::Lease,
-    stock::{INSTALLER_CONFIG, ServerConfig},
-};
+use wellfed_formats::stock::{INSTALLER_CONFIG, ServerConfig};
 use wellfed_stock::{
     clock,
     config::{self, State},

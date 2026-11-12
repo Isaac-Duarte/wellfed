@@ -27,7 +27,7 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt};
 use serde_json::Value;
 use wellfed_bench::server::api::{ReadOnly, Refusal, WAIT_MAX_MS, Wait, WaitFor};
 use wellfed_bench::server::{Client, ClientError};
-use wellfed_formats::bench::live::BenchState;
+use wellfed_bench_formats::live::BenchState;
 use wellfed_formats::private::{SYSTEM_RANDOM, random};
 
 use tools::{Call, LogSource, Until, WaitArgs};

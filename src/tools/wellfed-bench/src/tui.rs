@@ -43,7 +43,7 @@ use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc::UnboundedSender;
 use wellfed_bench::server::Store;
 use wellfed_bench::server::stopping::{Ask, CONFIRM_PROMPT, Confirm, Held, Press};
-use wellfed_formats::bench::live::{BenchState, Uart};
+use wellfed_bench_formats::live::{BenchState, Uart};
 
 use keys::{Input, Key, Keys};
 use view::Screen;

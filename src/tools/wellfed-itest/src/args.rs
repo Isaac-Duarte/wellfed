@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use wellfed_formats::bench::catalog::Tier;
+use wellfed_bench_formats::catalog::Tier;
 use wellfed_formats::stock::SERVER_CONFIG;
 use wellfed_rig::device::OWNER_KEYS;
 

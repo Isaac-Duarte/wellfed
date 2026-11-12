@@ -30,10 +30,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use wellfed_bench_formats::Paths;
+use wellfed_bench_formats::banks::{BANKS, Bank, Check, Content, Ledger, Source};
 use wellfed_core::ota::install::{Bank0Check, Bank0Error, Blocked};
 use wellfed_core::record::{Event, Record, Update};
-use wellfed_formats::bench::banks::{BANKS, Bank, Check, Content, Ledger, Source};
-use wellfed_formats::bench::{Paths, VERIFICATION};
+use wellfed_formats::VERIFICATION;
 use wellfed_formats::flash_plan::GiveWayPlan;
 use wellfed_formats::require;
 use wellfed_image::bank::{self, Layout};

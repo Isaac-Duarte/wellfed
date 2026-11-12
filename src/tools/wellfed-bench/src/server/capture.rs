@@ -19,11 +19,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use wellfed_bench_formats::banks::Witness;
+use wellfed_bench_formats::live::{StartRecord, Uart, UartRecord, trim_tail};
+use wellfed_bench_formats::notes::Seen;
+use wellfed_bench_formats::{CAPTURES, now, relative};
 use wellfed_core::record::{Event, Record, Tag};
-use wellfed_formats::bench::banks::Witness;
-use wellfed_formats::bench::live::{StartRecord, Uart, UartRecord, trim_tail};
-use wellfed_formats::bench::notes::Seen;
-use wellfed_formats::bench::{CAPTURES, now, relative};
 use wellfed_rig::Cancel;
 use wellfed_rig::tools::{Children, Processes, Tools};
 
@@ -142,10 +142,7 @@ impl Inner {
             Children::new(),
         );
         // Named by the start, so a restart never meets its own segments.
-        let prefix = format!(
-            "bench-{}",
-            wellfed_formats::bench::since_epoch().as_millis()
-        );
+        let prefix = format!("bench-{}", wellfed_bench_formats::since_epoch().as_millis());
         let captures = self.root.join(CAPTURES);
         let segment = move |n: u32| captures.join(format!("{prefix}-uart-{n:02}"));
         let mut chain = match tools.capture(&self.port, SEGMENT, Box::new(segment)) {

@@ -1,6 +1,6 @@
 //! How this command line asks the person at the feeder, and reads the
 //! answer: at a terminal, or as JSON lines for the bench server that runs
-//! `wellfed restore-stock` as a job (`wellfed_formats::bench::prompt`).
+//! `wellfed restore-stock` as a job (`wellfed_install::prompt`).
 //!
 //! In either mode a closed standard input is an error, never "no" and never
 //! "go on": nobody is there to answer, and the run must not carry on as if
@@ -21,7 +21,7 @@ use std::io::{self, BufRead, Write};
 use clap::ValueEnum;
 use tokio::sync::mpsc;
 use wellfed_client::setup::panel_position;
-use wellfed_formats::bench::prompt::{Answer, Expects, Prompt};
+use wellfed_install::prompt::{Answer, Expects, Prompt};
 use wellfed_install::{Announcement, PlatformError, Prompter};
 use wellfed_session::setup_code::Code;
 
@@ -372,7 +372,7 @@ mod tests {
     }
 
     fn code() -> Prompt {
-        use wellfed_formats::bench::prompt::CodePresses;
+        use wellfed_install::prompt::CodePresses;
         use wellfed_session::setup_code::Button;
 
         Prompt::KeySetupCode {

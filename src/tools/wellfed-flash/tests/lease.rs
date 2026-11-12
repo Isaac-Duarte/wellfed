@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 
 use serde_json::Value;
-use wellfed_formats::bench::lease::{self, Holder, LEASE, Lease};
+use wellfed_bench_formats::lease::{self, Holder, LEASE, Lease};
 use wellfed_formats::private::write_json;
 
 const BINARY: &str = env!("CARGO_BIN_EXE_wellfed-flash");

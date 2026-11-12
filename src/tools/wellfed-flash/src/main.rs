@@ -17,12 +17,12 @@ use serde_json::Value;
 use wellfed_core::buttons::Buttons;
 use wellfed_core::virtual_panel;
 
+use wellfed_bench_formats::lease::Lease;
 use wellfed_flash::error::ErrorKind;
 use wellfed_flash::evidence::report::SummaryStatus;
 use wellfed_flash::evidence::session::{Context, EMULATOR, Outcome};
 use wellfed_flash::link::protocol::{Core, INTERRUPTED};
 use wellfed_flash::writers::{read, stock, update};
-use wellfed_formats::bench::lease::Lease;
 use wellfed_formats::cli::Device;
 use wellfed_proto::device::Model;
 

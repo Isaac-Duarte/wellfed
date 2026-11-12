@@ -30,13 +30,13 @@ use wellfed_bench::server::{
     CONSOLE_QUEUE, Client, ClientError, ClockSync, Console, DeviceOptions, Followed, Interrupt,
     JobCommand, JobOptions, Options, Server, ToolPaths,
 };
-use wellfed_formats::bench::banks::{Bank, Check, Content, Entry};
-use wellfed_formats::bench::catalog;
-use wellfed_formats::bench::lease::{self, Liveness};
-use wellfed_formats::bench::live::{BenchState, JobId, Phase, Session, Uart};
-use wellfed_formats::bench::prompt::Answer;
-use wellfed_formats::bench::rendezvous;
-use wellfed_formats::bench::{CONFIG, Config};
+use wellfed_bench_formats::banks::{Bank, Check, Content, Entry};
+use wellfed_bench_formats::catalog;
+use wellfed_bench_formats::lease::{self, Liveness};
+use wellfed_bench_formats::live::{BenchState, JobId, Phase, Session, Uart};
+use wellfed_bench_formats::rendezvous;
+use wellfed_bench_formats::{CONFIG, Config};
+use wellfed_install::prompt::Answer;
 use wellfed_relay::{AtBoard, Relay};
 use wellfed_rig::commands::{check_name, seconds_arg};
 use wellfed_rig::tools::{default_build_bin, default_flash_bin, default_wellfed_bin};

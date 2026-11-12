@@ -35,11 +35,9 @@ use axum::routing::{get, post};
 use bytes::Bytes;
 use futures_util::stream::{self, Stream};
 use tokio::sync::watch;
-use wellfed_formats::bench::live::{
-    AnswerError, AnswerRequest, BenchState, JobEvent, JobId, Phase,
-};
-use wellfed_formats::bench::notes::Body as NoteBody;
-use wellfed_formats::bench::now;
+use wellfed_bench_formats::live::{AnswerError, AnswerRequest, BenchState, JobEvent, JobId, Phase};
+use wellfed_bench_formats::notes::Body as NoteBody;
+use wellfed_bench_formats::now;
 
 use crate::server::api::{Accepted, CancelRequest, JobRequest, OUTPUT_PAGE, OutputPage, Refusal};
 

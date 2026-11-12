@@ -16,7 +16,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use super::{now, relative};
-use crate::Result;
+use wellfed_formats::Result;
 
 pub const HISTORY: &str = "history.jsonl";
 const KEPT_LINES: usize = 40;

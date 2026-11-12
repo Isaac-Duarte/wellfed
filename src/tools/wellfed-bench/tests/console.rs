@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use rustix::process::{Pid, Signal, kill_process};
 use wellfed_bench::server::api::DuringWrite;
 use wellfed_bench::server::{Client, Console, Followed, Options, Server, ToolPaths};
-use wellfed_formats::bench::live::{BenchState, CancelState, Phase};
+use wellfed_bench_formats::live::{BenchState, CancelState, Phase};
 use wellfed_relay::{AtBoard, FakeBoard};
 
 mod support;

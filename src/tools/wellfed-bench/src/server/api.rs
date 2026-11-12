@@ -1,15 +1,15 @@
 //! What crosses the socket besides the live state and the job stream
-//! (`wellfed_formats::bench::live`) and the device routes
-//! (`wellfed_formats::bench::feeder`): a new job's command line, the
+//! (`wellfed_bench_formats::live`) and the device routes
+//! (`wellfed_bench_formats::feeder`): a new job's command line, the
 //! answer to it, a ledger seed, and the refusals, which a client matches
 //! by variant. An answer to a job's question is
-//! `wellfed_formats::bench::live::AnswerRequest`.
+//! `wellfed_bench_formats::live::AnswerRequest`.
 
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use wellfed_formats::bench::banks::Ledger;
-use wellfed_formats::bench::live::{AnswerError, JobEnd, JobId};
+use wellfed_bench_formats::banks::Ledger;
+use wellfed_bench_formats::live::{AnswerError, JobEnd, JobId};
 
 /// `POST /banks/seed`: the ledger's starting point for one bank, from a
 /// dump session's inspection when it names one, else the operator's own.

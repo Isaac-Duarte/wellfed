@@ -58,7 +58,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use wellfed_formats::bench::rendezvous;
+use wellfed_bench_formats::rendezvous;
 use wellfed_model::{Answer, Op};
 
 use crate::device::Connection;

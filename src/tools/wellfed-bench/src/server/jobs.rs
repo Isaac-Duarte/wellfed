@@ -11,10 +11,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
-use wellfed_formats::bench::Config;
-use wellfed_formats::bench::banks::Written;
-use wellfed_formats::bench::progress::{BenchCommand, ProgressSink, Status};
-use wellfed_formats::bench::{CAPTURES, STATUS_DIR, plain_name};
+use wellfed_bench_formats::Config;
+use wellfed_bench_formats::banks::Written;
+use wellfed_bench_formats::progress::{BenchCommand, ProgressSink, Status};
+use wellfed_bench_formats::{CAPTURES, STATUS_DIR, plain_name};
 use wellfed_itest::ItestArgs;
 use wellfed_relay::Relay;
 use wellfed_rig::Cancel;
@@ -448,10 +448,7 @@ fn record_start(
 /// A press's evidence directory under private/captures/: one per press, by
 /// the time it was typed, so a job needs no name.
 pub(crate) fn press_name() -> String {
-    format!(
-        "press-{}",
-        wellfed_formats::bench::since_epoch().as_millis()
-    )
+    format!("press-{}", wellfed_bench_formats::since_epoch().as_millis())
 }
 
 /// Run the command: the suite's on `wellfed-itest`, the rest on the rig.
@@ -509,7 +506,7 @@ mod tests {
     struct Discard;
 
     impl ProgressSink for Discard {
-        fn publish(&mut self, _: &wellfed_formats::bench::progress::Current) {}
+        fn publish(&mut self, _: &wellfed_bench_formats::progress::Current) {}
     }
 
     #[test]

@@ -60,7 +60,8 @@ Under `nohup`, macOS doesn't show that SIGHUP is ignored, so `wellfed restore-st
 | `src/product/` | Product policy shared by the firmware and the server: the device protocol and the feeder's stores |
 | `src/client/` | The clients the CLI, the server and the Android app share, and the libraries host programs share: file formats, image checks, signing and stock's protocol ([server design](../server/design.md#crates)) |
 | `src/server/` | The owner's optional server ([the server](../server/README.md)) |
-| `src/tools/` | Host tools, including the `wellfed` CLI and the simulators ([tool list](../../src/tools/README.md)) |
+| `src/sim/` | The simulated devices, which the tools, the server's test kit and other crates' tests run ([simulators](../../src/tools/README.md#simulators)) |
+| `src/tools/` | Host tools, including the `wellfed` CLI ([tool list](../../src/tools/README.md)) |
 | `src/firmware/wellfed/` | One crate per firmware: `feeder`, `qa`, `bringup` and `blink` ([firmware guide](../../src/firmware/wellfed/README.md)) |
 | `src/firmware/vendor/` | The vendor SDK side: C hooks and ports, pinned SDK and toolchain locks, the stock layout, simulator scenarios and the image build (`make -C src/firmware/vendor`) |
 | `src/firmware/devices/` | Per-device descriptions and layouts |
@@ -102,12 +103,12 @@ The repository is self-contained: SDK and toolchain copies and fixtures resolve 
 
 ## Which tool do I use?
 
-Every host tool is Rust. [src/tools/README.md](../../src/tools/README.md) lists them all, with which touch hardware. The files they pass to each other are typed once, in `wellfed-formats`.
+Every host tool is Rust. [src/tools/README.md](../../src/tools/README.md) lists them all, with which touch hardware. The files they pass to each other are typed once, in `wellfed-formats`, and the bench's protocol in `wellfed-bench-formats`.
 
 | I want to… | Use | Read |
 | --- | --- | --- |
 | Pair with a feeder, feed, plans, settings, history and status | `wellfed` | [commands](../../src/tools/README.md#the-wellfed-command-line), [device API](../firmware/device-api.md) |
-| Run against a feeder without hardware | `wellfed-feeder-sim` | [tools](../../src/tools/README.md) |
+| Run against a feeder without hardware | `wellfed-feeder-sim` | [simulators](../../src/tools/README.md#simulators) |
 | Build a firmware image | `wellfed-build` | [firmware builds](firmware-builds.md) |
 | Freeze a build for installing, or sign it as an update | `wellfed-build review`, `sign` | [development updates](uart-development.md) |
 | Read or write the feeder's flash over UART | `wellfed-flash` | [Rust flash client](rust-flash.md) |

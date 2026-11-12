@@ -43,9 +43,10 @@ use super::{Attendance, Bench};
 use crate::device::{DeviceStatus, Fault};
 use crate::tools::{InstallJob, Installing, PushError};
 use crate::{Error, Result};
-use wellfed_formats::bench::banks::{Bank, Content, Source as Wrote};
-use wellfed_formats::bench::{CAPTURES, STOCK_BACKUPS, VERIFICATION, since_epoch};
+use wellfed_bench_formats::banks::{Bank, Content, Source as Wrote};
+use wellfed_bench_formats::{CAPTURES, since_epoch};
 use wellfed_formats::require;
+use wellfed_formats::{STOCK_BACKUPS, VERIFICATION};
 
 /// Each capture segment; the classifier reads it once it ends.
 const SEGMENT: Duration = Duration::from_secs(60);

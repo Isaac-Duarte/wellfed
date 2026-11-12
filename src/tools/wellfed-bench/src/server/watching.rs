@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
-use wellfed_formats::bench::live::{BenchState, JobEnd, JobId, Phase, Uart};
-use wellfed_formats::bench::now;
+use wellfed_bench_formats::live::{BenchState, JobEnd, JobId, Phase, Uart};
+use wellfed_bench_formats::now;
 
 use crate::server::api::{OUTPUT_PAGE, OutputPage, Refusal};
 use crate::server::client::{Client, ClientError};

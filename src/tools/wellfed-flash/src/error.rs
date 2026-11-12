@@ -10,7 +10,7 @@
 use std::fmt;
 use std::io;
 
-use wellfed_formats::bench::lease::LeaseError;
+use wellfed_bench_formats::lease::LeaseError;
 
 use crate::evidence::{journal, session};
 use crate::link::{protocol, sector, status};
@@ -51,7 +51,7 @@ pub enum Error {
     Formats(#[from] wellfed_formats::Error),
     /// Another tool holds the bench, or a killed run left its lease.
     #[error(transparent)]
-    Lease(#[from] wellfed_formats::bench::lease::LeaseError),
+    Lease(#[from] wellfed_bench_formats::lease::LeaseError),
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]
