@@ -21,7 +21,7 @@ use crate::evidence::report::{Session, Status, SummaryStatus, Transport};
 use crate::evidence::session::{
     self, Completion, Context, Outcome, Region, Saved, StatusEvent, progress,
 };
-use crate::link::protocol::{self, CAPACITY, Port, SECTOR};
+use crate::link::protocol::{CAPACITY, Port, SECTOR};
 use crate::link::sector::{self, Baseline};
 use crate::link::status;
 use crate::writers::development::{
@@ -598,8 +598,7 @@ fn session_run(
     let update = loaded.update();
 
     let result = (|| -> Result<Option<development::Verified>> {
-        // A fresh ready wait before each command: see `Readiness`.
-        let mut port = protocol::Prompt(context.record(&args.evidence.port, &directory)?);
+        let mut port = context.record(&args.evidence.port, &directory)?;
         report.update(|r| r.status = Status::Running)?;
 
         progress(&format!(
