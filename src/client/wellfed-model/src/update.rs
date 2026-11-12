@@ -224,11 +224,6 @@ pub enum UpdateStop {
 }
 
 /// Why an update op was refused.
-///
-/// Read through [`Deserialize`] by hand around the derived reader: serde's
-/// catch-all on an externally tagged enum takes only a bare name, so a
-/// newer refusal that carries data (`{"a_newer": {..}}`) would fail the
-/// whole body. Any refusal the derived reader can't read is `Unknown`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case", remote = "Self")]
 pub enum UpdateRefusal {
@@ -286,6 +281,10 @@ impl Serialize for UpdateRefusal {
     }
 }
 
+// Read by hand around the derived reader: serde's catch-all on an
+// externally tagged enum takes only a bare name, so a newer refusal that
+// carries data (`{"a_newer": {..}}`) would fail the whole body. Any refusal
+// the derived reader can't read is `Unknown`.
 impl<'de> Deserialize<'de> for UpdateRefusal {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
