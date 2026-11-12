@@ -204,6 +204,18 @@ fn bytes_past_the_declared_length_are_refused() {
     }
 }
 
+/// A manifest past its bound is named as too large, not as missing.
+#[test]
+fn a_manifest_past_its_bound_is_too_large() {
+    let size = MAX_MANIFEST + 1;
+    let bytes = header(MANIFEST, size).unwrap().to_vec();
+
+    assert!(matches!(
+        read(&bytes, 512),
+        Err(ArchiveError::ManifestTooLarge { size: found }) if found == size
+    ));
+}
+
 #[test]
 fn another_format_version_is_refused_before_its_tables() {
     let next = FORMAT_VERSION + 1;

@@ -57,9 +57,9 @@ pub fn fed(
         feed,
         requested: portions(result.requested),
         completed: portions(result.completed),
-        outcome,
-        reason: reason(result.reason),
-        hopper: food_level(hopper),
+        outcome: outcome.into(),
+        reason: reason(result.reason).into(),
+        hopper: food_level(hopper).into(),
         by,
     }
 }
@@ -78,10 +78,10 @@ pub fn interrupted(feed: u32, result: &OwnerResult, by: Source) -> EventBody {
         feed,
         requested: portions(result.requested),
         completed: portions(result.completed),
-        outcome: FeedOutcome::Uncertain,
-        reason: FeedReason::Interrupted,
+        outcome: FeedOutcome::Uncertain.into(),
+        reason: FeedReason::Interrupted.into(),
         // The boot that resolves it never saw the feed's reading.
-        hopper: FoodLevel::Unread,
+        hopper: FoodLevel::Unread.into(),
         by,
     }
 }
@@ -132,9 +132,9 @@ mod tests {
                 feed: 7,
                 requested: 2,
                 completed: 1,
-                outcome: FeedOutcome::Failed,
-                reason: FeedReason::NoFeedback,
-                hopper: FoodLevel::Low,
+                outcome: FeedOutcome::Failed.into(),
+                reason: FeedReason::NoFeedback.into(),
+                hopper: FoodLevel::Low.into(),
                 by: Source::Panel,
             }
         );
@@ -145,7 +145,7 @@ mod tests {
         else {
             panic!("not a feed");
         };
-        assert_eq!(outcome, FeedOutcome::Uncertain);
+        assert_eq!(outcome, FeedOutcome::Uncertain.into());
 
         let pending = result(OwnerOutcome::Pending, CoreReason::None);
         let EventBody::Fed {
@@ -156,7 +156,7 @@ mod tests {
         };
         assert_eq!(
             (outcome, reason),
-            (FeedOutcome::Uncertain, FeedReason::Output)
+            (FeedOutcome::Uncertain.into(), FeedReason::Output.into())
         );
     }
 
@@ -176,7 +176,7 @@ mod tests {
             else {
                 panic!("not a feed");
             };
-            assert_eq!((outcome, hopper), (FeedOutcome::Done, level));
+            assert_eq!((outcome, hopper), (FeedOutcome::Done.into(), level.into()));
         }
     }
 
@@ -193,9 +193,9 @@ mod tests {
                 feed: 9,
                 requested: 2,
                 completed: 0,
-                outcome: FeedOutcome::Uncertain,
-                reason: FeedReason::Interrupted,
-                hopper: FoodLevel::Unread,
+                outcome: FeedOutcome::Uncertain.into(),
+                reason: FeedReason::Interrupted.into(),
+                hopper: FoodLevel::Unread.into(),
                 by: Source::Feeder,
             }
         );

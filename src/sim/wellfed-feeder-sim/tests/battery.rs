@@ -125,7 +125,7 @@ impl Feeder {
         self.events()
             .into_iter()
             .filter_map(|body| match body {
-                EventBody::Fed { outcome, by, .. } => Some((outcome, by)),
+                EventBody::Fed { outcome, by, .. } => Some((outcome.known()?, by)),
                 _ => None,
             })
             .collect()

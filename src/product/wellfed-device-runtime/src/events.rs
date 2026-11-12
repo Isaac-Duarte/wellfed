@@ -6,6 +6,8 @@
 //!   writer drains the queue with [`pending`] and [`finish_pending`]. A full
 //!   queue drops the record and counts it ([`take_lost`]), so a burst can
 //!   never stall the loop; the loop records the count as an event of its own.
+//!   The writer counts a record the ring refused there too
+//!   ([`append_failed`]).
 //!   The last slot is kept for a feed's outcome ([`record_outcome`]): appends
 //!   wait while a feed holds the outputs, so the events of a long feed pile
 //!   up here, and the feed's own result must not be the one lost.
@@ -70,6 +72,8 @@ struct Shared {
     /// Enrollments and revocations the outbox had no room for.
     written_lost: u32,
     lost: u32,
+    /// Records a refused `Lost` reported, until a record lands.
+    held_lost: u32,
     last: Option<u64>,
     epoch: Option<u32>,
     /// The ring's newest record when it was opened.
@@ -85,6 +89,7 @@ static SHARED: TaskCell<Shared> = TaskCell::new(Shared {
     written_len: 0,
     written_lost: 0,
     lost: 0,
+    held_lost: 0,
     last: None,
     epoch: None,
     opened: None,
@@ -132,9 +137,43 @@ fn push(at: Option<u32>, body: [u8; BODY_BYTES], limit: usize) -> bool {
     })
 }
 
-/// Records dropped since the last call.
+/// Records dropped since the last call, once the queue has a shared slot
+/// for the `Lost` event that reports them: 0 while it has none, and the
+/// count keeps growing until it does. Handed over sooner, the `Lost` would
+/// itself be dropped and its count with it.
 pub fn take_lost() -> u32 {
-    with(|shared| core::mem::take(&mut shared.lost))
+    with(|shared| {
+        if shared.len >= QUEUE - RESERVED {
+            return 0;
+        }
+        core::mem::take(&mut shared.lost)
+    })
+}
+
+/// The writer's half: an event it could not append to the ring (a failed
+/// program, or a body that would not encode) is dropped, and counted with
+/// the queue's, so a `Lost` follows it into the history.
+pub fn append_failed() {
+    with(|shared| shared.lost = shared.lost.saturating_add(1));
+}
+
+/// The writer's half: the ring refused the `Lost` that reported `count`
+/// records. The count waits for the next append that lands, then goes
+/// back to the loop to report again, so the history still shows the gap
+/// once the ring takes records. Not at once: under a store whose programs
+/// keep failing each `Lost` would queue the next, and every attempt costs
+/// a slot of the ring.
+pub fn lost_refused(count: u16) {
+    with(|shared| shared.held_lost = shared.held_lost.saturating_add(u32::from(count)));
+}
+
+/// The writer's half: a record landed in the ring, so a count held from a
+/// refused `Lost` goes back to be reported.
+pub fn landed() {
+    with(|shared| {
+        let held = core::mem::take(&mut shared.held_lost);
+        shared.lost = shared.lost.saturating_add(held);
+    });
 }
 
 /// The writer's half: the oldest queued record, if any; it stays queued
@@ -259,6 +298,7 @@ pub fn reset() {
         shared.written_len = 0;
         shared.written_lost = 0;
         shared.lost = 0;
+        shared.held_lost = 0;
         shared.last = None;
         shared.epoch = None;
         shared.opened = None;

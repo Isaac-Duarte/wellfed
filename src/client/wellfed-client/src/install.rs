@@ -65,8 +65,8 @@ pub mod frame;
 
 pub use backup::{
     BackupError, Bank1Reader, CONTAINER_HEADER, DOWNGRADE_LEN, ReadError, RestoreError,
-    RestoreOffer, STOCK_OTA_SHA256, STOCK_PAYLOAD_LEN, STOCK_PAYLOAD_SHA256, STOCK_VERSION,
-    StockBackup, StockPins, VerifiedBackup,
+    RestoreOffer, STOCK_MODEL, STOCK_OTA_SHA256, STOCK_PAYLOAD_LEN, STOCK_PAYLOAD_SHA256,
+    STOCK_VERSION, StockBackup, StockPins, VerifiedBackup,
 };
 pub use frame::{FrameError, SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
 

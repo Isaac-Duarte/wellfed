@@ -229,10 +229,7 @@ pub struct Meal {
 /// it was read: each meal takes the last feed its plan's slot fed today, at
 /// or after its minute, so a plan moved later today shows nothing as fed.
 pub fn today(plans: &Plans, feeds: &[Feed], now: Timestamp, zone: &TimeZone) -> Vec<Meal> {
-    let local = now.to_zoned(zone.clone());
-    let day = local.date();
-    let minute_now =
-        u16::try_from(i32::from(local.hour()) * 60 + i32::from(local.minute())).unwrap_or(u16::MAX);
+    let day = now.to_zoned(zone.clone()).date();
     let next = next_meal(plans, now, zone);
 
     let mut meals: Vec<Meal> = plans
@@ -262,7 +259,11 @@ pub fn today(plans: &Plans, feeds: &[Feed], now: Timestamp, zone: &TimeZone) -> 
                 (None, None, Some(next)) if next.slot == slot && same_day(next.at, zone, day) => {
                     MealState::Next { at: next.at }
                 }
-                (None, None, _) if plan.minute <= minute_now => MealState::Passed,
+                // Passed once the schedule has no occurrence of it left
+                // today, by the scheduler's own rules: a minute a
+                // spring-forward skips runs after the gap, so it can still
+                // be to come with its nominal minute gone.
+                (None, None, _) if to_skip(plans, slot, now, zone).is_err() => MealState::Passed,
                 (None, None, _) => MealState::Later,
             };
             let action = match state {
@@ -487,6 +488,34 @@ mod tests {
             "a later meal today can be skipped too"
         );
         assert_eq!((meals[0].action, meals[1].action), (None, None));
+    }
+
+    /// A meal whose minute a spring-forward skips runs after the gap: past
+    /// its nominal minute it is still to come, and can still be skipped,
+    /// while the day's next meal is another.
+    #[test]
+    fn a_meal_in_a_spring_gap_is_still_to_come() {
+        let zone = TimeZone::get("America/New_York").unwrap();
+        // 03:00 EDT, just after the clocks went from 02:00 to 03:00.
+        let now: Timestamp = "2026-03-08T07:00:00Z".parse().unwrap();
+        let mut table = [None; PLANS];
+        table[0] = Some(Plan {
+            minute: 2 * 60 + 30,
+            ..BREAKFAST
+        });
+        table[1] = Some(Plan {
+            minute: 3 * 60 + 15,
+            ..BREAKFAST
+        });
+
+        let meals = today(&plans(table), &[], now, &zone);
+
+        let gap = meals.iter().find(|meal| meal.slot == 0).unwrap();
+        let due: Timestamp = "2026-03-08T07:30:00Z".parse().unwrap();
+        assert_eq!(gap.state, MealState::Later);
+        assert_eq!(gap.action, Some(MealAction::Skip { due }));
+        let next = meals.iter().find(|meal| meal.slot == 1).unwrap();
+        assert!(matches!(next.state, MealState::Next { .. }), "{next:?}");
     }
 
     #[test]

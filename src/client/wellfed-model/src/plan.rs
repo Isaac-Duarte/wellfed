@@ -54,7 +54,7 @@ pub struct Plan {
 impl Plan {
     /// Whether the feeder accepts the plan.
     pub fn valid(&self) -> bool {
-        self.minute < 24 * 60
+        self.minute < crate::status::DAY_MINUTES
             && (PORTIONS_MIN..=PORTIONS_MAX).contains(&self.portions)
             && self.call <= crate::CALL_PLAYS_MAX
     }

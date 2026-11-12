@@ -1,10 +1,11 @@
 //! The device API's request decoding: the owner's open session, then each
-//! length-byte-prefixed piece of the input sealed as one request frame.
+//! piece of the input, behind its two-byte length, sealed as one request
+//! frame up to the frame's limit.
 #![no_main]
 
 #[path = "../../product/wellfed-device-api/tests/support/mod.rs"]
 mod support;
 
 libfuzzer_sys::fuzz_target!(|data: &[u8]| {
-    support::session(&support::split(data));
+    support::session(&support::split_requests(data));
 });

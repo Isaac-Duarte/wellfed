@@ -547,19 +547,20 @@ impl Keeper {
         };
         // A cancel or an expiry is no fault of the feeder's to see to; a
         // completed feed shows the fault is past.
-        match outcome {
-            FeedOutcome::Failed | FeedOutcome::Uncertain => {
+        // An outcome a later build added counts as uncertain.
+        match outcome.known() {
+            Some(FeedOutcome::Failed | FeedOutcome::Uncertain) | None => {
                 self.feed_fault = Some(FeedFault {
                     feed,
-                    outcome: outcome.into(),
-                    reason: reason.into(),
+                    outcome,
+                    reason,
                 });
             }
-            FeedOutcome::Done => self.feed_fault = None,
-            FeedOutcome::Cancelled | FeedOutcome::Expired => {}
+            Some(FeedOutcome::Done) => self.feed_fault = None,
+            Some(FeedOutcome::Cancelled | FeedOutcome::Expired) => {}
         }
         self.feeds = self.feeds.saturating_add(1);
-        if outcome != FeedOutcome::Done {
+        if outcome != FeedOutcome::Done.into() {
             self.feeds_failed = self.feeds_failed.saturating_add(1);
         }
         self.portions = self.portions.saturating_add(u32::from(completed));

@@ -211,7 +211,11 @@ impl AlertStage {
         if stop != self.stop
             && let Some(stop) = stop
         {
-            events::record(platform, now_ms, EventBody::UpdateStop { stop });
+            events::record(
+                platform,
+                now_ms,
+                EventBody::UpdateStop { stop: stop.into() },
+            );
         }
         self.stop = stop;
     }
@@ -227,7 +231,9 @@ impl AlertStage {
         };
 
         let candidate = wellfed_device::update::candidate(progress.candidate);
-        let body = EventBody::UpdateAtBoot { candidate };
+        let body = EventBody::UpdateAtBoot {
+            candidate: candidate.into(),
+        };
         self.candidate_noted = events::record_or_wait(platform, now_ms, body);
         self.on_trial = self.candidate_noted && candidate == UpdateCandidate::Activated;
     }

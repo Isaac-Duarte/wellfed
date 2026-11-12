@@ -9,9 +9,14 @@
 //!   [`Incoming::Refused`]), then answers, events, gaps and samples, each
 //!   already `wellfed-model`'s owned value. The feeder sends events in
 //!   batches; they come out one [`Pushed::Event`] at a time, in order.
-//! - [`Session::request`] seals one request under the caller's id. A write
-//!   whose answer never arrived is retried with the same id (after a
-//!   reconnect too), so the feeder answers it once.
+//! - [`Session::request`] seals one request under the caller's id. The
+//!   feeder remembers a key's last 32 write ids, with their answers, in RAM
+//!   across reconnects: a write resent under the same id within that window
+//!   and the same boot gets its first answer rather than running again.
+//!   Past the window or across a restart, the same id is a new request. So
+//!   a write whose answer never arrived is uncertain: a feed (or any write
+//!   that must not run twice) is never resent, but settled from the history
+//!   ([`crate::settle`]).
 //! - [`Join::connect`] redeems an invite (Noise XXpsk3), checking that the
 //!   feeder that answers holds the identity the invite named.
 //!
@@ -25,10 +30,12 @@ use wellfed_model::{
     convert,
 };
 use wellfed_proto::api::{
-    ClientMessage, DEVICE_MESSAGES, DeviceMessage, FRAME_MAX, Join as JoinRequest, Op as WireOp,
-    Open, PROLOGUE, REVISION, RequestId, Samples, Welcome,
+    ClientMessage, DEVICE_MESSAGES, DeviceMessage, FRAME_MAX, Join as JoinRequest, MESSAGE_MAX,
+    Op as WireOp, Open, PROLOGUE, REVISION, RequestId, Samples, Welcome,
 };
-use wellfed_session::frame::{self, PREFIX};
+use wellfed_session::frame;
+
+use crate::frames::{Frames, TooLong};
 use wellfed_session::hex::{self, Lower};
 use wellfed_session::noise::{self, Handshake, Keypair, Pattern, Role, Transport};
 
@@ -131,32 +138,6 @@ pub fn frame(message: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(out)
 }
 
-/// Reassembles frames from a byte stream, which may split or join them.
-#[derive(Debug, Default)]
-struct Deframer {
-    buffer: Vec<u8>,
-}
-
-impl Deframer {
-    fn push(&mut self, bytes: &[u8]) {
-        self.buffer.extend_from_slice(bytes);
-    }
-
-    fn next_frame(&mut self) -> Result<Option<Vec<u8>>, Error> {
-        let Some(prefix) = self.buffer.first_chunk::<PREFIX>() else {
-            return Ok(None);
-        };
-        let announced = usize::from(u16::from_le_bytes(*prefix));
-        let len = frame::parse_prefix(*prefix, FRAME_MAX).ok_or(Error::TooLong(announced))?;
-        if self.buffer.len() < PREFIX + len {
-            return Ok(None);
-        }
-        let message = self.buffer[PREFIX..PREFIX + len].to_vec();
-        self.buffer.drain(..PREFIX + len);
-        Ok(Some(message))
-    }
-}
-
 /// The clear frame that opens a connection.
 pub(crate) fn open_frame(open: Open) -> Result<Vec<u8>, Error> {
     let mut out = [0; 16];
@@ -215,7 +196,7 @@ pub enum Incoming {
 /// An enrolled client's session.
 pub struct Session {
     state: State,
-    deframer: Deframer,
+    frames: Frames,
     /// Opened messages waiting for [`Self::next_incoming`], oldest first.
     inbox: std::collections::VecDeque<Vec<u8>>,
     /// The rest of a batch of events, oldest first: they come before
@@ -274,7 +255,7 @@ impl Session {
         out.extend(frame(&message[..written])?);
         let session = Self {
             state: State::Handshake(Box::new(handshake)),
-            deframer: Deframer::default(),
+            frames: Frames::new(FRAME_MAX),
             inbox: std::collections::VecDeque::new(),
             events: std::collections::VecDeque::new(),
             epoch: None,
@@ -297,8 +278,12 @@ impl Session {
     }
 
     fn take(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        self.deframer.push(bytes);
-        while let Some(message) = self.deframer.next_frame()? {
+        self.frames.push(bytes);
+        while let Some(message) = self
+            .frames
+            .next()
+            .map_err(|TooLong(announced)| Error::TooLong(announced))?
+        {
             let mut plain = vec![0; FRAME_MAX];
             let len = match &mut self.state {
                 State::Handshake(handshake) => {
@@ -457,11 +442,20 @@ impl Session {
         self.send(&ClientMessage::Subscribe { after, samples })
     }
 
+    /// Nothing goes before the welcome is read: the handshake's reply
+    /// opens the transport, but only the welcome says whether the feeder
+    /// is a pre-revision build that must get frozen ops alone. A message
+    /// sealed into a frame must leave room for the seal's tag, so a larger
+    /// one is [`Error::TooLarge`] before any nonce is spent.
     fn send(&mut self, message: &ClientMessage<'_>) -> Result<Vec<u8>, Error> {
         let State::Open(transport) = &mut self.state else {
             return Err(Error::Unexpected);
         };
-        let mut plain = [0; FRAME_MAX];
+        if self.epoch.is_none() {
+            return Err(Error::NotOpen);
+        }
+
+        let mut plain = [0; MESSAGE_MAX];
         let len = wellfed_proto::encode(message, &mut plain).map_err(|_| Error::TooLarge)?;
         let mut sealed = [0; FRAME_MAX];
         let sealed_len = transport.seal(&plain[..len], &mut sealed)?;
@@ -595,7 +589,7 @@ pub enum JoinStep {
 pub struct Join {
     handshake: Option<Box<Handshake>>,
     transport: Option<Box<Transport>>,
-    deframer: Deframer,
+    frames: Frames,
     invite: Invite,
     label: String,
 }
@@ -634,7 +628,7 @@ impl Join {
         let join = Self {
             handshake: Some(Box::new(handshake)),
             transport: None,
-            deframer: Deframer::default(),
+            frames: Frames::new(FRAME_MAX),
             invite,
             label: label.to_owned(),
         };
@@ -643,8 +637,12 @@ impl Join {
 
     /// Bytes from the connection: what to write next, or the answer.
     pub fn receive(&mut self, bytes: &[u8]) -> Result<Option<JoinStep>, Error> {
-        self.deframer.push(bytes);
-        let Some(message) = self.deframer.next_frame()? else {
+        self.frames.push(bytes);
+        let Some(message) = self
+            .frames
+            .next()
+            .map_err(|TooLong(announced)| Error::TooLong(announced))?
+        else {
             return Ok(None);
         };
         let mut plain = [0; FRAME_MAX];
@@ -692,10 +690,10 @@ mod tests {
             [0x22; 32],
         )
         .unwrap();
-        let open = PREFIX + frame::parse_prefix([hello[0], hello[1]], FRAME_MAX).unwrap();
-        let mut deframer = Deframer::default();
-        deframer.push(&hello[open..]);
-        let first = deframer.next_frame().unwrap().unwrap();
+        let open = frame::PREFIX + frame::parse_prefix([hello[0], hello[1]], FRAME_MAX).unwrap();
+        let mut frames = Frames::new(FRAME_MAX);
+        frames.push(&hello[open..]);
+        let first = frames.next().unwrap().unwrap();
         let mut payload = [0; FRAME_MAX];
         handshake.read_message(&first, &mut payload).unwrap();
 
@@ -770,6 +768,240 @@ mod tests {
         );
         assert_eq!(session.next_incoming().unwrap(), None);
         assert!(!session.is_open());
+    }
+
+    fn opened_by(welcome: &Welcome<'_>) -> Session {
+        let client = Keypair::from_secret([0x20; 32]);
+        let feeder = *Keypair::from_secret([0x10; 32]).public();
+        let (mut session, hello) = Session::connect(&client, feeder, [0x33; 32]).unwrap();
+        session.receive(&feeder_says(&hello, welcome, &[])).unwrap();
+        session
+    }
+
+    fn welcome(schema: u32) -> Welcome<'static> {
+        Welcome::Open {
+            major: 1,
+            model: Model::Plaf103,
+            build: "b",
+            role: WireRole::Owner,
+            epoch: 1,
+            schema,
+        }
+    }
+
+    /// A request whose message fills a frame but leaves no room for the
+    /// seal's tag is too large, refused before a nonce is spent, so the
+    /// next request still seals in step.
+    #[test]
+    fn a_request_past_a_sealed_frame_is_too_large() {
+        let mut session = opened_by(&welcome(REVISION));
+        assert!(matches!(
+            session.next_incoming(),
+            Ok(Some(Incoming::Opened(_)))
+        ));
+        let chunk = |len| Op::UpdateChunk {
+            offset: 0,
+            data: vec![0; len],
+        };
+        let encoded = |op: &Op| {
+            let mut out = [0; 2 * FRAME_MAX];
+            wellfed_proto::encode(
+                &ClientMessage::Request {
+                    id: [8; 16],
+                    op: op.to_proto().unwrap(),
+                },
+                &mut out,
+            )
+            .unwrap()
+        };
+        let fits = (900..FRAME_MAX)
+            .map(chunk)
+            .find(|op| encoded(op) == MESSAGE_MAX)
+            .unwrap();
+
+        for len in [MESSAGE_MAX + 1, FRAME_MAX - 1, FRAME_MAX] {
+            let op = (900..FRAME_MAX)
+                .map(chunk)
+                .find(|op| encoded(op) == len)
+                .unwrap();
+            assert!(matches!(
+                session.request([8; 16], &op),
+                Err(Error::TooLarge)
+            ));
+        }
+        let sealed = session.request([8; 16], &fits).unwrap();
+        assert_eq!(sealed.len(), frame::PREFIX + FRAME_MAX);
+        assert!(session.request([9; 16], &Op::Status).is_ok());
+    }
+
+    /// The handshake's reply opens the transport, but nothing goes until
+    /// the welcome is read: only it says whether the feeder takes frozen
+    /// ops alone.
+    #[test]
+    fn nothing_goes_before_the_welcome_is_read() {
+        let mut session = opened_by(&welcome(wellfed_model::LEGACY_SCHEMA_FROM));
+        assert!(session.is_open());
+
+        assert!(matches!(
+            session.request([1; 16], &Op::Status),
+            Err(Error::NotOpen)
+        ));
+        assert!(matches!(session.alive([2; 16]), Err(Error::NotOpen)));
+        assert!(matches!(
+            session.next_incoming(),
+            Ok(Some(Incoming::Opened(_)))
+        ));
+        assert!(matches!(
+            session.request([1; 16], &Op::Status),
+            Err(Error::Legacy)
+        ));
+        assert!(session.alive([2; 16]).is_ok());
+    }
+
+    /// The feeder's side of an IK session up to its welcome: the bytes to
+    /// hand the client, and the transport to seal more with.
+    fn welcomed(hello: &[u8]) -> (Vec<u8>, Transport) {
+        let feeder = Keypair::from_secret([0x10; 32]);
+        let mut handshake = Handshake::new(
+            Pattern::Ik,
+            Role::Responder,
+            PROLOGUE,
+            &feeder,
+            None,
+            [0x22; 32],
+        )
+        .unwrap();
+        let open = frame::PREFIX + frame::parse_prefix([hello[0], hello[1]], FRAME_MAX).unwrap();
+        let mut frames = Frames::new(FRAME_MAX);
+        frames.push(&hello[open..]);
+        let first = frames.next().unwrap().unwrap();
+        let mut payload = [0; FRAME_MAX];
+        handshake.read_message(&first, &mut payload).unwrap();
+
+        let mut plain = [0; FRAME_MAX];
+        let mut message = [0; FRAME_MAX];
+        let len = wellfed_proto::encode(&welcome(REVISION), &mut plain).unwrap();
+        let written = handshake
+            .write_message(&plain[..len], &mut message)
+            .unwrap();
+        (
+            frame(&message[..written]).unwrap(),
+            handshake.into_transport().unwrap(),
+        )
+    }
+
+    fn sealed(transport: &mut Transport, plain: &[u8]) -> Vec<u8> {
+        let mut message = [0; FRAME_MAX];
+        let len = transport.seal(plain, &mut message).unwrap();
+        frame(&message[..len]).unwrap()
+    }
+
+    /// An answer a newer feeder sent that this build can't decode reaches
+    /// the pending write through the whole connection: unreadable (it may
+    /// have run) or, tagged as a refusal, an unknown refusal (it did not),
+    /// and the session stays open.
+    #[test]
+    fn an_undecodable_answer_reaches_its_write_and_the_session_stays() {
+        use crate::connection::{Connection, Event};
+
+        let start = std::time::Instant::now();
+        let client = Keypair::from_secret([0x20; 32]);
+        let feeder = *Keypair::from_secret([0x10; 32]).public();
+        let mut connection = Connection::new(&client, feeder, [0x33; 32], start).unwrap();
+        let hello = connection.poll_transmit().unwrap();
+        let (welcome, mut transport) = welcomed(&hello);
+        connection.handle_input(start, &welcome).unwrap();
+        assert!(connection.opened().is_some());
+
+        let lock = Op::SetLock { locked: true };
+        connection.request(start, [1; 16], &lock).unwrap();
+        connection.request(start, [2; 16], &lock).unwrap();
+        let mut unreadable = vec![0];
+        unreadable.extend_from_slice(&[1; 16]);
+        unreadable.extend_from_slice(&[0x70, 0x01]);
+        let mut refused = vec![0];
+        refused.extend_from_slice(&[2; 16]);
+        refused.extend_from_slice(&[1, 0x70]);
+        let mut bytes = sealed(&mut transport, &unreadable);
+        bytes.extend(sealed(&mut transport, &refused));
+        connection.handle_input(start, &bytes).unwrap();
+
+        assert_eq!(
+            connection.poll_event(),
+            Some(Event::Answer {
+                id: [1; 16],
+                answer: Answer::Unreadable
+            })
+        );
+        assert_eq!(
+            connection.poll_event(),
+            Some(Event::Answer {
+                id: [2; 16],
+                answer: Answer::Refused(Refusal::Unknown)
+            })
+        );
+        assert!(connection.request(start, [3; 16], &Op::Status).is_ok());
+        assert!(connection.opened().is_some());
+    }
+
+    /// An invite's redemption checks the feeder that answers holds the key
+    /// the invite named: one that knows the secret but holds another key
+    /// gets no `Join`.
+    #[test]
+    fn an_impostor_with_the_invite_s_secret_gets_no_join() {
+        let client = Keypair::from_secret([0x20; 32]);
+        let invite = Invite {
+            feeder: *Keypair::from_secret([0x10; 32]).public(),
+            id: 7,
+            secret: [0x44; 32],
+        };
+        let (mut join, hello) = Join::connect(&client, invite, "phone", [0x33; 32]).unwrap();
+
+        let impostor = Keypair::from_secret([0x66; 32]);
+        let mut handshake = Handshake::new(
+            Pattern::XxPsk3,
+            Role::Responder,
+            PROLOGUE,
+            &impostor,
+            None,
+            [0x22; 32],
+        )
+        .unwrap();
+        handshake.set_psk(invite.secret);
+        let mut frames = Frames::new(FRAME_MAX);
+        frames.push(&hello);
+        let _open = frames.next().unwrap().unwrap();
+        let first = frames.next().unwrap().unwrap();
+        let mut payload = [0; FRAME_MAX];
+        handshake.read_message(&first, &mut payload).unwrap();
+        let mut message = [0; FRAME_MAX];
+        let written = handshake.write_message(&[], &mut message).unwrap();
+
+        let answer = join.receive(&frame(&message[..written]).unwrap());
+
+        assert!(matches!(answer, Err(Error::WrongFeeder)), "{answer:?}");
+    }
+
+    /// A label is 1 to 16 bytes with no NUL, checked before anything goes.
+    #[test]
+    fn a_join_label_is_bounded() {
+        let client = Keypair::from_secret([0x20; 32]);
+        let invite = Invite {
+            feeder: [0x10; 32],
+            id: 7,
+            secret: [0x44; 32],
+        };
+        for label in ["", "seventeen bytes!!", "a\0b"] {
+            assert!(
+                matches!(
+                    Join::connect(&client, invite, label, [0x33; 32]),
+                    Err(Error::Label)
+                ),
+                "{label:?}"
+            );
+        }
+        assert!(Join::connect(&client, invite, "sixteen bytes!!!", [0x33; 32]).is_ok());
+        assert!(Join::connect(&client, invite, "a", [0x33; 32]).is_ok());
     }
 
     /// A response a newer build sent that this one cannot decode still

@@ -193,7 +193,7 @@ impl Feeder {
                     outcome,
                     by,
                     ..
-                } => Some((feed, requested, outcome, by)),
+                } => Some((feed, requested, outcome.known()?, by)),
                 _ => None,
             })
             .collect()

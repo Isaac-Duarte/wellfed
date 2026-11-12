@@ -24,9 +24,9 @@ fn fed(feed: u32, portions: u8) -> EventBody {
         feed,
         requested: portions,
         completed: portions,
-        outcome: FeedOutcome::Done,
-        reason: FeedReason::Done,
-        hopper: FoodLevel::Present,
+        outcome: FeedOutcome::Done.into(),
+        reason: FeedReason::Done.into(),
+        hopper: FoodLevel::Present.into(),
         by: Source::Panel,
     }
 }

@@ -71,6 +71,38 @@ fn lenient<P: Copy, M: From<P>>(value: proto::Lenient<P>, unknown: M) -> M {
     value.known().map_or(unknown, M::from)
 }
 
+/// Each unit enum that alerts and event bodies carry leniently, read from
+/// the wire with `Unknown` for a variant a newer build added, and written
+/// back as the variant it names.
+macro_rules! lenient_both_ways {
+    ($($model:ty => $wire:ty),* $(,)?) => {$(
+        impl From<proto::Lenient<$wire>> for $model {
+            fn from(value: proto::Lenient<$wire>) -> Self {
+                lenient(value, Self::Unknown)
+            }
+        }
+
+        impl TryFrom<$model> for proto::Lenient<$wire> {
+            type Error = NoWireForm;
+
+            fn try_from(value: $model) -> Result<Self, NoWireForm> {
+                <$wire>::try_from(value).map(proto::Lenient::Known)
+            }
+        }
+    )*};
+}
+
+lenient_both_ways! {
+    FeedOutcome => proto::FeedOutcome,
+    FeedReason => proto::FeedReason,
+    FoodLevel => proto::FoodLevel,
+    Blocked => proto::Blocked,
+    ClientRole => proto::Role,
+    EnrollPath => proto::Path,
+    UpdateStop => proto::UpdateStop,
+    UpdateCandidate => proto::UpdateCandidate,
+}
+
 /// A host value with no wire form: one holding a variant a newer feeder
 /// build added, which this build only names `Unknown`. Never so for one
 /// decoded from the wire, where a body this build cannot read stays raw.
@@ -179,15 +211,6 @@ impl From<proto::Desiccant> for Desiccant {
                 days,
                 due: desiccant.due() == Some(true),
             },
-        }
-    }
-}
-
-impl From<proto::Readiness> for Readiness {
-    fn from(readiness: proto::Readiness) -> Self {
-        match readiness {
-            proto::Readiness::Ready => Self::Ready,
-            proto::Readiness::Blocked(blocked) => Self::Blocked(blocked.into()),
         }
     }
 }
@@ -573,7 +596,7 @@ impl TryFrom<EventBody> for proto::EventBody {
                 by: by.try_into()?,
             },
             EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => Self::FeedingBlocked {
-                reason: reason.map(proto::Blocked::try_from).transpose()?,
+                reason: reason.map(TryInto::try_into).transpose()?,
             },
             EventBody::Feeder(FeederEvent::Supply {
                 adapter,
@@ -702,24 +725,41 @@ impl TryFrom<MissedReason> for proto::MissedReason {
 
 impl From<proto::Plan> for Plan {
     fn from(plan: proto::Plan) -> Self {
+        // A tail a newer build filled holds nothing this build can show,
+        // and `PutPlans` never writes one back.
+        let proto::Plan {
+            minute,
+            portions,
+            days,
+            enabled,
+            call,
+            ext: _,
+        } = plan;
         Self {
-            minute: plan.minute,
-            portions: plan.portions,
-            days: Weekdays::from_bits(plan.days),
-            enabled: plan.enabled,
-            call: plan.call,
+            minute,
+            portions,
+            days: Weekdays::from_bits(days),
+            enabled,
+            call,
         }
     }
 }
 
 impl From<Plan> for proto::Plan {
     fn from(plan: Plan) -> Self {
+        let Plan {
+            minute,
+            portions,
+            days,
+            enabled,
+            call,
+        } = plan;
         Self {
-            minute: plan.minute,
-            portions: plan.portions,
-            days: plan.days.bits(),
-            enabled: plan.enabled,
-            call: plan.call,
+            minute,
+            portions,
+            days: days.bits(),
+            enabled,
+            call,
             ext: proto::Tail::EMPTY,
         }
     }
@@ -1565,28 +1605,30 @@ impl From<proto::UpdatePhase> for UpdatePhase {
 
 impl From<proto::AlertsView> for AlertsView {
     fn from(view: proto::AlertsView) -> Self {
+        let proto::AlertsView {
+            epoch,
+            generation,
+            more,
+            settling,
+            alerts: proto::AlertTable { entries, skipped },
+        } = view;
         Self {
-            epoch: view.epoch,
-            generation: Generation(view.generation),
-            more: view.more,
-            settling: view.settling,
-            alerts: view
-                .alerts
-                .entries
-                .iter()
-                .flatten()
-                .map(OpenAlert::from)
-                .collect(),
-            unread: view.alerts.skipped,
+            epoch,
+            generation: Generation(generation),
+            more,
+            settling,
+            alerts: entries.iter().flatten().map(OpenAlert::from).collect(),
+            unread: skipped,
         }
     }
 }
 
 impl From<&proto::OpenAlert> for OpenAlert {
     fn from(open: &proto::OpenAlert) -> Self {
+        let proto::OpenAlert { at, alert } = *open;
         Self {
-            at: open.at.map(|at| seconds(at.get())),
-            alert: open.alert.into(),
+            at: at.map(|at| seconds(at.get())),
+            alert: alert.into(),
         }
     }
 }
@@ -1770,36 +1812,53 @@ impl From<proto::Refusal> for Refusal {
 
 impl Op {
     /// The kind of device whose module serves the op, `None` for the
-    /// shared core every kind serves: what its wire form says, so the two
-    /// cannot disagree. Another kind refuses it `Unavailable`.
+    /// shared core every kind serves; another kind refuses it
+    /// `Unavailable`. The variant says, so an op that holds a value only a
+    /// newer build names (and has no wire form) still names its module,
+    /// and the check costs no conversion. The wire form agrees
+    /// (`an_op_s_kind_is_its_wire_form_s`).
     pub fn kind(&self) -> Option<DeviceKind> {
-        // A section of the shared statistics op may still be one kind's.
-        if let Self::Stats { section } = self {
-            return section.kind();
-        }
-        // An op holding a value only a newer build names has no wire
-        // form, so it is never sent and no kind serves it.
-        let Ok(op) = self.to_proto() else {
-            return None;
-        };
-        match op {
-            proto::Op::Feeder(_) => Some(DeviceKind::Feeder),
-            proto::Op::Status
-            | proto::Op::PutWifi { .. }
-            | proto::Op::TimeSync(_)
-            | proto::Op::CreateInvite { .. }
-            | proto::Op::CreateBoundInvite { .. }
-            | proto::Op::ListClients
-            | proto::Op::RevokeClient { .. }
-            | proto::Op::Reboot
-            | proto::Op::Update(_)
-            | proto::Op::Alive
-            | proto::Op::GetTime
-            | proto::Op::PutTime { .. }
-            | proto::Op::TailLog { .. }
-            | proto::Op::Stats { .. }
-            | proto::Op::ReadBank1 { .. }
-            | proto::Op::GetAlerts => None,
+        match self {
+            // A section of the shared statistics op may still be one kind's.
+            Self::Stats { section } => section.kind(),
+            Self::GetSettings
+            | Self::PutSettings { .. }
+            | Self::SetLock { .. }
+            | Self::Play { .. }
+            | Self::Feed { .. }
+            | Self::CancelFeed { .. }
+            | Self::FeedTrace { .. }
+            | Self::GetCalibration
+            | Self::PutCalibration { .. }
+            | Self::GetPlans
+            | Self::PutPlans { .. }
+            | Self::ResetDesiccant
+            | Self::GetCall
+            | Self::StartCall { .. }
+            | Self::CallChunk { .. }
+            | Self::DeleteCall
+            | Self::PlayCall
+            | Self::SkipMeal { .. }
+            | Self::UnskipMeal { .. } => Some(DeviceKind::Feeder),
+            Self::Status
+            | Self::PutWifi { .. }
+            | Self::TimeSync(_)
+            | Self::CreateInvite { .. }
+            | Self::CreateBoundInvite { .. }
+            | Self::ListClients
+            | Self::RevokeClient { .. }
+            | Self::Reboot
+            | Self::OfferUpdate { .. }
+            | Self::UpdateChunk { .. }
+            | Self::UpdateState
+            | Self::CancelUpdate
+            | Self::EnrollUpdateKey { .. }
+            | Self::UpdateKeyStatement { .. }
+            | Self::GetTime
+            | Self::PutTime { .. }
+            | Self::TailLog { .. }
+            | Self::ReadBank1 { .. }
+            | Self::GetAlerts => None,
         }
     }
 
@@ -2063,6 +2122,208 @@ pub fn setup_reply(reply: proto_setup::Reply) -> Option<setup::Reply> {
 
 #[cfg(test)]
 mod tests {
+    use super::proto;
+
+    /// An enum value a newer build added, inside an alert or an event,
+    /// reads as unknown there, and the rest of the entry reads on: a failed
+    /// meal with an outcome and reason this build can't name is still a
+    /// failed meal, urgent, and its event still a feed's.
+    #[test]
+    fn a_newer_value_inside_an_alert_or_event_reads_as_unknown() {
+        use crate::{
+            Alert, AlertLevel, AlertsView, EventBody, FeedOutcome, FeedReason, FeederEvent,
+        };
+
+        let mut entries = [None; proto::ALERTS_MAX];
+        entries[0] = Some(proto::OpenAlert {
+            at: core::num::NonZeroU32::new(1_800_000_000),
+            alert: proto::Alert::MealFailed {
+                feed: 7,
+                plan: Some(2),
+                requested: 3,
+                completed: 1,
+                outcome: proto::Lenient::Unknown(99),
+                reason: proto::Lenient::Unknown(98),
+            },
+        });
+        let sent = proto::AlertsView {
+            epoch: 1,
+            generation: 2,
+            more: false,
+            settling: false,
+            alerts: proto::AlertTable {
+                entries,
+                skipped: 0,
+            },
+        };
+        let mut bytes = [0; 512];
+        let len = wellfed_proto::encode(&sent, &mut bytes).unwrap();
+        let view =
+            AlertsView::from(wellfed_proto::decode::<proto::AlertsView>(&bytes[..len]).unwrap());
+
+        assert_eq!(view.unread, 0);
+        let [open] = view.alerts.as_slice() else {
+            panic!("one alert: {view:?}");
+        };
+        assert_eq!(
+            open.alert,
+            Alert::MealFailed {
+                feed: 7,
+                plan: Some(2),
+                requested: 3,
+                completed: 1,
+                outcome: FeedOutcome::Unknown,
+                reason: FeedReason::Unknown,
+            }
+        );
+        assert_eq!(open.alert.level(), AlertLevel::Urgent);
+
+        let fed = proto::Event {
+            seq: 4,
+            at: None,
+            body: proto::EventBody::Fed {
+                feed: 7,
+                requested: 3,
+                completed: 1,
+                outcome: proto::Lenient::Unknown(99),
+                reason: proto::Lenient::Unknown(98),
+                hopper: proto::Lenient::Unknown(97),
+                by: proto::Source::Schedule(2),
+            },
+        };
+        let raw = proto::RawEvent::encode(&fed).unwrap();
+        let crate::Pushed::Event(event) = super::raw_event(1, raw) else {
+            panic!("an event this build reads");
+        };
+        let EventBody::Feeder(FeederEvent::Fed {
+            outcome, reason, ..
+        }) = event.body
+        else {
+            panic!("a feed's event: {event:?}");
+        };
+        assert_eq!(
+            (outcome, reason),
+            (FeedOutcome::Unknown, FeedReason::Unknown)
+        );
+    }
+
+    /// Every op names the module its wire form goes to, and one that has
+    /// no wire form (a value only a newer build names) still names its own.
+    #[test]
+    fn an_op_s_kind_is_its_wire_form_s() {
+        use crate::{
+            Calibration, ClientRole, FeederSettingsPatch, Generation, Op, PLANS, StatsSection,
+            TimeChanges, TimeSync, Tune, Window,
+        };
+
+        let at = jiff::Timestamp::from_second(1_800_000_000).unwrap();
+        let ops = [
+            Op::Status,
+            Op::GetSettings,
+            Op::PutSettings {
+                base: Generation(1),
+                changes: FeederSettingsPatch::default(),
+            },
+            Op::PutWifi {
+                base: Generation(1),
+                wifi: None,
+            },
+            Op::SetLock { locked: true },
+            Op::Play { tune: Tune::Chime },
+            Op::TimeSync(TimeSync {
+                unix_ms: 1,
+                offset_s: 0,
+                next_change_s: 0,
+                next_offset_s: 0,
+            }),
+            Op::CreateInvite {
+                role: ClientRole::Member,
+            },
+            Op::CreateBoundInvite {
+                role: ClientRole::Member,
+                key: [1; 32],
+            },
+            Op::ListClients,
+            Op::RevokeClient { key: [1; 32] },
+            Op::Feed { portions: 1 },
+            Op::Reboot,
+            Op::CancelFeed { feed: 1 },
+            Op::OfferUpdate {
+                manifest: vec![1],
+                downgrade: None,
+            },
+            Op::UpdateChunk {
+                offset: 0,
+                data: vec![1],
+            },
+            Op::UpdateState,
+            Op::CancelUpdate,
+            Op::EnrollUpdateKey {
+                key: [1; 32],
+                label: "key".into(),
+            },
+            Op::UpdateKeyStatement { statement: vec![1] },
+            Op::GetTime,
+            Op::PutTime {
+                base: Generation(1),
+                changes: TimeChanges::default(),
+            },
+            Op::TailLog { after: None },
+            Op::Stats {
+                section: StatsSection::Counters,
+            },
+            Op::Stats {
+                section: StatsSection::Food,
+            },
+            Op::FeedTrace { feed: 1, offset: 0 },
+            Op::GetCalibration,
+            Op::PutCalibration {
+                base: Generation(1),
+                calibration: Calibration {
+                    portion_mg: None,
+                    bowl: crate::Bowl::Single,
+                },
+            },
+            Op::ReadBank1 { offset: 0 },
+            Op::GetPlans,
+            Op::PutPlans {
+                base: Generation(1),
+                plans: [None; PLANS],
+            },
+            Op::ResetDesiccant,
+            Op::GetCall,
+            Op::StartCall { bytes: 1, crc: 1 },
+            Op::CallChunk {
+                offset: 0,
+                data: vec![1],
+            },
+            Op::DeleteCall,
+            Op::PlayCall,
+            Op::SkipMeal { slot: 0, due: at },
+            Op::UnskipMeal { slot: 0, due: at },
+            Op::GetAlerts,
+        ];
+        for op in &ops {
+            // A statistics section names its own kind, inside the shared op.
+            let wire = match (op, op.to_proto().unwrap()) {
+                (Op::Stats { section }, _) => section.kind(),
+                (_, proto::Op::Feeder(_)) => Some(DeviceKind::Feeder),
+                _ => None,
+            };
+            assert_eq!(op.kind(), wire, "{op:?}");
+        }
+
+        let unsendable = Op::PutSettings {
+            base: Generation(1),
+            changes: FeederSettingsPatch {
+                lights_window: Some(Window::Unknown),
+                ..FeederSettingsPatch::default()
+            },
+        };
+        assert!(unsendable.to_proto().is_err());
+        assert_eq!(unsendable.kind(), Some(DeviceKind::Feeder));
+    }
+
     use super::*;
     use crate::{AlertKey, AlertKind, AlertLevel};
 
@@ -2121,15 +2382,15 @@ mod tests {
                 plan: Some(1),
                 requested: 2,
                 completed: 1,
-                outcome: proto::FeedOutcome::Failed,
-                reason: proto::FeedReason::Jammed,
+                outcome: proto::FeedOutcome::Failed.into(),
+                reason: proto::FeedReason::Jammed.into(),
             },
             proto::Alert::MealUncertain {
                 feed: 8,
                 plan: None,
                 requested: 2,
                 completed: 0,
-                reason: proto::FeedReason::Interrupted,
+                reason: proto::FeedReason::Interrupted.into(),
             },
             proto::Alert::MealMissed {
                 plan: 2,
@@ -2142,13 +2403,13 @@ mod tests {
             },
             proto::Alert::PowerWasOut,
             proto::Alert::UpdateFailed {
-                stop: proto::UpdateStop::Hash,
+                stop: proto::UpdateStop::Hash.into(),
             },
             proto::Alert::RolledBack,
             proto::Alert::ClientJoined {
                 client: CLIENT,
-                role: proto::Role::Member,
-                path: proto::Path::Invite,
+                role: proto::Role::Member.into(),
+                path: proto::Path::Invite.into(),
             },
             proto::Alert::ClientRevoked {
                 client: CLIENT,
@@ -2157,7 +2418,7 @@ mod tests {
             proto::Alert::RepeatedRestarts,
             proto::Alert::NoClock,
             proto::Alert::CannotFeed {
-                reason: proto::Blocked::Fault,
+                reason: proto::Blocked::Fault.into(),
             },
             proto::Alert::FoodLow,
             proto::Alert::FoodLikelyOut { confirmed: 5 },
@@ -2169,36 +2430,6 @@ mod tests {
             .into_iter()
             .map(|alert| proto::OpenAlert { at, alert })
             .collect()
-    }
-
-    fn kind_of(kind: proto::AlertKind) -> AlertKind {
-        match kind {
-            proto::AlertKind::MealFailed => AlertKind::MealFailed,
-            proto::AlertKind::MealUncertain => AlertKind::MealUncertain,
-            proto::AlertKind::MealMissed => AlertKind::MealMissed,
-            proto::AlertKind::MealNoRecord => AlertKind::MealNoRecord,
-            proto::AlertKind::PowerWasOut => AlertKind::PowerWasOut,
-            proto::AlertKind::UpdateFailed => AlertKind::UpdateFailed,
-            proto::AlertKind::RolledBack => AlertKind::RolledBack,
-            proto::AlertKind::ClientJoined => AlertKind::ClientJoined,
-            proto::AlertKind::ClientRevoked => AlertKind::ClientRevoked,
-            proto::AlertKind::RepeatedRestarts => AlertKind::RepeatedRestarts,
-            proto::AlertKind::NoClock => AlertKind::NoClock,
-            proto::AlertKind::CannotFeed => AlertKind::CannotFeed,
-            proto::AlertKind::FoodLow => AlertKind::FoodLow,
-            proto::AlertKind::FoodLikelyOut => AlertKind::FoodLikelyOut,
-            proto::AlertKind::DesiccantDue => AlertKind::DesiccantDue,
-            proto::AlertKind::BatteryBelowFloor => AlertKind::BatteryBelowFloor,
-            proto::AlertKind::PlansStuck => AlertKind::PlansStuck,
-        }
-    }
-
-    fn level_of(level: proto::AlertLevel) -> AlertLevel {
-        match level {
-            proto::AlertLevel::Urgent => AlertLevel::Urgent,
-            proto::AlertLevel::Soon => AlertLevel::Soon,
-            proto::AlertLevel::Security => AlertLevel::Security,
-        }
     }
 
     fn key_of(key: proto::AlertKey) -> AlertKey {
@@ -2214,16 +2445,16 @@ mod tests {
                 client,
                 at: when,
             } => AlertKey::Client {
-                kind: kind_of(kind),
+                kind: AlertKind::of_wire(kind),
                 client: Hex(client),
                 at: at(when),
             },
             proto::AlertKey::Timed { kind, at: when } => AlertKey::Timed {
-                kind: kind_of(kind),
+                kind: AlertKind::of_wire(kind),
                 at: at(when),
             },
             proto::AlertKey::Kind(kind) => AlertKey::Kind {
-                kind: kind_of(kind),
+                kind: AlertKind::of_wire(kind),
             },
         }
     }
@@ -2237,8 +2468,8 @@ mod tests {
         for (wire, kind) in every.iter().zip(AlertKind::ALL) {
             let open = OpenAlert::from(wire);
             assert_eq!(open.alert.kind(), kind, "ALL is in the enum's order");
-            assert_eq!(kind_of(wire.alert.kind()), kind);
-            assert_eq!(level_of(wire.alert.level()), open.alert.level());
+            assert_eq!(AlertKind::of_wire(wire.alert.kind()), kind);
+            assert_eq!(AlertLevel::of_wire(wire.alert.level()), open.alert.level());
             assert_eq!(wire.alert.kind().is_condition(), kind.is_condition());
             assert_eq!(key_of(wire.key()), open.key(), "{kind:?}");
         }
@@ -2299,8 +2530,8 @@ mod tests {
             },
             proto::EventBody::Enrolled {
                 client: CLIENT,
-                role: proto::Role::UpdateSigner,
-                path: proto::Path::Recovery,
+                role: proto::Role::UpdateSigner.into(),
+                path: proto::Path::Recovery.into(),
             },
             proto::EventBody::Revoked { client: CLIENT, by },
             proto::EventBody::ClockSync {
@@ -2312,13 +2543,13 @@ mod tests {
                 feed: 9,
                 requested: 2,
                 completed: 1,
-                outcome: proto::FeedOutcome::Uncertain,
-                reason: proto::FeedReason::FeedbackStream,
-                hopper: proto::FoodLevel::Low,
+                outcome: proto::FeedOutcome::Uncertain.into(),
+                reason: proto::FeedReason::FeedbackStream.into(),
+                hopper: proto::FoodLevel::Low.into(),
                 by,
             },
             proto::EventBody::FeedingBlocked {
-                reason: Some(proto::Blocked::Fault),
+                reason: Some(proto::Blocked::Fault.into()),
             },
             proto::EventBody::FeedingBlocked { reason: None },
             proto::EventBody::MealSoon {
@@ -2328,13 +2559,13 @@ mod tests {
                 portions: 2,
             },
             proto::EventBody::Food {
-                level: proto::FoodLevel::Present,
+                level: proto::FoodLevel::Present.into(),
             },
             proto::EventBody::UpdateStop {
-                stop: proto::UpdateStop::Hash,
+                stop: proto::UpdateStop::Hash.into(),
             },
             proto::EventBody::UpdateAtBoot {
-                candidate: proto::UpdateCandidate::Pending,
+                candidate: proto::UpdateCandidate::Pending.into(),
             },
             proto::EventBody::Restarting,
             proto::EventBody::UpdateConfirmed,
@@ -2411,8 +2642,8 @@ mod tests {
     fn a_body_reads_as_the_http_api_spells_it() {
         let body = EventBody::from(proto::EventBody::Enrolled {
             client: CLIENT,
-            role: proto::Role::Owner,
-            path: proto::Path::Invite,
+            role: proto::Role::Owner.into(),
+            path: proto::Path::Invite.into(),
         });
         assert_eq!(
             serde_json::to_value(body).unwrap(),

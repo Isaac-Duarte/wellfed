@@ -36,6 +36,9 @@ use wellfed_signed::offer::{self, ImageKind};
 
 /// The stock release an install starts from and a backup restores.
 pub const STOCK_VERSION: &str = "1.1.15";
+/// The model the pinned stock image is built for: a restore of it goes to
+/// no other.
+pub const STOCK_MODEL: Model = Model::Plaf103;
 
 /// SHA-256 of the whole stock 1.1.15 OTA image (container header
 /// included), as pinned in the device layout and the image profile.
@@ -292,6 +295,9 @@ impl StockBackup {
         }
         let model =
             Model::from_byte(signed.model).ok_or(RestoreError::Model { code: signed.model })?;
+        if model != STOCK_MODEL {
+            return Err(RestoreError::OtherModel { model });
+        }
         Ok(RestoreOffer {
             version: m.version,
             model,
@@ -324,6 +330,14 @@ pub enum RestoreError {
     OtherImage,
     #[error("the manifest names model code {code}, which no device has")]
     Model { code: u8 },
+    /// The stock image is [`STOCK_MODEL`]'s, whatever a manifest of it
+    /// says.
+    #[error(
+        "the manifest is signed for a {}, and the stock image is a {}'s",
+        model.name(),
+        STOCK_MODEL.name()
+    )]
+    OtherModel { model: Model },
 }
 
 /// [`StockBackup::from_bank`] against the given pins: the vendor's
@@ -597,6 +611,15 @@ mod tests {
         assert_eq!(
             backup.restore_offer(&unknown),
             Err(RestoreError::Model { code: 0x7f })
+        );
+        // Another model's manifest of these bytes is no restore either.
+        let mut other_model = good.clone();
+        other_model[21] = Model::Plwf106.code();
+        assert_eq!(
+            backup.restore_offer(&other_model),
+            Err(RestoreError::OtherModel {
+                model: Model::Plwf106
+            })
         );
 
         let replacement = manifest(&original, ImageKind::Replacement, original.len());

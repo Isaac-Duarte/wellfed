@@ -420,22 +420,15 @@ impl FeederSettings {
 /// The feeder's settings to change; absent fields stay as they are.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct FeederSettingsPatch {
-    #[serde(default)]
     pub lights: Option<bool>,
-    #[serde(default)]
     pub sound: Option<bool>,
     /// 0-100.
-    #[serde(default)]
     pub volume: Option<u8>,
-    #[serde(default)]
     pub lights_window: Option<Window>,
-    #[serde(default)]
     pub sound_window: Option<Window>,
     /// The desiccant reminder's period in days, 1-90.
-    #[serde(default)]
     #[schema(minimum = 1, maximum = 90)]
     pub desiccant_days: Option<u8>,
-    #[serde(default)]
     pub meal_reminder: Option<MealReminder>,
 }
 
@@ -550,7 +543,7 @@ impl Window {
 }
 
 /// Minutes in a day: a window's bounds are below it.
-const DAY_MINUTES: u16 = 24 * 60;
+pub(crate) const DAY_MINUTES: u16 = 24 * 60;
 
 impl fmt::Display for Window {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -320,8 +320,8 @@ pub fn a_client_change_records_its_event_unread(rig: &mut impl Rig) {
 
     let joined = EventBody::Enrolled {
         client: [7; 4],
-        role: proto::Role::Member,
-        path: Path::Invite,
+        role: proto::Role::Member.into(),
+        path: Path::Invite.into(),
     };
     let revoked = EventBody::Revoked {
         client: [7; 4],
@@ -345,8 +345,8 @@ pub fn a_client_change_records_its_event_unread(rig: &mut impl Rig) {
     };
     assert!(alerted(Alert::ClientJoined {
         client: [7; 4],
-        role: proto::Role::Member,
-        path: Path::Invite,
+        role: proto::Role::Member.into(),
+        path: Path::Invite.into(),
     }));
     assert!(alerted(Alert::ClientRevoked {
         client: [7; 4],
@@ -920,9 +920,9 @@ pub fn the_statistics_follow_the_loop(rig: &mut impl Rig) {
         feed: 1,
         requested: 3,
         completed: 2,
-        outcome: FeedOutcome::Failed,
-        reason: FeedReason::NoFeedback,
-        hopper: FoodLevel::Present,
+        outcome: FeedOutcome::Failed.into(),
+        reason: FeedReason::NoFeedback.into(),
+        hopper: FoodLevel::Present.into(),
         by: Source::Feeder,
     };
     rig.feeder().record_outcome(0, fed);
@@ -1086,7 +1086,7 @@ pub fn a_lasting_reason_not_to_feed_is_recorded_once(rig: &mut impl Rig) {
     rig.write();
 
     let blocked = EventBody::FeedingBlocked {
-        reason: Some(Blocked::Fault),
+        reason: Some(Blocked::Fault.into()),
     };
     let mut after = None;
     let mut seen = 0;

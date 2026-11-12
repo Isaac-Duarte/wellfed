@@ -39,6 +39,7 @@ pub mod api;
 pub mod calibration;
 pub mod call;
 pub mod connection;
+mod frames;
 pub mod history;
 pub mod install;
 pub mod offer;

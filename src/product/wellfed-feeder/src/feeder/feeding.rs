@@ -56,7 +56,7 @@
 use core::fmt;
 
 use wellfed_proto::api::{
-    Blocked, EventBody, FoodLevel, PORTIONS_MAX, PORTIONS_MIN, Readiness, Refusal, Source,
+    Blocked, EventBody, FoodLevel, Lenient, PORTIONS_MAX, PORTIONS_MIN, Readiness, Refusal, Source,
 };
 
 use crate::feed;
@@ -263,7 +263,13 @@ impl Watch {
     /// sees the feeder ready between two reasons still records the second.
     pub fn refused<P: Platform>(&mut self, platform: &mut P, now_ms: u32, reason: Blocked) {
         if self.refused.replace(reason) != Some(reason) {
-            events::record(platform, now_ms, EventBody::DispenseRefused { reason });
+            events::record(
+                platform,
+                now_ms,
+                EventBody::DispenseRefused {
+                    reason: reason.into(),
+                },
+            );
         }
     }
 
@@ -293,7 +299,9 @@ impl Watch {
             events::record(
                 platform,
                 now_ms,
-                EventBody::FeedingBlocked { reason: lasting },
+                EventBody::FeedingBlocked {
+                    reason: lasting.map(Lenient::Known),
+                },
             );
         }
     }

@@ -1114,3 +1114,31 @@ fn after_a_reboot_a_copy_found_current_later_posts_away() {
     assert_eq!(watch.changes().len(), 1);
     assert_eq!(watch.cursor, Some(cursor(1, 5, 1)));
 }
+
+/// Past the bound, the oldest report the table no longer lists ends, never
+/// one it still lists: that one would be tracked anew on the next read and
+/// posted again.
+#[test]
+fn the_bound_ends_absent_reports_and_keeps_a_listed_one() {
+    let mutes = Mutes::default();
+    let mut watch = Watch::default();
+    let now = context(at(10), &mutes);
+    let mut feed = 1;
+    for read in 1..=8 {
+        // Feed 0's report stays listed; eleven new ones push the others
+        // out, held as absent while the feeder reports more.
+        let mut table = vec![failed(0)];
+        for _ in 0..11 {
+            table.push(failed(feed));
+            feed += 1;
+        }
+        let mut alerts = view(1, &table);
+        alerts.more = true;
+        watch.apply(cursor(1, 1, read), &alerts, &now);
+
+        let new = if read == 1 { 12 } else { 11 };
+        assert_eq!(posts(&watch).len(), new, "read {read}");
+        assert!(watch.open.len() <= TRACKED_MAX);
+        deliver(&mut watch);
+    }
+}

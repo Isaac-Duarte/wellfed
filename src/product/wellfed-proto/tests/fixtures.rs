@@ -24,7 +24,8 @@ fn hex(bytes: &[u8]) -> String {
     Lower(bytes).to_string()
 }
 
-/// A fixture: its name, its bytes, and how to check they decode back.
+/// A fixture: its name, its bytes, and how to check they decode back to
+/// what wrote them.
 type Fixture = (&'static str, Vec<u8>, fn(&[u8]) -> bool);
 
 /// Every message shape.
@@ -43,8 +44,14 @@ fn messages() -> Vec<Fixture> {
         }
         entry(&DeviceMessage::Events(writer.batch()))
     }
-    let client = |bytes: &[u8]| decode::<ClientMessage<'_>>(bytes).is_ok();
-    let feeder = |bytes: &[u8]| decode::<DeviceMessage<'_>>(bytes).is_ok();
+    // What the bytes decode to encodes to them again: a decoder that read
+    // a field into the wrong place or a variant by the wrong index would
+    // write other bytes back.
+    let client =
+        |bytes: &[u8]| decode::<ClientMessage<'_>>(bytes).is_ok_and(|value| entry(&value) == bytes);
+    let feeder =
+        |bytes: &[u8]| decode::<DeviceMessage<'_>>(bytes).is_ok_and(|value| entry(&value) == bytes);
+    let event = |bytes: &[u8]| decode::<EventBody>(bytes).is_ok_and(|value| entry(&value) == bytes);
     let request = |op| ClientMessage::Request { id: ID, op };
     let response = |result| DeviceMessage::Response { id: ID, result };
     let wifi = Wifi {
@@ -309,9 +316,9 @@ fn messages() -> Vec<Fixture> {
                     feed: 14,
                     requested: 2,
                     completed: 1,
-                    outcome: FeedOutcome::Failed,
-                    reason: FeedReason::NoFeedback,
-                    hopper: FoodLevel::Low,
+                    outcome: FeedOutcome::Failed.into(),
+                    reason: FeedReason::NoFeedback.into(),
+                    hopper: FoodLevel::Low.into(),
                     by: Source::Panel,
                 },
             }]),
@@ -510,7 +517,7 @@ fn messages() -> Vec<Fixture> {
                 seq: 16,
                 at: None,
                 body: EventBody::FeedingBlocked {
-                    reason: Some(Blocked::Fault),
+                    reason: Some(Blocked::Fault.into()),
                 },
             }]),
             feeder,
@@ -752,7 +759,7 @@ fn messages() -> Vec<Fixture> {
                 generation: 5,
                 by: Source::Client([1, 2, 3, 4]),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-missed",
@@ -761,7 +768,7 @@ fn messages() -> Vec<Fixture> {
                 due: 1_793_200_000,
                 reason: MissedReason::Blocked(Blocked::Feeding),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-fed-scheduled",
@@ -769,12 +776,12 @@ fn messages() -> Vec<Fixture> {
                 feed: 9,
                 requested: 2,
                 completed: 2,
-                outcome: FeedOutcome::Done,
-                reason: FeedReason::Done,
-                hopper: FoodLevel::Present,
+                outcome: FeedOutcome::Done.into(),
+                reason: FeedReason::Done.into(),
+                hopper: FoodLevel::Present.into(),
                 by: Source::Schedule(2),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "refused-portions",
@@ -784,9 +791,9 @@ fn messages() -> Vec<Fixture> {
         (
             "event-dispense-refused",
             entry(&EventBody::DispenseRefused {
-                reason: Blocked::Feeding,
+                reason: Blocked::Feeding.into(),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "op-reset-desiccant",
@@ -820,14 +827,14 @@ fn messages() -> Vec<Fixture> {
                 minute: 7 * 60 + 30,
                 portions: 2,
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-food",
             entry(&EventBody::Food {
-                level: FoodLevel::Low,
+                level: FoodLevel::Low.into(),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-fed-outlet-blocked",
@@ -835,12 +842,12 @@ fn messages() -> Vec<Fixture> {
                 feed: 21,
                 requested: 3,
                 completed: 1,
-                outcome: FeedOutcome::Failed,
-                reason: FeedReason::OutletBlocked,
-                hopper: FoodLevel::Present,
+                outcome: FeedOutcome::Failed.into(),
+                reason: FeedReason::OutletBlocked.into(),
+                hopper: FoodLevel::Present.into(),
                 by: Source::Panel,
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-fed-jammed",
@@ -848,12 +855,12 @@ fn messages() -> Vec<Fixture> {
                 feed: 22,
                 requested: 2,
                 completed: 0,
-                outcome: FeedOutcome::Failed,
-                reason: FeedReason::Jammed,
-                hopper: FoodLevel::Present,
+                outcome: FeedOutcome::Failed.into(),
+                reason: FeedReason::Jammed.into(),
+                hopper: FoodLevel::Present.into(),
                 by: Source::Schedule(1),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-fed-mark-stuck",
@@ -861,12 +868,12 @@ fn messages() -> Vec<Fixture> {
                 feed: 23,
                 requested: 1,
                 completed: 0,
-                outcome: FeedOutcome::Failed,
-                reason: FeedReason::MarkStuck,
-                hopper: FoodLevel::Unread,
+                outcome: FeedOutcome::Failed.into(),
+                reason: FeedReason::MarkStuck.into(),
+                hopper: FoodLevel::Unread.into(),
                 by: Source::Feeder,
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "op-get-call",
@@ -921,7 +928,7 @@ fn messages() -> Vec<Fixture> {
                     seq: 301,
                     at: Some(1_792_674_000),
                     body: EventBody::Food {
-                        level: FoodLevel::Present,
+                        level: FoodLevel::Present.into(),
                     },
                 },
                 Event {
@@ -936,10 +943,10 @@ fn messages() -> Vec<Fixture> {
             "event-enrolled-press",
             entry(&EventBody::Enrolled {
                 client: [1, 2, 3, 4],
-                role: Role::UpdateSigner,
-                path: Path::Press,
+                role: Role::UpdateSigner.into(),
+                path: Path::Press.into(),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "op-play-call",
@@ -969,7 +976,7 @@ fn messages() -> Vec<Fixture> {
                 due: 1_793_200_000,
                 by: Source::Client([1, 2, 3, 4]),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-unskipped",
@@ -978,25 +985,23 @@ fn messages() -> Vec<Fixture> {
                 due: 1_793_200_000,
                 by: Source::Client([1, 2, 3, 4]),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-update-stop",
             entry(&EventBody::UpdateStop {
-                stop: UpdateStop::Hash,
+                stop: UpdateStop::Hash.into(),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "event-update-at-boot",
             entry(&EventBody::UpdateAtBoot {
-                candidate: UpdateCandidate::Activated,
+                candidate: UpdateCandidate::Activated.into(),
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
-        ("event-restarting", entry(&EventBody::Restarting), |b| {
-            decode::<EventBody>(b).is_ok()
-        }),
+        ("event-restarting", entry(&EventBody::Restarting), event),
         ("op-get-alerts", entry(&request(Op::GetAlerts)), client),
         (
             "outcome-alerts",
@@ -1015,7 +1020,7 @@ fn messages() -> Vec<Fixture> {
         (
             "event-update-confirmed",
             entry(&EventBody::UpdateConfirmed),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
         (
             "op-create-bound-invite",
@@ -1031,7 +1036,7 @@ fn messages() -> Vec<Fixture> {
                 client: [0x22; 7],
                 by: [0x33; 7],
             }),
-            |b| decode::<EventBody>(b).is_ok(),
+            event,
         ),
     ]
 }
@@ -1046,15 +1051,15 @@ fn alerts_table() -> [Option<OpenAlert>; ALERTS_MAX] {
             plan: Some(2),
             requested: 3,
             completed: 1,
-            outcome: FeedOutcome::Failed,
-            reason: FeedReason::Jammed,
+            outcome: FeedOutcome::Failed.into(),
+            reason: FeedReason::Jammed.into(),
         },
         Alert::MealUncertain {
             feed: 14,
             plan: None,
             requested: 1,
             completed: 0,
-            reason: FeedReason::Interrupted,
+            reason: FeedReason::Interrupted.into(),
         },
         Alert::MealMissed {
             plan: 1,
@@ -1066,12 +1071,12 @@ fn alerts_table() -> [Option<OpenAlert>; ALERTS_MAX] {
             due: 1_792_674_000,
         },
         Alert::UpdateFailed {
-            stop: UpdateStop::Hash,
+            stop: UpdateStop::Hash.into(),
         },
         Alert::ClientJoined {
             client: [1, 2, 3, 4],
-            role: Role::Member,
-            path: Path::Invite,
+            role: Role::Member.into(),
+            path: Path::Invite.into(),
         },
         Alert::ClientRevoked {
             client: [1, 2, 3, 4],
@@ -1079,7 +1084,7 @@ fn alerts_table() -> [Option<OpenAlert>; ALERTS_MAX] {
         },
         Alert::RolledBack,
         Alert::CannotFeed {
-            reason: Blocked::Fault,
+            reason: Blocked::Fault.into(),
         },
         Alert::FoodLikelyOut { confirmed: 5 },
         Alert::DesiccantDue { days: -2 },
@@ -1152,7 +1157,31 @@ fn every_v1_message_keeps_its_bytes() {
             format!("{name} {}", hex(&bytes)),
             "{name} changed bytes"
         );
-        assert!(decodes(&bytes), "{name} no longer decodes");
+        assert!(decodes(&bytes), "{name} no longer decodes to what wrote it");
     }
     assert_eq!(fixed, current, "a fixture was added or removed: bless it");
+}
+
+/// The feed trace's sample body reads as its comment says, through the
+/// reader every client uses.
+#[test]
+fn the_sample_trace_body_reads() {
+    use wellfed_proto::trace::{Entry, Reader};
+
+    let body = [0x11, 0x9a, 0x05, 0x8f, 0x80, 0x3d, 0x02];
+    let read: Vec<_> = Reader::new(&body).collect();
+    assert_eq!(
+        read,
+        [
+            Ok(Entry::Current {
+                at_ms: 17,
+                value: 333
+            }),
+            Ok(Entry::Mark {
+                at_ms: 7_840,
+                edges: 1,
+                high: false
+            }),
+        ]
+    );
 }

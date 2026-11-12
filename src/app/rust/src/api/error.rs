@@ -96,6 +96,9 @@ impl From<wellfed_connect::Error> for BridgeError {
             | Error::NotFound(_) => ErrorKind::Connect,
             Error::Timeout | Error::Unanswered | Error::Silent => ErrorKind::Timeout,
             Error::Closed | Error::Io(_) => ErrorKind::Closed,
+            // The join went and its answer was lost: the invite may be
+            // spent and the key enrolled.
+            Error::JoinUnanswered => ErrorKind::Interrupted,
             Error::UnknownKey => ErrorKind::UnknownKey,
             Error::Version(_) => ErrorKind::Version,
             Error::Full => ErrorKind::Full,

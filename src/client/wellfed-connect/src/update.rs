@@ -16,8 +16,10 @@ use std::time::Duration;
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
 use wellfed_model::{Answer, Op, UpdateView};
 
-/// Sessions a push reopens at most: a feeder that keeps dropping them is
-/// not coming back.
+/// Sessions a push reopens in a row with no byte written between them: a
+/// feeder that keeps dropping them without taking any more is not coming
+/// back. One whose install moves on between drops is, however many it
+/// drops over a long install.
 pub const REOPEN_MAX: u32 = 20;
 
 /// How long the driver waits between its steps.
@@ -107,6 +109,7 @@ pub async fn push<S: Steps>(
     let mut installer = Installer::new(image);
     let mut open = false;
     let mut reopened = 0;
+    let mut written = 0;
     let mut offered = false;
     loop {
         if !open {
@@ -146,6 +149,10 @@ pub async fn push<S: Steps>(
                         Err(_) => {}
                         Ok(()) => {
                             if let (Answer::Update(_), Some(view)) = (&answer, installer.view()) {
+                                if view.written > written {
+                                    written = view.written;
+                                    reopened = 0;
+                                }
                                 steps.progress(view);
                             }
                         }
@@ -176,6 +183,8 @@ pub async fn push<S: Steps>(
 mod tests {
     use std::convert::Infallible;
 
+    use wellfed_model::{Bank0Check, UpdatePhase};
+
     use super::*;
 
     /// A feeder that answers every request with `answer`, and keeps what it
@@ -205,6 +214,181 @@ mod tests {
         }
 
         fn progress(&mut self, _: &UpdateView) {}
+    }
+
+    /// Bank 0 receiving an image of `chunks` chunks, which activates it
+    /// with the last one: it applies every request, and loses the answers
+    /// `lose` picks by the request's number, as a dropped session would.
+    struct Bank0 {
+        chunks: u32,
+        written: u32,
+        installing: bool,
+        /// Bank 1 runs the new build: what a reopen finds once it is.
+        active: bool,
+        requests: u32,
+        lose: fn(u32) -> bool,
+        /// Sessions it opens before it stops coming back.
+        sessions: Option<u32>,
+        reopened: u32,
+        /// Whether a lost request was applied first, as a lost answer is,
+        /// or never arrived.
+        applies_lost: bool,
+    }
+
+    impl Bank0 {
+        fn new(chunks: u32, lose: fn(u32) -> bool) -> Self {
+            Self {
+                chunks,
+                written: 0,
+                installing: false,
+                active: false,
+                requests: 0,
+                lose,
+                sessions: None,
+                reopened: 0,
+                applies_lost: true,
+            }
+        }
+
+        fn len(&self) -> u32 {
+            self.chunks * 512
+        }
+
+        fn view(&self) -> Answer {
+            let receiving = self.installing && self.written < self.len();
+            Answer::Update(UpdateView {
+                phase: if self.active {
+                    UpdatePhase::Activated
+                } else if receiving {
+                    UpdatePhase::Receiving
+                } else {
+                    UpdatePhase::Idle
+                },
+                bank: 0,
+                min_version: 0,
+                digest: None,
+                version: 1,
+                image_len: self.len(),
+                written: self.written,
+                wanted: if receiving {
+                    vec![self.written]
+                } else {
+                    Vec::new()
+                },
+                stopped: None,
+                bank0: Bank0Check::Unchecked,
+            })
+        }
+
+        fn apply(&mut self, op: &Op) -> Answer {
+            match op {
+                Op::OfferUpdate { .. } => self.installing = true,
+                Op::UpdateChunk { offset, data } if *offset == self.written => {
+                    self.written += u32::try_from(data.len()).unwrap();
+                    self.active = self.written == self.len();
+                }
+                _ => {}
+            }
+            self.view()
+        }
+    }
+
+    impl Steps for Bank0 {
+        type Error = Infallible;
+
+        async fn step(&mut self, op: Op) -> Result<Option<Answer>, Infallible> {
+            self.requests += 1;
+            if (self.lose)(self.requests) {
+                if self.applies_lost {
+                    self.apply(&op);
+                }
+                return Ok(None);
+            }
+            Ok(Some(self.apply(&op)))
+        }
+
+        async fn reopen(&mut self) -> Result<Option<Opened>, Infallible> {
+            self.reopened += 1;
+            if self
+                .sessions
+                .is_some_and(|sessions| self.reopened > sessions)
+            {
+                return Ok(None);
+            }
+            let (bank, build) = if self.active {
+                (1, "new")
+            } else {
+                (0, "bank 0")
+            };
+            Ok(Some(Opened {
+                bank,
+                build: build.into(),
+            }))
+        }
+
+        fn activated(&mut self, opened: &Opened) -> bool {
+            opened.build == "new"
+        }
+
+        fn progress(&mut self, _: &UpdateView) {}
+    }
+
+    const IMAGE: Image<'static> = Image {
+        manifest: b"manifest",
+        downgrade: None,
+        payload: &[1; 64 * 512],
+    };
+
+    const NOW: Pace = Pace {
+        settle: Duration::ZERO,
+        restart: Duration::ZERO,
+    };
+
+    fn run(feeder: &mut Bank0) -> Pushed {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(push(IMAGE, feeder, NOW)).unwrap()
+    }
+
+    /// The last chunk's answer is lost and the feeder restarts into the new
+    /// build: the next session shows it running, and the push ends
+    /// activated without offering again into the trial boot.
+    #[test]
+    fn an_activation_whose_answer_was_lost_is_found_running() {
+        let mut feeder = Bank0::new(64, |request| request == 65);
+
+        assert_eq!(run(&mut feeder), Pushed::Activated);
+        assert_eq!(feeder.requests, 65);
+    }
+
+    /// A feeder that never comes back: nothing reached bank 0 before the
+    /// offer, and after it the install's end is unknown.
+    #[test]
+    fn a_feeder_gone_says_whether_the_offer_went() {
+        let mut never = Bank0::new(64, |_| false);
+        never.sessions = Some(0);
+        assert_eq!(run(&mut never), Pushed::Gone { offered: false });
+
+        let mut after_offer = Bank0::new(64, |request| request == 3);
+        after_offer.sessions = Some(1);
+        assert_eq!(run(&mut after_offer), Pushed::Gone { offered: true });
+    }
+
+    /// A long install over a link that drops a session every few chunks
+    /// keeps going while bytes move, past [`REOPEN_MAX`] drops in all; one
+    /// that takes nothing more between drops stops at the bound.
+    #[test]
+    fn the_reopen_bound_counts_drops_with_no_progress() {
+        let mut lossy = Bank0::new(64, |request| request % 3 == 0);
+        assert_eq!(run(&mut lossy), Pushed::Activated);
+        assert!(lossy.reopened > REOPEN_MAX + 1, "{}", lossy.reopened);
+
+        let mut stuck = Bank0::new(64, |_| true);
+        stuck.applies_lost = false;
+        assert_eq!(run(&mut stuck), Pushed::Gone { offered: true });
+        assert_eq!(stuck.reopened, REOPEN_MAX);
     }
 
     /// An offer answered in a way this build cannot read, or with an answer

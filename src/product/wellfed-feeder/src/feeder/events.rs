@@ -95,8 +95,8 @@ fn push(
     }
 
     let mut bytes = [0u8; BODY_BYTES];
-    // Every body fits the ring's record; one that did not would be a lost
-    // event.
+    // Every body fits the ring's record (wellfed-proto's test lists each
+    // variant at its widest), so no encoding fails here uncounted.
     if wellfed_proto::encode(&body, &mut bytes).is_ok() {
         let _ = platform.queue_event(at, bytes, slot);
     }

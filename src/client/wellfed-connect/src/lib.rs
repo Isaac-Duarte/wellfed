@@ -26,8 +26,11 @@
 //!
 //! Randomness is the caller's: request ids and ephemeral keys come in as
 //! arguments, so a server can draw them from its own generator and tests
-//! can fix them. A request that times out may still have run, so the
-//! caller retries a write with the same id.
+//! can fix them. A request that times out may still have run. A resend
+//! under the same id gets the first answer only while the feeder still
+//! remembers the id (its last 32 writes of the key, this boot), so a
+//! caller never resends a feed it didn't hear answered, and settles it
+//! from the history ([`wellfed_client::api`]).
 
 #![forbid(unsafe_code)]
 
@@ -83,6 +86,10 @@ pub enum Error {
     Unanswered,
     #[error("the feeder closed the connection")]
     Closed,
+    /// An invite's join went, and its answer never came: the feeder may
+    /// have enrolled the key, so only a session with it can tell.
+    #[error("the feeder took the join and its answer never came: the key may be enrolled")]
+    JoinUnanswered,
     #[error("the feeder stopped answering")]
     Silent,
     #[error(transparent)]
@@ -351,6 +358,10 @@ pub struct Connection {
     outbox: Outbox,
     /// Pushed messages not yet taken by [`Self::next`].
     queued: VecDeque<Pushed>,
+    /// The newest event or gap end handed to the caller, or the cursor the
+    /// subscription resumed after: behind the session's while events wait
+    /// in `queued`.
+    cursor: Option<Cursor>,
     /// Answers, or their absence, not yet taken by [`Self::ask`] or
     /// [`Self::receive`].
     answers: VecDeque<(RequestId, Option<Answer>)>,
@@ -386,13 +397,17 @@ impl Connection {
         ephemeral: [u8; 32],
         timing: Timing,
     ) -> Result<Self> {
+        // The welcome's window starts once the connection is up, not
+        // before a slow accept.
+        let stream = dial(address).await?;
         let session =
             connection::Connection::with(keys, identity, ephemeral, Hello::CURRENT, timing, now())?;
         let mut connection = Self {
-            stream: dial(address).await?,
+            stream,
             session,
             outbox: Outbox::default(),
             queued: VecDeque::new(),
+            cursor: None,
             answers: VecDeque::new(),
         };
         while connection.session.opened().is_none() {
@@ -444,9 +459,22 @@ impl Connection {
         self.opened().skew()
     }
 
-    /// The newest event or gap end received since [`Self::subscribe`].
+    /// The newest event or gap end [`Self::next`] or [`Self::receive`]
+    /// handed out since [`Self::subscribe`], or the cursor it resumed
+    /// after. One read may decode several events at once; those not yet
+    /// handed out are still ahead of it, so a caller that keeps it and
+    /// ends the session resumes before them.
     pub fn cursor(&self) -> Option<Cursor> {
-        self.session.cursor()
+        self.cursor
+    }
+
+    /// The next pushed message, moving [`Self::cursor`] past it.
+    fn hand_on(&mut self) -> Option<Pushed> {
+        let message = self.queued.pop_front()?;
+        if let Some(cursor) = Cursor::after(&message) {
+            self.cursor = Some(cursor);
+        }
+        Some(message)
     }
 
     /// Change how long a silent feeder is given before the session ends with
@@ -465,16 +493,42 @@ impl Connection {
     /// One turn of the loop: write what the session has, then read or
     /// wake for its clock, until `until` at the latest. Cancel-safe.
     async fn turn(&mut self, until: Option<Instant>) -> Result<()> {
+        let result = self.step(until).await;
+
+        // What the session decoded before an error ended it still counts:
+        // an answer read in the same read as a bad frame is that request's
+        // answer, not its absence.
+        while let Some(event) = self.session.poll_event() {
+            match event {
+                Event::Pushed(message) => self.queued.push_back(message),
+                Event::Answer { id, answer } => self.answers.push_back((id, Some(answer))),
+                Event::Unanswered { id } => self.answers.push_back((id, None)),
+            }
+        }
+        result
+    }
+
+    async fn step(&mut self, until: Option<Instant>) -> Result<()> {
         while let Some(bytes) = self.session.poll_transmit() {
             self.outbox.0.extend(bytes);
         }
-        self.outbox.flush(&mut self.stream).await?;
-
         let due = self.session.poll_timeout().map(Instant::from_std);
         let wake = match (due, until) {
             (Some(due), Some(until)) => due.min(until),
             (due, until) => due.or(until).unwrap_or_else(|| Instant::now() + SILENCE),
         };
+
+        // The write is bounded by the same clock as the read: a feeder that
+        // stopped reading fills the socket's buffer, and the silence limit
+        // must still end the session rather than the kernel, minutes on.
+        // The outbox keeps what a cut-short flush did not write, and a
+        // write the socket takes at once goes even past the clock.
+        let Ok(flushed) = timeout_at(wake, self.outbox.flush(&mut self.stream)).await else {
+            self.session.handle_timeout(now())?;
+            return Ok(());
+        };
+        flushed?;
+
         // A clock already due acts before any read: a session silent past
         // its limit is gone even when a close is waiting to be read.
         let mut buffer = [0u8; 2048];
@@ -495,14 +549,6 @@ impl Connection {
             }
             Err(_) => self.session.handle_timeout(now())?,
         }
-
-        while let Some(event) = self.session.poll_event() {
-            match event {
-                Event::Pushed(message) => self.queued.push_back(message),
-                Event::Answer { id, answer } => self.answers.push_back((id, Some(answer))),
-                Event::Unanswered { id } => self.answers.push_back((id, None)),
-            }
-        }
         Ok(())
     }
 
@@ -512,6 +558,7 @@ impl Connection {
     /// from the oldest kept: [`Resume::Restarted`].
     pub async fn subscribe(&mut self, from: Option<Cursor>, samples: bool) -> Result<Resume> {
         let resume = self.session.subscribe(now(), from, samples)?;
+        self.cursor = self.session.cursor();
         while let Some(bytes) = self.session.poll_transmit() {
             self.outbox.0.extend(bytes);
         }
@@ -546,7 +593,7 @@ impl Connection {
             if let Some((id, answer)) = self.answers.pop_front() {
                 return Ok(Received::Answer { id, answer });
             }
-            if let Some(message) = self.queued.pop_front() {
+            if let Some(message) = self.hand_on() {
                 return Ok(Received::Pushed(message));
             }
             if deadline <= Instant::now() {
@@ -561,7 +608,7 @@ impl Connection {
     pub async fn next(&mut self, wait: Duration) -> Result<Pushed> {
         let deadline = Instant::now() + wait;
         loop {
-            if let Some(message) = self.queued.pop_front() {
+            if let Some(message) = self.hand_on() {
                 return Ok(message);
             }
             // Answers belong to `ask` and `receive`; one given up on is dropped.
@@ -587,13 +634,29 @@ impl Connection {
             .map_err(|error| AskError::Unsent(error.into()))?;
 
         loop {
-            while let Some((answered, answer)) = self.answers.pop_front() {
-                if answered == id {
-                    return answer.ok_or(AskError::MayHaveRun(Error::Unanswered));
-                }
+            if let Some(answer) = self.answer_to(id) {
+                return answer.ok_or(AskError::MayHaveRun(Error::Unanswered));
             }
-            self.turn(None).await.map_err(AskError::MayHaveRun)?;
+            if let Err(error) = self.turn(None).await {
+                // The read that ended the session may have carried the
+                // answer first.
+                return match self.answer_to(id) {
+                    Some(Some(answer)) => Ok(answer),
+                    _ => Err(AskError::MayHaveRun(error)),
+                };
+            }
         }
+    }
+
+    /// The answer, or its absence, to the request under `id` once it is
+    /// in; the answers to other requests before it are dropped.
+    fn answer_to(&mut self, id: RequestId) -> Option<Option<Answer>> {
+        while let Some((answered, answer)) = self.answers.pop_front() {
+            if answered == id {
+                return Some(answer);
+            }
+        }
+        None
     }
 }
 
@@ -667,23 +730,43 @@ pub async fn join(
 ) -> Result<Joined> {
     let (mut join, hello) = Join::connect(keys, invite, label, ephemeral)?;
     let mut stream = dial(address).await?;
-    stream.write_all(&hello).await?;
+    write_within(&mut stream, &hello).await?;
 
     let mut buffer = [0u8; 2048];
+    let mut joining = false;
     loop {
-        let n = timeout(ANSWER, stream.read(&mut buffer))
-            .await
-            .map_err(|_| Error::Timeout)??;
-        if n == 0 {
+        let read = match timeout(ANSWER, stream.read(&mut buffer)).await {
+            Ok(Ok(0)) => Err(Error::Closed),
+            Ok(Ok(n)) => Ok(n),
+            Ok(Err(error)) => Err(error.into()),
+            Err(_) => Err(Error::Timeout),
+        };
+        let n = match read {
+            Ok(n) => n,
+            // Once the join went, the feeder may have enrolled the key
+            // whatever ended the wait.
+            Err(_) if joining => return Err(Error::JoinUnanswered),
             // The feeder drops an unknown or expired invite unanswered.
-            return Err(Error::Closed);
-        }
+            Err(error) => return Err(error),
+        };
         match join.receive(&buffer[..n])? {
             None => {}
-            Some(JoinStep::Send(bytes)) => stream.write_all(&bytes).await?,
+            Some(JoinStep::Send(bytes)) => {
+                joining = true;
+                write_within(&mut stream, &bytes).await?;
+            }
             Some(JoinStep::Done(joined)) => return Ok(joined),
         }
     }
+}
+
+/// Write `bytes` within [`ANSWER`]: a feeder that stopped reading would
+/// otherwise hold the write until the kernel gives up.
+async fn write_within(stream: &mut TcpStream, bytes: &[u8]) -> Result<()> {
+    timeout(ANSWER, stream.write_all(bytes))
+        .await
+        .map_err(|_| Error::Timeout)??;
+    Ok(())
 }
 
 /// Whether a device of `kind` serves `op`: the shared core, or its own
@@ -730,6 +813,81 @@ mod tests {
             assert!(serves(DeviceKind::Fountain, op), "{op:?}");
         }
         assert_eq!(UNAVAILABLE, Answer::Refused(Refusal::Unavailable));
+    }
+
+    /// A feeder that takes an invite's join and closes without answering
+    /// may have enrolled the key: the join's end is unknown, not an
+    /// expired invite. One that closes before the join went is.
+    #[test]
+    fn a_join_whose_answer_is_lost_may_have_enrolled() {
+        use std::io::{Read, Write};
+        use wellfed_proto::api::{FRAME_MAX, Open, PROLOGUE};
+        use wellfed_session::frame::{self, PREFIX};
+        use wellfed_session::noise::{Handshake, Pattern, Role};
+
+        fn read_frame(stream: &mut std::net::TcpStream) -> Option<Vec<u8>> {
+            let mut prefix = [0; PREFIX];
+            stream.read_exact(&mut prefix).ok()?;
+            let len = frame::parse_prefix(prefix, FRAME_MAX).unwrap();
+            let mut message = vec![0; len];
+            stream.read_exact(&mut message).ok()?;
+            Some(message)
+        }
+
+        let feeder = Keypair::from_secret([0x10; 32]);
+        let invite = Invite {
+            feeder: *feeder.public(),
+            id: 7,
+            secret: [0x44; 32],
+        };
+        for answers in [true, false] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let device = Keypair::from_secret([0x10; 32]);
+            let served = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let open: Open = wellfed_proto::decode(&read_frame(&mut stream).unwrap()).unwrap();
+                assert_eq!(open, Open::Invite { id: 7 });
+                let first = read_frame(&mut stream).unwrap();
+                if !answers {
+                    return;
+                }
+                let mut handshake = Handshake::new(
+                    Pattern::XxPsk3,
+                    Role::Responder,
+                    PROLOGUE,
+                    &device,
+                    None,
+                    [7; 32],
+                )
+                .unwrap();
+                handshake.set_psk([0x44; 32]);
+                let mut plain = [0; FRAME_MAX];
+                handshake.read_message(&first, &mut plain).unwrap();
+                let mut out = [0; FRAME_MAX];
+                let written = handshake.write_message(&[], &mut out).unwrap();
+                stream
+                    .write_all(&frame::prefix(written, FRAME_MAX).unwrap())
+                    .unwrap();
+                stream.write_all(&out[..written]).unwrap();
+                // The join arrives, and the feeder closes unanswered.
+                read_frame(&mut stream).unwrap();
+            });
+
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let client = Keypair::from_secret([0x20; 32]);
+            let joined = runtime.block_on(join(&client, invite, "phone", address, [0x33; 32]));
+            served.join().unwrap();
+
+            if answers {
+                assert!(matches!(joined, Err(Error::JoinUnanswered)), "{joined:?}");
+            } else {
+                assert!(matches!(joined, Err(Error::Closed)), "{joined:?}");
+            }
+        }
     }
 
     /// A fountain's side of one session: the handshake, welcoming the

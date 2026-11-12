@@ -1475,6 +1475,42 @@ fn a_quick_second_settings_change_goes_on_the_first_s_generation() {
     });
 }
 
+/// Once nobody listens to the session's updates, it ends at the next one,
+/// but a caller still hears how its request ended: an answered read is
+/// answered, and a settings change waiting behind one that landed never
+/// went, so it reads as not sent rather than as one that may have run.
+#[test]
+fn a_session_nobody_listens_to_still_answers_its_callers() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, heard) = opened(sim.identity, sim.address).await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        // Answered after the session's own opening reads, so none of them
+        // is left to say the card again.
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        drop(heard);
+
+        let read = ask(FeederRequest::GetPlans).await;
+        assert!(matches!(read, FeederReply::Plans { .. }), "{read:?}");
+
+        let volume = |volume| FeederRequest::PutSettings {
+            base: settings.generation,
+            changes: SettingsChanges {
+                volume: Some(volume),
+                ..SettingsChanges::default()
+            },
+        };
+        // The change's event may end the session before its answer does;
+        // either way the change that waited never went.
+        let (_, waiting) = tokio::join!(ask(volume(20)), ask(volume(40)));
+        assert!(matches!(waiting, FeederReply::NotSent), "{waiting:?}");
+        sim.stop().await;
+    });
+}
+
 /// A change waiting behind one the feeder refused never goes: the generation
 /// it would go on is not known.
 #[test]

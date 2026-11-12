@@ -10,7 +10,7 @@ use wellfed_api::{
     FoodLevel, InstallState, MaybeKnown, MealReminder, Model, Phase, Problem, Role, Settings,
     Source, Units, WifiSource, Window,
 };
-use wellfed_model::{Bank0Blocked, Bank0Check, Skew};
+use wellfed_model::{Bank0Blocked, Bank0Check, Skew, UpdateRefusal};
 
 fn read<T: DeserializeOwned>(json: &str) -> T {
     serde_json::from_str(json).unwrap_or_else(|error| panic!("{json} does not read: {error}"))
@@ -157,4 +157,29 @@ fn a_bank0_check_a_newer_build_added_reads_as_unknown() {
         Bank0Check::Blocked(Bank0Blocked::Unknown)
     );
     assert!(serde_json::from_str::<Bank0Check>(r#"{"state":"blocked"}"#).is_err());
+}
+
+/// A refusal a newer build added reads as unknown whether it is a bare
+/// name or carries data, which serde's catch-all alone would refuse; the
+/// known ones read as they always have.
+#[test]
+fn an_update_refusal_a_newer_build_added_reads_as_unknown() {
+    assert_eq!(
+        read::<UpdateRefusal>(r#""a_newer""#),
+        UpdateRefusal::Unknown
+    );
+    assert_eq!(
+        read::<UpdateRefusal>(r#"{"a_newer":{"x":1}}"#),
+        UpdateRefusal::Unknown
+    );
+    assert_eq!(
+        read::<UpdateRefusal>(r#""signature""#),
+        UpdateRefusal::Signature
+    );
+    let fallback = UpdateRefusal::Fallback {
+        reason: Bank0Blocked::Changed,
+    };
+    let json = serde_json::to_string(&fallback).unwrap();
+    assert_eq!(json, r#"{"fallback":{"reason":"changed"}}"#);
+    assert_eq!(read::<UpdateRefusal>(&json), fallback);
 }

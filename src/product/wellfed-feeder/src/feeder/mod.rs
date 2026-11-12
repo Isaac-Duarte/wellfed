@@ -561,7 +561,13 @@ impl<P: Platform> Feeder<P> {
         });
         let flight = feeding::Flight::of(feeds);
         if let Some(level) = self.readiness.food(feeds.food(), flight) {
-            events::record(&mut self.platform, now_ms, EventBody::Food { level });
+            events::record(
+                &mut self.platform,
+                now_ms,
+                EventBody::Food {
+                    level: level.into(),
+                },
+            );
         }
 
         let local_ms = self

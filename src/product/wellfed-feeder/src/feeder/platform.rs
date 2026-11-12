@@ -274,7 +274,9 @@ pub trait Platform {
     /// Queue one record for the event ring; false (and counted lost) when
     /// the queue has no `slot` left.
     fn queue_event(&mut self, at: Option<u32>, body: [u8; BODY_BYTES], slot: EventSlot) -> bool;
-    /// Records the queue dropped since the last call.
+    /// Records dropped since the last call (by the queue, or by the ring
+    /// refusing them), once the queue has a slot for the `Lost` event that
+    /// reports them; 0 until then.
     fn take_lost(&mut self) -> u32;
     /// The oldest event the settings writer appended itself (a client store
     /// change's) that the loop has not yet taken: its time and body, for

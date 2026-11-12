@@ -317,7 +317,7 @@ fn a_press_obeys_readiness_and_a_lasting_reason_is_recorded() {
         changes,
         [
             EventBody::FeedingBlocked {
-                reason: Some(Blocked::Fault)
+                reason: Some(Blocked::Fault.into())
             },
             EventBody::FeedingBlocked { reason: None },
         ]
@@ -364,10 +364,10 @@ fn a_press_during_a_feed_is_recorded_once_a_spell_and_not_queued() {
         refused,
         [
             EventBody::DispenseRefused {
-                reason: Blocked::Feeding
+                reason: Blocked::Feeding.into()
             },
             EventBody::DispenseRefused {
-                reason: Blocked::Resolving
+                reason: Blocked::Resolving.into()
             },
         ]
     );
@@ -400,13 +400,13 @@ fn a_press_under_a_new_reason_is_recorded_without_a_ready_pass() {
         refused,
         [
             EventBody::DispenseRefused {
-                reason: Blocked::Feeding
+                reason: Blocked::Feeding.into()
             },
             EventBody::DispenseRefused {
-                reason: Blocked::Battery
+                reason: Blocked::Battery.into()
             },
             EventBody::DispenseRefused {
-                reason: Blocked::Feeding
+                reason: Blocked::Feeding.into()
             },
         ]
     );
@@ -903,9 +903,9 @@ fn feed_despite_the_speaker(rig: &mut Rig, pages: usize) {
         feed,
         requested: 1,
         completed: 0,
-        outcome: FeedOutcome::Cancelled,
-        reason: FeedReason::Cancelled,
-        hopper: FoodLevel::Present,
+        outcome: FeedOutcome::Cancelled.into(),
+        reason: FeedReason::Cancelled.into(),
+        hopper: FoodLevel::Present.into(),
         by: Source::Panel,
     };
     rig.feeder.record_outcome(rig.now, fed);

@@ -18,7 +18,9 @@ use wellfed_feeder::feeder::{CLAIM_WAIT_MS, Platform};
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::sim::Sim;
-use wellfed_proto::api::{Alert, AlertKind, EventBody, FeedOutcome, Source, UpdateCandidate};
+use wellfed_proto::api::{
+    Alert, AlertKind, EventBody, FeedOutcome, Lenient, Source, UpdateCandidate,
+};
 
 const MINUTE_MS: u64 = 60_000;
 const HOUR_MS: u64 = 60 * MINUTE_MS;
@@ -176,7 +178,7 @@ fn a_failed_meal_opens_and_a_restart_reads_it_back() {
         feeder.events().iter().any(|(_, body)| matches!(
             body,
             EventBody::Fed {
-                outcome: FeedOutcome::Failed,
+                outcome: Lenient::Known(FeedOutcome::Failed),
                 ..
             }
         )),
@@ -299,7 +301,7 @@ fn a_trial_that_confirms_is_recorded_once() {
                 reset_flags: WATCHDOG
             },
             EventBody::UpdateAtBoot {
-                candidate: UpdateCandidate::Activated
+                candidate: UpdateCandidate::Activated.into()
             },
             EventBody::UpdateConfirmed,
         ]

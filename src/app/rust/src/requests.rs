@@ -287,6 +287,10 @@ async fn upload_call(commands: &mpsc::UnboundedSender<Command>, wav: &[u8]) -> F
                     refusal: refusal_of(refusal),
                 };
             }
+            // An answer this build can't read may follow a step that ran.
+            Step::Failed(UploadFailed::Upload(UploadError::Uncertain)) => {
+                return FeederReply::Unanswered;
+            }
             Step::Failed(_) => return FeederReply::Unexpected,
         }
     }

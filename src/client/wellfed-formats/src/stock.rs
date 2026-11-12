@@ -249,7 +249,7 @@ pub const SERVER_CONFIG: &str = "private/server.json";
 pub const INSTALLER_CONFIG: &str = "private/installer.json";
 
 /// The parts of `wellfed-stock`'s config the bench tools use.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ServerConfig {
     pub api_token: String,
     pub http_listen: std::net::SocketAddr,
@@ -258,6 +258,16 @@ pub struct ServerConfig {
     /// server replays it to stock's plan request, and stock replaces its
     /// stored table with whatever a reply carries.
     plans: Option<serde::de::IgnoredAny>,
+}
+
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerConfig")
+            .field("http_listen", &self.http_listen)
+            .field("mqtt_listen", &self.mqtt_listen)
+            .field("plans", &self.plans.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl ServerConfig {
@@ -301,6 +311,19 @@ impl ImageLease {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_server_config_s_debug_leaves_out_its_token() {
+        let config: ServerConfig = serde_json::from_value(json!({
+            "api_token": "s3cret-token",
+            "http_listen": "127.0.0.1:8765",
+            "mqtt_listen": "10.42.103.1:1883",
+        }))
+        .unwrap();
+        let debug = format!("{config:?}");
+        assert!(debug.contains("8765"), "{debug}");
+        assert!(!debug.contains("s3cret"), "{debug}");
+    }
 
     /// Any `plans` key but null is a snapshot the server would send stock,
     /// an empty list included; null, like no key, leaves the request

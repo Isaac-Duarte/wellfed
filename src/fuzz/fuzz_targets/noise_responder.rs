@@ -28,6 +28,10 @@ libfuzzer_sys::fuzz_target!(|data: &[u8]| {
 
     let mut payload = vec![0; usize::from(pick >> 2) * 8];
     if let Ok(read) = responder.read_message(message, &mut payload) {
+        // Every other pattern's first message carries a tag (IK and KK
+        // under the static key, XXpsk3 under the PSK) no byte fuzzer
+        // forges, so only XX's may be read.
+        assert_eq!(pattern, Pattern::Xx);
         assert!(read <= payload.len());
         let mut reply = [0; 256];
         let _ = responder.write_message(&[], &mut reply);

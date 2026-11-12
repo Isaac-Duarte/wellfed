@@ -300,14 +300,36 @@ macro_rules! round_trip {
     }};
 }
 
-/// Decode any bytes as `$ty`; whatever decodes re-encodes to bytes that
-/// decode to the same value.
+/// Decode any bytes as `$ty`; whatever decodes re-encodes, and one pass of
+/// encoding and decoding is a fixed point, by value and by bytes. The first
+/// decode may hold what an encode drops on purpose, a carried tail or a
+/// count of skipped alerts ([`a_carried_tail_and_skipped_alerts_are_not_written_back`]),
+/// so the pass normalises it: the value it decodes to must then decode
+/// back to itself, and encode to the same bytes, which a decoder that lost
+/// or invented anything else would not.
 macro_rules! stable {
-    ($ty:ty, $bytes:expr) => {{
+    // A type that carries nothing an encode drops: the first decode is
+    // already the fixed point.
+    (exact $ty:ty, $bytes:expr) => {{
+        stable!($ty, $bytes);
         if let Ok(value) = decode::<$ty>($bytes) {
             let mut out = [0u8; 4 * FRAME_MAX];
             let len = encode(&value, &mut out).unwrap();
             prop_assert_eq!(decode::<$ty>(&out[..len]), Ok(value));
+        }
+    }};
+    ($ty:ty, $bytes:expr) => {{
+        if let Ok(value) = decode::<$ty>($bytes) {
+            let mut once = [0u8; 4 * FRAME_MAX];
+            let len = encode(&value, &mut once).unwrap();
+            let normal = decode::<$ty>(&once[..len]);
+            prop_assert!(normal.is_ok(), "{:?} does not decode again", value);
+            let normal = normal.unwrap();
+
+            let mut twice = [0u8; 4 * FRAME_MAX];
+            let again_len = encode(&normal, &mut twice).unwrap();
+            prop_assert_eq!(&once[..len], &twice[..again_len]);
+            prop_assert_eq!(decode::<$ty>(&twice[..again_len]), Ok(normal));
         }
     }};
 }
@@ -364,22 +386,23 @@ proptest! {
     /// handshake payloads, and each sealed request.
     #[test]
     fn feeder_side_decoders_survive_any_bytes(bytes in wire()) {
-        stable!(Open, &bytes);
-        stable!(Hello, &bytes);
-        stable!(Join<'_>, &bytes);
+        stable!(exact Open, &bytes);
+        stable!(exact Hello, &bytes);
+        stable!(exact Join<'_>, &bytes);
+        // A request can carry a plan whose tail an encode drops.
         stable!(ClientMessage<'_>, &bytes);
         stable!(Request<'_>, &bytes);
-        stable!(Answer<'_>, &bytes);
+        stable!(exact Answer<'_>, &bytes);
     }
 
     /// What a client decodes from a feeder, or from anything answering on
     /// its address.
     #[test]
     fn client_side_decoders_survive_any_bytes(bytes in wire()) {
-        stable!(Welcome<'_>, &bytes);
-        stable!(Joined, &bytes);
+        stable!(exact Welcome<'_>, &bytes);
+        stable!(exact Joined, &bytes);
         stable!(DeviceMessage<'_>, &bytes);
-        stable!(Reply, &bytes);
+        stable!(exact Reply, &bytes);
 
         // A batch's bytes are read only when it is walked: any bytes as a
         // batch walk to an end, and every event they yield re-encodes to
@@ -481,4 +504,67 @@ proptest! {
             prop_assert_eq!(&out[..len], &body[..len]);
         }
     }
+}
+
+/// What an encode drops on purpose: a struct's tail a later build filled
+/// is read as carried and written back empty, and a skipped alert is
+/// counted on reading and not written. So a newer feeder's answer decodes,
+/// and its re-encoding is the fixed point [`stable!`] compares.
+#[test]
+fn a_carried_tail_and_skipped_alerts_are_not_written_back() {
+    fn hex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap())
+            .collect()
+    }
+
+    // `outcome-settings` from `fixtures/v1.txt`, its empty tail (the last
+    // byte) replaced by one a newer build filled.
+    let pinned =
+        hex("00111111111111111111111111111111110a000a0100280001e003b0091501cabe02010a0100");
+    let mut newer = pinned[..pinned.len() - 1].to_vec();
+    newer.extend_from_slice(&[0x01, 0xff]);
+    let Ok(DeviceMessage::Response {
+        result: Outcome::Feeder(FeederOutcome::Settings(settings)),
+        ..
+    }) = decode::<DeviceMessage<'_>>(&newer)
+    else {
+        panic!("a newer feeder's settings don't decode");
+    };
+    assert!(!settings.ext.is_empty());
+    let mut out = [0u8; FRAME_MAX];
+    let message = decode::<DeviceMessage<'_>>(&newer).unwrap();
+    let len = encode(&message, &mut out).unwrap();
+    assert_eq!(&out[..len], &pinned[..]);
+
+    // A table with an entry this build can't read between two it can.
+    #[derive(serde::Serialize)]
+    struct Wire<'a> {
+        epoch: u32,
+        generation: u32,
+        more: bool,
+        settling: bool,
+        alerts: &'a [EncodedAlert<'a>],
+    }
+    let at = core::num::NonZeroU32::new(5);
+    let entry = |alert| EncodedAlert { at, alert };
+    let len = encode(
+        &Wire {
+            epoch: 1,
+            generation: 2,
+            more: false,
+            settling: false,
+            alerts: &[entry(&[12]), entry(&[0x70, 0x01]), entry(&[12])],
+        },
+        &mut out,
+    )
+    .unwrap();
+    let read: AlertsView = decode(&out[..len]).unwrap();
+    assert_eq!(read.alerts.skipped, 1);
+    let mut again = [0u8; FRAME_MAX];
+    let len = encode(&read, &mut again).unwrap();
+    let written: AlertsView = decode(&again[..len]).unwrap();
+    assert_eq!(written.alerts.skipped, 0);
+    assert_eq!(written.alerts.entries, read.alerts.entries);
 }

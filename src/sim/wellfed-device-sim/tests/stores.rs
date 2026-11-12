@@ -80,8 +80,8 @@ fn a_client_change_answers_its_ticket_on_the_writers_turn() {
     assert_eq!(record.at, Some(1_700_000_000));
     let enrolled = EventBody::Enrolled {
         client: [9; 4],
-        role: proto::Role::Owner,
-        path: Path::Setup,
+        role: proto::Role::Owner.into(),
+        path: Path::Setup.into(),
     };
     assert_eq!(
         wellfed_proto::decode_padded::<EventBody>(&record.body),

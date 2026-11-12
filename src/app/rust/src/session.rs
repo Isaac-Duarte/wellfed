@@ -627,6 +627,11 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         };
 
         if write.landed(&mut self.facts, answer) && !self.card() {
+            // The write that waited never goes: its callers hear so, not
+            // that it may have run.
+            for reply in follow.map(|outgoing| outgoing.replies).unwrap_or_default() {
+                let _ = reply.send(Heard::NotSent);
+            }
             return Ok(false);
         }
         if let Some(outgoing) = follow {
@@ -783,12 +788,10 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                     }
                     _ => false,
                 };
-                if news && !self.card() {
-                    return Ok(false);
-                }
-                // Dart stopped waiting: nothing to tell it.
+                // The caller hears first: a session nobody listens to
+                // ends below, and its answer must not read as lost.
                 let _ = reply.send(Heard::from(answer));
-                Ok(true)
+                Ok(!news || self.card())
             }
             (Asked::Write { write, replies }, answer) => {
                 self.wrote(&write, replies, answer.as_ref())

@@ -117,8 +117,8 @@ fn every_body() -> Vec<EventBody> {
         EventBody::Wifi { generation: 1, by },
         EventBody::Enrolled {
             client: [1; 4],
-            role: proto::Role::Member,
-            path: proto::Path::Invite,
+            role: proto::Role::Member.into(),
+            path: proto::Path::Invite.into(),
         },
         EventBody::Revoked { client: [1; 4], by },
         EventBody::ClockSync { by, jump_ms: None },
@@ -127,13 +127,13 @@ fn every_body() -> Vec<EventBody> {
             feed: 1,
             requested: 1,
             completed: 1,
-            outcome: proto::FeedOutcome::Done,
-            reason: proto::FeedReason::Done,
-            hopper: FoodLevel::Present,
+            outcome: proto::FeedOutcome::Done.into(),
+            reason: proto::FeedReason::Done.into(),
+            hopper: FoodLevel::Present.into(),
             by,
         },
         EventBody::FeedingBlocked {
-            reason: Some(proto::Blocked::Fault),
+            reason: Some(proto::Blocked::Fault.into()),
         },
         EventBody::Supply(proto::Supply {
             adapter: Some(false),
@@ -150,7 +150,7 @@ fn every_body() -> Vec<EventBody> {
             reason: proto::MissedReason::Late,
         },
         EventBody::DispenseRefused {
-            reason: proto::Blocked::Feeding,
+            reason: proto::Blocked::Feeding.into(),
         },
         EventBody::MealSoon {
             plan: 0,
@@ -159,7 +159,7 @@ fn every_body() -> Vec<EventBody> {
             portions: 2,
         },
         EventBody::Food {
-            level: proto::FoodLevel::Low,
+            level: proto::FoodLevel::Low.into(),
         },
         EventBody::Skipped {
             plan: 0,
@@ -172,10 +172,10 @@ fn every_body() -> Vec<EventBody> {
             by,
         },
         EventBody::UpdateStop {
-            stop: proto::UpdateStop::Hash,
+            stop: proto::UpdateStop::Hash.into(),
         },
         EventBody::UpdateAtBoot {
-            candidate: proto::UpdateCandidate::None,
+            candidate: proto::UpdateCandidate::None.into(),
         },
         EventBody::Restarting,
         EventBody::UpdateConfirmed,

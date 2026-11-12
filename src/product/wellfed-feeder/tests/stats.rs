@@ -109,9 +109,9 @@ fn the_food_beam_counts_its_transitions_and_feeds_since_a_refill() {
         feed: 1,
         requested: 1,
         completed: 1,
-        outcome: wellfed_proto::api::FeedOutcome::Done,
-        reason: wellfed_proto::api::FeedReason::Done,
-        hopper: FoodLevel::Present,
+        outcome: wellfed_proto::api::FeedOutcome::Done.into(),
+        reason: wellfed_proto::api::FeedReason::Done.into(),
+        hopper: FoodLevel::Present.into(),
         by: wellfed_proto::api::Source::Panel,
     };
     keeper.food(true);

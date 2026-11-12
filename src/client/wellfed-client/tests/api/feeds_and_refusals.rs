@@ -34,6 +34,32 @@ fn a_feed_answers_once_reserved_and_a_retry_never_feeds_twice() {
     assert_eq!(ended, Answer::Refused(model::Refusal::NotFound));
 }
 
+/// The feeder remembers a key's last [`REMEMBERED`] write ids, in RAM: a
+/// feed's id resent once that many later writes have pushed it out is a new
+/// request, and feeds again. So a client never resends a feed whose answer
+/// it didn't hear, however soon; it settles it from the history.
+///
+/// [`REMEMBERED`]: wellfed_device_api::REMEMBERED
+#[test]
+fn a_feed_s_id_resent_after_the_window_feeds_again() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+
+    let feed = ask(&mut rig, &mut owner, 2, Op::Feed { portions: 3 });
+    assert_eq!(feed, Answer::Feeding { feed: 1 });
+    for (id, locked) in (10..)
+        .zip([true, false].into_iter().cycle())
+        .take(wellfed_device_api::REMEMBERED)
+    {
+        let lock = ask(&mut rig, &mut owner, id, Op::SetLock { locked });
+        assert!(matches!(lock, Answer::Done { .. }), "{lock:?}");
+    }
+    let again = ask(&mut rig, &mut owner, 2, Op::Feed { portions: 3 });
+
+    assert_eq!(again, Answer::Feeding { feed: 2 });
+    assert_eq!(rig.device.feeds.len(), 2);
+}
+
 /// The first request queued the feed; its session ended before the owner
 /// reserved it, so the client never heard. The same id on a new session
 /// waits for that feed's reservation and answers with it: no second feed.
