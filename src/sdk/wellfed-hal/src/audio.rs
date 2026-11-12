@@ -32,11 +32,25 @@ pub use wellfed_core::tone::PlayResult;
 use wellfed_core::tone::{Player, SAMPLE_RATE, Tune};
 
 use crate::board::storage::CALL;
-use crate::sdk;
+use crate::sdk::{self, IrqGuard};
 use crate::{clock, settings};
 
 /// The amplifier enable (stock writes it HIGH around playback).
 pub const AMP_PIN: u32 = crate::board::pins::AMP;
+const AMP_PORT: u32 = AMP_PIN >> 5;
+const AMP_MASK: u32 = 1 << (AMP_PIN & 31);
+
+// PB23 shares port B with the emitter, an indicator and the buttons, which
+// the supervision timer and the LED service write from other contexts. The
+// ROM's port writes and `GPIO_Init` read, modify and write the whole port,
+// so each write here is made under the interrupt lock, and the mask must
+// reach no pin another owner holds.
+const _: () = assert!(
+    AMP_PORT == 1
+        && AMP_MASK & crate::stopped::PB_MASK == 0
+        && AMP_MASK & crate::leds::PB_MASK == 0,
+    "the amplifier enable overlaps an emitter or indicator pin"
+);
 pub const POLL_MS: u32 = 20;
 /// Zero pages the amplifier gets to settle before the first note. 60 ms
 /// swallowed the 50 ms `key` tick whole while the 160 ms `alert` beeps were
@@ -97,10 +111,14 @@ fn open_output(audio: &mut sdk::Audio, rate_hz: u32) -> bool {
     if !AMP_READY.swap(true, Ordering::AcqRel) {
         // Configure the enable as an output, LOW, before its first use.
         amp(false);
+        let _guard = IrqGuard::lock();
         sdk::gpio_no_pull(AMP_PIN);
-        // SAFETY: the amplifier enable, which this module owns.
+        // SAFETY: the amplifier enable, which this module owns; `GPIO_Init`
+        // rewrites port B's direction, which the lock keeps from
+        // interleaving with another context's write.
         unsafe { sdk::gpio_init(AMP_PIN, true) };
-        amp(false);
+        // SAFETY: as above.
+        unsafe { sdk::gpio_port_write(AMP_PORT, AMP_MASK, 0) };
     }
     if !audio.open(rate_hz) {
         return false;
@@ -334,8 +352,9 @@ fn next(delay_ms: u32, record: Option<Record>) -> Step {
 }
 
 fn amp(on: bool) {
-    // SAFETY: the amplifier enable, which this module owns.
-    unsafe { sdk::gpio_write_bit(AMP_PIN, on) };
+    let _guard = IrqGuard::lock();
+    // SAFETY: the amplifier enable, which this module owns (checked above).
+    unsafe { sdk::gpio_port_write(AMP_PORT, AMP_MASK, if on { AMP_MASK } else { 0 }) };
 }
 
 impl Speaker {

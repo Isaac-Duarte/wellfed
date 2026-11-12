@@ -132,6 +132,9 @@ impl Service {
         }
 
         for pin in PINS {
+            // `GPIO_Init` rewrites port B's direction, which the emitter's
+            // and the indicator's owners also set, from other contexts.
+            let _guard = sdk::IrqGuard::lock();
             // SAFETY: a button input; the button port owns them.
             unsafe { sdk::gpio_init(pin, false) };
         }

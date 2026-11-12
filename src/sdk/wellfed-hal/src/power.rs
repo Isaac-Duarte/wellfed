@@ -121,8 +121,13 @@ impl Monitor {
         }
 
         let Some(calibration) = self.calibration else {
-            // SAFETY: the adapter input, which only ever reads; nothing drives it.
-            unsafe { sdk::gpio_init(ADAPTER_PIN, false) };
+            {
+                // `GPIO_Init` rewrites port A's direction, which the motor's
+                // and the indicators' owners also set, from other contexts.
+                let _guard = sdk::IrqGuard::lock();
+                // SAFETY: the adapter input, which only ever reads; nothing drives it.
+                unsafe { sdk::gpio_init(ADAPTER_PIN, false) };
+            }
             let calibration = adc::open().calibration;
             self.calibration = calibration;
             if calibration.is_none() {

@@ -5,6 +5,7 @@
 //! The PLAF103's power monitor, which builds for no other board.
 #![cfg(wellfed_board = "plaf103")]
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use wellfed_core::adc_scale::AdcCalibration;
 use wellfed_hal::power::{self, DIVIDER_PER_MILLE, Monitor, Record, SAMPLE_MS, STALE_MS, Step};
@@ -180,4 +181,40 @@ fn an_implausible_pack_reading_is_named() {
         power::supply(10_000).pack,
         Pack::Implausible { .. }
     ));
+}
+
+/// Port writes and direction changes the fake saw, and how many of them
+/// came with interrupts unmasked: another context's write to the same port
+/// could then interleave with the ROM's read-modify-write.
+static WRITES: AtomicU32 = AtomicU32::new(0);
+static UNMASKED: AtomicU32 = AtomicU32::new(0);
+
+fn note_write() {
+    WRITES.fetch_add(1, Ordering::Relaxed);
+    if wellfed_hal::sdk::primask() == 0 {
+        UNMASKED.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Count every GPIO write from here on.
+fn watch_writes() {
+    WRITES.store(0, Ordering::Relaxed);
+    UNMASKED.store(0, Ordering::Relaxed);
+    fake::with(|h| {
+        h.output_hook = Some(note_write);
+        h.direction_hook = Some(note_write);
+    });
+}
+
+#[test]
+fn opening_the_adapter_input_holds_the_interrupt_lock() {
+    let (_serial, mut monitor) = start(2849, true);
+    watch_writes();
+
+    monitor.step();
+    assert!(
+        WRITES.load(Ordering::Relaxed) >= 1,
+        "the adapter pin's direction"
+    );
+    assert_eq!(UNMASKED.load(Ordering::Relaxed), 0);
 }
