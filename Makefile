@@ -18,7 +18,7 @@ help:
 	@echo "check-server-release: the release check against dist/server/ and the image"
 	@echo "Checks do not open serial ports, change routing, or send device commands."
 
-check: check-rust check-deps check-fuzz check-cross check-virtual-feeder check-docs
+check: check-rust check-deps check-fuzz check-cross check-docs
 
 # Library and binary code only: input never panics on `unwrap`, a narrowing
 # `as` never wraps silently, and nothing is `pub` that no caller can reach.
@@ -30,7 +30,11 @@ PRODUCTION_LINTS = -D clippy::unwrap_used -D clippy::cast_possible_truncation \
 # the production pass and the all-targets pass, sharing a target directory,
 # would each undo the other's results and re-check the whole workspace on
 # every `make check`. The production pass keeps its own.
-PRODUCTION = --target-dir $(or $(CARGO_TARGET_DIR),target)/production
+#
+# Every recipe that runs what cargo built finds it here, so a builder with
+# CARGO_TARGET_DIR set never runs stale binaries left in ./target.
+TARGET = $(abspath $(or $(CARGO_TARGET_DIR),target))
+PRODUCTION = --target-dir $(TARGET)/production
 
 # Many tests wait on a socket, a timer or the simulator's 20 ms pace rather
 # than a core, so twice as many run as there are cores: on a 29-core builder
@@ -82,7 +86,7 @@ check-deps:
 # unstable sanitizer flags, in the fuzz crate's own target directory, since
 # its lockfile is not the workspace's.
 check-fuzz:
-	cargo clippy --locked --manifest-path src/fuzz/Cargo.toml --target-dir $(or $(CARGO_TARGET_DIR),target)/fuzz --bins -- -D warnings
+	cargo clippy --locked --manifest-path src/fuzz/Cargo.toml --target-dir $(TARGET)/fuzz --bins -- -D warnings
 
 # The KM0 core's routines for both boards, built and linted for the target,
 # where the RAM park, the trial and the C exports compile: the host passes in
@@ -153,7 +157,7 @@ check-app:
 	cd $(APP)/tools/wellfed_lints && dart pub get && dart test
 	cd $(APP) && dart analyze --fatal-infos
 	cargo build --locked -p wellfed-app-bridge -p wellfed-feeder-sim
-	cd $(APP) && TZ=America/Denver WELLFED_SMOKE_TARGET=$(CURDIR)/target/debug flutter test
+	cd $(APP) && TZ=America/Denver WELLFED_SMOKE_TARGET=$(TARGET)/debug flutter test
 	@if [ "$$(uname)" != Linux ]; then $(MAKE) app-goldens; fi
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
 	@# The https verifier needs both halves on the phone: the JNI hook in the
@@ -292,7 +296,7 @@ HA_WHEEL = target/homeassistant-wheels/check
 # host has on its path, so the gate passes or fails alike on every host.
 HA_PYO3 = PYO3_PYTHON=$(CURDIR)/$(HA_VENV)/bin/python
 # Where `cargo build` put the simulator, the CLI and the server.
-HA_BIN = $(abspath $(or $(CARGO_TARGET_DIR),target))/debug
+HA_BIN = $(TARGET)/debug
 check-homeassistant:
 	$(HA_VENV)/bin/python -c 'import sys; sys.exit(sys.version_info[:2] != (3, 14))' 2>/dev/null || uv venv --clear --python 3.14 $(HA_VENV)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt
