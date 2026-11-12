@@ -299,6 +299,12 @@ enum CatchUpEnd {
   /// Away from home, and the owner's server did not answer: nothing is
   /// judged.
   serverUnanswered,
+
+  /// Away from home, and the owner's server turned this phone away: its
+  /// token no longer holds, its account may not read the feeder, or the
+  /// server no longer has it. Nothing is judged, and nothing comes through
+  /// that server until the owner logs in again or adds the feeder back.
+  serverRefused,
 }
 
 /// A feeder's alerts as this phone lists them.

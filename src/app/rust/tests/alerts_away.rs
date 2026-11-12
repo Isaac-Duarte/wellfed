@@ -4,7 +4,7 @@
 //!   posts its alerts;
 //! - home again, a catch-up reads the feeder itself and posts nothing new,
 //!   and away once more nothing either: one alert, one notification;
-//! - a server that doesn't answer judges nothing.
+//! - a server that turns the phone away, or doesn't answer, judges nothing.
 
 use std::time::Duration;
 
@@ -187,6 +187,16 @@ fn an_alert_heard_away_and_then_at_home_posts_once() {
         .await;
         assert_eq!(again.end, CatchUpEnd::Server);
         assert!(post(&dir, &sim, &again).await.is_empty());
+
+        // A server that turns this phone away judges nothing either, and
+        // says it did.
+        let turned_away = AlertServer {
+            secret: "wf_0000000000000000000000000000000000000000000".into(),
+            ..alert_server.clone()
+        };
+        let refused = catch_up(&dir, &sim, PhoneNetwork::Elsewhere, Some(turned_away)).await;
+        assert_eq!(refused.end, CatchUpEnd::ServerRefused);
+        assert!(refused.changes.is_empty());
 
         // A server that doesn't answer judges nothing.
         server.stop().await;

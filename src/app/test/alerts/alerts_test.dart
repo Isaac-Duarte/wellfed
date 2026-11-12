@@ -97,6 +97,26 @@ void main() {
       expect(shown.problem, contains('disk'));
     });
 
+    test('a check the server turned away says so, and anything else thrown still stops the spinner', () async {
+      final ports = FakeAlertPorts()..notices = [foodLow()];
+      final alerts = FeederAlertsController(ports, kitchen);
+      addTearDown(alerts.dispose);
+      await alerts.load();
+
+      ports.fails = const ServerTurnedAway();
+      await alerts.check();
+      AlertsShown shown = alerts.state as AlertsShown;
+      expect(shown.checking, isFalse);
+      expect(shown.problem, contains('your server turned this phone away'));
+
+      ports.fails = StateError('a bridge panic');
+      await alerts.check();
+      shown = alerts.state as AlertsShown;
+      expect(shown.checking, isFalse);
+      expect(shown.problem, contains('a bridge panic'));
+      expect(shown.notices, hasLength(1));
+    });
+
     testWidgets('the screen words each alert, dismisses one and checks', (tester) async {
       final ports = FakeAlertPorts()..notices = [failedMeal(), foodLow()];
       await _showAlerts(tester, ports);

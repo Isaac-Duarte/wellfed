@@ -110,7 +110,7 @@ impl From<Error> for ServerError {
 /// run is the server client's [`Error::failure`], the one reading every
 /// client shares, so a kind never calls definite what that reads as
 /// possibly run; only the failures it leaves definite get their own words.
-fn kind(error: &Error) -> ServerErrorKind {
+pub(crate) fn kind(error: &Error) -> ServerErrorKind {
     use wellfed_api::ErrorCode;
     use wellfed_server_client::Failure;
 

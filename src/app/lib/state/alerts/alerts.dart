@@ -152,16 +152,31 @@ class FeederAlertsController extends ChangeNotifier {
     final AlertsState shown = _state;
     if (shown is! AlertsShown || shown.checking) return;
     _set(shown.copyWith(checking: true));
-    try {
-      await _ports.check([_feeder]);
-    } on BridgeError catch (error) {
-      _set(shown.copyWith(checking: false, problem: "Couldn't check: ${error.message}."));
-      return;
-    } on PlatformException catch (error) {
-      _set(shown.copyWith(checking: false, problem: "Couldn't check: ${error.message ?? error.code}."));
+    final String? problem = await _checked();
+    if (problem != null) {
+      _set(shown.copyWith(checking: false, problem: problem));
       return;
     }
     await load();
+  }
+
+  /// What a catch-up with the feeder ran into, in the screen's words;
+  /// `null` once it went through.
+  Future<String?> _checked() async {
+    try {
+      await _ports.check([_feeder]);
+      return null;
+    } on ServerTurnedAway {
+      return 'Away from home, your server turned this phone away. Log in to it again, '
+          'or check that it still has this feeder.';
+    } on BridgeError catch (error) {
+      return "Couldn't check: ${error.message}.";
+    } on PlatformException catch (error) {
+      return "Couldn't check: ${error.message ?? error.code}.";
+    } on Object catch (error) {
+      // Anything else, a panic's error among them: the spinner still stops.
+      return "Couldn't check: $error.";
+    }
   }
 
   /// Hide `notice` on this phone until the feeder clears it. The feeder is

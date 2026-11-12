@@ -45,6 +45,7 @@ use crate::alerts::{self, Sitting};
 use crate::api::alerts::{Attempt, CatchUpEnd};
 use crate::api::error::BridgeError;
 use crate::api::keys::random;
+use crate::api::server_error::ServerErrorKind;
 
 /// The longest a catch-up stays on the feeder once it dials: the handshake
 /// and two reads, each answered at once by a feeder that is there.
@@ -206,9 +207,16 @@ async fn through_server(
     now: impl Fn() -> Timestamp,
 ) -> Result<(CatchUpEnd, Vec<Change>), BridgeError> {
     let read = timeout(SITTING, server.client.feeder_alerts(server.feeder)).await;
-    let Ok(Ok(alerts)) = read else {
+    let alerts = match read {
+        Ok(Ok(alerts)) => alerts,
+        // Turned away: every round goes the same way until the owner acts.
+        Ok(Err(error)) if refused(&crate::server::kind(&error)) => {
+            return Ok((CatchUpEnd::ServerRefused, pending(dir, identity).await?));
+        }
         // The server's silence says nothing of the feeder.
-        return Ok((CatchUpEnd::ServerUnanswered, pending(dir, identity).await?));
+        Ok(Err(_)) | Err(_) => {
+            return Ok((CatchUpEnd::ServerUnanswered, pending(dir, identity).await?));
+        }
     };
 
     let [a, b, c, d, ..] = *target.keys.public();
@@ -230,6 +238,19 @@ async fn through_server(
     })
     .await??;
     Ok((CatchUpEnd::Server, changes))
+}
+
+/// Whether the server turned this phone away from the feeder, rather than
+/// failed to answer: its token no longer holds, its account or role may not
+/// read the feeder, or the server no longer has it.
+const fn refused(kind: &ServerErrorKind) -> bool {
+    matches!(
+        kind,
+        ServerErrorKind::TokenRevoked
+            | ServerErrorKind::AccountDisabled
+            | ServerErrorKind::Forbidden
+            | ServerErrorKind::NotFound
+    )
 }
 
 /// Apply what the server last read of the feeder, as a session's read

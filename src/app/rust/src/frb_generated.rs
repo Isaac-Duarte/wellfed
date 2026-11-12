@@ -8171,6 +8171,7 @@ impl SseDecode for crate::api::alerts::CatchUpEnd {
             6 => crate::api::alerts::CatchUpEnd::Failed,
             7 => crate::api::alerts::CatchUpEnd::Server,
             8 => crate::api::alerts::CatchUpEnd::ServerUnanswered,
+            9 => crate::api::alerts::CatchUpEnd::ServerRefused,
             _ => unreachable!("Invalid variant for CatchUpEnd: {}", inner),
         };
     }
@@ -14708,6 +14709,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::alerts::CatchUpEnd {
             Self::Failed => 6.into_dart(),
             Self::Server => 7.into_dart(),
             Self::ServerUnanswered => 8.into_dart(),
+            Self::ServerRefused => 9.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -20410,6 +20412,7 @@ impl SseEncode for crate::api::alerts::CatchUpEnd {
                 crate::api::alerts::CatchUpEnd::Failed => 6,
                 crate::api::alerts::CatchUpEnd::Server => 7,
                 crate::api::alerts::CatchUpEnd::ServerUnanswered => 8,
+                crate::api::alerts::CatchUpEnd::ServerRefused => 9,
                 _ => {
                     unimplemented!("");
                 }

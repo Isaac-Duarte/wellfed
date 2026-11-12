@@ -1,6 +1,5 @@
 import 'package:wellfed/platform/alert_ports.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
-import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 
@@ -59,12 +58,12 @@ class FakeAlertPorts implements AlertPorts {
   final postedOpen = <List<KnownFeeder>>[];
 
   /// What the next read or change throws, as a damaged store would.
-  BridgeError? fails;
+  Object? fails;
   final checked = <List<KnownFeeder>>[];
   final dismissed = <int>[];
 
   void _fail() {
-    if (fails case final BridgeError error) throw error;
+    if (fails case final Object error) Error.throwWithStackTrace(error, StackTrace.current);
   }
 
   @override
