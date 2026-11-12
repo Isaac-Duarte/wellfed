@@ -9,18 +9,19 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use flutter_rust_bridge::frb;
+use wellfed_client::offer::{self, Candidate, Confirmation, Offer, Restarted, confirmation};
 use wellfed_client::update::{Image, InstallError};
 use wellfed_connect::Connection;
 use wellfed_connect::update::Pushed;
 use wellfed_install::event::Event;
 use wellfed_install::push::push;
 use wellfed_install::{Discovery, Review};
-use wellfed_model::{Answer, Op, Readiness, Skew, UpdateView};
+use wellfed_model::{Answer, Bank0Blocked, Op, Readiness, Skew, UpdatePhase, UpdateView};
 use wellfed_session::hex;
 use wellfed_session::noise::Keypair;
 
 use crate::api::error::{BridgeError, ErrorKind};
-use crate::api::feeder::FeederRefusal;
+use crate::api::feeder::{FeederRefusal, UpdateInfo};
 use crate::api::install::{ImageCheck, InstallAnswer, InstallAsk, InstallUpdate};
 use crate::api::keys::ClientKey;
 use crate::api::model::UpdateStop;
@@ -82,6 +83,9 @@ pub enum UpdateEnd {
     /// The new version was activated, and the feeder runs bank 0's copy, which
     /// may be older than what it ran before the update: a trial that failed.
     WentBack,
+    /// The new version was activated, and bank 1 runs some other build: an
+    /// update from elsewhere came between.
+    WrongBuild,
     /// Something of this phone's before any offer: the image, or its address.
     Failed {
         detail: String,
@@ -282,11 +286,17 @@ async fn confirm(
     let deadline = Instant::now() + CONFIRM_WAIT;
     while Instant::now() < deadline {
         if let Some(read) = reading(connect).await {
-            if read.view.bank == 0 || !read.build.eq_ignore_ascii_case(served) {
-                return UpdateEnd::WentBack;
-            }
-            if read.view.min_version >= version || read.ready {
-                return UpdateEnd::Confirmed;
+            let restarted = Restarted {
+                build: &read.build,
+                bank: read.view.bank,
+                confirmed: read.view.min_version,
+                ready: read.ready,
+            };
+            match confirmation(served, version, restarted) {
+                Confirmation::Confirmed => return UpdateEnd::Confirmed,
+                Confirmation::FellBack => return UpdateEnd::WentBack,
+                Confirmation::WrongBuild => return UpdateEnd::WrongBuild,
+                Confirmation::Pending => {}
             }
         }
         tokio::time::sleep(POLL).await;
@@ -331,6 +341,99 @@ async fn reading(
         }
     };
     Some(Reading { build, view, ready })
+}
+
+/// Whether this app offers its image to a feeder.
+pub enum UpdateOffer {
+    /// Newer than what the feeder confirmed, and bank 0 allows it: offer
+    /// it. The only value an update starts from.
+    Newer { build: String, version: u32 },
+    /// The feeder runs this build already.
+    Current,
+    /// The feeder runs newer firmware than this app carries: update the app.
+    Older,
+    /// Bank 1 refuses every update until bank 0 checks itself in.
+    Blocked { reason: Bank0Blocked },
+}
+
+/// Whether to offer the image `build` at `version` to a feeder that runs
+/// `running` (`None` before its status is read) at `skew`, with `update`
+/// its update state: the rule every client shares.
+#[frb(sync)]
+pub fn update_offer(
+    build: String,
+    version: u32,
+    running: Option<String>,
+    skew: Skew,
+    update: UpdateInfo,
+) -> UpdateOffer {
+    let candidate = Candidate {
+        build: &build,
+        version,
+    };
+    match offer::offer(
+        candidate,
+        running.as_deref(),
+        skew,
+        update.min_version,
+        update.bank0,
+    ) {
+        Offer::Newer => UpdateOffer::Newer { build, version },
+        Offer::Current => UpdateOffer::Current,
+        Offer::Older => UpdateOffer::Older,
+        Offer::Blocked(reason) => UpdateOffer::Blocked { reason },
+    }
+}
+
+/// What a read settles of an update whose end was unknown.
+pub enum UnknownEnd {
+    /// Nothing is under way and the new build does not run: the owner may
+    /// decide again.
+    Decide,
+    /// The new build runs and has confirmed itself.
+    Confirmed,
+    /// Still unknown: look again later.
+    Unknown,
+}
+
+/// What `update` (the update state a fresh read gave) and the feeder's
+/// current status settle of the update that sent `served` at `version`
+/// (`None` when this app does not know what it sent): `running` is the
+/// status's build and `ready` whether it can feed, `None` and `false` while
+/// the status is not current. Idle alone settles nothing: a bank 1 on trial
+/// reads idle too, before its verdict.
+#[frb(sync)]
+pub fn unknown_end(
+    served: Option<String>,
+    version: u32,
+    update: UpdateInfo,
+    running: Option<String>,
+    ready: bool,
+) -> UnknownEnd {
+    if update.phase != UpdatePhase::Idle {
+        return UnknownEnd::Unknown;
+    }
+    if update.bank == 0 {
+        return UnknownEnd::Decide;
+    }
+    let (Some(served), Some(running)) = (served, running) else {
+        return UnknownEnd::Unknown;
+    };
+
+    let restarted = Restarted {
+        build: &running,
+        bank: update.bank,
+        confirmed: update.min_version,
+        ready,
+    };
+    match confirmation(&served, version, restarted) {
+        Confirmation::Confirmed => UnknownEnd::Confirmed,
+        // Bank 0 answered above; another build is not this update's to
+        // settle.
+        Confirmation::FellBack | Confirmation::WrongBuild | Confirmation::Pending => {
+            UnknownEnd::Unknown
+        }
+    }
 }
 
 #[cfg(test)]

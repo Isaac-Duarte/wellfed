@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/update/update_state.dart';
 
@@ -17,7 +18,7 @@ void main() {
     final feeder = FeederController(book, ports, kitchen);
     addTearDown(feeder.dispose);
 
-    await feeder.update.start(build: 'cd', version: 7);
+    await feeder.update.start(const UpdateOffer_Newer(build: 'cd', version: 7));
 
     expect(feeder.update.state, isA<UpdateUnavailable>());
     expect(ports.holds, 0);

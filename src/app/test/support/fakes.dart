@@ -27,6 +27,7 @@ import 'package:wellfed/theme/theme.dart';
 import 'fake_install.dart';
 import 'fake_phone.dart';
 import 'fake_router.dart';
+import 'fake_update_rules.dart';
 
 export 'fake_book.dart';
 export 'fake_phone.dart';
@@ -223,7 +224,7 @@ class FakeBackupPorts implements BackupPorts {
   Future<void> share(String path) async {}
 }
 
-class FakeFeederPorts implements FeederPorts {
+class FakeFeederPorts with FakeUpdateRules implements FeederPorts {
   final sessions = <FakeSession>[];
 
   /// The router every request goes through.

@@ -1447,10 +1447,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void dco_decode_unit(dynamic raw);
 
   @protected
+  UnknownEnd dco_decode_unknown_end(dynamic raw);
+
+  @protected
   UpdateEnd dco_decode_update_end(dynamic raw);
 
   @protected
   UpdateInfo dco_decode_update_info(dynamic raw);
+
+  @protected
+  UpdateOffer dco_decode_update_offer(dynamic raw);
 
   @protected
   UpdatePhase dco_decode_update_phase(dynamic raw);
@@ -3024,10 +3030,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_decode_unit(SseDeserializer deserializer);
 
   @protected
+  UnknownEnd sse_decode_unknown_end(SseDeserializer deserializer);
+
+  @protected
   UpdateEnd sse_decode_update_end(SseDeserializer deserializer);
 
   @protected
   UpdateInfo sse_decode_update_info(SseDeserializer deserializer);
+
+  @protected
+  UpdateOffer sse_decode_update_offer(SseDeserializer deserializer);
 
   @protected
   UpdatePhase sse_decode_update_phase(SseDeserializer deserializer);
@@ -5011,10 +5023,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_unit(void self, SseSerializer serializer);
 
   @protected
+  void sse_encode_unknown_end(UnknownEnd self, SseSerializer serializer);
+
+  @protected
   void sse_encode_update_end(UpdateEnd self, SseSerializer serializer);
 
   @protected
   void sse_encode_update_info(UpdateInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_update_offer(UpdateOffer self, SseSerializer serializer);
 
   @protected
   void sse_encode_update_phase(UpdatePhase self, SseSerializer serializer);

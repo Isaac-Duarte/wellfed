@@ -56,7 +56,7 @@ extension UpdateEndPatterns on UpdateEnd {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateEnd_Confirmed value)?  confirmed,TResult Function( UpdateEnd_AlreadyRunning value)?  alreadyRunning,TResult Function( UpdateEnd_Refused value)?  refused,TResult Function( UpdateEnd_Stopped value)?  stopped,TResult Function( UpdateEnd_Lost value)?  lost,TResult Function( UpdateEnd_Uncertain value)?  uncertain,TResult Function( UpdateEnd_NotOffered value)?  notOffered,TResult Function( UpdateEnd_Unconfirmed value)?  unconfirmed,TResult Function( UpdateEnd_WentBack value)?  wentBack,TResult Function( UpdateEnd_Failed value)?  failed,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateEnd_Confirmed value)?  confirmed,TResult Function( UpdateEnd_AlreadyRunning value)?  alreadyRunning,TResult Function( UpdateEnd_Refused value)?  refused,TResult Function( UpdateEnd_Stopped value)?  stopped,TResult Function( UpdateEnd_Lost value)?  lost,TResult Function( UpdateEnd_Uncertain value)?  uncertain,TResult Function( UpdateEnd_NotOffered value)?  notOffered,TResult Function( UpdateEnd_Unconfirmed value)?  unconfirmed,TResult Function( UpdateEnd_WentBack value)?  wentBack,TResult Function( UpdateEnd_WrongBuild value)?  wrongBuild,TResult Function( UpdateEnd_Failed value)?  failed,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case UpdateEnd_Confirmed() when confirmed != null:
@@ -68,7 +68,8 @@ return lost(_that);case UpdateEnd_Uncertain() when uncertain != null:
 return uncertain(_that);case UpdateEnd_NotOffered() when notOffered != null:
 return notOffered(_that);case UpdateEnd_Unconfirmed() when unconfirmed != null:
 return unconfirmed(_that);case UpdateEnd_WentBack() when wentBack != null:
-return wentBack(_that);case UpdateEnd_Failed() when failed != null:
+return wentBack(_that);case UpdateEnd_WrongBuild() when wrongBuild != null:
+return wrongBuild(_that);case UpdateEnd_Failed() when failed != null:
 return failed(_that);case _:
   return orElse();
 
@@ -87,7 +88,7 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateEnd_Confirmed value)  confirmed,required TResult Function( UpdateEnd_AlreadyRunning value)  alreadyRunning,required TResult Function( UpdateEnd_Refused value)  refused,required TResult Function( UpdateEnd_Stopped value)  stopped,required TResult Function( UpdateEnd_Lost value)  lost,required TResult Function( UpdateEnd_Uncertain value)  uncertain,required TResult Function( UpdateEnd_NotOffered value)  notOffered,required TResult Function( UpdateEnd_Unconfirmed value)  unconfirmed,required TResult Function( UpdateEnd_WentBack value)  wentBack,required TResult Function( UpdateEnd_Failed value)  failed,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateEnd_Confirmed value)  confirmed,required TResult Function( UpdateEnd_AlreadyRunning value)  alreadyRunning,required TResult Function( UpdateEnd_Refused value)  refused,required TResult Function( UpdateEnd_Stopped value)  stopped,required TResult Function( UpdateEnd_Lost value)  lost,required TResult Function( UpdateEnd_Uncertain value)  uncertain,required TResult Function( UpdateEnd_NotOffered value)  notOffered,required TResult Function( UpdateEnd_Unconfirmed value)  unconfirmed,required TResult Function( UpdateEnd_WentBack value)  wentBack,required TResult Function( UpdateEnd_WrongBuild value)  wrongBuild,required TResult Function( UpdateEnd_Failed value)  failed,}){
 final _that = this;
 switch (_that) {
 case UpdateEnd_Confirmed():
@@ -99,7 +100,8 @@ return lost(_that);case UpdateEnd_Uncertain():
 return uncertain(_that);case UpdateEnd_NotOffered():
 return notOffered(_that);case UpdateEnd_Unconfirmed():
 return unconfirmed(_that);case UpdateEnd_WentBack():
-return wentBack(_that);case UpdateEnd_Failed():
+return wentBack(_that);case UpdateEnd_WrongBuild():
+return wrongBuild(_that);case UpdateEnd_Failed():
 return failed(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -114,7 +116,7 @@ return failed(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateEnd_Confirmed value)?  confirmed,TResult? Function( UpdateEnd_AlreadyRunning value)?  alreadyRunning,TResult? Function( UpdateEnd_Refused value)?  refused,TResult? Function( UpdateEnd_Stopped value)?  stopped,TResult? Function( UpdateEnd_Lost value)?  lost,TResult? Function( UpdateEnd_Uncertain value)?  uncertain,TResult? Function( UpdateEnd_NotOffered value)?  notOffered,TResult? Function( UpdateEnd_Unconfirmed value)?  unconfirmed,TResult? Function( UpdateEnd_WentBack value)?  wentBack,TResult? Function( UpdateEnd_Failed value)?  failed,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateEnd_Confirmed value)?  confirmed,TResult? Function( UpdateEnd_AlreadyRunning value)?  alreadyRunning,TResult? Function( UpdateEnd_Refused value)?  refused,TResult? Function( UpdateEnd_Stopped value)?  stopped,TResult? Function( UpdateEnd_Lost value)?  lost,TResult? Function( UpdateEnd_Uncertain value)?  uncertain,TResult? Function( UpdateEnd_NotOffered value)?  notOffered,TResult? Function( UpdateEnd_Unconfirmed value)?  unconfirmed,TResult? Function( UpdateEnd_WentBack value)?  wentBack,TResult? Function( UpdateEnd_WrongBuild value)?  wrongBuild,TResult? Function( UpdateEnd_Failed value)?  failed,}){
 final _that = this;
 switch (_that) {
 case UpdateEnd_Confirmed() when confirmed != null:
@@ -126,7 +128,8 @@ return lost(_that);case UpdateEnd_Uncertain() when uncertain != null:
 return uncertain(_that);case UpdateEnd_NotOffered() when notOffered != null:
 return notOffered(_that);case UpdateEnd_Unconfirmed() when unconfirmed != null:
 return unconfirmed(_that);case UpdateEnd_WentBack() when wentBack != null:
-return wentBack(_that);case UpdateEnd_Failed() when failed != null:
+return wentBack(_that);case UpdateEnd_WrongBuild() when wrongBuild != null:
+return wrongBuild(_that);case UpdateEnd_Failed() when failed != null:
 return failed(_that);case _:
   return null;
 
@@ -144,7 +147,7 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  confirmed,TResult Function()?  alreadyRunning,TResult Function( FeederRefusal refusal)?  refused,TResult Function( UpdateStop stop)?  stopped,TResult Function()?  lost,TResult Function()?  uncertain,TResult Function()?  notOffered,TResult Function()?  unconfirmed,TResult Function()?  wentBack,TResult Function( String detail)?  failed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  confirmed,TResult Function()?  alreadyRunning,TResult Function( FeederRefusal refusal)?  refused,TResult Function( UpdateStop stop)?  stopped,TResult Function()?  lost,TResult Function()?  uncertain,TResult Function()?  notOffered,TResult Function()?  unconfirmed,TResult Function()?  wentBack,TResult Function()?  wrongBuild,TResult Function( String detail)?  failed,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case UpdateEnd_Confirmed() when confirmed != null:
 return confirmed();case UpdateEnd_AlreadyRunning() when alreadyRunning != null:
@@ -155,7 +158,8 @@ return lost();case UpdateEnd_Uncertain() when uncertain != null:
 return uncertain();case UpdateEnd_NotOffered() when notOffered != null:
 return notOffered();case UpdateEnd_Unconfirmed() when unconfirmed != null:
 return unconfirmed();case UpdateEnd_WentBack() when wentBack != null:
-return wentBack();case UpdateEnd_Failed() when failed != null:
+return wentBack();case UpdateEnd_WrongBuild() when wrongBuild != null:
+return wrongBuild();case UpdateEnd_Failed() when failed != null:
 return failed(_that.detail);case _:
   return orElse();
 
@@ -174,7 +178,7 @@ return failed(_that.detail);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  confirmed,required TResult Function()  alreadyRunning,required TResult Function( FeederRefusal refusal)  refused,required TResult Function( UpdateStop stop)  stopped,required TResult Function()  lost,required TResult Function()  uncertain,required TResult Function()  notOffered,required TResult Function()  unconfirmed,required TResult Function()  wentBack,required TResult Function( String detail)  failed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  confirmed,required TResult Function()  alreadyRunning,required TResult Function( FeederRefusal refusal)  refused,required TResult Function( UpdateStop stop)  stopped,required TResult Function()  lost,required TResult Function()  uncertain,required TResult Function()  notOffered,required TResult Function()  unconfirmed,required TResult Function()  wentBack,required TResult Function()  wrongBuild,required TResult Function( String detail)  failed,}) {final _that = this;
 switch (_that) {
 case UpdateEnd_Confirmed():
 return confirmed();case UpdateEnd_AlreadyRunning():
@@ -185,7 +189,8 @@ return lost();case UpdateEnd_Uncertain():
 return uncertain();case UpdateEnd_NotOffered():
 return notOffered();case UpdateEnd_Unconfirmed():
 return unconfirmed();case UpdateEnd_WentBack():
-return wentBack();case UpdateEnd_Failed():
+return wentBack();case UpdateEnd_WrongBuild():
+return wrongBuild();case UpdateEnd_Failed():
 return failed(_that.detail);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -200,7 +205,7 @@ return failed(_that.detail);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  confirmed,TResult? Function()?  alreadyRunning,TResult? Function( FeederRefusal refusal)?  refused,TResult? Function( UpdateStop stop)?  stopped,TResult? Function()?  lost,TResult? Function()?  uncertain,TResult? Function()?  notOffered,TResult? Function()?  unconfirmed,TResult? Function()?  wentBack,TResult? Function( String detail)?  failed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  confirmed,TResult? Function()?  alreadyRunning,TResult? Function( FeederRefusal refusal)?  refused,TResult? Function( UpdateStop stop)?  stopped,TResult? Function()?  lost,TResult? Function()?  uncertain,TResult? Function()?  notOffered,TResult? Function()?  unconfirmed,TResult? Function()?  wentBack,TResult? Function()?  wrongBuild,TResult? Function( String detail)?  failed,}) {final _that = this;
 switch (_that) {
 case UpdateEnd_Confirmed() when confirmed != null:
 return confirmed();case UpdateEnd_AlreadyRunning() when alreadyRunning != null:
@@ -211,7 +216,8 @@ return lost();case UpdateEnd_Uncertain() when uncertain != null:
 return uncertain();case UpdateEnd_NotOffered() when notOffered != null:
 return notOffered();case UpdateEnd_Unconfirmed() when unconfirmed != null:
 return unconfirmed();case UpdateEnd_WentBack() when wentBack != null:
-return wentBack();case UpdateEnd_Failed() when failed != null:
+return wentBack();case UpdateEnd_WrongBuild() when wrongBuild != null:
+return wrongBuild();case UpdateEnd_Failed() when failed != null:
 return failed(_that.detail);case _:
   return null;
 
@@ -592,6 +598,38 @@ String toString() {
 /// @nodoc
 
 
+class UpdateEnd_WrongBuild extends UpdateEnd {
+  const UpdateEnd_WrongBuild(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateEnd_WrongBuild);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateEnd.wrongBuild()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
 class UpdateEnd_Failed extends UpdateEnd {
   const UpdateEnd_Failed({required this.detail}): super._();
   
@@ -651,6 +689,380 @@ class _$UpdateEnd_FailedCopyWithImpl<$Res>
   return _then(UpdateEnd_Failed(
 detail: null == detail ? _self.detail : detail // ignore: cast_nullable_to_non_nullable
 as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$UpdateOffer {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateOffer);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateOffer()';
+}
+
+
+}
+
+/// @nodoc
+class $UpdateOfferCopyWith<$Res>  {
+$UpdateOfferCopyWith(UpdateOffer _, $Res Function(UpdateOffer) __);
+}
+
+
+/// Adds pattern-matching-related methods to [UpdateOffer].
+extension UpdateOfferPatterns on UpdateOffer {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateOffer_Newer value)?  newer,TResult Function( UpdateOffer_Current value)?  current,TResult Function( UpdateOffer_Older value)?  older,TResult Function( UpdateOffer_Blocked value)?  blocked,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case UpdateOffer_Newer() when newer != null:
+return newer(_that);case UpdateOffer_Current() when current != null:
+return current(_that);case UpdateOffer_Older() when older != null:
+return older(_that);case UpdateOffer_Blocked() when blocked != null:
+return blocked(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateOffer_Newer value)  newer,required TResult Function( UpdateOffer_Current value)  current,required TResult Function( UpdateOffer_Older value)  older,required TResult Function( UpdateOffer_Blocked value)  blocked,}){
+final _that = this;
+switch (_that) {
+case UpdateOffer_Newer():
+return newer(_that);case UpdateOffer_Current():
+return current(_that);case UpdateOffer_Older():
+return older(_that);case UpdateOffer_Blocked():
+return blocked(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateOffer_Newer value)?  newer,TResult? Function( UpdateOffer_Current value)?  current,TResult? Function( UpdateOffer_Older value)?  older,TResult? Function( UpdateOffer_Blocked value)?  blocked,}){
+final _that = this;
+switch (_that) {
+case UpdateOffer_Newer() when newer != null:
+return newer(_that);case UpdateOffer_Current() when current != null:
+return current(_that);case UpdateOffer_Older() when older != null:
+return older(_that);case UpdateOffer_Blocked() when blocked != null:
+return blocked(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String build,  int version)?  newer,TResult Function()?  current,TResult Function()?  older,TResult Function( Bank0Blocked reason)?  blocked,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case UpdateOffer_Newer() when newer != null:
+return newer(_that.build,_that.version);case UpdateOffer_Current() when current != null:
+return current();case UpdateOffer_Older() when older != null:
+return older();case UpdateOffer_Blocked() when blocked != null:
+return blocked(_that.reason);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String build,  int version)  newer,required TResult Function()  current,required TResult Function()  older,required TResult Function( Bank0Blocked reason)  blocked,}) {final _that = this;
+switch (_that) {
+case UpdateOffer_Newer():
+return newer(_that.build,_that.version);case UpdateOffer_Current():
+return current();case UpdateOffer_Older():
+return older();case UpdateOffer_Blocked():
+return blocked(_that.reason);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String build,  int version)?  newer,TResult? Function()?  current,TResult? Function()?  older,TResult? Function( Bank0Blocked reason)?  blocked,}) {final _that = this;
+switch (_that) {
+case UpdateOffer_Newer() when newer != null:
+return newer(_that.build,_that.version);case UpdateOffer_Current() when current != null:
+return current();case UpdateOffer_Older() when older != null:
+return older();case UpdateOffer_Blocked() when blocked != null:
+return blocked(_that.reason);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class UpdateOffer_Newer extends UpdateOffer {
+  const UpdateOffer_Newer({required this.build, required this.version}): super._();
+  
+
+ final  String build;
+ final  int version;
+
+/// Create a copy of UpdateOffer
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$UpdateOffer_NewerCopyWith<UpdateOffer_Newer> get copyWith => _$UpdateOffer_NewerCopyWithImpl<UpdateOffer_Newer>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateOffer_Newer&&(identical(other.build, build) || other.build == build)&&(identical(other.version, version) || other.version == version));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,build,version);
+}
+
+@override
+String toString() {
+    return 'UpdateOffer.newer(build: $build, version: $version)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $UpdateOffer_NewerCopyWith<$Res> implements $UpdateOfferCopyWith<$Res> {
+  factory $UpdateOffer_NewerCopyWith(UpdateOffer_Newer value, $Res Function(UpdateOffer_Newer) _then) = _$UpdateOffer_NewerCopyWithImpl;
+@useResult
+$Res call({
+ String build, int version
+});
+
+
+
+
+}
+/// @nodoc
+class _$UpdateOffer_NewerCopyWithImpl<$Res>
+    implements $UpdateOffer_NewerCopyWith<$Res> {
+  _$UpdateOffer_NewerCopyWithImpl(this._self, this._then);
+
+  final UpdateOffer_Newer _self;
+  final $Res Function(UpdateOffer_Newer) _then;
+
+/// Create a copy of UpdateOffer
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? build = null,Object? version = null,}) {
+  return _then(UpdateOffer_Newer(
+build: null == build ? _self.build : build // ignore: cast_nullable_to_non_nullable
+as String,version: null == version ? _self.version : version // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class UpdateOffer_Current extends UpdateOffer {
+  const UpdateOffer_Current(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateOffer_Current);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateOffer.current()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateOffer_Older extends UpdateOffer {
+  const UpdateOffer_Older(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateOffer_Older);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateOffer.older()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateOffer_Blocked extends UpdateOffer {
+  const UpdateOffer_Blocked({required this.reason}): super._();
+  
+
+ final  Bank0Blocked reason;
+
+/// Create a copy of UpdateOffer
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$UpdateOffer_BlockedCopyWith<UpdateOffer_Blocked> get copyWith => _$UpdateOffer_BlockedCopyWithImpl<UpdateOffer_Blocked>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateOffer_Blocked&&(identical(other.reason, reason) || other.reason == reason));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,reason);
+}
+
+@override
+String toString() {
+    return 'UpdateOffer.blocked(reason: $reason)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $UpdateOffer_BlockedCopyWith<$Res> implements $UpdateOfferCopyWith<$Res> {
+  factory $UpdateOffer_BlockedCopyWith(UpdateOffer_Blocked value, $Res Function(UpdateOffer_Blocked) _then) = _$UpdateOffer_BlockedCopyWithImpl;
+@useResult
+$Res call({
+ Bank0Blocked reason
+});
+
+
+
+
+}
+/// @nodoc
+class _$UpdateOffer_BlockedCopyWithImpl<$Res>
+    implements $UpdateOffer_BlockedCopyWith<$Res> {
+  _$UpdateOffer_BlockedCopyWithImpl(this._self, this._then);
+
+  final UpdateOffer_Blocked _self;
+  final $Res Function(UpdateOffer_Blocked) _then;
+
+/// Create a copy of UpdateOffer
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? reason = null,}) {
+  return _then(UpdateOffer_Blocked(
+reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
+as Bank0Blocked,
   ));
 }
 

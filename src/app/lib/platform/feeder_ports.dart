@@ -10,14 +10,17 @@ import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/src/rust/api/feeder.dart' show UpdateInfo;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/model.dart' show Skew;
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/router.dart' as router_api show feedDueSeconds, settledFeed;
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
+import 'package:wellfed/src/rust/api/update.dart' as update_api show unknownEnd, updateOffer;
 import 'package:wellfed/state/wifi/networks.dart';
 
 /// One running update: what it reports, and where it is told the feeder is.
@@ -74,6 +77,27 @@ abstract interface class FeederPorts {
 
   /// The image this APK carries, unpacked and checked against its pin.
   Future<ImageCheck> updateImage();
+
+  /// Whether to offer the image `build` at `version` to a feeder that runs
+  /// `running` at `skew`, with `update` its update state: the rule every
+  /// client shares, decided in Rust.
+  UpdateOffer updateOffer({
+    required String build,
+    required int version,
+    String? running,
+    required Skew skew,
+    required UpdateInfo update,
+  });
+
+  /// What a fresh update state and the feeder's current status settle of an
+  /// update whose end was unknown, decided in Rust by the same rule.
+  UnknownEnd unknownEnd({
+    String? served,
+    required int version,
+    required UpdateInfo update,
+    String? running,
+    required bool ready,
+  });
 
   /// Whether this device may update a feeder's firmware. Only the Android
   /// app has: the run keeps its process alive through the install's
@@ -216,6 +240,24 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   Future<ImageCheck> updateImage() async => _install.prepareImage(await _install.paths());
+
+  @override
+  UpdateOffer updateOffer({
+    required String build,
+    required int version,
+    String? running,
+    required Skew skew,
+    required UpdateInfo update,
+  }) => update_api.updateOffer(build: build, version: version, running: running, skew: skew, update: update);
+
+  @override
+  UnknownEnd unknownEnd({
+    String? served,
+    required int version,
+    required UpdateInfo update,
+    String? running,
+    required bool ready,
+  }) => update_api.unknownEnd(served: served, version: version, update: update, running: running, ready: ready);
 
   @override
   UpdatePush pushUpdate(String identity, String? address) => _AppPush(_key, _install, identity, address);

@@ -7,7 +7,7 @@
 use wellfed_client::offer::{Candidate, Confirmation, Offer, Restarted, confirmation, offer};
 use wellfed_model::{Bank0Blocked, Bank0Check, Skew};
 
-const RUNNING: &str = "aa11";
+const RUNNING: Option<&str> = Some("aa11");
 const IMAGE: Candidate<'static> = Candidate {
     build: "BB22",
     version: 5,
@@ -20,7 +20,7 @@ fn an_image_is_offered_only_when_newer_another_build_and_bank0_allows() {
         for bank0 in [Bank0Check::Unchecked, Bank0Check::Match] {
             assert_eq!(
                 offer(IMAGE, RUNNING, skew, 4, bank0),
-                Offer::Offer,
+                Offer::Newer,
                 "{skew:?}"
             );
         }
@@ -95,7 +95,7 @@ fn an_activated_update_ends_by_what_the_restarted_session_reads() {
         Confirmation::Pending
     );
 
-    for build in [served, RUNNING] {
+    for build in [served, "aa11"] {
         for ready in [false, true] {
             assert_eq!(
                 confirmation(served, 5, read(build, 0, 5, ready)),
@@ -106,7 +106,7 @@ fn an_activated_update_ends_by_what_the_restarted_session_reads() {
     }
     for confirmed in [4, 5] {
         assert_eq!(
-            confirmation(served, 5, read(RUNNING, 1, confirmed, true)),
+            confirmation(served, 5, read("aa11", 1, confirmed, true)),
             Confirmation::WrongBuild
         );
     }

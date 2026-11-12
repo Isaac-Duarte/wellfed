@@ -48,7 +48,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1874673895;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1941014399;
 
 // Section: executor
 
@@ -6861,6 +6861,86 @@ fn wire__crate__api__store__store_notice_read_impl(
         },
     )
 }
+fn wire__crate__api__update__unknown_end_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "unknown_end",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_served = <Option<String>>::sse_decode(&mut deserializer);
+            let api_version = <u32>::sse_decode(&mut deserializer);
+            let api_update = <crate::api::feeder::UpdateInfo>::sse_decode(&mut deserializer);
+            let api_running = <Option<String>>::sse_decode(&mut deserializer);
+            let api_ready = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::update::unknown_end(
+                    api_served,
+                    api_version,
+                    api_update,
+                    api_running,
+                    api_ready,
+                ))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__update__update_offer_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "update_offer",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_build = <String>::sse_decode(&mut deserializer);
+            let api_version = <u32>::sse_decode(&mut deserializer);
+            let api_running = <Option<String>>::sse_decode(&mut deserializer);
+            let api_skew = <crate::api::model::Skew>::sse_decode(&mut deserializer);
+            let api_update = <crate::api::feeder::UpdateInfo>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::update::update_offer(
+                    api_build,
+                    api_version,
+                    api_running,
+                    api_skew,
+                    api_update,
+                ))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 
 // Section: static_checks
 
@@ -13021,6 +13101,19 @@ impl SseDecode for () {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {}
 }
 
+impl SseDecode for crate::api::update::UnknownEnd {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::update::UnknownEnd::Decide,
+            1 => crate::api::update::UnknownEnd::Confirmed,
+            2 => crate::api::update::UnknownEnd::Unknown,
+            _ => unreachable!("Invalid variant for UnknownEnd: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::update::UpdateEnd {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -13058,6 +13151,9 @@ impl SseDecode for crate::api::update::UpdateEnd {
                 return crate::api::update::UpdateEnd::WentBack;
             }
             9 => {
+                return crate::api::update::UpdateEnd::WrongBuild;
+            }
+            10 => {
                 let mut var_detail = <String>::sse_decode(deserializer);
                 return crate::api::update::UpdateEnd::Failed { detail: var_detail };
             }
@@ -13087,6 +13183,36 @@ impl SseDecode for crate::api::feeder::UpdateInfo {
             written: var_written,
             bank0: var_bank0,
         };
+    }
+}
+
+impl SseDecode for crate::api::update::UpdateOffer {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_build = <String>::sse_decode(deserializer);
+                let mut var_version = <u32>::sse_decode(deserializer);
+                return crate::api::update::UpdateOffer::Newer {
+                    build: var_build,
+                    version: var_version,
+                };
+            }
+            1 => {
+                return crate::api::update::UpdateOffer::Current;
+            }
+            2 => {
+                return crate::api::update::UpdateOffer::Older;
+            }
+            3 => {
+                let mut var_reason = <crate::api::model::Bank0Blocked>::sse_decode(deserializer);
+                return crate::api::update::UpdateOffer::Blocked { reason: var_reason };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -13702,6 +13828,8 @@ fn pde_ffi_dispatcher_sync_impl(
         140 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
         141 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
         142 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
+        143 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
+        144 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -18903,6 +19031,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::install::UncertainWrite>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::update::UnknownEnd {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Decide => 0.into_dart(),
+            Self::Confirmed => 1.into_dart(),
+            Self::Unknown => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::update::UnknownEnd
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::update::UnknownEnd>
+    for crate::api::update::UnknownEnd
+{
+    fn into_into_dart(self) -> crate::api::update::UnknownEnd {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::update::UpdateEnd {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -18919,8 +19069,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::update::UpdateEnd {
             crate::api::update::UpdateEnd::NotOffered => [6.into_dart()].into_dart(),
             crate::api::update::UpdateEnd::Unconfirmed => [7.into_dart()].into_dart(),
             crate::api::update::UpdateEnd::WentBack => [8.into_dart()].into_dart(),
+            crate::api::update::UpdateEnd::WrongBuild => [9.into_dart()].into_dart(),
             crate::api::update::UpdateEnd::Failed { detail } => {
-                [9.into_dart(), detail.into_into_dart().into_dart()].into_dart()
+                [10.into_dart(), detail.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -18959,6 +19110,38 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::feeder::UpdateInfo>
     for crate::api::feeder::UpdateInfo
 {
     fn into_into_dart(self) -> crate::api::feeder::UpdateInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::update::UpdateOffer {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::api::update::UpdateOffer::Newer { build, version } => [
+                0.into_dart(),
+                build.into_into_dart().into_dart(),
+                version.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::update::UpdateOffer::Current => [1.into_dart()].into_dart(),
+            crate::api::update::UpdateOffer::Older => [2.into_dart()].into_dart(),
+            crate::api::update::UpdateOffer::Blocked { reason } => {
+                [3.into_dart(), reason.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::update::UpdateOffer
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::update::UpdateOffer>
+    for crate::api::update::UpdateOffer
+{
+    fn into_into_dart(self) -> crate::api::update::UpdateOffer {
         self
     }
 }
@@ -24306,6 +24489,23 @@ impl SseEncode for () {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {}
 }
 
+impl SseEncode for crate::api::update::UnknownEnd {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::update::UnknownEnd::Decide => 0,
+                crate::api::update::UnknownEnd::Confirmed => 1,
+                crate::api::update::UnknownEnd::Unknown => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::update::UpdateEnd {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -24339,8 +24539,11 @@ impl SseEncode for crate::api::update::UpdateEnd {
             crate::api::update::UpdateEnd::WentBack => {
                 <i32>::sse_encode(8, serializer);
             }
-            crate::api::update::UpdateEnd::Failed { detail } => {
+            crate::api::update::UpdateEnd::WrongBuild => {
                 <i32>::sse_encode(9, serializer);
+            }
+            crate::api::update::UpdateEnd::Failed { detail } => {
+                <i32>::sse_encode(10, serializer);
                 <String>::sse_encode(detail, serializer);
             }
             _ => {
@@ -24360,6 +24563,32 @@ impl SseEncode for crate::api::feeder::UpdateInfo {
         <u32>::sse_encode(self.image_len, serializer);
         <u32>::sse_encode(self.written, serializer);
         <crate::api::model::Bank0Check>::sse_encode(self.bank0, serializer);
+    }
+}
+
+impl SseEncode for crate::api::update::UpdateOffer {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::update::UpdateOffer::Newer { build, version } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(build, serializer);
+                <u32>::sse_encode(version, serializer);
+            }
+            crate::api::update::UpdateOffer::Current => {
+                <i32>::sse_encode(1, serializer);
+            }
+            crate::api::update::UpdateOffer::Older => {
+                <i32>::sse_encode(2, serializer);
+            }
+            crate::api::update::UpdateOffer::Blocked { reason } => {
+                <i32>::sse_encode(3, serializer);
+                <crate::api::model::Bank0Blocked>::sse_encode(reason, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 

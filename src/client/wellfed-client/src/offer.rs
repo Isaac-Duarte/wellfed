@@ -27,8 +27,9 @@ pub struct Candidate<'a> {
 /// Whether to offer a [`Candidate`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Offer {
-    /// Offer it.
-    Offer,
+    /// Newer than what the feeder confirmed, and bank 0 allows it: offer
+    /// it.
+    Newer,
     /// The feeder runs this build already.
     Current,
     /// It is not newer than what the feeder confirmed, or the feeder runs a
@@ -39,16 +40,16 @@ pub enum Offer {
 }
 
 /// Whether to offer `candidate` to a feeder that runs `running` (its
-/// welcome's build) at API `skew`, whose update state reports `confirmed`
+/// status's build; `None` when this client cannot read it) at API `skew`, whose update state reports `confirmed`
 /// (`wellfed_model::UpdateView::min_version`) and `bank0`.
 pub fn offer(
     candidate: Candidate<'_>,
-    running: &str,
+    running: Option<&str>,
     skew: Skew,
     confirmed: u32,
     bank0: Bank0Check,
 ) -> Offer {
-    if candidate.build.eq_ignore_ascii_case(running) {
+    if running.is_some_and(|running| candidate.build.eq_ignore_ascii_case(running)) {
         return Offer::Current;
     }
     if skew == Skew::FeederAhead || candidate.version <= confirmed {
@@ -56,7 +57,7 @@ pub fn offer(
     }
 
     match bank0 {
-        Bank0Check::Unchecked | Bank0Check::Match => Offer::Offer,
+        Bank0Check::Unchecked | Bank0Check::Match => Offer::Newer,
         Bank0Check::Blocked(reason) => Offer::Blocked(reason),
         // A state a newer build added: nothing says bank 0 may take an
         // update.

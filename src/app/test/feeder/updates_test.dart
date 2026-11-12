@@ -320,6 +320,15 @@ void main() {
       expect(find.text('Running now'), findsOneWidget);
     });
 
+    // Bank 1 running some other build is not a fallback: the words must not
+    // say the trial failed.
+    testWidgets('another build on bank 1 says so, not that it went back', (tester) async {
+      await end(tester, const UpdateEnd.wrongBuild());
+      expect(find.text('Kitchen runs another version'), findsOneWidget);
+      expect(find.textContaining("didn't send"), findsOneWidget);
+      expect(find.textContaining("didn't start properly"), findsNothing);
+    });
+
     testWidgets('a run that loses its stream is uncertain', (tester) async {
       final (FakeFeederPorts ports, _) = await _show(tester);
       await tapIn(tester, find.text('Install on Kitchen'));

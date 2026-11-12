@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:wellfed/platform/feeder_ports.dart' show FeederPorts, UpdatePush;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart' show InstallAsk, InstallAsk_Locate;
-import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/model.dart' show Skew;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
@@ -36,10 +36,24 @@ class UpdateFlow extends ChangeNotifier {
   bool _holding = false;
   bool _disposed = false;
 
-  /// Offer the image with this `build` and `version`.
-  Future<void> start({required String build, required int version}) async {
+  /// Whether to offer the image `build` at `version`, by the feeder's update
+  /// state `update`: the rule every client shares, decided in Rust.
+  UpdateOffer offer({required String build, required int version, required UpdateInfo update}) {
+    final FeederState feeder = _feeder.state;
+    return _ports.updateOffer(
+      build: build,
+      version: version,
+      running: feeder.card?.build,
+      // Before the welcome names one, nothing says the feeder is ahead.
+      skew: feeder.skew ?? Skew.unknown,
+      update: update,
+    );
+  }
+
+  /// Offer the image `offer` names, which the shared rule found newer.
+  Future<void> start(UpdateOffer_Newer offer) async {
     if (_state is! UpdateIdle) return;
-    _served = (build, version);
+    _served = (offer.build, offer.version);
     _set(const UpdateSending());
 
     final KnownFeeder known = _feeder.state.known;
@@ -134,33 +148,35 @@ class UpdateFlow extends ChangeNotifier {
     if (_state case UpdateEnded(endUnknown: false)) _set(const UpdateIdle());
   }
 
-  /// Read what the feeder says of an unknown end. Idle alone settles nothing: a
-  /// bank 1 on trial reads idle too, before its verdict. Bank 0 idle means nothing
-  /// is under way and the new build is not running, so the owner may decide
-  /// again. The served build at or past its version has kept it. Reads go as
-  /// often as the owner looks; the end stays until then.
+  /// Read what the feeder says of an unknown end, and let the shared rule
+  /// settle it (`FeederPorts.unknownEnd`): bank 0 idle means nothing is under way and the
+  /// new build is not running, so the owner may decide again; the served build
+  /// running and confirmed has kept it. Reads go as often as the owner looks;
+  /// the end stays until then.
   Future<void> lookAgain() async {
     final UpdateState now = _state;
     if (now is! UpdateEnded || !now.endUnknown) return;
     final FeederReply reply = await _feeder.ask(const FeederRequest.updateState());
-    final bool idle = reply is FeederReply_Update && reply.update.phase == UpdatePhase.idle;
-    final UpdateInfo? state = reply is FeederReply_Update ? reply.update : null;
-    final (String, int)? served = _served;
+    if (reply is! FeederReply_Update) {
+      if (_state case final UpdateEnded ended) _set(ended.changed(stillUnknown: true));
+      return;
+    }
     final FeederState feeder = _feeder.state;
-    final Card? card = feeder.card;
+    final Card? card = feeder.cardIsCurrent ? feeder.card : null;
 
-    if (idle && state != null && state.bank == 0) {
-      _set(const UpdateIdle());
-    } else if (idle &&
-        state != null &&
-        served != null &&
-        card != null &&
-        feeder.cardIsCurrent &&
-        card.build.toLowerCase() == served.$1.toLowerCase() &&
-        state.minVersion >= served.$2) {
-      _set(const UpdateEnded(UpdateEnd.confirmed()));
-    } else if (_state case final UpdateEnded ended) {
-      _set(ended.changed(stillUnknown: true));
+    switch (_ports.unknownEnd(
+      served: _served?.$1,
+      version: _served?.$2 ?? 0,
+      update: reply.update,
+      running: card?.build,
+      ready: card?.ready ?? false,
+    )) {
+      case UnknownEnd.decide:
+        _set(const UpdateIdle());
+      case UnknownEnd.confirmed:
+        _set(const UpdateEnded(UpdateEnd.confirmed()));
+      case UnknownEnd.unknown:
+        if (_state case final UpdateEnded ended) _set(ended.changed(stillUnknown: true));
     }
   }
 
