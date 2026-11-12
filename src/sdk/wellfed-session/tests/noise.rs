@@ -1,5 +1,5 @@
 //! The device API's Noise handshakes against `snow`, an independent
-//! implementation: XX, IK and KK in both roles, then transport messages each
+//! implementation: XX, IK and XXpsk3 in both roles, then transport messages each
 //! way. With the same keys the two write the same bytes, so a mismatch in
 //! any token, hash or key schedule fails here. Tampering, misordering and a
 //! wrong static key must all fail closed.
@@ -16,9 +16,9 @@ const RESPONDER_EPHEMERAL: [u8; 32] = [0x44; 32];
 /// An invite's secret, for XXpsk3.
 const PSK: [u8; 32] = [0x66; 32];
 
-/// KK always starts with the peer's static key; IK only on the initiator.
+/// IK's initiator starts with the peer's static key.
 fn needs_remote(pattern: Pattern, role: Role) -> bool {
-    pattern == Pattern::Kk || (pattern == Pattern::Ik && role == Role::Initiator)
+    pattern == Pattern::Ik && role == Role::Initiator
 }
 
 fn name(pattern: Pattern) -> &'static str {
@@ -145,7 +145,7 @@ fn exchange(ours: &mut Transport, theirs: &mut snow::TransportState) {
 
 #[test]
 fn every_pattern_agrees_with_snow_in_both_roles() {
-    for pattern in [Pattern::Xx, Pattern::Ik, Pattern::Kk, Pattern::XxPsk3] {
+    for pattern in [Pattern::Xx, Pattern::Ik, Pattern::XxPsk3] {
         for role in [Role::Initiator, Role::Responder] {
             let (mut ours, mut theirs) = run(pattern, role);
             exchange(&mut ours, &mut theirs);
@@ -154,13 +154,8 @@ fn every_pattern_agrees_with_snow_in_both_roles() {
 }
 
 #[test]
-fn ik_and_kk_are_one_round_trip_and_xx_is_three_messages() {
-    for (pattern, messages) in [
-        (Pattern::Xx, 3),
-        (Pattern::Ik, 2),
-        (Pattern::Kk, 2),
-        (Pattern::XxPsk3, 3),
-    ] {
+fn ik_is_one_round_trip_and_xx_is_three_messages() {
+    for (pattern, messages) in [(Pattern::Xx, 3), (Pattern::Ik, 2), (Pattern::XxPsk3, 3)] {
         let mut initiator = ours(pattern, Role::Initiator);
         let mut responder = ours(pattern, Role::Responder);
         let (mut message, mut payload) = ([0; 256], [0; 256]);
@@ -182,8 +177,8 @@ fn ik_and_kk_are_one_round_trip_and_xx_is_three_messages() {
 
 #[test]
 fn a_tampered_or_replayed_message_fails_closed() {
-    let mut initiator = ours(Pattern::Kk, Role::Initiator);
-    let mut responder = ours(Pattern::Kk, Role::Responder);
+    let mut initiator = ours(Pattern::Ik, Role::Initiator);
+    let mut responder = ours(Pattern::Ik, Role::Responder);
     let (mut message, mut payload) = ([0; 256], [0; 256]);
 
     let len = initiator.write_message(b"hi", &mut message).unwrap();
@@ -196,7 +191,7 @@ fn a_tampered_or_replayed_message_fails_closed() {
 
     // A fresh responder takes the genuine message; the transport then
     // refuses a replay, since the counter has moved on.
-    let mut responder = ours(Pattern::Kk, Role::Responder);
+    let mut responder = ours(Pattern::Ik, Role::Responder);
     responder
         .read_message(&message[..len], &mut payload)
         .unwrap();
@@ -214,32 +209,10 @@ fn a_tampered_or_replayed_message_fails_closed() {
 }
 
 #[test]
-fn kk_with_the_wrong_static_key_fails() {
-    let stranger = *Keypair::from_secret([0x55; 32]).public();
-    let mut initiator = Handshake::new(
-        Pattern::Kk,
-        Role::Initiator,
-        PROLOGUE,
-        &Keypair::from_secret(INITIATOR_STATIC),
-        Some(stranger),
-        INITIATOR_EPHEMERAL,
-    )
-    .unwrap();
-    let mut responder = ours(Pattern::Kk, Role::Responder);
-    let (mut message, mut payload) = ([0; 256], [0; 256]);
-
-    let len = initiator.write_message(&[], &mut message).unwrap();
-    assert_eq!(
-        responder.read_message(&message[..len], &mut payload),
-        Err(Error::Decrypt)
-    );
-}
-
-#[test]
 fn misuse_is_refused() {
     assert!(matches!(
         Handshake::new(
-            Pattern::Kk,
+            Pattern::Ik,
             Role::Initiator,
             PROLOGUE,
             &Keypair::from_secret(INITIATOR_STATIC),
@@ -383,7 +356,7 @@ mod properties {
     use super::*;
     use proptest::prelude::*;
 
-    const PATTERNS: [Pattern; 4] = [Pattern::Xx, Pattern::Ik, Pattern::Kk, Pattern::XxPsk3];
+    const PATTERNS: [Pattern; 3] = [Pattern::Xx, Pattern::Ik, Pattern::XxPsk3];
 
     #[derive(Clone, Copy, Debug)]
     struct Keys {

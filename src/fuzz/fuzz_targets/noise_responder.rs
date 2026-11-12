@@ -4,22 +4,20 @@
 
 use wellfed_session::noise::{Handshake, Keypair, Pattern, Role};
 
-const PATTERNS: [Pattern; 4] = [Pattern::Xx, Pattern::Ik, Pattern::Kk, Pattern::XxPsk3];
+const PATTERNS: [Pattern; 3] = [Pattern::Xx, Pattern::Ik, Pattern::XxPsk3];
 
 libfuzzer_sys::fuzz_target!(|data: &[u8]| {
     let Some((&pick, message)) = data.split_first() else {
         return;
     };
-    let pattern = PATTERNS[usize::from(pick & 3)];
+    let pattern = PATTERNS[usize::from(pick & 3) % PATTERNS.len()];
     let identity = Keypair::from_secret([0x22; 32]);
-    let peer = *Keypair::from_secret([0x11; 32]).public();
-    let remote = (pattern == Pattern::Kk).then_some(peer);
     let Ok(mut responder) = Handshake::new(
         pattern,
         Role::Responder,
         b"fuzz",
         &identity,
-        remote,
+        None,
         [0x44; 32],
     ) else {
         return;
@@ -28,8 +26,8 @@ libfuzzer_sys::fuzz_target!(|data: &[u8]| {
 
     let mut payload = vec![0; usize::from(pick >> 2) * 8];
     if let Ok(read) = responder.read_message(message, &mut payload) {
-        // Every other pattern's first message carries a tag (IK and KK
-        // under the static key, XXpsk3 under the PSK) no byte fuzzer
+        // Every other pattern's first message carries a tag (IK under the
+        // static key, XXpsk3 under the PSK) no byte fuzzer
         // forges, so only XX's may be read.
         assert_eq!(pattern, Pattern::Xx);
         assert!(read <= payload.len());

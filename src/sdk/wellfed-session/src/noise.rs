@@ -1,15 +1,13 @@
-//! The Noise Protocol Framework (revision 34) for the device API: the two
+//! The Noise Protocol Framework (revision 34) for the device API: the three
 //! handshakes the product uses, over 25519, ChaChaPoly and SHA-256.
 //!
-//! - **XX** pairs a client the feeder has never seen: both static keys travel
-//!   encrypted, and each side learns the other's.
+//! - **XX** pairs a client the feeder has never seen (BLE setup): both
+//!   static keys travel encrypted, and each side learns the other's.
 //! - **IK** opens a paired client's session on the device API: the
 //!   client already holds the feeder's static key and sends its own encrypted
 //!   in the first message, so the feeder learns which client is connecting
 //!   without trying each enrolled key, in one round trip with no identity in
 //!   clear.
-//! - **KK** reconnects when both sides already hold the other's static key
-//!   (the budget measured it).
 //! - **XXpsk3** is XX bound to an invite's secret: the third message
 //!   fails unless both sides hold the same pre-shared key. The responder
 //!   learns which invite from the first message's payload, so it sets the
@@ -41,7 +39,6 @@ pub const MAX_MESSAGE: usize = 65_535;
 pub enum Pattern {
     Xx,
     Ik,
-    Kk,
     XxPsk3,
 }
 
@@ -51,7 +48,6 @@ impl Pattern {
         match self {
             Self::Xx => b"Noise_XX_25519_ChaChaPoly_SHA256",
             Self::Ik => b"Noise_IK_25519_ChaChaPoly_SHA256",
-            Self::Kk => b"Noise_KK_25519_ChaChaPoly_SHA256",
             Self::XxPsk3 => b"Noise_XXpsk3_25519_ChaChaPoly_SHA256",
         }
     }
@@ -61,7 +57,6 @@ impl Pattern {
         match self {
             Self::Xx => &[&[E], &[E, Ee, S, Es], &[S, Se]],
             Self::Ik => &[&[E, Es, S, Ss], &[E, Ee, Se]],
-            Self::Kk => &[&[E, Es, Ss], &[E, Ee, Se]],
             Self::XxPsk3 => &[&[E], &[E, Ee, S, Es], &[S, Se, Psk]],
         }
     }
@@ -100,7 +95,7 @@ pub enum Error {
     Decrypt,
     /// A Diffie-Hellman result was all zeros: the peer sent a low-order key.
     WeakKey,
-    /// KK, and IK's initiator, need the remote static key before it starts.
+    /// IK's initiator needs the remote static key before it starts.
     MissingRemoteKey,
     /// A PSK pattern reached its `psk` token with no key set.
     MissingPsk,
@@ -325,8 +320,8 @@ pub struct Handshake {
 }
 
 impl Handshake {
-    /// `ephemeral` is a fresh random secret, never used before. KK, and IK's
-    /// initiator, need the peer's static key in `remote_static`; XX and IK's
+    /// `ephemeral` is a fresh random secret, never used before. IK's
+    /// initiator needs the peer's static key in `remote_static`; XX and IK's
     /// responder learn it and ignore one given here.
     pub fn new(
         pattern: Pattern,
@@ -341,18 +336,6 @@ impl Handshake {
 
         let rs = match pattern {
             Pattern::Xx | Pattern::XxPsk3 => None,
-            Pattern::Kk => {
-                // KK's pre-messages: the initiator's static, then the
-                // responder's, the same order on both sides.
-                let remote = remote_static.ok_or(Error::MissingRemoteKey)?;
-                let (first, second) = match role {
-                    Role::Initiator => (*local_static.public(), remote),
-                    Role::Responder => (remote, *local_static.public()),
-                };
-                state.mix_hash(&first);
-                state.mix_hash(&second);
-                Some(remote)
-            }
             // IK's one pre-message is the responder's static; the
             // responder learns the initiator's from the first message.
             Pattern::Ik => match role {
