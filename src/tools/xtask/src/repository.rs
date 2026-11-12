@@ -18,8 +18,12 @@ const UNPUBLISHED: [&str; 6] = ["private", ".venv", "target", ".aws", ".codex", 
 const EVIDENCE: [&str; 5] = ["bin", "pcap", "pcapng", "img", "apk"];
 /// The Home Assistant integration's Python, the one Python under `src/`.
 const HOME_ASSISTANT: &str = "src/integrations/homeassistant/";
-const TEXT: [&str; 11] = [
-    "md", "rs", "py", "toml", "json", "yml", "txt", "c", "h", "ts", "svg",
+/// Text the publish checks read: the Rust and C sources, the docs and
+/// configuration, the app's Dart, Kotlin, Gradle and Android files, the
+/// site's Svelte, scripts and styles, and the shell scripts.
+const TEXT: [&str; 22] = [
+    "md", "rs", "py", "toml", "json", "yml", "yaml", "txt", "c", "h", "ts", "svg", "dart",
+    "svelte", "kt", "kts", "gradle", "xml", "sh", "js", "html", "css",
 ];
 /// Product code, which reaches the motor pins, the watchdog and flash only
 /// through the HAL's owners: it may name neither the raw writers nor the
@@ -63,7 +67,9 @@ const LINES: usize = 400;
 /// and its assertions together.
 const TEST_LINES: usize = 600;
 /// Sources under `src/` that must not cite a board card.
-const CARD_FREE: [&str; 6] = ["rs", "c", "h", "toml", "md", "ts"];
+const CARD_FREE: [&str; 13] = [
+    "rs", "c", "h", "toml", "md", "ts", "py", "dart", "svelte", "kt", "sh", "yml", "yaml",
+];
 /// The one tracked page that may name cards: it tells agents how the
 /// ignored boards are kept. Every other page states the fact instead.
 const CARD_PAGE: &str = "AGENTS.md";
@@ -76,10 +82,14 @@ macro_rules! regex {
 }
 
 regex!(USER_PATH, r"/(?:home|Users|mnt|media)/[A-Za-z0-9_.-]+/");
-regex!(DATED, r#"private/[^\s"']*202610\d{2}"#);
-// A board card's id: a board's prefix and a number. Pinned policy names
-// are lowercase and stay.
-regex!(CARD, r"\b(?:FW|FP|SV|AR)\d{1,3}[a-z]?\b");
+regex!(DATED, r#"private/[^\s"']*20\d{6}"#);
+// A board card's id: a board's prefix (firmware, feature, server, autonomous
+// run, notifications, beta, performance) and a number, or a review finding's
+// id. Pinned policy names are lowercase and stay.
+regex!(
+    CARD,
+    r"\b(?:FW|FP|SV|AR|NT|BT|PE)\d{1,3}[a-z]?\b|\bF-\d{3}\b"
+);
 regex!(CHANNEL, r#"(?m)^channel\s*=\s*"([^"]+)""#);
 
 // The raw output writers `wellfed-amebad-sys` marks `unsafe`; reads such
@@ -150,6 +160,7 @@ pub(crate) fn check(root: &Path) -> io::Result<Summary> {
         check_file(&root, name, &mut summary);
     }
     check_release_toolchain(&root, &mut summary);
+    check_container_context(&root, &mut summary);
     summary
         .errors
         .extend(crate::op_clients::check(&root, &names));
@@ -355,6 +366,100 @@ fn check_release_toolchain(root: &Path, summary: &mut Summary) {
     }
 }
 
+/// The container build loads the whole workspace, so every member's manifest
+/// must reach it through `.dockerignore`.
+fn check_container_context(root: &Path, summary: &mut Summary) {
+    let read = |file: &str| fs::read_to_string(root.join(file));
+
+    match (read(".dockerignore"), read("Cargo.toml")) {
+        (Ok(ignore), Ok(manifest)) => {
+            for member in left_out(&ignore, &workspace_members(&manifest)) {
+                summary.errors.push(format!(
+                    ".dockerignore: leaves out the workspace member {member}, so the server's container build cannot load the workspace"
+                ));
+            }
+        }
+        (Err(error), _) | (_, Err(error)) => summary.errors.push(format!(
+            ".dockerignore: cannot compare it with the workspace's members: {error}"
+        )),
+    }
+}
+
+/// The paths in the root manifest's `[workspace] members` list.
+fn workspace_members(manifest: &str) -> Vec<String> {
+    let Some(start) = manifest.find("members = [") else {
+        return Vec::new();
+    };
+    let list = &manifest[start + "members = [".len()..];
+    let list = &list[..list.find(']').unwrap_or(list.len())];
+    list.lines()
+        .map(|line| line.split('#').next().unwrap_or_default())
+        .flat_map(|line| line.split(','))
+        .map(|item| item.trim().trim_matches('"'))
+        .filter(|item| !item.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The `members` whose `Cargo.toml` the ignore rules leave out of the build
+/// context. Docker reads the rules in order and the last one matching a path,
+/// or any directory above it, decides; `!` re-admits.
+fn left_out(ignore: &str, members: &[String]) -> Vec<String> {
+    let rules: Vec<(bool, Vec<&str>)> = ignore
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| match line.strip_prefix('!') {
+            Some(rule) => (false, rule),
+            None => (true, line),
+        })
+        .map(|(excludes, rule)| {
+            let parts = rule.trim_matches('/').split('/').collect();
+            (excludes, parts)
+        })
+        .collect();
+
+    members
+        .iter()
+        .filter(|member| {
+            let path = format!("{member}/Cargo.toml");
+            let parts: Vec<&str> = path.split('/').collect();
+            let mut excluded = false;
+            for (excludes, rule) in &rules {
+                if (1..=parts.len()).any(|end| glob(rule, &parts[..end])) {
+                    excluded = *excludes;
+                }
+            }
+            excluded
+        })
+        .cloned()
+        .collect()
+}
+
+/// Whether the path components `path` match the rule's, where `*` in a
+/// component matches any run of characters and `**` any number of
+/// components.
+fn glob(rule: &[&str], path: &[&str]) -> bool {
+    match rule.split_first() {
+        None => path.is_empty(),
+        Some((&"**", rest)) => (0..=path.len()).any(|skip| glob(rest, &path[skip..])),
+        Some((first, rest)) => path
+            .split_first()
+            .is_some_and(|(part, others)| component(first, part) && glob(rest, others)),
+    }
+}
+
+fn component(pattern: &str, text: &str) -> bool {
+    match pattern.split_once('*') {
+        None => pattern == text,
+        Some((head, tail)) => {
+            text.starts_with(head)
+                && (head.len()..=text.len())
+                    .any(|at| text.is_char_boundary(at) && component(tail, &text[at..]))
+        }
+    }
+}
+
 /// The root's settings (its non-comment lines) that a nested clippy.toml lacks.
 /// Lines are compared whole, which assumes every root setting fits on one
 /// line; a multi-line array there would need a TOML-aware comparison.
@@ -523,6 +628,61 @@ fn raw_outputs(name: &str, source: &str, errors: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The rules decide by the last that matches a path or a directory
+    /// above it, so a member under an excluded directory needs its own
+    /// re-admission.
+    #[test]
+    fn a_workspace_member_the_container_context_leaves_out_is_named() {
+        let manifest =
+            "[workspace]\nmembers = [\n    \"src/tools/xtask\", # host\n    \"src/app/rust\",\n]\n";
+        let members = workspace_members(manifest);
+        assert_eq!(members, ["src/tools/xtask", "src/app/rust"]);
+
+        let ignore = "*\n!Cargo.toml\n!src/\nsrc/app/\n**/target/\n";
+        assert_eq!(left_out(ignore, &members), ["src/app/rust"]);
+        let admitted = format!("{ignore}!src/app/rust/\n**/target/\n");
+        assert!(left_out(&admitted, &members).is_empty());
+
+        assert!(glob(&["**", "target"], &["src", "a", "target"]));
+        assert!(component("*.md", "README.md"));
+        assert!(!component("*.md", "README.rs"));
+    }
+
+    /// The repository's own context holds every member.
+    #[test]
+    fn the_container_context_holds_every_workspace_member() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let ignore = fs::read_to_string(root.join(".dockerignore")).unwrap();
+        let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        let members = workspace_members(&manifest);
+        assert!(members.len() > 10, "{members:?}");
+        assert!(
+            left_out(&ignore, &members).is_empty(),
+            "{:?}",
+            left_out(&ignore, &members)
+        );
+    }
+
+    #[test]
+    fn card_and_finding_ids_are_caught() {
+        // Built from halves, so this file does not cite one itself.
+        for (prefix, number) in [
+            ("see FW", "12"),
+            ("NT", "3a"),
+            ("BT", "07"),
+            ("PE", "25"),
+            ("F-", "117"),
+            ("SV", "69"),
+        ] {
+            let text = format!("{prefix}{number}");
+            assert!(CARD.is_match(&text), "{text}");
+        }
+        for text in ["sha256", "F-1", "PA_12", "FWD3"] {
+            assert!(!CARD.is_match(text), "{text}");
+        }
+        assert!(DATED.is_match(&format!("private/captures-{}/x", "20261112")));
+    }
 
     #[test]
     fn markdown_link_targets() {
