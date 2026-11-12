@@ -89,6 +89,11 @@ impl Peer {
         }
 
         if park::answer::<M>(self.session, &mut self.answered) != 0 {
+            // Lease numbers are per authority: a KM4 that restarted without
+            // this core starts its leases at 1 again. The old authority's
+            // leases already read as foreign, since a request must name the
+            // answered authority, so its high-water mark guards nothing.
+            self.last_lease = 0;
             self.answered_at = ticks;
             return PeerEvent::Answered;
         }

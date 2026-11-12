@@ -153,3 +153,62 @@ fn unmasked_context_is_refused_without_ack() {
     assert_eq!(peer.on_request::<Km0>(), ParkEvent::Refused);
     assert_ne!(with(|m| m.regs[0][10]), ACK);
 }
+
+const B: u64 = 0x0000_0002_2222_2222;
+
+/// KM4 announces a new authority to a peer that keeps running, as after a
+/// KM4-only reset.
+fn announce(authority: u64) {
+    with(|m| {
+        let r = &mut m.regs[1];
+        (r[2], r[3], r[4], r[5], r[6], r[9], r[10]) = (
+            authority as u32,
+            (authority >> 32) as u32,
+            0,
+            0,
+            0,
+            0,
+            HELLO,
+        );
+    });
+}
+
+/// KM4 publishes REQUEST for `lease` under `authority`, naming `peer`'s
+/// session, and releases it 50 ticks later.
+fn request(peer: &Peer, authority: u64, lease: u64) {
+    let session = peer.session;
+    with(|m| {
+        let r = &mut m.regs[1];
+        (r[2], r[3], r[4], r[5], r[6], r[9], r[10]) = (
+            authority as u32,
+            (authority >> 32) as u32,
+            session as u32,
+            (session >> 32) as u32,
+            lease as u32,
+            (lease >> 32) as u32,
+            REQUEST,
+        );
+        m.release_at = m.ticks + 50;
+    });
+}
+
+#[test]
+fn a_new_authority_starts_its_leases_afresh() {
+    let mut peer = requested(5);
+    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Released);
+
+    announce(B);
+    peer.step::<Km0>(1, 9);
+    assert_eq!(peer.answered, B);
+
+    request(&peer, B, 1);
+    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Released);
+
+    // Within the new authority a lease still never repeats or goes back.
+    request(&peer, B, 1);
+    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Ignored);
+
+    // And the old authority's leases stay foreign, whatever their number.
+    request(&peer, A, 6);
+    assert_eq!(peer.on_request::<Km0>(), ParkEvent::Ignored);
+}
