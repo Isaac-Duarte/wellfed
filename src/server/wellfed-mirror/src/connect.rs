@@ -8,6 +8,7 @@ use tracing::{debug, warn};
 use wellfed_api::FeederId;
 use wellfed_connect::Connection;
 use wellfed_model::{ClientRole, Joined, Model};
+use wellfed_session::hex::Lower;
 use wellfed_session::noise::Keypair;
 
 use crate::{ConnectError, Discovery, Invite, Mirror, Shared, Unreachable};
@@ -51,13 +52,19 @@ impl Mirror {
     ) -> Result<Enrolled, ConnectError> {
         let keys = Keypair::from_secret(secret);
         let ephemeral = self.shared.random()?;
-        let joined = wellfed_connect::join(&keys, invite, label, address, ephemeral)
-            .await
-            .map_err(|error| match error {
-                // The feeder drops an unknown or expired invite unanswered.
-                wellfed_connect::Error::Closed => ConnectError::InviteExpired,
-                other => Unreachable(other).into(),
-            })?;
+        let joined = match wellfed_connect::join(&keys, invite, label, address, ephemeral).await {
+            Ok(joined) => joined,
+            // The feeder drops an unknown or expired invite unanswered.
+            Err(wellfed_connect::Error::Closed) => return Err(ConnectError::InviteExpired),
+            // The join went and its answer was lost: the key may be
+            // enrolled, holding a client slot with nothing to use it unless
+            // it is kept. A session with it says.
+            Err(wellfed_connect::Error::JoinUnanswered) => {
+                self.joined_unanswered(&keys, invite.feeder, address)
+                    .await?
+            }
+            Err(other) => return Err(Unreachable(other).into()),
+        };
         match joined {
             Joined::Enrolled { role, model } => Ok(Enrolled {
                 role,
@@ -65,6 +72,40 @@ impl Mirror {
                 public: *keys.public(),
             }),
             Joined::Refused(refusal) => Err(ConnectError::Refused(refusal)),
+        }
+    }
+}
+
+impl Mirror {
+    /// Whether a join whose answer was lost enrolled `keys`: a session
+    /// with them opens only if it did, and names the role and model the
+    /// answer would have. When the session fails for another reason the
+    /// key may be enrolled all the same, and the log names it to revoke.
+    async fn joined_unanswered(
+        &self,
+        keys: &Keypair,
+        identity: [u8; 32],
+        address: SocketAddr,
+    ) -> Result<Joined, ConnectError> {
+        let ephemeral = self.shared.random()?;
+        let timing = self.shared.config.timing.session;
+        match Connection::open_with(keys, identity, address, ephemeral, timing).await {
+            Ok(session) => Ok(Joined::Enrolled {
+                role: session.role(),
+                model: session.model(),
+            }),
+            // Not enrolled: the invite may be spent, and another is needed.
+            Err(error @ wellfed_connect::Error::UnknownKey) => Err(Unreachable(error).into()),
+            Err(error) => {
+                warn!(
+                    "feeder {} took this server's join and its answer was lost, and a session \
+                     to check failed: {error}; it may hold this server's key ({}), which \
+                     nothing uses: revoke that client on the feeder",
+                    Lower(&identity[..4]),
+                    Lower(&keys.public()[..4]),
+                );
+                Err(Unreachable(wellfed_connect::Error::JoinUnanswered).into())
+            }
         }
     }
 }
