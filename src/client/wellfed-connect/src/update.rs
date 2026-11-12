@@ -92,7 +92,9 @@ pub enum Pushed {
     /// The feeder stopped answering the device API, or answered in a way
     /// this build cannot read. With `offered`, the offer went out: bank 1
     /// may be partly written, or activated with its answer lost, and only
-    /// the feeder can tell.
+    /// the feeder can tell, so a caller should report it as uncertain. Not
+    /// every caller does yet: the installer's promotion still reads it as
+    /// bank 0 not installing the update.
     Gone { offered: bool },
 }
 
@@ -137,8 +139,8 @@ pub async fn push<S: Steps>(
                     // Only a state or a refusal says where the install
                     // stands. An answer this build cannot read (a newer
                     // build's), or of another kind, may follow an offer
-                    // that took: the push ends unsettled, as a feeder that
-                    // went silent does, and nothing is sent again.
+                    // that took: the push ends `Gone`, as with a feeder
+                    // that went silent, and nothing is sent again.
                     Some(answer) if !matches!(answer, Answer::Update(_) | Answer::Refused(_)) => {
                         return Ok(Pushed::Gone { offered });
                     }
