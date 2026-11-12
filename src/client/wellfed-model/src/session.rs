@@ -191,17 +191,6 @@ pub mod schema {
 
     use super::{DeviceKind, Model};
 
-    /// [`DeviceKind`] as its JSON spells it.
-    pub fn device_kind() -> Object {
-        ObjectBuilder::new()
-            .schema_type(Type::String)
-            .enum_values(Some(DeviceKind::ALL.map(DeviceKind::name)))
-            .description(Some(
-                "A kind of device, which one module of the device API serves.",
-            ))
-            .build()
-    }
-
     /// [`Model`] as its JSON spells it.
     pub fn model() -> Object {
         ObjectBuilder::new()

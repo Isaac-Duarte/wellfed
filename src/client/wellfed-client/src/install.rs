@@ -503,11 +503,6 @@ impl Install {
         self.options.version
     }
 
-    /// The backup promotion waits for, once given.
-    pub fn verified_backup(&self) -> Option<VerifiedBackup> {
-        self.backup
-    }
-
     /// The frame went out (the caller left stock's access point after).
     pub fn frame_sent(&mut self) {
         if self.stage == Stage::FrameOut {
