@@ -16,15 +16,18 @@ use tokio::time::{Duration, Instant, sleep, timeout_at};
 use tracing::warn;
 use wellfed_api::Connection as Link;
 use wellfed_client::install::Bank1Reader;
-use wellfed_client::offer::{Confirmation, Restarted, confirmation};
 use wellfed_client::release::MANIFEST_LEN;
 use wellfed_client::release::manifest_digest;
 use wellfed_client::update::Image;
 use wellfed_connect::update::{self, Opened, Steps, Way};
-use wellfed_model::{Answer, Op, Readiness, UpdatePhase, UpdateView};
+use wellfed_model::{Answer, Op, UpdatePhase, UpdateView};
 use wellfed_session::hex::Lower;
 
 use crate::{AskError, Operation, RandomFailed};
+
+mod trial;
+
+pub use trial::Trial;
 
 pub use wellfed_client::install::ReadError;
 pub use wellfed_client::update::InstallError as UpdateError;
@@ -34,8 +37,6 @@ pub use wellfed_connect::update::Pushed;
 const REOPEN_WAIT: Duration = Duration::from_secs(5 * 60);
 /// Between state reads that find no session to answer them.
 const POLL: Duration = Duration::from_secs(1);
-/// Between reads of a trial that has not decided.
-const TRIAL_POLL: Duration = Duration::from_secs(2);
 
 /// What an install offers: a release file as the server keeps it (the
 /// signed manifest, then the image it names) and the build it carries.
@@ -138,95 +139,6 @@ impl Operation {
         wellfed_connect::update::push(image, &mut steps, pace).await
     }
 
-    /// Follow the build `build` at `version` that [`Self::install`] just
-    /// activated on this turn: its restart into bank 1 and its trial, until
-    /// the trial's verdict or the turn's trial time passes. Reads change
-    /// nothing, so looking again sends nothing the feeder could act on.
-    ///
-    /// The session that answered the activation is bank 0's, about to
-    /// restart, so a bank 0 answer counts as a fallback only from a session
-    /// opened after that answer; bank 1 runs only after the restart, so its
-    /// answer counts from any. The verdict is the rule every client shares
-    /// ([`wellfed_client::offer::confirmation`]).
-    pub async fn follow_trial(
-        &mut self,
-        build: [u8; 32],
-        version: u32,
-    ) -> Result<Trial, RandomFailed> {
-        let served = Lower(&build).to_string();
-        let deadline = Instant::now() + self.trial;
-        // Each session's start and end sends its build, and the push marked
-        // it seen as bank 0 answered the activation: a change since means
-        // that session is gone.
-        let mut restarted = false;
-
-        while Instant::now() < deadline {
-            restarted |= self.build.has_changed().unwrap_or(true);
-            self.build.borrow_and_update();
-            if let Some(reading) = self.reading().await? {
-                let restarted_into = Restarted {
-                    build: &reading.build,
-                    bank: reading.bank,
-                    confirmed: reading.confirmed,
-                    ready: reading.ready,
-                };
-                match confirmation(&served, version, restarted_into) {
-                    Confirmation::Confirmed => return Ok(Trial::Confirmed),
-                    Confirmation::WrongBuild => return Ok(Trial::WrongBuild),
-                    // A boot forgets the activation, so bank 0 still
-                    // saying so is the activating boot, reached again
-                    // before its restart.
-                    Confirmation::FellBack
-                        if restarted && reading.phase != UpdatePhase::Activated =>
-                    {
-                        return Ok(Trial::FellBack);
-                    }
-                    // Bank 0 still answering in the activating boot, or a
-                    // trial not yet decided.
-                    Confirmation::FellBack | Confirmation::Pending => {}
-                }
-            }
-            let wait = deadline.min(Instant::now() + TRIAL_POLL);
-            // A session ending or opening wakes the look at once, and
-            // counts: waiting marks the change seen.
-            match timeout_at(wait, self.build.changed()).await {
-                Ok(Ok(())) => restarted = true,
-                // The feeder's task ended: nothing more will answer.
-                Ok(Err(_)) => break,
-                Err(_) => {}
-            }
-        }
-        Ok(Trial::Unseen)
-    }
-
-    /// What the open session says it runs, or `None` while no session
-    /// answers. The bank comes from the update state and the build from
-    /// the welcome, both frozen; readiness from the status, which a build
-    /// of another revision may not give, and which then counts as not
-    /// ready.
-    async fn reading(&mut self) -> Result<Option<Reading>, RandomFailed> {
-        let Some(build) = self.build.borrow().clone() else {
-            return Ok(None);
-        };
-        let id = self.request_id()?;
-        let Ok(Answer::Update(view)) = self.step(id, Op::UpdateState).await else {
-            return Ok(None);
-        };
-        let id = self.request_id()?;
-        let ready = matches!(
-            self.step(id, Op::Status).await,
-            Ok(Answer::Status(status))
-                if status.feeder().is_some_and(|feeder| feeder.readiness == Readiness::Ready)
-        );
-        Ok(Some(Reading {
-            build,
-            phase: view.phase,
-            bank: view.bank,
-            confirmed: view.min_version,
-            ready,
-        }))
-    }
-
     /// Clear the way for an offer of `manifest`, by the rule every client
     /// shares ([`wellfed_connect::update::clear_stale`]). Any doubt about a
     /// cancel ends the push before the offer: `Gone` without `offered`, or
@@ -280,32 +192,6 @@ impl Operation {
         self.random.fill(&mut id)?;
         Ok(id)
     }
-}
-
-/// How a new build's trial ended, as the server saw it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Trial {
-    /// Bank 1 runs the build, and it confirmed itself.
-    Confirmed,
-    /// Bank 0 answers after the restart: the trial failed and the feeder
-    /// gave way to its recovery copy, which may be older than what it ran
-    /// before the install.
-    FellBack,
-    /// Bank 1 runs some other build: an update from elsewhere came between.
-    WrongBuild,
-    /// No verdict in the trial time: the feeder did not come back, or its
-    /// trial had not decided.
-    Unseen,
-}
-
-/// What a session after an activation says it runs.
-struct Reading {
-    build: String,
-    phase: UpdatePhase,
-    bank: u8,
-    /// The highest version it reports confirmed.
-    confirmed: u32,
-    ready: bool,
 }
 
 /// The long lane, as the driver's steps.

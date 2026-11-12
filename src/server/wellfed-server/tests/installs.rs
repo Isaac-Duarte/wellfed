@@ -184,6 +184,27 @@ fn a_release_whose_trial_fails_ends_rolled_back() {
     });
 }
 
+/// A feeder that boots another build into bank 1 than the one activated
+/// (an update from elsewhere came between) ends the install wrong_build,
+/// not confirmed.
+#[test]
+fn a_release_replaced_before_its_boot_ends_wrong_build() {
+    local(async {
+        let rig = Rig::start(ClientRole::Owner).await;
+        rig.banks.borrow_mut().boots_instead = Some([0x88; 32]);
+
+        rig.http.install(rig.feeder, rig.release.id).await.unwrap();
+        let ended = rig.ended().await;
+
+        assert_eq!(
+            (ended.state, ended.failure),
+            (InstallState::Failed, Some(InstallFailure::WrongBuild))
+        );
+        assert!(ended.finished.is_some());
+        rig.stop().await;
+    });
+}
+
 /// Installing the build the feeder already runs sends nothing and says so,
 /// rather than reading as an activation or a refusal.
 #[test]

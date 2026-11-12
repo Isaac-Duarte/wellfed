@@ -249,6 +249,57 @@ fn a_restart_while_the_trial_is_followed_ends_it_activated() {
     });
 }
 
+/// A feeder that never comes back after the activation gives no verdict:
+/// once the trial time passes, the install ends `activated`, with no
+/// failure, rather than confirmed or rolled back.
+#[test]
+fn a_feeder_that_never_comes_back_ends_the_install_activated() {
+    local(async {
+        let banks = Banks::new();
+        let sim = feeder::start_updatable(&banks).await;
+        let mut config = release::trusting(config());
+        config.timing.trial = Duration::from_secs(3);
+        let server = TestService::start_with(config).await;
+        let id = server
+            .adopt_as(&sim, &sim.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let file = signed(&project(), 7, BUILD, LEN);
+        let (release, _) = server.service().upload_release(file).await.unwrap();
+        let request = InstallRequest {
+            release: release.id,
+        };
+        server
+            .service()
+            .install(&ada().into(), id, request)
+            .await
+            .unwrap();
+        until("the trial is followed", || async {
+            server.service().install_state(id).await.unwrap().state == InstallState::Confirming
+        })
+        .await;
+
+        sim.stop().await;
+        until("the install ends", || async {
+            server
+                .service()
+                .install_state(id)
+                .await
+                .unwrap()
+                .finished
+                .is_some()
+        })
+        .await;
+
+        let unseen = server.service().install_state(id).await.unwrap();
+        assert_eq!(
+            (unseen.state, unseen.failure),
+            (InstallState::Activated, None)
+        );
+        server.shutdown().await;
+    });
+}
+
 /// An owner's own session with the feeder, once it answers: a restart
 /// into bank 0 takes a moment.
 async fn session(sim: &feeder::Running) -> feeder::Connection {

@@ -446,6 +446,63 @@ fn install_follows_a_release_to_activation() {
     });
 }
 
+/// An install whose feeder never comes back after the activation gets no
+/// verdict of its trial: it ends `activated`, and the command exits 3, the
+/// status of an outcome nobody saw.
+#[test]
+fn install_with_no_verdict_exits_3() {
+    local(async {
+        let banks = Banks::new();
+        let sim = feeder::start_updatable(&banks).await;
+        let mut config = release::trusting(config());
+        config.timing.trial = std::time::Duration::from_secs(3);
+        let server = TestServer::start_with(config).await;
+        let mut http = server.client();
+        http.setup(&ada_setup()).await.unwrap();
+        let request = AdoptFeeder {
+            invite: feeder::invite(&sim, ClientRole::Owner).await,
+            name: "kitchen".into(),
+            address: Some(sim.address.to_string()),
+            phone_key: None,
+        };
+        let kitchen = http.adopt(&request).await.unwrap().id;
+        let file = release::signed(&release::project(), 7, BUILD, 16 * release::SECTOR);
+        let Uploaded::New(kept) = http.upload_release(file).await.unwrap() else {
+            panic!("a first upload is new");
+        };
+        until("the server reads the feeder", || async {
+            let detail = http.feeder(kitchen).await.ok();
+            let status = detail.and_then(|detail| detail.status);
+            status.is_some_and(|status| status.live)
+        })
+        .await;
+        let home = Home::new();
+        home.login(&server).await.exited(0);
+        let id = kept.id.to_string();
+
+        // The feeder goes away for good once its trial is followed.
+        let gone = async {
+            until("the trial is followed", || async {
+                let state = http.install_state(kitchen).await.ok().map(|i| i.state);
+                state == Some(InstallState::Confirming)
+            })
+            .await;
+            sim.stop().await;
+        };
+        let args = ["install", id.as_str()];
+        let (ran, ()) = tokio::join!(home.run(&args, ""), gone);
+
+        ran.exited(3);
+        assert!(ran.stderr.contains("no verdict"), "{}", ran.stderr);
+        let ended = http.install_state(kitchen).await.unwrap();
+        assert_eq!(
+            (ended.state, ended.failure),
+            (InstallState::Activated, None)
+        );
+        server.stop().await;
+    });
+}
+
 /// `stock read` keeps bank 1 read from the replacement on bank 0, `stock`
 /// shows it, `stock export` copies it byte for byte to a new file, and
 /// `stock restore` checks the server's copy against stock's pinned image
