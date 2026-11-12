@@ -62,16 +62,14 @@ impl Client {
         decode(response, StatusCode::CREATED).await
     }
 
-    /// Claim `phone`, a key this token's phone already holds on the
-    /// feeder, as its phone key. Safe to retry: the same token asking again
-    /// is answered the record its claim made.
-    pub async fn claim_phone(&self, id: FeederId, phone: Hex<32>) -> Result<PhoneKey, Error> {
+    /// Claim `claim.key`, a key this token's phone already holds on the
+    /// feeder, as its phone key, with its proof when it has one. Safe to
+    /// retry: the same token asking again is answered the record its claim
+    /// made (a proof, used once, needs a new challenge).
+    pub async fn claim_phone(&self, id: FeederId, claim: &PhoneClaim) -> Result<PhoneKey, Error> {
         let response = self
             .api(Method::POST, &format!("/feeders/{id}/phones"))
-            .json(&PhoneClaim {
-                key: phone,
-                proof: None,
-            })
+            .json(claim)
             .send()
             .await?;
         decode(response, StatusCode::OK).await

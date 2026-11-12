@@ -124,6 +124,16 @@ struct Entry {
     direct: Option<Arc<DirectLink>>,
 }
 
+/// A round of claims of the phone's own key, read under one lock.
+pub(crate) struct ClaimsDue {
+    pub(crate) client: wellfed_server_client::Client,
+    /// The phone token's id, which a proof is bound to.
+    pub(crate) token: Option<Uuid>,
+    pub(crate) session: u64,
+    /// The feeders to claim on.
+    pub(crate) due: Vec<FeederId>,
+}
+
 pub(crate) fn now_ms() -> i64 {
     Timestamp::now().as_millisecond()
 }
@@ -718,6 +728,14 @@ impl Router {
         self.state().client()
     }
 
+    /// The server's client and the phone token's id, when one is
+    /// configured.
+    pub(crate) fn server_login(&self) -> Option<(wellfed_server_client::Client, Option<Uuid>)> {
+        let state = self.state();
+        let server = state.server.as_ref()?;
+        Some((server.handle.client.clone(), server.handle.token))
+    }
+
     /// The server's id for `feeder`, while a server is configured and its
     /// last list named it.
     pub(crate) fn listed(&self, feeder: &str) -> Option<FeederId> {
@@ -731,7 +749,7 @@ impl Router {
     /// marked as claimed from now so a second round sends none of them.
     /// `None` with no server, or with an account that holds no key of its
     /// own.
-    pub(crate) fn claims_due(&self) -> Option<(wellfed_server_client::Client, u64, Vec<FeederId>)> {
+    pub(crate) fn claims_due(&self) -> Option<ClaimsDue> {
         let mut guard = self.state();
         let state = &mut *guard;
         let server = state.server.as_ref()?;
@@ -740,6 +758,7 @@ impl Router {
         }
 
         let client = server.handle.client.clone();
+        let token = server.handle.token;
         let claimed = &mut state.claimed;
         let due = state
             .feeders
@@ -747,7 +766,12 @@ impl Router {
             .filter_map(|entry| entry.server)
             .filter(|id| claimed.insert(*id))
             .collect();
-        Some((client, state.session, due))
+        Some(ClaimsDue {
+            client,
+            token,
+            session: state.session,
+            due,
+        })
     }
 
     /// Claim the phone's own key on `id` again in the next round, while

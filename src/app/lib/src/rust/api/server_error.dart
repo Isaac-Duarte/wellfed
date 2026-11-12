@@ -91,13 +91,15 @@ enum ServerErrorKind {
   inviteExpired,
 
   /// The server could not read the feeder's clients to confirm this
-  /// phone's key (the feeder offline, or slow to connect), so the key is
+  /// phone's key (the feeder offline, or slow to connect), or took no
+  /// proof that the phone holds it (its challenge ran out), so the key is
   /// not this account's yet. Claiming it again records it.
   phoneKeyUnconfirmed,
 
   /// The server will not record this phone's key as the account's: the
   /// feeder does not list it, another phone or client holds it, an owner
-  /// kept it, or only an owner may claim it. `message` says which.
+  /// kept it, only an owner may claim it, or it asks a proof the phone
+  /// did not give. `message` says which.
   phoneKeyRefused,
 
   /// The server has no session with the feeder right now, or could not

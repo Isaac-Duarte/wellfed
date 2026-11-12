@@ -109,8 +109,13 @@ impl From<Error> for ServerError {
                 ErrorCode::NoCurrentFood => ServerErrorKind::NoCurrentFood,
                 ErrorCode::AlreadyAdopted => ServerErrorKind::AlreadyAdopted,
                 ErrorCode::InviteExpired => ServerErrorKind::InviteExpired,
-                ErrorCode::PhoneKeyUnconfirmed => ServerErrorKind::PhoneKeyUnconfirmed,
+                // A proof whose challenge ran out is settled by claiming
+                // again with a new one, as an unconfirmed key is.
+                ErrorCode::PhoneKeyUnconfirmed | ErrorCode::PhoneKeyProofRefused => {
+                    ServerErrorKind::PhoneKeyUnconfirmed
+                }
                 ErrorCode::PhoneKeyNotListed
+                | ErrorCode::PhoneKeyProofRequired
                 | ErrorCode::PhoneKeyKept
                 | ErrorCode::PhoneKeyNotAPhone
                 | ErrorCode::PhoneClaimOwnersOnly

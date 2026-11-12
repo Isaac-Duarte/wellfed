@@ -5,7 +5,9 @@
 //! `409 phone_key_not_listed`, the feeder adopted all the same, and a
 //! claim of the right key afterwards settles it.
 
-use wellfed_api::{AdoptFeeder, ClientOwner, ClientRole, ErrorCode, Hex, NewToken, TokenId, User};
+use wellfed_api::{
+    AdoptFeeder, ClientOwner, ClientRole, ErrorCode, Hex, NewToken, PhoneClaim, TokenId, User,
+};
 use wellfed_server_client::{Auth, Client, StatusCode};
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::{TestServer, ada_setup, local, refused};
@@ -89,8 +91,26 @@ fn a_key_the_feeder_does_not_hold_is_refused_and_a_claim_settles_it() {
         assert!(phone.phones().await.unwrap().is_empty());
 
         let kitchen = feeders[0].id;
-        let claimed = phone.claim_phone(kitchen, Hex(key)).await.unwrap();
-        let again = phone.claim_phone(kitchen, Hex(key)).await.unwrap();
+        let claimed = phone
+            .claim_phone(
+                kitchen,
+                &PhoneClaim {
+                    key: Hex(key),
+                    proof: None,
+                },
+            )
+            .await
+            .unwrap();
+        let again = phone
+            .claim_phone(
+                kitchen,
+                &PhoneClaim {
+                    key: Hex(key),
+                    proof: None,
+                },
+            )
+            .await
+            .unwrap();
 
         assert_eq!((claimed.user, claimed.token), (owner.id, Some(token)));
         assert_eq!(claimed.role, ClientRole::Owner);
