@@ -126,7 +126,7 @@ struct Shared {
     started: Timestamp,
     /// When this run started, by a clock that never steps: a wall clock
     /// set back never stretches a window counted from the start.
-    started_steady: std::time::Instant,
+    started_steady: tokio::time::Instant,
 }
 
 impl Shared {
@@ -201,7 +201,7 @@ impl Service {
                 random,
                 hub,
                 started,
-                started_steady: std::time::Instant::now(),
+                started_steady: tokio::time::Instant::now(),
             }),
             mirror,
             releases: Arc::new(releases),
