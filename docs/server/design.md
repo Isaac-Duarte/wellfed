@@ -277,6 +277,8 @@ The driver is `wellfed_connect::update::push`, which the CLI also runs. On the s
 
 One install runs at a time per server. The stream carries `install` updates (the start, progress every 32 KiB, and the end), and an install a restart cut short reads as `interrupted` if the feeder never took its offer. Once it took the offer, bank 1 may be partly written or activated, so the install reads as uncertain (`unreachable` with `offered`) and only the feeder's status tells.
 
+**The trial is followed.** Once bank 1 is activated, a release's install reads `confirming`, and the server keeps its turn on the long lane while the feeder restarts into the release and runs its trial, for up to six minutes. It reads each session opened after the activation's answer by the rule every client shares (`wellfed_client::offer::confirmation`): bank 1 running the build and reporting it confirmed, or ready to feed, ends `confirmed`; bank 0 answering from a new boot ends `failed` with `rolled_back`; bank 1 running another build ends `failed` with `wrong_build`. No verdict in that time, or a server stopped meanwhile, leaves the install `activated` with its end set, and the feeder's update state, or its `rolled_back` alert, tells. A stock restore ends at `activated`, since stock serves no device API to follow. The install keeps the server's one install slot until it ends.
+
 ## Stock backup and restore
 
 The server keeps each feeder's own stock firmware, the copy promotion would otherwise destroy, and offers "Restore stock" from it ([rollback](../firmware/consumer-installation.md#rollback)).

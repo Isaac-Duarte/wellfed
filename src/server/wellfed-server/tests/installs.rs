@@ -9,10 +9,11 @@ use std::rc::Rc;
 use uuid::Uuid;
 use wellfed_api::{
     AdoptFeeder, ClientRole, Connection, Credentials, ErrorCode, FeederId, FeederRefusal, Hex,
-    Install, InstallState, InstallTarget, NewUser, Release, Role, StreamEvent, StreamQuery,
+    Install, InstallFailure, InstallState, InstallTarget, NewUser, Release, Role, StreamEvent,
+    StreamQuery,
 };
 use wellfed_server_client::{Client, Error, Kept, Lock, StatusCode};
-use wellfed_server_testkit::feeder::{self, Banks, Running};
+use wellfed_server_testkit::feeder::{self, Banks, Running, Trial};
 use wellfed_server_testkit::release::{self, SECTOR, project, signed};
 use wellfed_server_testkit::{TestServer, WAIT, ada_setup, config, local, refused, until};
 
@@ -71,7 +72,7 @@ impl Rig {
         let ended = tokio::time::timeout(4 * WAIT, async {
             loop {
                 let install = self.http.install_state(self.feeder).await.unwrap();
-                if install.state != InstallState::Running {
+                if !under_way(install.state) {
                     return install;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -84,6 +85,12 @@ impl Rig {
         self.server.stop().await;
         self.sim.stop().await;
     }
+}
+
+/// Whether an install in `state` still runs: pushing, or following the
+/// release's trial.
+fn under_way(state: InstallState) -> bool {
+    matches!(state, InstallState::Running | InstallState::Confirming)
 }
 
 #[test]
@@ -126,14 +133,19 @@ fn an_owner_installs_a_release_with_its_progress_on_the_stream() {
             };
             assert_eq!((feeder, install.id), (rig.feeder, started.id));
             seen.push((install.state, install.written));
-            if install.state != InstallState::Running {
+            if !under_way(install.state) {
                 break;
             }
         }
         assert_eq!(seen.first(), Some(&(InstallState::Running, 0)));
+        // Activated, the trial is followed through the restart until the
+        // release confirms itself.
         assert_eq!(
-            seen.last(),
-            Some(&(InstallState::Activated, rig.release.image_len))
+            &seen[seen.len() - 2..],
+            [
+                (InstallState::Confirming, rig.release.image_len),
+                (InstallState::Confirmed, rig.release.image_len)
+            ]
         );
         assert!(
             seen.iter()
@@ -142,13 +154,32 @@ fn an_owner_installs_a_release_with_its_progress_on_the_stream() {
         );
 
         let ended = rig.http.install_state(rig.feeder).await.unwrap();
-        assert_eq!(ended.state, InstallState::Activated);
+        assert_eq!(ended.state, InstallState::Confirmed);
         assert_eq!(ended.failure, None);
         assert!(ended.finished.is_some());
-        until("the feeder restarts into the release", || async {
-            rig.banks.borrow().bank1_build == BUILD
-        })
-        .await;
+        assert_eq!(rig.banks.borrow().bank1_build, BUILD);
+        rig.stop().await;
+    });
+}
+
+/// A release whose trial never confirms is followed through the feeder's
+/// fallback to bank 0, and the install says it rolled back rather than
+/// stopping at its activation.
+#[test]
+fn a_release_whose_trial_fails_ends_rolled_back() {
+    local(async {
+        let rig = Rig::start(ClientRole::Owner).await;
+        rig.banks.borrow_mut().trial = Trial::NeverConfirms;
+
+        rig.http.install(rig.feeder, rig.release.id).await.unwrap();
+        let ended = rig.ended().await;
+
+        assert_eq!(
+            (ended.state, ended.failure),
+            (InstallState::Failed, Some(InstallFailure::RolledBack))
+        );
+        assert!(ended.finished.is_some());
+        assert!(!rig.banks.borrow().bank1_valid(), "bank 0 answers");
         rig.stop().await;
     });
 }
@@ -160,7 +191,7 @@ fn installing_the_running_build_ends_already_running() {
     local(async {
         let rig = Rig::start(ClientRole::Owner).await;
         rig.http.install(rig.feeder, rig.release.id).await.unwrap();
-        assert_eq!(rig.ended().await.state, InstallState::Activated);
+        assert_eq!(rig.ended().await.state, InstallState::Confirmed);
         until("the feeder answers from the release", || async {
             let detail = rig.http.feeder(rig.feeder).await;
             let status = detail.ok().and_then(|detail| detail.status);
@@ -206,7 +237,7 @@ fn status_and_writes_are_answered_during_the_transfer() {
         assert_eq!(during.state, InstallState::Running);
         assert!(during.written < during.image_len, "{during:?}");
 
-        assert_eq!(rig.ended().await.state, InstallState::Activated);
+        assert_eq!(rig.ended().await.state, InstallState::Confirmed);
         rig.stop().await;
     });
 }
@@ -224,7 +255,7 @@ fn a_second_install_is_refused_while_one_runs() {
         );
 
         let ended = rig.ended().await;
-        assert_eq!((ended.id, ended.state), (first.id, InstallState::Activated));
+        assert_eq!((ended.id, ended.state), (first.id, InstallState::Confirmed));
         rig.stop().await;
     });
 }

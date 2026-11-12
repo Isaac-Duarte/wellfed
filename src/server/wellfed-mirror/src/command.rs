@@ -60,6 +60,8 @@ pub struct Operation {
     wait: Wait,
     /// How an install on this turn waits between its steps.
     pub(crate) pace: Pace,
+    /// How long an install on this turn follows its build's trial.
+    pub(crate) trial: Duration,
     /// Request ids for the steps an install sends.
     pub(crate) random: Arc<dyn Random>,
     _turn: OwnedSemaphorePermit,
@@ -126,6 +128,7 @@ impl LongLane {
             build: self.build,
             wait: Wait::of(&timing),
             pace: timing.pace,
+            trial: timing.trial,
             random,
             _turn: turn,
         })

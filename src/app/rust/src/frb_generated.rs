@@ -9435,7 +9435,9 @@ impl SseDecode for crate::api::server_views::InstallState {
             1 => crate::api::server_views::InstallState::Activated,
             2 => crate::api::server_views::InstallState::AlreadyRunning,
             3 => crate::api::server_views::InstallState::Failed,
-            4 => crate::api::server_views::InstallState::Unknown,
+            4 => crate::api::server_views::InstallState::Confirming,
+            5 => crate::api::server_views::InstallState::Confirmed,
+            6 => crate::api::server_views::InstallState::Unknown,
             _ => unreachable!("Invalid variant for InstallState: {}", inner),
         };
     }
@@ -15973,7 +15975,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::server_views::Inst
             crate::api::server_views::InstallState::Activated => 1.into_dart(),
             crate::api::server_views::InstallState::AlreadyRunning => 2.into_dart(),
             crate::api::server_views::InstallState::Failed => 3.into_dart(),
-            crate::api::server_views::InstallState::Unknown => 4.into_dart(),
+            crate::api::server_views::InstallState::Confirming => 4.into_dart(),
+            crate::api::server_views::InstallState::Confirmed => 5.into_dart(),
+            crate::api::server_views::InstallState::Unknown => 6.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -21433,7 +21437,9 @@ impl SseEncode for crate::api::server_views::InstallState {
                 crate::api::server_views::InstallState::Activated => 1,
                 crate::api::server_views::InstallState::AlreadyRunning => 2,
                 crate::api::server_views::InstallState::Failed => 3,
-                crate::api::server_views::InstallState::Unknown => 4,
+                crate::api::server_views::InstallState::Confirming => 4,
+                crate::api::server_views::InstallState::Confirmed => 5,
+                crate::api::server_views::InstallState::Unknown => 6,
                 _ => {
                     unimplemented!("");
                 }

@@ -12540,6 +12540,36 @@
           },
           {
             "type": "object",
+            "description": "The release was activated and its trial failed: the feeder gave way\nto bank 0's recovery copy, which may be older than what it ran\nbefore the install.",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "rolled_back"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The release was activated, and bank 1 then ran another build: an\nupdate from elsewhere came between.",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "wrong_build"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
             "required": [
               "reason"
@@ -12580,6 +12610,8 @@
           "activated",
           "already_running",
           "failed",
+          "confirming",
+          "confirmed",
           "unknown"
         ]
       },

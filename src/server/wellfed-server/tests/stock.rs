@@ -91,18 +91,21 @@ impl Rig {
 
     /// Install the release (promotion, which waits for a kept stock backup
     /// when the feeder runs from bank 0) and wait until the feeder answers
-    /// from it on bank 1.
+    /// from it on bank 1, and the server saw it confirm: until then the
+    /// install still holds the one install slot.
     async fn promote(&self) {
         self.http
             .install(self.feeder, self.release.id)
             .await
             .unwrap();
-        until("the feeder answers from the release", || async {
-            let state = self.http.stock(self.feeder).await.unwrap();
-            state.feeder_state.is_some_and(|feeder| feeder.bank == 1)
-                && self.banks.borrow().bank1_build == BUILD
+        until("the release confirms itself", || async {
+            let install = self.http.install_state(self.feeder).await.unwrap();
+            install.state == InstallState::Confirmed
         })
         .await;
+        let state = self.http.stock(self.feeder).await.unwrap();
+        assert!(state.feeder_state.is_some_and(|feeder| feeder.bank == 1));
+        assert_eq!(self.banks.borrow().bank1_build, BUILD);
     }
 
     async fn stop(self) {

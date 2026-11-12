@@ -412,11 +412,17 @@ fn install_follows_a_release_to_activation() {
         let last = bodies.last().unwrap();
         assert_eq!(
             (last.state, last.written),
-            (InstallState::Activated, kept.image_len)
+            (InstallState::Confirmed, kept.image_len)
+        );
+        assert!(
+            bodies
+                .iter()
+                .any(|body| body.state == InstallState::Confirming),
+            "the trial is followed: {bodies:?}"
         );
         let read = home.run(&["install"], "").await;
         assert!(
-            read.exited(0).stdout.contains("activated"),
+            read.exited(0).stdout.contains("confirmed"),
             "{}",
             read.stdout
         );

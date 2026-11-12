@@ -46,6 +46,9 @@ pub fn config() -> Config {
                 restart: Duration::from_millis(1_500),
             },
             join_settle: Duration::from_secs(5),
+            // The simulator restarts in a second or two, and its trial
+            // decides at its next boot or the one after.
+            trial: Duration::from_secs(30),
             setup_window: Duration::from_secs(3600),
         },
         // The diagnostics' own tests turn them on: elsewhere their reads

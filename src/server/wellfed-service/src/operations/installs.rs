@@ -25,7 +25,7 @@ use wellfed_api::{
     ClientRole, Connection as Link, FeederId, FeederRefusal, Install, InstallFailure, InstallId,
     InstallRequest, InstallState, InstallTarget, StreamEvent,
 };
-use wellfed_mirror::{PushError, Pushed, Restore, Update, UpdateError};
+use wellfed_mirror::{Operation, PushError, Pushed, Restore, Trial, Update, UpdateError};
 use wellfed_model::{Refusal, UpdatePhase, UpdateView};
 use wellfed_releases::{STOCK_VERSION, StockBackup};
 
@@ -228,18 +228,32 @@ impl Service {
         let now = self.shared.clock.now();
         let interrupted = self.shared.store.interrupt_installs(now).await?;
         if interrupted > 0 {
-            warn!("an install was running when the server stopped: marked failed");
+            warn!("an install was running when the server stopped: marked as it stood");
         }
         Ok(())
     }
 
-    /// Run the install to its end, keep that, and free the slot.
+    /// Run the install to its end, keep that, and free the slot. A
+    /// release's activation is followed through its trial on the same
+    /// turn, so the session that answered it is the one the follow counts
+    /// from.
     async fn run_install(&self, mut claim: Claim, offer: Offer) {
         let feeder = claim.install.feeder;
-        let ended = self.push(&mut claim, feeder, &offer).await;
+        let Ok(mut operation) = self.mirror.operation(feeder).await else {
+            // The only refusal: the feeder was let go before the turn came.
+            let failure = InstallFailure::Unreachable { offered: false };
+            return self.end(claim, InstallState::Failed, Some(failure)).await;
+        };
+        let ended = self.push(&mut claim, &mut operation, &offer).await;
         let failed = |failure| (InstallState::Failed, Some(failure));
         let (state, failure) = match ended {
-            Ok(Pushed::Activated) => (InstallState::Activated, None),
+            Ok(Pushed::Activated) => match offer {
+                Offer::Release { build, .. } => {
+                    self.follow_trial(&mut claim, &mut operation, build).await
+                }
+                // Stock serves no device API to follow.
+                Offer::Stock { .. } => (InstallState::Activated, None),
+            },
             Ok(Pushed::AlreadyRunning) => (InstallState::AlreadyRunning, None),
             Ok(Pushed::Failed(error)) => failed(failure(error)),
             Ok(Pushed::Gone { offered }) => failed(InstallFailure::Unreachable { offered }),
@@ -251,6 +265,45 @@ impl Service {
             }
         };
 
+        drop(operation);
+        self.end(claim, state, failure).await;
+    }
+
+    /// Follow the release `build` an install just activated on
+    /// `operation`'s turn, through its restart and trial: the install's
+    /// state meanwhile is `confirming`, kept and published, and its end
+    /// the trial's verdict, or `activated` when none came.
+    async fn follow_trial(
+        &self,
+        claim: &mut Claim,
+        operation: &mut Operation,
+        build: [u8; 32],
+    ) -> (InstallState, Option<InstallFailure>) {
+        let install = claim.update(|install| install.state = InstallState::Confirming);
+        info!(
+            "activated: the feeder restarts into version {}, and its trial is followed",
+            install.version
+        );
+        if let Err(error) = self.shared.store.save_install(&install).await {
+            warn!("that the install's trial is followed was not stored: {error}");
+        }
+        self.publish_install(install);
+
+        match operation.follow_trial(build, install.version).await {
+            Ok(Trial::Confirmed) => (InstallState::Confirmed, None),
+            Ok(Trial::FellBack) => (InstallState::Failed, Some(InstallFailure::RolledBack)),
+            Ok(Trial::WrongBuild) => (InstallState::Failed, Some(InstallFailure::WrongBuild)),
+            Ok(Trial::Unseen) => (InstallState::Activated, None),
+            Err(error) => {
+                warn!("the trial is no longer followed: {error}");
+                (InstallState::Activated, None)
+            }
+        }
+    }
+
+    /// End `claim`'s install as `state`, with `failure`: logged, kept and
+    /// published, and the slot freed.
+    async fn end(&self, mut claim: Claim, state: InstallState, failure: Option<InstallFailure>) {
         let now = self.shared.clock.now();
         let install = claim.update(|install| {
             install.state = state;
@@ -263,9 +316,14 @@ impl Service {
                 "the feeder already runs version {}: nothing was sent",
                 install.version
             ),
+            (InstallState::Confirmed, None) => info!(
+                "the feeder runs version {}, and it confirmed itself",
+                install.version
+            ),
             (_, None) => match install.target {
-                InstallTarget::Release { .. } => info!(
-                    "activated: the feeder restarts into version {}",
+                InstallTarget::Release { .. } => warn!(
+                    "activated, and no verdict of version {}'s trial came: the feeder's update \
+                     state tells",
                     install.version
                 ),
                 InstallTarget::Stock { .. } => info!(
@@ -295,19 +353,14 @@ impl Service {
         claim.unsaved(install);
     }
 
-    /// Wait for the feeder's long-operation turn and push the offer over
-    /// it, publishing the progress as it goes.
+    /// Push the offer over the feeder's long-operation turn, publishing
+    /// the progress as it goes.
     async fn push(
         &self,
         claim: &mut Claim,
-        feeder: FeederId,
+        operation: &mut Operation,
         offer: &Offer,
     ) -> Result<Pushed, PushError> {
-        let Ok(mut operation) = self.mirror.operation(feeder).await else {
-            // The only refusal: the feeder was let go before the turn came.
-            return Ok(Pushed::Gone { offered: false });
-        };
-
         // Once the feeder took the offer, the row says so, so a restart
         // before the end reads the install as uncertain, not as one that
         // changed nothing. The note is kept beside the push, which a store

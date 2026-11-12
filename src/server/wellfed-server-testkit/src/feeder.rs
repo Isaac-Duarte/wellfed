@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use wellfed_client::api::Invite;
 /// An owner's session with the simulator ([`open_owner`]).
 pub use wellfed_connect::{Connection, Samples};
-pub use wellfed_feeder_sim::banks::Banks;
+pub use wellfed_feeder_sim::banks::{Banks, Trial};
 pub use wellfed_feeder_sim::flash::Flash;
 pub use wellfed_feeder_sim::harness::newer::Newer;
 pub use wellfed_feeder_sim::harness::{Relay, Running, fail_call, fail_feeder_settings};

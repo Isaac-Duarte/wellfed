@@ -60,6 +60,7 @@ impl Config {
             sample_wait: timing.sample_wait,
             pace: timing.pace,
             join_settle: timing.join_settle,
+            trial: timing.trial,
             // The rest of the feeder's own session clocks; nothing the
             // owner sets.
             ..wellfed_mirror::Timing::default()
@@ -102,6 +103,9 @@ pub struct Timing {
     /// How long an adoption whose join answer was lost looks for its key
     /// enrolled, as a running feed holds the enrollment.
     pub join_settle: Duration,
+    /// How long after an activation the server follows the new build's
+    /// restart and trial, up to its verdict.
+    pub trial: Duration,
     /// How long after it starts a server with no account takes a setup or
     /// an import: whoever reaches it first could claim it, so the window
     /// is short, and a restart opens it again.
@@ -122,6 +126,7 @@ impl Default for Timing {
             transfer_idle: Duration::from_secs(30),
             pace: mirror.pace,
             join_settle: mirror.join_settle,
+            trial: mirror.trial,
             setup_window: Duration::from_secs(3600),
         }
     }

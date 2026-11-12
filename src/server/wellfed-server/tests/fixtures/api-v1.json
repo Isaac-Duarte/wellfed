@@ -1,5 +1,5 @@
 {
-  "revision": 7,
+  "revision": 8,
   "document": {
     "components": {
       "schemas": {
@@ -4083,6 +4083,34 @@
               "properties": {
                 "reason": {
                   "enum": [
+                    "rolled_back"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "reason": {
+                  "enum": [
+                    "wrong_build"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "reason": {
+                  "enum": [
                     "unknown"
                   ],
                   "type": "string"
@@ -4116,6 +4144,8 @@
             "activated",
             "already_running",
             "failed",
+            "confirming",
+            "confirmed",
             "unknown"
           ],
           "type": "string"

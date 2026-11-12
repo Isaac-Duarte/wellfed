@@ -63,7 +63,15 @@ class FeedRate {
           gramsPerDay == other.gramsPerDay;
 }
 
-enum InstallState { running, activated, alreadyRunning, failed, unknown }
+enum InstallState {
+  running,
+  activated,
+  alreadyRunning,
+  failed,
+  confirming,
+  confirmed,
+  unknown,
+}
 
 /// The server this phone logged in to, as the app's file keeps it: the link,
 /// and the feeders its last list gave, so a cold start with the server down

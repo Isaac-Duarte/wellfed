@@ -106,20 +106,30 @@ pub enum InstallState {
     /// The server is pushing the release, or waiting for the feeder to
     /// restart into bank 0 to take it.
     Running,
-    /// Every byte is verified and bank 1 activated: the feeder restarts
-    /// into the release, whose trial confirms it, or into stock.
+    /// Every byte is verified and bank 1 activated. A stock restore ends
+    /// here: the feeder restarts into stock, which serves no device API. A
+    /// release's install that ends here was activated and the server saw
+    /// no verdict of its trial (the feeder did not come back in time, or
+    /// the server stopped while it followed it): the feeder's update state
+    /// tells, and a fallback reaches the server as its `rolled_back` alert.
     Activated,
     /// Bank 1 already ran the release's build when the install began, so
     /// nothing was offered and nothing written.
     AlreadyRunning,
-    /// It ended without the server seeing activation; `failure` says why.
-    /// Before the feeder took the offer, it keeps running the build it had.
-    /// After, it may run its recovery copy from bank 0 with bank 1 partly
-    /// written, and when the end is uncertain (`unreachable` with
-    /// `offered`) bank 1 may be activated: the feeder's update state tells.
-    /// The server does not follow a new build's trial; a fallback reaches
-    /// it as the feeder's `rolled_back` alert.
+    /// It ended without the release confirmed; `failure` says why. Before
+    /// the feeder took the offer, it keeps running the build it had. After,
+    /// it may run its recovery copy from bank 0 with bank 1 partly written,
+    /// and when the end is uncertain (`unreachable` with `offered`) bank 1
+    /// may be activated: the feeder's update state tells. A trial that
+    /// failed is `rolled_back`.
     Failed,
+    /// Bank 1 is activated, and the server follows the release: the
+    /// feeder's restart into it and its trial, for up to a few minutes.
+    /// It ends `confirmed`, `failed` (`rolled_back`, `wrong_build`), or
+    /// `activated` when no verdict came.
+    Confirming,
+    /// The feeder runs the release, and it confirmed itself.
+    Confirmed,
     /// A value a newer server added, which this client cannot name. The
     /// server never sends it.
     #[serde(other)]
@@ -134,6 +144,8 @@ impl InstallState {
             Self::Activated => "activated",
             Self::AlreadyRunning => "already_running",
             Self::Failed => "failed",
+            Self::Confirming => "confirming",
+            Self::Confirmed => "confirmed",
             Self::Unknown => "unknown",
         }
     }
@@ -146,6 +158,8 @@ impl InstallState {
             Self::Activated,
             Self::AlreadyRunning,
             Self::Failed,
+            Self::Confirming,
+            Self::Confirmed,
         ]
         .into_iter()
         .find(|state| state.code() == code)
@@ -181,6 +195,13 @@ pub enum InstallFailure {
     /// so the feeder keeps running the build it had. (One stopped after is
     /// `unreachable` with `offered`.)
     Interrupted,
+    /// The release was activated and its trial failed: the feeder gave way
+    /// to bank 0's recovery copy, which may be older than what it ran
+    /// before the install.
+    RolledBack,
+    /// The release was activated, and bank 1 then ran another build: an
+    /// update from elsewhere came between.
+    WrongBuild,
     /// A value a newer server added, which this client cannot name. The
     /// server never sends it.
     #[serde(other)]

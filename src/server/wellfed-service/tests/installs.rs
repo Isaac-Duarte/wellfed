@@ -11,7 +11,7 @@ use wellfed_api::{
     Model, ReleaseQuery,
 };
 use wellfed_model::{Answer, Op, UpdatePhase};
-use wellfed_server_testkit::feeder::{self, Banks, Relay};
+use wellfed_server_testkit::feeder::{self, Banks, Relay, Trial};
 use wellfed_server_testkit::release::{
     self, MANIFEST_LEN, SECTOR, UPDATE_CHUNK_MAX, project, signed,
 };
@@ -25,7 +25,10 @@ async fn ended(service: &Service, id: wellfed_api::FeederId) -> wellfed_api::Ins
     let ended = tokio::time::timeout(4 * WAIT, async {
         loop {
             let install = service.install_state(id).await.unwrap();
-            if install.state != InstallState::Running {
+            if !matches!(
+                install.state,
+                InstallState::Running | InstallState::Confirming
+            ) {
                 return install;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -89,7 +92,7 @@ fn a_restart_mid_transfer_ends_it_uncertain_and_the_next_activates() {
         let ended = ended(server.service(), id).await;
         assert_eq!(
             (ended.id, ended.state),
-            (second.id, InstallState::Activated)
+            (second.id, InstallState::Confirmed)
         );
         until("the feeder restarts into the release", || async {
             banks.borrow().bank1_build == BUILD
@@ -196,6 +199,51 @@ fn an_offer_the_store_cannot_note_stops_the_install_uncertain() {
         let after = server.service().install_state(id).await.unwrap();
         assert_eq!((after.id, after.failure), (first.id, uncertain));
 
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A server stopped while it followed an activated release's trial never
+/// saw the verdict: at the next start that install reads `activated`, ended
+/// then, rather than still confirming or failed.
+#[test]
+fn a_restart_while_the_trial_is_followed_ends_it_activated() {
+    local(async {
+        let banks = Banks::new();
+        // Undecided for some seconds: three trial boots, then the fallback.
+        banks.borrow_mut().trial = Trial::NeverConfirms;
+        let sim = feeder::start_updatable(&banks).await;
+        let server = TestService::start_with(release::trusting(config())).await;
+        let id = server
+            .adopt_as(&sim, &sim.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let file = signed(&project(), 7, BUILD, LEN);
+        let (release, _) = server.service().upload_release(file).await.unwrap();
+        let request = InstallRequest {
+            release: release.id,
+        };
+        let started = server
+            .service()
+            .install(&ada().into(), id, request)
+            .await
+            .unwrap();
+        until("the trial is followed", || async {
+            server.service().install_state(id).await.unwrap().state == InstallState::Confirming
+        })
+        .await;
+
+        let store = server.stop().await;
+        let server = TestService::open(store, release::trusting(config())).await;
+
+        let unseen = server.service().install_state(id).await.unwrap();
+        assert_eq!(unseen.id, started.id);
+        assert_eq!(
+            (unseen.state, unseen.failure),
+            (InstallState::Activated, None)
+        );
+        assert!(unseen.finished.is_some());
         server.shutdown().await;
         sim.stop().await;
     });
@@ -339,7 +387,7 @@ fn an_install_over_a_stopped_candidate_cancels_it_and_activates() {
         let ended = ended(server.service(), id).await;
         assert_eq!(
             (ended.state, ended.failure),
-            (InstallState::Activated, None)
+            (InstallState::Confirmed, None)
         );
         until("the feeder restarts into the release", || async {
             banks.borrow().bank1_build == BUILD
@@ -393,7 +441,7 @@ fn an_install_whose_caller_is_dropped_as_it_starts_still_ends() {
         drop(installing);
 
         let ended = ended(service, id).await;
-        assert_eq!(ended.state, InstallState::Activated);
+        assert_eq!(ended.state, InstallState::Confirmed);
         server.shutdown().await;
         sim.stop().await;
     });

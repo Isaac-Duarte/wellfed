@@ -119,7 +119,7 @@ pub const PREFIX: &str = "/api/v1";
 /// document to that ([API evolution]).
 ///
 /// [API evolution]: ../../../../docs/server/README.md#api-evolution
-pub const REVISION: u32 = 7;
+pub const REVISION: u32 = 8;
 
 /// How long the server looks for its key enrolled on a feeder after an
 /// adoption's join answer was lost (`504 outcome_unknown`): the feeder

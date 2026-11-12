@@ -66,6 +66,9 @@ pub struct Timing {
     /// until a running feed ends, and makes it whether or not the
     /// connection that asked is still there.
     pub join_settle: Duration,
+    /// How long after an activation the server follows the new build: its
+    /// restart into bank 1 and its trial, up to the trial's verdict.
+    pub trial: Duration,
 }
 
 impl Default for Timing {
@@ -80,6 +83,9 @@ impl Default for Timing {
             pace: Pace::DEFAULT,
             // The longest feed (48 portions at up to 12 s each), and margin.
             join_settle: wellfed_api::LOST_JOIN_SEARCH,
+            // A trial confirms within a few minutes of the activation, as
+            // the app and the CLI wait.
+            trial: Duration::from_secs(6 * 60),
         }
     }
 }

@@ -401,5 +401,7 @@ pub enum _InstallState {
     Activated,
     AlreadyRunning,
     Failed,
+    Confirming,
+    Confirmed,
     Unknown,
 }
