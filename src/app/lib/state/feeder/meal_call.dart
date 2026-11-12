@@ -57,6 +57,11 @@ class MealCallFlow {
         if (reply is! FeederReply_NotSent) return reply;
         if (!wanted()) return null;
         reaching?.call();
+        // A request refused before any of it went out can be refused so on
+        // every try, while its read answers: a beat between tries keeps that
+        // from spinning until the deadline.
+        await deadline.beat();
+        if (!wanted()) return null;
       }
     } finally {
       deadline.cancel();

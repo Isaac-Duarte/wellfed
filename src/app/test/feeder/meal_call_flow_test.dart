@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/meal_call.dart';
 
 import '../support/fakes.dart';
 import '../support/harness.dart';
@@ -40,10 +41,35 @@ void main() {
     session.answering = (request) async => request is FeederRequest_UploadCall ? answers.removeAt(0) : held;
     final reads = <FeederReply>[];
 
-    final FeederReply? reply = await feeder.mealCall.send(wav, wanted: () => true, read: reads.add);
-    expect(reply, isA<FeederReply_Unanswered>());
+    final Future<FeederReply?> sending = feeder.mealCall.send(wav, wanted: () => true, read: reads.add);
+    await tester.pump(const Duration(seconds: 1));
+    expect(await sending, isA<FeederReply_Unanswered>());
     expect(uploads(session), 2);
     expect(reads, [held, held], reason: 'a read before each upload');
+  });
+
+  // "Not sent" can be the same every time (a request the bridge refuses
+  // before it goes out) while the read answers: each try waits a beat, and
+  // the deadline ends them.
+  testWidgets('an upload never sent waits between tries, and stops at the deadline', (tester) async {
+    final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+    session.answering = (request) async => request is FeederRequest_UploadCall ? const FeederReply.notSent() : held;
+
+    FeederReply? reply = const FeederReply.done();
+    var ended = false;
+    unawaited(
+      feeder.mealCall.send(wav, wanted: () => true).then((answer) {
+        reply = answer;
+        ended = true;
+      }),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(uploads(session), lessThanOrEqualTo(3), reason: 'a beat between tries');
+
+    await tester.pump(MealCallFlow.reachWait);
+    expect(ended, isTrue);
+    expect(reply, isNull, reason: 'never sent, so never reached');
+    expect(uploads(session), lessThanOrEqualTo(MealCallFlow.reachWait.inMilliseconds ~/ 500 + 1));
   });
 
   testWidgets('a second send while one uploads gets its answer and sends nothing', (tester) async {
