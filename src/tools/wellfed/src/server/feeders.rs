@@ -13,8 +13,8 @@ use anyhow::{Result, bail};
 use clap::{Args, ValueEnum};
 use uuid::Uuid;
 use wellfed_server_client::api::{
-    Command, CommandOutcome, CommandQuery, CommandState, CommandStateFilter, EventQuery, Feeder,
-    FeederId, FeederSettingsPatch, MealReminder, StreamEvent, StreamQuery, Window,
+    Command, CommandOutcome, CommandQuery, CommandState, CommandStateFilter, EventPage, EventQuery,
+    Feeder, FeederId, FeederSettingsPatch, MealReminder, StreamEvent, StreamQuery, Window,
 };
 use wellfed_server_client::{Client, Lock, Updates};
 
@@ -329,12 +329,12 @@ pub(super) async fn cancel_feed(
     Ok(Settled::Known)
 }
 
-/// A page of the feeder's history, then with `--follow` its new events
-/// and gaps from the stream.
+/// A page of the feeder's history, then with `--follow` the rest of it
+/// and its new events and gaps from the stream.
 pub(super) async fn events(client: &Client, args: EventsArgs, out: Output) -> Result<Settled> {
     let id = args.which.id(client).await?;
-    // Open first, so nothing recorded between the page and the stream is
-    // missed.
+    // Open first, so nothing recorded between the history and the stream
+    // is missed: the stream starts live, and the pages reach up to it.
     let mut updates = match args.follow {
         true => Some(client.stream(&StreamQuery::default(), None).await?),
         false => None,
@@ -346,22 +346,17 @@ pub(super) async fn events(client: &Client, args: EventsArgs, out: Output) -> Re
         limit: args.limit,
         kind: None,
     };
-    let page = client.events(id, &query).await?;
-    out.show(&page, |page| {
-        let mut lines: Vec<String> = page.events.iter().map(text::event).collect();
-        lines.extend(page.gaps.iter().map(text::gap));
-        lines.join("\n")
-    })?;
-    if let (Some(next), false) = (page.next, args.follow) {
-        eprintln!("More after {next}: --after {next}");
-    }
-
     let Some(updates) = updates.as_mut() else {
+        let page = page(client, id, &query, out).await?;
+        if let Some(next) = page.next {
+            eprintln!("More after {next}: --after {next}");
+        }
         return Ok(Settled::Known);
     };
-    // The stream opened before the page was read, so it may repeat the
-    // page's newest events.
-    let printed = page.events.last().map(|event| (event.epoch, event.seq));
+
+    // The stream opened before the history was read, so it may repeat the
+    // history's newest events.
+    let mut printed = history(client, id, query, out, None).await?;
     while let Some(update) = updates.next().await {
         let update = update?;
         match &update.event {
@@ -369,14 +364,60 @@ pub(super) async fn events(client: &Client, args: EventsArgs, out: Output) -> Re
                 if *feeder == id && Some((event.epoch, event.seq)) > printed =>
             {
                 out.show(&update.event, |_| text::event(event))?;
+                printed = Some((event.epoch, event.seq));
             }
             StreamEvent::Gap { feeder, gap } if *feeder == id => {
                 out.show(&update.event, |_| text::gap(gap))?;
+            }
+            // This subscriber fell behind and the server dropped what it
+            // could not hold: read what was skipped from the history.
+            StreamEvent::Resync => {
+                eprintln!("The stream fell behind; reading what it skipped.");
+                let skipped = EventQuery {
+                    epoch: printed.map(|(epoch, _)| epoch).or(args.epoch),
+                    after: printed.map(|(_, seq)| seq).or(args.after),
+                    limit: args.limit,
+                    kind: None,
+                };
+                printed = history(client, id, skipped, out, printed).await?;
             }
             _ => {}
         }
     }
     bail!("the server ended the stream")
+}
+
+/// One page of history from `query`, shown.
+async fn page(client: &Client, id: FeederId, query: &EventQuery, out: Output) -> Result<EventPage> {
+    let page = client.events(id, query).await?;
+    out.show(&page, |page| {
+        let mut lines: Vec<String> = page.events.iter().map(text::event).collect();
+        lines.extend(page.gaps.iter().map(text::gap));
+        lines.join("\n")
+    })?;
+    Ok(page)
+}
+
+/// Every page of history from `query` to the newest, shown in order; the
+/// newest event shown since `printed`.
+async fn history(
+    client: &Client,
+    id: FeederId,
+    mut query: EventQuery,
+    out: Output,
+    mut printed: Option<(u32, u64)>,
+) -> Result<Option<(u32, u64)>> {
+    loop {
+        let page = page(client, id, &query, out).await?;
+        if let Some(event) = page.events.last() {
+            printed = printed.max(Some((event.epoch, event.seq)));
+        }
+        let Some(next) = page.next else {
+            return Ok(printed);
+        };
+        query.after = Some(next);
+        query.epoch = page.epoch.or(query.epoch);
+    }
 }
 
 /// The journal entry under a key: how a write whose outcome was unknown

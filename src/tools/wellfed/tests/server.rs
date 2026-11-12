@@ -9,13 +9,14 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use uuid::Uuid;
 use wellfed_server_client::api::{
     AdoptFeeder, ClientOwner, ClientRole, Command, CommandOutcome, CommandState, Connection,
-    ErrorCode, FeedOutcome, Feeder, FeederClient, FeederId, Hex, Install, InstallState, Problem,
-    StockBackup, StockSource, StockState,
+    ErrorCode, EventPage, EventQuery, FeedOutcome, Feeder, FeederClient, FeederId, Hex, Install,
+    InstallState, Problem, StockBackup, StockSource, StockState,
 };
 use wellfed_server_client::{Client, Uploaded};
 use wellfed_server_testkit::feeder::{self, Banks, Flash, Relay, Running};
@@ -117,6 +118,67 @@ async fn adopt(http: &Client, sim: &Running, address: String) -> FeederId {
     })
     .await;
     id
+}
+
+/// `events --follow` reads every page of the history before it follows the
+/// stream, which starts live: a first page that held only part of it left
+/// the rest unshown, with no hint.
+#[test]
+fn events_follow_shows_the_whole_history_before_the_stream() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = TestServer::start().await;
+        let mut http = server.client();
+        http.setup(&ada_setup()).await.unwrap();
+        let kitchen = adopt(&http, &sim, sim.address.to_string()).await;
+        let home = Home::new();
+        home.login(&server).await.exited(0);
+
+        for secret in [0x41, 0x42, 0x43] {
+            let invite = feeder::invite(&sim, ClientRole::Member).await;
+            feeder::join_phone(&sim, &invite, [secret; 32]).await;
+        }
+        let whole = EventQuery {
+            limit: Some(500),
+            ..EventQuery::default()
+        };
+        until("the server holds the joinings", || async {
+            http.events(kitchen, &whole).await.unwrap().events.len() >= 4
+        })
+        .await;
+        let held: Vec<u64> = http
+            .events(kitchen, &whole)
+            .await
+            .unwrap()
+            .events
+            .iter()
+            .map(|event| event.seq)
+            .collect();
+
+        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_wellfed"))
+            .args(["server", "events", "--follow", "--json", "--limit", "1"])
+            .arg("--token-file")
+            .arg(home.token_file())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("the CLI starts");
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let mut shown = Vec::new();
+        let read = async {
+            while shown.len() < held.len() {
+                let line = lines.next_line().await.unwrap().expect("the CLI follows");
+                let page: EventPage = serde_json::from_str(&line).expect("a page");
+                shown.extend(page.events.iter().map(|event| event.seq));
+            }
+        };
+        let finished = tokio::time::timeout(Duration::from_secs(10), read).await;
+        child.kill().await.unwrap();
+        assert!(finished.is_ok(), "shown {shown:?} of {held:?}");
+        assert_eq!(shown, held);
+    });
 }
 
 fn mode(path: &Path) -> u32 {
