@@ -142,7 +142,7 @@ class FakeFeederPorts with FakeUpdateRules implements FeederPorts {
 
   /// What each adoption step answers, and the steps asked, in order.
   Adoption adoptAnswer = const Adoption.failed(
-    error: ServerError(kind: ServerErrorKind.closed, message: 'none'),
+    error: ServerError(kind: ServerErrorKind.closed, message: 'none', mayHaveRun: false),
   );
   final adoptSteps = <String>[];
 

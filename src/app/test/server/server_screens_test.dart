@@ -7,6 +7,7 @@ import 'package:wellfed/screens/server/account.dart';
 import 'package:wellfed/screens/server/add_server.dart';
 import 'package:wellfed/screens/server/feeder_food.dart';
 import 'package:wellfed/screens/server/pet.dart';
+import 'package:wellfed/screens/server/server_words.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
@@ -17,6 +18,7 @@ import 'package:wellfed/state/server/add_server.dart';
 import 'package:wellfed/state/server/feeder_food.dart';
 import 'package:wellfed/state/server/household.dart';
 import 'package:wellfed/state/server/pet.dart';
+import 'package:wellfed/state/server/records.dart';
 import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/state/server/server_history.dart';
 
@@ -184,7 +186,7 @@ void main() {
     addTearDown(flow.dispose);
     await flow.load();
 
-    session.home.lost = serverError(ServerErrorKind.interrupted);
+    session.home.lost = serverError(ServerErrorKind.interrupted, mayHaveRun: true);
     expect(await flow.addPet(name: 'Tom', species: Species.cat), isFalse);
     expect(flow.state.pets.map((pet) => pet.name), ['Tom'], reason: 'the read after it shows it took');
     expect(flow.state.problem?.mayHaveRun, isTrue);
@@ -192,10 +194,20 @@ void main() {
     expect(session.home.changes, ['create pet Tom']);
 
     // A server that said it failed partway reads the same way.
-    session.home.lost = serverError(ServerErrorKind.serverFailed);
+    session.home.lost = serverError(ServerErrorKind.serverFailed, mayHaveRun: true);
     expect(await flow.saveFood(brand: 'Acme', name: 'Fish', kcalPerKg: 3500, bagGrams: 2000), isFalse);
     expect(flow.state.foods.map((food) => food.name), ['Fish']);
     expect(flow.state.problem?.mayHaveRun, isTrue);
+
+    // So does a page no Wellfed server sends, as a proxy's after the insert
+    // landed: the bridge says it may have run, whatever its words.
+    session.home.lost = serverError(ServerErrorKind.protocol, mayHaveRun: true);
+    expect(await flow.addPet(name: 'Kit', species: Species.cat), isFalse);
+    expect(flow.state.pets.map((pet) => pet.name), ['Tom', 'Kit']);
+    final RecordProblem? problem = flow.state.problem;
+    expect(problem?.mayHaveRun, isTrue);
+    expect(problem == null ? null : recordProblemWords(problem), contains('may or may not have taken'));
+    expect(session.home.changes, ['create pet Tom', 'create food Fish', 'create pet Kit']);
   });
 
   testWidgets('a pet edit shows the new pet, and a refused one says why', (tester) async {

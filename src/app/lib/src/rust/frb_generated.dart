@@ -9449,12 +9449,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ServerError dco_decode_server_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ServerError(
       kind: dco_decode_server_error_kind(arr[0]),
       message: dco_decode_String(arr[1]),
       retryAfterSeconds: dco_decode_opt_box_autoadd_u_32(arr[2]),
+      mayHaveRun: dco_decode_bool(arr[3]),
     );
   }
 
@@ -15189,10 +15190,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_kind = sse_decode_server_error_kind(deserializer);
     var var_message = sse_decode_String(deserializer);
     var var_retryAfterSeconds = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_mayHaveRun = sse_decode_bool(deserializer);
     return ServerError(
       kind: var_kind,
       message: var_message,
       retryAfterSeconds: var_retryAfterSeconds,
+      mayHaveRun: var_mayHaveRun,
     );
   }
 
@@ -20869,6 +20872,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_server_error_kind(self.kind, serializer);
     sse_encode_String(self.message, serializer);
     sse_encode_opt_box_autoadd_u_32(self.retryAfterSeconds, serializer);
+    sse_encode_bool(self.mayHaveRun, serializer);
   }
 
   @protected

@@ -12016,10 +12016,12 @@ impl SseDecode for crate::api::server_error::ServerError {
         let mut var_kind = <crate::api::server_error::ServerErrorKind>::sse_decode(deserializer);
         let mut var_message = <String>::sse_decode(deserializer);
         let mut var_retryAfterSeconds = <Option<u32>>::sse_decode(deserializer);
+        let mut var_mayHaveRun = <bool>::sse_decode(deserializer);
         return crate::api::server_error::ServerError {
             kind: var_kind,
             message: var_message,
             retry_after_seconds: var_retryAfterSeconds,
+            may_have_run: var_mayHaveRun,
         };
     }
 }
@@ -17867,6 +17869,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_error::ServerError {
             self.kind.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
             self.retry_after_seconds.into_into_dart().into_dart(),
+            self.may_have_run.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -23769,6 +23772,7 @@ impl SseEncode for crate::api::server_error::ServerError {
         <crate::api::server_error::ServerErrorKind>::sse_encode(self.kind, serializer);
         <String>::sse_encode(self.message, serializer);
         <Option<u32>>::sse_encode(self.retry_after_seconds, serializer);
+        <bool>::sse_encode(self.may_have_run, serializer);
     }
 }
 

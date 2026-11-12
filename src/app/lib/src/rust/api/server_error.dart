@@ -18,15 +18,26 @@ class ServerError {
   /// login.
   final int? retryAfterSeconds;
 
+  /// A change that ended so may have run all the same: its answer was
+  /// lost, could not be read, or the server failed partway. The kind
+  /// names the words; this, from the server client's one reading of a
+  /// failure, says whether a change took, so a screen never resends one
+  /// that may have.
+  final bool mayHaveRun;
+
   const ServerError({
     required this.kind,
     required this.message,
     this.retryAfterSeconds,
+    required this.mayHaveRun,
   });
 
   @override
   int get hashCode =>
-      kind.hashCode ^ message.hashCode ^ retryAfterSeconds.hashCode;
+      kind.hashCode ^
+      message.hashCode ^
+      retryAfterSeconds.hashCode ^
+      mayHaveRun.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -35,7 +46,8 @@ class ServerError {
           runtimeType == other.runtimeType &&
           kind == other.kind &&
           message == other.message &&
-          retryAfterSeconds == other.retryAfterSeconds;
+          retryAfterSeconds == other.retryAfterSeconds &&
+          mayHaveRun == other.mayHaveRun;
 }
 
 enum ServerErrorKind {

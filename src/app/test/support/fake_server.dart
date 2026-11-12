@@ -16,7 +16,9 @@ const serverLink = ServerLink(
 );
 const serverOwner = ServerAccount(id: 'u1', name: 'ada', role: ServerRole.owner);
 
-ServerError serverError(ServerErrorKind kind) => ServerError(kind: kind, message: kind.name);
+/// An error of `kind`; a change that ended so `mayHaveRun` when set.
+ServerError serverError(ServerErrorKind kind, {bool mayHaveRun = false}) =>
+    ServerError(kind: kind, message: kind.name, mayHaveRun: mayHaveRun);
 
 /// A session with the owner's server the test answers. Only what the app's
 /// controllers call is here; anything else fails the test.

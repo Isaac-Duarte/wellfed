@@ -113,7 +113,7 @@ void main() {
       path: RoutePath.server,
       reply: FeederReply.notSent(
         reason: reason,
-        server: kind == null ? null : ServerError(kind: kind, message: 'no'),
+        server: kind == null ? null : ServerError(kind: kind, message: 'no', mayHaveRun: false),
       ),
     );
 

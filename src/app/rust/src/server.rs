@@ -90,6 +90,11 @@ impl From<Error> for ServerError {
             .retry_after()
             .map(|wait| u32::try_from(wait.as_secs()).unwrap_or(u32::MAX));
         let kind = kind(&error);
+        let may_have_run = matches!(
+            error.failure(),
+            wellfed_server_client::Failure::Interrupted
+                | wellfed_server_client::Failure::OutcomeUnknown
+        );
 
         let message = match &error {
             Error::Problem { problem, .. } => match &problem.detail {
@@ -102,6 +107,7 @@ impl From<Error> for ServerError {
             kind,
             message,
             retry_after_seconds,
+            may_have_run,
         }
     }
 }
@@ -689,7 +695,9 @@ mod tests {
 
         for error in unreadable {
             assert_eq!(error.failure(), Failure::Interrupted, "{error}");
-            assert_eq!(ServerError::from(error).kind, ServerErrorKind::Protocol);
+            let error = ServerError::from(error);
+            assert_eq!(error.kind, ServerErrorKind::Protocol);
+            assert!(error.may_have_run, "{error}");
         }
     }
 
@@ -718,7 +726,35 @@ mod tests {
                 retry_after: None,
             };
             assert_eq!(error.failure(), Failure::Interrupted, "{error}");
-            assert_eq!(ServerError::from(error).kind, ServerErrorKind::ServerFailed);
+            let error = ServerError::from(error);
+            assert_eq!(error.kind, ServerErrorKind::ServerFailed);
+            assert!(error.may_have_run, "{error}");
+        }
+    }
+
+    /// A refusal, or a call that never left the phone, did not run.
+    #[test]
+    fn a_refusal_or_an_unsent_call_did_not_run() {
+        use wellfed_api::{ErrorCode, Problem};
+        use wellfed_server_client::StatusCode;
+
+        let refused = Error::Problem {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            problem: Box::new(Problem {
+                kind: "about:blank".into(),
+                title: "No".into(),
+                status: StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
+                code: ErrorCode::Invalid,
+                detail: None,
+                refusal: None,
+                release: None,
+            }),
+            retry_after: None,
+        };
+
+        for error in [refused, Error::NoSession] {
+            let error = ServerError::from(error);
+            assert!(!error.may_have_run, "{error}");
         }
     }
 

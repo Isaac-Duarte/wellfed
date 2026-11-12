@@ -13,16 +13,12 @@ final class RecordProblem {
   /// It ended a change, not a read.
   final bool change;
 
-  /// A change that may have run all the same: its answer was lost, or the
-  /// server failed partway. The records were read again after it, so what
-  /// the screen lists says whether it took; nothing sends it again, and the
-  /// owner checks before asking anew.
-  bool get mayHaveRun =>
-      change &&
-      switch (error.kind) {
-        ServerErrorKind.interrupted || ServerErrorKind.serverFailed || ServerErrorKind.outcomeUnknown => true,
-        _ => false,
-      };
+  /// A change that may have run all the same: its answer was lost or could
+  /// not be read, or the server failed partway, as the bridge decides. The
+  /// records were read again after it, so what the screen lists says
+  /// whether it took; nothing sends it again, and the owner checks before
+  /// asking anew.
+  bool get mayHaveRun => change && error.mayHaveRun;
 
   @override
   bool operator ==(Object other) => other is RecordProblem && other.error == error && other.change == change;

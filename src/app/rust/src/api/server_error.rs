@@ -91,11 +91,23 @@ pub struct ServerError {
     /// The wait the server named in `Retry-After`, as on a rate-limited
     /// login.
     pub retry_after_seconds: Option<u32>,
+    /// A change that ended so may have run all the same: its answer was
+    /// lost, could not be read, or the server failed partway. The kind
+    /// names the words; this, from the server client's one reading of a
+    /// failure, says whether a change took, so a screen never resends one
+    /// that may have.
+    pub may_have_run: bool,
 }
 
 impl ServerError {
+    /// An error the app built itself, which may have run only when its kind
+    /// says the answer was lost.
     pub(crate) fn new(kind: ServerErrorKind, message: impl fmt::Display) -> Self {
         Self {
+            may_have_run: matches!(
+                kind,
+                ServerErrorKind::Interrupted | ServerErrorKind::OutcomeUnknown
+            ),
             kind,
             message: message.to_string(),
             retry_after_seconds: None,
