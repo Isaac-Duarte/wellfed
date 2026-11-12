@@ -112,6 +112,10 @@ pub enum ErrorCode {
     /// retry found the feeder offline or refused the resend. Retry with the
     /// same `Idempotency-Key`, which it answers once; a write whose answer
     /// settled nothing stays unknown, and is never sent again.
+    ///
+    /// An adoption takes no `Idempotency-Key`: it settles by reading
+    /// `GET /feeders`, which lists the feeder once the server finds the
+    /// key it joined with, and another try needs a new invite.
     OutcomeUnknown,
     /// The `Idempotency-Key` already names another request (another
     /// body, feeder, kind of write or user). Nothing was sent.
