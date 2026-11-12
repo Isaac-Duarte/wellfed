@@ -23,9 +23,10 @@
 //! food light, so blinking it through every feed read as a low-food warning.
 //!
 //! The food beam is read during feeds and at rest, soon after boot and every
-//! ten minutes on the adapter ([`wellfed_core_feeder::feed::food_read`]), so low food
-//! shows within a few seconds of a boot and clears within ten minutes of a
-//! refill. On batteries, during Bluetooth setup, and on a trial boot until it
+//! [`FOOD_READ_EVERY_MS`] (a minute) on the adapter, so low food shows within
+//! a few seconds of a boot and clears within a minute of a refill.
+//!
+//! [`FOOD_READ_EVERY_MS`]: wellfed_core_feeder::feed::food_read::FOOD_READ_EVERY_MS On batteries, during Bluetooth setup, and on a trial boot until it
 //! has confirmed, it shows the latest reading there is, which may be none.
 //!
 //! With the `lights` setting off, or outside its window on the local clock,
