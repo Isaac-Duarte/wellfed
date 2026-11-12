@@ -23,7 +23,7 @@ use wellfed_api::{
 };
 use wellfed_mirror::{BankReadError, ReadError};
 use wellfed_model::{Answer, Op, UpdatePhase};
-use wellfed_releases::{DOWNGRADE_LEN, MANIFEST_LEN, RestoreError, Taken};
+use wellfed_releases::{DOWNGRADE_LEN, MANIFEST_LEN, RestoreError, STOCK_MODEL, Taken};
 
 use crate::operations::installs::Offer;
 use crate::{
@@ -148,6 +148,9 @@ impl Service {
         let row = self.row(id).await?;
         if row.role != ClientRole::Owner {
             return Err(Error::Refused(FeederRefusal::Forbidden));
+        }
+        if row.model != STOCK_MODEL {
+            return Err(InstallError::StockModelOnly { device: row.model }.into());
         }
         let (view, backup) = self.releases.stock().backup(row.identity).await?;
         // A restore signed for another model is never sent: the device

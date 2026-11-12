@@ -44,7 +44,7 @@ use wellfed_model::Hex;
 pub use error::Error;
 pub use stock::{Stock, StockConfig, Taken};
 pub use wellfed_client::install::{
-    DOWNGRADE_LEN, RestoreError, RestoreOffer, STOCK_VERSION, StockBackup, StockPins,
+    DOWNGRADE_LEN, RestoreError, RestoreOffer, STOCK_MODEL, STOCK_VERSION, StockBackup, StockPins,
 };
 pub use wellfed_client::release::{MANIFEST_LEN, ReleaseError};
 
