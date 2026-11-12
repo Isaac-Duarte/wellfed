@@ -508,7 +508,9 @@ impl<S: KindStore> DeviceStores<S> {
             }
             self.wifi_saved.finish(!saved);
         }
-        if let Some(settings) = self.time_pending.take() {
+        if let Some(settings) = self.time_pending.take()
+            && !self.time.unchanged(&settings)
+        {
             self.time.save(&settings);
         }
     }

@@ -330,8 +330,19 @@ fn an_owner_sets_the_zone_and_the_ntp_server_and_the_clock_follows() {
                 }),
             },
         };
+        let again = put.clone();
         let put = sim.ask(&mut owner, &put).await;
         assert_eq!(put, written(1));
+        // The same settings again change nothing, and the generation stays,
+        // as the feeder's writer skips the save.
+        let Op::PutTime { changes, .. } = again else {
+            unreachable!("a time change")
+        };
+        let same = Op::PutTime {
+            base: Generation(1),
+            changes,
+        };
+        assert_eq!(sim.ask(&mut owner, &same).await, written(1));
 
         let mut view = None;
         for _ in 0..50 {
