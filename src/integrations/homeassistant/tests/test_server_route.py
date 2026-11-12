@@ -210,6 +210,40 @@ async def test_switching_routes_keeps_the_entities_and_drops_the_old_route(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_a_key_left_on_the_feeder_keeps_its_repair_back_on_the_direct_route(
+    hass: HomeAssistant, simulator: Simulator, server: Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server.adopt(simulator)
+    entry = await _direct_entry(hass, simulator)
+    old_key = bridge.public_key(bytes.fromhex(entry.data[CONF_SECRET])).hex()
+    leftover = f"leftover_key_{entry.unique_id}"
+
+    # The server could not remove the direct key (as for a member's account).
+    monkeypatch.setattr(bridge, "server_revoke_client", lambda *_: False)
+    await _reconfigure(hass, entry, "reconfigure_server", _sign_in(server))
+    monkeypatch.undo()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, leftover) is not None
+
+    # Back on the direct route, with a new key: the old one is still on the
+    # feeder, and so is its repair.
+    await _reconfigure(
+        hass,
+        entry,
+        "reconfigure_direct",
+        {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
+    )
+    assert old_key in simulator.owner("clients")
+    await asyncio.sleep(1)
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, leftover) is not None
+
+    # Once the owner removes it, the direct session's own key sees it gone.
+    simulator.owner("revoke", old_key[:16])
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await _until(hass, lambda: ir.async_get(hass).async_get_issue(DOMAIN, leftover) is None)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_a_revoked_token_asks_to_sign_in_again(
     hass: HomeAssistant, simulator: Simulator, server: Server
 ) -> None:

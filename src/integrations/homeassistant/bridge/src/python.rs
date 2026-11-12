@@ -174,6 +174,29 @@ fn join_check(
     })
 }
 
+/// Whether the feeder `identity` still lists the client key `key`, as the
+/// key `secret` reads its clients now; `None` when no session could ask.
+#[pyfunction]
+#[pyo3(signature = (secret, identity, key, address=None))]
+fn client_listed(
+    py: Python<'_>,
+    secret: &[u8],
+    identity: &[u8],
+    key: &[u8],
+    address: Option<&str>,
+) -> PyResult<Option<bool>> {
+    let client = ClientKey::restore(secret)?;
+    let identity = bytes32(identity, Error::IdentityLength)?;
+    let listed = bytes32(key, Error::KeyLength)?;
+    Ok(py.detach(|| {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()?;
+        runtime.block_on(key::client_listed(&client, &identity, address, listed))
+    }))
+}
+
 /// Sign in to the owner's server at `url` as `name`, and create a token
 /// labelled `label` for Home Assistant. The password is used for this alone
 /// and not kept; an account that may change nothing is refused.
@@ -374,7 +397,7 @@ impl Feeder {
 mod wellfed_homeassistant {
     #[pymodule_export]
     use super::{
-        Feeder, JoinFailed, ServerRefused, WellfedError, generate_secret,
+        Feeder, JoinFailed, ServerRefused, WellfedError, client_listed, generate_secret,
         invite_feeder, join, join_check, public_key, role_writes, server_client_listed,
         server_feeders, server_login, server_revoke_client, server_revoke_token,
     };

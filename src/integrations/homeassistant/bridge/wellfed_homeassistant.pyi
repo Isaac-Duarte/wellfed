@@ -2,7 +2,7 @@ from _typeshed import SupportsGetItem
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "JoinFailed", "JoinProblem", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "join_check", "public_key", "role_writes", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
+__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "JoinFailed", "JoinProblem", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "client_listed", "generate_secret", "invite_feeder", "join", "join_check", "public_key", "role_writes", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
 
 PORTIONS_MAX: Final[int]
 """
@@ -1412,6 +1412,12 @@ class Written:
         """
     @property
     def result(self, /) -> WriteResult: ...
+
+def client_listed(secret: bytes, identity: bytes, key: bytes, address: str | None = None) -> bool | None:
+    """
+    Whether the feeder `identity` still lists the client key `key`, as the
+    key `secret` reads its clients now; `None` when no session could ask.
+    """
 
 def generate_secret() -> bytes:
     """

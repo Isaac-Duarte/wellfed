@@ -238,6 +238,29 @@ async fn revoke_self(
     }
 }
 
+/// Whether the feeder `feeder` still lists the client key `listed`, as
+/// `key`, one of its clients, reads them now; `None` when no session could
+/// ask. Any client may list the clients, a member too, so Home Assistant
+/// checks a key it left behind on the direct route as well.
+pub async fn client_listed(
+    key: &ClientKey,
+    feeder: &[u8; 32],
+    address: Option<&str>,
+    listed: [u8; 32],
+) -> Option<bool> {
+    let address = locate(feeder, address).await.ok()?;
+    let ephemeral = random().ok()?;
+    let opened = wellfed_connect::Connection::open(key.keypair(), *feeder, address, ephemeral);
+    let mut session = opened.await.ok()?;
+    let asked = session.ask(random().ok()?, &wellfed_model::Op::ListClients);
+    match asked.await {
+        Ok(wellfed_model::Answer::Clients(clients)) => {
+            Some(clients.iter().any(|client| client.key.0 == listed))
+        }
+        _ => None,
+    }
+}
+
 /// The feeder's address: given, or found over mDNS by its identity. The
 /// browse blocks, so it runs off the session's runtime thread.
 pub(crate) async fn locate(

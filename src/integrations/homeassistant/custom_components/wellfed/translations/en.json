@@ -470,7 +470,11 @@
     },
     "leftover_key": {
       "title": "Remove Home Assistant's old key from feeder {feeder}",
-      "description": "Feeder {feeder} is now reached through the Wellfed server, but Home Assistant could not remove the key it used to reach it directly (it starts {key}). Remove the client named home-assistant from the feeder's people in the app. This clears once the server no longer sees the key on the feeder."
+      "description": "Home Assistant could not remove a key it used before to reach feeder {feeder} (the key starts {key}), so the feeder may still list it. Remove it: the client named home-assistant whose key starts {key}, in the feeder's people in the app or with `wellfed revoke {key}`. Its key differs from the one Home Assistant uses now. This clears once the feeder no longer lists it."
+    },
+    "leftover_key_left": {
+      "title": "Remove Home Assistant's old key from feeder {feeder}",
+      "description": "A Wellfed entry was deleted while feeder {feeder} may still list a key Home Assistant used before (the key starts {key}), and nothing checks it now. Remove the client named home-assistant whose key starts {key}, in the feeder's people in the app or with `wellfed revoke {key}`, then ignore this."
     },
     "token_left": {
       "title": "Revoke Home Assistant's token on the Wellfed server",

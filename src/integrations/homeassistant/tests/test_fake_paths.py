@@ -53,6 +53,7 @@ from custom_components.wellfed.const import (
     ROUTE_SERVER,
 )
 from custom_components.wellfed.kept import kept
+from custom_components.wellfed.session import key_left
 import wellfed_homeassistant as bridge
 
 from . import fake
@@ -865,6 +866,44 @@ async def test_a_leftover_key_clears_once_gone_and_with_its_entry(
     leftover()
     assert await hass.config_entries.async_remove(entry.entry_id)
     assert _issue(hass, "leftover_key") is None
+
+
+async def test_a_leftover_key_is_checked_directly_and_outlives_its_entry(
+    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listed = [True]
+    asked: list[tuple[bytes, bytes, bytes, str | None]] = []
+
+    def client_listed(
+        secret: bytes, identity: bytes, key: bytes, address: str | None = None
+    ) -> bool:
+        asked.append((secret, identity, key, address))
+        return listed[0]
+
+    monkeypatch.setattr(bridge, "client_listed", client_listed)
+    old = bytes([9] * 32)
+    entry = _entry(hass, DIRECT_DATA)
+    store = kept(hass, entry.entry_id)
+    await store.load()
+    store.set_leftover_key(old)
+    key_left(hass, fake.IDENTITY, old)
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await _until(hass, lambda: len(asked) == 1)
+    # Asked with the key in use now, about the one left over.
+    assert asked[0] == (fake.SECRET, fake.IDENTITY, old, DIRECT_DATA[CONF_ADDRESS])
+    assert _issue(hass, "leftover_key") is not None
+
+    # Deleted while the feeder may still list it: the repair stays, worded
+    # for no entry to check it.
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    issue = _issue(hass, "leftover_key")
+    assert issue is not None and issue.is_persistent
+    assert issue.translation_key == "leftover_key_left"
+    assert issue.translation_placeholders == {
+        "feeder": fake.IDENTITY.hex()[:8],
+        "key": old.hex()[:8],
+    }
 
 
 async def test_write_entities_are_hidden_while_the_role_writes_nothing(

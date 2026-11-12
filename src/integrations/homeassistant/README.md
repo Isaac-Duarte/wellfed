@@ -100,7 +100,7 @@ Contributors and agents build and check releases. Only the owner publishes, crea
 - The config entry is version 2. Version 1 entries, from test builds before the two routes, are not migrated: they fail to migrate, and the owner deletes them and pairs again.
 - Through the server, there is no route to read the feeder's time view, so the day is counted in the home's zone, which the server keeps every feeder on.
 - Through the server, TLS checks the server's certificate against the Home Assistant host's own trusted certificates (`rustls-platform-verifier`, which reads the system store); no roots are bundled. A self-signed certificate needs its authority installed on the host.
-- A member may not remove its own key from the feeder, so an entry moved from the direct route to the server asks the server to remove it, which works on an owner's account when the feeder made the server an owner. Otherwise a repair asks the owner to remove it in the app; it clears when the server no longer lists the key, checked at each connect.
+- A member may not remove its own key from the feeder, so an entry moved from the direct route to the server asks the server to remove it, which works on an owner's account when the feeder made the server an owner. Otherwise a repair asks the owner to remove it in the app; it clears when the feeder no longer lists the key, checked at each connect, through the server or, back on the direct route, with the new key (any client may list the clients). Deleting the entry leaves the repair, worded for no entry to check it.
 
 ## Evidence
 

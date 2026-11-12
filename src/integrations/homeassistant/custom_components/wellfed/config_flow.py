@@ -44,7 +44,6 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
@@ -73,12 +72,11 @@ from .const import (
     DOMAIN,
     ENTRY_MINOR_VERSION,
     ENTRY_VERSION,
-    LEFTOVER_KEY_ISSUE,
     ROUTE_DIRECT,
     ROUTE_SERVER,
 )
 from .kept import kept
-from .session import forget_token, token_left
+from .session import forget_token, key_left, token_left
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -465,11 +463,10 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
                 # refusal starts no reauth.
                 await self._stop_session(entry)
                 await self._forget(dict(entry.data))
-                # Back on the direct route: no key is left over.
-                store = kept(self.hass, entry.entry_id)
-                await store.load()
-                store.set_leftover_key(None)
-                ir.async_delete_issue(self.hass, DOMAIN, f"{LEFTOVER_KEY_ISSUE}_{identity.hex()}")
+                # A key an earlier move left on the feeder stays in the
+                # store and its repair: the new key is another, and the
+                # direct session clears it once the feeder no longer lists
+                # it.
                 return self.async_update_reload_and_abort(
                     entry, data=_direct_data(secret, identity, address)
                 )
@@ -504,19 +501,7 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             await store.load()
             store.set_leftover_key(None if removed else public)
             if not removed:
-                ir.async_create_issue(
-                    self.hass,
-                    DOMAIN,
-                    f"{LEFTOVER_KEY_ISSUE}_{feeder.identity.hex()}",
-                    is_fixable=False,
-                    is_persistent=True,
-                    severity=ir.IssueSeverity.WARNING,
-                    translation_key=LEFTOVER_KEY_ISSUE,
-                    translation_placeholders={
-                        "feeder": feeder.identity.hex()[:8],
-                        "key": public.hex()[:8],
-                    },
-                )
+                key_left(self.hass, feeder.identity, public)
         return self.async_update_reload_and_abort(
             entry, data=_server_data(self._url, self._keep_login(), feeder)
         )

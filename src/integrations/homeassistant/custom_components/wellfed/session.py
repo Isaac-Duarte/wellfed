@@ -37,6 +37,7 @@ from .const import (
     CONF_URL,
     DOMAIN,
     EVENT_FEEDER,
+    LEFTOVER_KEY_ISSUE,
     ROUTE_SERVER,
     TOKEN_LEFT_ISSUE,
 )
@@ -156,6 +157,23 @@ def token_left(hass: HomeAssistant, url: str, token_id: str) -> None:
         severity=ir.IssueSeverity.WARNING,
         translation_key=TOKEN_LEFT_ISSUE,
         translation_placeholders={"url": url, "token_id": token_id},
+    )
+
+
+def key_left(
+    hass: HomeAssistant, identity: bytes, key: bytes, translation_key: str = LEFTOVER_KEY_ISSUE
+) -> None:
+    """A client key Home Assistant held on the feeder `identity` and could not remove:
+    the owner removes it, by the start of the key."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{LEFTOVER_KEY_ISSUE}_{identity.hex()}",
+        is_fixable=False,
+        is_persistent=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=translation_key,
+        translation_placeholders={"feeder": identity.hex()[:8], "key": key.hex()[:8]},
     )
 
 
