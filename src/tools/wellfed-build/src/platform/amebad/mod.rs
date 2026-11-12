@@ -27,6 +27,7 @@ use self::toolchain::{toolchain_lock, verify_toolchain};
 use super::{Built, Job};
 use crate::device::StockPaths;
 use crate::environment::{BOARD_VARIABLE, BUILD_WIFI_VARIABLE, Environment, OTA_KEY_VARIABLE};
+use crate::firmware::Runtime;
 use crate::{Error, Firmware, Profile, Provisioning, Repo, Result, Stage, digest, relative, text};
 use wellfed_formats::require;
 use wellfed_proto::device::Model;
@@ -583,7 +584,7 @@ impl Build<'_> {
                 ),
             || AmebadError::NoIdentity,
         )?;
-        carries_key(combined, self.job.ota_key)?;
+        carries_key(combined, self.job.ota_key, self.job.firmware.runtime())?;
         Ok(banner)
     }
 
@@ -805,12 +806,13 @@ impl Amebad {
     }
 }
 
-/// Refuse an image that lacks the update key the build set. `wellfed-hal`
-/// keeps the key as the 64 hex characters it was given, so the packaged code
-/// holds them; anything that compiled in another key (a cargo `[env]` entry
-/// the environment check missed) leaves them out.
-fn carries_key(combined: &[u8], key: Option<&str>) -> Result<()> {
-    let Some(key) = key else {
+/// Refuse an image on the SDK runtime that lacks the update key the build
+/// set. `wellfed-hal` keeps the key as the 64 hex characters it was given,
+/// so the packaged updater holds them; anything that compiled in another
+/// key (a cargo `[env]` entry the environment check missed) leaves them
+/// out. A bare firmware links no updater, so its image holds no key at all.
+fn carries_key(combined: &[u8], key: Option<&str>, runtime: Runtime) -> Result<()> {
+    let Some(key) = key.filter(|_| runtime == Runtime::Sdk) else {
         return Ok(());
     };
     require(contains(combined, key.as_bytes()), || AmebadError::OtaKey {
@@ -827,11 +829,13 @@ mod tests {
     fn an_image_without_the_key_the_build_set_is_refused() {
         let key = "ab".repeat(32);
         let image = format!("code{key}data").into_bytes();
-        carries_key(&image, Some(&key)).unwrap();
-        carries_key(&image, None).unwrap();
+        carries_key(&image, Some(&key), Runtime::Sdk).unwrap();
+        carries_key(&image, None, Runtime::Sdk).unwrap();
 
         let other = "cd".repeat(32);
-        let error = carries_key(&image, Some(&other)).unwrap_err();
+        // A bare firmware's image links no updater to hold a key.
+        carries_key(&image, Some(&other), Runtime::Bare).unwrap();
+        let error = carries_key(&image, Some(&other), Runtime::Sdk).unwrap_err();
         assert!(
             matches!(&error, Error::Amebad(AmebadError::OtaKey { key }) if key == &other),
             "{error:?}"
