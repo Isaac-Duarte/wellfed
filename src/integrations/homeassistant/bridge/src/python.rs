@@ -186,7 +186,8 @@ struct Feeder(feeder::Feeder);
 #[pymethods]
 impl Feeder {
     /// `pending` and `answered` are what the last run left: the feeds
-    /// still unsettled, and the feed numbers answered since the oldest.
+    /// still unsettled, and the feed numbers the last `Answered` update
+    /// listed.
     #[new]
     #[pyo3(signature = (secret, identity, address=None, pending=Vec::new(), answered=Vec::new()))]
     fn new(

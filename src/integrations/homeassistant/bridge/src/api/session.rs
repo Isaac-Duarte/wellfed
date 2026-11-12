@@ -128,8 +128,9 @@ pub struct Update {
     /// For [`UpdateKind::StillUnknown`]: the portions that feed asked for.
     pub portions: Option<u8>,
     /// For [`UpdateKind::Pending`]: the feed to keep. For
-    /// [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`] and
-    /// [`UpdateKind::StillUnknown`]: the pending feed it accounts for.
+    /// [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`],
+    /// [`UpdateKind::StillUnknown`] and [`UpdateKind::Forgotten`]: the
+    /// pending feed it accounts for.
     pub pending: Option<Pending>,
     /// The first and last event lost, for a [`UpdateKind::Gap`] the feeder
     /// named; both `None` for a history that started over.
@@ -140,8 +141,9 @@ pub struct Update {
     pub reason: Option<String>,
     /// For [`UpdateKind::Alerts`].
     pub alerts: Option<Alerts>,
-    /// For [`UpdateKind::Answered`]: the feed number to keep.
-    pub answered: Option<u32>,
+    /// For [`UpdateKind::Answered`]: every feed number to keep, in place of
+    /// those kept before.
+    pub answered: Vec<u32>,
 }
 
 impl Update {
@@ -162,7 +164,7 @@ impl Update {
             gap_to: None,
             reason: None,
             alerts: None,
-            answered: None,
+            answered: Vec::new(),
         }
     }
 
@@ -225,10 +227,11 @@ impl Update {
         }
     }
 
-    /// A feed number this client now has the end of.
-    pub fn answered(feed: u32) -> Self {
+    /// The feed numbers this client has the end of, now that it has one
+    /// more: what the integration keeps for the next session.
+    pub fn answered(feeds: Vec<u32>) -> Self {
         Self {
-            answered: Some(feed),
+            answered: feeds,
             ..Self::kind(UpdateKind::Answered)
         }
     }
@@ -255,6 +258,16 @@ impl Update {
             portions: Some(pending.portions),
             pending: Some(pending),
             ..Self::kind(UpdateKind::StillUnknown)
+        }
+    }
+
+    /// A feed whose answer never came is no longer waited on: still
+    /// unknown, and nothing settles it now.
+    pub fn forgotten(pending: Pending) -> Self {
+        Self {
+            portions: Some(pending.portions),
+            pending: Some(pending),
+            ..Self::kind(UpdateKind::Forgotten)
         }
     }
 

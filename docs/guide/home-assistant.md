@@ -144,7 +144,7 @@ Known limits:
 
 ## When a feed's answer is lost
 
-Home Assistant sends a feed once and never sends it again on its own, on either route. If the answer doesn't arrive, you get an error that says the feed may have run, and a repair appears under **Settings**, **Repairs**. It clears itself once the feeder's history shows the feed, or, through the server, once the server learns how it ended, even if Home Assistant restarts in between. If the history holds no record of it, the repair says so: check the bowl before you feed again.
+Home Assistant sends a feed once and never sends it again on its own, on either route. If the answer doesn't arrive, you get an error that says the feed may have run, and a repair appears under **Settings**, **Repairs**. It clears itself once the feeder's history shows the feed, or, through the server, once the server learns how it ended, even if Home Assistant restarts in between. Until then a new direct feed is not sent. If the history holds no record of it after 15 minutes, or once the feeder is idle, the repair says so: check the bowl before you feed again. Home Assistant feeds again from then, and keeps watching for that feed's record for a week, as the app does, so a record that turns up late still clears the repair.
 
 ## Firmware updates
 

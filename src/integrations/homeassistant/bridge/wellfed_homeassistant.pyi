@@ -413,7 +413,8 @@ class Feeder:
     def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None, pending: SupportsGetItem[int, Pending] = ..., answered: SupportsGetItem[int, SupportsIndex] = ...) -> Feeder:
         """
         `pending` and `answered` are what the last run left: the feeds
-        still unsettled, and the feed numbers answered since the oldest.
+        still unsettled, and the feed numbers the last `Answered` update
+        listed.
         """
     def cancel_feed(self, /, feed: SupportsIndex) -> Written:
         """
@@ -1097,9 +1098,10 @@ class Update:
         For [`UpdateKind::Alerts`].
         """
     @property
-    def answered(self, /) -> int | None:
+    def answered(self, /) -> list[int]:
         """
-        For [`UpdateKind::Answered`]: the feed number to keep.
+        For [`UpdateKind::Answered`]: every feed number to keep, in place of
+        those kept before.
         """
     @property
     def build(self, /) -> str | None:
@@ -1134,8 +1136,9 @@ class Update:
     def pending(self, /) -> Pending | None:
         """
         For [`UpdateKind::Pending`]: the feed to keep. For
-        [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`] and
-        [`UpdateKind::StillUnknown`]: the pending feed it accounts for.
+        [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`],
+        [`UpdateKind::StillUnknown`] and [`UpdateKind::Forgotten`]: the
+        pending feed it accounts for.
         """
     @property
     def portions(self, /) -> int | None:
@@ -1176,9 +1179,10 @@ class UpdateKind:
     """
     Answered: Final[UpdateKind]
     """
-    A feed number this client has the end of, in `answered`: its
-    write was answered, or its `Fed` settled a lost feed. Keep it
-    for the next session, where a `Fed` for it settles nothing.
+    This client has the end of one more feed number: its write was
+    answered, or its `Fed` settled a lost feed. `answered` lists
+    every number to keep for the next session, where a `Fed` for one
+    of them settles nothing, in place of those kept before.
     """
     Connected: Final[UpdateKind]
     """
@@ -1189,6 +1193,12 @@ class UpdateKind:
     """
     An event; `replayed` when it came from the history read at
     connect rather than as it happened.
+    """
+    Forgotten: Final[UpdateKind]
+    """
+    A feed whose answer never came, reported still unknown, waited
+    as long as one is kept with no end found: no longer pending, and
+    nothing settles it now.
     """
     Gap: Final[UpdateKind]
     """
@@ -1228,7 +1238,9 @@ class UpdateKind:
     StillUnknown: Final[UpdateKind]
     """
     A feed whose answer never came has no `Fed` event this session
-    could find: whether it ran is not known.
+    could find yet: whether it ran is not known. It no longer holds
+    new feeds back, and stays pending: a later update may still
+    settle it, until [`UpdateKind::Forgotten`].
     """
     TokenRefused: Final[UpdateKind]
     """

@@ -67,12 +67,25 @@ type RequestId = [u8; 16];
 /// How often a quiet session reads the status anew, which also keeps the
 /// connection's silence limit fed.
 pub(crate) const TURN: Duration = Duration::from_secs(30);
-/// How long an uncertain feed waits for its `Fed` event within one
-/// session: longer than the longest feed the feeder runs.
+/// How long an uncertain feed holds new feeds back before it is reported
+/// still unknown, unless the backlog shows it sooner: longer than the
+/// longest feed the feeder runs.
 pub(crate) const SETTLE: Duration = Duration::from_secs(15 * 60);
-/// Feeds kept for the day's facts, and feed numbers this client was
-/// answered for: far more than a day holds.
+/// How long after it went out a feed whose answer never came stays open to
+/// its end, as the app keeps one: a `Fed` that turns up late, or a journal
+/// that settles it late, still settles it. Past this it is forgotten
+/// ([`UpdateKind::Forgotten`](crate::api::UpdateKind)), still unknown.
+pub(crate) const KEEP_MS: i64 = 7 * 24 * 3_600_000;
+/// Feeds kept for the day's facts: far more than a day holds.
 const FEEDS_KEPT: usize = 512;
+/// Feed numbers kept from before the oldest open uncertain feed went out,
+/// and kept in any case: a feed answered then may end after it.
+const ANSWERED_TAIL: usize = 64;
+/// The most feed numbers kept. Every number answered since an uncertain
+/// feed went out must be kept while it is open, or a `Fed` of one dropped
+/// could be taken for its end, so past this the oldest open one is
+/// forgotten instead. A week of feeds is far fewer.
+const ANSWERED_MOST: usize = 1024;
 /// How long a write may wait for the session before it is refused unsent.
 /// A press reaches an idle session within milliseconds; one that waited
 /// longer stood behind a connect or a slow write, and by then the owner
@@ -128,8 +141,10 @@ pub(crate) async fn refusing<T>(
 }
 
 /// What a session starts from after Home Assistant restarted: the feeds
-/// still unsettled, and the feed numbers this client was answered for
-/// since the oldest of them, so a `Fed` for one of those settles nothing.
+/// still unsettled, and the feed numbers this client has the end of, as
+/// the last [`UpdateKind::Answered`](crate::api::UpdateKind) listed them:
+/// every one since the oldest open feed went out, so a `Fed` for one of
+/// those settles nothing.
 #[derive(Clone, Debug, Default)]
 pub struct Carried {
     pub pending: Vec<Pending>,
@@ -315,6 +330,23 @@ impl Feeder {
 struct Uncertain {
     pending: Pending,
     sent: Instant,
+    /// Reported still unknown: it no longer holds new feeds back, and
+    /// waits for its `Fed` until [`KEEP_MS`].
+    reported: bool,
+    /// How many feed numbers had been kept when it went out: every one
+    /// from here on stays while it is open.
+    answered_at: usize,
+}
+
+/// Whether a feed sent at `sent_ms` was reported still unknown before
+/// a restart: its settle window has passed.
+pub(crate) fn reported(sent_ms: i64) -> bool {
+    now_ms().saturating_sub(sent_ms) >= i64::try_from(SETTLE.as_millis()).unwrap_or(i64::MAX)
+}
+
+/// Whether a feed sent at `sent_ms` has waited as long as one is kept.
+pub(crate) fn forgotten(sent_ms: i64) -> bool {
+    now_ms().saturating_sub(sent_ms) >= KEEP_MS
 }
 
 /// What outlives one session: where the history was read to, what it said,
@@ -324,48 +356,85 @@ struct Memory {
     cursor: Option<Cursor>,
     facts: Facts,
     calibration: Option<CalibrationView>,
-    /// Feed numbers the feeder answered this client with, newest last: a
-    /// `Fed` for one of them settles nothing.
+    /// Feed numbers this client has the end of, newest last: a `Fed` for
+    /// one of them settles nothing.
     answered: VecDeque<u32>,
+    /// How many numbers `answered` was ever given, so the oldest it holds
+    /// is number `answered_total - answered.len()` of them.
+    answered_total: usize,
     uncertain: Vec<Uncertain>,
     /// The alert tables read so far; `None` until the first session.
     alerts: Option<Tracker>,
 }
 
 impl Memory {
+    /// What the last run left. Which of its numbers came after which
+    /// feed is not kept, so every one stays while any of its feeds is open.
     fn carried(carried: Carried) -> Self {
-        let mut memory = Self {
-            uncertain: carried
-                .pending
-                .into_iter()
-                .map(|pending| Uncertain {
-                    sent: sent_at(pending.sent_ms),
-                    pending,
-                })
-                .collect(),
+        let uncertain = carried
+            .pending
+            .into_iter()
+            .map(|pending| Uncertain {
+                sent: sent_at(pending.sent_ms),
+                reported: reported(pending.sent_ms),
+                answered_at: 0,
+                pending,
+            })
+            .collect();
+        Self {
+            answered_total: carried.answered.len(),
+            answered: carried.answered.into(),
+            uncertain,
             ..Self::default()
-        };
-        for feed in carried.answered {
-            memory.answered(feed);
         }
-        memory
     }
 
-    fn answered(&mut self, feed: u32) {
-        if self.answered.len() == FEEDS_KEPT {
-            self.answered.pop_front();
-        }
+    /// Keep `feed` among the numbers this client has the end of. Those no
+    /// open uncertain feed needs go; any uncertain feed whose numbers would
+    /// not all fit is forgotten, and returned.
+    fn answered(&mut self, feed: u32) -> Vec<Uncertain> {
         self.answered.push_back(feed);
+        self.answered_total += 1;
+
+        let mut forgotten = Vec::new();
+        loop {
+            let oldest = self
+                .uncertain
+                .iter()
+                .map(|uncertain| uncertain.answered_at)
+                .min();
+            let from = oldest
+                .unwrap_or(self.answered_total)
+                .saturating_sub(ANSWERED_TAIL);
+            let first = self.answered_total - self.answered.len();
+            for _ in first..from {
+                self.answered.pop_front();
+            }
+            if self.answered.len() <= ANSWERED_MOST {
+                return forgotten;
+            }
+            let Some(index) = self
+                .uncertain
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, uncertain)| uncertain.answered_at)
+                .map(|(index, _)| index)
+            else {
+                return forgotten;
+            };
+            forgotten.push(self.uncertain.remove(index));
+        }
     }
 
     fn fed(&mut self, feed: Feed) {
         fed(&mut self.facts, feed);
     }
 
-    /// Whether a lost feed is still unsettled, one carried from the last
-    /// run included: a new feed waits for it.
+    /// Whether a lost feed is still unsettled and not yet reported still
+    /// unknown, one carried from the last run included: a new feed waits
+    /// for it.
     fn holds_feeds(&self) -> bool {
-        !self.uncertain.is_empty()
+        self.uncertain.iter().any(|uncertain| !uncertain.reported)
     }
 }
 
@@ -396,6 +465,17 @@ async fn run(
     fingerprint.copy_from_slice(&key.public()[..4]);
     let mut memory = Memory::carried(carried);
     memory.alerts = Some(Tracker::new(fingerprint));
+    // A lost feed carried from the last run that still holds feeds back is
+    // announced again, so the integration's repair says so.
+    for uncertain in &memory.uncertain {
+        if !uncertain.reported
+            && updates
+                .send(Update::pending(uncertain.pending.clone()))
+                .is_err()
+        {
+            return;
+        }
+    }
 
     loop {
         let Some(opened) = refusing(open(&key, &target, clocks.session), &mut commands).await
@@ -902,6 +982,8 @@ impl<'a> Session<'a> {
         self.memory.uncertain.push(Uncertain {
             pending: pending.clone(),
             sent: Instant::now(),
+            reported: false,
+            answered_at: self.memory.answered_total,
         });
         Written::uncertain_feed(pending)
     }
@@ -1037,16 +1119,31 @@ impl<'a> Session<'a> {
 
     /// The backlog is read: the state is whole, and an uncertain feed with
     /// no `Fed` in it, on a feeder that is not feeding now, is still
-    /// unknown.
+    /// unknown. It no longer holds feeds back, and its `Fed` still settles
+    /// it if it turns up later.
     fn end_backlog(&mut self) -> Step {
         self.backlog = None;
         let feeding = self.memory.facts.status.as_ref().is_some_and(feeding_now);
         if !feeding {
-            for uncertain in std::mem::take(&mut self.memory.uncertain) {
-                self.send(Update::still_unknown(uncertain.pending))?;
-            }
+            self.report(|_| true)?;
         }
         self.state()
+    }
+
+    /// Report each uncertain feed `due` picks, not yet reported, as still
+    /// unknown.
+    fn report(&mut self, due: impl Fn(&Uncertain) -> bool) -> Step {
+        let mut reported = Vec::new();
+        for uncertain in &mut self.memory.uncertain {
+            if !uncertain.reported && due(uncertain) {
+                uncertain.reported = true;
+                reported.push(uncertain.pending.clone());
+            }
+        }
+        for pending in reported {
+            self.send(Update::still_unknown(pending))?;
+        }
+        Ok(())
     }
 
     /// Settle each uncertain feed the history read gives the one `Fed` of,
@@ -1100,21 +1197,35 @@ impl<'a> Session<'a> {
     /// settlement, so the integration has it first; a handle gone has no
     /// one to tell.
     fn answer(&mut self, feed: u32) {
-        self.memory.answered(feed);
-        let _ = self.updates.send(Update::answered(feed));
+        for uncertain in self.memory.answered(feed) {
+            self.forget(uncertain.pending, uncertain.reported);
+        }
+        let kept = self.memory.answered.iter().copied().collect();
+        let _ = self.updates.send(Update::answered(kept));
     }
 
-    /// Uncertain feeds past [`SETTLE`] with no `Fed`: still unknown.
-    fn expire(&mut self) -> Step {
-        let now = Instant::now();
-        let (expired, kept) = std::mem::take(&mut self.memory.uncertain)
-            .into_iter()
-            .partition(|uncertain| now.duration_since(uncertain.sent) >= SETTLE);
-        self.memory.uncertain = kept;
-        for uncertain in expired {
-            self.send(Update::still_unknown(uncertain.pending))?;
+    /// Stop waiting on a lost feed: still unknown, and reported so first if
+    /// it was not. A handle gone has no one to tell.
+    fn forget(&self, pending: Pending, reported: bool) {
+        if !reported {
+            let _ = self.updates.send(Update::still_unknown(pending.clone()));
         }
-        Ok(())
+        let _ = self.updates.send(Update::forgotten(pending));
+    }
+
+    /// Uncertain feeds past [`SETTLE`] with no `Fed` are still unknown;
+    /// those past [`KEEP_MS`] are forgotten.
+    fn expire(&mut self) -> Step {
+        let (gone, open) = std::mem::take(&mut self.memory.uncertain)
+            .into_iter()
+            .partition(|uncertain| forgotten(uncertain.pending.sent_ms));
+        self.memory.uncertain = open;
+        for uncertain in gone {
+            self.forget(uncertain.pending, uncertain.reported);
+        }
+
+        let now = Instant::now();
+        self.report(|uncertain| now.duration_since(uncertain.sent) >= SETTLE)
     }
 }
 
@@ -1243,6 +1354,104 @@ mod tests {
             let forever = std::future::pending::<()>();
             assert_eq!(refusing(forever, &mut inbox).await, None);
         });
+    }
+
+    fn lost(id: &str, sent_ms: i64) -> Pending {
+        Pending {
+            id: id.into(),
+            portions: 1,
+            sent_ms,
+            after: Some(4),
+        }
+    }
+
+    /// A lost feed carried from a run that already reported it still
+    /// unknown waits for its `Fed`, but holds no feed back.
+    #[test]
+    fn a_carried_feed_past_its_settle_window_holds_no_feed_back() {
+        let carried = Carried {
+            pending: vec![lost("old", now_ms() - 20 * 60 * 1000)],
+            answered: Vec::new(),
+        };
+        let memory = Memory::carried(carried);
+        assert_eq!(memory.uncertain.len(), 1, "still waited on");
+        assert!(!memory.holds_feeds());
+    }
+
+    /// Every number answered since an open lost feed went out is kept,
+    /// with the ones just before it; with none open, only the last few.
+    #[test]
+    fn the_numbers_an_open_lost_feed_needs_are_kept() {
+        let mut memory = Memory::default();
+        for feed in 0..100 {
+            assert!(memory.answered(feed).is_empty());
+        }
+        assert_eq!(memory.answered.len(), ANSWERED_TAIL);
+        assert_eq!(memory.answered.front(), Some(&36));
+
+        memory.uncertain.push(Uncertain {
+            pending: lost("open", now_ms()),
+            sent: Instant::now(),
+            reported: true,
+            answered_at: memory.answered_total,
+        });
+        for feed in 100..400 {
+            assert!(memory.answered(feed).is_empty());
+        }
+        assert_eq!(
+            memory.answered.front(),
+            Some(&36),
+            "the tail before it stays"
+        );
+        assert_eq!(memory.answered.back(), Some(&399));
+
+        memory.uncertain.clear();
+        assert!(memory.answered(400).is_empty());
+        assert_eq!(memory.answered.len(), ANSWERED_TAIL);
+        assert_eq!(memory.answered.back(), Some(&400));
+    }
+
+    /// Numbers carried from the last run are all kept while one of its
+    /// feeds is open: which came after it is not known.
+    #[test]
+    fn carried_numbers_stay_while_a_carried_feed_is_open() {
+        let carried = Carried {
+            pending: vec![lost("open", now_ms())],
+            answered: (0..200).collect(),
+        };
+        let mut memory = Memory::carried(carried);
+        assert!(memory.answered(200).is_empty());
+        assert_eq!(memory.answered.len(), 201);
+        assert_eq!(memory.answered.front(), Some(&0));
+    }
+
+    /// A lost feed whose numbers would not all fit is forgotten rather
+    /// than have one dropped that its `Fed` could be taken for.
+    #[test]
+    fn a_lost_feed_whose_numbers_would_not_fit_is_forgotten() {
+        let carried = Carried {
+            pending: vec![lost("open", now_ms())],
+            answered: Vec::new(),
+        };
+        let mut memory = Memory::carried(carried);
+        for feed in 0..u32::try_from(ANSWERED_MOST).unwrap() {
+            assert!(memory.answered(feed).is_empty());
+        }
+        let forgotten = memory.answered(9_999);
+        assert_eq!(forgotten.len(), 1);
+        assert_eq!(forgotten[0].pending.id, "open");
+        assert!(memory.uncertain.is_empty());
+        assert_eq!(memory.answered.len(), ANSWERED_TAIL);
+    }
+
+    /// A lost feed is reported still unknown after its settle window and
+    /// forgotten after the keep window, by the time it went out.
+    #[test]
+    fn a_lost_feed_is_reported_then_forgotten_by_its_age() {
+        assert!(!reported(now_ms()));
+        assert!(reported(now_ms() - 16 * 60 * 1000));
+        assert!(!forgotten(now_ms() - 16 * 60 * 1000));
+        assert!(forgotten(now_ms() - KEEP_MS));
     }
 
     /// A feed carried across a restart keeps its settle window: one sent

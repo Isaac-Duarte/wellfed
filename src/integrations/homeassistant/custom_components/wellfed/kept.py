@@ -1,15 +1,16 @@
 """What an entry keeps across restarts and reloads, in a store of its own.
 
 - **Pending feeds:** each feed whose answer was lost, until an update
-  settles it. The next session is handed them, so a feed lost just before a
-  restart is still settled (or found unknown) rather than forgotten, and
-  the repair that names them stays in step.
-- **Answered feeds:** the last feed numbers this Home Assistant has the end
-  of, as the bridge announces them: each feed it was answered for, and each
-  lost feed a `Fed` event settled. Directly, a `Fed` event of one of them
-  settles nothing, so the next session must know them too: a feed answered
-  just before a lost one went out may end after it, and the replay of a
-  `Fed` that settled one lost feed must not settle another.
+  settles it or the bridge stops waiting on it. The next session is handed
+  them, so a feed lost before a restart is still settled rather than
+  forgotten.
+- **Answered feeds:** the feed numbers this Home Assistant has the end of,
+  as the bridge last listed them: each feed it was answered for, and each
+  lost feed a `Fed` event settled, as many as the bridge needs kept.
+  Directly, a `Fed` event of one of them settles nothing, so the next
+  session must know them too: a feed answered just before a lost one went
+  out may end after it, and the replay of a `Fed` that settled one lost
+  feed must not settle another.
 - **A leftover key:** the client key an entry held directly before it moved
   to the server route, while the feeder may still list it.
 
@@ -53,9 +54,6 @@ STORAGE_MINOR_VERSION = 1
 ASIDE_MOST = 1000
 
 STORES: HassKey[dict[str, Kept]] = HassKey(f"{DOMAIN}_kept")
-
-# Answered feed numbers kept: far more than a settle window holds.
-ANSWERED_KEPT = 64
 
 
 class PendingData(TypedDict):
@@ -221,9 +219,9 @@ class Kept:
         self._data["pending"] = [p for p in self._data["pending"] if p["id"] != pending.id]
         self._save()
 
-    def answered_feed(self, feed: int) -> None:
-        """A feed this Home Assistant was answered for: the last ones are kept."""
-        self._data["answered"] = [*self._data["answered"], feed][-ANSWERED_KEPT:]
+    def set_answered(self, feeds: list[int]) -> None:
+        """The feed numbers to keep, as the bridge listed them."""
+        self._data["answered"] = list(feeds)
         self._save()
 
     def set_leftover_key(self, key: bytes | None) -> None:

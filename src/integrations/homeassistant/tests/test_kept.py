@@ -83,7 +83,7 @@ async def test_a_newer_major_is_read_as_nothing_and_never_written(
     assert "newer version of the integration" in caplog.text
 
     store.add_pending(_a_pending())
-    store.answered_feed(7)
+    store.set_answered([7])
     await _flushed(hass)
 
     assert hass_storage[KEY] == newer, "left as it was"

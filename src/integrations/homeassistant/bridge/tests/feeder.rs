@@ -526,6 +526,57 @@ fn a_feed_that_never_reached_the_feeder_is_still_unknown_after_the_backlog() {
     assert_eq!((portions, which), (Some(1), Some(pending)));
 }
 
+/// A lost feed reported still unknown no longer holds feeds back, and stays
+/// open to its own `Fed`. A later lost feed of other portions that runs is
+/// settled by its own `Fed`, never the older one, which never ran.
+#[test]
+fn a_fed_settles_the_lost_feed_of_its_portions_not_an_older_one() {
+    let (sim, key) = joined();
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let feeder = std::sync::Arc::new(session(&sim, key, relay.address, SHORT));
+    state_where(&feeder, |_| true);
+
+    // A, of two portions, waits in the relay, which drops it with the
+    // connection: it never reaches the feeder.
+    relay.pause();
+    let fed = {
+        let feeder = std::sync::Arc::clone(&feeder);
+        std::thread::spawn(move || feeder.feed(2))
+    };
+    wait_for("the feed to wait in the relay", || relay.holding_requests());
+    relay.cut();
+    relay.resume();
+    let older = fed.join().unwrap().pending.expect("A is kept pending");
+    let reported = until(&feeder, |update| {
+        (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
+    });
+    assert_eq!(reported, Some(older.clone()));
+
+    // B, of one portion, goes out though A is still open; its answer is
+    // lost, and it runs.
+    relay.hold_answers();
+    let written = feeder.feed(1);
+    assert_eq!(written.result, WriteResult::Uncertain, "{written:?}");
+    let newer = written.pending.expect("B is kept pending");
+    relay.resume();
+    let (which, settled) = until(&feeder, |update| {
+        (update.kind == UpdateKind::Settled).then(|| (update.pending.clone(), update.feed.clone()))
+    });
+    assert_eq!(which, Some(newer));
+    assert_eq!(settled.map(|fed| fed.requested), Some(1));
+
+    let quiet = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < quiet {
+        if let Some(update) = feeder.next_update(Duration::from_millis(200)) {
+            assert!(
+                !matches!(update.kind, UpdateKind::Settled | UpdateKind::Forgotten),
+                "A ran nowhere and is still waited on: {update:?}"
+            );
+        }
+    }
+}
+
 /// Home Assistant restarts while a feed's answer is lost: the feed it kept
 /// pending is handed to the next session, whose backlog holds its `Fed`.
 #[test]
@@ -658,17 +709,22 @@ fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
     relay.resume();
     let mut answered = Vec::new();
     let settled = until(&feeder, |update| {
-        answered.extend(update.answered);
+        if update.kind == UpdateKind::Answered {
+            answered.clone_from(&update.answered);
+        }
         (update.kind == UpdateKind::Settled).then(|| update.feed.clone())
     });
     let first = settled.expect("the feed that ran").feed;
     assert_eq!(answered, [first], "announced before its settlement");
 
     // B runs for two seconds; a second lost feed goes out while it does,
-    // and is refused unseen.
+    // and is refused unseen. The integration keeps the list as announced.
     let b = feeder.feed(10).feed.expect("the feeder numbered B");
-    until(&feeder, |update| (update.answered == Some(b)).then_some(()));
-    answered.push(b);
+    let answered = until(&feeder, |update| {
+        (update.kind == UpdateKind::Answered && update.answered.contains(&b))
+            .then(|| update.answered.clone())
+    });
+    assert_eq!(answered, [first, b]);
     relay.hold_answers();
     let lost = feeder.feed(1);
     let pending = lost.pending.expect("an uncertain feed is kept pending");

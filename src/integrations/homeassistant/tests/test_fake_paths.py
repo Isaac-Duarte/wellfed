@@ -206,6 +206,8 @@ async def test_a_lost_feed_is_kept_across_a_reload_and_settled_by_the_next_sessi
     # The fixture put its maker in the bridge's place.
     made = cast(_Make, bridge.Feeder)
     assert made.handed[-1] == ([lost.id], [41, 9])
+    # The bridge announces again a lost feed that still holds feeds back.
+    feeder.push(fake.update(bridge.UpdateKind.Pending, pending=lost))
     await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
     feeder.push(fake.update(bridge.UpdateKind.SettledUnfed, pending=lost))
     await _until(hass, lambda: _issue(hass, "uncertain_feed") is None)
@@ -252,7 +254,7 @@ async def test_a_lost_feed_settled_by_its_fed_keeps_its_number(
     # The bridge announces the number before the settlement: after a
     # restart, the replay of this `Fed` must settle no other lost feed.
     feeder.push(
-        fake.update(bridge.UpdateKind.Answered, answered=4),
+        fake.update(bridge.UpdateKind.Answered, answered=[4]),
         fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=lost),
     )
     # In order: the lost feed is kept, its number comes, then it settles.
@@ -309,7 +311,7 @@ async def test_a_stop_keeps_a_lost_feed_s_updates_in_their_order(
     # of it the pump has handed the event loop, the rest still waits.
     feeder.push(
         fake.update(bridge.UpdateKind.Pending, pending=lost),
-        fake.update(bridge.UpdateKind.Answered, answered=4),
+        fake.update(bridge.UpdateKind.Answered, answered=[4]),
         fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=lost),
     )
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -354,7 +356,72 @@ async def test_a_lost_feed_with_no_record_is_reported_unknown(
     unknown = _issue(hass, "unknown_feed")
     assert unknown is not None and unknown.translation_placeholders is not None
     assert unknown.translation_placeholders["portions"] == "2"
+    # It holds no feed back now, and is still waited on.
     assert _issue(hass, "uncertain_feed") is None
+    assert [p.id for p in entry.runtime_data.kept.pending] == [lost.id]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_lost_feed_reported_unknown_is_settled_by_a_late_record(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    lost = fake.pending(portions=2)
+    feeder.feed_result = fake.uncertain(lost)
+    with pytest.raises(HomeAssistantError):
+        await session.feed(2)
+    feeder.push(fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost))
+    await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
+
+    # Its `Fed` turns up after all: the feed is known, and both repairs go.
+    feeder.push(fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=lost))
+    await _until(hass, lambda: _issue(hass, "unknown_feed") is None)
+    assert _issue(hass, "uncertain_feed") is None
+    assert session.kept.pending == []
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_lost_feed_no_longer_waited_on_leaves_the_store(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    lost = fake.pending(portions=2)
+    feeder.feed_result = fake.uncertain(lost)
+    with pytest.raises(HomeAssistantError):
+        await session.feed(2)
+    feeder.push(fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost))
+    await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
+    assert [p.id for p in session.kept.pending] == [lost.id]
+
+    feeder.push(fake.update(bridge.UpdateKind.Forgotten, portions=2, pending=lost))
+    await _until(hass, lambda: session.kept.pending == [])
+    # Still unknown: the owner's repair stays until they ignore it.
+    assert _issue(hass, "unknown_feed") is not None
+    assert _issue(hass, "uncertain_feed") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_reported_lost_feed_keeps_no_repair_for_a_newer_one(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    older, newer = fake.pending("older", portions=2), fake.pending("newer", portions=1)
+    # The older one was reported still unknown; the newer one still holds
+    # feeds back until it is settled.
+    feeder.push(
+        fake.update(bridge.UpdateKind.Pending, pending=older),
+        fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=older),
+        fake.update(bridge.UpdateKind.Pending, pending=newer),
+    )
+    await _until(hass, lambda: len(entry.runtime_data.kept.pending) == 2)
+    await _until(hass, lambda: _issue(hass, "uncertain_feed") is not None)
+    feeder.push(fake.update(bridge.UpdateKind.Settled, feed=fake.feed(4), pending=newer))
+    await _until(hass, lambda: _issue(hass, "uncertain_feed") is None)
+    # The older one is still waited on, and still unknown.
+    assert [p.id for p in entry.runtime_data.kept.pending] == [older.id]
+    assert _issue(hass, "unknown_feed") is not None
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

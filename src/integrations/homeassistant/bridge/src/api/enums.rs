@@ -444,7 +444,9 @@ view_enum! {
         /// it, as the server's journal learned.
         SettledUnfed => "settled_unfed",
         /// A feed whose answer never came has no `Fed` event this session
-        /// could find: whether it ran is not known.
+        /// could find yet: whether it ran is not known. It no longer holds
+        /// new feeds back, and stays pending: a later update may still
+        /// settle it, until [`UpdateKind::Forgotten`].
         StillUnknown => "still_unknown",
         /// The feeder no longer knows this client's key; the session will
         /// not reconnect.
@@ -461,10 +463,15 @@ view_enum! {
         /// The feeder's alerts moved: what is open, and what opened and
         /// cleared since.
         Alerts => "alerts",
-        /// A feed number this client has the end of, in `answered`: its
-        /// write was answered, or its `Fed` settled a lost feed. Keep it
-        /// for the next session, where a `Fed` for it settles nothing.
+        /// This client has the end of one more feed number: its write was
+        /// answered, or its `Fed` settled a lost feed. `answered` lists
+        /// every number to keep for the next session, where a `Fed` for one
+        /// of them settles nothing, in place of those kept before.
         Answered => "answered",
+        /// A feed whose answer never came, reported still unknown, waited
+        /// as long as one is kept with no end found: no longer pending, and
+        /// nothing settles it now.
+        Forgotten => "forgotten",
     }
 }
 

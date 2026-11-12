@@ -443,7 +443,7 @@
     },
     "unknown_feed": {
       "title": "Whether a feed on feeder {feeder} ran is not known",
-      "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it. It may have run without being recorded, or never reached the feeder. Check the bowl, then ignore this."
+      "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it yet. It may have run without being recorded, or never reached the feeder. Check the bowl, then ignore this. Home Assistant feeds again meanwhile, and if the feed's record turns up within a week, this clears itself."
     },
     "update_feeder": {
       "title": "Feeder {feeder} runs older firmware",
