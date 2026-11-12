@@ -47,7 +47,7 @@ pub fn config() -> Config {
 }
 
 /// The controller over `path`'s ledger, with [`config`].
-pub fn load(path: PathBuf) -> anyhow::Result<Controller> {
+pub fn load(path: PathBuf) -> wellfed_stock::Result<Controller> {
     Controller::load(config(), path, BUILD)
 }
 

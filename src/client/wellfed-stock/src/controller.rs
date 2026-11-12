@@ -14,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, ensure};
+use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -124,10 +124,20 @@ pub enum Rejection {
 /// however that device is reached and however often its trust is forgotten and
 /// given again, so it still holds back a second request. The name is a digest,
 /// since a device ID is whatever a client on the LAN said it was.
+/// The ledger at `path`, read whole.
+fn read_ledger(path: &Path) -> Result<Ledger> {
+    serde_json::from_slice(&fs::read(path)?).map_err(|source| Error::Ledger {
+        path: path.into(),
+        source,
+    })
+}
+
 pub fn ledger_path(config_path: &Path, device: &str) -> Result<PathBuf> {
-    let directory = config_path.parent().context("config directory missing")?;
+    let directory = config_path.parent().ok_or_else(|| Error::NoParent {
+        path: config_path.into(),
+    })?;
     let digest = wellfed_formats::canonical::sha256(device.as_bytes());
-    let name = digest.get(..16).context("a digest is 64 hex digits")?;
+    let name = digest.get(..16).unwrap_or(&digest);
     Ok(directory.join(format!("stock-ledger.{name}.json")))
 }
 
@@ -143,8 +153,7 @@ pub fn open_request(config_path: &Path) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
-    let ledger: Ledger =
-        serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    let ledger: Ledger = read_ledger(&path)?;
     Ok(unsettled(&ledger))
 }
 
@@ -181,7 +190,9 @@ pub fn unreadable_ledgers(config_path: &Path) -> Result<Vec<PathBuf>> {
 
 /// Every device's ledger beside the config.
 fn ledger_files(config_path: &Path) -> Result<Vec<PathBuf>> {
-    let directory = config_path.parent().context("config directory missing")?;
+    let directory = config_path.parent().ok_or_else(|| Error::NoParent {
+        path: config_path.into(),
+    })?;
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -220,8 +231,7 @@ pub fn latest_sequence(config_path: &Path, device: &str) -> Result<Option<usize>
     if !path.exists() {
         return Ok(None);
     }
-    let ledger: Ledger =
-        serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    let ledger: Ledger = read_ledger(&path)?;
     Ok(ledger.ota_trials.values().map(|r| r.sequence).max())
 }
 
@@ -248,8 +258,7 @@ pub fn close_answered(
         return Ok(false);
     }
     let _lease = storage::lock(&path)?;
-    let mut ledger: Ledger =
-        serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    let mut ledger: Ledger = read_ledger(&path)?;
     let Some(record) = ledger.ota_trials.values_mut().max_by_key(|r| r.sequence) else {
         return Ok(false);
     };
@@ -279,8 +288,7 @@ pub fn stock_restored(config_path: &Path, device: &str, sequence: usize) -> Resu
         return Ok(false);
     }
     let _lease = storage::lock(&path)?;
-    let mut ledger: Ledger =
-        serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    let mut ledger: Ledger = read_ledger(&path)?;
     let Some(record) = ledger.ota_trials.values_mut().max_by_key(|r| r.sequence) else {
         return Ok(false);
     };
@@ -315,7 +323,7 @@ impl Controller {
     pub fn load(config: Config, path: PathBuf, build: Build) -> Result<Self> {
         let lease = storage::lock(&path)?;
         let mut ledger = if path.exists() {
-            serde_json::from_slice::<Ledger>(&fs::read(&path)?).context("invalid stock ledger")?
+            read_ledger(&path)?
         } else {
             Ledger {
                 device_id: config.device_id.clone(),
@@ -323,10 +331,9 @@ impl Controller {
             }
         };
 
-        ensure!(
-            ledger.device_id == config.device_id,
-            "ledger belongs to another device"
-        );
+        wellfed_formats::require(ledger.device_id == config.device_id, || {
+            Error::LedgerDevice { path: path.clone() }
+        })?;
 
         // A trial in flight when the last process stopped may or may not have
         // reached the device: mark it uncertain rather than resend it.

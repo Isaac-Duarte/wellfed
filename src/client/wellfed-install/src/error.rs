@@ -82,15 +82,18 @@ pub enum Error {
     Signing(#[from] wellfed_signing::Error),
 
     #[error("start the stock server")]
-    StockServer(#[source] PlatformError),
+    StockServer(#[source] wellfed_stock::Error),
     #[error("start the image server")]
-    Images(#[source] PlatformError),
+    Images(#[source] wellfed_stock::Error),
     #[error("the stock server has stopped")]
     StockServerGone,
     /// It ended on its own, for a reason other than its enrollment window
     /// closing: its port was taken, or its records could not be read.
-    #[error("the stock server stopped: {0}")]
-    StockServerFailed(String),
+    #[error("the stock server stopped")]
+    StockServerFailed(#[source] std::sync::Arc<wellfed_stock::Error>),
+    /// It ended on its own with no error, though nothing asked it to.
+    #[error("the stock server stopped on its own")]
+    StockServerStopped,
     /// The server would not send the install request, and its ledger shows
     /// no record of it, so nothing reached stock.
     #[error(

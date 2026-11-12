@@ -15,7 +15,6 @@ use std::{
 
 use tokio::{sync::watch, task::JoinHandle};
 
-use anyhow::{Context, Result, ensure};
 use axum::{
     body::{Body, Bytes},
     http::{HeaderMap, Method, Request, StatusCode, header},
@@ -26,6 +25,7 @@ use hyper::{body::Incoming, server::conn::http1, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::{net::TcpListener, task::JoinSet};
 use uuid::Uuid;
+use wellfed_formats::require;
 use wellfed_formats::{
     canonical,
     manifest::BuildManifest,
@@ -35,7 +35,48 @@ use wellfed_formats::{
 use wellfed_signed::MARKER;
 
 use crate::protocol::plaf103;
-use crate::{config::Config, storage};
+use crate::{Error, Listener, Result, Task, config::Config, storage};
+
+/// Why a review's image is not served.
+#[derive(Debug, thiserror::Error)]
+pub enum ImageError {
+    #[error("image too short")]
+    TooShort,
+    #[error("image payload lacks the loader marker")]
+    NoMarker,
+    #[error("read the review's {file}")]
+    Read {
+        file: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("read review.json")]
+    Review(#[source] wellfed_formats::Error),
+    #[error("build-manifest.json does not match its review")]
+    ManifestMismatch,
+    #[error("parse build-manifest.json")]
+    Manifest(#[source] serde_json::Error),
+    #[error("the review's build is for {device}, not the {stock} stock this serves")]
+    OtherDevice { device: String, stock: &'static str },
+    #[error("build-manifest.json has no 64-hex startup_identity")]
+    NoIdentity,
+    #[error("an OTA file of {size} bytes is larger than stock takes")]
+    TooLarge { size: u64 },
+    #[error("the OTA file changed size while it was read")]
+    SizeChanged,
+    #[error("unsupported frozen review")]
+    UnsupportedReview,
+    #[error("the review is not of a replacement build")]
+    NotBuild,
+    #[error("image.bin does not match its review")]
+    ImageMismatch,
+    #[error("the OTA image host must use IPv4, not {host}")]
+    HostNotIpv4 { host: std::net::IpAddr },
+    #[error(
+        "the OTA image server needs distinct private IPv4 host and peer addresses, not {host} and {peer}"
+    )]
+    Addresses { host: Ipv4Addr, peer: Ipv4Addr },
+}
 
 /// Stock's own image size, the most it accepts.
 const IMAGE_BYTES: usize = 1_376_288;
@@ -52,16 +93,12 @@ pub const CONTAINER_HEADER: usize = 32;
 
 /// The bank contents of an OTA container: everything after its header,
 /// which must start with the loader's marker.
-pub fn payload(container: &[u8]) -> Result<&[u8]> {
-    ensure!(
-        container.len() > CONTAINER_HEADER + MARKER.len(),
-        "image too short"
-    );
+pub fn payload(container: &[u8]) -> Result<&[u8], ImageError> {
+    require(container.len() > CONTAINER_HEADER + MARKER.len(), || {
+        ImageError::TooShort
+    })?;
     let payload = &container[CONTAINER_HEADER..];
-    ensure!(
-        payload[..MARKER.len()] == MARKER,
-        "image payload lacks the loader marker"
-    );
+    require(payload[..MARKER.len()] == MARKER, || ImageError::NoMarker)?;
     Ok(payload)
 }
 
@@ -91,41 +128,49 @@ pub struct Build {
 
 /// The startup identity the review's frozen `build-manifest.json` records,
 /// bound to the review by its digest.
-fn build_identity(review: &Path, frozen: &ImageReview) -> Result<String> {
-    let raw = std::fs::read(review.join("build-manifest.json"))
-        .context("read the review's build-manifest.json")?;
-    ensure!(
+fn build_identity(review: &Path, frozen: &ImageReview) -> Result<String, ImageError> {
+    let raw =
+        std::fs::read(review.join("build-manifest.json")).map_err(|source| ImageError::Read {
+            file: "build-manifest.json",
+            source,
+        })?;
+    require(
         frozen.manifest_sha256.as_deref() == Some(canonical::sha256(&raw).as_str()),
-        "build-manifest.json does not match its review"
-    );
+        || ImageError::ManifestMismatch,
+    )?;
 
-    let manifest: BuildManifest =
-        serde_json::from_slice(&raw).context("parse build-manifest.json")?;
+    let manifest: BuildManifest = serde_json::from_slice(&raw).map_err(ImageError::Manifest)?;
     // Stock takes the image as its own model's (`targetPid`): one built for
     // another device would install on the wrong board.
-    ensure!(
-        manifest.device == plaf103::MODEL.name(),
-        "the review's build is for {}, not the {} stock this serves",
-        manifest.device,
-        plaf103::MODEL.name()
-    );
+    require(manifest.device == plaf103::MODEL.name(), || {
+        ImageError::OtherDevice {
+            device: manifest.device.clone(),
+            stock: plaf103::MODEL.name(),
+        }
+    })?;
     let id = manifest.startup_identity.unwrap_or_default();
-    ensure!(
+    require(
         id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()),
-        "build-manifest.json has no 64-hex startup_identity"
-    );
+        || ImageError::NoIdentity,
+    )?;
     Ok(id.to_ascii_lowercase())
 }
 
 /// Read at most `IMAGE_BYTES`.
-fn read_image(path: &Path) -> Result<Vec<u8>> {
-    let file = std::fs::File::open(path).context("open the review's image.bin")?;
-    let size = file.metadata()?.len();
-    ensure!(size <= IMAGE_BYTES as u64, "unexpected OTA file size");
+fn read_image(path: &Path) -> Result<Vec<u8>, ImageError> {
+    let read = |source| ImageError::Read {
+        file: "image.bin",
+        source,
+    };
+    let file = std::fs::File::open(path).map_err(read)?;
+    let size = file.metadata().map_err(read)?.len();
+    require(size <= IMAGE_BYTES as u64, || ImageError::TooLarge { size })?;
 
     let mut data = Vec::with_capacity(IMAGE_BYTES);
-    file.take((IMAGE_BYTES + 1) as u64).read_to_end(&mut data)?;
-    ensure!(data.len() as u64 == size, "OTA size changed while reading");
+    file.take((IMAGE_BYTES + 1) as u64)
+        .read_to_end(&mut data)
+        .map_err(read)?;
+    require(data.len() as u64 == size, || ImageError::SizeChanged)?;
     Ok(data)
 }
 
@@ -134,24 +179,19 @@ impl Build {
     /// The review's layout audit is what establishes the container header,
     /// byte-sum and inner images stock checks; the digest binds these bytes
     /// to it. The loader-marker check repeats `wellfed-build sign`'s.
-    pub fn load(review: &Path) -> Result<Self> {
+    pub fn load(review: &Path) -> Result<Self, ImageError> {
         let frozen: ImageReview =
-            wellfed_formats::load(&review.join("review.json")).context("read review.json")?;
-        ensure!(
-            frozen.kind == ReviewKind::Plaf103DevelopmentImage,
-            "unsupported frozen review"
-        );
-        ensure!(
-            frozen.image_kind == ImageKind::Build,
-            "review is not of a replacement build"
-        );
+            wellfed_formats::load(&review.join("review.json")).map_err(ImageError::Review)?;
+        require(frozen.kind == ReviewKind::Plaf103DevelopmentImage, || {
+            ImageError::UnsupportedReview
+        })?;
+        require(frozen.image_kind == ImageKind::Build, || {
+            ImageError::NotBuild
+        })?;
 
         let data = read_image(&review.join("image.bin"))?;
         let sha256 = canonical::sha256(&data);
-        ensure!(
-            sha256 == frozen.ota_sha256,
-            "image.bin does not match its review"
-        );
+        require(sha256 == frozen.ota_sha256, || ImageError::ImageMismatch)?;
         payload(&data)?;
         let build = build_identity(review, &frozen)?;
 
@@ -325,7 +365,10 @@ impl Images {
     /// Wait for the server to end on its own, and how it ended.
     pub async fn finished(&mut self) -> Result<()> {
         match self.task.take() {
-            Some(task) => task.await.context("the image server panicked")?,
+            Some(task) => task.await.map_err(|source| Error::Panicked {
+                task: Task::ImageServer,
+                source,
+            })?,
             None => Ok(()),
         }
     }
@@ -366,17 +409,25 @@ pub async fn start(
     peer: Ipv4Addr,
 ) -> Result<Images> {
     let std::net::IpAddr::V4(host) = config.mqtt_listen.ip() else {
-        anyhow::bail!("OTA image host must use IPv4");
+        return Err(ImageError::HostNotIpv4 {
+            host: config.mqtt_listen.ip(),
+        }
+        .into());
     };
-    ensure!(
+    require(
         host.is_private() && peer.is_private() && host != peer,
-        "OTA image server requires distinct private IPv4 host/peer addresses"
-    );
+        || ImageError::Addresses { host, peer },
+    )?;
 
     let build = Build::load(review)?;
-    let listener = TcpListener::bind((host, PORT))
+    let address = std::net::SocketAddr::from((host, PORT));
+    let listener = TcpListener::bind(address)
         .await
-        .context("bind OTA image server")?;
+        .map_err(|source| Error::Bind {
+            listener: Listener::ImageServer,
+            address,
+            source,
+        })?;
 
     let lease = Lease {
         token: Uuid::new_v4(),

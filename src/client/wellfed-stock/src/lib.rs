@@ -26,12 +26,15 @@ pub mod clock;
 pub mod config;
 pub mod controller;
 pub mod enroll;
+mod error;
 pub mod mqtt;
 pub mod ota;
 pub mod protocol;
 pub mod server;
 pub mod setup;
 pub mod storage;
+
+pub use error::{ConnectError, Error, Listener, Result, Task};
 
 /// After a failed `accept`: the listener goes on, since one failure must not
 /// end a listener an install depends on. A connection the peer reset before

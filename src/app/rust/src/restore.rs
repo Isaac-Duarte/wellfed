@@ -110,6 +110,7 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         | Error::Images(_)
         | Error::StockServerGone
         | Error::StockServerFailed(_)
+        | Error::StockServerStopped
         | Error::RequestRefused(_)
         | Error::Trial(_)
         | Error::NoPeer

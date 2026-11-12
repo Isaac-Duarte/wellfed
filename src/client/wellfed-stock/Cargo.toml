@@ -8,7 +8,6 @@ description = "What stock PLAF103 1.1.15 speaks: its MQTT protocol and broker, t
 publish.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 axum.workspace = true
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = { version = "0.10.4", features = ["serde"] }

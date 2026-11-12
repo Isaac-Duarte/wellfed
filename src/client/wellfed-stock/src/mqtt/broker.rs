@@ -33,7 +33,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use chrono::Utc;
 use mqtt5::{
     broker::{
@@ -367,7 +367,7 @@ pub async fn run(
     let peers = auth.peers.clone();
 
     let settings = BrokerConfig {
-        bind_addresses: vec!["127.0.0.1:0".parse()?],
+        bind_addresses: vec![SocketAddr::from(([127, 0, 0, 1], 0))],
         max_clients: 8,
         max_packet_size: 65_536,
         session_expiry_interval: Duration::ZERO,
@@ -395,9 +395,7 @@ pub async fn run(
         .await?
         .with_auth_provider(Arc::new(auth));
 
-    let broker_address = broker
-        .local_addr()
-        .context("broker has no loopback listener")?;
+    let broker_address = broker.local_addr().ok_or(Error::NoLoopbackListener)?;
 
     // Shut down rather than dropped: the broker's client tasks end with it,
     // so nothing is left holding a session once `run` returns.

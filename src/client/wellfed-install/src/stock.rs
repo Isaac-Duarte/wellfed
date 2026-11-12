@@ -6,6 +6,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use wellfed_client::install::{FeederTrust, StockPower, StockView};
@@ -51,7 +52,7 @@ pub fn installer_config(path: &Path, listen: SocketAddr, zone: Option<&str>) -> 
             .and_then(|zone| zone.parse().ok())
             .unwrap_or(chrono_tz::UTC);
         return wellfed_stock::config::init_installer(path, listen, zone)
-            .map_err(|error| Error::StockServer(error.into()));
+            .map_err(Error::StockServer);
     }
 
     let text = std::fs::read(path).map_err(|source| Error::Read {
@@ -67,8 +68,7 @@ pub fn installer_config(path: &Path, listen: SocketAddr, zone: Option<&str>) -> 
         return Ok(());
     }
     config.mqtt_listen = listen;
-    wellfed_stock::storage::write_json(path, &config)
-        .map_err(|error| Error::StockServer(error.into()))
+    wellfed_stock::storage::write_json(path, &config).map_err(Error::StockServer)
 }
 
 /// Forget the feeder the broker beside `config` trusted, and any contest: the
@@ -149,8 +149,8 @@ pub fn damaged_ledgers(config: &Path) -> bool {
 /// a request to that feeder is still open, so the next one would go out. Only the
 /// owner may ask for it, having been told so.
 pub fn set_aside_ledgers(config: &Path) -> Result<(), Error> {
-    let unreadable = wellfed_stock::controller::unreadable_ledgers(config)
-        .map_err(|error| Error::StockServer(error.into()))?;
+    let unreadable =
+        wellfed_stock::controller::unreadable_ledgers(config).map_err(Error::StockServer)?;
     for path in unreadable {
         wellfed_formats::private::set_aside(&path)
             .map_err(|source| Error::Remove { path, source })?;
@@ -166,8 +166,7 @@ pub fn any_open_request(config: &Path) -> bool {
 
 /// Where the ledger of `device`, by the installer's config, lives.
 pub fn ledger_path(config: &Path, device: &str) -> Result<PathBuf, Error> {
-    wellfed_stock::controller::ledger_path(config, device)
-        .map_err(|error| Error::StockServer(error.into()))
+    wellfed_stock::controller::ledger_path(config, device).map_err(Error::StockServer)
 }
 
 /// Whether the feeder the broker beside `config` trusts has a request whose
@@ -196,8 +195,8 @@ pub fn feeder_answered(
         return Ok(false);
     };
 
-    let sequence = wellfed_stock::controller::latest_sequence(config, &device)
-        .map_err(|error| Error::StockServer(error.into()))?;
+    let sequence =
+        wellfed_stock::controller::latest_sequence(config, &device).map_err(Error::StockServer)?;
     crate::storage::Answered {
         config: config
             .canonicalize()
@@ -231,7 +230,7 @@ pub fn settle_answered(config: &Path, backups: &Path, identity: &[u8; 32]) -> Re
         sequence,
         note,
     )
-    .map_err(|error| Error::StockServer(error.into()))
+    .map_err(Error::StockServer)
 }
 
 /// A restore activated stock on the feeder with `identity`: settle the trial it
@@ -244,7 +243,7 @@ pub(crate) fn feeder_restored(backups: &Path, identity: &[u8; 32]) -> Result<(),
     settle_answered(&answered.config, backups, identity)?;
     if let Some(sequence) = answered.sequence {
         wellfed_stock::controller::stock_restored(&answered.config, &answered.device, sequence)
-            .map_err(|error| Error::StockServer(error.into()))?;
+            .map_err(Error::StockServer)?;
     }
     Ok(())
 }
@@ -254,9 +253,9 @@ pub(crate) enum Unready {
     /// No feeder has enrolled, so the session with stock has not started.
     NoFeeder,
     /// The enrollment window closed with no feeder.
-    WindowClosed(String),
-    /// The server failed, with its error.
-    Failed(String),
+    WindowClosed(NoFeederEnrolled),
+    /// The server ended on its own: with its error, or with none.
+    Failed(Option<Arc<wellfed_stock::Error>>),
     /// The enrollment record beside the config cannot be read.
     Unreadable(String),
 }
@@ -264,8 +263,8 @@ pub(crate) enum Unready {
 /// How a server that ended on its own ended.
 #[derive(Clone)]
 enum Ended {
-    WindowClosed(String),
-    Failed(String),
+    WindowClosed(NoFeederEnrolled),
+    Failed(Option<Arc<wellfed_stock::Error>>),
 }
 
 impl From<Ended> for Unready {
@@ -331,7 +330,7 @@ impl Stock {
                 stock_plans: self.options.stock_plans,
             },
         )
-        .map_err(|error| Error::StockServer(error.into()))?;
+        .map_err(Error::StockServer)?;
         self.server = Some(server);
         Ok(true)
     }
@@ -346,11 +345,9 @@ impl Stock {
         };
         if server.is_finished() {
             let ended = match server.finished().await {
-                Ok(()) => Ended::Failed("it stopped".to_string()),
-                Err(error) if error.downcast_ref::<NoFeederEnrolled>().is_some() => {
-                    Ended::WindowClosed(format!("{error:#}"))
-                }
-                Err(error) => Ended::Failed(format!("{error:#}")),
+                Ok(()) => Ended::Failed(None),
+                Err(wellfed_stock::Error::NoFeederEnrolled(closed)) => Ended::WindowClosed(closed),
+                Err(error) => Ended::Failed(Some(Arc::new(error))),
             };
             self.server = None;
             self.ended = Some(ended.clone());
@@ -381,12 +378,11 @@ impl Stock {
                 path: self.options.config.clone(),
                 source,
             })?;
-        let config =
-            wellfed_stock::config::load(&path).map_err(|error| Error::StockServer(error.into()))?;
+        let config = wellfed_stock::config::load(&path).map_err(Error::StockServer)?;
         let peer = peer(&config)?;
         let images = image::start(&config, &path, review, peer)
             .await
-            .map_err(|error| Error::Images(error.into()))?;
+            .map_err(Error::Images)?;
         let lease = images.lease.clone();
         self.images = Some(images);
         Ok(lease)

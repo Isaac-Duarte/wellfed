@@ -728,7 +728,8 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         Error::StockServer(_)
         | Error::Images(_)
         | Error::StockServerGone
-        | Error::StockServerFailed(_) => (StopCase::ServerFailed, FromStart),
+        | Error::StockServerFailed(_)
+        | Error::StockServerStopped => (StopCase::ServerFailed, FromStart),
         Error::Stopped(stopped) => match stopped.unsettled {
             Some(Unsettled::Request(_)) => (StopCase::Uncertain, Nothing),
             Some(Unsettled::Promotion) => uncertain_write(UncertainWrite::Promotion),
@@ -1515,7 +1516,7 @@ mod tests {
     #[test]
     fn a_failed_server_and_a_failed_recovery_are_not_dead_ends() {
         assert_eq!(
-            stop_of(&Error::StockServerFailed("address in use".into()), true),
+            stop_of(&Error::StockServerStopped, true),
             (StopCase::ServerFailed, Resume::FromStart)
         );
         assert_eq!(

@@ -653,17 +653,21 @@ where
                 Err(Unready::NoFeeder) => Wait::NoFeeder,
                 Err(Unready::Unreadable(error)) => Wait::Unreadable { error },
                 // Nothing will report now: the window closed with no feeder.
-                Err(Unready::WindowClosed(error)) => {
-                    self.io.report.event(Event::StockServerEnded { error });
+                Err(Unready::WindowClosed(closed)) => {
+                    self.io.report.event(Event::StockServerEnded {
+                        error: closed.to_string(),
+                    });
                     install.gave_up();
                     return Ok(());
                 }
                 // Not the same as no feeder coming: its port was taken, say.
                 Err(Unready::Failed(error)) => {
                     self.io.report.event(Event::StockServerEnded {
-                        error: error.clone(),
+                        error: error
+                            .as_deref()
+                            .map_or_else(|| "it stopped".to_string(), |error| crate::text(error)),
                     });
-                    return Err(Error::StockServerFailed(error));
+                    return Err(error.map_or(Error::StockServerStopped, Error::StockServerFailed));
                 }
             };
 

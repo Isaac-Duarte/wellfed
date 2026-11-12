@@ -14,7 +14,7 @@ pub(crate) mod compat;
 
 use std::{sync::Arc, time::Duration};
 
-use anyhow::{Result, ensure};
+use crate::{Error, Result};
 use chrono::Utc;
 use rumqttc::{AsyncClient, ConnectionError, Event, MqttOptions, Packet, Publish, QoS};
 use tokio::sync::{mpsc, oneshot, watch};
@@ -98,12 +98,12 @@ impl Actor {
     }
 
     fn session_started(&mut self, client: &AsyncClient, ack: &rumqttc::SubAck) -> Result<()> {
-        ensure!(
+        wellfed_formats::require(
             ack.return_codes
                 .iter()
                 .all(|code| matches!(code, rumqttc::SubscribeReasonCode::Success(_))),
-            "broker refused server subscription"
-        );
+            || Error::SubscriptionRefused,
+        )?;
         self.controller.connected(Utc::now());
         self.query_attributes(client);
         Ok(())

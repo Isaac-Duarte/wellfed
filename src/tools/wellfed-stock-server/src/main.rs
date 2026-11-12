@@ -303,7 +303,7 @@ async fn serve(path: PathBuf, enroll_minutes: Option<u64>) -> Result<()> {
     // A SIGTERM (kill, timeout) must stop the broker too, through the same
     // stop as Ctrl-C.
     let outcome: Result<()> = tokio::select! {
-        result = server.finished() => result,
+        result = server.finished() => result.map_err(anyhow::Error::from),
         result = tokio::signal::ctrl_c() => result.context("shutdown signal failed"),
         result = terminated() => result.context("shutdown signal failed"),
     };

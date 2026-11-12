@@ -23,7 +23,6 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result, bail};
 use tokio::{
     net::TcpListener,
     sync::{mpsc, oneshot, watch},
@@ -32,6 +31,7 @@ use tokio::{
 use tracing::info;
 
 use crate::{
+    Error, Listener, Result, Task,
     api::{self, ApiState},
     build_info::BUILD,
     clock,
@@ -125,10 +125,7 @@ impl Server {
         let window = match (&state, options.enroll) {
             (State::Device(_), _) => None,
             (State::Unenrolled(_), Some(window)) => Some(window),
-            (State::Unenrolled(_), None) => bail!(
-                "no feeder is enrolled in {}; pass --enroll-minutes during an install",
-                path.display()
-            ),
+            (State::Unenrolled(_), None) => return Err(Error::NotEnrolled { path: path.into() }),
         };
 
         let (stop, stopped) = watch::channel(false);
@@ -164,7 +161,10 @@ impl Server {
     /// stopped. Answers once; later calls find nothing left to wait for.
     pub async fn finished(&mut self) -> Result<()> {
         match self.task.take() {
-            Some(task) => task.await.context("the stock server panicked")?,
+            Some(task) => task.await.map_err(|source| Error::Panicked {
+                task: Task::StockServer,
+                source,
+            })?,
             None => Ok(()),
         }
     }
@@ -290,7 +290,7 @@ async fn run(
             }),
             None,
         ),
-        (State::Unenrolled(_), None) => bail!("no feeder is enrolled"),
+        (State::Unenrolled(_), None) => return Err(Error::NotEnrolled { path }),
     };
 
     // The broker stops when the server is asked to, or when the session
@@ -313,13 +313,13 @@ async fn run(
         let config = match (known, window) {
             (Some(config), _) => config,
             (None, Some(window)) => enrolled_device(&path, window, enrollment).await?,
-            (None, None) => bail!("no feeder is enrolled"),
+            (None, None) => return Err(Error::NotEnrolled { path: path.clone() }),
         };
         serve(config, &path, options, listening, ready, stop.clone()).await
     };
 
     let outcome = tokio::select! {
-        result = &mut broker => result.context("the broker"),
+        result = &mut broker => result.map_err(|error| error.of(Task::Broker)),
         result = session => {
             end.send_replace(true);
             let _ = tokio::time::timeout(STOP_WAIT, &mut broker).await;
@@ -327,7 +327,7 @@ async fn run(
         }
     };
     match outcome {
-        Ok(()) if !*stop.borrow() => bail!("the stock server stopped unexpectedly"),
+        Ok(()) if !*stop.borrow() => Err(Error::StoppedUnexpectedly),
         outcome => outcome,
     }
 }
@@ -359,7 +359,7 @@ async fn enrolled_device(
     );
     match tokio::time::timeout(window, enrollment.wait_for(|enrolled| *enrolled)).await {
         Ok(Ok(_)) => config::load(path),
-        Ok(Err(_)) => bail!("the broker ended while waiting for a feeder"),
+        Ok(Err(_)) => Err(Error::BrokerEnded),
         Err(_) => Err(NoFeederEnrolled { minutes }.into()),
     }
 }
@@ -375,14 +375,17 @@ async fn serve(
     stop: watch::Receiver<bool>,
 ) -> Result<()> {
     let config = Arc::new(config);
-    let listener = match options.api {
-        Api::Loopback => Some(
-            TcpListener::bind(config.http_listen)
-                .await
-                .context("bind loopback HTTP API")?,
-        ),
-        Api::Off => None,
-    };
+    let listener =
+        match options.api {
+            Api::Loopback => Some(TcpListener::bind(config.http_listen).await.map_err(
+                |source| Error::Bind {
+                    listener: Listener::Api,
+                    address: config.http_listen,
+                    source,
+                },
+            )?),
+            Api::Off => None,
+        };
 
     let mut controller = Controller::load(
         (*config).clone(),
@@ -432,7 +435,7 @@ async fn serve(
                 axum::serve(listener, app)
                     .with_graceful_shutdown(stopped(stop.clone()))
                     .await
-                    .context("the loopback API")
+                    .map_err(|error| Error::from(error).of(Task::Api))
             }
             None => std::future::pending().await,
         }
@@ -440,7 +443,7 @@ async fn serve(
 
     info!(mqtt=%config.mqtt_listen, http=%config.http_listen, api=?options.api, "local service starting; no traffic redirection applied");
     tokio::select! {
-        result = worker => result.context("the MQTT worker"),
+        result = worker => result.map_err(|error| error.of(Task::MqttWorker)),
         result = api => result,
         () = subscribed => Ok(()),
         () = stopped(stop.clone()) => Ok(()),
