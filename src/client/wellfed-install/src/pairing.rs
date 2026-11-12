@@ -272,6 +272,8 @@ mod tests {
         keyed: Rc<Cell<Option<Code>>>,
         /// The feeder's next message to the client.
         next: Option<Vec<u8>>,
+        /// Drop before the feeder proves the code, not after the last step.
+        early: bool,
     }
 
     impl SetupLink for Dropping {
@@ -292,11 +294,39 @@ mod tests {
             }
 
             // The code is in: the feeder starts the proof.
+            if self.early {
+                return Err("the link dropped".into());
+            }
             let code = self.keyed.take().ok_or("no code was keyed in")?;
             Ok(self.feeder.prove(code))
         }
 
         async fn close(self) {}
+    }
+
+    fn dropping(feeder: &Keypair, keyed: &Rc<Cell<Option<Code>>>, early: bool) -> Dropping {
+        Dropping {
+            feeder: SetupFeeder::new(feeder),
+            keyed: Rc::clone(keyed),
+            next: None,
+            early,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_link_lost_before_the_proof_is_a_failure_and_keeps_nothing() {
+        let feeder = Keypair::from_secret([1; 32]);
+        let mut keys = Remembering {
+            keypair: Keypair::from_secret([2; 32]),
+            remembered: Vec::new(),
+        };
+        let keyed = Rc::new(Cell::new(None));
+        let link = dropping(&feeder, &keyed, true);
+
+        let paired = over_link(&mut keys, None, link, &mut Owner(keyed)).await;
+
+        assert!(matches!(paired, Err(Error::Platform(_))), "{paired:?}");
+        assert!(keys.remembered.is_empty());
     }
 
     #[tokio::test]
@@ -307,11 +337,7 @@ mod tests {
             remembered: Vec::new(),
         };
         let keyed = Rc::new(Cell::new(None));
-        let link = Dropping {
-            feeder: SetupFeeder::new(&feeder),
-            keyed: Rc::clone(&keyed),
-            next: None,
-        };
+        let link = dropping(&feeder, &keyed, false);
         let wifi = Credentials::new(b"Lab".to_vec(), "pass word!".into()).unwrap();
 
         let paired = over_link(&mut keys, Some(wifi), link, &mut Owner(keyed)).await;
