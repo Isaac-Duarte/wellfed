@@ -85,7 +85,6 @@ pub(crate) fn line(event: &Event) -> String {
         | Event::Waiting(_)
         | Event::VersionLost
         | Event::StockServerEnded { .. }
-        | Event::DevicePinned { .. }
         | Event::Requesting { .. }
         | Event::StockProgress(_)
         | Event::StockRestarting
@@ -103,8 +102,6 @@ pub(crate) fn line(event: &Event) -> String {
         | Event::TrialOpen { .. }
         | Event::FeederTried { .. }
         | Event::FloorUnread { .. }
-        | Event::Signed { .. }
-        | Event::GivenBackupKept { .. }
         | Event::Promoting
         | Event::Installed { .. }
         | Event::ResumeRecordKept { .. }) => format!("{other:?}"),

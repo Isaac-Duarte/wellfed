@@ -3,8 +3,7 @@
 //! The steps make every decision; this module only does what each one
 //! asks and tells the steps what came of it. Nothing is retried that the
 //! steps say must not be: the install request goes once, and a refusal or
-//! an uncertain outcome ends the run; so does the update key's enrollment,
-//! which an unanswered one judges by the signer list.
+//! an uncertain outcome ends the run.
 //!
 //! Reads (a status, a session opening) are tried again until their wait
 //! runs out, since they change nothing.
@@ -18,29 +17,27 @@ use tokio::time::Instant;
 
 use crate::prompt::Prompt;
 use wellfed_client::install::{
-    FeederTrust, Install, InstallError, Options, PairRoute, Promoted, Promotion, Provision,
-    Replacement, Requested, Step, StockBackup, StockNotReady, UpdateKey,
+    FeederTrust, Install, InstallError, Options, PairRoute, Promoted, Provision, Replacement,
+    Requested, Step, StockBackup, StockNotReady,
 };
 use wellfed_client::setup::Credentials;
 use wellfed_client::update::{Image, InstallError as UpdateError};
-use wellfed_client::update_key::{EnrollError, Enrolled};
 use wellfed_connect::AskError;
 use wellfed_formats::manifest::Provisioning;
 use wellfed_formats::stock::TrialPhase;
 use wellfed_model::setup::Refusal as SetupRefusal;
 use wellfed_model::{Answer, Op, Skew};
 use wellfed_proto::api::PORT;
-use wellfed_signing::{Frozen, Key, Motion, highest_signed};
 use wellfed_stock::ota::trial::{AnsweredInput, Input};
 use wellfed_stock::server::Refusal;
 
-use crate::event::{Enrollment, Event, Wait};
+use crate::event::{Event, Wait};
 use crate::platform::{Bluetooth, Discovery, Keys, Prompter, Report};
 use crate::push::{Pushed, push};
 use crate::review::Review;
 use crate::stock::{Stock, StockOptions, Unready, latest_report, view};
 use crate::track::{Stop, Track, Unsettled};
-use crate::{Error, backup, pairing, session::random, storage, update_key};
+use crate::{Error, backup, pairing, session::random, storage};
 
 /// How often the run looks at stock's status and the replacement
 /// ([`Plan::poll`]).
@@ -79,8 +76,6 @@ const FRAME_ANSWER: Duration = Duration::from_secs(2);
 const FRAME_ARRIVAL: Duration = Duration::from_secs(2 * 60);
 /// How long the backup's read keeps coming back to a feeder that dropped it.
 const BACKUP_RECONNECT: Duration = Duration::from_secs(3 * 60);
-/// How the feeder lists the installer's update key.
-const UPDATE_KEY_LABEL: &str = "installer";
 
 /// Where an install starts.
 #[derive(Debug, Clone)]
@@ -104,36 +99,17 @@ pub enum Unjoined {
     SetUpAgain,
 }
 
-/// What the promotion into bank 1 is signed with.
-pub enum Signer {
-    /// An update manifest for the build, signed elsewhere at `version`,
-    /// promoted as signed. Its signer is the manifest's own: no key is
-    /// enrolled for it.
-    Manifest { manifest: Vec<u8>, version: u32 },
-    /// The verified review signed here with `key`, at a version above the
-    /// feeder's floor and above `above` (the highest this owner signed so
-    /// far); `key` is enrolled first unless the image builds it in.
-    Key {
-        key: Box<Key>,
-        frozen: Box<Frozen>,
-        above: u32,
-    },
-}
-
 /// Everything a run needs, read and checked before the feeder is touched.
 pub struct Plan {
     pub review: Review,
     pub start: Start,
-    pub signer: Signer,
+    /// The update manifest for the build, signed elsewhere at `version`
+    /// and promoted as signed. The image builds its signer's key in, so no
+    /// key is enrolled for it.
+    pub manifest: Vec<u8>,
+    pub version: u32,
     /// The owner's Wi-Fi, which Bluetooth setup gives a consumer image.
     pub home: Option<Credentials>,
-    /// A copy of stock 1.1.15's image the owner holds, kept beside the
-    /// backups before the promotion once the feeder's identity is known.
-    pub backup: Option<StockBackup>,
-    /// Stock's MQTT client ID as the owner already knows it: the feeder
-    /// check passes without asking for exactly this device, and stops the
-    /// run for another.
-    pub expect_device: Option<String>,
     /// The feeder's identity, as a hex prefix. A run from bank 0 with no record
     /// and no address uses a feeder the keys know only when this names it: the
     /// keys may know other feeders of the owner's, and nothing else says which.
@@ -405,38 +381,17 @@ fn activated(bank: u8, build: &str, served: &str) -> bool {
 /// the whole install, so the owner checks the device ID (on the feeder's
 /// label or in the vendor app) and the address (the router's client list)
 /// before anything is sent.
-///
-/// With `expected` the owner has answered ahead: the device they pinned
-/// passes without a question, and any other stops the run. The address is
-/// then not checked by anyone, which the owner accepts by pinning: the
-/// device ID is what stock's credentials are bound to.
-async fn recognized(
-    prompter: &mut impl Prompter,
-    report: &impl Report,
-    trust: FeederTrust,
-    expected: Option<&str>,
-) -> Result<bool, Error> {
+async fn recognized(prompter: &mut impl Prompter, trust: FeederTrust) -> Result<bool, Error> {
     let (device, address) = match trust {
         FeederTrust::Enrolled { device, address } => (device, address),
         // The bench: its credentials came from a capture of this feeder.
         FeederTrust::Captured => return Ok(true),
         FeederTrust::Contested => return Ok(false),
     };
-    match expected {
-        Some(expected) => {
-            wellfed_formats::require(expected == device, || Error::OtherDevice {
-                expected: expected.to_string(),
-                enrolled: device.clone(),
-                address: address.clone(),
-            })?;
-            report.event(Event::DevicePinned { device, address });
-            Ok(true)
-        }
-        None => prompter
-            .yes(Prompt::RecognizeFeeder { device, address })
-            .await
-            .map_err(Error::Platform),
-    }
+    prompter
+        .yes(Prompt::RecognizeFeeder { device, address })
+        .await
+        .map_err(Error::Platform)
 }
 
 /// Ask the owner to restart the feeder, with the broker already listening.
@@ -477,13 +432,9 @@ struct Run<P, B, D, K, R> {
     io: Platform<P, B, D, K, R>,
     review: Review,
     stock: Stock,
-    /// The signed update manifest: given, or once the run signed it.
-    manifest: Option<Vec<u8>>,
-    /// The verified review and the key, when the run signs the promotion
-    /// itself; the key is also the one it enrolls.
-    signing: Option<(Box<Frozen>, Box<Key>)>,
+    /// The signed update manifest the promotion offers.
+    manifest: Vec<u8>,
     home: Option<Credentials>,
-    expect_device: Option<String>,
     feeder: Option<String>,
     address: Option<SocketAddr>,
     located: Located,
@@ -500,9 +451,6 @@ struct Run<P, B, D, K, R> {
     found: Option<SocketAddr>,
     /// The feeder's identity, once its key is known.
     identity: Option<[u8; 32]>,
-    /// The owner's stock copy, kept before promotion once the feeder's
-    /// identity is known.
-    given: Option<StockBackup>,
     /// Where the run is, for the report of a stop that ends it.
     track: Track,
     /// When this run's setup frame went out.
@@ -523,31 +471,9 @@ where
             Provisioning::Consumer => PairRoute::Setup,
             Provisioning::Bench => PairRoute::Recovery,
         };
-        let (manifest, promotion, update_key, signing) = match plan.signer {
-            Signer::Manifest { manifest, version } => (
-                Some(manifest),
-                Promotion::Signed(version),
-                UpdateKey::BuiltIn,
-                None,
-            ),
-            Signer::Key { key, frozen, above } => {
-                let update_key = if plan.review.builds_in(&key) {
-                    UpdateKey::BuiltIn
-                } else {
-                    UpdateKey::Enroll(key.public())
-                };
-                (
-                    None,
-                    Promotion::Sign { above },
-                    update_key,
-                    Some((frozen, key)),
-                )
-            }
-        };
         let options = Options {
             route,
-            update_key,
-            promotion,
+            version: plan.version,
         };
 
         let located = match (&plan.start, plan.address) {
@@ -556,22 +482,17 @@ where
             (Start::Bank0, None) => Located::No,
         };
         let build = plan.review.build().to_string();
-        let mut install = match plan.start {
+        let install = match plan.start {
             Start::Stock(provision) => Install::new(provision, &build, options)?,
             Start::Bank0 => Install::from_bank0(&build, options),
         };
-        if let Some(backup) = &plan.backup {
-            install.backup(backup.verified().ok_or(Error::Unverified)?);
-        }
 
         let run = Self {
             io,
             review: plan.review,
             stock: Stock::new(plan.stock),
-            manifest,
-            signing,
+            manifest: plan.manifest,
             home: plan.home,
-            expect_device: plan.expect_device,
             feeder: plan.feeder,
             address: plan.address,
             located,
@@ -583,7 +504,6 @@ where
             refused: None,
             found: None,
             identity: None,
-            given: plan.backup,
             track: Track::new(),
             frame_out: None,
         };
@@ -606,8 +526,7 @@ where
                     self.await_stock(install).await?;
                 }
                 Step::ConfirmFeeder(trust) => {
-                    let expected = self.expect_device.as_deref();
-                    if recognized(&mut self.io.prompter, &self.io.report, trust, expected).await? {
+                    if recognized(&mut self.io.prompter, trust).await? {
                         install.feeder_confirmed();
                     } else {
                         install.feeder_rejected();
@@ -621,7 +540,6 @@ where
                 Step::Pair(route) => self.pair(install, route).await?,
                 Step::AwaitJoin => self.await_join(install).await?,
                 Step::ReadStatus => {
-                    self.kept_promotion(install);
                     let (build, bank) = self.status().await?;
                     self.answered(&build);
                     self.io.report.event(Event::ReplacementAnswers {
@@ -637,12 +555,6 @@ where
                     self.close_trial(install.build()).await;
                     install.trial_closed();
                 }
-                Step::EnrollKey(_) => {
-                    let outcome = self.enroll_key().await?;
-                    install.key_enrolled(outcome);
-                }
-                Step::AwaitEnroll => return Err(Error::EnrollmentEnded),
-                Step::CheckSigners => self.check_signers(install).await,
                 Step::Backup => {
                     let backup = self
                         .backup()
@@ -651,12 +563,7 @@ where
                     install.backup(backup.verified().ok_or(Error::Unverified)?);
                 }
                 Step::ReadFloor => self.read_floor(install).await,
-                Step::Sign { version } => {
-                    self.sign(version)?;
-                    install.signed();
-                }
                 Step::Promote => {
-                    self.keep_given()?;
                     let outcome = self.promote(install.build()).await?;
                     install.promoted(outcome);
                 }
@@ -1210,60 +1117,6 @@ where
         answered
     }
 
-    /// Enroll the installer's update key once, the owner pressing Dispense.
-    async fn enroll_key(&mut self) -> Result<Result<Enrolled, EnrollError>, Error> {
-        let mut connection = self.session(READ_WAIT).await?;
-        let Some((_, key)) = &self.signing else {
-            return Err(Error::NoUpdateKey);
-        };
-        self.track.sent(Unsettled::UpdateKey);
-        let outcome = update_key::enroll(
-            &mut connection,
-            key.public(),
-            key.id(),
-            UPDATE_KEY_LABEL,
-            &mut self.io.prompter,
-            &self.io.report,
-        )
-        .await?;
-        let shown = match &outcome {
-            Ok(enrolled) => Some(Enrollment::Enrolled(*enrolled)),
-            Err(EnrollError::Uncertain) => Some(Enrollment::Unanswered),
-            Err(_) => None,
-        };
-        if let Some(outcome) = shown {
-            self.io.report.event(Event::KeyEnrollment {
-                key: key.id(),
-                outcome,
-            });
-        }
-        Ok(outcome)
-    }
-
-    /// The feeder's clients after an unanswered enrollment; a read changes
-    /// nothing, so a session is opened again until [`READ_WAIT`] runs out.
-    async fn check_signers(&self, install: &mut Install) {
-        let deadline = Instant::now() + READ_WAIT;
-        loop {
-            let read = async {
-                let mut connection = self.connect().await?;
-                update_key::clients(&mut connection).await
-            };
-            match read.await {
-                Ok(clients) => return install.signers(&clients),
-                // A pre-revision build's list is never readable: asking
-                // again only waits out the deadline.
-                Err(error) if matches!(error, Error::Legacy) || Instant::now() >= deadline => {
-                    self.io.report.event(Event::SignersUnread {
-                        error: crate::text(&error),
-                    });
-                    return install.signers_unread();
-                }
-                Err(_) => tokio::time::sleep(self.poll).await,
-            }
-        }
-    }
-
     /// The feeder's floor, its highest confirmed version.
     async fn read_floor(&self, install: &mut Install) {
         let deadline = Instant::now() + READ_WAIT;
@@ -1296,77 +1149,6 @@ where
                 Err(_) => tokio::time::sleep(self.poll).await,
             }
         }
-    }
-
-    /// Sign the reviewed build at `version` with the update key, and keep
-    /// the manifest beside the feeder's backup before it is offered: a run
-    /// resumed after the activation reads its version there.
-    fn sign(&mut self, version: u32) -> Result<(), Error> {
-        let identity = self.identity.ok_or(Error::NoIdentity)?;
-        let Some((frozen, key)) = &self.signing else {
-            return Err(Error::NoSigner);
-        };
-        let manifest = frozen.offer(key, version, Motion::Refused)?;
-
-        let path = storage::promotion_path(&self.backups, &identity, version);
-        storage::write_new(&path, &manifest)?;
-        self.io.report.event(Event::Signed {
-            build: frozen.build_id(),
-            version,
-            key: key.id(),
-            path,
-        });
-        self.manifest = Some(manifest.to_vec());
-        Ok(())
-    }
-
-    /// The version an earlier run promoted for this feeder, from the
-    /// manifests kept beside its backup, for a run that signs for itself
-    /// and finds bank 1 already activated.
-    ///
-    /// The highest kept one is the right one: every run signs above all
-    /// versions signed so far, and keeps its manifest before offering it,
-    /// so the last promotion is always the highest. A lower kept manifest
-    /// is an earlier promotion bank 1 has already confirmed past; and if
-    /// the highest was kept but never activated, bank 1 confirming the
-    /// served build cannot reach it, so the run waits and then times out
-    /// rather than reporting a confirmation it did not see.
-    fn kept_promotion(&self, install: &mut Install) {
-        let Some(identity) = self.identity else {
-            return;
-        };
-        let directory = storage::feeder_directory(&self.backups, &identity);
-        if let Some((version, _)) = highest_signed(&directory) {
-            install.promoted_before(version);
-        }
-    }
-
-    /// A session with the paired feeder; opening one sends nothing, so it
-    /// is tried again until `wait` runs out.
-    async fn session(&self, wait: Duration) -> Result<wellfed_connect::Connection, Error> {
-        let deadline = Instant::now() + wait;
-        loop {
-            match self.connect().await {
-                Ok(connection) => return Ok(connection),
-                Err(error) if Instant::now() >= deadline => {
-                    return Err(Error::NoSession(Box::new(error)));
-                }
-                Err(_) => tokio::time::sleep(self.poll).await,
-            }
-        }
-    }
-
-    /// Keep the owner's own stock copy as a backup read from the feeder is
-    /// kept, before the promotion overwrites the feeder's own.
-    fn keep_given(&mut self) -> Result<(), Error> {
-        let Some(backup) = self.given.take() else {
-            return Ok(());
-        };
-        let identity = self.identity.ok_or(Error::NoIdentity)?;
-        let path = storage::backup_path(&self.backups, &identity);
-        storage::keep_backup(&path, &backup).map_err(|error| Error::KeepGiven(Box::new(error)))?;
-        self.io.report.event(Event::GivenBackupKept { path });
-        Ok(())
     }
 
     /// The stock backup for the paired feeder: kept from an earlier run, or
@@ -1478,9 +1260,8 @@ where
     /// activated instead.
     async fn promote(&mut self, served: &str) -> Result<Promoted, Error> {
         let payload = self.review.payload()?;
-        let manifest = self.manifest.as_deref().ok_or(Error::NoManifest)?;
         let image = Image {
-            manifest,
+            manifest: &self.manifest,
             downgrade: None,
             payload,
         };
@@ -1712,65 +1493,6 @@ mod tests {
         let wrong = Err::<(), _>(Error::SetupRefused(SetupRefusal::WrongCode));
         assert!(!go_again(&mut Again, route, &wrong).await.unwrap());
         assert!(!go_again(&mut Again, route, &Ok(())).await.unwrap());
-    }
-
-    /// An expected device answers the feeder check ahead: the pinned
-    /// device passes without a question, any other stops the run naming
-    /// both, and without it a person is asked.
-    #[tokio::test]
-    async fn an_expected_device_answers_the_feeder_check_or_stops_the_run() {
-        let enrolled = || FeederTrust::Enrolled {
-            device: "AF_FEEDER".into(),
-            address: "10.42.103.172".into(),
-        };
-        // A prompter with nobody behind it: any question it put would fail.
-        let mut prompter = Scripted::default();
-        let report = |_| {};
-
-        assert!(
-            recognized(&mut prompter, &report, enrolled(), Some("AF_FEEDER"))
-                .await
-                .unwrap()
-        );
-
-        let error = recognized(&mut prompter, &report, enrolled(), Some("AF_OTHER"))
-            .await
-            .unwrap_err();
-        match &error {
-            Error::OtherDevice {
-                expected,
-                enrolled,
-                address,
-            } => assert_eq!(
-                (expected.as_str(), enrolled.as_str(), address.as_str()),
-                ("AF_OTHER", "AF_FEEDER", "10.42.103.172")
-            ),
-            other => panic!("{other:?}"),
-        }
-
-        let error = recognized(&mut prompter, &report, enrolled(), None)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, Error::Platform(_)), "{error:?}");
-        assert_eq!(
-            prompter.asked,
-            [Prompt::RecognizeFeeder {
-                device: "AF_FEEDER".into(),
-                address: "10.42.103.172".into()
-            }]
-        );
-
-        // A contested enrollment is no feeder, pinned or not.
-        assert!(
-            !recognized(
-                &mut prompter,
-                &report,
-                FeederTrust::Contested,
-                Some("AF_FEEDER")
-            )
-            .await
-            .unwrap()
-        );
     }
 
     /// A run takes the paired record only when its broker enrolled the

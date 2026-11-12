@@ -33,11 +33,6 @@ pub enum Event {
     StockServerEnded {
         error: String,
     },
-    /// The broker enrolled the device the owner pinned ahead of time.
-    DevicePinned {
-        device: String,
-        address: String,
-    },
     /// The one install request is going out.
     Requesting {
         build: String,
@@ -126,17 +121,6 @@ pub enum Event {
     Floor(u32),
     FloorUnread {
         error: String,
-    },
-    /// The build was signed for the promotion and kept at `path`.
-    Signed {
-        build: String,
-        version: u32,
-        key: [u8; 8],
-        path: PathBuf,
-    },
-    /// The owner's own stock copy was kept at `path` before the promotion.
-    GivenBackupKept {
-        path: PathBuf,
     },
     /// The stock backup an earlier run kept, at `path`.
     BackupFound {

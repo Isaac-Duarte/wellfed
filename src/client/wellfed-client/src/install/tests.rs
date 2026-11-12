@@ -39,8 +39,7 @@ const FLOOR: u32 = 3;
 fn bench() -> Options {
     Options {
         route: PairRoute::Recovery,
-        update_key: UpdateKey::BuiltIn,
-        promotion: Promotion::Signed(VERSION),
+        version: VERSION,
     }
 }
 
@@ -59,7 +58,7 @@ fn run_to(phase: Phase) -> Install {
         Phase::ReadStatus,
         Phase::CloseTrial,
         Phase::Backup,
-        Phase::Sign,
+        Phase::Floor,
         Phase::Promote,
         Phase::AwaitConfirm,
     ];
@@ -84,7 +83,7 @@ fn run_to(phase: Phase) -> Install {
                 bank: 0,
             }),
             Phase::Backup => install.trial_closed(),
-            Phase::Sign => {
+            Phase::Floor => {
                 install.backup(VerifiedBackup::for_tests());
                 assert_eq!(install.step(), Step::ReadFloor);
             }
@@ -569,62 +568,12 @@ fn answers_out_of_turn_change_nothing() {
     assert_eq!(install.step(), Step::AwaitStock);
 }
 
-/// The installer's update key, which a consumer image does not build in.
-const UPDATE_KEY: [u8; 32] = [0x5e; 32];
-
-/// A consumer review's run: Bluetooth setup, the installer's key enrolled,
-/// and the build signed by the run above `above`.
-fn consumer(above: u32) -> Options {
+/// A consumer review's run: Bluetooth setup, and a manifest signed before
+/// the run, its signer built into the image.
+fn consumer() -> Options {
     Options {
         route: PairRoute::Setup,
-        update_key: UpdateKey::Enroll(UPDATE_KEY),
-        promotion: Promotion::Sign { above },
-    }
-}
-
-/// A consumer run from stock to the replacement answering on bank 0 with
-/// its stock record closed: the enrollment comes next.
-fn consumer_on_bank0(above: u32) -> Install {
-    let mut install = Install::new(Provision::Done, BUILD, consumer(above)).unwrap();
-    install.stock(&ready()).unwrap();
-    install.feeder_confirmed();
-    assert_eq!(install.step(), Step::RequestInstall);
-    install.requested(Requested::Sent);
-    install.stock_gone();
-
-    assert_eq!(install.step(), Step::Pair(PairRoute::Setup));
-    install.set_up();
-    assert_eq!(install.step(), Step::AwaitJoin);
-    install.joined();
-    install.replacement(Replacement {
-        build: BUILD,
-        bank: 0,
-    });
-    assert_eq!(install.step(), Step::CloseTrial);
-    install.trial_closed();
-    install
-}
-
-/// A run resumed on bank 0 carried to its floor read, its update key
-/// built in.
-fn resumed_to_floor(options: Options) -> Install {
-    let mut install = Install::from_bank0(BUILD, options);
-    install.paired();
-    install.replacement(Replacement {
-        build: BUILD,
-        bank: 0,
-    });
-    install.backup(VerifiedBackup::for_tests());
-    assert_eq!(install.step(), Step::ReadFloor);
-    install
-}
-
-fn client(key: [u8; 32], role: ClientRole) -> Client {
-    Client {
-        key: wellfed_model::Hex(key),
-        label: "installer".into(),
-        role,
-        you: false,
+        version: VERSION,
     }
 }
 
@@ -633,7 +582,7 @@ fn client(key: [u8; 32], role: ClientRole) -> Client {
 /// image through the recovery window, with no join to wait for.
 #[test]
 fn the_pair_route_follows_the_provisioning() {
-    let mut install = Install::from_bank0(BUILD, consumer(0));
+    let mut install = Install::from_bank0(BUILD, consumer());
     assert_eq!(install.step(), Step::Pair(PairRoute::Setup));
     install.set_up();
     assert_eq!(install.step(), Step::AwaitJoin);
@@ -645,7 +594,7 @@ fn the_pair_route_follows_the_provisioning() {
     assert_eq!(install.step(), Step::ReadStatus);
 
     // A key the build already knows opens a session at once on either.
-    let mut known = Install::from_bank0(BUILD, consumer(0));
+    let mut known = Install::from_bank0(BUILD, consumer());
     known.paired();
     assert_eq!(known.step(), Step::ReadStatus);
 
@@ -657,7 +606,7 @@ fn the_pair_route_follows_the_provisioning() {
     assert_eq!(bench.step(), Step::ReadStatus);
 
     // A feeder that never joins ends the run at the join.
-    let mut lost = Install::from_bank0(BUILD, consumer(0));
+    let mut lost = Install::from_bank0(BUILD, consumer());
     lost.set_up();
     lost.gave_up();
     assert_eq!(
@@ -666,144 +615,24 @@ fn the_pair_route_follows_the_provisioning() {
     );
 }
 
-#[test]
-fn the_update_key_is_enrolled_once_before_the_backup() {
-    let mut install = consumer_on_bank0(0);
-    assert_eq!(install.step(), Step::EnrollKey(UPDATE_KEY));
-    assert_eq!(install.phase(), Phase::UpdateKey);
-    // Sent once: until its end comes, there is only waiting.
-    assert_eq!(install.step(), Step::AwaitEnroll);
-    install.backup(VerifiedBackup::for_tests());
-    assert_eq!(install.step(), Step::AwaitEnroll);
-    install.key_enrolled(Ok(Enrolled::Now));
-    assert_eq!(install.step(), Step::ReadFloor);
-
-    // A bench image builds its key in: nothing is enrolled.
-    let mut bench = run_to(Phase::Backup);
-    assert_eq!(bench.step(), Step::Backup);
-}
-
-/// A refused or unconfirmed enrollment ends the run before the backup, the
-/// floor or the promotion.
-#[test]
-fn a_refused_enrollment_ends_the_run_before_any_promotion() {
-    for error in [
-        EnrollError::Unconfirmed,
-        EnrollError::Forbidden,
-        EnrollError::Busy,
-        EnrollError::Full,
-        EnrollError::SessionKey {
-            role: ClientRole::Owner,
-        },
-        EnrollError::ListUnanswered,
-    ] {
-        let mut install = consumer_on_bank0(0);
-        install.step();
-        install.key_enrolled(Err(error));
-        let failed = Step::Failed(InstallError::UpdateKey(error));
-        assert_eq!(install.step(), failed);
-
-        install.backup(VerifiedBackup::for_tests());
-        install.floor(0);
-        install.signed();
-        install.promoted(Promoted::Activated);
-        assert_eq!(install.step(), failed, "{error:?}");
-    }
-}
-
-/// A key the feeder already lists as a signer sends nothing: the shared
-/// enrollment reads the list first and ends there.
-#[test]
-fn an_already_enrolled_key_is_skipped() {
-    use crate::update_key::{Enroll, Next};
-    use wellfed_model::{Answer, Op};
-
-    let mut install = consumer_on_bank0(0);
-    let Step::EnrollKey(key) = install.step() else {
-        panic!("the enrollment comes after the bank-0 status");
-    };
-    let mut enroll = Enroll::new(key, "installer", ClientRole::Owner).unwrap();
-    assert_eq!(enroll.poll(), Next::Send(Op::ListClients));
-    enroll.answer(&Answer::Clients(vec![client(
-        key,
-        ClientRole::UpdateSigner,
-    )]));
-    let Next::Done(enrolled) = enroll.poll() else {
-        panic!("a listed key ends the enrollment");
-    };
-    assert_eq!(enrolled, Enrolled::Already);
-
-    install.key_enrolled(Ok(enrolled));
-    assert_eq!(install.step(), Step::Backup);
-}
-
-/// An unanswered enrollment may have enrolled the key: the signer list
-/// decides, and the enrollment is never sent again.
-#[test]
-fn an_unanswered_enrollment_is_uncertain_and_never_resent() {
-    let unanswered = || {
-        let mut install = consumer_on_bank0(0);
-        install.step();
-        install.key_enrolled(Err(EnrollError::Uncertain));
-        assert_eq!(install.step(), Step::CheckSigners);
-        assert_eq!(install.step(), Step::CheckSigners);
-        install
-    };
-
-    let mut landed = unanswered();
-    landed.signers(&[
-        client([1; 32], ClientRole::Owner),
-        client(UPDATE_KEY, ClientRole::UpdateSigner),
-    ]);
-    assert_eq!(landed.step(), Step::Backup);
-
-    let uncertain = Step::Failed(InstallError::UpdateKeyUncertain);
-    for listed in [vec![], vec![client(UPDATE_KEY, ClientRole::Member)]] {
-        let mut missing = unanswered();
-        missing.signers(&listed);
-        assert_eq!(missing.step(), uncertain);
-    }
-    let mut unread = unanswered();
-    unread.signers_unread();
-    assert_eq!(unread.step(), uncertain);
-    let mut given_up = unanswered();
-    given_up.gave_up();
-    assert_eq!(given_up.step(), uncertain);
-
-    // Nothing after it offers the key again or moves the run on.
-    for mut ended in [unread, given_up] {
-        ended.key_enrolled(Ok(Enrolled::Now));
-        ended.signers(&[client(UPDATE_KEY, ClientRole::UpdateSigner)]);
-        assert_eq!(ended.step(), uncertain);
-    }
-}
-
 /// A consumer run resumed on bank 0: paired by the known key, nothing asked
-/// of stock and no record to close; the key enrolled, the backup, then the
-/// version signed above both the floor and what the installer signed
-/// before.
+/// of stock and no record to close; the backup, the floor, then the
+/// promotion of the manifest it was given.
 #[test]
-fn a_resumed_consumer_run_enrolls_signs_and_promotes() {
-    let mut install = Install::from_bank0(BUILD, consumer(11));
-    assert_eq!(install.version(), None);
+fn a_resumed_consumer_run_backs_up_and_promotes() {
+    let mut install = Install::from_bank0(BUILD, consumer());
+    assert_eq!(install.version(), VERSION);
     install.paired();
     install.replacement(Replacement {
         build: BUILD,
         bank: 0,
     });
-    assert_eq!(install.step(), Step::EnrollKey(UPDATE_KEY));
-    install.key_enrolled(Ok(Enrolled::Now));
+    assert_eq!(install.step(), Step::Backup);
     install.backup(VerifiedBackup::for_tests());
     assert_eq!(install.step(), Step::ReadFloor);
+    assert_eq!(install.phase(), Phase::Floor);
 
-    assert_eq!(install.step(), Step::ReadFloor);
     install.floor(FLOOR);
-    assert_eq!(install.step(), Step::Sign { version: 12 });
-    assert_eq!(install.version(), Some(12));
-    assert_eq!(install.phase(), Phase::Sign);
-    install.promoted(Promoted::Activated);
-    assert_eq!(install.step(), Step::Sign { version: 12 });
-    install.signed();
     assert_eq!(install.step(), Step::Promote);
     install.promoted(Promoted::Activated);
 
@@ -811,50 +640,18 @@ fn a_resumed_consumer_run_enrolls_signs_and_promotes() {
         build: BUILD,
         bank: 1,
     };
-    install.confirmed(running, 11, None);
+    install.confirmed(running, VERSION - 1, None);
     assert_eq!(install.step(), Step::AwaitConfirm);
-    install.confirmed(running, 12, None);
+    install.confirmed(running, VERSION, None);
     assert_eq!(install.step(), Step::Done);
-}
-
-/// Resumed after the activation, a run that signs for itself waits for the
-/// version an earlier run kept; without one it cannot tell a trial from a
-/// confirmation, and stops.
-#[test]
-fn a_resumed_run_on_bank_1_needs_the_promoted_version() {
-    let running = Replacement {
-        build: BUILD,
-        bank: 1,
-    };
-
-    let mut unknown = Install::from_bank0(BUILD, consumer(0));
-    unknown.paired();
-    unknown.replacement(running);
-    assert_eq!(unknown.step(), Step::Failed(InstallError::PromotionUnknown));
-
-    let mut kept = Install::from_bank0(BUILD, consumer(0));
-    kept.paired();
-    kept.promoted_before(12);
-    kept.replacement(running);
-    assert_eq!(kept.step(), Step::AwaitConfirm);
-    kept.confirmed(running, 11, None);
-    assert_eq!(kept.step(), Step::AwaitConfirm);
-    kept.confirmed(running, 12, None);
-    assert_eq!(kept.step(), Step::Done);
-
-    // A manifest given to the run names its own version.
-    let mut given = Install::from_bank0(BUILD, bench());
-    given.promoted_before(99);
-    assert_eq!(given.version(), Some(VERSION));
 }
 
 /// A manifest at or below the feeder's floor would need a downgrade
 /// statement, which the installer never makes: refused before promotion.
-/// A run that signs for itself goes above the floor.
 #[test]
 fn a_version_at_or_below_the_floor_is_refused() {
     for floor in [VERSION, VERSION + 1] {
-        let mut install = run_to(Phase::Sign);
+        let mut install = run_to(Phase::Floor);
         install.floor(floor);
         let refused = Step::Failed(InstallError::NotAboveFloor {
             version: VERSION,
@@ -864,22 +661,4 @@ fn a_version_at_or_below_the_floor_is_refused() {
         install.promoted(Promoted::Activated);
         assert_eq!(install.step(), refused);
     }
-
-    let signing = |above| Options {
-        update_key: UpdateKey::BuiltIn,
-        ..consumer(above)
-    };
-    let mut above_floor = resumed_to_floor(signing(2));
-    above_floor.floor(7);
-    assert_eq!(above_floor.step(), Step::Sign { version: 8 });
-    let mut above_signed = resumed_to_floor(signing(9));
-    above_signed.floor(7);
-    assert_eq!(above_signed.step(), Step::Sign { version: 10 });
-
-    let mut full = resumed_to_floor(signing(u32::MAX));
-    full.floor(7);
-    assert_eq!(
-        full.step(),
-        Step::Failed(InstallError::NoVersionAbove { floor: 7 })
-    );
 }

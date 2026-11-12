@@ -31,8 +31,8 @@ use wellfed_install::listen::{self, Listened, UNCERTAIN_WAIT};
 use wellfed_install::prompt::Prompt;
 use wellfed_install::{
     Announcement, Api, Bind, Bluetooth, Discovery, Error, Event, Keys, Plan, Platform,
-    PlatformError, Prompter, Refusal, Rejection, Report, Review, SetupLink, Signer, Start,
-    StockOptions, Stop, Unjoined, Unsettled,
+    PlatformError, Prompter, Refusal, Rejection, Report, Review, SetupLink, Start, StockOptions,
+    Stop, Unjoined, Unsettled,
 };
 use wellfed_session::noise::Keypair;
 
@@ -586,9 +586,7 @@ impl From<Event> for InstallEvent {
                 bytes: u64::try_from(bytes).unwrap_or(u64::MAX),
                 total: STOCK_PAYLOAD_LEN,
             },
-            Event::BackupKept { path }
-            | Event::BackupFound { path }
-            | Event::GivenBackupKept { path } => Self::BackupKept {
+            Event::BackupKept { path } | Event::BackupFound { path } => Self::BackupKept {
                 path: path.display().to_string(),
             },
             Event::Promoting => Self::Promoting,
@@ -597,7 +595,6 @@ impl From<Event> for InstallEvent {
             Event::AlreadyActivated | Event::Activated => Self::Activated,
             Event::Installed { build } => Self::Installed { build },
             Event::FrameSent { .. } => note("the setup frame went out".to_string()),
-            Event::DevicePinned { device, .. } => note(format!("device {device} was pinned")),
             Event::KnownKeyRefused { error }
             | Event::TrialOpen { error }
             | Event::EnrollUnanswered { error }
@@ -624,7 +621,6 @@ impl From<Event> for InstallEvent {
             Event::FeederTried { address, answered } => note(format!(
                 "tried the feeder at {address}, answered: {answered}"
             )),
-            Event::Signed { version, .. } => note(format!("signed at version {version}")),
         }
     }
 }
@@ -651,11 +647,8 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             }
             InstallError::StockClockUnset => (StopCase::ClockUnset, FromStart),
             InstallError::TimedOut(phase) => timed_out(*phase, from_stock),
-            InstallError::UpdateKey(_)
-            | InstallError::UpdateKeyUncertain
-            | InstallError::NotAboveFloor { .. }
+            InstallError::NotAboveFloor { .. }
             | InstallError::NoVersionAbove { .. }
-            | InstallError::PromotionUnknown
             | InstallError::Promotion(_)
             | InstallError::WrongPromotion { .. } => (StopCase::PromotionFailed, FromBank0),
             // The offer may have taken: never offered again, and the run
@@ -689,7 +682,7 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         Error::Handover(_) | Error::FrameSend { .. } | Error::UdpSocket(_) => {
             (StopCase::HandoverFailed, FromStart)
         }
-        Error::Backup(_) | Error::NotStock(_) | Error::Unverified | Error::KeepGiven(_) => {
+        Error::Backup(_) | Error::NotStock(_) | Error::Unverified => {
             (StopCase::BackupMismatch, FromBank0)
         }
         Error::Setup(inner) => {
@@ -738,7 +731,6 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         | Error::StockServerFailed(_) => (StopCase::ServerFailed, FromStart),
         Error::Stopped(stopped) => match stopped.unsettled {
             Some(Unsettled::Request(_)) => (StopCase::Uncertain, Nothing),
-            Some(Unsettled::UpdateKey) => uncertain_write(UncertainWrite::UpdateKey),
             Some(Unsettled::Promotion) => uncertain_write(UncertainWrite::Promotion),
             None if stopped.phase <= Phase::Request && from_stock => {
                 (StopCase::Cancelled, FromStart)
@@ -761,7 +753,6 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         | Error::Signing(_)
         | Error::Trial(_)
         | Error::NoPeer
-        | Error::OtherDevice { .. }
         | Error::ClientsRefused(_)
         | Error::Legacy
         | Error::NoIdentity
@@ -775,11 +766,8 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         | Error::RestoreInstallRunning { .. }
         | Error::RestoreCancelUnknown
         | Error::RestoreStopped(_)
-        | Error::NoUpdateKey
-        | Error::NoSigner
         | Error::NoManifest
-        | Error::ShortImage
-        | Error::EnrollmentEnded => (StopCase::Other, Nothing),
+        | Error::ShortImage => (StopCase::Other, Nothing),
     }
 }
 
@@ -820,12 +808,9 @@ const fn timed_out(phase: Phase, from_stock: bool) -> (StopCase, Resume) {
             (StopCase::NoSetupFeeder, Resume::FromBank0)
         }
         // Waits a run gives up on only once the replacement answers.
-        Phase::CloseTrial
-        | Phase::UpdateKey
-        | Phase::Backup
-        | Phase::Sign
-        | Phase::Promote
-        | Phase::Done => (StopCase::Other, Resume::FromBank0),
+        Phase::CloseTrial | Phase::Backup | Phase::Floor | Phase::Promote | Phase::Done => {
+            (StopCase::Other, Resume::FromBank0)
+        }
     }
 }
 
@@ -962,10 +947,9 @@ fn plan(
         start,
         // The promotion is signed elsewhere: this phone never holds a key a
         // feeder trusts, and the image builds the signer's in.
-        signer: Signer::Manifest { manifest, version },
+        manifest,
+        version,
         home,
-        backup: None,
-        expect_device: None,
         feeder: spec.feeder,
         address: spec
             .address

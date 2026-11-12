@@ -116,7 +116,6 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         | Error::EnrollmentUnreadable { .. }
         | Error::UdpSocket(_)
         | Error::FrameSend { .. }
-        | Error::OtherDevice { .. }
         | Error::NoHomeNetwork
         | Error::NoAddress
         | Error::OtherFeeder { .. }
@@ -138,13 +137,9 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         | Error::BackupNotSetAside { .. }
         | Error::Unverified
         | Error::Backup(_)
-        | Error::KeepGiven(_)
         | Error::Setup(_)
-        | Error::NoUpdateKey
-        | Error::NoSigner
         | Error::NoManifest
         | Error::ShortImage
-        | Error::EnrollmentEnded
         | Error::Steps(_)
         | Error::Stopped(_) => RestoreStop::Other,
     }

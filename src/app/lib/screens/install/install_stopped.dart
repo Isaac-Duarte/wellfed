@@ -88,9 +88,6 @@ class InstallStoppedPage extends StatelessWidget {
     StopCase_UncertainWrite(:final write) => (
       "We don't know if that last step ran",
       switch (write) {
-        UncertainWrite.updateKey =>
-          "The feeder didn't answer about the update key, and it is never "
-              'sent a second time.',
         UncertainWrite.promotion =>
           'The feeder stopped answering while Wellfed became permanent. Leave '
               'it plugged in: picking up reads where it got to.',

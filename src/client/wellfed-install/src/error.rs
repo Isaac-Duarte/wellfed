@@ -118,16 +118,6 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    /// The broker enrolled another device than the owner pinned: whatever
-    /// reached it first is not the feeder the owner means to install.
-    #[error(
-        "the broker enrolled device {enrolled}, connecting from {address}, but the expected device is {expected}; nothing was sent to stock. Check which device reached the broker before running again"
-    )]
-    OtherDevice {
-        expected: String,
-        enrolled: String,
-        address: String,
-    },
     /// The feeder this install paired with no longer answers where it was
     /// last seen, where stock connected from, or by discovery.
     #[error(
@@ -218,9 +208,6 @@ pub enum Error {
     /// the feeder's only copy of stock, is refused.
     #[error(transparent)]
     Backup(Box<Error>),
-    /// The owner's own stock copy could not be kept before the promotion.
-    #[error(transparent)]
-    KeepGiven(Box<Error>),
     /// Bluetooth setup failed; the replacement runs from bank 0.
     #[error(transparent)]
     Setup(Box<Error>),
@@ -251,16 +238,10 @@ pub enum Error {
     #[error("the restore stopped on {0}, with nothing offered")]
     RestoreStopped(crate::track::Stop),
 
-    #[error("no update key to enroll")]
-    NoUpdateKey,
-    #[error("no review and key to sign the promotion with")]
-    NoSigner,
     #[error("no signed manifest to promote with")]
     NoManifest,
     #[error("image.bin is shorter than its header")]
     ShortImage,
-    #[error("the enrollment ended before this step")]
-    EnrollmentEnded,
 
     /// The steps ended the install.
     #[error(transparent)]
