@@ -114,25 +114,40 @@ const LOGUART_RBR: u32 = 0x24;
 /// The same register written: the transmit FIFO.
 const LOGUART_THR: u32 = LOGUART_RBR;
 
+/// A receive overrun some read of the log UART's line status saw, kept until
+/// the receive side reports it. Reading the status clears the UART's own
+/// flag, and the log sender reads it before every burst: without this, a
+/// line sent while the button task was held off would clear the overrun the
+/// `virtual-panel` variant refuses a damaged line on.
+static LOGUART_OVERRUN: AtomicBool = AtomicBool::new(false);
+
+/// Read the log UART's line status, keeping any overrun it reports.
+#[inline(always)]
+fn loguart_status() -> u32 {
+    // SAFETY: the log UART's registers are always mapped on KM4, which
+    // prints through the same block. Reading the status clears only its
+    // error flags, and the overrun among them is kept below.
+    let status = unsafe { ptr::read_volatile(reg(k::WELLFED_LOGUART + LOGUART_LSR)) };
+    if status & k::WELLFED_LOGUART_OVERRUN != 0 {
+        LOGUART_OVERRUN.store(true, Ordering::Relaxed);
+    }
+    status
+}
+
 /// The oldest byte the log UART received, if any. Only the `virtual-panel`
 /// variant calls it: no other code in the image reads that FIFO (no vendor
 /// shell is linked, KM0 disables the log UART's interrupt, and KM4 holds
 /// its PMU wakelock, so KM0's tickless drain never runs).
 pub fn log_uart_receive() -> crate::LogUartReceive {
-    // SAFETY: the log UART's registers are always mapped on KM4, which
-    // prints through the same block. Reading the status clears only its
-    // error flags; reading the receive register pops one byte, and only
-    // after the status says one is there.
-    unsafe {
-        let status = ptr::read_volatile(reg(k::WELLFED_LOGUART + LOGUART_LSR));
-        if status & k::WELLFED_LOGUART_DATA_READY == 0 {
-            return crate::LogUartReceive::Empty;
-        }
-        let word = ptr::read_volatile(reg(k::WELLFED_LOGUART + LOGUART_RBR));
-        crate::LogUartReceive::Byte {
-            byte: word.to_le_bytes()[0],
-            overrun: status & k::WELLFED_LOGUART_OVERRUN != 0,
-        }
+    if loguart_status() & k::WELLFED_LOGUART_DATA_READY == 0 {
+        return crate::LogUartReceive::Empty;
+    }
+    // SAFETY: as for `loguart_status`; reading the receive register pops
+    // one byte, and only after the status says one is there.
+    let word = unsafe { ptr::read_volatile(reg(k::WELLFED_LOGUART + LOGUART_RBR)) };
+    crate::LogUartReceive::Byte {
+        byte: word.to_le_bytes()[0],
+        overrun: LOGUART_OVERRUN.swap(false, Ordering::Relaxed),
     }
 }
 
@@ -1839,10 +1854,7 @@ enum Burst {
 fn log_burst() -> Burst {
     let _guard = crate::IrqGuard::lock();
 
-    let status = reg(k::WELLFED_LOGUART + LOGUART_LSR);
-    // SAFETY: the log UART's registers are always mapped on KM4. Reading the
-    // status clears only its error flags, which nothing here acts on.
-    if unsafe { ptr::read_volatile(status) } & k::WELLFED_LOGUART_THR_EMPTY == 0 {
+    if loguart_status() & k::WELLFED_LOGUART_THR_EMPTY == 0 {
         return Burst::NoRoom;
     }
 
@@ -1880,8 +1892,7 @@ pub fn log_drain_open() {
 
 /// The drain's step: one burst if the UART has room; whether lines still
 /// wait, so that the caller comes back at the next tick. With none waiting it
-/// leaves the status register alone: reading it clears the receive overrun
-/// flag the `virtual-panel` variant refuses a line on.
+/// leaves the status register alone.
 #[inline(never)]
 pub fn log_drain() -> bool {
     if crate::LOG_RING.pending() {

@@ -292,6 +292,9 @@ pub struct Hardware {
     /// overran before the next is read.
     pub log_uart_rx: VecDeque<u8>,
     pub log_uart_overrun: bool,
+    /// An overrun a status read cleared from the UART and kept for the
+    /// receive side, as the target keeps it.
+    pub log_uart_overrun_kept: bool,
 }
 
 /// The Wi-Fi shim's vendor calls, as the Wi-Fi task makes them: each one
@@ -492,6 +495,7 @@ impl Default for Hardware {
             ble_stats: BleStats::default(),
             log_uart_rx: VecDeque::new(),
             log_uart_overrun: false,
+            log_uart_overrun_kept: false,
         }
     }
 }

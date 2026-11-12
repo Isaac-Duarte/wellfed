@@ -382,13 +382,25 @@ pub unsafe fn gpio_enable_outputs(port: u32, mask: u32) {
     }
 }
 
+/// A read of the log UART's line status, as the target's: it clears the
+/// UART's overrun flag, which the read keeps until the receive side
+/// reports it.
+fn loguart_status(h: &mut Hardware) {
+    if core::mem::take(&mut h.log_uart_overrun) {
+        h.log_uart_overrun_kept = true;
+    }
+}
+
 pub fn log_uart_receive() -> crate::LogUartReceive {
-    with(|h| match h.log_uart_rx.pop_front() {
-        None => crate::LogUartReceive::Empty,
-        Some(byte) => crate::LogUartReceive::Byte {
-            byte,
-            overrun: core::mem::take(&mut h.log_uart_overrun),
-        },
+    with(|h| {
+        loguart_status(h);
+        match h.log_uart_rx.pop_front() {
+            None => crate::LogUartReceive::Empty,
+            Some(byte) => crate::LogUartReceive::Byte {
+                byte,
+                overrun: core::mem::take(&mut h.log_uart_overrun_kept),
+            },
+        }
     })
 }
 
@@ -799,6 +811,8 @@ pub fn panic_outputs_safe() {
 /// The host's output has no line time to spare a task, so a line is out by
 /// the time this returns and the drain below has nothing to do.
 pub fn log(message: &CStr) {
+    // The target's sender reads the line status before each burst.
+    with(loguart_status);
     print!("{}", message.to_string_lossy());
     crate::LOG_TAIL.push(message.to_bytes());
 }
