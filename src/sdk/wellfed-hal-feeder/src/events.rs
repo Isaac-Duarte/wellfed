@@ -241,7 +241,8 @@ impl EventsState {
             self.fault = fault;
         }
         self.capture_enabled = false;
-        sdk::gpio_int_config(FEEDBACK_PIN, false);
+        // SAFETY: the capture owns the feedback pin and its interrupt.
+        unsafe { sdk::gpio_int_config(FEEDBACK_PIN, false) };
         let millis = self.clock.millis;
         let board = self.board();
         board.trip(millis);
@@ -342,22 +343,30 @@ impl EventsState {
 
         sdk::gtimer_clock_enable();
         // GPIO is in the LP domain; its working clock is a board-open precondition.
-        sdk::gpio_int_config(FEEDBACK_PIN, false);
-        sdk::gpio_int_mode(FEEDBACK_PIN, true);
-        sdk::gpio_int_config(FEEDBACK_PIN, false);
+        // SAFETY: the capture owns the feedback pin and its interrupt.
+        unsafe {
+            sdk::gpio_int_config(FEEDBACK_PIN, false);
+            sdk::gpio_int_mode(FEEDBACK_PIN, true);
+            sdk::gpio_int_config(FEEDBACK_PIN, false);
+        }
         sdk::gpioa_eoi(FEEDBACK_MASK);
         sdk::tim2_init(self.timer_arr);
 
-        let timer_registered = sdk::irq_register(Irq::Timer2, timer_interrupt, PRIORITY);
-        let gpio_registered =
-            timer_registered && sdk::irq_register(Irq::GpioA, feedback_interrupt, PRIORITY);
+        // SAFETY: the capture owns both lines; each handler clears its own
+        // line and reaches the capture only through `active`, null until
+        // `set_active` below.
+        let timer_registered = unsafe { sdk::irq_register(Irq::Timer2, timer_interrupt, PRIORITY) };
+        let gpio_registered = timer_registered
+            // SAFETY: as for the timer's.
+            && unsafe { sdk::irq_register(Irq::GpioA, feedback_interrupt, PRIORITY) };
         if !gpio_registered {
             if timer_registered {
                 sdk::irq_unregister(Irq::Timer2);
             }
             sdk::tim2_int_config(false);
             sdk::tim2_cmd(false);
-            sdk::gpio_int_mode(FEEDBACK_PIN, false);
+            // SAFETY: the capture owns the feedback pin and its interrupt.
+            unsafe { sdk::gpio_int_mode(FEEDBACK_PIN, false) };
             self.fault = EventsFault::Setup;
             return false;
         }
@@ -452,7 +461,8 @@ impl EventsState {
         let read = self.now();
 
         if !enabled {
-            sdk::gpio_int_config(FEEDBACK_PIN, false);
+            // SAFETY: the capture owns the feedback pin and its interrupt.
+            unsafe { sdk::gpio_int_config(FEEDBACK_PIN, false) };
             self.capture_enabled = false;
             if !stopped {
                 return self.fail(EventsFault::Feedback);
@@ -476,7 +486,8 @@ impl EventsState {
         self.reset_feedback(value);
         self.edges = FeedbackEdges::default();
         sdk::gpioa_eoi(FEEDBACK_MASK);
-        sdk::gpio_int_config(FEEDBACK_PIN, true);
+        // SAFETY: the capture owns the feedback pin and its interrupt.
+        unsafe { sdk::gpio_int_config(FEEDBACK_PIN, true) };
         self.capture_enabled = sdk::gpioa_int_en() & FEEDBACK_MASK != 0
             && sdk::gpioa_int_mask() & FEEDBACK_MASK == 0
             && sdk::gpioa_int_bothedge() & FEEDBACK_MASK != 0;
@@ -618,7 +629,8 @@ impl EventsState {
         }
         let millis = self.clock.millis;
         self.board().motor(MotorCommand::Stop, millis);
-        sdk::gpio_int_config(FEEDBACK_PIN, false);
+        // SAFETY: the capture owns the feedback pin and its interrupt.
+        unsafe { sdk::gpio_int_config(FEEDBACK_PIN, false) };
         self.capture_enabled = false;
         let optics_off = self.board().optics(false) && board::optics_off();
         self.optics_armed = false;
@@ -632,7 +644,8 @@ impl EventsState {
         sdk::irq_disable(Irq::Timer2);
         sdk::tim2_int_config(false);
         sdk::tim2_cmd(false);
-        sdk::gpio_int_mode(FEEDBACK_PIN, false);
+        // SAFETY: the capture owns the feedback pin and its interrupt.
+        unsafe { sdk::gpio_int_mode(FEEDBACK_PIN, false) };
         sdk::irq_unregister(Irq::GpioA);
         sdk::irq_unregister(Irq::Timer2);
         set_active(ptr::null_mut());

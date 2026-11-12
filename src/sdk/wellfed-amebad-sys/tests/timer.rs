@@ -14,7 +14,8 @@ fn running(period: u32) {
     fake::reset_hardware();
     sdk::tim2_init(period);
     sdk::tim2_int_clear();
-    assert!(sdk::irq_register(Irq::Timer2, count, 4));
+    // SAFETY: `count` only clears the fake timer's flag.
+    assert!(unsafe { sdk::irq_register(Irq::Timer2, count, 4) });
     sdk::irq_enable(Irq::Timer2, 4);
     sdk::tim2_cmd(true);
 }

@@ -337,7 +337,9 @@ impl Provider {
         }
 
         let systick = sdk::systick_ctrl();
-        sdk::set_systick_ctrl(systick & !park::SYSTICK_CONTROL_BITS);
+        // SAFETY: the lease owns the tick while the peer is parked; its
+        // end restores `systick`.
+        unsafe { sdk::set_systick_ctrl(systick & !park::SYSTICK_CONTROL_BITS) };
         let begin_at = sdk::systimer_ticks();
         let ram_token = park_token(&token);
         // SAFETY: `ram_token` is a live local.

@@ -269,7 +269,11 @@ pub fn systick_ctrl() -> u32 {
 }
 
 /// CLKSOURCE (bit 2) reads 1 whatever is written, as on the KM4 Cortex-M33.
-pub fn set_systick_ctrl(value: u32) {
+///
+/// # Safety
+/// The caller owns the scheduler's tick: a flash lease stops it while the
+/// peer is parked and restores it after.
+pub unsafe fn set_systick_ctrl(value: u32) {
     with(|h| h.systick = value | 4);
 }
 
@@ -461,7 +465,9 @@ pub fn efuse_read8(address: u32) -> Option<u8> {
     with(|h| (!h.efuse_fail).then_some(255))
 }
 
-pub fn pad_disable(pin: u32) {
+/// # Safety
+/// The caller owns `pin`, an analog input whose digital path may go.
+pub unsafe fn pad_disable(pin: u32) {
     assert!(pin < 64);
     with(|h| h.pads_disabled |= 1 << pin);
 }
@@ -559,7 +565,9 @@ pub fn heap_min_free() -> u32 {
 
 pub fn gtimer_clock_enable() {}
 
-pub fn gpio_int_config(pin: u32, enabled: bool) {
+/// # Safety
+/// The caller owns `pin` and the port's interrupt.
+pub unsafe fn gpio_int_config(pin: u32, enabled: bool) {
     assert_eq!(pin, board::INTERRUPT_PIN);
     with(|h| {
         if enabled {
@@ -570,7 +578,9 @@ pub fn gpio_int_config(pin: u32, enabled: bool) {
     });
 }
 
-pub fn gpio_int_mode(pin: u32, enabled: bool) {
+/// # Safety
+/// As for [`gpio_int_config`].
+pub unsafe fn gpio_int_mode(pin: u32, enabled: bool) {
     assert_eq!(pin, board::INTERRUPT_PIN);
     with(|h| {
         if enabled {
@@ -650,7 +660,10 @@ pub fn tim2_int_clear() {
     with(|h| h.timer.sr = 0);
 }
 
-pub fn irq_register(irq: Irq, isr: Isr, priority: u32) -> bool {
+/// # Safety
+/// The caller owns `irq`'s line, and `isr` is sound to run as its handler,
+/// with a null context, from the moment it is registered.
+pub unsafe fn irq_register(irq: Irq, isr: Isr, priority: u32) -> bool {
     assert_eq!(priority, 4);
     with(|h| {
         if (irq == Irq::Timer2 && h.fail_timer_register)
@@ -720,7 +733,8 @@ pub unsafe fn wdg_init(count_id: u32, divisor: u32) {
             (count_id << 25) | divisor | WDG_BIT_CLEAR | WDG_BIT_RST_MODE | WDG_BIT_ISR_CLEAR;
         h.watchdog_vendor = written & !(WDG_BIT_CLEAR | WDG_BIT_ISR_CLEAR);
     });
-    set_lp_km0_ctrl(lp_km0_ctrl() | LP_WDT_RESET_HS_ALL);
+    // SAFETY: the caller's contract makes it the watchdog's one owner.
+    unsafe { set_lp_km0_ctrl(lp_km0_ctrl() | LP_WDT_RESET_HS_ALL) };
 }
 
 /// # Safety
@@ -756,7 +770,10 @@ pub fn hs_platform_para() -> u32 {
     with(|h| h.hs_control)
 }
 
-pub fn set_hs_platform_para(value: u32) {
+/// # Safety
+/// The caller is the watchdog's one owner: the register holds the scope
+/// of the watchdog's reset.
+pub unsafe fn set_hs_platform_para(value: u32) {
     with(|h| {
         if !h.watchdog_scope_blocked {
             h.hs_control = value;
@@ -768,7 +785,10 @@ pub fn lp_km0_ctrl() -> u32 {
     with(|h| h.lp_control)
 }
 
-pub fn set_lp_km0_ctrl(value: u32) {
+/// # Safety
+/// As for [`set_hs_platform_para`]: the register holds which cores the
+/// watchdog's reset reaches.
+pub unsafe fn set_lp_km0_ctrl(value: u32) {
     with(|h| {
         if !h.watchdog_scope_blocked {
             h.lp_control = value;

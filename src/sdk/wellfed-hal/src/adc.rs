@@ -44,7 +44,8 @@ pub fn open() -> Opened {
     }
 
     for &pad in board::pins::ADC_PADS {
-        sdk::pad_disable(pad);
+        // SAFETY: the board's ADC pads are analog inputs this module owns.
+        unsafe { sdk::pad_disable(pad) };
     }
     sdk::adc_init_manual();
     sdk::adc_cmd(true);

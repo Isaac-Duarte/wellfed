@@ -100,7 +100,8 @@ fn preempt_now() {
     let Some(ticks) = hit else { return };
 
     PREEMPT_TICKS.with(|c| c.set(ticks));
-    assert!(sdk::irq_register(Irq::Timer2, preempt_isr, 4));
+    // SAFETY: `preempt_isr` touches only this test's model state.
+    assert!(unsafe { sdk::irq_register(Irq::Timer2, preempt_isr, 4) });
     // Pending while masked, then unmasked without delivery: the line is
     // taken the next time anything unmasks.
     fake::with(|h| h.interrupts = 1);
@@ -264,7 +265,8 @@ fn leased<R>(op: impl FnOnce() -> R) -> R {
     }
 
     assert_eq!(sdk::primask(), 1, "release keeps IRQs masked");
-    sdk::set_systick_ctrl(ticket.saved_systick);
+    // SAFETY: the test stands in for the lease's release, which owns the tick.
+    unsafe { sdk::set_systick_ctrl(ticket.saved_systick) };
     sdk::set_primask(0);
     result
 }

@@ -425,7 +425,10 @@ pub fn efuse_read8(address: u32) -> Option<u8> {
 
 /// Shut `pin`'s digital pad path down, for an analog input. A pin past
 /// the chip's 64 is no pad, and nothing is written.
-pub fn pad_disable(pin: u32) {
+///
+/// # Safety
+/// The caller owns `pin`, an analog input whose digital path may go.
+pub unsafe fn pad_disable(pin: u32) {
     if let Ok(pad @ 0..64) = u8::try_from(pin) {
         // SAFETY: the pinned SDK routine, with plain-value arguments.
         unsafe { raw::PAD_CMD(pad, SDK_DISABLE) }
@@ -512,13 +515,18 @@ pub fn gtimer_clock_enable() {
     }
 }
 
-pub fn gpio_int_config(pin: u32, enabled: bool) {
+/// # Safety
+/// The caller owns `pin` and the port's interrupt.
+pub unsafe fn gpio_int_config(pin: u32, enabled: bool) {
     // SAFETY: the pinned SDK routine, with plain-value arguments.
     unsafe { raw::GPIO_INTConfig(pin, state(enabled)) }
 }
 
 /// Both-edge, active-low, debounced interrupt mode.
-pub fn gpio_int_mode(pin: u32, enabled: bool) {
+///
+/// # Safety
+/// As for [`gpio_int_config`].
+pub unsafe fn gpio_int_mode(pin: u32, enabled: bool) {
     // SAFETY: the pinned SDK routine, with plain-value arguments.
     unsafe {
         raw::GPIO_INTMode(
@@ -695,7 +703,11 @@ fn irqn(irq: Irq) -> raw::IRQn_Type {
 }
 
 /// `InterruptRegister`, i.e. the SDK's inline `irq_register_check`.
-pub fn irq_register(irq: Irq, isr: Isr, priority: u32) -> bool {
+///
+/// # Safety
+/// The caller owns `irq`'s line, and `isr` is sound to run as its handler,
+/// with a null context, from the moment it is registered.
+pub unsafe fn irq_register(irq: Irq, isr: Isr, priority: u32) -> bool {
     let priority = priority.min(k::WELLFED_MAX_IRQ_PRIORITY) << k::WELLFED_IRQ_PRIORITY_SHIFT;
     // SAFETY: the pinned SDK routine, with plain-value arguments.
     unsafe { raw::irq_register(Some(isr), irqn(irq), 0, priority) != 0 }
@@ -1082,7 +1094,10 @@ pub fn systick_ctrl() -> u32 {
     unsafe { ptr::read_volatile(reg(SYSTICK_CTRL)) }
 }
 
-pub fn set_systick_ctrl(value: u32) {
+/// # Safety
+/// The caller owns the scheduler's tick: a flash lease stops it while the
+/// peer is parked and restores it after.
+pub unsafe fn set_systick_ctrl(value: u32) {
     // SAFETY: a fixed register in the pinned SDK memory map.
     unsafe { ptr::write_volatile(reg(SYSTICK_CTRL), value) }
 }
@@ -1097,7 +1112,10 @@ pub fn hs_platform_para() -> u32 {
     unsafe { ptr::read_volatile(reg(k::WELLFED_SYSCTRL_HP + k::WELLFED_REG_HS_PLATFORM_PARA)) }
 }
 
-pub fn set_hs_platform_para(value: u32) {
+/// # Safety
+/// The caller is the watchdog's one owner: the register holds the scope
+/// of the watchdog's reset.
+pub unsafe fn set_hs_platform_para(value: u32) {
     // SAFETY: a fixed register in the pinned SDK memory map.
     unsafe {
         ptr::write_volatile(
@@ -1112,7 +1130,10 @@ pub fn lp_km0_ctrl() -> u32 {
     unsafe { ptr::read_volatile(reg(k::WELLFED_SYSCTRL_LP + k::WELLFED_REG_LP_KM0_CTRL)) }
 }
 
-pub fn set_lp_km0_ctrl(value: u32) {
+/// # Safety
+/// As for [`set_hs_platform_para`]: the register holds which cores the
+/// watchdog's reset reaches.
+pub unsafe fn set_lp_km0_ctrl(value: u32) {
     // SAFETY: a fixed register in the pinned SDK memory map.
     unsafe {
         ptr::write_volatile(
