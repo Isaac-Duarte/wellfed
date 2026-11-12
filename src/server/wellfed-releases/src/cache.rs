@@ -78,6 +78,11 @@ impl Cache {
     ///
     /// Each comes with whether it is listed, so a page cursor that names a
     /// release hidden since still marks its place.
+    ///
+    /// The listing reads the records without hashing every file: a record
+    /// changed on disk shows as it says until the release is uploaded or
+    /// fetched again, which writes it back. Nothing installs from it; an
+    /// install reads the release through [`Self::file`].
     pub(crate) async fn list(&self) -> Result<Vec<(Release, bool)>, Error> {
         let dir = self.dir.clone();
         let project: Vec<KeyId> = self.keys.project.iter().map(release::key_id).collect();
