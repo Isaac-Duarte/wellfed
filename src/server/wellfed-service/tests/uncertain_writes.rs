@@ -11,7 +11,7 @@ use wellfed_api::{
     ClientRole, CommandQuery, CommandState, CommandStateFilter, Connection as Link, FeederId,
     FeederSettingsPatch, Model, Settings,
 };
-use wellfed_server_testkit::feeder::{self, Control, Relay};
+use wellfed_server_testkit::feeder::{self, Control, Relay, Running};
 use wellfed_server_testkit::fixed::FixedClock;
 use wellfed_server_testkit::{TempStore, TestService, ada, config, home, local};
 use wellfed_service::{CommandError, Config, Error, IdempotencyKey, Service, seal_key};
@@ -72,6 +72,21 @@ async fn not_online(server: &TestService, id: FeederId) {
             .any(|f| f.id == id && f.connection != Link::Online)
     })
     .await;
+}
+
+/// Cut the feeder's session and restart the feeder behind `relay`, then
+/// wait for the server's session with the restarted feeder. The server
+/// sees the cut session end before the relay passes anything again, so
+/// the write that follows goes out on the new session: waiting for online
+/// alone may find the old one still reading online, and the write then
+/// meets the cut, or the feeder before its restart.
+async fn restart_behind(server: &TestService, sim: &Running, relay: &Relay, id: FeederId) {
+    relay.pause();
+    relay.cut();
+    not_online(server, id).await;
+    sim.control(Control::Reboot);
+    relay.resume();
+    server.link(id, Link::Online).await;
 }
 
 /// The writes of `key` the server's uncertain list holds.
@@ -166,10 +181,7 @@ fn a_resend_refused_after_a_restart_is_unknown_not_stale() {
             .put_settings(&caller, id, base, patch, Some(key))
             .await;
         assert!(unknown(&first), "{first:?}");
-        relay.cut();
-        sim.control(Control::Reboot);
-        relay.resume();
-        server.link(id, Link::Online).await;
+        restart_behind(&server, &sim, &relay, id).await;
 
         let resent = service
             .put_settings(&caller, id, base, patch, Some(key))
@@ -258,10 +270,7 @@ fn a_resent_revocation_that_finds_the_key_gone_is_done() {
             .revoke_client(&caller, id, stranger, Some(key))
             .await;
         assert!(unknown(&first), "{first:?}");
-        relay.cut();
-        sim.control(Control::Reboot);
-        relay.resume();
-        server.link(id, Link::Online).await;
+        restart_behind(&server, &sim, &relay, id).await;
 
         service
             .revoke_client(&caller, id, stranger, Some(key))
