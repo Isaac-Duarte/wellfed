@@ -783,6 +783,7 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
         | Error::RestoreEnroll(_)
         | Error::RestoreKey(_)
         | Error::RestoreKeyGone
+        | Error::RestoreReleaseKey
         | Error::RestoreInstallRunning { .. }
         | Error::RestoreCancelUnknown
         | Error::RestoreStopped(_)

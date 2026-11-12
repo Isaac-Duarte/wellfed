@@ -284,7 +284,7 @@ The server keeps each feeder's own stock firmware, the copy promotion would othe
 - **The copy** comes from the feeder (`POST /feeders/{id}/stock/read` reads bank 1 over the device API while stock is still there) or from an owner's upload of the copy the installer kept.
 - **It's checked** against stock 1.1.15's pinned payload and container (`422 stock_refused` otherwise), then kept under `stock/<identity>/`. A kept copy is never replaced, and every read checks the file again.
 - **Promotion waits for it.** An install on a feeder idle on bank 0 is `409 stock_backup_needed` until a verified copy is kept.
-- **Restore** is signed by the owner on their computer, since the server holds no signing key (`wellfed server stock restore --version <n>`), and the server runs it as an install.
+- **Restore** is signed by the owner on their computer, since the server holds no signing key (`wellfed server stock restore --key <file>`, with the version one above the feeder's floor unless `--version` names one, and never the release key, by the same rule the CLI's own restore follows), and the server runs it as an install.
 
 ## Backups, export and import
 

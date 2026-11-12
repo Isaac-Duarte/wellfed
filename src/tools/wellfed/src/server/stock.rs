@@ -26,9 +26,10 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use wellfed_client::install::{STOCK_VERSION, StockBackup};
 use wellfed_formats::canonical::sha256;
+use wellfed_install::restore::Signed;
 use wellfed_server_client::api::{Hex, InstallState, StockBackupState, StockRestore, StreamQuery};
 use wellfed_server_client::{Client, Kept};
-use wellfed_signing::{Frozen, Key, Motion};
+use wellfed_signing::{Frozen, Key};
 
 use super::feeders::Which;
 use super::install::follow;
@@ -60,11 +61,12 @@ enum StockVerb {
     /// Sign the server's backup as the stock image and restore it on the
     /// feeder, following the restore to its end.
     Restore {
-        /// The version the stock manifest carries.
+        /// The version the stock manifest carries; one above the feeder's
+        /// floor when not given.
         #[arg(long)]
-        version: u32,
-        /// The update-signing key the feeder trusts.
-        #[arg(long, default_value = wellfed_signing::KEY_PATH)]
+        version: Option<u32>,
+        /// The update-signing key the feeder trusts; never the release key.
+        #[arg(long)]
         key: PathBuf,
     },
 }
@@ -136,7 +138,7 @@ async fn download(
 async fn restore(
     client: &Client,
     feeder: wellfed_server_client::api::FeederId,
-    version: u32,
+    version: Option<u32>,
     key: &std::path::Path,
     out: Output,
 ) -> Result<Settled> {
@@ -159,10 +161,13 @@ async fn restore(
     })?;
     let frozen = Frozen::stock(backup.bytes().to_vec()).context("sign the backup as stock")?;
     let key = Key::load(key).with_context(|| format!("load {}", key.display()))?;
-    let manifest = frozen.offer(&key, version, Motion::Refused)?;
-    let downgrade = key.downgrade(&manifest, &identity.0, floor)?;
+    let Signed {
+        manifest,
+        downgrade,
+        version,
+    } = wellfed_install::restore::sign(&frozen, &key, &identity.0, floor, version)?;
     let request = StockRestore {
-        manifest: Hex(manifest),
+        manifest: Hex(manifest.try_into().ok().context("a manifest's length")?),
         downgrade: Hex(downgrade
             .try_into()
             .ok()

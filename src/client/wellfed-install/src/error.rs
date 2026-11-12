@@ -229,6 +229,10 @@ pub enum Error {
     /// holds, and nothing was offered.
     #[error("the restore's update key file went away before the offer, so nothing was offered")]
     RestoreKeyGone,
+    /// The release key signs consumer images on offline media and never a
+    /// restore, which an online computer signs.
+    #[error("the release key never signs a restore; use an update key the feeder trusts")]
+    RestoreReleaseKey,
     /// An install is running on the feeder now, so nothing was cancelled and
     /// nothing offered.
     #[error("an install is running on the feeder ({phase:?}), so nothing was offered")]

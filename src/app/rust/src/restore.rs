@@ -94,7 +94,10 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         Error::RestoreCancelUnknown => RestoreStop::CancelUnknown,
         Error::RestoreStopped(_) => RestoreStop::Cancelled,
         // What a restore never meets, or meets only as the run's own words.
-        Error::Platform(_)
+        // The app signs with a key it made for the restore, never the
+        // release key.
+        Error::RestoreReleaseKey
+        | Error::Platform(_)
         | Error::Handover(_)
         | Error::ShowCode(_)
         | Error::Connect { .. }

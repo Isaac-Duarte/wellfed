@@ -498,7 +498,11 @@ fn stock_is_read_shown_exported_and_never_signed_unless_pinned() {
             .await
             .exited(1);
 
-        let restore = home.run(&["stock", "restore", "--version", "1"], "").await;
+        let key = home.0.path().join("update-key.json");
+        let key = key.to_str().unwrap();
+        let restore = home
+            .run(&["stock", "restore", "--version", "1", "--key", key], "")
+            .await;
         assert!(
             restore.exited(1).stderr.contains("pinned image"),
             "{}",

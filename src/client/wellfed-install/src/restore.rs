@@ -73,6 +73,46 @@ pub enum Signing {
     Given(Box<Key>),
 }
 
+/// What a stock restore sends, signed.
+#[derive(Debug)]
+pub struct Signed {
+    /// The manifest offering the image as stock.
+    pub manifest: Vec<u8>,
+    /// The statement that lets the feeder take it below its floor.
+    pub downgrade: Vec<u8>,
+    /// The version the manifest carries.
+    pub version: u32,
+}
+
+/// Sign `image` as stock for the feeder `identity`, whose update floor is
+/// `floor`. The one rule for every caller, the app's, the CLI's and the
+/// server path's: the version is one above the floor unless given, and the
+/// release key, which stays on offline media, never signs a restore.
+pub fn sign(
+    image: &Frozen,
+    key: &Key,
+    identity: &[u8; 32],
+    floor: u32,
+    version: Option<u32>,
+) -> Result<Signed, Error> {
+    wellfed_formats::require(key.scope() != KeyScope::Release, || {
+        Error::RestoreReleaseKey
+    })?;
+    let version = match version {
+        Some(version) => version,
+        None => floor
+            .checked_add(1)
+            .ok_or(Error::Steps(InstallError::NoVersionAbove { floor }))?,
+    };
+    let manifest = image.offer(key, version, Motion::Refused)?.to_vec();
+    let downgrade = key.downgrade(&manifest, identity, floor)?;
+    Ok(Signed {
+        manifest,
+        downgrade,
+        version,
+    })
+}
+
 /// Which feeder a restore is for, and how it signs.
 pub struct Target {
     pub identity: [u8; 32],
@@ -257,14 +297,11 @@ async fn drive(
     // before anything can raise it.
     let floor = clear_floor(&mut session, report).await?;
     report.event(Event::Floor(floor));
-    let version = match target.version {
-        Some(version) => version,
-        None => floor
-            .checked_add(1)
-            .ok_or(Error::Steps(InstallError::NoVersionAbove { floor }))?,
-    };
-    let manifest = image.offer(key, version, Motion::Refused)?;
-    let downgrade = key.downgrade(&manifest, &target.identity, floor)?;
+    let Signed {
+        manifest,
+        downgrade,
+        version,
+    } = sign(image, key, &target.identity, floor, target.version)?;
     report.event(Event::RestoreSigned {
         version,
         floor,
@@ -858,6 +895,39 @@ mod tests {
             assert!(!rig.key_file().exists());
             rig.sim.stop().await;
         });
+    }
+
+    /// One signing rule for every restore, the app's, the CLI's and the
+    /// server path's: the version is one above the floor unless given, and
+    /// the release key never signs one.
+    #[test]
+    fn a_restore_signs_above_the_floor_and_never_with_the_release_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = Frozen::synthetic_stock(synthetic().bytes().to_vec());
+        let owner = dir.path().join("owner.json");
+        wellfed_signing::keygen(&owner, KeyScope::Owner).unwrap();
+        let owner = Key::load(&owner).unwrap();
+
+        let signed = sign(&image, &owner, &[7; 32], 4, None).unwrap();
+        assert_eq!(signed.version, 5);
+        assert_eq!(
+            sign(&image, &owner, &[7; 32], 4, Some(9)).unwrap().version,
+            9
+        );
+        assert!(matches!(
+            sign(&image, &owner, &[7; 32], u32::MAX, None),
+            Err(Error::Steps(InstallError::NoVersionAbove {
+                floor: u32::MAX
+            }))
+        ));
+
+        let release = dir.path().join("release.json");
+        wellfed_signing::release_keygen(&release).unwrap();
+        let release = Key::load(&release).unwrap();
+        assert!(matches!(
+            sign(&image, &release, &[7; 32], 4, None),
+            Err(Error::RestoreReleaseKey)
+        ));
     }
 
     /// No press: the feeder refuses the key, the run ends with nothing
