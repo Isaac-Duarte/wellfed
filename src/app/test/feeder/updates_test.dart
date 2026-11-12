@@ -212,6 +212,42 @@ void main() {
     expect(find.text('7'), findsOneWidget, reason: 'the floor, read again');
   });
 
+  // A reinstall of a build the feeder confirmed before skips the trial and
+  // leaves the floor below the version. A trial build takes no feed until it
+  // confirms, so the served build ready to feed has kept the update, as the
+  // installer's confirm step reads it; one not ready stays unknown.
+  testWidgets('the served build ready to feed has kept the update, its floor below', (tester) async {
+    final (FakeFeederPorts ports, FakeSession session) = await _show(tester);
+    await tapIn(tester, find.text('Install on Kitchen'));
+    ports.progress.add(const UpdateProgress.ended(end: UpdateEnd.unconfirmed()));
+    await settle(tester);
+    const below = FeederReply.update(
+      update: UpdateInfo(
+        phase: UpdatePhase.idle,
+        bank: 1,
+        minVersion: 6,
+        version: 0,
+        imageLen: 0,
+        written: 0,
+        bank0: Bank0Check.unchecked(),
+      ),
+    );
+
+    session.status(fakeCard(build: _newBuild, ready: false));
+    await settle(tester);
+    session.replies.add(below);
+    await tapIn(tester, find.text('Look again'));
+    expect(find.textContaining("hasn't settled"), findsOneWidget);
+    expect(find.text('Updated'), findsNothing);
+
+    session.status(fakeCard(build: _newBuild));
+    await settle(tester);
+    session.replies.add(below);
+    await tapIn(tester, find.text('Look again'));
+    expect(find.text('Updated'), findsOneWidget);
+    expect(ports.pushes, hasLength(1), reason: 'settled by reading, never sent again');
+  });
+
   testWidgets('an offer held by an earlier stop offers its cancel, once', (tester) async {
     final (FakeFeederPorts ports, FakeSession session) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));

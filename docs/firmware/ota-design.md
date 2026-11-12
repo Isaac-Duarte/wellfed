@@ -47,6 +47,8 @@ The bench and the simulator drive the same client steps (`wellfed_client::update
 
 The device API's client pushes each offer once, and never again on its own.
 
+**Clients share what they offer and how they read the end** (`wellfed_client::offer`). An update ends confirmed once bank 1 runs the build that was activated and either reports its version confirmed or is ready to feed: a trial build takes no feed until it confirms, so a ready one has confirmed, and readiness is what settles a reinstall of a build the feeder confirmed before, which skips the trial and leaves the floor below the version. Bank 0 answering means it fell back, and bank 1 running another build means another update came between. An end the app never heard settles by the same rule when the owner looks again, readiness included on purpose: the floor alone would leave such a reinstall unknown for good.
+
 Bank 0 keeps the build it was written with, so these messages are frozen, and so are the manifest, the statements and the image limits it checks: a client of any later build still updates a bank 0 of any earlier one, and reads the bank from the update state, never the status ([the frozen update path](device-api.md#the-frozen-part)).
 
 ### The loop never verifies
