@@ -26,15 +26,20 @@
 //! - **Request–answer matching.** Each [`Connection::request`] ends in
 //!   exactly one [`Event::Answer`] or, after [`Timing::answer`] (or
 //!   [`Timing::press`] for one a press at the feeder answers) or when the
-//!   session ends first, [`Event::Unanswered`]. An unanswered request may have run: a write is
-//!   retried only under the same id, which the feeder answers from memory
-//!   without running it twice, and a feed is never retried automatically.
+//!   session ends first, [`Event::Unanswered`]. An unanswered request may
+//!   have run. Nothing here resends it. The feeder answers a resent id from
+//!   memory only within its last 32 write ids of the key and the same boot
+//!   ([`crate::api`]), so a caller may resend a write that is safe to run
+//!   twice, and settles a feed from the history instead.
 //! - **The event cursor.** [`Connection::subscribe`] takes the newest
 //!   event a mirror holds as a [`Cursor`], and resumes after it only when
 //!   it counts in the feeder's current epoch; a cursor from a re-created
 //!   ring starts over from the oldest event kept ([`Resume::Restarted`]).
-//!   [`Connection::cursor`] follows every event and gap pushed since, a
-//!   newer build's event this client cannot read among them.
+//!   [`Connection::cursor`] follows every event and gap handed out since,
+//!   a newer build's event this client cannot read among them. It moves as
+//!   [`Connection::poll_event`] hands one on, not as a read decodes it, so
+//!   a caller that keeps the cursor and stops with events still queued
+//!   resumes before them rather than after.
 //!
 //! LAN recovery, the button-hold window's setup exchange over the device
 //! API's port, is [`Recovery`].
@@ -95,6 +100,29 @@ impl Default for Timing {
 pub struct Cursor {
     pub epoch: u32,
     pub seq: u64,
+}
+
+impl Cursor {
+    /// Where the history stands once `pushed` is held: past an event, read
+    /// or not, or a gap's end. A sample or log line is outside the history
+    /// (log lines count per boot) and moves nothing.
+    pub fn after(pushed: &Pushed) -> Option<Self> {
+        match pushed {
+            Pushed::Event(event) => Some(Self {
+                epoch: event.epoch,
+                seq: event.seq,
+            }),
+            Pushed::Unknown(event) => Some(Self {
+                epoch: event.epoch,
+                seq: event.seq,
+            }),
+            Pushed::Gap(gap) => Some(Self {
+                epoch: gap.epoch,
+                seq: gap.to,
+            }),
+            Pushed::Sample(_) | Pushed::Log(_) => None,
+        }
+    }
 }
 
 /// What [`Connection::subscribe`] did with the mirror's cursor.
@@ -212,8 +240,8 @@ impl Connection {
         self.opened.as_ref()
     }
 
-    /// The newest event or gap end pushed since [`Self::subscribe`], or the
-    /// cursor it resumed after.
+    /// The newest event or gap end [`Self::poll_event`] handed out since
+    /// [`Self::subscribe`], or the cursor it resumed after.
     pub fn cursor(&self) -> Option<Cursor> {
         self.cursor
     }
@@ -280,32 +308,7 @@ impl Connection {
                     self.events.push_back(Event::Answer { id, answer });
                 }
             }
-            Incoming::Pushed(pushed) => {
-                match &pushed {
-                    Pushed::Event(event) => {
-                        self.cursor = Some(Cursor {
-                            epoch: event.epoch,
-                            seq: event.seq,
-                        });
-                    }
-                    Pushed::Unknown(event) => {
-                        self.cursor = Some(Cursor {
-                            epoch: event.epoch,
-                            seq: event.seq,
-                        });
-                    }
-                    Pushed::Gap(gap) => {
-                        self.cursor = Some(Cursor {
-                            epoch: gap.epoch,
-                            seq: gap.to,
-                        });
-                    }
-                    // Log lines count per boot, outside the history: the
-                    // caller keeps their cursor.
-                    Pushed::Sample(_) | Pushed::Log(_) => {}
-                }
-                self.events.push_back(Event::Pushed(pushed));
-            }
+            Incoming::Pushed(pushed) => self.events.push_back(Event::Pushed(pushed)),
         }
         Ok(true)
     }
@@ -315,9 +318,16 @@ impl Connection {
         self.transmit.pop_front()
     }
 
-    /// The next result, in arrival order.
+    /// The next result, in arrival order. An event or gap handed out here
+    /// moves [`Self::cursor`] past it.
     pub fn poll_event(&mut self) -> Option<Event> {
-        self.events.pop_front()
+        let event = self.events.pop_front()?;
+        if let Event::Pushed(pushed) = &event
+            && let Some(cursor) = Cursor::after(pushed)
+        {
+            self.cursor = Some(cursor);
+        }
+        Some(event)
     }
 
     /// When [`Self::handle_timeout`] is next due; `None` once the session

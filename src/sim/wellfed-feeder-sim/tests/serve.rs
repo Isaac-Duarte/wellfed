@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use wellfed_client::api::Invite;
-use wellfed_connect::{Connection, Error as ConnectError, join};
+use wellfed_connect::{Connection, Cursor, Error as ConnectError, join};
 use wellfed_core::clock::ntp;
 use wellfed_device_api::mailbox::KeyResult;
 use wellfed_device_api::mailbox::Lock;
@@ -898,6 +898,44 @@ fn events_that_arrive_while_a_request_waits_are_kept_for_next() {
             owner.ask(wellfed_connect::KEEPALIVE_ID, &Op::Status).await,
             Err(wellfed_connect::AskError::Unsent(ConnectError::ReservedId))
         ));
+        sim.stop().await;
+    });
+}
+
+/// The cursor names the newest event handed out, not the newest decoded:
+/// a caller that keeps it and ends the session with events still queued
+/// resumes before them, so none is skipped.
+#[test]
+fn the_cursor_follows_what_was_handed_out() {
+    local(async {
+        let mut sim = Running::start(&Flash::memory(), true).await;
+        let mut owner = sim.open(OWNER).await.unwrap();
+        owner.subscribe(None, false).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let answer = sim.ask(&mut owner, &Op::Status).await;
+        assert!(matches!(answer, Answer::Status(_)));
+        assert_eq!(owner.queued(), 2);
+        assert_eq!(owner.cursor(), None);
+
+        let Pushed::Event(first) = owner.next(WAIT).await.unwrap() else {
+            panic!("the backlog starts with an event");
+        };
+        let kept = owner.cursor();
+        assert_eq!(
+            kept,
+            Some(Cursor {
+                epoch: first.epoch,
+                seq: first.seq
+            })
+        );
+        drop(owner);
+
+        let mut again = sim.open(OWNER).await.unwrap();
+        again.subscribe(kept, false).await.unwrap();
+        let Pushed::Event(second) = again.next(WAIT).await.unwrap() else {
+            panic!("the backlog goes on with an event");
+        };
+        assert_eq!(second.seq, first.seq + 1);
         sim.stop().await;
     });
 }
