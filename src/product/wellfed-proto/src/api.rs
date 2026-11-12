@@ -3354,10 +3354,13 @@ mod tests {
         assert_eq!(read[1], Err(crate::Error::Malformed));
     }
 
-    /// The event ring stores a body in 16 bytes.
+    /// The event ring stores a body in 16 bytes. The recorder counts no
+    /// loss for a body it can't encode, so every variant is listed here:
+    /// a new one fails the count below until it is.
     #[test]
     fn every_event_body_fits_sixteen_bytes() {
         let client = [0xff; 4];
+        let mut listed = std::collections::BTreeSet::new();
         for body in [
             EventBody::Boot {
                 bank: 1,
@@ -3475,6 +3478,7 @@ mod tests {
             let mut out = [0; EVENT_BODY_MAX];
             let len = encode(&body, &mut out).unwrap();
             assert_eq!(decode::<EventBody>(&out[..len]), Ok(body));
+            listed.insert(out[0]);
 
             // The largest event around the largest body fits its bound.
             let event = Event {
@@ -3489,5 +3493,21 @@ mod tests {
             assert_eq!(read.len(), 1);
             assert_eq!(read[0].unwrap().event(), Some(event));
         }
+
+        let mut tracer = serde_reflection::Tracer::new(serde_reflection::TracerConfig::default());
+        tracer.trace_simple_type::<EventBody>().unwrap();
+        // EventBody's own variants are all traced; its fields' enums need
+        // not be.
+        let registry = tracer.registry_unchecked();
+        let Some(serde_reflection::ContainerFormat::Enum(variants)) = registry.get("EventBody")
+        else {
+            panic!("EventBody traces as an enum");
+        };
+        // A variant's index is its encoding's first byte while there are
+        // fewer than 128.
+        let every: std::collections::BTreeSet<u8> = (0..variants.len())
+            .map(|i| u8::try_from(i).unwrap())
+            .collect();
+        assert_eq!(listed, every, "list every event body at its widest");
     }
 }
