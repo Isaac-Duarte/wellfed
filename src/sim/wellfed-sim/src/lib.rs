@@ -78,6 +78,14 @@ pub enum HarnessError {
 
     #[error("{0:?} requires simulated power")]
     Unpowered(Command),
+    /// A crate the report's identity hashes could not be read: moved or
+    /// gone, so the list in the report module is stale.
+    #[error("the report's source {directory} cannot be read")]
+    Sources {
+        directory: &'static str,
+        #[source]
+        error: std::io::Error,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, HarnessError>;
@@ -424,7 +432,7 @@ impl<'a> Simulation<'a> {
             name: self.scenario.name,
             profile: self.scenario.profile,
             scenario_sha256: sha256(&scenario_text),
-            identity: identities(&self.root, &self.executable),
+            identity: identities(&self.root, &self.executable)?,
             enums: Enums {
                 state: State::ALL,
                 fault: Fault::ALL,
