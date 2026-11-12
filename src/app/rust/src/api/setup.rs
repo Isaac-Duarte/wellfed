@@ -302,7 +302,8 @@ impl Recovery {
 
 /// The recovery exchange, reporting each reply to `step` until the last,
 /// until `step` returns `false` because the screen went away, or until
-/// `closed` is notified; dropping the connection hangs up.
+/// `closed` is notified, which ends it unsettled once the feeder has proven
+/// the code; dropping the connection hangs up.
 #[frb(ignore)]
 pub async fn recover(
     session: Session,
@@ -317,7 +318,16 @@ pub async fn recover(
     loop {
         let reply = tokio::select! {
             reply = recovery.reply(wait) => reply,
-            () = closed.notified() => return Ok(()),
+            () = closed.notified() => {
+                // Past the feeder's proof, the feeder may hold this phone
+                // whatever the screen does: the hang-up leaves it unsettled.
+                if let Some(feeder) = recovery.session().feeder_key() {
+                    step(SetupStep::Unsettled {
+                        feeder: feeder.to_vec(),
+                    });
+                }
+                return Ok(());
+            }
         };
         let reply = match (reply, recovery.session().feeder_key()) {
             (Ok(reply), _) => reply,

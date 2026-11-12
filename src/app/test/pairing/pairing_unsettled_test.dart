@@ -125,4 +125,21 @@ void main() {
 
     expect(book.feeders.single.identity, 'abcd');
   });
+
+  test('a recovery closed after the proof saves the feeder its hang-up leaves unsettled', () async {
+    final book = FakeBook();
+    final ports = FakePairingPorts();
+    final flow = PairingFlow(book, ports);
+    unawaited(flow.runRecovery(address: '192.168.1.41:4747', name: 'Kitchen'));
+    await pumpEventQueue();
+
+    final FakeRecovery recovery = ports.recoveries.single;
+    flow.dispose();
+    expect(recovery.closes, 1);
+    recovery.steps.add(SetupStep.unsettled(feeder: proven));
+    await recovery.steps.close();
+    await pumpEventQueue();
+
+    expect(book.feeders.single.identity, 'abcd');
+  });
 }

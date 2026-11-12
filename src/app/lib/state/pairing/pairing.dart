@@ -71,9 +71,7 @@ class PairingFlow extends ChangeNotifier {
   StreamSubscription<List<int>>? _notifications;
   Timer? _timer;
   Completer<SetupStep>? _ended;
-  StreamSubscription<SetupStep>? _recovering;
   Recovery? _recovery;
-  Completer<void>? _recoveryDone;
   Future<void> _writing = Future.value();
   bool _disposed = false;
 
@@ -171,12 +169,11 @@ class PairingFlow extends ChangeNotifier {
 
     SetupStep? end;
     final done = Completer<void>();
-    _recoveryDone = done;
     // Rust reports a failed recovery as a step. Anything else that arrives
     // as an error (a panic, a lost stream) is still a screen to show, not an
-    // exception for nobody to catch.
-    // Held so dispose can cancel it: the stream waits out the code window.
-    _recovering = recovery
+    // exception for nobody to catch. The stream ends by itself, a closed
+    // screen's hang-up included.
+    final StreamSubscription<SetupStep> recovering = recovery
         .run(address: address)
         .listen(
           (step) {
@@ -206,7 +203,7 @@ class PairingFlow extends ChangeNotifier {
       return;
     } finally {
       _timer?.cancel();
-      _recovering = null;
+      unawaited(recovering.cancel());
     }
     final ended = end;
     // The feeder took this phone, or may have, whatever the screen does:
@@ -410,11 +407,10 @@ class PairingFlow extends ChangeNotifier {
       choosing.completeError(const _Failed(PairingFailure.other, 'the screen closed'));
     }
     _fail(PairingFailure.other, 'the screen closed');
-    // Hang up in Rust too, so the feeder's window is free for a retry.
+    // Hang up in Rust too, so the feeder's window is free for a retry. The
+    // run's stream is left to end by itself: a close after the feeder's
+    // proof ends it unsettled, and that feeder is saved all the same.
     _recovery?.close();
-    unawaited(_recovering?.cancel());
-    final Completer<void>? recovering = _recoveryDone;
-    if (recovering != null && !recovering.isCompleted) recovering.complete();
     unawaited(_closeLink());
     super.dispose();
   }
