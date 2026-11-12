@@ -93,7 +93,60 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         Error::RestoreInstallRunning { .. } => RestoreStop::InstallRunning,
         Error::RestoreCancelUnknown => RestoreStop::CancelUnknown,
         Error::RestoreStopped(_) => RestoreStop::Cancelled,
-        _ => RestoreStop::Other,
+        // What a restore never meets, or meets only as the run's own words.
+        Error::Platform(_)
+        | Error::Handover(_)
+        | Error::ShowCode(_)
+        | Error::Connect { .. }
+        | Error::Random(_)
+        | Error::Clock
+        | Error::Parse { .. }
+        | Error::Write { .. }
+        | Error::ReviewManifest { .. }
+        | Error::NoStartupIdentity
+        | Error::Frame(_)
+        | Error::Signing(_)
+        | Error::StockServer(_)
+        | Error::Images(_)
+        | Error::StockServerGone
+        | Error::StockServerFailed(_)
+        | Error::RequestRefused(_)
+        | Error::Trial(_)
+        | Error::NoPeer
+        | Error::EnrollmentUnreadable { .. }
+        | Error::UdpSocket(_)
+        | Error::FrameSend { .. }
+        | Error::OtherDevice { .. }
+        | Error::NoHomeNetwork
+        | Error::NoAddress
+        | Error::OtherFeeder { .. }
+        | Error::SetupRefused(_)
+        | Error::SetupSession(_)
+        | Error::NoProof
+        | Error::Unsettled { .. }
+        | Error::RecoveryClosed
+        | Error::RecoveryTimeout
+        | Error::Answered { .. }
+        | Error::ClientsRefused(_)
+        | Error::Legacy
+        | Error::NoIdentity
+        | Error::NoSession(_)
+        | Error::NoBackupServed
+        | Error::Bank1(_)
+        | Error::NotStock(_)
+        | Error::BackupExists { .. }
+        | Error::BackupNotSetAside { .. }
+        | Error::Unverified
+        | Error::Backup(_)
+        | Error::KeepGiven(_)
+        | Error::Setup(_)
+        | Error::NoUpdateKey
+        | Error::NoSigner
+        | Error::NoManifest
+        | Error::ShortImage
+        | Error::EnrollmentEnded
+        | Error::Steps(_)
+        | Error::Stopped(_) => RestoreStop::Other,
     }
 }
 

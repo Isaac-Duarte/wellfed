@@ -744,7 +744,41 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             }
             None => (StopCase::Cancelled, FromBank0),
         },
-        _ => (StopCase::Other, Nothing),
+        // This phone's own files, keys and platform, and what an install's
+        // route never meets: the run's words are all there is to say.
+        Error::Platform(_)
+        | Error::ShowCode(_)
+        | Error::Random(_)
+        | Error::Clock
+        | Error::Read { .. }
+        | Error::Parse { .. }
+        | Error::Create { .. }
+        | Error::Write { .. }
+        | Error::Remove { .. }
+        | Error::ReviewManifest { .. }
+        | Error::NoStartupIdentity
+        | Error::Signing(_)
+        | Error::Trial(_)
+        | Error::NoPeer
+        | Error::OtherDevice { .. }
+        | Error::ClientsRefused(_)
+        | Error::Legacy
+        | Error::NoIdentity
+        | Error::NoBackupServed
+        | Error::Bank1(_)
+        | Error::BackupNotSetAside { .. }
+        | Error::RestoreNotFound
+        | Error::RestoreEnroll(_)
+        | Error::RestoreKey(_)
+        | Error::RestoreKeyGone
+        | Error::RestoreInstallRunning { .. }
+        | Error::RestoreCancelUnknown
+        | Error::RestoreStopped(_)
+        | Error::NoUpdateKey
+        | Error::NoSigner
+        | Error::NoManifest
+        | Error::ShortImage
+        | Error::EnrollmentEnded => (StopCase::Other, Nothing),
     }
 }
 
@@ -784,7 +818,13 @@ const fn timed_out(phase: Phase, from_stock: bool) -> (StopCase, Resume) {
         Phase::Pair | Phase::ReadStatus | Phase::AwaitInstall => {
             (StopCase::NoSetupFeeder, Resume::FromBank0)
         }
-        _ => (StopCase::Other, Resume::FromBank0),
+        // Waits a run gives up on only once the replacement answers.
+        Phase::CloseTrial
+        | Phase::UpdateKey
+        | Phase::Backup
+        | Phase::Sign
+        | Phase::Promote
+        | Phase::Done => (StopCase::Other, Resume::FromBank0),
     }
 }
 
