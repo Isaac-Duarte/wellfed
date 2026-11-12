@@ -6,9 +6,11 @@
 //! key must never reach this log, where any app with log access or a bug
 //! report could read it. So every variant is named here rather than falling
 //! to a `Debug` of the whole value: one added later fails this build until
-//! someone has decided what of it may be written.
+//! someone has decided what of it may be written, and so does a field
+//! added to one that is written whole.
 
 use crate::api::install::{InstallAnswer, InstallAsk, InstallEnd, InstallEvent, InstallUpdate};
+use crate::api::restore::RestoreEnd;
 
 /// Write `update` to the log, if it says anything.
 pub(crate) fn update(update: &InstallUpdate) {
@@ -20,6 +22,11 @@ pub(crate) fn update(update: &InstallUpdate) {
 /// Write the answer to ask `id`.
 pub(crate) fn answer(id: u32, answer: &InstallAnswer) {
     log::info!("{}", answered(id, answer));
+}
+
+/// Write a restore's end, which reaches its screen past [`update`].
+pub(crate) fn restore_end(end: &RestoreEnd) {
+    log::info!("{}", restore_ended(end));
 }
 
 fn line(update: &InstallUpdate) -> Option<String> {
@@ -49,24 +56,24 @@ fn event_line(event: &InstallEvent) -> Option<String> {
         // Status and addresses, with nothing of the owner's in them.
         InstallEvent::StockServerStarted
         | InstallEvent::AwaitingStock
-        | InstallEvent::Waiting { .. }
+        | InstallEvent::Waiting { why: _ }
         | InstallEvent::VersionLost
-        | InstallEvent::StockServerEnded { .. }
-        | InstallEvent::Requesting { .. }
+        | InstallEvent::StockServerEnded { error: _ }
+        | InstallEvent::Requesting { build: _ }
         | InstallEvent::StockRestarting
         | InstallEvent::KeyKnown
         | InstallEvent::SetupStarting
-        | InstallEvent::NoSetupFeeder { .. }
+        | InstallEvent::NoSetupFeeder { error: _ }
         | InstallEvent::PressDispense
-        | InstallEvent::Joined { .. }
-        | InstallEvent::ReplacementAnswers { .. }
-        | InstallEvent::ReadingBackup { .. }
-        | InstallEvent::BackupKept { .. }
+        | InstallEvent::Joined { address: _ }
+        | InstallEvent::ReplacementAnswers { build: _, bank: _ }
+        | InstallEvent::ReadingBackup { total: _ }
+        | InstallEvent::BackupKept { path: _ }
         | InstallEvent::Promoting
         | InstallEvent::SessionDropped
         | InstallEvent::Activated
-        | InstallEvent::Installed { .. }
-        | InstallEvent::Note { .. } => Some(format!("{event:?}")),
+        | InstallEvent::Installed { build: _ }
+        | InstallEvent::Note { text: _ } => Some(format!("{event:?}")),
     }
 }
 
@@ -78,26 +85,42 @@ fn asked(ask: &InstallAsk) -> String {
         InstallAsk::RestartFeeder
         | InstallAsk::JoinFeederNetwork
         | InstallAsk::LeaveFeederNetwork
-        | InstallAsk::RecognizeFeeder { .. }
+        | InstallAsk::RecognizeFeeder {
+            device: _,
+            address: _,
+        }
         | InstallAsk::OpenRecoveryWindow
         | InstallAsk::OpenLink
         | InstallAsk::CloseLink
-        | InstallAsk::Locate { .. } => format!("{ask:?}"),
+        | InstallAsk::Locate { identity: _ } => format!("{ask:?}"),
     }
 }
 
 fn answered(id: u32, answer: &InstallAnswer) -> String {
     match answer {
         InstallAnswer::Done
-        | InstallAnswer::Yes { .. }
-        | InstallAnswer::Located { .. }
-        | InstallAnswer::Failed { .. } => format!("answer {id}: {answer:?}"),
+        | InstallAnswer::Yes { yes: _ }
+        | InstallAnswer::Located { address: _ }
+        | InstallAnswer::Failed { reason: _ } => format!("answer {id}: {answer:?}"),
     }
 }
 
 fn ended(end: &InstallEnd) -> String {
     match end {
-        InstallEnd::Done | InstallEnd::Stopped { .. } => format!("ended: {end:?}"),
+        InstallEnd::Done
+        | InstallEnd::Stopped {
+            case: _,
+            resume: _,
+            detail: _,
+        } => format!("ended: {end:?}"),
+    }
+}
+
+fn restore_ended(end: &RestoreEnd) -> String {
+    match end {
+        RestoreEnd::Activated
+        | RestoreEnd::Uncertain { why: _, detail: _ }
+        | RestoreEnd::Stopped { case: _, detail: _ } => format!("restore ended: {end:?}"),
     }
 }
 
@@ -138,6 +161,15 @@ mod tests {
         .unwrap();
         assert_eq!(ask, "ask 3: OpenLink");
         assert_eq!(answered(3, &InstallAnswer::Done), "answer 3: Done");
+    }
+
+    /// A restore's end is written too, though it never passes an update.
+    #[test]
+    fn a_restore_s_end_is_written() {
+        assert_eq!(
+            restore_ended(&RestoreEnd::Activated),
+            "restore ended: Activated"
+        );
     }
 
     /// Progress is left out, as it comes many times a second.

@@ -235,6 +235,7 @@ impl RestoreThread {
         let plan = match plan {
             Ok(plan) => plan,
             Err(end) => {
+                crate::trace::restore_end(&end);
                 deliver(RestoreUpdate::Ended { end });
                 return;
             }
@@ -275,17 +276,18 @@ impl RestoreThread {
                         }
                     },
                 );
+                crate::trace::restore_end(&end);
                 last(RestoreUpdate::Ended { end });
                 // Dropping the sink closes Dart's stream.
                 *asks.deliver() = None;
             });
         if let Err(error) = thread {
-            deliver(RestoreUpdate::Ended {
-                end: stopped_with(
-                    RestoreStop::Other,
-                    format!("no thread for the restore: {error}"),
-                ),
-            });
+            let end = stopped_with(
+                RestoreStop::Other,
+                format!("no thread for the restore: {error}"),
+            );
+            crate::trace::restore_end(&end);
+            deliver(RestoreUpdate::Ended { end });
             *self.asks.deliver() = None;
         }
     }
