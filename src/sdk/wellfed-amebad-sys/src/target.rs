@@ -1601,7 +1601,7 @@ pub fn mdns_recv(socket: i32, buffer: &mut [u8]) -> Datagram {
     match unsafe { wellfed_mdns_recv(socket, buffer.as_mut_ptr(), length, &mut ip, &mut port) } {
         0 => Datagram::None,
         n if n > 0 => Datagram::Got {
-            len: n as usize,
+            len: usize::try_from(n).map_or(0, |n| n.min(buffer.len())),
             ip,
             port: u16::try_from(port).unwrap_or(0),
         },

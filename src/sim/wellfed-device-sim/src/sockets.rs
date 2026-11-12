@@ -188,6 +188,9 @@ impl Sockets {
             return Datagram::None;
         };
         match mdns.try_recv_from(into) {
+            // An empty datagram is consumed and is nothing to read, as the
+            // firmware's shim reads it: never a failure that closes the socket.
+            Ok((0, _)) => Datagram::None,
             Ok((len, SocketAddr::V4(from))) => Datagram::Got {
                 len,
                 ip: u32::from(*from.ip()),
@@ -221,6 +224,7 @@ impl Sockets {
             return Datagram::Error;
         };
         match ntp.recv_from(into) {
+            Ok((0, _)) => Datagram::None,
             Ok((len, SocketAddr::V4(from))) => Datagram::Got {
                 len,
                 ip: u32::from(*from.ip()),
@@ -239,5 +243,41 @@ impl Sockets {
             .iter_mut()
             .find(|(stream, _)| *stream == id)
             .map(|(_, stream)| stream)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An empty datagram reads as nothing to read on both UDP sockets, as
+    /// the firmware's shim answers it, and the socket stays open: the next
+    /// datagram is read.
+    #[tokio::test]
+    async fn an_empty_datagram_is_nothing_to_read() {
+        let mdns = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let mdns_at = mdns.local_addr().unwrap();
+        let mut sockets = Sockets::new(Some((mdns, Ipv4Addr::LOCALHOST)));
+        sockets.ntp_open().unwrap();
+        let ntp_at = sockets.ntp.as_ref().unwrap().local_addr().unwrap().port();
+
+        let peer = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        for to in [mdns_at.port(), ntp_at] {
+            peer.send_to(&[], (Ipv4Addr::LOCALHOST, to)).unwrap();
+            peer.send_to(b"next", (Ipv4Addr::LOCALHOST, to)).unwrap();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut into = [0; 16];
+        assert_eq!(sockets.mdns_receive(&mut into), Datagram::None);
+        assert!(matches!(
+            sockets.mdns_receive(&mut into),
+            Datagram::Got { len: 4, .. }
+        ));
+        assert_eq!(sockets.ntp_receive(&mut into), Datagram::None);
+        assert!(matches!(
+            sockets.ntp_receive(&mut into),
+            Datagram::Got { len: 4, .. }
+        ));
     }
 }

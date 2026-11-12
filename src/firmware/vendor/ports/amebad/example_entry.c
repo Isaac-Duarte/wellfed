@@ -813,7 +813,10 @@ int wellfed_mdns_open(void)
     return s;
 }
 
-/* One datagram received now, with its sender; 0 when none, -1 on error. */
+/* One datagram received now, with its sender; 0 when none, -1 on error.
+ * An empty datagram is valid input, not a socket failure: lwIP's recvfrom
+ * consumes it and returns 0, which reads as none, so any LAN peer sending
+ * one cannot close the socket. */
 int wellfed_mdns_recv(int s, void *buffer, unsigned int length, unsigned int *ip, unsigned int *port)
 {
     if (!wellfed_ready(s, 0)) {
@@ -826,6 +829,9 @@ int wellfed_mdns_recv(int s, void *buffer, unsigned int length, unsigned int *ip
         *ip = lwip_ntohl(from.sin_addr.s_addr);
         *port = lwip_ntohs(from.sin_port);
         return got;
+    }
+    if (got == 0) {
+        return 0;
     }
     if (got < 0) {
         int error = wellfed_socket_error(s);
