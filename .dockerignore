@@ -8,6 +8,8 @@
 !src/
 src/web/
 src/app/
+# The app's bridge crate is a workspace member: cargo loads its manifest.
+!src/app/rust/
 src/fuzz/
-**/target/
 **/node_modules/
+**/target/
