@@ -6,7 +6,7 @@ help:
 	@echo "check-bench-board: Clippy and a release build of the bench board's RP2040 firmware (part of check-cross)"
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
-	@echo "check-app: the Android app's bindings, tokens and limits unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, a debug APK, and on Linux or macOS that desktop's app (needs the pinned Flutter)"
+	@echo "check-app: the Android app's bindings, tokens, limits and roles unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, a debug APK, and on Linux or macOS that desktop's app (needs the pinned Flutter)"
 	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator and the server with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
 	@echo "homeassistant-wheels: the Home Assistant bridge's release wheels, cross-built for musllinux and manylinux (aarch64, x86_64, armv7 musl), and its sdist (needs uv; adds Rust targets)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
@@ -114,8 +114,8 @@ check-web:
 	pnpm -C src/web e2e
 
 # The Android app (src/app/). Its Dart bindings, theme tokens and the
-# feeder's limits are generated from Rust and committed, so a regeneration
-# must leave them unchanged. The bridge crate's own tests run in `check-rust`. The APK is
+# feeder's limits and role matrix are generated from Rust and committed, so
+# a regeneration must leave them unchanged. The bridge crate's own tests run in `check-rust`. The APK is
 # built for arm64 phones and x86_64 emulators only, and each desktop app only
 # on its own host, since Flutter cannot cross-build them: Linux on Linux, macOS
 # on a Mac, where the bridge comes in as a CocoaPods pod (CocoaPods needs a
@@ -123,7 +123,7 @@ check-web:
 APP = src/app
 FLUTTER_VERSION = 3.47.8
 APP_APK = $(APP)/build/app/outputs/flutter-apk/app-debug.apk
-APP_GENERATED = $(APP)/lib/src/rust $(APP)/rust/src/frb_generated.rs $(APP)/lib/theme/tokens.g.dart $(APP)/lib/src/limits.g.dart
+APP_GENERATED = $(APP)/lib/src/rust $(APP)/rust/src/frb_generated.rs $(APP)/lib/theme/tokens.g.dart $(APP)/lib/src/limits.g.dart $(APP)/lib/src/roles.g.dart
 # The tests run in a zone with DST on any builder: the day-count test only proves
 # anything across a DST day, and Dart's local time cannot be faked. The smoke
 # tests run the real bridge against a simulator they start and stop themselves.

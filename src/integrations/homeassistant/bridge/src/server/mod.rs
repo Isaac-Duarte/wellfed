@@ -722,7 +722,6 @@ impl<'a> Session<'a> {
 
     /// The op `write` becomes, unless it is never sent.
     fn prepare(&self, write: &Write) -> Result<(Op, Kind), NotSent> {
-        writes::gate(self.role)?;
         wellfed_formats::require(self.online, || NotSent::Disconnected)?;
         wellfed_formats::require(!self.legacy, || NotSent::Legacy)?;
 
@@ -738,6 +737,7 @@ impl<'a> Session<'a> {
             calibration: self.memory.calibration.as_ref(),
         };
         let (op, kind) = writes::build(write, &read)?;
+        writes::gate(self.role, &op)?;
         writes::served(&op, self.kind.ok_or(NotSent::Unsupported)?)?;
         Ok((op, kind))
     }

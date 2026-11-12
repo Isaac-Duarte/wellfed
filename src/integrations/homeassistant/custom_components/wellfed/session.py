@@ -213,10 +213,11 @@ class FeederSession:
 
     @property
     def writes(self) -> bool:
-        """Whether this client's role may change anything: an owner or a member.
-        Any other (a viewer's account, or a role a newer build added) writes
-        nothing, and its write entities are hidden."""
-        return self.role in (bridge.Role.Owner, bridge.Role.Member)
+        """Whether this client's role may make the writes the integration offers,
+        as the bridge reads the feeder's own matrix. Any other (a viewer's
+        account, or a role a newer build added) writes nothing, and its write
+        entities are hidden."""
+        return self.role is not None and bridge.role_writes(self.role)
 
     @property
     def last_fed(self) -> bridge.Feed | None:

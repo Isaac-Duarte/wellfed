@@ -4,6 +4,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/src/roles.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart' show PlansView;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
@@ -322,14 +323,18 @@ String blockedWords(Blocked reason) => switch (reason) {
 /// Everything both sides know still works, so this is advice, never a block,
 /// and a newer feeder is never offered this app's older firmware.
 String? skewWords(FeederState state) {
-  final bool owner = state.role == ClientRole.owner;
+  // Only a role that may update the feeder is told to.
+  final bool updates = switch (state.role) {
+    final ClientRole role => mayAsk(role, Ask.offerUpdate),
+    null => false,
+  };
   return switch ((state.skew, state.serverSkew)) {
     (Skew.feederAhead, _) => 'Update this app: the feeder runs newer firmware',
     // A pre-revision build takes nothing but an update from this app.
-    (Skew.legacy, _) || (null, Skew.legacy) when owner => 'Update the feeder: its firmware is too old for this app',
+    (Skew.legacy, _) || (null, Skew.legacy) when updates => 'Update the feeder: its firmware is too old for this app',
     (Skew.legacy, _) || (null, Skew.legacy) => 'The feeder needs an update from its owner',
     (Skew.feederBehind, _) ||
-    (null, Skew.feederBehind) when owner => 'Update the feeder: it runs older firmware than this app',
+    (null, Skew.feederBehind) when updates => 'Update the feeder: it runs older firmware than this app',
     (Skew.feederBehind, _) || (null, Skew.feederBehind) => 'The feeder runs older firmware: its owner can update it',
     (_, Skew.feederAhead) => 'Update the Wellfed server: the feeder runs newer firmware',
     // A revision this app cannot name came from a newer build.

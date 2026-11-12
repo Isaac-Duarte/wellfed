@@ -73,7 +73,6 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-mod access;
 pub mod clients;
 mod device;
 pub mod mailbox;

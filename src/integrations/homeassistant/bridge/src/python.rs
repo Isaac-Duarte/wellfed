@@ -12,10 +12,11 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::FeederSettingsPatch;
 
-use crate::api::{Pending, ServerProblem, Tune, Update, Written};
+use crate::api::{Pending, Role, ServerProblem, Tune, Update, Written};
 use crate::feeder::{self, Carried, Clocks, Target};
 use crate::key::{self, ClientKey, Joined, bytes32};
 use crate::server::{self, Login, ServerFeeder};
+use crate::writes;
 
 /// A call into the Wellfed bridge failed.
 ///
@@ -77,6 +78,13 @@ where
 #[pyfunction]
 fn generate_secret() -> PyResult<Vec<u8>> {
     Ok(ClientKey::generate()?.secret().to_vec())
+}
+
+/// Whether `role` may make every write the integration offers, by the
+/// feeder's own matrix: its write entities show only then.
+#[pyfunction]
+fn role_writes(role: &Bound<'_, Role>) -> bool {
+    writes::writes_all(*role.get())
 }
 
 /// The public key of `secret`, as the feeder lists this client.
@@ -308,7 +316,7 @@ mod wellfed_homeassistant {
     #[pymodule_export]
     use super::{
         Feeder, ServerRefused, WellfedError, generate_secret, invite_feeder, join, public_key,
-        server_client_listed, server_feeders, server_login, server_revoke_client,
+        role_writes, server_client_listed, server_feeders, server_login, server_revoke_client,
         server_revoke_token,
     };
     #[pymodule_export]

@@ -179,7 +179,7 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 - An owner does everything, and may invite any role but an update signer.
 - A member or the server may feed, change settings, the plans and the lock, play, sync the clock, read the time view and the statistics but `Memory`, and list clients. Both may skip a meal, play the meal call and read it. Neither may change Wi-Fi or the time settings, revoke, reboot, update, tail the log, read bank 1 or upload or delete the meal call. The server's key may not set the portion calibration.
-- The device classes every op by who may send it, matched with no catch-all, so an op added to the API doesn't build until it says who may send it. A role its class doesn't name is refused `Forbidden` before the op is checked further, so a malformed op is `Forbidden` to that role and `Invalid` to one that may send it.
+- The device classes every op by who may send it (`wellfed_proto::access`), matched with no catch-all, so an op added to the API doesn't build until it says who may send it. A role its class doesn't name is refused `Forbidden` before the op is checked further, so a malformed op is `Forbidden` to that role and `Invalid` to one that may send it. Clients gate on the same function: `wellfed_model::Op::allowed` in Rust, and in the app a table generated from it (`lib/src/roles.g.dart`).
 - A member may invite members. The server may invite no one (`pairing::Pairing::invite`). So an owner's server that makes its phones' invites, revokes their keys or changes Wi-Fi is adopted with an owner's invite.
 - An update-signer key never opens a session.
 - An owner's clock sync may step the clock; a member's or the server's may only narrow it ([clock](clock.md#the-clock)).

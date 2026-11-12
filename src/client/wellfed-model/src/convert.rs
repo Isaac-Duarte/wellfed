@@ -1810,6 +1810,17 @@ impl Op {
         self.to_proto().is_ok_and(|op| op.is_frozen())
     }
 
+    /// Whether a client holding `role` may send the op: the device's own
+    /// rule ([`wellfed_proto::access::allowed`]), so a client's gate and
+    /// the device's refusal never disagree. A role only a newer build
+    /// names grants nothing, and an op with no wire form is never sent.
+    pub fn allowed(&self, role: ClientRole) -> bool {
+        let (Ok(role), Ok(op)) = (proto::Role::try_from(role), self.to_proto()) else {
+            return false;
+        };
+        wellfed_proto::access::allowed(role, &op)
+    }
+
     /// The wire form, borrowing this op's strings; none for an op holding
     /// a value only a newer build names (a role or a window read from a
     /// newer server), which is never sent.
@@ -2043,6 +2054,37 @@ pub fn setup_reply(reply: proto_setup::Reply) -> Option<setup::Reply> {
 mod tests {
     use super::*;
     use crate::{AlertKey, AlertKind, AlertLevel};
+
+    /// The client's gate is the device's matrix: one op of each class, by
+    /// owner, member, server, update signer and a role a newer build named.
+    #[test]
+    fn a_role_may_send_what_the_device_allows_it() {
+        let roles = [
+            ClientRole::Owner,
+            ClientRole::Member,
+            ClientRole::Server,
+            ClientRole::UpdateSigner,
+            ClientRole::Unknown,
+        ];
+        let calibrate = Op::PutCalibration {
+            base: Generation(0),
+            calibration: crate::Calibration {
+                portion_mg: Some(9_000),
+                bowl: crate::Bowl::Single,
+            },
+        };
+        let rows = [
+            (Op::Feed { portions: 1 }, [true, true, true, false, false]),
+            (calibrate, [true, true, false, false, false]),
+            (Op::Reboot, [true, false, false, false, false]),
+        ];
+
+        for (op, may) in rows {
+            for (role, may) in roles.into_iter().zip(may) {
+                assert_eq!(op.allowed(role), may, "{role:?} {op:?}");
+            }
+        }
+    }
 
     /// One alert of every kind, as the feeder's rules hold them.
     fn every_alert() -> Vec<proto::OpenAlert> {

@@ -5,7 +5,6 @@ use super::feeder::{self, FeederAction, FeederReply};
 use super::handshake::{find, fingerprint, invite};
 use super::memory::{Recall, Remembered, recall};
 use super::{Phase, Server, Wait, Waiting, slot_id};
-use crate::access::Access;
 use crate::clients::{Label, Role};
 use crate::mailbox::{
     Asked, NtpServer, Origin, TimeFields, TimeResult, TimeSettingsResult, WifiResult, Zone,
@@ -13,6 +12,7 @@ use crate::mailbox::{
 use crate::pairing::{self, Pairing};
 use crate::wifi::Credentials;
 use crate::{Device, KeyChange, REBOOT_MS, Record, UpdateRequest};
+use wellfed_proto::access::Access;
 use wellfed_proto::api::{
     self as proto, ClientMessage, EventBody, FrozenRefusal, Op, Refusal, RequestId, Source,
     StatsSection, UPDATE_CHUNK_MAX, UpdateOp, UpdateRefusal, UpdateView,

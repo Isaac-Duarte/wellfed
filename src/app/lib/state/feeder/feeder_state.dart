@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:wellfed/src/roles.g.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -270,14 +271,17 @@ final class FeederState {
   /// The card is what this session read, not an earlier one.
   bool get cardIsCurrent => connection == Connection.online && cardFresh;
 
-  /// Whether the feeder would take a feed from this phone now.
-  /// A role a newer build added grants nothing here.
+  /// Whether the feeder would take a feed from this phone now: its role may
+  /// feed by the feeder's own matrix, where a role a newer build added grants
+  /// nothing. A role no session has named yet is left to the feeder.
   bool get canFeed =>
       cardIsCurrent &&
       !feed.active &&
       !viewer &&
-      role != ClientRole.server &&
-      role != ClientRole.unknown &&
+      switch (role) {
+        final ClientRole role => mayAsk(role, Ask.feed),
+        null => true,
+      } &&
       (card?.ready ?? false);
 
   /// This state with the named parts changed. A nullable part takes a function,
