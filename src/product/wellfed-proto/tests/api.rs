@@ -235,7 +235,8 @@ const OPEN: &[(&str, &str)] = &[
 /// [`OPEN`]'s. An answer holding a variant its reader doesn't know reads
 /// as `Unreadable` whole (a `Status` with a newer battery state would be
 /// no status at all), a live sample ends the session it came in, and a
-/// newer client's `Subscribe` ends an older feeder's. A lenient enum
+/// newer client's `Subscribe`, or a client message of a new kind, ends an
+/// older feeder's. A lenient enum
 /// (behind its `Lenient` newtype) and anything behind a length (an event
 /// body, an alert entry, a trace page, a tail) is not reached. A request's
 /// op is not walked either: a device refuses an op it can't decode
@@ -318,11 +319,18 @@ fn closed(registry: &Registry) -> BTreeMap<String, usize> {
     let Some(ContainerFormat::Enum(client)) = registry.get("ClientMessage") else {
         panic!("ClientMessage is not traced as an enum");
     };
+    // An older feeder reads a message of a kind it doesn't know as
+    // malformed and ends the session, so the kinds themselves are closed.
+    found.insert("ClientMessage".to_owned(), client.len());
     for variant in client.values().filter(|variant| variant.name != "Request") {
         variant_fields(registry, &variant.value, &mut found);
     }
     found
 }
+
+/// The kinds of message a client sends: `Request` and `Subscribe`. Closed,
+/// so a new one is refused here rather than ending older feeders' sessions.
+const CLIENT_MESSAGES: usize = 2;
 
 /// What in `current` grew a closed enum of `stored`'s ([`closed`]).
 fn opened(stored: &Registry, current: &Registry) -> Vec<String> {
@@ -449,9 +457,11 @@ fn a_closed_enum_takes_no_new_variant() {
         "CallClip",
         "Samples",
         "DeviceStatus",
+        "ClientMessage",
     ] {
         assert!(closed.contains_key(name), "{name} is not closed");
     }
+    assert_eq!(closed.get("ClientMessage"), Some(&CLIENT_MESSAGES));
     for name in [
         "Tune",
         "Op",
