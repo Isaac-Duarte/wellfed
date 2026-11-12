@@ -125,18 +125,29 @@ impl<T: TimeSettings> Facts<T> {
 
     /// The portions fed on the feeder's local day, by its clock as of its
     /// status; `None` while that clock is invalid. A feed recorded with no
-    /// clock has no day, so it is not counted.
+    /// clock has no day, so it is not counted. A feed counts once: one the
+    /// feeder recorded uncertain and resolved at its next boot has two
+    /// `Fed` events under its number, and the newer says how it ended.
     pub fn portions_today(&self, fallback: TimeZone) -> Option<Portions> {
         let now = self.clock()?;
         let zone = self.zone(fallback);
         let day = now.to_zoned(zone.clone()).date();
 
         let mut portions = Portions::default();
-        let today = self.feeds.iter().filter(|fed| {
-            fed.at
-                .is_some_and(|at| at.to_zoned(zone.clone()).date() == day)
+        let today: Vec<&Feed> = self
+            .feeds
+            .iter()
+            .filter(|fed| {
+                fed.at
+                    .is_some_and(|at| at.to_zoned(zone.clone()).date() == day)
+            })
+            .collect();
+        let newest = today.iter().enumerate().filter(|(index, fed)| {
+            !today[index + 1..]
+                .iter()
+                .any(|later| (later.epoch, later.feed) == (fed.epoch, fed.feed))
         });
-        for fed in today {
+        for (_, fed) in newest {
             let (confirmed, at_most) = fed.delivered.bounds();
             portions.confirmed += u32::from(confirmed);
             portions.at_most += u32::from(at_most);
@@ -269,6 +280,26 @@ mod tests {
                 confirmed: 3,
                 at_most: 5,
                 feeds: 2,
+            })
+        );
+    }
+
+    /// A feed recorded uncertain, then resolved at the next boot under the
+    /// same number, is one feed, counted as the newer event says.
+    #[test]
+    fn a_feed_with_a_second_fed_event_counts_once() {
+        let feeds = vec![
+            fed(1, 7, Some(NOON - HOUR_MS), FeedOutcome::Uncertain, 1),
+            fed(2, 7, Some(NOON - HOUR_MS / 2), FeedOutcome::Uncertain, 0),
+        ];
+        let portions = facts(Some(at(NOON)), feeds).portions_today(TimeZone::UTC);
+
+        assert_eq!(
+            portions,
+            Some(Portions {
+                confirmed: 0,
+                at_most: 3,
+                feeds: 1,
             })
         );
     }
