@@ -46,6 +46,17 @@ const RECORDING_MAX_MS: u64 = 60_000;
 
 const _: () = assert!(CALL_RATE_HZ == clip::RATE_HZ && CALL_BYTES_MAX == clip::BYTES_MAX);
 
+/// The most samples a clip holds: two to a byte.
+fn samples_max() -> usize {
+    usize::try_from(CALL_BYTES_MAX * 2).unwrap_or(usize::MAX)
+}
+
+/// How long `samples` play at the call's rate.
+fn samples_ms(samples: usize) -> u32 {
+    let rate = usize::try_from(CALL_RATE_HZ).unwrap_or(usize::MAX);
+    u32::try_from(samples.saturating_mul(1000) / rate).unwrap_or(u32::MAX)
+}
+
 /// Why a file cannot become a meal call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ClipError {
@@ -125,13 +136,10 @@ impl Clip {
         let resampled = resample(&mono, wav.rate, CALL_RATE_HZ);
         let samples = scaled(trimmed(&resampled))?;
 
-        let max = usize::try_from(CALL_BYTES_MAX * 2).unwrap_or(usize::MAX);
-        if samples.len() > max {
-            let rate = usize::try_from(CALL_RATE_HZ).unwrap_or(usize::MAX);
-            let ms = |samples: usize| u32::try_from(samples * 1000 / rate).unwrap_or(u32::MAX);
+        if samples.len() > samples_max() {
             return Err(ClipError::TooLong {
-                ms: ms(samples.len()),
-                max_ms: ms(max),
+                ms: samples_ms(samples.len()),
+                max_ms: samples_ms(samples_max()),
             });
         }
         let mut stream = Vec::with_capacity(samples.len().div_ceil(2));
@@ -532,11 +540,9 @@ impl Wav {
             .saturating_mul(1000)
             / u64::from(rate);
         if ms > RECORDING_MAX_MS {
-            let rate = u64::from(CALL_RATE_HZ);
             return Err(ClipError::TooLong {
                 ms: u32::try_from(ms).unwrap_or(u32::MAX),
-                max_ms: u32::try_from(u64::from(CALL_BYTES_MAX) * 2 * 1000 / rate)
-                    .unwrap_or(u32::MAX),
+                max_ms: samples_ms(samples_max()),
             });
         }
         let decode: fn(&[u8]) -> f64 = match (tag, width) {

@@ -22,7 +22,9 @@
 //! **Kinds `1100` to `1111` are for a later build's entries**, and every
 //! such entry has the same shape: its time as above, then a varint length
 //! and that many bytes. A reader skips one it doesn't know by that length,
-//! taking its time as the next entry's base, and reads on: traces are
+//! taking its time as the next entry's base, and reads on. Such an entry
+//! moves only the time base, never the current or battery base, so a later
+//! build can't make an older reader misread the readings after it: traces are
 //! served as the feeder stored them, so an older client meets a newer
 //! build's entries, and a newer build serves traces an older one stored
 //! ([device API](../../../../docs/firmware/device-api.md#evolution)).
