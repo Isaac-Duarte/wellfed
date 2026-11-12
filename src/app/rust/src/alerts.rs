@@ -169,9 +169,14 @@ impl AlertState {
         self.sweeping.retain(|held| !ids.contains(&held.id));
     }
 
+    /// Let go of each hold older than [`SWEEP_HOLD`], and of one that starts
+    /// further ahead than that: the phone's clock stepped back since, and the
+    /// hold would otherwise last as long as the step.
     fn lapse_sweeps(&mut self, now: Timestamp) {
-        self.sweeping
-            .retain(|held| now.duration_since(held.since) <= SWEEP_HOLD);
+        self.sweeping.retain(|held| {
+            let held_for = now.duration_since(held.since);
+            -SWEEP_HOLD <= held_for && held_for <= SWEEP_HOLD
+        });
     }
 
     /// The changes Dart made for the feeder `identity`: each notice posted
@@ -1027,6 +1032,25 @@ mod tests {
             at(0) + SWEEP_HOLD + SignedDuration::from_secs(1),
         );
         assert_eq!(delivery(&state), Delivery::Posted);
+        assert!(state.sweeping.is_empty());
+
+        // The phone's clock steps back an hour after the choice: the hold
+        // lets go at once rather than an hour on.
+        state.feeders[0]
+            .watch
+            .open
+            .iter_mut()
+            .find(|tracked| tracked.key == due)
+            .unwrap()
+            .delivery = Delivery::Due;
+        state.hold_sweep(&[id], at(0));
+        state.confirm(
+            KITCHEN,
+            &feeder,
+            (&posted, &[]),
+            at(0) - SignedDuration::from_hours(1),
+        );
+        assert_eq!(delivery(&state), Delivery::Posted, "a step back lets go");
         assert!(state.sweeping.is_empty());
     }
 
