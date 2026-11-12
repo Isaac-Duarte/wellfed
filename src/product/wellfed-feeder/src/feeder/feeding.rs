@@ -55,7 +55,9 @@
 
 use core::fmt;
 
-use wellfed_proto::api::{Blocked, EventBody, FoodLevel, PORTIONS_MAX, Readiness, Refusal, Source};
+use wellfed_proto::api::{
+    Blocked, EventBody, FoodLevel, PORTIONS_MAX, PORTIONS_MIN, Readiness, Refusal, Source,
+};
 
 use crate::feed;
 
@@ -122,14 +124,15 @@ pub const fn claim_hold(
 
 /// Queue one feed of `portions` for `by` while `ready` allows it. The
 /// number the journal holds the feed under, or why it was refused:
-/// portions outside 1 to [`PORTIONS_MAX`] first, by name, whoever asks.
+/// portions outside [`PORTIONS_MIN`] to [`PORTIONS_MAX`] first, by name,
+/// whoever asks.
 pub fn queue<F: Feeds>(
     feeds: &mut F,
     ready: Readiness,
     portions: u8,
     by: Source,
 ) -> Result<u32, Refusal> {
-    if !(1..=PORTIONS_MAX).contains(&portions) {
+    if !(PORTIONS_MIN..=PORTIONS_MAX).contains(&portions) {
         return Err(Refusal::Portions { asked: portions });
     }
     if let Readiness::Blocked(blocked) = ready {

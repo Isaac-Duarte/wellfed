@@ -1740,7 +1740,9 @@ impl From<proto::UpdateRefusal> for UpdateRefusal {
     }
 }
 
-const _: () = assert!(crate::PORTIONS_MAX == proto::PORTIONS_MAX);
+const _: () = assert!(
+    crate::PORTIONS_MIN == proto::PORTIONS_MIN && crate::PORTIONS_MAX == proto::PORTIONS_MAX
+);
 
 impl From<proto::Refusal> for Refusal {
     fn from(refusal: proto::Refusal) -> Self {
