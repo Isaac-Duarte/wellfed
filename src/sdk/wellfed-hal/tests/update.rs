@@ -127,6 +127,8 @@ struct TestFlash {
     /// The hooks read unarmed once the activation is recorded, just before
     /// the marker.
     disarm_at_marker: bool,
+    /// The store's writes fail from the marker on.
+    store_fails_at_marker: bool,
     /// The attempt register as each bank-1 program found it: what a reset
     /// inside that write would leave behind.
     register_seen: Vec<u32>,
@@ -138,6 +140,9 @@ struct TestFlash {
 impl Flash for TestFlash {
     fn armed(&self) -> bool {
         let at_marker = matches!(store().record().state, State::Activated(_));
+        if self.store_fails_at_marker && at_marker {
+            STORE_FAILS.with(|f| f.set(true));
+        }
         self.inner.armed() && !(self.disarm_at_marker && at_marker)
     }
     fn erase(&mut self, sector: u32) -> bool {
@@ -1934,6 +1939,89 @@ fn a_marker_the_flash_was_not_armed_for_stops_and_keeps_the_offer_pending() {
         rig.steps(1);
         assert!(!rig.restarted);
     }
+}
+
+/// An activation that never reached the marker goes back to pending. When
+/// the store won't take that write, it reads unreadable for the rest of the
+/// boot and takes no offer; the next boot reads the manifest still
+/// activated, as a build that failed, and refuses it until a cancel clears
+/// it. Then it installs again.
+#[test]
+fn an_unwritten_marker_whose_revert_fails_waits_for_a_cancel() {
+    let _guard = start(0);
+    let mut rig = Rig::bench(0);
+    let payload = image(SECTOR);
+    let signed = manifest(3, &payload);
+    rig.flash.disarm_at_marker = true;
+    rig.flash.store_fails_at_marker = true;
+    progress(rig.offer(&signed, None));
+
+    let stopped = rig.push(&payload, None);
+    assert_eq!(stopped.stopped, Some(Stop::Activate));
+    assert!(rig.marker_never_written());
+    assert!(matches!(store().record().state, State::Activated(c) if c.version == 3));
+    rig.flash.disarm_at_marker = false;
+    rig.flash.store_fails_at_marker = false;
+    STORE_FAILS.with(|f| f.set(false));
+    assert_eq!(rig.offer(&signed, None), Err(Refused::Unreadable));
+
+    // The next boot.
+    mailbox::reset();
+    INTERLOCK.reset();
+    let mut rig = Rig::bench(0);
+    assert_eq!(rig.offer(&signed, None), Err(Refused::Failed));
+    progress(rig.ask(Request::Cancel));
+    assert_eq!(store().record().state, State::None);
+    let again = progress(rig.offer(&signed, None));
+    assert_eq!(again.phase, Phase::Receiving);
+    assert_eq!(rig.push(&payload, None).phase, Phase::Activated);
+}
+
+/// An offer the store can't record as pending starts nothing: no lease, no
+/// attempt bit, and the answer names the store.
+#[test]
+fn an_offer_the_store_cannot_record_starts_nothing() {
+    let _guard = start(0);
+    let mut rig = Rig::bench(0);
+    let payload = image(SECTOR);
+    STORE_FAILS.with(|f| f.set(true));
+
+    assert_eq!(
+        rig.offer(&manifest(3, &payload), None),
+        Err(Refused::Store(UpdateError::Io))
+    );
+    assert!(!mailbox::installing());
+    assert!(!arming::update_attempted());
+    assert_eq!(store().record().state, State::None);
+}
+
+/// A cancel whose store write fails still stops the install it reached:
+/// the stop is recorded, the lease goes, and the refusal says the
+/// candidate is still held.
+#[test]
+fn a_cancel_whose_clear_fails_records_the_stop_it_made() {
+    let _guard = start(0);
+    let mut rig = Rig::bench(0);
+    let payload = image(LEN);
+    rig.offer(&manifest(3, &payload), None).unwrap();
+    assert!(mailbox::installing());
+
+    STORE_FAILS.with(|f| f.set(true));
+    assert_eq!(
+        rig.ask(Request::Cancel),
+        Err(Refused::Store(UpdateError::Io))
+    );
+    assert!(!mailbox::installing(), "the lease is released");
+    assert!(!arming::update_attempted());
+    assert_eq!(mailbox::progress().unwrap().stopped, Some(Stop::Cancelled));
+    assert!(rig.records.iter().any(|r| matches!(
+        r,
+        Record::Stopped {
+            stop: Stop::Cancelled,
+            ..
+        }
+    )));
+    assert!(matches!(store().record().state, State::Pending(c) if c.version == 3));
 }
 
 /// A bank-1 marker whose program failed may have landed: stock may boot,

@@ -1165,7 +1165,14 @@ impl<I: SlotIo + Clone> Update<I> {
         }
         let record = self.install.is_some().then(|| self.stop(Stop::Cancelled));
         if recorded && under_marker(|| self.store.clear()).is_err() {
-            return self.refuse(Refused::Store(wellfed_core::store::update::UpdateError::Io));
+            let refused = Refused::Store(wellfed_core::store::update::UpdateError::Io);
+            // An install that ran has stopped all the same: its stop is the
+            // record, and the refusal says the candidate is still held.
+            let Some(record) = record else {
+                return self.refuse(refused);
+            };
+            mailbox::finish(Err(refused));
+            return next(IDLE_MS, Some(record));
         }
         self.stopped = record.map(|_| Stop::Cancelled);
         mailbox::finish(Ok(Answer::Progress(self.progress())));
@@ -1273,7 +1280,7 @@ impl<I: SlotIo + Clone> Update<I> {
         let stock = candidate.kind == ImageKind::Stock;
         if stock && !under_marker(|| flash.mark_handover()) {
             let _ = under_marker(|| flash.clear_handover());
-            let _ = under_marker(|| self.store.set_pending(candidate));
+            self.unactivate(candidate);
             let record = self.stop(Stop::Store);
             return next(IDLE_MS, Some(record));
         }
@@ -1304,7 +1311,7 @@ impl<I: SlotIo + Clone> Update<I> {
         if install.marked(marking).is_err() {
             // Bank 1 stays invalid: a later offer of the same manifest may
             // try again, as it never ran. This feeder also keeps its owner.
-            let _ = under_marker(|| self.store.set_pending(candidate));
+            self.unactivate(candidate);
             if stock {
                 let _ = under_marker(|| flash.clear_handover());
             }
@@ -1327,6 +1334,15 @@ impl<I: SlotIo + Clone> Update<I> {
                 marking,
             }),
         )
+    }
+
+    /// Take an activation whose marker was never written back to pending,
+    /// so the same offer may try again. A store that won't take the write
+    /// reads `Io` for the rest of the boot, so every offer is refused
+    /// unreadable; the next boot reads it still activated, as a build that
+    /// failed, and a cancel clears it.
+    fn unactivate(&mut self, candidate: Candidate) {
+        let _ = under_marker(|| self.store.set_pending(candidate));
     }
 
     /// Restart once the answer is out: after bank 1's give-way answer was
