@@ -54,9 +54,44 @@ pub fn decode<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, Error> {
 
 /// Decode one message from the start of `bytes`, whose rest must be zeros:
 /// a fixed-size record field (the event ring's 16-byte body).
-pub fn decode_padded<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Option<T> {
-    match postcard::take_from_bytes(bytes) {
-        Ok((value, rest)) if rest.iter().all(|&b| b == 0) => Some(value),
-        _ => None,
+///
+/// Only bytes the value encodes back to are a record. Postcard reads an
+/// overlong varint (`0x96 0x00` for 22) as the value it ends on, which no
+/// build ever writes, so such a body would read as an event whose bytes
+/// differ from the ones stored, hashed and passed on.
+pub fn decode_padded<'a, T: Deserialize<'a> + Serialize>(bytes: &'a [u8]) -> Option<T> {
+    let (value, rest) = postcard::take_from_bytes::<T>(bytes).ok()?;
+    let read = bytes.get(..bytes.len() - rest.len())?;
+    let canonical = postcard::serialize_with_flavor(
+        &value,
+        Same {
+            expected: read,
+            at: 0,
+        },
+    );
+    (rest.iter().all(|&b| b == 0) && canonical == Ok(true)).then_some(value)
+}
+
+/// A postcard output that compares each byte with the next of `expected`
+/// instead of keeping it, so checking an encoding needs no buffer.
+struct Same<'a> {
+    expected: &'a [u8],
+    at: usize,
+}
+
+impl postcard::ser_flavors::Flavor for Same<'_> {
+    /// Whether the encoding was all of `expected`.
+    type Output = bool;
+
+    fn try_push(&mut self, byte: u8) -> postcard::Result<()> {
+        if self.expected.get(self.at) != Some(&byte) {
+            return Err(postcard::Error::SerializeBufferFull);
+        }
+        self.at += 1;
+        Ok(())
+    }
+
+    fn finalize(self) -> postcard::Result<bool> {
+        Ok(self.at == self.expected.len())
     }
 }
