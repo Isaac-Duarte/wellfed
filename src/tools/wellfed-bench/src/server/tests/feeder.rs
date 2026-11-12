@@ -71,9 +71,13 @@ impl Checkout {
             "label": "bench",
             "feeders": [{ "identity": wellfed_session::hex::Lower(identity).to_string() }],
         });
-        fs::write(
-            self.root().join("private/wellfed-owner.json"),
-            file.to_string(),
+        let keys = self.root().join("private/wellfed-owner.json");
+        fs::write(&keys, file.to_string()).unwrap();
+        // As every writer makes a key file: the bench refuses one others
+        // can read.
+        fs::set_permissions(
+            &keys,
+            <fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o600),
         )
         .unwrap();
     }
