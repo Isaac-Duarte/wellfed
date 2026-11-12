@@ -1639,7 +1639,7 @@
         "tags": [
           "feeders"
         ],
-        "summary": "Stop the feed with this number if it still runs. Its result is still\nits `Fed` event, `cancelled`, with the portions it gave. A retry of a\ncancel whose outcome was unknown may be refused `not_found`: the feed\nhas ended, perhaps by the first attempt, and its `Fed` event says how.",
+        "summary": "Stop the feed with this number if it still runs. Its result is still\nits `Fed` event, `cancelled`, with the portions it gave. A retry of a\ncancel whose outcome was unknown that the feeder refuses stays unknown\n(`outcome_unknown`): the feed may have ended by the first attempt or on\nits own, and its `Fed` event says how.",
         "operationId": "cancel",
         "parameters": [
           {
@@ -1703,7 +1703,7 @@
             }
           },
           "409": {
-            "description": "feeder_refused: not_found once the feed has ended",
+            "description": "feeder_refused: not_found once the feed has ended, on a first attempt",
             "content": {
               "application/json": {
                 "schema": {

@@ -52,8 +52,9 @@ pub(crate) async fn feed(
 
 /// Stop the feed with this number if it still runs. Its result is still
 /// its `Fed` event, `cancelled`, with the portions it gave. A retry of a
-/// cancel whose outcome was unknown may be refused `not_found`: the feed
-/// has ended, perhaps by the first attempt, and its `Fed` event says how.
+/// cancel whose outcome was unknown that the feeder refuses stays unknown
+/// (`outcome_unknown`): the feed may have ended by the first attempt or on
+/// its own, and its `Fed` event says how.
 #[utoipa::path(
     post,
     path = "/feeders/{id}/feeds/{feed}/cancel",
@@ -64,7 +65,7 @@ pub(crate) async fn feed(
         (status = 400, body = Problem, description = "invalid: a malformed Idempotency-Key"),
         (status = 403, body = Problem, description = "forbidden: a viewer"),
         (status = 404, body = Problem),
-        (status = 409, body = Problem, description = "feeder_refused: not_found once the feed has ended"),
+        (status = 409, body = Problem, description = "feeder_refused: not_found once the feed has ended, on a first attempt"),
         (status = 503, body = Problem, description = "feeder_offline"),
         (status = 504, body = Problem, description = "outcome_unknown: retry with the same key"),
     ),

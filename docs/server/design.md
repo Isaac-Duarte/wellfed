@@ -236,7 +236,7 @@ A retry under the same key reads the journal first:
 
 A feed whose answer was lost has no number and is never sent again. The one `Fed` event from the server's key after the history the server held when it was sent settles it, when that match is unambiguous; another client's feed or a panel feed never does. Once the feeder has restarted since, and the server holds its whole history with no gap, a feed still unsettled is `resolved` as `unrecorded`: whether food was dispensed is unknown, and it is never resent. A `Fed` event found later replaces `unrecorded`.
 
-`POST /feeders/{id}/feeds/{feed}/cancel` goes through the journal too: `204` while the feed runs, `409 feeder_refused` `not_found` once it has ended, or for a number no feed holds yet.
+`POST /feeders/{id}/feeds/{feed}/cancel` goes through the journal too: `204` while the feed runs, `409 feeder_refused` `not_found` once it has ended, or for a number no feed holds yet. A retry of a cancel whose outcome was unknown that the feeder refuses is `504 outcome_unknown`: the first attempt may have stopped the feed, and its `Fed` event says how it ended.
 
 **Settings** are always read from the feeder, never the cache, since a change must name the current generation; an offline feeder's settings are `503 feeder_offline`.
 
