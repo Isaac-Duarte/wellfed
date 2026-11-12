@@ -162,7 +162,7 @@ return unknown(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  forbidden,TResult Function( int current)?  stale,TResult Function()?  busy,TResult Function()?  unavailable,TResult Function()?  invalid,TResult Function()?  notWritable,TResult Function()?  full,TResult Function()?  notFound,TResult Function()?  muted,TResult Function()?  time,TResult Function()?  fault,TResult Function( UpdateRefusal reason)?  update,TResult Function()?  unverified,TResult Function( int asked)?  portions,TResult Function()?  noClock,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  forbidden,TResult Function( int? current)?  stale,TResult Function()?  busy,TResult Function()?  unavailable,TResult Function()?  invalid,TResult Function()?  notWritable,TResult Function()?  full,TResult Function()?  notFound,TResult Function()?  muted,TResult Function()?  time,TResult Function()?  fault,TResult Function( UpdateRefusal reason)?  update,TResult Function()?  unverified,TResult Function( int? asked)?  portions,TResult Function()?  noClock,TResult Function()?  unknown,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden() when forbidden != null:
 return forbidden();case FeederRefusal_Stale() when stale != null:
@@ -198,7 +198,7 @@ return unknown();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  forbidden,required TResult Function( int current)  stale,required TResult Function()  busy,required TResult Function()  unavailable,required TResult Function()  invalid,required TResult Function()  notWritable,required TResult Function()  full,required TResult Function()  notFound,required TResult Function()  muted,required TResult Function()  time,required TResult Function()  fault,required TResult Function( UpdateRefusal reason)  update,required TResult Function()  unverified,required TResult Function( int asked)  portions,required TResult Function()  noClock,required TResult Function()  unknown,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  forbidden,required TResult Function( int? current)  stale,required TResult Function()  busy,required TResult Function()  unavailable,required TResult Function()  invalid,required TResult Function()  notWritable,required TResult Function()  full,required TResult Function()  notFound,required TResult Function()  muted,required TResult Function()  time,required TResult Function()  fault,required TResult Function( UpdateRefusal reason)  update,required TResult Function()  unverified,required TResult Function( int? asked)  portions,required TResult Function()  noClock,required TResult Function()  unknown,}) {final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden():
 return forbidden();case FeederRefusal_Stale():
@@ -230,7 +230,7 @@ return unknown();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  forbidden,TResult? Function( int current)?  stale,TResult? Function()?  busy,TResult? Function()?  unavailable,TResult? Function()?  invalid,TResult? Function()?  notWritable,TResult? Function()?  full,TResult? Function()?  notFound,TResult? Function()?  muted,TResult? Function()?  time,TResult? Function()?  fault,TResult? Function( UpdateRefusal reason)?  update,TResult? Function()?  unverified,TResult? Function( int asked)?  portions,TResult? Function()?  noClock,TResult? Function()?  unknown,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  forbidden,TResult? Function( int? current)?  stale,TResult? Function()?  busy,TResult? Function()?  unavailable,TResult? Function()?  invalid,TResult? Function()?  notWritable,TResult? Function()?  full,TResult? Function()?  notFound,TResult? Function()?  muted,TResult? Function()?  time,TResult? Function()?  fault,TResult? Function( UpdateRefusal reason)?  update,TResult? Function()?  unverified,TResult? Function( int? asked)?  portions,TResult? Function()?  noClock,TResult? Function()?  unknown,}) {final _that = this;
 switch (_that) {
 case FeederRefusal_Forbidden() when forbidden != null:
 return forbidden();case FeederRefusal_Stale() when stale != null:
@@ -292,10 +292,10 @@ String toString() {
 
 
 class FeederRefusal_Stale extends FeederRefusal {
-  const FeederRefusal_Stale({required this.current}): super._();
+  const FeederRefusal_Stale({this.current}): super._();
   
 
- final  int current;
+ final  int? current;
 
 /// Create a copy of FeederRefusal
 /// with the given fields replaced by the non-null parameter values.
@@ -329,7 +329,7 @@ abstract mixin class $FeederRefusal_StaleCopyWith<$Res> implements $FeederRefusa
   factory $FeederRefusal_StaleCopyWith(FeederRefusal_Stale value, $Res Function(FeederRefusal_Stale) _then) = _$FeederRefusal_StaleCopyWithImpl;
 @useResult
 $Res call({
- int current
+ int? current
 });
 
 
@@ -346,10 +346,10 @@ class _$FeederRefusal_StaleCopyWithImpl<$Res>
 
 /// Create a copy of FeederRefusal
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? current = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? current = freezed,}) {
   return _then(FeederRefusal_Stale(
-current: null == current ? _self.current : current // ignore: cast_nullable_to_non_nullable
-as int,
+current: freezed == current ? _self.current : current // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 
@@ -757,10 +757,10 @@ String toString() {
 
 
 class FeederRefusal_Portions extends FeederRefusal {
-  const FeederRefusal_Portions({required this.asked}): super._();
+  const FeederRefusal_Portions({this.asked}): super._();
   
 
- final  int asked;
+ final  int? asked;
 
 /// Create a copy of FeederRefusal
 /// with the given fields replaced by the non-null parameter values.
@@ -794,7 +794,7 @@ abstract mixin class $FeederRefusal_PortionsCopyWith<$Res> implements $FeederRef
   factory $FeederRefusal_PortionsCopyWith(FeederRefusal_Portions value, $Res Function(FeederRefusal_Portions) _then) = _$FeederRefusal_PortionsCopyWithImpl;
 @useResult
 $Res call({
- int asked
+ int? asked
 });
 
 
@@ -811,10 +811,10 @@ class _$FeederRefusal_PortionsCopyWithImpl<$Res>
 
 /// Create a copy of FeederRefusal
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? asked = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? asked = freezed,}) {
   return _then(FeederRefusal_Portions(
-asked: null == asked ? _self.asked : asked // ignore: cast_nullable_to_non_nullable
-as int,
+asked: freezed == asked ? _self.asked : asked // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 

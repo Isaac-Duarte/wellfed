@@ -120,8 +120,9 @@ sealed class FeederRefusal with _$FeederRefusal {
   const factory FeederRefusal.forbidden() = FeederRefusal_Forbidden;
 
   /// The store moved past the base: read it again and decide again.
-  const factory FeederRefusal.stale({required int current}) =
-      FeederRefusal_Stale;
+  /// `current` is the store's generation now, unknown when the owner's
+  /// server refused it, since its refusal does not carry one.
+  const factory FeederRefusal.stale({int? current}) = FeederRefusal_Stale;
   const factory FeederRefusal.busy() = FeederRefusal_Busy;
   const factory FeederRefusal.unavailable() = FeederRefusal_Unavailable;
   const factory FeederRefusal.invalid() = FeederRefusal_Invalid;
@@ -134,8 +135,10 @@ sealed class FeederRefusal with _$FeederRefusal {
   const factory FeederRefusal.update({required UpdateRefusal reason}) =
       FeederRefusal_Update;
   const factory FeederRefusal.unverified() = FeederRefusal_Unverified;
-  const factory FeederRefusal.portions({required int asked}) =
-      FeederRefusal_Portions;
+
+  /// A feed outside the portions a feeder takes; `asked` is unknown when
+  /// the owner's server refused it, since its refusal does not carry it.
+  const factory FeederRefusal.portions({int? asked}) = FeederRefusal_Portions;
   const factory FeederRefusal.noClock() = FeederRefusal_NoClock;
 
   /// A refusal a newer feeder build added, which this app cannot name.

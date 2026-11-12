@@ -223,7 +223,8 @@ enum NotSentReason {
   /// The pin could not be written down, so it did not go.
   store,
 
-  /// The server did not send it: `server_error` says why.
+  /// The server did not send it: the reply's `server` says why, when it
+  /// answered at all.
   server,
 
   /// The phone's own session ended before it went.

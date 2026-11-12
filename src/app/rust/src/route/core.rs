@@ -249,8 +249,7 @@ pub(crate) fn settled_reply(settlement: &Settlement) -> FeederReply {
             refusal: match refusal {
                 ServerRefusal::Forbidden => FeederRefusal::Forbidden,
                 ServerRefusal::Busy => FeederRefusal::Busy,
-                // The server's refusal does not carry the generation.
-                ServerRefusal::Stale => FeederRefusal::Stale { current: 0 },
+                ServerRefusal::Stale => FeederRefusal::Stale { current: None },
                 ServerRefusal::Unavailable => FeederRefusal::Unavailable,
                 ServerRefusal::Invalid => FeederRefusal::Invalid,
                 ServerRefusal::NotWritable => FeederRefusal::NotWritable,
@@ -259,7 +258,7 @@ pub(crate) fn settled_reply(settlement: &Settlement) -> FeederReply {
                 ServerRefusal::Muted => FeederRefusal::Muted,
                 ServerRefusal::Time => FeederRefusal::Time,
                 ServerRefusal::Fault => FeederRefusal::Fault,
-                ServerRefusal::Portions => FeederRefusal::Portions { asked: 0 },
+                ServerRefusal::Portions => FeederRefusal::Portions { asked: None },
                 ServerRefusal::NoClock => FeederRefusal::NoClock,
                 ServerRefusal::Unverified => FeederRefusal::Unverified,
                 ServerRefusal::Unknown => FeederRefusal::Unknown,

@@ -596,7 +596,9 @@ fn portion_times(entries: &[TraceEntry], completed: u8) -> Vec<u32> {
 pub(crate) const fn refusal_of(refusal: Refusal) -> FeederRefusal {
     match refusal {
         Refusal::Forbidden => FeederRefusal::Forbidden,
-        Refusal::Stale { current } => FeederRefusal::Stale { current: current.0 },
+        Refusal::Stale { current } => FeederRefusal::Stale {
+            current: Some(current.0),
+        },
         Refusal::Busy => FeederRefusal::Busy,
         Refusal::Unavailable => FeederRefusal::Unavailable,
         Refusal::Invalid => FeederRefusal::Invalid,
@@ -608,7 +610,7 @@ pub(crate) const fn refusal_of(refusal: Refusal) -> FeederRefusal {
         Refusal::Fault => FeederRefusal::Fault,
         Refusal::Update(reason) => FeederRefusal::Update { reason },
         Refusal::Unverified => FeederRefusal::Unverified,
-        Refusal::Portions { asked } => FeederRefusal::Portions { asked },
+        Refusal::Portions { asked } => FeederRefusal::Portions { asked: Some(asked) },
         Refusal::NoClock => FeederRefusal::NoClock,
         Refusal::Unknown => FeederRefusal::Unknown,
     }

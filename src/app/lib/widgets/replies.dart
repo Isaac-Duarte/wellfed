@@ -54,8 +54,9 @@ String refusalWords(FeederRefusal refusal) => switch (refusal) {
   FeederRefusal_Fault() => 'It stopped on a fault and needs a restart.',
   FeederRefusal_Update() => 'The feeder refused the update.',
   FeederRefusal_Unverified() => 'This feeder has not verified that mode.',
-  FeederRefusal_Portions(:final asked) =>
+  FeederRefusal_Portions(:final asked?) =>
     'A feed is ${Limits.portionsLeast} to ${Limits.portionsMost} portions, not $asked.',
+  FeederRefusal_Portions() => 'A feed is ${Limits.portionsLeast} to ${Limits.portionsMost} portions.',
   FeederRefusal_NoClock() => "The feeder doesn't know the date. Set its time first.",
   FeederRefusal_Unknown() => 'The feeder refused it for a reason this app does not know. Update this app.',
 };

@@ -322,8 +322,10 @@ pub struct UpdateInfo {
 pub enum FeederRefusal {
     Forbidden,
     /// The store moved past the base: read it again and decide again.
+    /// `current` is the store's generation now, unknown when the owner's
+    /// server refused it, since its refusal does not carry one.
     Stale {
-        current: u32,
+        current: Option<u32>,
     },
     Busy,
     Unavailable,
@@ -338,8 +340,10 @@ pub enum FeederRefusal {
         reason: UpdateRefusal,
     },
     Unverified,
+    /// A feed outside the portions a feeder takes; `asked` is unknown when
+    /// the owner's server refused it, since its refusal does not carry it.
     Portions {
-        asked: u8,
+        asked: Option<u8>,
     },
     NoClock,
     /// A refusal a newer feeder build added, which this app cannot name.

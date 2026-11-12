@@ -170,7 +170,8 @@ pub enum NotSentReason {
     Random,
     /// The pin could not be written down, so it did not go.
     Store,
-    /// The server did not send it: `server_error` says why.
+    /// The server did not send it: the reply's `server` says why, when it
+    /// answered at all.
     Server,
     /// The phone's own session ended before it went.
     Session,

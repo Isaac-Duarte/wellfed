@@ -8613,7 +8613,7 @@ impl SseDecode for crate::api::feeder::FeederRefusal {
                 return crate::api::feeder::FeederRefusal::Forbidden;
             }
             1 => {
-                let mut var_current = <u32>::sse_decode(deserializer);
+                let mut var_current = <Option<u32>>::sse_decode(deserializer);
                 return crate::api::feeder::FeederRefusal::Stale {
                     current: var_current,
                 };
@@ -8653,7 +8653,7 @@ impl SseDecode for crate::api::feeder::FeederRefusal {
                 return crate::api::feeder::FeederRefusal::Unverified;
             }
             13 => {
-                let mut var_asked = <u8>::sse_decode(deserializer);
+                let mut var_asked = <Option<u8>>::sse_decode(deserializer);
                 return crate::api::feeder::FeederRefusal::Portions { asked: var_asked };
             }
             14 => {
@@ -20857,7 +20857,7 @@ impl SseEncode for crate::api::feeder::FeederRefusal {
             }
             crate::api::feeder::FeederRefusal::Stale { current } => {
                 <i32>::sse_encode(1, serializer);
-                <u32>::sse_encode(current, serializer);
+                <Option<u32>>::sse_encode(current, serializer);
             }
             crate::api::feeder::FeederRefusal::Busy => {
                 <i32>::sse_encode(2, serializer);
@@ -20895,7 +20895,7 @@ impl SseEncode for crate::api::feeder::FeederRefusal {
             }
             crate::api::feeder::FeederRefusal::Portions { asked } => {
                 <i32>::sse_encode(13, serializer);
-                <u8>::sse_encode(asked, serializer);
+                <Option<u8>>::sse_encode(asked, serializer);
             }
             crate::api::feeder::FeederRefusal::NoClock => {
                 <i32>::sse_encode(14, serializer);

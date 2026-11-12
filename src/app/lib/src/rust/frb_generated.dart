@@ -7364,7 +7364,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 0:
         return FeederRefusal_Forbidden();
       case 1:
-        return FeederRefusal_Stale(current: dco_decode_u_32(raw[1]));
+        return FeederRefusal_Stale(
+          current: dco_decode_opt_box_autoadd_u_32(raw[1]),
+        );
       case 2:
         return FeederRefusal_Busy();
       case 3:
@@ -7390,7 +7392,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 12:
         return FeederRefusal_Unverified();
       case 13:
-        return FeederRefusal_Portions(asked: dco_decode_u_8(raw[1]));
+        return FeederRefusal_Portions(
+          asked: dco_decode_opt_box_autoadd_u_8(raw[1]),
+        );
       case 14:
         return FeederRefusal_NoClock();
       case 15:
@@ -12350,7 +12354,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 0:
         return FeederRefusal_Forbidden();
       case 1:
-        var var_current = sse_decode_u_32(deserializer);
+        var var_current = sse_decode_opt_box_autoadd_u_32(deserializer);
         return FeederRefusal_Stale(current: var_current);
       case 2:
         return FeederRefusal_Busy();
@@ -12376,7 +12380,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 12:
         return FeederRefusal_Unverified();
       case 13:
-        var var_asked = sse_decode_u_8(deserializer);
+        var var_asked = sse_decode_opt_box_autoadd_u_8(deserializer);
         return FeederRefusal_Portions(asked: var_asked);
       case 14:
         return FeederRefusal_NoClock();
@@ -18326,7 +18330,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(0, serializer);
       case FeederRefusal_Stale(current: final current):
         sse_encode_i_32(1, serializer);
-        sse_encode_u_32(current, serializer);
+        sse_encode_opt_box_autoadd_u_32(current, serializer);
       case FeederRefusal_Busy():
         sse_encode_i_32(2, serializer);
       case FeederRefusal_Unavailable():
@@ -18352,7 +18356,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(12, serializer);
       case FeederRefusal_Portions(asked: final asked):
         sse_encode_i_32(13, serializer);
-        sse_encode_u_8(asked, serializer);
+        sse_encode_opt_box_autoadd_u_8(asked, serializer);
       case FeederRefusal_NoClock():
         sse_encode_i_32(14, serializer);
       case FeederRefusal_Unknown():
