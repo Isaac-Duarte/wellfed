@@ -7,8 +7,8 @@ use wellfed_core::flash_coord::FlashReply;
 use wellfed_hal::flash::park;
 use wellfed_hal::flash::park::fake::{self as ipc, Ipc, Refusing};
 use wellfed_hal::flash_lock::handshake::{Handshake, Handshaking, Unstarted};
-use wellfed_hal::flash_lock::provider::READY_TIMEOUT_MS;
-use wellfed_hal::sdk::fake;
+use wellfed_hal::flash_lock::provider::{BOOT_COUNT_REGISTER, READY_TIMEOUT_MS};
+use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::{stopped, supervision};
 
 const PEER: u64 = 0x0000_0001_4b30_abcd;
@@ -111,4 +111,19 @@ fn a_ready_for_another_session_is_foreign_and_waited_past() {
     };
     assert_eq!(answer.peer(), PEER);
     assert!(answer.accepted().is_some());
+}
+
+/// Each handshake raises the boot count by one and opens its session under
+/// it, so KM0 never sees two hellos from one session.
+#[test]
+fn each_start_raises_the_boot_count_by_one() {
+    fresh();
+    sdk::backup_write(BOOT_COUNT_REGISTER, 41);
+
+    for count in 42..45 {
+        let handshake = Handshake::start::<Ipc<false>>(0).expect("started");
+        assert_eq!(sdk::backup_read(BOOT_COUNT_REGISTER), count);
+        assert_eq!(handshake.count(), count);
+        assert_eq!(handshake.authority(), park::session(count, 0, false));
+    }
 }
