@@ -10,7 +10,7 @@ use std::time::Duration;
 use wellfed_connect::Samples;
 
 use wellfed_client::api::Invite;
-use wellfed_connect::{Connection, Cursor, Error as ConnectError, join};
+use wellfed_connect::{AskError, Connection, Cursor, Error as ConnectError, join};
 use wellfed_core::clock::ntp;
 use wellfed_device_api::mailbox::KeyResult;
 use wellfed_device_api::mailbox::Lock;
@@ -549,19 +549,56 @@ fn a_reboot_drops_the_sessions_and_boots_again() {
     });
 }
 
+/// Whether the simulator logged a session ended for a new connection,
+/// draining what it logged.
+fn evicted(sim: &mut Running) -> bool {
+    let mut evicted = false;
+    while let Ok(event) = sim.events.try_recv() {
+        evicted |= matches!(
+            event,
+            Event::Sim(Record::Feeder(feeder::Record::Serve(
+                serve::Record::Server(ApiRecord::Ended {
+                    reason: Reason::Evicted,
+                    ..
+                },)
+            )))
+        );
+    }
+    evicted
+}
+
+/// With every slot taken, a new client is let in and the session that went
+/// longest without a word loses its connection; the others carry on.
 #[test]
-fn a_fifth_connection_is_turned_away() {
-    local(async {
-        let sim = Running::start(&Flash::memory(), true).await;
+fn a_fifth_connection_takes_the_slot_of_the_session_idle_longest() {
+    paused(async {
+        let mut sim = Running::start(&Flash::memory(), true).await;
         let mut open = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..wellfed_device_api::SESSIONS {
             open.push(sim.open(OWNER).await.unwrap());
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        // Closed at once, its hello unread: the client sees the close or
-        // the reset that unread bytes bring.
-        let fifth = sim.open(OWNER).await;
-        assert_matches!(fifth, Err(ConnectError::Closed | ConnectError::Io(_)));
-        drop(open);
+        // The first opened, but it has spoken since: the second is idlest.
+        assert!(matches!(
+            status(&mut sim, &mut open[0]).await,
+            Status { .. }
+        ));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!evicted(&mut sim));
+
+        let mut fifth = sim.open(OWNER).await.unwrap();
+        assert!(matches!(status(&mut sim, &mut fifth).await, Status { .. }));
+        assert!(evicted(&mut sim));
+        let id = sim.id();
+        let gone = open[1]
+            .ask(id, &Op::Status)
+            .await
+            .map_err(AskError::into_error);
+        assert_matches!(gone, Err(ConnectError::Closed | ConnectError::Io(_)));
+        for index in [0, 2, 3] {
+            let answer = status(&mut sim, &mut open[index]).await;
+            assert!(matches!(answer, Status { .. }), "session {index}");
+        }
         sim.stop().await;
     });
 }
@@ -1544,6 +1581,7 @@ fn a_client_that_stops_reading_rests_the_loop_and_loses_its_slot() {
         }
         let mut next = sim.open(OWNER).await.unwrap();
         assert!(matches!(status(&mut sim, &mut next).await, Status { .. }));
+        assert!(!evicted(&mut sim), "the stalled slot was free");
         sim.stop().await;
     });
 }

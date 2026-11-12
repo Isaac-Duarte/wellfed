@@ -15,7 +15,7 @@ use crate::mailbox::{NtpResult, NtpServer, Origin, SaveOutcome, TimeSettingsResu
 use crate::pairing::{self, Pairing, Path};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record, UpdateAnswer, UpdateKeyChange};
 use wellfed_proto::api::{
-    self as proto, DeviceMessage, Outcome, Refusal, RequestId, TimeView, UpdateRefusal,
+    self as proto, DeviceMessage, Outcome, Refusal, RequestId, TimeView, UpdatePhase, UpdateRefusal,
 };
 use wellfed_signed::offer::key_id;
 
@@ -242,6 +242,12 @@ impl Server {
                 op,
                 result: reply.name(),
             });
+        }
+
+        match reply {
+            Reply::Feeder(FeederReply::Feeding(_)) => self.fed[index] = true,
+            Reply::Update(view) => self.installing[index] = view.phase != UpdatePhase::Idle,
+            _ => {}
         }
 
         // The client list encodes itself, so neither it nor the line above

@@ -38,6 +38,9 @@ named_enum! {
         /// session ends, so its client holds the write as unanswered rather
         /// than hear an answer that may be wrong.
         Forgotten = "forgotten",
+        /// Every slot was taken: the session idle longest gave its slot up
+        /// to a new connection.
+        Evicted = "evicted",
     }
 }
 
