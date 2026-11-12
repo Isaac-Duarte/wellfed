@@ -14,7 +14,11 @@
 //!   settles the entry as `superseded`, with nothing sent.
 //! - A delete that finds no clip is done. One that finds the clip the
 //!   first send found erases it again under its request id; another clip
-//!   is a later upload, and the entry settles as `superseded`.
+//!   is a later upload, and the entry settles as `superseded`. The read
+//!   and the erase are two requests, and the erase names no clip, so an
+//!   upload that lands between them is erased, as it would be by a first
+//!   send: closing that needs an erase the feeder checks against the clip
+//!   it holds.
 //!
 //! An upload the feeder took and then lost to a restart finds no clip of
 //! its own, so it is superseded too: the caller uploads again under a new
