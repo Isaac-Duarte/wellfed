@@ -32,7 +32,7 @@ A **condition** opens once its state has held past its threshold, and closes whe
 | `BatteryBelowFloor` | Condition | The owner's verdict on the pack | Live |
 | `PowerWasOut` | Report | A `Supply` event with the adapter out, once an outage. A feeder with no pack writes no such event, so it reads as unreachable | The boot read |
 | `RolledBack` | Report | `UpdateAtBoot`, against the boots around it ([below](#two-kinds-of-alert)) | The boot read |
-| `UpdateFailed` | Report | `UpdateStop`, except a cancel | The boot read |
+| `UpdateFailed` | Report | `UpdateStop`, except a cancel; also a give-way no install followed: bank 0 holding the candidate with nothing installing for ten minutes records `UpdateStop::Timeout`, once a boot | The boot read |
 | `RepeatedRestarts` | Tracked like a condition | Three boots that count ([below](#two-kinds-of-alert)) within 6 hours, over after a quiet day. A boot with no time counts as recent | The boot read |
 | `ClientJoined`, `ClientRevoked` | Report | `Enrolled`, `Revoked` | The boot read |
 

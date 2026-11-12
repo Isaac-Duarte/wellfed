@@ -860,3 +860,59 @@ fn only_an_owner_enrolls_an_update_key() {
         rig.sim.stop().await;
     });
 }
+
+/// A give-way whose installer never comes back leaves the feeder on bank
+/// 0's recovery copy; after a while it says the update stopped, once.
+#[test]
+fn a_give_way_no_install_follows_is_reported_as_a_failed_update() {
+    use wellfed_feeder::feeder::alert_stage::GIVEN_WAY_MS;
+
+    paused(async {
+        let mut rig = Rig::start().await;
+        let offer = Offer::new(7, 0x77, 2 * SECTOR);
+        update(&mut rig, offer.image(), &mut Faults::default())
+            .await
+            .unwrap();
+        assert_eq!(rig.bank().await, 1);
+
+        // The next install gives way, and its client is gone.
+        let offer = Offer::new(8, 0x78, 2 * SECTOR);
+        let mut installer = Installer::new(offer.image());
+        let mut connection = rig.open().await;
+        installer.opened(rig.state(&mut connection).await.bank);
+        loop {
+            match installer.poll() {
+                Next::Send(sent, op) => {
+                    let answer = connection.ask(rig.id(), &op).await.unwrap();
+                    installer.answer(sent, &answer).unwrap();
+                }
+                Next::Wait => tokio::time::sleep(Duration::from_millis(5)).await,
+                Next::Reconnect => break,
+                next => panic!("{next:?}"),
+            }
+        }
+        drop(connection);
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert_eq!(rig.bank().await, 0);
+
+        let failed = |view: &AlertsView| {
+            view.alerts
+                .iter()
+                .filter(|open| {
+                    open.alert
+                        == Alert::UpdateFailed {
+                            stop: UpdateStop::Timeout,
+                        }
+                })
+                .count()
+        };
+        tokio::time::sleep(Duration::from_millis(u64::from(GIVEN_WAY_MS) / 2)).await;
+        assert_eq!(failed(&rig.alerts().await), 0, "not yet");
+        tokio::time::sleep(Duration::from_millis(u64::from(GIVEN_WAY_MS))).await;
+        assert_eq!(failed(&rig.alerts().await), 1);
+        tokio::time::sleep(Duration::from_millis(u64::from(GIVEN_WAY_MS) * 2)).await;
+        assert_eq!(failed(&rig.alerts().await), 1, "once");
+        assert!(!rig.rolled_back().await);
+        rig.sim.stop().await;
+    });
+}
