@@ -260,6 +260,11 @@ copies, and keep it private: with it, a copy can act as this server
 toward every adopted feeder. Without it a copy still holds the history,
 but the server cannot reach its feeders again until each is adopted anew.
 
+The feeders' stock firmware backups are NOT in these copies either: they
+are files in stock/ in the data directory. Once an install has written
+over a feeder's stock, the copy there may be the only one left, so copy
+stock/ somewhere apart from this machine after the server keeps one.
+
 To restore: stop the server, copy one of these files to server.db in the
 data directory (deleting any server.db-wal and server.db-shm there), put
 the key back at keys/server.key, and start the server. The server refuses

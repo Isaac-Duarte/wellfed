@@ -79,7 +79,7 @@ The first start makes the key, placed with a hard link, so keep the directory on
 The server copies its database into `backups/` every day at 03:30 in the home's zone, and an owner can take one any time with `POST /api/v1/backups`. The newest 7 are kept (`backups.keep`).
 
 > [!WARNING]
-> The backups leave out `keys/server.key`. A restored `server.db` opens only with its key, and without it the server can no longer reach your feeders. Copy `keys/server.key` somewhere off the machine once, and copy `backups/` off the machine regularly. Or back up the whole data directory.
+> The backups leave out `keys/server.key` and `stock/`. A restored `server.db` opens only with its key, and without it the server can no longer reach your feeders. Once an install has written over a feeder's stock firmware, the server's copy in `stock/` may be the only one left, and neither these backups nor an export holds it. Copy `keys/server.key` somewhere off the machine once, copy `stock/` off the machine after the server keeps a feeder's stock, and copy `backups/` off the machine regularly. Or back up the whole data directory.
 
 To restore from a backup:
 
