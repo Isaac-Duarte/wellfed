@@ -16,10 +16,12 @@ pub enum ServerErrorKind {
     Redirected,
     /// Nothing answered at the address, or not in time to connect.
     Unreachable,
-    /// The request broke after it was sent, its answer was cut off, the
-    /// server went quiet past the phone's timeouts, or it failed inside (a
-    /// `5xx` problem): it may have run.
+    /// The request broke after it was sent, its answer was cut off, or the
+    /// server went quiet past the phone's timeouts: it may have run.
     Interrupted,
+    /// The server answered that it failed inside, or lost the feeder part
+    /// way (a `5xx` problem): it may have run.
+    ServerFailed,
     /// The name or the password is wrong.
     BadCredentials,
     /// Too many failed logins: `retry_after_seconds` says when the server

@@ -1469,7 +1469,9 @@ impl Router {
                             state.reach = ServerReach::Refused;
                             state.standing = Standing::Refused;
                         }
-                        ServerErrorKind::Unreachable | ServerErrorKind::Interrupted => {
+                        ServerErrorKind::Unreachable
+                        | ServerErrorKind::Interrupted
+                        | ServerErrorKind::ServerFailed => {
                             state.reach = ServerReach::Down { since_ms: now_ms() };
                         }
                         _ => {}

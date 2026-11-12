@@ -123,6 +123,10 @@ fn kind(error: &Error) -> ServerErrorKind {
         Failure::Interrupted if matches!(error, Error::Decode(_) | Error::Unexpected { .. }) => {
             return ServerErrorKind::Protocol;
         }
+        // The server itself said it failed: the connection held.
+        Failure::Interrupted if matches!(error, Error::Problem { .. }) => {
+            return ServerErrorKind::ServerFailed;
+        }
         Failure::Interrupted => return ServerErrorKind::Interrupted,
         Failure::OutcomeUnknown => return ServerErrorKind::OutcomeUnknown,
         Failure::FeederOffline => return ServerErrorKind::FeederOffline,
@@ -686,6 +690,35 @@ mod tests {
         for error in unreadable {
             assert_eq!(error.failure(), Failure::Interrupted, "{error}");
             assert_eq!(ServerError::from(error).kind, ServerErrorKind::Protocol);
+        }
+    }
+
+    /// A Wellfed server that answers it failed inside reads as that, not as
+    /// a connection that broke, and still as possibly run.
+    #[test]
+    fn a_server_that_says_it_failed_reads_so_and_still_may_have_run() {
+        use wellfed_api::{ErrorCode, Problem};
+        use wellfed_server_client::{Failure, StatusCode};
+
+        for (status, code) in [
+            (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal),
+            (StatusCode::BAD_GATEWAY, ErrorCode::Unreachable),
+        ] {
+            let error = Error::Problem {
+                status,
+                problem: Box::new(Problem {
+                    kind: "about:blank".into(),
+                    title: "It failed".into(),
+                    status: status.as_u16(),
+                    code,
+                    detail: None,
+                    refusal: None,
+                    release: None,
+                }),
+                retry_after: None,
+            };
+            assert_eq!(error.failure(), Failure::Interrupted, "{error}");
+            assert_eq!(ServerError::from(error).kind, ServerErrorKind::ServerFailed);
         }
     }
 

@@ -12,6 +12,8 @@ String serverErrorWords(ServerError error) => switch (error.kind) {
   ServerErrorKind.redirected => 'The server sent the $deviceName elsewhere. Use this address instead: ${error.message}',
   ServerErrorKind.unreachable => 'Nothing answered at that address. Check the $deviceName is on the home network.',
   ServerErrorKind.interrupted => 'The connection broke before the server answered.',
+  ServerErrorKind.serverFailed =>
+    'The server failed partway, so it may or may not have taken. Check before you try again.',
   ServerErrorKind.badCredentials => 'The name or the password is wrong.',
   ServerErrorKind.rateLimited => switch (error.retryAfterSeconds) {
     final int seconds? => 'Too many tries. Try again in $seconds seconds.',
