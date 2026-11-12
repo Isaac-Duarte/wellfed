@@ -22,7 +22,9 @@
 //! one whole view under the interrupt guard, so a reader never pairs half
 //! of one view with half of another.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+#[cfg(any(not(target_os = "none"), feature = "km4"))]
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use crate::cell::TaskCell;
 #[cfg(any(not(target_os = "none"), feature = "km4"))]
