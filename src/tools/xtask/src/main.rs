@@ -52,8 +52,14 @@ enum Task {
     Fuzz {
         #[arg(value_enum)]
         target: fuzz::Target,
-        /// How long to fuzz.
-        #[arg(long, default_value_t = 60, conflicts_with = "replay")]
+        /// How long to fuzz: at least a second, since libFuzzer reads 0 as
+        /// no limit.
+        #[arg(
+            long,
+            default_value_t = 60,
+            conflicts_with = "replay",
+            value_parser = clap::value_parser!(u32).range(1..)
+        )]
         seconds: u32,
         /// Run this one saved input (a crash artifact) instead of fuzzing.
         #[arg(long)]

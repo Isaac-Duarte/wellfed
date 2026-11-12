@@ -1,8 +1,8 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-release-apk app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-fuzz check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-release-apk app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
-	@echo "check-rust / check-deps / check-cross / check-virtual-feeder / check-docs: individual checks"
+	@echo "check-rust / check-deps / check-fuzz / check-cross / check-virtual-feeder / check-docs: individual checks"
 	@echo "check-bench-board: Clippy and a release build of the bench board's RP2040 firmware (part of check-cross)"
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
@@ -18,7 +18,7 @@ help:
 	@echo "check-server-release: the release check against dist/server/ and the image"
 	@echo "Checks do not open serial ports, change routing, or send device commands."
 
-check: check-rust check-deps check-cross check-virtual-feeder check-docs
+check: check-rust check-deps check-fuzz check-cross check-virtual-feeder check-docs
 
 # Library and binary code only: input never panics on `unwrap`, a narrowing
 # `as` never wraps silently, and nothing is `pub` that no caller can reach.
@@ -75,6 +75,14 @@ check-deps:
 	cargo deny --locked check
 	cargo deny --manifest-path src/fuzz/Cargo.toml --locked check --config src/fuzz/deny.toml
 	cargo deny --manifest-path $(BENCH_BOARD)/Cargo.toml --locked check --config $(BENCH_BOARD)/deny.toml
+
+# The fuzz targets are evidence for the parsers they drive, so each must
+# compile and lint clean on every change, though only `cargo xtask fuzz` runs
+# them. Clippy checks them on the pinned compiler without libFuzzer's
+# unstable sanitizer flags, in the fuzz crate's own target directory, since
+# its lockfile is not the workspace's.
+check-fuzz:
+	cargo clippy --locked --manifest-path src/fuzz/Cargo.toml --target-dir $(or $(CARGO_TARGET_DIR),target)/fuzz --bins -- -D warnings
 
 # The KM0 core's routines for both boards, built and linted for the target,
 # where the RAM park, the trial and the C exports compile: the host passes in
