@@ -20,7 +20,7 @@ pub(crate) fn locate(identity: &[u8; 32], address: Option<&str>) -> Result<Socke
 
 /// Fresh bytes from the system's random source.
 pub(crate) fn random<const N: usize>() -> Result<[u8; N]> {
-    private::random(OwnerKey::system()).context("read the system random source")
+    private::random().context("read the system random source")
 }
 
 /// An open session: this computer's own, or the bench server's.

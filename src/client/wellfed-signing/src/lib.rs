@@ -52,7 +52,7 @@ use wellfed_formats::VERIFICATION;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::credentials::{KeyScope, OtaKeyFile};
 use wellfed_formats::manifest::{BuildManifest, Provisioning};
-use wellfed_formats::private::{SYSTEM_RANDOM, random, write_new_whole};
+use wellfed_formats::private::{random, write_new_whole};
 use wellfed_formats::require;
 use wellfed_formats::review::ImageKind;
 use wellfed_image::bank::BANK1;
@@ -145,7 +145,7 @@ pub fn keygen(output: &Path, scope: KeyScope) -> Result<String> {
 /// Write a new key of any scope at `output`, whole, mode 600, never
 /// replacing one; the public key, as hex.
 fn write_key(output: &Path, scope: KeyScope) -> Result<String> {
-    let seed: [u8; 32] = random(Path::new(SYSTEM_RANDOM))?;
+    let seed: [u8; 32] = random()?;
     let public_key =
         hex::Lower(&SigningKey::from_bytes(&seed).verifying_key().to_bytes()).to_string();
 

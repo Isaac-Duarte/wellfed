@@ -154,7 +154,7 @@ impl Stored {
     /// The kept backup's path for the feeder the key file names.
     fn path(&self) -> Result<PathBuf> {
         let keys = home::or_home(self.keys.as_deref(), Home::owner_key)?;
-        let key = OwnerKey::open(&keys, None, Missing::Refuse, OwnerKey::system())?;
+        let key = OwnerKey::open(&keys, None, Missing::Refuse)?;
         let identity = key.feeder(self.feeder.as_deref())?;
         Ok(backup_path(&backups(self.backups.as_deref())?, &identity))
     }
@@ -195,12 +195,7 @@ fn backups(given: Option<&Path>) -> Result<PathBuf> {
 
 /// `wellfed restore-stock`: install the backup over the replacement.
 pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
-    let key_file = OwnerKey::open(
-        &args.target.keys()?,
-        None,
-        Missing::Refuse,
-        OwnerKey::system(),
-    )?;
+    let key_file = OwnerKey::open(&args.target.keys()?, None, Missing::Refuse)?;
     let backups = backups(args.backups.as_deref())?;
     let identity = key_file.feeder(args.target.feeder.as_deref())?;
     let backup = match &args.backup {

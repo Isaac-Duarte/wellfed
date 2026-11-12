@@ -4,10 +4,8 @@
 //! its feeder. Home Assistant keeps the secret in the entry's data and hands
 //! it back at each start, so a restart resumes as the same client.
 
-use std::path::Path;
-
 use wellfed_client::api::Invite;
-use wellfed_formats::private::{self, SYSTEM_RANDOM};
+use wellfed_formats::private;
 use wellfed_model::{ClientRole, Joined as Enrollment};
 use wellfed_session::noise::Keypair;
 
@@ -16,7 +14,7 @@ use crate::Error;
 /// `N` fresh bytes from the OS generator: secrets, ephemeral keys and
 /// request ids.
 pub(crate) fn random<const N: usize>() -> Result<[u8; N], Error> {
-    Ok(private::random(Path::new(SYSTEM_RANDOM))?)
+    Ok(private::random()?)
 }
 
 /// A 32-byte value from Python's bytes, or the length it had.
