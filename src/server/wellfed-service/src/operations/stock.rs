@@ -23,7 +23,7 @@ use wellfed_api::{
 };
 use wellfed_mirror::{BankReadError, ReadError};
 use wellfed_model::{Answer, Op, UpdatePhase};
-use wellfed_releases::{DOWNGRADE_LEN, MANIFEST_LEN, Taken};
+use wellfed_releases::{DOWNGRADE_LEN, MANIFEST_LEN, RestoreError, Taken};
 
 use crate::operations::installs::Offer;
 use crate::{
@@ -150,11 +150,18 @@ impl Service {
             return Err(Error::Refused(FeederRefusal::Forbidden));
         }
         let (view, backup) = self.releases.stock().backup(row.identity).await?;
+        // A restore signed for another model is never sent: the device
+        // would refuse it, but only once it arrives. The stock image is
+        // one model's, so a manifest naming another offers no restore of it.
         let offer = backup
             .restore_offer(&request.manifest.0)
-            .map_err(InstallError::RestoreMismatch)?;
-        // A restore signed for another model is never sent: the device
-        // would refuse it, but only once it arrives.
+            .map_err(|error| match error {
+                RestoreError::OtherModel { model } => InstallError::OtherModel {
+                    release: model.into(),
+                    device: row.model,
+                },
+                error => InstallError::RestoreMismatch(error),
+            })?;
         if offer.model != row.model {
             return Err(InstallError::OtherModel {
                 release: offer.model.into(),
