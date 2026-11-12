@@ -22,7 +22,7 @@ use wellfed_formats::lock::SdkLock;
 use wellfed_formats::manifest::{Artifact, Audits, CompiledArchive};
 
 use self::audit::{Archives, Binutils, park, word};
-use self::sdk::{Overrides, check_sdk_worktree, prepare, rust_archive};
+use self::sdk::{Overrides, Staged, check_sdk_worktree, checked_worktree, prepare, rust_archive};
 use self::toolchain::{toolchain_lock, verify_toolchain};
 use super::{Built, Job};
 use crate::device::StockPaths;
@@ -658,7 +658,12 @@ impl Build<'_> {
 
     /// Nothing the build read changed while it compiled. Returns the
     /// toolchain's file pins.
-    fn recheck(&self, overrides: &Overrides, lock: &SdkLock) -> Result<BTreeMap<String, String>> {
+    fn recheck(
+        &self,
+        overrides: &Overrides,
+        staged: &Staged,
+        lock: &SdkLock,
+    ) -> Result<BTreeMap<String, String>> {
         let job = self.job;
         (job.recheck)()?;
         for (path, checksum) in overrides {
@@ -666,6 +671,7 @@ impl Build<'_> {
                 AmebadError::OverrideChanged { path: path.clone() }
             })?;
         }
+        staged.recheck()?;
         check_sdk_worktree(&self.sdk, job.profile)?;
 
         let pins = toolchain_lock(job.repo, lock)?;
@@ -784,12 +790,14 @@ impl Amebad {
             None
         };
 
-        let (sdk, overrides) = prepare(job, self, stock.as_ref(), &lock)?;
+        let sdk = checked_worktree(job, &lock)?;
+        let staged = Staged::new(job, &sdk);
+        let overrides = prepare(job, self, stock.as_ref(), &sdk, &staged)?;
         let build = Build {
             job,
             stock,
             log: job.log.clone(),
-            sdk,
+            sdk: sdk.clone(),
             binutils: Binutils {
                 dir: job.toolchain.join("bin"),
             },
@@ -803,7 +811,7 @@ impl Amebad {
         } else {
             Default::default()
         };
-        let toolchain_files = build.recheck(&overrides, &lock)?;
+        let toolchain_files = build.recheck(&overrides, &staged, &lock)?;
         let audits = build.audits(&ota, &archives)?;
 
         Ok(Built {

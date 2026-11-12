@@ -5,8 +5,12 @@
 //! disk, so a rerun never stacks edits, and each one anchors on text that
 //! occurs exactly once in the pinned SDK, so a changed SDK is refused rather
 //! than silently patched elsewhere. The overlaid files' digests go into the
-//! manifest and are checked again after compilation.
+//! manifest and are checked again after compilation. So are the copies staged
+//! from the checkout (the application entry, the BLE peripheral, the
+//! first-boot mains) and the generated Wi-Fi header, whose digests the
+//! manifest does not carry: [`Staged`] holds them for the recheck.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -46,6 +50,10 @@ pub enum SdkError {
     /// A staged copy differs from the input the identity hashed.
     #[error("{file}: {name}")]
     Staged { file: StagedFile, name: String },
+    /// A staged copy or generated header changed after staging, while the
+    /// vendor recipes compiled it.
+    #[error("Staged SDK file {path} changed during compilation")]
+    StagedChanged { path: String },
     #[error("Build worktree has an unexpected SDK revision")]
     Revision,
     #[error("Unexpected toolchain path; left unchanged: {}", path.display())]
@@ -484,6 +492,68 @@ fn walk(directory: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 /// The build's SDK overlays, keyed by SDK-relative path with their digests.
 pub(crate) type Overrides = BTreeMap<String, String>;
 
+/// The files the build compiles that came from somewhere other than an
+/// overlay: copies of checkout inputs, each checked against the digest the
+/// identity hashed, and the generated Wi-Fi header. Their digests stay in
+/// memory for [`Staged::recheck`], so the header's, which a dictionary could
+/// turn back into the bench passphrase, never reaches the manifest.
+pub(crate) struct Staged<'a> {
+    /// The checkout, which the inputs' names are relative to.
+    root: &'a Path,
+    /// The input digests the identity was computed from.
+    inputs: &'a BTreeMap<String, String>,
+    sdk: &'a Path,
+    digests: RefCell<BTreeMap<String, String>>,
+}
+
+impl<'a> Staged<'a> {
+    pub(crate) fn new(job: &'a Job<'a>, sdk: &'a Path) -> Self {
+        Self {
+            root: &job.repo.root,
+            inputs: job.inputs,
+            sdk,
+            digests: RefCell::default(),
+        }
+    }
+
+    /// Check `copy`, staged from the checkout's `source`, against the
+    /// digest the identity hashed, and hold it for the recheck. A source
+    /// read in place (`copy == source`, the bench Wi-Fi file) is checked
+    /// only: the job's own recheck covers it.
+    fn input(&self, source: &Path, copy: &Path, file: StagedFile) -> Result<()> {
+        let name = crate::relative(source, self.root)?;
+        let checksum = digest(copy)?;
+        require(self.inputs.get(&name) == Some(&checksum), || {
+            SdkError::Staged { file, name }
+        })?;
+        if copy != source {
+            self.hold(copy, checksum)?;
+        }
+        Ok(())
+    }
+
+    /// Hold a generated file at the bytes just written.
+    fn generated(&self, path: &Path) -> Result<()> {
+        self.hold(path, digest(path)?)
+    }
+
+    fn hold(&self, path: &Path, checksum: String) -> Result<()> {
+        let relative = crate::relative(path, self.sdk)?;
+        self.digests.borrow_mut().insert(relative, checksum);
+        Ok(())
+    }
+
+    /// Refuse a staged file that changed since staging.
+    pub(crate) fn recheck(&self) -> Result<()> {
+        for (path, checksum) in self.digests.borrow().iter() {
+            require(&digest(&self.sdk.join(path))? == checksum, || {
+                SdkError::StagedChanged { path: path.clone() }
+            })?;
+        }
+        Ok(())
+    }
+}
+
 /// Write an overlay and record its digest.
 fn overlay(sdk: &Path, relative: &str, text: &str, overrides: &mut Overrides) -> Result<()> {
     let path = sdk.join(relative);
@@ -503,35 +573,33 @@ fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Create or check the profile's worktree and apply its overlays.
-/// The job's inputs hold the digests the identity was computed from;
-/// staged copies of inputs must still match them.
+/// The profile's SDK worktree, created or checked: the first half of
+/// [`prepare`], so the caller can hold the [`Staged`] files against it.
+pub(crate) fn checked_worktree(job: &Job, lock: &SdkLock) -> Result<PathBuf> {
+    worktree(job.repo, &job.output, job.profile, lock)
+}
+
+/// Apply the profile's overlays to its checked worktree. The job's inputs
+/// hold the digests the identity was computed from; staged copies of inputs
+/// must still match them, and `staged` holds them for the recheck.
 pub(crate) fn prepare(
     job: &Job,
     board: &Amebad,
     stock: Option<&StockPaths>,
-    lock: &SdkLock,
-) -> Result<(PathBuf, Overrides)> {
+    sdk: &Path,
+    staged: &Staged,
+) -> Result<Overrides> {
     let (repo, profile) = (job.repo, job.profile);
-    let sdk = worktree(repo, &job.output, profile, lock)?;
 
     let mut overrides = Overrides::new();
-    let staged = |source: &Path, copy: &Path, file: StagedFile| -> Result<()> {
-        let name = crate::relative(source, &repo.root)?;
-        require(job.inputs.get(&name) == Some(&digest(copy)?), || {
-            SdkError::Staged { file, name }
-        })?;
-        Ok(())
-    };
-
     if let Some(stock) = stock {
-        ota_addresses(stock, &sdk, &mut overrides)?;
+        ota_addresses(stock, sdk, &mut overrides)?;
         let source = pinmap::overlay(
-            &pinned(&sdk, PINMAP)?,
+            &pinned(sdk, PINMAP)?,
             job.device.model(),
             &fs::read(&stock.image)?,
         )?;
-        overlay(&sdk, PINMAP, &source, &mut overrides)?;
+        overlay(sdk, PINMAP, &source, &mut overrides)?;
     }
     if profile.has(Stage::Rust) {
         rust_overlays(
@@ -539,18 +607,18 @@ pub(crate) fn prepare(
             job.device.model(),
             board,
             job.provisioning,
-            &sdk,
+            sdk,
             &mut overrides,
-            &staged,
+            staged,
         )?;
         let bluetooth = board.bluetooth_source(job.firmware)?;
-        bluetooth_overlays(&sdk, bluetooth, &mut overrides, &staged)?;
+        bluetooth_overlays(sdk, bluetooth, &mut overrides, staged)?;
     }
     if profile.has(Stage::Firstboot) {
-        firstboot_overlays(board, &sdk, &mut overrides, &staged)?;
+        firstboot_overlays(board, sdk, &mut overrides, staged)?;
     }
-    recompile_on_option_change(&sdk)?;
-    Ok((sdk, overrides))
+    recompile_on_option_change(sdk)?;
+    Ok(overrides)
 }
 
 /// The profile's SDK worktree at the pinned revision, created on first
@@ -592,7 +660,7 @@ fn rust_overlays(
     provisioning: Provisioning,
     sdk: &Path,
     overrides: &mut Overrides,
-    staged: &dyn Fn(&Path, &Path, StagedFile) -> Result<()>,
+    staged: &Staged,
 ) -> Result<()> {
     let example = sdk.join("component/common/example");
     // The vendor makefiles name objects by basename and include old .d
@@ -605,7 +673,7 @@ fn rust_overlays(
 
     let destination = example.join("example_entry.c");
     write_if_changed(&destination, &fs::read(&board.entry)?)?;
-    staged(&board.entry, &destination, StagedFile::Source)?;
+    staged.input(&board.entry, &destination, StagedFile::Source)?;
 
     // Earlier C builds modified these SDK makefiles; restore the pinned copies.
     for relative in [project(UTILITIES_MAKEFILE), SRC_LP_MAKEFILE.to_string()] {
@@ -685,8 +753,9 @@ fn rust_overlays(
     // network.
     let (header, source) = credentials_header(repo, provisioning)?;
     write_if_changed(&sdk.join(WIFI_HEADER), header.as_bytes())?;
+    staged.generated(&sdk.join(WIFI_HEADER))?;
     if let Some(wifi) = source {
-        staged(&wifi, &wifi, StagedFile::WifiCredentials)?;
+        staged.input(&wifi, &wifi, StagedFile::WifiCredentials)?;
     }
     Ok(())
 }
@@ -725,7 +794,7 @@ fn bluetooth_overlays(
     sdk: &Path,
     bluetooth: Option<&Path>,
     overrides: &mut Overrides,
-    staged: &dyn Fn(&Path, &Path, StagedFile) -> Result<()>,
+    staged: &Staged,
 ) -> Result<()> {
     let objects = sdk.join(project("project_hp/asdk"));
     remove_objects(&objects.join("make/utilities_example"), "wellfed_ble")?;
@@ -743,7 +812,7 @@ fn bluetooth_overlays(
     };
 
     write_if_changed(&destination, &fs::read(source)?)?;
-    staged(source, &destination, StagedFile::Source)?;
+    staged.input(source, &destination, StagedFile::Source)?;
     // rust_overlays restored this makefile from the pinned revision.
     let makefile = project(UTILITIES_MAKEFILE);
     let anchor = "CSRC += $(DIR)/example_entry.c\n";
@@ -859,7 +928,7 @@ fn firstboot_overlays(
     board: &Amebad,
     sdk: &Path,
     overrides: &mut Overrides,
-    staged: &dyn Fn(&Path, &Path, StagedFile) -> Result<()>,
+    staged: &Staged,
 ) -> Result<()> {
     // Fast connect saves reconnect data to FAST_RECONNECT_DATA (0x105000),
     // inside the application bank; it also enables fast DHCP's read of that
@@ -880,7 +949,7 @@ fn firstboot_overlays(
             core.dir()
         );
         write_if_changed(&sdk.join(&relative), &fs::read(source)?)?;
-        staged(source, &sdk.join(&relative), StagedFile::FirstbootMain)?;
+        staged.input(source, &sdk.join(&relative), StagedFile::FirstbootMain)?;
         overrides.insert(relative.clone(), digest(&sdk.join(&relative))?);
     }
     Ok(())
@@ -889,6 +958,53 @@ fn firstboot_overlays(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every staged copy and the generated header are held at their staged
+    /// bytes: one changed while the vendor recipes ran is refused, though
+    /// its checkout input is unchanged.
+    #[test]
+    fn a_staged_copy_or_header_changed_after_staging_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let sdk = root.path().join("sdk");
+        fs::create_dir_all(sdk.join("example")).unwrap();
+        let source = root.path().join("entry.c");
+        fs::write(&source, "int main;").unwrap();
+        let inputs = BTreeMap::from([("entry.c".to_string(), digest(&source).unwrap())]);
+        let staged = || Staged {
+            root: root.path(),
+            inputs: &inputs,
+            sdk: &sdk,
+            digests: RefCell::default(),
+        };
+
+        for changed in ["example/entry.c", "example/header.h"] {
+            let copy = sdk.join("example/entry.c");
+            let header = sdk.join("example/header.h");
+            fs::copy(&source, &copy).unwrap();
+            fs::write(&header, "#define SSID \"\"").unwrap();
+            let held = staged();
+            held.input(&source, &copy, StagedFile::Source).unwrap();
+            held.generated(&header).unwrap();
+            held.recheck().unwrap();
+
+            fs::write(sdk.join(changed), "edited").unwrap();
+            let error = held.recheck().unwrap_err();
+            assert!(
+                matches!(&error, crate::Error::Sdk(SdkError::StagedChanged { path }) if path == changed),
+                "{error:?}"
+            );
+        }
+
+        let copy = sdk.join("example/entry.c");
+        fs::write(&copy, "edited").unwrap();
+        let error = staged()
+            .input(&source, &copy, StagedFile::Source)
+            .unwrap_err();
+        assert!(
+            matches!(&error, crate::Error::Sdk(SdkError::Staged { .. })),
+            "{error:?}"
+        );
+    }
 
     const GIT: [&str; 8] = [
         "-c",
