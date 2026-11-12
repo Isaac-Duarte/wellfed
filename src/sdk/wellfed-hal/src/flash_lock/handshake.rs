@@ -1,6 +1,6 @@
 //! The KM4 side of the park handshake with KM0, for every KM4 caller that
-//! binds a flash authority: the arming sequence, and the probes that drive
-//! the outputs on their own.
+//! binds a flash authority: the arming sequence, the probes that drive the
+//! outputs on their own, and the settings stress.
 //!
 //! A handshake bumps the boot count, opens a session and says hello; then
 //! KM0's reply is awaited for at most [`READY_TIMEOUT_MS`]; and the
@@ -30,8 +30,10 @@ pub enum Unstarted {
 /// Where a handshake stands after a poll.
 #[derive(Clone, Copy, Debug)]
 pub enum Handshaking {
-    /// KM0 has not answered yet.
-    Waiting,
+    /// KM0 has not answered yet. `foreign` when its reply register holds
+    /// a READY for another session, or a malformed one, which a bench report
+    /// may name; it is waited past like no answer.
+    Waiting { foreign: bool },
     /// KM0 never answered within [`READY_TIMEOUT_MS`].
     TimedOut,
     /// KM0 answered, and its session was bound into a coordinator.
@@ -44,12 +46,18 @@ pub enum Handshaking {
 /// accepted, so a caller cannot attach a refused one.
 #[derive(Clone, Copy, Debug)]
 pub struct Answer {
+    peer: u64,
     inactive: bool,
     /// `None` when the clock gave no coordinator.
     bound: Option<(FlashCoord, FlashReply)>,
 }
 
 impl Answer {
+    /// KM0's session, which it echoed with this handshake's.
+    pub const fn peer(&self) -> u64 {
+        self.peer
+    }
+
     /// Whether STOP and infrared OFF read back verified.
     pub const fn inactive(&self) -> bool {
         self.inactive
@@ -68,11 +76,13 @@ impl Answer {
             .map(|(coord, _)| coord)
     }
 
-    /// The coordinator whatever it replied, for arming alone: it keeps even
-    /// a refused one in its provider, which the feeding owner reads its
-    /// outputs' leases from. A refused coordinator is never idle, so it
-    /// grants no lease, and its phase and fault say why it refused.
-    pub(crate) fn bound(self) -> Option<(FlashCoord, FlashReply)> {
+    /// The coordinator whatever it replied, for a caller that keeps even a
+    /// refused one in its provider: arming, whose provider the feeding owner
+    /// reads its outputs' leases from, and the settings stress, which reports
+    /// its phase and fault. A refused coordinator is never idle, so it grants
+    /// no lease, and its phase and fault say why it refused. Arm nothing
+    /// with it unless its reply is [`FlashReply::Accepted`].
+    pub fn with_any_reply(self) -> Option<(FlashCoord, FlashReply)> {
         self.bound
     }
 }
@@ -81,6 +91,7 @@ impl Answer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Handshake {
     authority: u64,
+    count: u32,
 }
 
 impl Handshake {
@@ -97,7 +108,7 @@ impl Handshake {
         if !park::hello::<M>(authority) {
             return Err(Unstarted::Refused);
         }
-        Ok(Self { authority })
+        Ok(Self { authority, count })
     }
 
     /// The session this handshake opened, which the coordinator is bound
@@ -106,12 +117,21 @@ impl Handshake {
         self.authority
     }
 
+    /// The boot count this handshake raised, which its session carries.
+    pub const fn count(&self) -> u32 {
+        self.count
+    }
+
     /// One poll, `now_ms` after the handshake started.
     pub fn step<M: Mmio>(&self, now_ms: u32) -> Handshaking {
         let peer = match park::reply::<M>(self.authority) {
             Reply::Ready(peer) => peer,
             _ if now_ms >= READY_TIMEOUT_MS => return Handshaking::TimedOut,
-            _ => return Handshaking::Waiting,
+            reply => {
+                return Handshaking::Waiting {
+                    foreign: reply == Reply::Foreign,
+                };
+            }
         };
 
         // Bind only with verified STOP and infrared OFF readback.
@@ -120,6 +140,10 @@ impl Handshake {
             let reply = coord.ready(self.authority, peer, inactive, now_ms);
             (coord, reply)
         });
-        Handshaking::Ready(Answer { inactive, bound })
+        Handshaking::Ready(Answer {
+            peer,
+            inactive,
+            bound,
+        })
     }
 }

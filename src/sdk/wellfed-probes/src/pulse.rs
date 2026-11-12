@@ -375,7 +375,7 @@ impl Probe {
                 self.board.close();
                 return self.end(Record::Timeout { ms });
             }
-            Handshaking::Waiting => return next(WAIT_MS, None),
+            Handshaking::Waiting { .. } => return next(WAIT_MS, None),
         };
         self.flash = answer.accepted();
 

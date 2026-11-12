@@ -65,7 +65,7 @@ fn an_unanswered_handshake_waits_then_times_out() {
 
     assert!(matches!(
         handshake.step::<Ipc<false>>(READY_TIMEOUT_MS - 1),
-        Handshaking::Waiting
+        Handshaking::Waiting { foreign: false }
     ));
     assert!(matches!(
         handshake.step::<Ipc<false>>(READY_TIMEOUT_MS),
@@ -86,4 +86,29 @@ fn nothing_starts_while_writes_are_held_or_km0_refuses() {
 
     fresh();
     assert_eq!(Handshake::start::<Refusing>(0), Err(Unstarted::Refused));
+}
+
+/// A READY that names another session is foreign: it is reported, waited
+/// past like no answer, and never bound, while the session it names binds.
+#[test]
+fn a_ready_for_another_session_is_foreign_and_waited_past() {
+    fresh();
+    assert!(stopped::initialize().verified());
+    let first = Handshake::start::<Ipc<false>>(0).expect("started");
+    let second = Handshake::start::<Ipc<false>>(0).expect("started");
+    assert_ne!(first.authority(), second.authority());
+
+    assert!(matches!(
+        answered(first, 1),
+        Handshaking::Waiting { foreign: true }
+    ));
+    assert!(matches!(
+        first.step::<Ipc<false>>(READY_TIMEOUT_MS),
+        Handshaking::TimedOut
+    ));
+    let Handshaking::Ready(answer) = second.step::<Ipc<false>>(1) else {
+        panic!("KM0 answered the second session");
+    };
+    assert_eq!(answer.peer(), PEER);
+    assert!(answer.accepted().is_some());
 }

@@ -116,12 +116,12 @@ impl Arming {
                 };
 
                 let answer = match handshake.step::<M>(now) {
-                    Handshaking::Waiting => return Poll::Pending(None),
+                    Handshaking::Waiting { .. } => return Poll::Pending(None),
                     Handshaking::TimedOut => return self.fail(Event::Timeout),
                     Handshaking::Ready(answer) => answer,
                 };
                 let inactive = answer.inactive();
-                match answer.bound() {
+                match answer.with_any_reply() {
                     None => self.fail(Event::Clock),
                     Some((coord, reply)) => {
                         let authority = handshake.authority();
