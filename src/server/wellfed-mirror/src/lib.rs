@@ -184,6 +184,8 @@ impl Shared {
 pub struct Mirror {
     shared: Arc<Shared>,
     feeders: Arc<Mutex<HashMap<FeederId, task::Handle>>>,
+    /// Held by a start or a stop across the wait for a task to end.
+    turns: Arc<tokio::sync::Mutex<()>>,
     cancel: CancellationToken,
     tasks: TaskTracker,
 }
@@ -215,6 +217,7 @@ impl Mirror {
                 desk: desk::Desk::default(),
             }),
             feeders: Arc::new(Mutex::new(HashMap::new())),
+            turns: Arc::new(tokio::sync::Mutex::new(())),
             cancel,
             tasks: TaskTracker::new(),
         }
@@ -222,12 +225,16 @@ impl Mirror {
 
     /// Start mirroring `feeder`, and subscribe to its updates from the
     /// first. A feeder already running is stopped first, and its task has
-    /// ended before the new one starts, so two sessions never overlap.
+    /// ended before the new one starts, so two sessions never overlap:
+    /// starts and stops take turns, so none runs while another waits for
+    /// a task to end.
     pub async fn start(&self, feeder: Feeder) -> broadcast::Receiver<MirrorEvent> {
+        let _turn = self.turns.lock().await;
         let id = feeder.id;
         let running = self.handles().remove(&id);
         if let Some(old) = running {
             old.stop().await;
+            self.shared.desk.forget(id);
         }
 
         let (updates, first) = broadcast::channel(UPDATES);
@@ -238,11 +245,7 @@ impl Mirror {
             self.cancel.child_token(),
             &self.tasks,
         );
-        // Two starts racing for one id: the loser's task is stopped too.
-        let raced = self.handles().insert(id, handle);
-        if let Some(other) = raced {
-            other.stop().await;
-        }
+        self.handles().insert(id, handle);
         first
     }
 
@@ -250,11 +253,13 @@ impl Mirror {
     /// it was running. Its last update is `Link::Offline`, then its
     /// broadcast closes.
     pub async fn stop(&self, id: FeederId) -> bool {
+        let _turn = self.turns.lock().await;
         let handle = self.handles().remove(&id);
         let Some(handle) = handle else {
             return false;
         };
         handle.stop().await;
+        self.shared.desk.forget(id);
         true
     }
 

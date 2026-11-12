@@ -1,8 +1,8 @@
 //! The mirror on its own, against the simulated feeder: updates follow the
 //! store, a command that waits past its turn is never sent, a late answer
 //! still reaches its caller, and a stopped feeder is let go (offline last)
-//! once its task has ended, and a zone change during a clock sync is synced
-//! too.
+//! once its task has ended, two starts of one feeder take turns, and a
+//! zone change during a clock sync is synced too.
 
 mod support;
 
@@ -10,16 +10,16 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use tokio::sync::broadcast::Receiver;
-use tokio::sync::broadcast::error::TryRecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 use wellfed_api::{Connection as Link, EventBody, EventKind, FeederEvent, HistoryEvent, Source};
-use wellfed_mirror::{AskError, MirrorEvent, Zone};
+use wellfed_mirror::{AskError, Feeder, MirrorEvent, Zone};
 use wellfed_model::{Answer, Op, Skew};
 use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::fixed::FixedClock;
 use wellfed_server_testkit::{TempStore, WAIT, local, until};
 use wellfed_store::Store;
 
-use support::{ID, mirrored, mirrored_timed, next};
+use support::{ID, SECRET, mirrored, mirrored_timed, next};
 
 /// The next new event the mirror broadcasts.
 async fn next_event(updates: &mut Receiver<MirrorEvent>) -> HistoryEvent {
@@ -212,6 +212,47 @@ fn a_stopped_feeder_is_let_go() {
             }
         }
         assert_eq!(last, Some(Link::Offline));
+
+        mirror.shutdown().await;
+        store.close().await;
+        sim.stop().await;
+    });
+}
+
+/// Two starts of a running feeder race. They take turns: the later one
+/// stops the earlier one's task, whose broadcast has closed before the
+/// later task starts, so the feeder serves the mirror one session.
+#[test]
+fn two_starts_of_one_feeder_take_turns() {
+    local(async {
+        let temp = TempStore::new();
+        let store = temp.open().await;
+        let sim = feeder::start().await;
+        let address = sim.address.to_string();
+        let (mirror, _updates) = mirrored(&store, &sim, &address, WAIT).await;
+        let feeder = || Feeder {
+            id: ID,
+            identity: sim.identity,
+            secret: SECRET,
+            address: Some(address.clone()),
+        };
+
+        let (mut earlier, mut later) = tokio::join!(mirror.start(feeder()), mirror.start(feeder()));
+        let closed = tokio::time::timeout(WAIT, async {
+            loop {
+                match earlier.recv().await {
+                    Err(RecvError::Closed) => break,
+                    Ok(_) | Err(RecvError::Lagged(_)) => {}
+                }
+            }
+        });
+        assert!(closed.await.is_ok(), "the earlier start's task ended");
+        while !matches!(next(&mut later).await, MirrorEvent::Link(Link::Online)) {}
+        let status = mirror.ask(ID, [5; 16], Op::Status).await;
+        let Ok(Answer::Status(status)) = status else {
+            panic!("a status read: {status:?}");
+        };
+        assert_eq!(status.sessions, 1);
 
         mirror.shutdown().await;
         store.close().await;
