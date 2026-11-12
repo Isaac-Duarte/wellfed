@@ -77,6 +77,8 @@ impl Updates {
         now_ms: u32,
     ) -> (Self, Booted) {
         let (Boot { bank, trial, storm }, build) = boot(flash, &mut banks.borrow_mut(), update_key);
+        #[cfg(feature = "harness")]
+        crate::harness::Alone::booting();
         mailbox::reset();
         wellfed_hal::interlock::INTERLOCK.reset();
         let store = Region::new(flash, storage::UPDATE);
