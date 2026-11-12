@@ -116,7 +116,7 @@ impl Deref for Scenario {
 impl Scenario {
     /// The catalog's entry for `name`: a name the catalog lacks fails the
     /// build, so every scenario here is one `--list` shows.
-    const fn new(name: &str, run: fn(&mut Ctx) -> Result<()>) -> Self {
+    pub(super) const fn new(name: &str, run: fn(&mut Ctx) -> Result<()>) -> Self {
         let mut i = 0;
         while i < catalog::SCENARIOS.len() {
             if same(catalog::SCENARIOS[i].name, name) {
@@ -661,12 +661,23 @@ pub(super) fn is_start(event: &Event<'_>) -> bool {
 }
 
 fn ota_power_cuts(ctx: &mut Ctx) -> Result<()> {
-    update_power_cuts(ctx, "cut")
+    update_power_cuts(ctx, "cut", AfterFailedCut::Recover)
+}
+
+/// What the power cuts do when a cut did not end as it should.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AfterFailedCut {
+    /// Cold-boot the feeder and put the baseline back before failing, so the
+    /// next scenario starts from it.
+    Recover,
+    /// Fail at once: `sustained` halts on any failure, cutting relay 1, and
+    /// powers nothing it can no longer account for.
+    Halt,
 }
 
 /// The two update power cuts, signing their images under `label`-twin and
 /// `label`-restore: `sustained` runs them more than once.
-pub(super) fn update_power_cuts(ctx: &mut Ctx, label: &str) -> Result<()> {
+pub(super) fn update_power_cuts(ctx: &mut Ctx, label: &str, failed: AfterFailedCut) -> Result<()> {
     let build = ctx.baseline()?.build.clone();
     // The feeder skips the trial for a build it has confirmed before, so the
     // cuts happen while it installs the feeder's twin (the same firmware
@@ -682,6 +693,10 @@ pub(super) fn update_power_cuts(ctx: &mut Ctx, label: &str) -> Result<()> {
     let restore = ctx.resign(&format!("{label}-restore"))?;
 
     let result = power_cuts(ctx, &twin);
+    if result.is_err() && failed == AfterFailedCut::Halt {
+        ctx.note("  A cut failed: halting before any recovery install; bank 1 may hold the twin");
+        return result;
+    }
     let since = ctx.mark()?;
     if result.is_err() {
         ctx.note("  Cold-booting, whatever stage it stopped in, then pushing the baseline");

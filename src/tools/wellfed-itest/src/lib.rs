@@ -693,12 +693,30 @@ fn unmet(scenario: &Scenario, ctx: &Ctx) -> Option<String> {
     None
 }
 
+/// What a run found: its verdicts so far, whether the feeder went silent, and
+/// the operator's interrupt if one ended it early.
+struct Ran {
+    reports: Vec<Report>,
+    silent: Option<Silent>,
+    interrupted: Option<Error>,
+}
+
 /// Run `scenarios` in order. A failure stops the rest unless `keep_going`;
-/// a silent feeder always stops them, with the recovery commands.
-fn run(ctx: &mut Ctx, scenarios: &[&'static Scenario]) -> Result<(Vec<Report>, Option<Silent>)> {
+/// a silent feeder always stops them, with the recovery commands. An
+/// interrupt stops them too, keeping every verdict reached, the one in
+/// progress recorded as interrupted.
+fn run(ctx: &mut Ctx, scenarios: &[&'static Scenario]) -> Ran {
     let mut reports = Vec::new();
     let mut stop: Option<String> = None;
     let mut silent = None;
+    let interrupt = |reports: &mut Vec<Report>, scenario: &Scenario, took, error| {
+        reports.push(Report {
+            scenario: scenario.name,
+            verdict: Verdict::Skip("interrupted by the operator".into()),
+            took,
+        });
+        Some(error)
+    };
     // Read once the baseline confirms; every later scenario is held to it.
     let mut expected: Option<DeviceState> = None;
 
@@ -723,7 +741,14 @@ fn run(ctx: &mut Ctx, scenarios: &[&'static Scenario]) -> Result<(Vec<Report>, O
 
         let mut verdict = match result {
             Ok(()) => Verdict::Pass,
-            Err(error) if error.interrupted() => return Err(error),
+            Err(error) if error.interrupted() => {
+                let interrupted = interrupt(&mut reports, scenario, took, error);
+                return Ran {
+                    reports,
+                    silent: ctx.went_silent.take(),
+                    interrupted,
+                };
+            }
             Err(error) => match error.unmet_on_device() {
                 Some(reason) => Verdict::Skip(reason),
                 None => Verdict::Fail(error.to_string()),
@@ -734,6 +759,8 @@ fn run(ctx: &mut Ctx, scenarios: &[&'static Scenario]) -> Result<(Vec<Report>, O
             if verdict == Verdict::Pass {
                 verdict = Verdict::Fail(reason.clone());
             }
+            // A halt on a silent feeder still needs the UART way back.
+            silent = ctx.went_silent.take().or(silent);
         } else if let Some(found) = ctx.silent() {
             if verdict == Verdict::Pass {
                 verdict = Verdict::Fail(found.reason());
@@ -748,7 +775,14 @@ fn run(ctx: &mut Ctx, scenarios: &[&'static Scenario]) -> Result<(Vec<Report>, O
                     "left the feeder changed: {}",
                     scenarios::restore_state(ctx, want, &now).join("; ")
                 )),
-                Err(error) if error.interrupted() => return Err(error),
+                Err(error) if error.interrupted() => {
+                    let interrupted = interrupt(&mut reports, scenario, took, error);
+                    return Ran {
+                        reports,
+                        silent,
+                        interrupted,
+                    };
+                }
                 Err(error) => Some(format!(
                     "could not read the feeder's state after it: {error}"
                 )),
@@ -790,7 +824,11 @@ fn run(ctx: &mut Ctx, scenarios: &[&'static Scenario]) -> Result<(Vec<Report>, O
             took,
         });
     }
-    Ok((reports, silent))
+    Ran {
+        reports,
+        silent,
+        interrupted: None,
+    }
 }
 
 /// The run's record: per-scenario verdicts beside the captures.
@@ -870,8 +908,8 @@ pub fn itest(bench: &mut Bench, args: &ItestArgs) -> Result<u8> {
     let (result, baseline) = match rig.start() {
         Ok(()) => {
             let mut ctx = Ctx::new(&mut rig, args);
-            let result = run(&mut ctx, &scenarios);
-            (result, ctx.baseline.take())
+            let ran = run(&mut ctx, &scenarios);
+            (Ok(ran), ctx.baseline.take())
         }
         Err(error) => (Err(error), None),
     };
@@ -879,7 +917,11 @@ pub fn itest(bench: &mut Bench, args: &ItestArgs) -> Result<u8> {
     let captures = rig.captures.clone();
     drop(rig);
 
-    let (reports, silent) = result?;
+    let Ran {
+        reports,
+        silent,
+        interrupted,
+    } = result?;
     say!("Results:");
     for report in &reports {
         let verdict = match report.verdict {
@@ -903,5 +945,8 @@ pub fn itest(bench: &mut Bench, args: &ItestArgs) -> Result<u8> {
     let summary = summary(&name, &reports, silent.as_ref(), &captures);
     std::fs::write(&record, serde_json::to_string_pretty(&summary)? + "\n")?;
     say!("Recorded {}", bench.rel(&record));
+    if let Some(error) = interrupted {
+        return Err(error);
+    }
     Ok(exit_code(&reports, silent.as_ref()))
 }

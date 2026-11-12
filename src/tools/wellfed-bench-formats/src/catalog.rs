@@ -116,7 +116,9 @@ pub const SCENARIOS: [Scenario; 10] = [
         name: "ota-recovery",
         about: "a failed trial gives way to bank 0, which stops corrupt, out-of-order and stalled transfers, then restores the baseline",
         tier: Tier::Standard,
-        needs: &[Need::Power, Need::Build],
+        // The fallback and the drills need no cold boot: the failing trial
+        // resets itself, and bank 0 serves every drill in one power cycle.
+        needs: &[Need::Build],
         baseline: false,
     },
     Scenario {
