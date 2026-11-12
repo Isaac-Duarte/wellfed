@@ -3,9 +3,10 @@ use std::collections::{BTreeMap, VecDeque};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use wellfed_bench_formats::banks::{Check, Content, Entry, Ledger, Source, Witness};
+use wellfed_bench_formats::flash::FlashUse;
 use wellfed_bench_formats::live::{
-    Activity, ActivityKind, BenchState, CancelState, ClockView, FeederStatus, FeederView, FlashUse,
-    JobView, Journal, JournalSource, Phase, ServerView, Session, Uart,
+    Activity, ActivityKind, BenchState, CancelState, ClockView, FeederStatus, FeederView, JobView,
+    Journal, JournalSource, Phase, ServerView, Session, Uart,
 };
 use wellfed_bench_formats::notes::{CardEvidence, Expect, Operator, Timer, TimerState, Verdict};
 use wellfed_bench_formats::progress::{

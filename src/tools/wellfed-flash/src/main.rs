@@ -453,7 +453,7 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use clap::ValueEnum;
-    use wellfed_bench_formats::live::FlashUse;
+    use wellfed_bench_formats::flash::FlashUse;
 
     use super::*;
 

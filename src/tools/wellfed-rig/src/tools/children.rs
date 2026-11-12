@@ -174,7 +174,7 @@ mod tests {
     use std::path::Path;
     use std::time::{Duration, Instant};
 
-    use wellfed_bench_formats::live::FlashUse;
+    use wellfed_bench_formats::flash::FlashUse;
 
     use super::*;
 

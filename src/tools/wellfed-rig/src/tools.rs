@@ -19,7 +19,8 @@ use wellfed_formats::canonical::sha256;
 
 use crate::device::{Answer, Ask, Device, DeviceError, DeviceLink, DeviceStatus, Fault};
 use crate::{Cancel, Error, Result, Waited, wait_child};
-use wellfed_bench_formats::live::{ActivityKind, FlashUse};
+use wellfed_bench_formats::flash::FlashUse;
+use wellfed_bench_formats::live::ActivityKind;
 use wellfed_bench_formats::progress::{FlashTool, Status};
 use wellfed_bench_formats::relative;
 use wellfed_bench_formats::session::Status as SessionStatus;

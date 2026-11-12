@@ -19,6 +19,7 @@ pub mod capture;
 pub mod catalog;
 #[cfg(feature = "device")]
 pub mod feeder;
+pub mod flash;
 pub mod lease;
 #[cfg(feature = "live")]
 pub mod live;

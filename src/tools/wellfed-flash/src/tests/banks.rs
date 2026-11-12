@@ -335,6 +335,42 @@ fn an_erased_marker_sector_is_accepted_only_with_the_rest_exactly_the_source() {
     assert!(development::images(&finish, &own).is_err());
 }
 
+/// A marker sector staged whole is finished, not part-programmed, even
+/// when the staged sector's last frames are erased bytes: a finish that
+/// stopped after it, with a later sector staged too, still completes.
+#[test]
+fn a_staged_marker_sector_ending_in_erased_frames_is_staged_whole() {
+    for frames in 1..=3 {
+        let mut payload = development::payload(&image(30000, 3), &BANK1)
+            .unwrap()
+            .to_vec();
+        payload[SECTOR - frames * 1024..SECTOR].fill(0xff);
+        let source = wellfed_image::fixtures::wrap(&payload);
+        let target = variant(&source, false);
+        let old = development::payload(&source, &BANK1).unwrap().to_vec();
+        let (_, staged) =
+            development::images(&update(Some(&source), &target, BANK1), &old).unwrap();
+        assert!(
+            staged[SECTOR - frames * 1024..SECTOR]
+                .iter()
+                .all(|b| *b == 0xff)
+        );
+
+        let later = (SECTOR..old.len())
+            .step_by(SECTOR)
+            .find(|at| old[*at..at + SECTOR] != staged[*at..at + SECTOR])
+            .unwrap();
+        let mut current = old.clone();
+        current[..SECTOR].copy_from_slice(&staged[..SECTOR]);
+        current[later..later + SECTOR].copy_from_slice(&staged[later..later + SECTOR]);
+
+        let mut finish = update(Some(&source), &target, BANK1);
+        finish.interrupted = true;
+        let finished = development::images(&finish, &current);
+        assert!(finished.is_ok(), "{frames}: {finished:?}");
+    }
+}
+
 /// A marker restore that stops part-way through the marker sector's
 /// program, its one changed sector, is finished by the interrupted mode
 /// from a fresh read, whichever frame it stopped after.

@@ -314,11 +314,13 @@ pub fn images(update: &Update, current: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
 
 /// Whether `sector` is `want`'s first whole program frames, at least
 /// `least` bytes of them and short of all, followed by erased flash: what a
-/// program stopped after the sector's erase leaves.
+/// program stopped after the sector's erase leaves. A sector that is `want`
+/// whole is programmed, even when `want` itself ends in erased frames.
 fn part_programmed(sector: &[u8], want: &[u8], least: usize) -> bool {
-    (least..SECTOR)
-        .step_by(FRAME)
-        .any(|n| sector[..n] == want[..n] && sector[n..].iter().all(|b| *b == 0xff))
+    sector != want
+        && (least..SECTOR)
+            .step_by(FRAME)
+            .any(|n| sector[..n] == want[..n] && sector[n..].iter().all(|b| *b == 0xff))
 }
 
 impl DevelopmentError {
