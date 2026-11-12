@@ -123,6 +123,7 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
     match error {
         Error::KeyChanged { .. } => return ServerErrorKind::KeyChanged,
         Error::NoIdentity => return ServerErrorKind::NoIdentity,
+        _ if error.untrusted_certificate() => return ServerErrorKind::UntrustedCertificate,
         _ => {}
     }
 

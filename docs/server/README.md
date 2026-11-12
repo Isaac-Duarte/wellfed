@@ -88,8 +88,10 @@ The app pins the key in three ways:
 | Server reached at | The app checks |
 | --- | --- |
 | An `https://` address found on the home network | That the handshake is signed by the key mDNS announced |
-| An `https://` address typed for the home network | The key the first handshake proves, which it then pins |
+| An `https://` address typed for the home network: a private or link-local IP, or a name under `.local`, `home.arpa`, `.lan` or `.internal`, or a single label such as `nas` | The key the first handshake proves, which it then pins |
 | An `https://` public name | The system's certificate authorities, and the key `GET /identity` answers at each login |
+
+Any other name counts as public. If the server's own HTTPS answers one, the system's authorities refuse its certificate, and the app says to use the server's IP or `.local` address instead.
 
 The app speaks no plain `http://` on the network: only to the phone or computer it runs on. Every later connection to a home-network address must prove the pinned key. One that proves another fails in the handshake, before anything is sent, the token included, and the app says the key changed. It never takes the new key by itself. The only thing it offers is removing the server; you add it again once you know why the key changed. Meanwhile the phone reaches its own feeders directly, as with the server down.
 

@@ -11991,6 +11991,7 @@ impl SseDecode for crate::api::server_error::ServerErrorKind {
             25 => crate::api::server_error::ServerErrorKind::FeederBusy,
             26 => crate::api::server_error::ServerErrorKind::KeyChanged,
             27 => crate::api::server_error::ServerErrorKind::NoIdentity,
+            28 => crate::api::server_error::ServerErrorKind::UntrustedCertificate,
             _ => unreachable!("Invalid variant for ServerErrorKind: {}", inner),
         };
     }
@@ -17800,6 +17801,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_error::ServerErrorKind
             Self::FeederBusy => 25.into_dart(),
             Self::KeyChanged => 26.into_dart(),
             Self::NoIdentity => 27.into_dart(),
+            Self::UntrustedCertificate => 28.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -23638,6 +23640,7 @@ impl SseEncode for crate::api::server_error::ServerErrorKind {
                 crate::api::server_error::ServerErrorKind::FeederBusy => 25,
                 crate::api::server_error::ServerErrorKind::KeyChanged => 26,
                 crate::api::server_error::ServerErrorKind::NoIdentity => 27,
+                crate::api::server_error::ServerErrorKind::UntrustedCertificate => 28,
                 _ => {
                     unimplemented!("");
                 }

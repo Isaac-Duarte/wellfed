@@ -92,6 +92,19 @@ impl From<reqwest::Error> for Error {
 }
 
 impl Error {
+    /// Whether the server's certificate was refused as no authority the
+    /// system trusts vouches for it: a server's own HTTPS reached as if
+    /// by a public name, say. Nothing was sent.
+    pub fn untrusted_certificate(&self) -> bool {
+        let Self::Http(http) = self else {
+            return false;
+        };
+        matches!(
+            crate::trust::carried::<rustls::Error>(http),
+            Some(rustls::Error::InvalidCertificate(_))
+        )
+    }
+
     /// How long the server asked to wait before trying again.
     pub fn retry_after(&self) -> Option<Duration> {
         match self {

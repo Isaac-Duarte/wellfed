@@ -98,6 +98,11 @@ pub enum ServerErrorKind {
     /// not the server's own `https://` port on the home network. Nothing
     /// was sent.
     NoIdentity,
+    /// The address answers HTTPS with a certificate no authority the phone
+    /// trusts vouches for, at a name the app takes for a public one: most
+    /// likely the server's own HTTPS by a name only the home network
+    /// resolves. Nothing was sent; its IP address or `.local` name works.
+    UntrustedCertificate,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

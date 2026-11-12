@@ -177,7 +177,10 @@ impl ServerCertVerifier for KeyVerifier {
                 if signed_by(pinned, message, dss) {
                     Ok(HandshakeSignatureValid::assertion())
                 } else {
-                    Err(mismatch(named_key(cert)))
+                    // A certificate naming the pinned key with a handshake
+                    // another key signed offers no key worth naming.
+                    let named = named_key(cert).filter(|named| named != pinned);
+                    Err(mismatch(named))
                 }
             }
             Expect::FirstUse(proved) => {

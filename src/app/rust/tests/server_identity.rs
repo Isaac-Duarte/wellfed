@@ -99,3 +99,21 @@ fn a_server_proving_another_key_is_refused_and_never_adopted() {
         server.stop().await;
     });
 }
+
+/// A server's own HTTPS reached as if by a public name is checked by the
+/// system's authorities, which never vouch for it: its own words, not that
+/// nothing answered.
+#[test]
+fn an_untrusted_certificate_has_its_own_kind() {
+    local(async {
+        let server = started().await;
+        let platform = server.https_client(wellfed_server_client::Trust::Platform);
+
+        let refused = platform.health().await.unwrap_err();
+
+        let error = wellfed_app_bridge::api::server_error::ServerError::from(refused);
+        assert_eq!(error.kind, ServerErrorKind::UntrustedCertificate);
+        assert!(!error.may_have_run);
+        server.stop().await;
+    });
+}

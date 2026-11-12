@@ -44,6 +44,9 @@ String serverErrorWords(ServerError error) => switch (error.kind) {
   ServerErrorKind.keyChanged =>
     "The server at that address isn't the one it announced or the one you added: it proved another key. "
         'Nothing was sent.',
+  ServerErrorKind.untrustedCertificate =>
+    "That address's certificate isn't one this $deviceName trusts. "
+        "Use the server's IP or .local address, like https://192.168.1.20:8443.",
   ServerErrorKind.noIdentity =>
     "That address answers, but not as a Wellfed server's own https:// port. "
         'Use the address the server prints for the home network, like https://192.168.1.20:8443.',

@@ -65,7 +65,7 @@ impl Identity {
     /// The server's HTTPS: TLS 1.3 only, with a certificate this key
     /// signed for itself.
     pub fn tls(&self) -> Result<Arc<ServerConfig>, IdentityError> {
-        let (certificate, key) = self.certificate()?;
+        let (certificate, key) = self.certified()?;
         let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
         let mut config = ServerConfig::builder_with_provider(provider)
             .with_protocol_versions(&[&rustls::version::TLS13])?
@@ -75,9 +75,15 @@ impl Identity {
         Ok(Arc::new(config))
     }
 
+    /// The certificate the server's HTTPS presents: public, as every
+    /// handshake shows it.
+    pub fn certificate(&self) -> Result<CertificateDer<'static>, IdentityError> {
+        Ok(self.certified()?.0)
+    }
+
     /// A certificate naming this key, self-signed with it, and the key as
     /// rustls takes it.
-    fn certificate(
+    fn certified(
         &self,
     ) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>), IdentityError> {
         let mut pkcs8 = PKCS8_ED25519.to_vec();
@@ -117,7 +123,7 @@ mod tests {
     fn its_https_certificate_carries_its_key() {
         let identity = Identity::derive(&[3; 32]);
 
-        let (certificate, _) = identity.certificate().unwrap();
+        let certificate = identity.certificate().unwrap();
 
         let key = identity.public();
         assert!(certificate.windows(32).any(|window| window == key));

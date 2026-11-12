@@ -700,11 +700,28 @@ fn reach(base: &Url) -> Reach {
             .is_ok_and(|ip| ip.is_loopback());
     if loopback {
         Reach::Device
-    } else if at_home(host) {
+    } else if at_home(host) || home_name(bare) {
         Reach::Home
     } else {
         Reach::Public
     }
+}
+
+/// A name only the home network resolves, which no public authority
+/// certifies, so only the server's own HTTPS answers it: `home.arpa` and
+/// the common router suffixes `.lan` and `.internal`, and a single label
+/// (`nas`). This decides the check only: plain `http://` to one is refused
+/// all the same, since anyone can claim such a name on a network.
+pub(crate) fn home_name(host: &str) -> bool {
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return false;
+    }
+    let name = host.trim_end_matches('.').to_ascii_lowercase();
+    !name.contains('.')
+        || [".home.arpa", ".lan", ".internal"]
+            .iter()
+            .any(|suffix| name.ends_with(suffix))
+        || name == "home.arpa"
 }
 
 fn base(url: &str) -> Result<Url, ServerError> {
@@ -727,8 +744,9 @@ fn options(key: Option<[u8; 32]>, timeouts: Timeouts) -> Options {
         plain: PlainHttp::Refused,
         trust: key.map_or(Trust::Platform, Trust::Pinned),
         // Around a Wi-Fi with no way out, for a server off the home
-        // network only: the relay decides per request.
-        proxy: Some(crate::relay::proxy()),
+        // network only: the relay decides per request. Only Android binds
+        // the process to one network; a desktop keeps its proxy settings.
+        proxy: cfg!(target_os = "android").then(crate::relay::proxy),
     }
 }
 
@@ -782,6 +800,32 @@ pub(crate) fn with_scheme(typed: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::with_scheme;
+
+    #[test]
+    fn a_name_only_the_home_network_resolves_is_reached_by_its_pinned_key() {
+        use super::{Reach, reach};
+
+        let at = |url: &str| reach(&super::Url::parse(url).unwrap());
+        for home in [
+            "https://192.168.1.20:8443",
+            "https://wellfed.local:8443",
+            "https://nas.home.arpa:8443",
+            "https://nas.lan:8443",
+            "https://NAS.Internal.:8443",
+            "https://nas:8443",
+        ] {
+            assert_eq!(at(home), Reach::Home, "{home}");
+        }
+        for public in [
+            "https://feeder.example.org",
+            "https://203.0.113.4:8443",
+            "https://lan.example.com",
+        ] {
+            assert_eq!(at(public), Reach::Public, "{public}");
+        }
+        assert_eq!(at("http://localhost:8080"), Reach::Device);
+        assert_eq!(at("http://[::1]:8080"), Reach::Device);
+    }
 
     #[test]
     fn a_bare_address_is_plain_http_only_on_this_device() {
