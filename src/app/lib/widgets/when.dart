@@ -1,6 +1,7 @@
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 
+import 'package:wellfed/src/rust/api/model.dart' show FeedOutcome;
 import 'package:wellfed/src/rust/api/session.dart';
 
 /// A moment as this phone shows the time of day.
@@ -66,6 +67,25 @@ String deliveredText(FeedResult fed) =>
 String fedAmountText(FeedResult fed) => fed.uncertain || fed.confirmed != fed.requested
     ? '${deliveredText(fed)} ${portionWord(fed.requested)}'
     : portionsText(fed.confirmed);
+
+/// How a feed ended, as every screen marks it.
+enum FedKind {
+  /// It ran to its end and gave every portion asked.
+  full,
+
+  /// It gave fewer, or ended some other way: a fault, a cancel.
+  short,
+
+  /// Its count is not known: it is never repeated.
+  unsure,
+}
+
+/// The one rule for [FedKind], so a feed reads alike on every screen.
+FedKind fedKind(FeedResult fed) => fed.uncertain
+    ? FedKind.unsure
+    : fed.outcome == FeedOutcome.done && fed.confirmed == fed.requested
+    ? FedKind.full
+    : FedKind.short;
 
 const _dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const _monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

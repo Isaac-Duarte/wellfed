@@ -66,7 +66,7 @@ class FeedDetailBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final bool all = result.outcome == FeedOutcome.done && result.confirmed == result.requested;
+    final bool all = fedKind(result) == FedKind.full;
     final title = result.uncertain
         ? 'Fed between ${result.confirmed} and ${result.atMost} portions'
         : 'Fed ${deliveredText(result)} ${portionWord(result.requested)}';

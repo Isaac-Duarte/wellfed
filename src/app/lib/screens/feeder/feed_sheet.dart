@@ -270,7 +270,7 @@ class _Progress extends StatelessWidget {
       FeedEnded(:final FeedResult result) => Builder(
         builder: (context) {
           final ThemeTokens c = context.colors;
-          final all = result.confirmed == result.requested;
+          final bool all = fedKind(result) == FedKind.full;
           final FoodLevel? food = feeder.state.card?.food;
           return _Sheet(
             glyph: all ? Glyph.check : Glyph.warning,
