@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use clap::{Args, ValueEnum};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use wellfed_bench_formats::transients::{self, TransientCycle, TransientsManifest};
 use wellfed_core::buttons::Buttons;
 use wellfed_formats::canonical::sha256;
@@ -64,6 +64,14 @@ const ANALYZER_OUTPUT_CHANNELS: [(&str, u8); 2] = [("outa", 2), ("outb", 3)];
 enum PressStep {
     Own,
     Within,
+}
+
+/// The relay board's power-cut count when the feeder entered the loader,
+/// `None` from a board that does not count them; the execute in that
+/// helper session requires the same answer.
+#[derive(Serialize, Deserialize)]
+struct PowerAtLoader {
+    power_cuts: Option<u32>,
 }
 
 const STOPPED_POWERED: &str =
@@ -1070,7 +1078,7 @@ impl Bench {
         if args.bank1_source.is_some() {
             self.fresh(&bank0::binding(&self.root, &args.name))?;
         }
-        self.loader(&p.loader)?;
+        self.helper_session(&p)?;
 
         let looks = [
             argv(
@@ -1118,7 +1126,7 @@ impl Bench {
         if let Some(bank1) = &args.update.bank1_source {
             self.require_bank1_bound(&args.update.name, bank1)?;
         }
-        self.require_unbroken_power()?;
+        self.require_unbroken_power(&p)?;
 
         // Progress estimate only; the updater reads and checks the plan itself.
         if let Some(plan) = fs::read(&p.plan)
@@ -1190,11 +1198,35 @@ impl Bench {
         Ok(0)
     }
 
-    /// Relay state shows the supply was not switched off; it cannot rule out a brownout.
-    fn require_unbroken_power(&mut self) -> Result<()> {
+    /// The loader, for a helper session a later execute writes in, with
+    /// the board's power-cut count recorded for that execute to check.
+    fn helper_session(&mut self, p: &Paths) -> Result<()> {
+        self.fresh(&p.power)?;
+        self.loader(&p.loader)?;
+
+        let power_cuts = self.relay.power_cuts()?;
+        if let Some(parent) = p.power.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&p.power, serde_json::to_vec(&PowerAtLoader { power_cuts })?)?;
+        Ok(())
+    }
+
+    /// The relays show the supply on and the strap released, and a board
+    /// that counts its power cuts has made none since loader entry: the
+    /// Wellfed Bench board's RECOVER button cycles the power by itself and
+    /// leaves the relays as they were. It cannot rule out a brownout.
+    fn require_unbroken_power(&mut self, p: &Paths) -> Result<()> {
         let powered = self.get(POWER)?;
         let strap = self.get(STRAP)?;
-        require(powered && !strap, || CommandsError::PowerCycled.into())
+        require(powered && !strap, || CommandsError::PowerCycled)?;
+
+        // No record is a session this build did not enter: start over.
+        let at_loader = fs::read(&p.power).map_err(|_| CommandsError::PowerCycled)?;
+        let PowerAtLoader { power_cuts } = serde_json::from_slice(&at_loader)?;
+        require(self.relay.power_cuts()? == power_cuts, || {
+            CommandsError::PowerCycled.into()
+        })
     }
 
     /// Loader, bounded read, give-way inspection and plan; stop for review.
@@ -1219,7 +1251,7 @@ impl Bench {
         for path in [&p.loader, &p.bounded, &p.inspect, &p.plan] {
             self.fresh(path)?;
         }
-        self.loader(&p.loader)?;
+        self.helper_session(&p)?;
 
         let give_way = self.give_way_args(args, &p);
         let steps = [
@@ -1264,7 +1296,7 @@ impl Bench {
         require(p.plan.is_file() && !p.execute.exists(), || {
             CommandsError::PlanRequired
         })?;
-        self.require_unbroken_power()?;
+        self.require_unbroken_power(&p)?;
 
         let command = argv(
             &["give-way", "execute"],
@@ -1330,7 +1362,7 @@ impl Bench {
         for path in [&p.loader, &p.bounded, &p.full, &p.plan] {
             self.fresh(path)?;
         }
-        self.loader(&p.loader)?;
+        self.helper_session(&p)?;
 
         let read = self.read_args();
         let reads = [
@@ -1415,7 +1447,7 @@ impl Bench {
         require(p.plan.is_file() && !p.execute.exists(), || {
             CommandsError::PlanRequired
         })?;
-        self.require_unbroken_power()?;
+        self.require_unbroken_power(&p)?;
 
         let command = argv(
             &["stock-recovery", "execute"],

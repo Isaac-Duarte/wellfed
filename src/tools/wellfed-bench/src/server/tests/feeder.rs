@@ -359,7 +359,17 @@ async fn job_results_write_the_ledger_and_the_banner_disputes_them() {
     )
     .unwrap();
     fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
+    fs::write(
+        root.join("private/verification/u1-power.json"),
+        r#"{"power_cuts":null}"#,
+    )
+    .unwrap();
     fs::write(root.join("private/verification/g1-plan.json"), "{}").unwrap();
+    fs::write(
+        root.join("private/verification/g1-power.json"),
+        r#"{"power_cuts":null}"#,
+    )
+    .unwrap();
     let server = Running::start(checkout.open_at(None));
 
     let id = server
@@ -715,6 +725,11 @@ async fn a_write_that_stops_leaves_its_bank_unknown_and_a_seed_waits_for_no_job(
     let root = checkout.root();
     fs::write(root.join("stop-writes"), "").unwrap();
     fs::write(root.join("private/verification/g1-plan.json"), "{}").unwrap();
+    fs::write(
+        root.join("private/verification/g1-power.json"),
+        r#"{"power_cuts":null}"#,
+    )
+    .unwrap();
     let server = Running::start(checkout.open_at(None));
 
     let id = server

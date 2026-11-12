@@ -102,7 +102,7 @@ Dependencies run down the table. Their shared shapes (the bench config, progress
 | `transients NAME` | Repeated logic-analyzer captures (`sigrok-cli`, fx2lafw) of relay power-ons or, with `--mode loader`, loader entries; each cycle arms the analyzer before power-on and ends powered off. No UART, no flash ([motor driver](motor-driver.md#capture-startup-transients)) |
 | `dump NAME` | `loader`, then `read small` and `read full` in one helper session |
 | `flash-prepare NAME` | `loader`, `read small`, `update inspect` and `update prepare`. Prints the plan summary and the exact `flash-execute` line, then stops |
-| `flash-execute NAME` | Checks relay 1 stayed on and the strap is released, runs `update execute` with the reviewed hash, then `boot`; with `--bank 0`, then [finishes the bank-0 write](#finish-a-bank-0-write) |
+| `flash-execute NAME` | Checks relay 1 stayed on and the strap is released, and that a Wellfed Bench board has cut the feeder's power no times since loader entry (its RECOVER button cycles the power by itself), runs `update execute` with the reviewed hash, then `boot`; with `--bank 0`, then [finishes the bank-0 write](#finish-a-bank-0-write) |
 | `give-way-prepare NAME`, `give-way-execute NAME` | The same pair for `give-way`. `--fallback` names bank 0's frozen review |
 | `stock-prepare NAME`, `stock-execute NAME` | UART return to stock ([below](#to-stock-over-uart)) |
 | `ota NAME` | One over-the-air update of the running feeder ([below](#over-the-air-updates)). Never touches power or opens the relay board |

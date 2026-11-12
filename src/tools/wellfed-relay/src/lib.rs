@@ -25,6 +25,9 @@ pub enum Error {
     /// A query's reply was neither on nor off.
     #[error("Relay {channel} state {reply:?}")]
     State { channel: u8, reply: String },
+    /// The power-cut count's reply was not a count.
+    #[error("Relay power-cut count {reply:?}")]
+    Cuts { reply: String },
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error("Serial port: {0}")]
@@ -122,6 +125,12 @@ pub trait Board: Send {
     fn set(&mut self, channel: u8, switch: Switch) -> Result<()>;
     /// The channel's state as the board reports it.
     fn get(&mut self, channel: u8) -> Result<bool>;
+    /// The feeder power cuts the board has made, whoever asked for them,
+    /// or `None` from a board that does not count them (the SH-UR04A,
+    /// whose relays move only on a host command). The Wellfed Bench
+    /// board's RECOVER button cycles the power by itself, which the
+    /// channels alone cannot show once the feeder is back on.
+    fn power_cuts(&mut self) -> Result<Option<u32>>;
 }
 
 /// The relay board a sequence drives.
@@ -155,6 +164,10 @@ impl Relay {
 
     pub fn get(&mut self, channel: u8) -> Result<bool> {
         self.board.get(channel)
+    }
+
+    pub fn power_cuts(&mut self) -> Result<Option<u32>> {
+        self.board.power_cuts()
     }
 }
 
@@ -209,6 +222,23 @@ impl Board for AtBoard {
         }
         Ok(on)
     }
+
+    fn power_cuts(&mut self) -> Result<Option<u32>> {
+        // The SH-UR04A answers a command it lacks with an error, or not at
+        // all, and either is a board that does not count.
+        let reply = match self.command("AT+CUTS?") {
+            Ok(reply) => reply,
+            Err(Error::Refused { .. }) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let count = reply
+            .strip_prefix(b"OK+CUTS=")
+            .and_then(|digits| std::str::from_utf8(digits).ok())
+            .and_then(|digits| digits.parse().ok());
+        count.map(Some).ok_or_else(|| Error::Cuts {
+            reply: String::from_utf8_lossy(&reply).into_owned(),
+        })
+    }
 }
 
 struct Detached;
@@ -246,6 +276,10 @@ pub struct FakeState {
     pub refuse: bool,
     /// Refuse this one channel only, as a failed relay would.
     pub refuse_channel: Option<u8>,
+    /// The power-cut count, as the Wellfed Bench board answers it; `None`
+    /// answers `AT+CUTS?` with an error, as the SH-UR04A does. Switching
+    /// CH1 off from on adds one.
+    pub cuts: Option<u32>,
 }
 
 #[cfg(any(test, feature = "fake"))]
@@ -271,6 +305,12 @@ impl FakeBoard {
 impl Link for FakeBoard {
     fn transact(&mut self, line: &str) -> io::Result<Vec<u8>> {
         let mut s = self.lock();
+        if line == "AT+CUTS?" {
+            return Ok(match s.cuts {
+                Some(cuts) => format!("OK+CUTS={cuts}\r\n\0").into_bytes(),
+                None => b"Error\r\n\0".to_vec(),
+            });
+        }
         let parsed = line
             .strip_prefix("AT+CH")
             .and_then(|rest| rest.split_once('='))
@@ -285,6 +325,9 @@ impl Link for FakeBoard {
 
         let slot = usize::from(channel);
         if value != "?" {
+            if channel == POWER && s.on[slot] && value == "0" {
+                s.cuts = s.cuts.map(|cuts| cuts.wrapping_add(1));
+            }
             s.on[slot] = value == "1";
             s.log.push((channel, value == "1"));
         }
@@ -306,6 +349,36 @@ mod tests {
         assert!(relay.get(1).unwrap());
         assert!(!relay.get(2).unwrap());
         assert_eq!(board.log(), [(1, true)]);
+    }
+
+    #[test]
+    fn a_board_that_counts_power_cuts_reports_each_one() {
+        let board = FakeBoard::default();
+        let mut relay = Relay::new(Box::new(board.clone()));
+        assert_eq!(relay.power_cuts().unwrap(), None, "an SH-UR04A");
+
+        board.lock().cuts = Some(u32::MAX);
+        relay.set(POWER, Switch::Off).unwrap();
+        relay.set(POWER, Switch::On).unwrap();
+        assert_eq!(
+            relay.power_cuts().unwrap(),
+            Some(u32::MAX),
+            "nothing was cut"
+        );
+        relay.set(POWER, Switch::Off).unwrap();
+        assert_eq!(relay.power_cuts().unwrap(), Some(0), "the count wraps");
+    }
+
+    #[test]
+    fn a_count_that_is_not_one_is_an_error() {
+        struct Garbled;
+        impl Link for Garbled {
+            fn transact(&mut self, _: &str) -> io::Result<Vec<u8>> {
+                Ok(b"OK+CUTS=many\r\n".to_vec())
+            }
+        }
+        let mut relay = Relay::new(Box::new(Garbled));
+        assert!(matches!(relay.power_cuts(), Err(Error::Cuts { .. })));
     }
 
     #[test]

@@ -74,6 +74,9 @@ pub struct Paths {
     pub plan: PathBuf,
     pub execute: PathBuf,
     pub boot: PathBuf,
+    /// The relay board's power-cut count at loader entry, which the
+    /// execute in that helper session requires unchanged.
+    pub power: PathBuf,
 }
 
 impl Paths {
@@ -86,6 +89,7 @@ impl Paths {
             plan: root.join(VERIFICATION).join(format!("{name}-plan.json")),
             execute: root.join(VERIFICATION).join(format!("{name}-execute")),
             boot: root.join(CAPTURES).join(format!("{name}-boot")),
+            power: root.join(VERIFICATION).join(format!("{name}-power.json")),
         }
     }
 }

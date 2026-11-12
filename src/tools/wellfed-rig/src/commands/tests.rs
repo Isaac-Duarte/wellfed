@@ -15,7 +15,7 @@ use crate::device::{Answer, DeviceError, DeviceStatus};
 use crate::tools::{Capture, CaptureFailure, Captured, InstallJob, Installing, PushError};
 use wellfed_bench_formats::progress::{FlashTool, StepState};
 use wellfed_formats::VERIFICATION;
-use wellfed_relay::{FakeBoard, Switch};
+use wellfed_relay::{FakeBoard, Link, Switch};
 use wellfed_signed::SECTOR;
 
 fn sector() -> PlannedSector {
@@ -492,6 +492,14 @@ fn prepare_plan(rig: &Rig, name: &str) {
     let p = Paths::new(&rig.bench.root, name);
     fs::create_dir_all(p.plan.parent().unwrap()).unwrap();
     fs::write(&p.plan, r#"{"operation_plan": {"staging_packets": 4, "commit_packets": 1, "region": {"bytes": 4096}}}"#).unwrap();
+    at_loader(rig, name);
+}
+
+/// The power-cut count a prepare records at loader entry: the board's now.
+fn at_loader(rig: &Rig, name: &str) {
+    let cuts = rig.board.lock().cuts;
+    let record = serde_json::json!({ "power_cuts": cuts });
+    fs::write(Paths::new(&rig.bench.root, name).power, record.to_string()).unwrap();
 }
 
 /// Power off, strap released, UART isolated; then the strap held across the
@@ -817,6 +825,65 @@ fn give_way_prepare_then_execute() {
     let last = calls.flash.last().unwrap();
     assert_eq!(last[..2], ["give-way", "execute"]);
     assert!(last.contains(&"--fallback".to_string()));
+}
+
+/// The Wellfed Bench board's RECOVER button cycles the feeder's power by
+/// itself and leaves the relays as they were, so only its power-cut count
+/// shows the helper session the prepare left is gone.
+#[test]
+fn a_power_cut_the_board_made_since_prepare_refuses_the_execute() {
+    let mut rig = rig();
+    rig.board.lock().cuts = Some(41);
+    let execute = prepared_give_way(&mut rig);
+
+    // RECOVER, short press: power off, then on again.
+    let mut panel = rig.board.clone();
+    panel.transact("AT+CH1=0").unwrap();
+    panel.transact("AT+CH1=1").unwrap();
+    assert!(rig.board.state()[0] && !rig.board.state()[1]);
+
+    let error = rig.bench.give_way_execute(&execute).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::PowerCycled));
+    assert_eq!(flash_commands(&rig).last().unwrap(), "give-way prepare");
+
+    // Nothing cut since the prepare: the execute runs.
+    let mut unbroken = self::rig();
+    unbroken.board.lock().cuts = Some(41);
+    let execute = prepared_give_way(&mut unbroken);
+    unbroken
+        .tools
+        .0
+        .borrow_mut()
+        .results
+        .push_back(boot_result());
+    assert_eq!(unbroken.bench.give_way_execute(&execute).unwrap(), 0);
+}
+
+/// A plan with no record of the loader entry it runs in is no session this
+/// build entered, and neither is one a board that counts did not count.
+#[test]
+fn an_execute_needs_the_count_its_prepare_recorded() {
+    let mut rig = rig();
+    let execute = prepared_give_way(&mut rig);
+    let power = Paths::new(&rig.bench.root, "gw").power;
+    fs::remove_file(&power).unwrap();
+    let error = rig.bench.give_way_execute(&execute).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::PowerCycled));
+
+    let mut counted = self::rig();
+    let execute = prepared_give_way(&mut counted);
+    counted.board.lock().cuts = Some(0);
+    let error = counted.bench.give_way_execute(&execute).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::PowerCycled));
+    assert!(
+        counted
+            .tools
+            .0
+            .borrow()
+            .flash
+            .iter()
+            .all(|c| c[1] != "execute")
+    );
 }
 
 /// `wellfed-flash` exits 2 for any error its command returns, not only for
