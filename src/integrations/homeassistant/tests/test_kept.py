@@ -1,7 +1,8 @@
 """The entry's store by the beta upgrade rule: version 1 reads as its
 sample, a newer minor is read with its additions kept, a newer major is
-read as nothing and never written, and a store in another shape is set
-aside under a numbered name, or left untouched when that fails."""
+read as nothing and never written, and a store in another shape (a value
+the bridge would refuse among them) is set aside under a numbered name, or
+left untouched when that fails."""
 
 from __future__ import annotations
 
@@ -104,6 +105,39 @@ async def test_a_store_that_cannot_be_set_aside_is_never_saved_over(
     await _flushed(hass)
 
     assert hass_storage[KEY] == other, "left as it was"
+
+
+def _with_pending(**changes: Any) -> dict[str, Any]:
+    """The sample's data, its first pending feed changed."""
+    data: dict[str, Any] = json.loads(json.dumps(SAMPLE["data"]))
+    data["pending"][0].update(changes)
+    return data
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        _with_pending(portions=300),
+        _with_pending(portions=0),
+        _with_pending(sent_ms=2**63),
+        _with_pending(after=-1),
+        {**SAMPLE["data"], "answered": [-1]},
+        {**SAMPLE["data"], "answered": [2**32]},
+        {**SAMPLE["data"], "leftover_key": "not a key"},
+    ],
+)
+async def test_a_value_the_bridge_would_refuse_reads_as_another_shape(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+    data: dict[str, Any],
+) -> None:
+    hass_storage[KEY] = _stored(1, 1, data)
+    store = kept(hass, ENTRY)
+    await store.load()
+
+    assert store.pending == [] and store.answered == [] and store.leftover_key is None
+    assert "not in the shape it writes" in caplog.text
 
 
 def test_set_aside_copies_to_the_next_free_name_and_never_replaces(tmp_path: Path) -> None:

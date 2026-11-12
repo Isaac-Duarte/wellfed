@@ -76,30 +76,44 @@ def _empty() -> KeptData:
     return {"pending": [], "answered": [], "leftover_key": None}
 
 
-def _int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
+def _int(value: Any, low: int, high: int) -> bool:
+    """Whether `value` is an integer from `low` to `high`, as the bridge takes it."""
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def _key(value: Any) -> bool:
+    """Whether `value` is a client key in hex, 32 bytes."""
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    try:
+        bytes.fromhex(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _pending(item: Any) -> bool:
     return (
         isinstance(item, dict)
         and isinstance(item.get("id"), str)
-        and _int(item.get("portions"))
-        and _int(item.get("sent_ms"))
-        and (item.get("after") is None or _int(item.get("after")))
+        and _int(item.get("portions"), bridge.PORTIONS_MIN, bridge.PORTIONS_MAX)
+        and _int(item.get("sent_ms"), -(2**63), 2**63 - 1)
+        and (item.get("after") is None or _int(item.get("after"), 0, 2**64 - 1))
         and isinstance(item.get("reported"), bool)
     )
 
 
 def _valid(data: Any) -> bool:
-    """Whether `data` is the store's shape, every field typed."""
+    """Whether `data` is the store's shape, every field typed and within what
+    the bridge takes: a value past it would fail setup on every try rather
+    than set the file aside."""
     return (
         isinstance(data, dict)
         and isinstance(data.get("pending"), list)
         and all(_pending(item) for item in data["pending"])
         and isinstance(data.get("answered"), list)
-        and all(_int(feed) for feed in data["answered"])
-        and (data.get("leftover_key") is None or isinstance(data["leftover_key"], str))
+        and all(_int(feed, 0, 2**32 - 1) for feed in data["answered"])
+        and (data.get("leftover_key") is None or _key(data["leftover_key"]))
     )
 
 
