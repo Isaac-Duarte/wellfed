@@ -38,7 +38,7 @@ use crate::sdk::{self, IrqGuard};
 use crate::{clock, settings};
 
 /// The amplifier enable (stock writes it HIGH around playback).
-pub const AMP_PIN: u32 = crate::board::pins::AMP;
+const AMP_PIN: u32 = crate::board::pins::AMP;
 const AMP_PORT: u32 = AMP_PIN >> 5;
 const AMP_MASK: u32 = 1 << (AMP_PIN & 31);
 
@@ -184,6 +184,8 @@ fn local_ms() -> Option<i64> {
 }
 
 /// Forget everything (host tests).
+#[cfg(not(target_os = "none"))]
+#[doc(hidden)]
 pub fn reset() {
     SLOT.store(EMPTY, Ordering::Release);
     AMP_READY.store(false, Ordering::Release);

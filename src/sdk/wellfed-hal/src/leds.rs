@@ -193,11 +193,6 @@ impl Readback {
         }
     }
 
-    /// True only for an input-verified level.
-    pub fn matches(self, high: bool) -> bool {
-        self.decision(high) == Decision::Verified
-    }
-
     /// True for an input-verified level or a consistent output-only request.
     pub fn accepted(self, high: bool) -> bool {
         matches!(
@@ -248,20 +243,3 @@ pub fn shown(led: Led, high: bool) -> Decision {
 pub const SETTLE_MS: u32 = 10;
 /// Back-to-back input reads per observation, to separate a dead path from a marginal one.
 pub const INPUT_SAMPLES: u32 = 64;
-
-#[derive(Clone, Copy, Debug)]
-pub struct ProbeStep {
-    pub led: Led,
-    pub high: bool,
-    pub delay_ms: u32,
-}
-
-/// Two HIGH/LOW pulses per line, then terminal. Scheduling delays are nominal.
-pub fn probe_step(index: u32) -> Option<ProbeStep> {
-    let led = *Led::ALL.get((index / 4) as usize)?;
-    Some(ProbeStep {
-        led,
-        high: index.is_multiple_of(2),
-        delay_ms: if index % 4 == 1 { 500 } else { 1000 },
-    })
-}

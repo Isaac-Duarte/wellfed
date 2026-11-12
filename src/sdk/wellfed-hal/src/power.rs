@@ -228,6 +228,7 @@ pub fn supply(now_ms: u32) -> supply::Reading {
 }
 
 /// Tests only: forget the published sample.
+#[cfg(not(target_os = "none"))]
 #[doc(hidden)]
 pub fn reset() {
     SAMPLE.store(0, Ordering::Release);

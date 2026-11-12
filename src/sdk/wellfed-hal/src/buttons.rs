@@ -207,6 +207,7 @@ pub fn inject(gesture: Gesture) {
 }
 
 /// Tests only: empty the queue.
+#[cfg(not(target_os = "none"))]
 #[doc(hidden)]
 pub fn reset() {
     READ.store(WRITTEN.load(Ordering::Acquire), Ordering::Release);

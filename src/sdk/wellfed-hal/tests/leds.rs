@@ -6,9 +6,26 @@
 //! The PLAF103's panel drivers, which build for no other board.
 #![cfg(wellfed_board = "plaf103")]
 
-use wellfed_hal::leds::{self, Led};
+use wellfed_hal::leds::{self, Decision, Led};
 use wellfed_hal::sdk::fake;
 use wellfed_hal::stopped;
+
+/// A bounded probe of every indicator: two HIGH/LOW pulses each, at
+/// nominal delays, then terminal.
+struct ProbeStep {
+    led: Led,
+    high: bool,
+    delay_ms: u32,
+}
+
+fn probe_step(index: u32) -> Option<ProbeStep> {
+    let led = *Led::ALL.get(usize::try_from(index / 4).ok()?)?;
+    Some(ProbeStep {
+        led,
+        high: index.is_multiple_of(2),
+        delay_ms: if index % 4 == 1 { 500 } else { 1000 },
+    })
+}
 
 fn ready() {
     fake::reset_hardware();
@@ -22,12 +39,15 @@ fn bounded_probe_visits_only_indicators_and_keeps_stopped_outputs() {
     let mut duration = 0;
     let mut levels = Vec::new();
 
-    for step in (0..).map_while(leds::probe_step) {
+    for step in (0..).map_while(probe_step) {
         assert!(leds::request(step.led, step.high));
         let readback = leds::observe(step.led);
         assert!(readback.accepted(step.high));
         // Only PB22 can verify a level; Port A indicators are never input-verified.
-        assert_eq!(readback.matches(step.high), step.led.input_readable());
+        assert_eq!(
+            readback.decision(step.high) == Decision::Verified,
+            step.led.input_readable()
+        );
         levels.push((step.led.pin(), step.high));
         duration += step.delay_ms;
         assert!(stopped::observe().verified());
@@ -43,7 +63,7 @@ fn bounded_probe_visits_only_indicators_and_keeps_stopped_outputs() {
             .flat_map(|p| [(p, true), (p, false), (p, true), (p, false)])
             .collect::<Vec<_>>()
     );
-    assert!(leds::probe_step(u32::MAX).is_none());
+    assert!(probe_step(u32::MAX).is_none());
     assert!(leds::all_low());
 }
 
@@ -115,7 +135,6 @@ fn missing_stopped_state_refuses_indicator_enable() {
 
 #[test]
 fn stale_input_is_distinguished_from_latch_failure_and_mux_mismatch() {
-    use leds::Decision;
     let fault = Led::Fault.pin();
     let (port, bit) = ((fault >> 5) as usize, 1 << (fault & 31));
 
@@ -131,7 +150,7 @@ fn stale_input_is_distinguished_from_latch_failure_and_mux_mismatch() {
         h.readback_override_mask[port] = 0;
     });
 
-    assert!(leds::observe(Led::Fault).matches(true));
+    assert!(leds::observe(Led::Fault).decision(true) == Decision::Verified);
     fake::with(|h| h.pad_control[fault as usize] = 11);
     assert!(!leds::observe(Led::Fault).accepted(true));
 
@@ -151,7 +170,7 @@ fn stale_input_is_distinguished_from_latch_failure_and_mux_mismatch() {
     assert!(leds::request(Led::Connection, true));
     let output = leds::observe(Led::Connection);
     assert_eq!(output.decision(true), Decision::OutputOnly);
-    assert!(output.accepted(true) && !output.matches(true));
+    assert!(output.accepted(true) && output.decision(true) != Decision::Verified);
 
     fake::with(|h| h.pad_control[0] = 11);
     assert_eq!(
@@ -170,7 +189,6 @@ fn stale_input_is_distinguished_from_latch_failure_and_mux_mismatch() {
 
 #[test]
 fn input_only_high_mismatch_can_complete_bounded_probe_but_never_passes() {
-    use leds::Decision;
     ready();
     fake::with(|h| {
         h.readback_override_mask = [leds::PA_MASK, leds::PB_MASK];
@@ -180,7 +198,7 @@ fn input_only_high_mismatch_can_complete_bounded_probe_but_never_passes() {
     let mut mismatches = 0;
     let mut duration = 0;
 
-    for step in (0..).map_while(leds::probe_step) {
+    for step in (0..).map_while(probe_step) {
         assert!(leds::request(step.led, step.high));
         let readback = leds::observe(step.led);
         if !step.led.input_readable() {
@@ -275,7 +293,6 @@ fn indicator_pull_removal_preserves_unrelated_pad_flags_and_pins() {
 
 #[test]
 fn the_indicator_service_drives_lights_while_the_motor_runs_and_emitters_are_lit() {
-    use leds::Decision;
     use wellfed_hal::board::pins::{IR_PA_BIT, MOTOR_A_BIT};
     ready();
 
