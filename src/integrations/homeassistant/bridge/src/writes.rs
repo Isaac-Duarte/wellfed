@@ -11,6 +11,8 @@
 //!   A stale one is reported and the store read again; it is never sent
 //!   again here.
 
+use std::ops::RangeInclusive;
+
 use wellfed_client::plans::{self, Edit};
 use wellfed_model::{
     Answer, Calibration, CalibrationView, ClientRole, DeviceKind, FeederSettingsPatch, Generation,
@@ -19,11 +21,16 @@ use wellfed_model::{
 
 use crate::api::{NotSent, Tune};
 
-/// The feeder's limits on a portion's weight, in milligrams (1-50 g).
-pub const PORTION_MG: std::ops::RangeInclusive<u32> = 1_000..=50_000;
+/// The feeder's limits on a portion's weight, in milligrams.
+const PORTION_MG: RangeInclusive<u32> =
+    wellfed_model::PORTION_MG_MIN..=wellfed_model::PORTION_MG_MAX;
 
 /// The feeder's limits on the desiccant reminder's period, in days.
-const DESICCANT_DAYS: std::ops::RangeInclusive<u8> = 1..=90;
+const DESICCANT_DAYS: RangeInclusive<u8> =
+    wellfed_model::DESICCANT_DAYS_MIN..=wellfed_model::DESICCANT_DAYS_MAX;
+
+/// The portions one feed may ask for.
+const PORTIONS: RangeInclusive<u8> = wellfed_model::PORTIONS_MIN..=wellfed_model::PORTIONS_MAX;
 
 /// One write Home Assistant asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,7 +96,7 @@ pub fn served(op: &Op, kind: DeviceKind) -> Result<(), NotSent> {
 pub fn build(write: &Write, read: &Read<'_>) -> Result<(Op, Kind), NotSent> {
     let built = match *write {
         Write::Feed { portions } => {
-            let valid = (1..=wellfed_model::PORTIONS_MAX).contains(&portions);
+            let valid = PORTIONS.contains(&portions);
             wellfed_formats::require(valid, || NotSent::Invalid)?;
             (Op::Feed { portions }, Kind::Feed { portions })
         }
@@ -240,19 +247,51 @@ mod tests {
             volume: Some(101),
             ..FeederSettingsPatch::default()
         };
-        let never = FeederSettingsPatch {
-            desiccant_days: Some(0),
-            ..FeederSettingsPatch::default()
+        let desiccant = |days| {
+            Write::Settings(FeederSettingsPatch {
+                desiccant_days: Some(days),
+                ..FeederSettingsPatch::default()
+            })
         };
+        let (portions, days, mg) = (
+            [wellfed_model::PORTIONS_MIN, wellfed_model::PORTIONS_MAX],
+            [
+                wellfed_model::DESICCANT_DAYS_MIN,
+                wellfed_model::DESICCANT_DAYS_MAX,
+            ],
+            [wellfed_model::PORTION_MG_MIN, wellfed_model::PORTION_MG_MAX],
+        );
+
+        // Each limit is the feeder's own constant, the one Python reads
+        // too: a value just outside it is never sent, and the limit is.
         for write in [
-            Write::Feed { portions: 0 },
-            Write::Feed { portions: 49 },
+            Write::Feed {
+                portions: portions[0] - 1,
+            },
+            Write::Feed {
+                portions: portions[1] + 1,
+            },
             Write::Settings(loud),
-            Write::Settings(never),
-            Write::PortionWeight { mg: 999 },
-            Write::PortionWeight { mg: 50_001 },
+            desiccant(days[0] - 1),
+            desiccant(days[1] + 1),
+            Write::PortionWeight { mg: mg[0] - 1 },
+            Write::PortionWeight { mg: mg[1] + 1 },
         ] {
             assert_eq!(build(&write, &read), Err(NotSent::Invalid), "{write:?}");
+        }
+        for write in [
+            Write::Feed {
+                portions: portions[0],
+            },
+            Write::Feed {
+                portions: portions[1],
+            },
+            desiccant(days[0]),
+            desiccant(days[1]),
+            Write::PortionWeight { mg: mg[0] },
+            Write::PortionWeight { mg: mg[1] },
+        ] {
+            assert!(build(&write, &read).is_ok(), "{write:?}");
         }
 
         let (op, kind) = build(&Write::PortionWeight { mg: 9_500 }, &read).unwrap();

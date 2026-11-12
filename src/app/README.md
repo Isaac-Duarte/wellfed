@@ -34,6 +34,7 @@ People and the audit log are not on the phone yet ([roadmap](../../docs/roadmap.
 | `wellfed-app-bridge` | `rust/` (Rust) | The client key, the setup and recovery sessions (`wellfed_client::setup`), device API sessions (`wellfed_connect`), the install (`wellfed_install`), the app's file |
 | Generated | `lib/src/rust/`, `rust/src/frb_generated.rs` | The Dart API and types, from `flutter_rust_bridge_codegen generate` |
 | Theme | `lib/theme/tokens.g.dart` | Colors and sizes from [`assets/brand/tokens.json`](../../assets/brand/tokens.json) |
+| Limits | `lib/src/limits.g.dart` | The feeder's limits (portions, meals, calls, clients, portion weight), from `wellfed-model`, as constants a widget reads without the Rust library |
 
 - **The Rust half checks what the feeder checks.** Dart moves bytes and shows what the session says. A feed goes out once; a feed whose answer never came is shown as "may have run" and never sent again.
 - **Every feeder request goes through the path router** (`rust/src/route/`, `PathRouter` in Dart), with a server or without one. It picks the server first and the phone's own session when the server can't reach the feeder ([two paths, one feed](../../docs/server/README.md#two-paths-one-feed)). Every write is written down in `pending.json`, beside the app's file, before it goes, and is sent once. One that may have run stays pinned to its path until that path settles it, and a check only reads. A new feed waits until an uncertain one is settled or put away: closing the feed sheet that asks "Did it feed?" puts it away, and one an earlier run left is asked about before the next feed. Each session is attached to the router before it runs, and a session offers Dart no request of its own, so every request and feed a screen sends goes through the router. Outside it, each a flow of its own that never sends a feed: the reads a session makes for the card and the history, its clock sync when it opens (after pairing, or when the feeder's clock is unset), a firmware update, the restore of stock, and the install's, setup's and join's own sessions. A pins file that doesn't read is set aside and holds every feed back until the owner has checked the bowls, and one the phone's storage can't open blocks every request instead of sending writes unpinned; a router left behind by a restarted engine in the same process is taken over by the next one and sends nothing again. A change other than a feed that never said how it ended shows on the feeder's screen until a check settles it or the owner puts it away, and a feed's own answer reaches a screen made again while it was out by the feed's key.
@@ -193,7 +194,7 @@ It is the same app, started with `flutter run -d macos`, or built with `flutter 
 2. Run `flutter_rust_bridge_codegen generate` here.
 3. Commit the regenerated `lib/src/rust/` and `rust/src/frb_generated.rs` with the Rust change.
 
-After a change to `tokens.json`, run `UPDATE_BINDINGS=1 cargo test -p wellfed-app-bridge --test tokens` and commit `lib/theme/tokens.g.dart`.
+After a change to `tokens.json`, run `UPDATE_BINDINGS=1 cargo test -p wellfed-app-bridge --test tokens` and commit `lib/theme/tokens.g.dart`. After a change to a limit in `wellfed-model`, run `UPDATE_BINDINGS=1 cargo test -p wellfed-app-bridge --test protocol` and commit `lib/src/limits.g.dart`.
 
 ## Run it against the simulator
 

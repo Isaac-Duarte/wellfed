@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/meal_choices.dart';
 import 'package:wellfed/screens/feeder/schedule.dart' show CallLink;
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -281,13 +282,13 @@ class _MealEditorState extends State<MealEditor> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Portions', style: label),
-                    Text('1 to 48', style: muted),
+                    Text('${Limits.portionsLeast} to ${Limits.portionsMost}', style: muted),
                   ],
                 ),
               ),
               IconButton.outlined(
                 tooltip: 'One fewer',
-                onPressed: _portions > 1 ? () => setState(() => _portions--) : null,
+                onPressed: _portions > Limits.portionsLeast ? () => setState(() => _portions--) : null,
                 icon: const StrokeIcon(Glyph.minus),
               ),
               SizedBox(
@@ -300,7 +301,7 @@ class _MealEditorState extends State<MealEditor> {
               ),
               IconButton.outlined(
                 tooltip: 'One more',
-                onPressed: _portions < 48 ? () => setState(() => _portions++) : null,
+                onPressed: _portions < Limits.portionsMost ? () => setState(() => _portions++) : null,
                 icon: const StrokeIcon(Glyph.add),
               ),
             ],

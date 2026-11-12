@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
+import json
+from pathlib import Path
 from typing import Any
 
 from homeassistant.config_entries import SOURCE_USER, ConfigEntry
@@ -11,6 +13,7 @@ from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant, State
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
+from homeassistant.util.yaml import load_yaml_dict
 import pytest
 
 from custom_components.wellfed.const import (
@@ -19,6 +22,7 @@ from custom_components.wellfed.const import (
     DOMAIN,
     EVENT_FEEDER,
 )
+import wellfed_homeassistant as bridge
 
 from .conftest import Simulator
 
@@ -145,7 +149,7 @@ async def test_the_lock_switch_follows_the_feeder(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-@pytest.mark.parametrize("portions", [0, 49])
+@pytest.mark.parametrize("portions", [bridge.PORTIONS_MIN - 1, bridge.PORTIONS_MAX + 1])
 async def test_the_feed_action_refuses_portions_out_of_range(
     hass: HomeAssistant, simulator: Simulator, portions: int
 ) -> None:
@@ -158,6 +162,23 @@ async def test_the_feed_action_refuses_portions_out_of_range(
         )
 
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+def test_the_feed_action_s_selector_and_words_name_the_feeder_s_portions() -> None:
+    """services.yaml and the translations cannot import the bridge, so their
+    bounds are pinned to it here."""
+    component = Path(__file__).parents[1] / "custom_components/wellfed"
+    services = load_yaml_dict(component / "services.yaml")
+    number = services["feed"]["fields"]["portions"]["selector"]["number"]
+    assert (number["min"], number["max"]) == (bridge.PORTIONS_MIN, bridge.PORTIONS_MAX)
+
+    bounds = f"{bridge.PORTIONS_MIN} to {bridge.PORTIONS_MAX}"
+    for file in (component / "strings.json", component / "translations/en.json"):
+        words = json.loads(file.read_text())
+        field = words["services"]["feed"]["fields"]["portions"]["description"]
+        refused = words["exceptions"]["refused_portions"]["message"]
+        assert bounds in field, file
+        assert bounds in refused, file
 
 
 def _short(entry: ConfigEntry) -> str:

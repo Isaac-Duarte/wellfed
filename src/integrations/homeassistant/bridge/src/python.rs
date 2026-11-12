@@ -322,4 +322,20 @@ mod wellfed_homeassistant {
     use crate::key::Joined;
     #[pymodule_export]
     use crate::server::{Login, ServerFeeder};
+
+    // The feeder's limits, from the model the bridge checks writes against,
+    // so the integration's entities and service schema never hold a copy.
+
+    /// The fewest portions one feed asks for.
+    #[pymodule_export]
+    const PORTIONS_MIN: u8 = wellfed_model::PORTIONS_MIN;
+    /// The most portions one feed asks for.
+    #[pymodule_export]
+    const PORTIONS_MAX: u8 = wellfed_model::PORTIONS_MAX;
+    /// The lightest portion weight the feeder stores, in milligrams.
+    #[pymodule_export]
+    const PORTION_MG_MIN: u32 = wellfed_model::PORTION_MG_MIN;
+    /// The heaviest portion weight the feeder stores, in milligrams.
+    #[pymodule_export]
+    const PORTION_MG_MAX: u32 = wellfed_model::PORTION_MG_MAX;
 }

@@ -13,16 +13,17 @@ from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfMass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+import wellfed_homeassistant as bridge
+
 from . import WellfedConfigEntry
 from .const import PORTIONS_MAX, PORTIONS_MIN
 from .entity import WellfedEntity, serves
 
 PARALLEL_UPDATES = 0
 
-# The feeder's limits on a portion's weight (wellfed_homeassistant's
-# PORTION_MG), in grams.
-PORTION_GRAMS_MIN = 1.0
-PORTION_GRAMS_MAX = 50.0
+# The feeder's limits on a portion's weight, from the bridge, in grams.
+PORTION_GRAMS_MIN = bridge.PORTION_MG_MIN / 1000
+PORTION_GRAMS_MAX = bridge.PORTION_MG_MAX / 1000
 
 
 async def async_setup_entry(

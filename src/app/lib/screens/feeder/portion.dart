@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -22,7 +23,9 @@ class PortionScreen extends StatefulWidget {
 }
 
 class _PortionScreenState extends State<PortionScreen> {
-  static const _gramsMost = 50;
+  /// Whole grams the steppers go between, inside the feeder's limits.
+  static const int _gramsLeast = Limits.portionMgLeast ~/ 1000;
+  static const int _gramsMost = Limits.portionMgMost ~/ 1000;
 
   /// What the ten-portion weighing divides by.
   static const _weighed = 10;
@@ -105,7 +108,7 @@ class _PortionScreenState extends State<PortionScreen> {
                     children: [
                       IconButton.outlined(
                         tooltip: 'A gram less',
-                        onPressed: can && grams != null && grams > 1 ? () => step(grams - 1) : null,
+                        onPressed: can && grams != null && grams > _gramsLeast ? () => step(grams - 1) : null,
                         icon: const StrokeIcon(Glyph.minus),
                       ),
                       Expanded(

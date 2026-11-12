@@ -2,6 +2,8 @@
 
 from typing import Final
 
+import wellfed_homeassistant as bridge
+
 DOMAIN: Final = "wellfed"
 
 # The entry's version, its major: a newer minor of it is read as it is.
@@ -48,6 +50,7 @@ SERVICE_CANCEL_FEED: Final = "cancel_feed"
 ATTR_PORTIONS: Final = "portions"
 ATTR_FEED: Final = "feed"
 
-# The feeder's own bounds on a feed's portions (wellfed_model::PORTIONS_MAX).
-PORTIONS_MIN: Final = 1
-PORTIONS_MAX: Final = 48
+# The feeder's own bounds on a feed's portions, from the bridge. services.yaml
+# cannot import them, so a test pins its copy to these.
+PORTIONS_MIN: Final = bridge.PORTIONS_MIN
+PORTIONS_MAX: Final = bridge.PORTIONS_MAX
