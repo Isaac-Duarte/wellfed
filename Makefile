@@ -272,11 +272,16 @@ HA_STUB = $(HA)/bridge/wellfed_homeassistant.pyi
 HA_STUBS = target/homeassistant-stubs
 # This host's wheel alone, so the install never picks up a cross-built one.
 HA_WHEEL = target/homeassistant-wheels/check
+# PyO3 builds against the venv's Python 3.14, never whatever `python3` the
+# host has on its path, so the gate passes or fails alike on every host.
+HA_PYO3 = PYO3_PYTHON=$(CURDIR)/$(HA_VENV)/bin/python
+# Where `cargo build` put the simulator, the CLI and the server.
+HA_BIN = $(abspath $(or $(CARGO_TARGET_DIR),target))/debug
 check-homeassistant:
-	cargo clippy --locked -p wellfed-homeassistant --features python --all-targets -- -D warnings
-	cargo clippy --locked $(PRODUCTION) -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
 	$(HA_VENV)/bin/python -c 'import sys; sys.exit(sys.version_info[:2] != (3, 14))' 2>/dev/null || uv venv --clear --python 3.14 $(HA_VENV)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt
+	$(HA_PYO3) cargo clippy --locked -p wellfed-homeassistant --features python --all-targets -- -D warnings
+	$(HA_PYO3) cargo clippy --locked $(PRODUCTION) -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
 	$(HA_VENV)/bin/ruff check $(HA)
 	$(HA_VENV)/bin/ruff format --check $(HA)
 	rm -rf $(HA_STUBS)
@@ -288,7 +293,7 @@ check-homeassistant:
 	$(HA_VENV)/bin/maturin build --locked --release -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml -o $(HA_WHEEL)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall $(HA_WHEEL)/*.whl
 	cd $(HA) && $(CURDIR)/$(HA_VENV)/bin/mypy
-	cd $(HA) && WELLFED_BIN_DIR=$(CURDIR)/target/debug $(CURDIR)/$(HA_VENV)/bin/python -m pytest -q -p no:cacheprovider \
+	cd $(HA) && WELLFED_BIN_DIR=$(HA_BIN) $(CURDIR)/$(HA_VENV)/bin/python -m pytest -q -p no:cacheprovider \
 		--cov=custom_components/wellfed --cov-report=term-missing --cov-fail-under=95
 
 # The wheels a release ships, cross-built with maturin and zig: musllinux for
