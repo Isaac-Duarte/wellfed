@@ -444,9 +444,11 @@ view_enum! {
         /// it, as the server's journal learned.
         SettledUnfed => "settled_unfed",
         /// A feed whose answer never came has no `Fed` event this session
-        /// could find yet: whether it ran is not known. It no longer holds
-        /// new feeds back, and stays pending: a later update may still
-        /// settle it, until [`UpdateKind::Forgotten`].
+        /// could find yet: whether it ran is not known. It stays pending: a
+        /// later update may still settle it, until
+        /// [`UpdateKind::Forgotten`]. Directly, it holds new feeds back
+        /// until it settles or the owner releases it
+        /// ([`UpdateKind::Released`]); through the server, it holds none.
         StillUnknown => "still_unknown",
         /// The feeder no longer knows this client's key; the session will
         /// not reconnect.
@@ -478,6 +480,10 @@ view_enum! {
         /// A direct feed kept while it went out has its answer: no longer
         /// kept. A feed it ran comes as [`UpdateKind::Answered`] first.
         Cleared => "cleared",
+        /// The owner released a lost feed, in `pending` with when: it holds
+        /// new feeds back no longer, and stays pending, so a later update
+        /// may still settle it, until [`UpdateKind::Forgotten`].
+        Released => "released",
     }
 }
 

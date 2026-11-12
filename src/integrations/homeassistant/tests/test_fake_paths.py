@@ -31,6 +31,7 @@ from homeassistant.helpers import (
     entity_registry as er,
     issue_registry as ir,
 )
+from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.components.diagnostics import (
@@ -385,9 +386,92 @@ async def test_a_lost_feed_with_no_record_is_reported_unknown(
     unknown = _issue(hass, "unknown_feed")
     assert unknown is not None and unknown.translation_placeholders is not None
     assert unknown.translation_placeholders["portions"] == "2"
-    # It holds no feed back now, and is still waited on.
+    # It still holds feeds back, and its repair is the one that releases it.
+    assert unknown.is_fixable
     assert _issue(hass, "uncertain_feed") is None
     assert [p.id for p in entry.runtime_data.kept.pending] == [lost.id]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_the_repair_releases_a_lost_feed_and_says_it_may_have_run(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    session = entry.runtime_data
+    lost = fake.pending(portions=2)
+    feeder.push(
+        fake.update(bridge.UpdateKind.Pending, pending=lost),
+        fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost),
+    )
+    await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
+    unknown = _issue(hass, "unknown_feed")
+    assert unknown is not None
+
+    assert await async_setup_component(hass, "repairs", {})
+    flows = hass.data["repairs"]["flow_manager"]
+    shown = await flows.async_init(DOMAIN, context={"issue_id": unknown.issue_id})
+    assert shown["type"] == FlowResultType.FORM
+    assert shown["step_id"] == "confirm"
+    assert shown["description_placeholders"]["portions"] == "2"
+    assert ("release", (lost.id,)) not in feeder.calls, "only once submitted"
+
+    done = await flows.async_configure(shown["flow_id"], {})
+    assert done["type"] == FlowResultType.CREATE_ENTRY
+    assert ("release", (lost.id,)) in feeder.calls
+    assert _issue(hass, "unknown_feed") is None
+
+    # The bridge confirms it: kept released, so the next session does not
+    # hold on it, and still waited on for its record.
+    released = bridge.Pending(lost.id, 2, lost.sent_ms, None, True, 1_793_794_000_000)
+    feeder.push(fake.update(bridge.UpdateKind.Released, portions=2, pending=released))
+    await _until(hass, lambda: [p.released_ms for p in session.kept.pending] == [1_793_794_000_000])
+    assert _issue(hass, "unknown_feed") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_the_repair_on_an_unloaded_entry_releases_nothing(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    entry = await _ready(hass, feeder)
+    lost = fake.pending(portions=2)
+    feeder.push(
+        fake.update(bridge.UpdateKind.Pending, pending=lost),
+        fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost),
+    )
+    await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
+    unknown = _issue(hass, "unknown_feed")
+    assert unknown is not None
+
+    assert await async_setup_component(hass, "repairs", {})
+    flows = hass.data["repairs"]["flow_manager"]
+    shown = await flows.async_init(DOMAIN, context={"issue_id": unknown.issue_id})
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    done = await flows.async_configure(shown["flow_id"], {})
+    assert done["type"] == FlowResultType.ABORT
+    assert done["reason"] == "not_loaded"
+    assert ("release", (lost.id,)) not in feeder.calls
+
+
+async def test_through_the_server_a_lost_feed_holds_nothing_and_has_no_release(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    feeder.holds_lost_feeds = False
+    entry = await _ready(hass, feeder, SERVER_DATA)
+    session = entry.runtime_data
+    lost = fake.pending(portions=2)
+    feeder.push(
+        fake.update(bridge.UpdateKind.Pending, pending=lost),
+        fake.update(bridge.UpdateKind.StillUnknown, portions=2, pending=lost),
+    )
+    await _until(hass, lambda: _issue(hass, "unknown_feed_server") is not None)
+    unknown = _issue(hass, "unknown_feed_server")
+    assert unknown is not None and not unknown.is_fixable
+    assert _issue(hass, "unknown_feed") is None
+
+    feeder.push(fake.update(bridge.UpdateKind.Forgotten, portions=2, pending=lost))
+    await _until(hass, lambda: session.kept.pending == [])
+    # Still unknown: the owner's repair stays until they ignore it.
+    assert _issue(hass, "unknown_feed_server") is not None
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
@@ -424,10 +508,10 @@ async def test_a_lost_feed_no_longer_waited_on_leaves_the_store(
     await _until(hass, lambda: _issue(hass, "unknown_feed") is not None)
     assert [p.id for p in session.kept.pending] == [lost.id]
 
+    # The bridge forgets only a feed released a week before.
     feeder.push(fake.update(bridge.UpdateKind.Forgotten, portions=2, pending=lost))
     await _until(hass, lambda: session.kept.pending == [])
-    # Still unknown: the owner's repair stays until they ignore it.
-    assert _issue(hass, "unknown_feed") is not None
+    assert _issue(hass, "unknown_feed") is None
     assert _issue(hass, "uncertain_feed") is None
     assert await hass.config_entries.async_unload(entry.entry_id)
 

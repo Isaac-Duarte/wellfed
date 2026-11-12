@@ -392,6 +392,8 @@ impl<'a> Session<'a> {
                         None => Ok(()),
                     },
                     Some(Command::Refresh) => self.refresh().await,
+                    // Nothing is held here, so nothing is released.
+                    Some(Command::Release) => Ok(()),
                 },
                 update = stream.next() => match update {
                     None => Err(Ended::Lost("the server ended the event stream".into())),
@@ -888,6 +890,7 @@ impl<'a> Session<'a> {
             sent_ms: now_ms(),
             after: None,
             reported: false,
+            released_ms: None,
         };
         // Announced on the updates before anything can settle it, so the
         // integration keeps it first; a handle gone has no one to tell.
@@ -1184,6 +1187,7 @@ mod tests {
                 sent_ms,
                 after: None,
                 reported: false,
+                released_ms: None,
             },
             feed: None,
             sent: sent_at(sent_ms),

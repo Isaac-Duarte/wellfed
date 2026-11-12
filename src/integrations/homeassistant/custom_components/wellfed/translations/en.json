@@ -379,7 +379,7 @@
       "message": "Not sent: that value is outside what the feeder accepts."
     },
     "not_sent_held": {
-      "message": "Not sent: another feed is still being answered or settled, so this one waits. Home Assistant settles it within 15 minutes; check the bowl before feeding again."
+      "message": "Not sent: another feed is still being answered, or one whose answer was lost may have run. No other feed goes until that feed settles or you allow feeding again from its repair. Check the bowl first."
     },
     "refused_forbidden": {
       "message": "The feeder refused: this client's role may not do that."
@@ -445,6 +445,20 @@
       "description": "Home Assistant sent a feed and no answer came, so it may have run. It was not sent again. This clears itself once the feeder's history shows the feed. Check the bowl before feeding again."
     },
     "unknown_feed": {
+      "title": "Feeding from Home Assistant is paused on feeder {feeder}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Allow feeding again on feeder {feeder}",
+            "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it. It may have run without being recorded, or never reached the feeder. So that the bowl is not filled twice, Home Assistant sends no other feed until that feed's record turns up, which clears this by itself.\n\nCheck the bowl first. Submitting allows feeding from Home Assistant again even though that feed may have run. If its record turns up within a week, Home Assistant still logs how it ended."
+          }
+        },
+        "abort": {
+          "not_loaded": "This feeder's Wellfed entry is not loaded. Try again once it is set up."
+        }
+      }
+    },
+    "unknown_feed_server": {
       "title": "Whether a feed on feeder {feeder} ran is not known",
       "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it yet. It may have run without being recorded, or never reached the feeder. Check the bowl, then ignore this. Home Assistant feeds again meanwhile, and if the feed's record turns up within a week, this clears itself."
     },

@@ -3,9 +3,11 @@
 - **Pending feeds:** each direct feed from just before it goes out, and
   each feed whose answer was lost, until its answer clears it, an update
   settles it, or the bridge stops waiting on it; with whether it was
-  reported still unknown. The next session is handed them, so a feed lost
-  before a restart, or out when Home Assistant stopped, is still settled
-  rather than forgotten, and one already reported is not reported again.
+  reported still unknown, and when the owner released it. The next session
+  is handed them, so a feed lost before a restart, or out when Home
+  Assistant stopped, is still settled rather than forgotten, one already
+  reported is not reported again, and one not released still holds new
+  feeds back.
 - **Answered feeds:** the feed numbers this Home Assistant has the end of,
   as the bridge last listed them: each feed it was answered for, and each
   lost feed a `Fed` event settled, as many as the bridge needs kept.
@@ -64,6 +66,7 @@ class PendingData(TypedDict):
     sent_ms: int
     after: int | None
     reported: bool
+    released_ms: int | None
 
 
 class KeptData(TypedDict):
@@ -98,9 +101,19 @@ def _pending(item: Any) -> bool:
         and isinstance(item.get("id"), str)
         and _int(item.get("portions"), bridge.PORTIONS_MIN, bridge.PORTIONS_MAX)
         and _int(item.get("sent_ms"), -(2**63), 2**63 - 1)
-        and (item.get("after") is None or _int(item.get("after"), 0, 2**64 - 1))
+        and _optional(item, "after", 0, 2**64 - 1)
         and isinstance(item.get("reported"), bool)
+        and _optional(item, "released_ms", -(2**63), 2**63 - 1)
     )
+
+
+def _optional(item: dict[str, Any], name: str, low: int, high: int) -> bool:
+    """Whether `item` has `name`, null or an integer from `low` to `high`: a
+    missing one would fail setup when the bridge is handed it."""
+    if name not in item:
+        return False
+    value = item[name]
+    return value is None or _int(value, low, high)
 
 
 def _valid(data: Any) -> bool:
@@ -207,7 +220,12 @@ class Kept:
     def pending(self) -> list[bridge.Pending]:
         return [
             bridge.Pending(
-                item["id"], item["portions"], item["sent_ms"], item["after"], item["reported"]
+                item["id"],
+                item["portions"],
+                item["sent_ms"],
+                item["after"],
+                item["reported"],
+                item["released_ms"],
             )
             for item in self._data["pending"]
         ]
@@ -231,6 +249,7 @@ class Kept:
                 "sent_ms": pending.sent_ms,
                 "after": pending.after,
                 "reported": pending.reported,
+                "released_ms": pending.released_ms,
             }
         )
         self._save()
@@ -240,6 +259,13 @@ class Kept:
         for item in self._data["pending"]:
             if item["id"] == pending.id:
                 item["reported"] = True
+        self._save()
+
+    def mark_released(self, pending: bridge.Pending) -> None:
+        """The owner released `pending`, as the bridge confirmed."""
+        for item in self._data["pending"]:
+            if item["id"] == pending.id:
+                item["released_ms"] = pending.released_ms
         self._save()
 
     def settle(self, pending: bridge.Pending) -> None:

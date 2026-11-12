@@ -31,10 +31,14 @@
 //!   [`UpdateKind::StillUnknown`](crate::api::UpdateKind) when the history
 //!   holds no such feed, never a guessed count: once the feeder reads idle
 //!   with no `Fed` for it, at the next backlog or at a status asked after
-//!   its answer was lost, or after 15 minutes at most. A `Fed` names the
-//!   client, not the request, so while one feed is uncertain and not yet
-//!   reported (or a feed's answer is still awaited) a new feed is not sent
-//!   ([`NotSent::Held`]). Every
+//!   its answer was lost, or after 15 minutes when it never does. While a
+//!   feed's answer is awaited, or a lost feed is neither settled nor
+//!   released by the owner, a new feed is not sent ([`NotSent::Held`]), as
+//!   the app holds one: the lost feed may have run, and a `Fed` names the
+//!   client, not the request. The hold never lapses on its own. The owner
+//!   releases it ([`Feeder::release`]) through the integration's repair,
+//!   which says the lost feed may have run; a released feed stays open to
+//!   its `Fed` for a week. Every
 //!   number this client has the end of goes to the integration
 //!   ([`UpdateKind::Answered`](crate::api::UpdateKind)), which hands them
 //!   to the next session, so a replayed `Fed` of a feed settled before a
@@ -57,8 +61,8 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
-use std::sync::Mutex;
 use std::sync::mpsc as std_mpsc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use jiff::tz::TimeZone;
@@ -85,16 +89,18 @@ type RequestId = [u8; 16];
 /// How often a quiet session reads the status anew, which also keeps the
 /// connection's silence limit fed.
 pub(crate) const TURN: Duration = Duration::from_secs(30);
-/// How long an uncertain feed holds new feeds back before it is reported
-/// still unknown, unless the backlog shows it sooner: longer than the
-/// longest feed the feeder runs.
+/// How long after it went out a lost feed is reported still unknown at
+/// the latest, when the feeder never reads idle sooner: longer than the
+/// longest feed the feeder runs. Directly, the report lets the owner
+/// release the feed; it does not release it.
 pub(crate) const SETTLE: Duration = Duration::from_secs(15 * 60);
-/// How long after it went out a feed whose answer never came stays open to
-/// its end: a `Fed` that turns up late, or a journal that settles it late,
-/// still settles it. Past this it is forgotten
-/// ([`UpdateKind::Forgotten`](crate::api::UpdateKind)), still unknown. The
-/// app keeps a lost feed a week from when the owner puts it away; Home
-/// Assistant has no such step, so it counts from the send.
+/// How long a feed whose answer never came stays open to its end once
+/// nothing holds on it: a `Fed` that turns up late, or a journal that
+/// settles it late, still settles it. Past this it is forgotten
+/// ([`UpdateKind::Forgotten`](crate::api::UpdateKind)), still unknown.
+/// Directly it counts from the owner's release, as the app counts a week
+/// from when the owner puts a lost feed away, so a feed still holding is
+/// never forgotten; through the server, which holds none, from the send.
 pub(crate) const KEEP_MS: i64 = 7 * 24 * 3_600_000;
 /// Feeds kept for the day's facts: far more than a day holds.
 const FEEDS_KEPT: usize = 512;
@@ -122,7 +128,15 @@ pub(crate) enum Command {
         queued: Instant,
     },
     Refresh,
+    /// The owner released lost feeds: their ids wait in [`Releases`].
+    Release,
 }
+
+/// The lost feeds the owner released, by id, until the session thread
+/// takes them. Shared with the handle rather than sent as a command, so a
+/// release made between sessions, when every command is refused, is
+/// applied at the next session rather than dropped.
+pub(crate) type Releases = Arc<Mutex<Vec<String>>>;
 
 /// Whether a write queued at `queued` waited too long to be sent; it is
 /// then answered unsent here.
@@ -154,7 +168,7 @@ pub(crate) async fn refusing<T>(
                 Some(Command::Write { reply, .. }) => {
                     let _ = reply.send(Written::not_sent(NotSent::Disconnected));
                 }
-                Some(Command::Refresh) => {}
+                Some(Command::Refresh | Command::Release) => {}
             },
         }
     }
@@ -177,7 +191,7 @@ pub(crate) fn now_ms() -> i64 {
 }
 
 /// The instant a pending feed went out, from its wall-clock time: a feed
-/// carried across a restart keeps its settle window rather than starting
+/// carried across a restart keeps its report window rather than starting
 /// a new one.
 pub(crate) fn sent_at(sent_ms: i64) -> Instant {
     let ago = u64::try_from(now_ms().saturating_sub(sent_ms)).unwrap_or(0);
@@ -195,9 +209,10 @@ pub struct Clocks {
     pub session: Timing,
     /// How long a lost session waits before opening another.
     pub retry: Duration,
-    /// How long a lost feed holds new feeds back at most before it is
-    /// reported still unknown: 15 minutes in Home Assistant, longer than the
-    /// longest feed the feeder runs.
+    /// How long after it went out a lost feed is reported still unknown at
+    /// the latest (15 minutes in Home Assistant). The report does not
+    /// release it: it holds new feeds back until it settles or the owner
+    /// releases it.
     pub settle: Duration,
 }
 
@@ -222,6 +237,9 @@ pub struct Target {
 pub struct Feeder {
     commands: mpsc::UnboundedSender<Command>,
     updates: Mutex<std_mpsc::Receiver<Update>>,
+    /// The owner's releases of lost feeds; `None` through the server, which
+    /// holds no feed back.
+    releases: Option<Releases>,
 }
 
 impl Feeder {
@@ -235,7 +253,11 @@ impl Feeder {
         clocks: Clocks,
         carried: Carried,
     ) -> Result<Self, Error> {
-        Self::spawn(move |inbox, outbox| run(key, target, clocks, carried, inbox, outbox))
+        let releases = Releases::default();
+        let shared = Arc::clone(&releases);
+        Self::spawn(Some(releases), move |inbox, outbox| {
+            run(key, target, clocks, carried, shared, inbox, outbox)
+        })
     }
 
     /// Start the session thread for the feeder `target` names through the
@@ -249,14 +271,14 @@ impl Feeder {
         pending: Vec<Pending>,
     ) -> Result<Self, Error> {
         let client = crate::server::client(&target, clocks)?;
-        Self::spawn(move |inbox, outbox| {
+        Self::spawn(None, move |inbox, outbox| {
             crate::server::run(client, target, clocks, pending, inbox, outbox)
         })
     }
 
     /// Run the session `serve` makes on a thread of its own, on a
     /// current-thread runtime.
-    fn spawn<F, S>(serve: S) -> Result<Self, Error>
+    fn spawn<F, S>(releases: Option<Releases>, serve: S) -> Result<Self, Error>
     where
         S: FnOnce(mpsc::UnboundedReceiver<Command>, std_mpsc::Sender<Update>) -> F + Send + 'static,
         F: Future<Output = ()>,
@@ -275,6 +297,7 @@ impl Feeder {
         Ok(Self {
             commands,
             updates: Mutex::new(updates),
+            releases,
         })
     }
 
@@ -330,6 +353,27 @@ impl Feeder {
         let _ = self.commands.send(Command::Refresh);
     }
 
+    /// The owner releases the lost feed `id` names: it holds new feeds
+    /// back no longer, though it may have run, and stays open to its
+    /// `Fed`. Confirmed by [`UpdateKind::Released`](crate::api::UpdateKind)
+    /// once the session thread takes it, at once or at the next session;
+    /// a feed not lost, settled or unknown releases nothing. Directly only:
+    /// the server route holds no feed back, and releases nothing.
+    pub fn release(&self, id: String) {
+        let Some(shared) = &self.releases else {
+            return;
+        };
+        releases(shared).push(id);
+        let _ = self.commands.send(Command::Release);
+    }
+
+    /// Whether a lost feed holds new feeds back on this route until it
+    /// settles or the owner releases it: directly, as the app holds one.
+    /// Through the server none is held.
+    pub fn holds_lost_feeds(&self) -> bool {
+        self.releases.is_some()
+    }
+
     fn write(&self, write: Write) -> Written {
         let (reply, answer) = oneshot::channel();
         let queued = Instant::now();
@@ -362,9 +406,10 @@ enum Stage {
 /// integration's store too) from just before it went out, as the app pins
 /// one: a restart before its answer finds it lost, so its `Fed` is never
 /// taken for another lost feed's. Its `Fed` comes after the event
-/// `pending.after` names. Once reported still unknown
-/// (`pending.reported`) it no longer holds new feeds back, and waits for
-/// its `Fed` until [`KEEP_MS`].
+/// `pending.after` names. It holds new feeds back until it settles or the
+/// owner releases it (`pending.released_ms`), reported still unknown
+/// (`pending.reported`) or not, and once released waits for its `Fed` for
+/// [`KEEP_MS`].
 #[derive(Clone, Debug)]
 struct Uncertain {
     pending: Pending,
@@ -381,9 +426,16 @@ struct Uncertain {
     lost_at: Option<u64>,
 }
 
-/// Whether a feed sent at `sent_ms` has waited as long as one is kept.
-pub(crate) fn forgotten(sent_ms: i64) -> bool {
-    now_ms().saturating_sub(sent_ms) >= KEEP_MS
+/// Whether a feed kept open since `since_ms` has waited as long as one is
+/// kept.
+pub(crate) fn forgotten(since_ms: i64) -> bool {
+    now_ms().saturating_sub(since_ms) >= KEEP_MS
+}
+
+/// The releases waiting. A thread that panicked holding the lock left the
+/// list whole, so it is used as it is.
+fn releases(shared: &Releases) -> std::sync::MutexGuard<'_, Vec<String>> {
+    shared.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// What outlives one session: where the history was read to, what it said,
@@ -402,6 +454,8 @@ struct Memory {
     uncertain: Vec<Uncertain>,
     /// The alert tables read so far; `None` until the first session.
     alerts: Option<Tracker>,
+    /// The owner's releases, shared with the handle.
+    releases: Releases,
 }
 
 impl Memory {
@@ -500,14 +554,16 @@ impl Memory {
             .collect()
     }
 
-    /// Take out the lost feeds past [`KEEP_MS`]. One still waiting on its
-    /// answer is never forgotten, whatever the clock says: a wall clock
-    /// that jumps ahead must not let go of a feed that may yet run.
+    /// Take out the lost feeds released [`KEEP_MS`] ago. One still
+    /// holding feeds back is never forgotten, nor one still waiting on its
+    /// answer, whatever the clock says: a wall clock that jumps ahead must
+    /// not let go of a feed that may yet run.
     fn past_keep(&mut self) -> Vec<Uncertain> {
         let (gone, open) = std::mem::take(&mut self.uncertain)
             .into_iter()
             .partition(|uncertain| {
-                uncertain.stage == Stage::Lost && forgotten(uncertain.pending.sent_ms)
+                uncertain.stage == Stage::Lost
+                    && uncertain.pending.released_ms.is_some_and(forgotten)
             });
         self.uncertain = open;
         gone
@@ -535,14 +591,38 @@ impl Memory {
         }
     }
 
-    /// Whether a feed of this client's has no end yet and is not reported
-    /// still unknown: one still waiting on its answer, which may yet be
-    /// lost, or a lost one, carried from the last run included. A new feed
-    /// waits for it.
+    /// Whether a feed of this client's has no end yet and the owner has
+    /// not released it: one still waiting on its answer, which may yet be
+    /// lost, or a lost one, carried from the last run included, reported
+    /// still unknown or not. A new feed waits for it, however long.
     fn holds_feeds(&self) -> bool {
         self.uncertain
             .iter()
-            .any(|uncertain| !uncertain.pending.reported)
+            .any(|uncertain| uncertain.pending.released_ms.is_none())
+    }
+
+    /// Release each lost feed the owner released since the last call and
+    /// that still holds feeds back: the ones released. An id that names
+    /// none (settled meanwhile, or still awaiting its answer) is dropped.
+    fn take_releases(&mut self) -> Vec<Pending> {
+        let ids = std::mem::take(&mut *releases(&self.releases));
+        if ids.is_empty() {
+            return Vec::new();
+        }
+
+        let at = now_ms();
+        let mut released = Vec::new();
+        for uncertain in &mut self.uncertain {
+            let pending = &mut uncertain.pending;
+            if uncertain.stage == Stage::Lost
+                && pending.released_ms.is_none()
+                && ids.contains(&pending.id)
+            {
+                pending.released_ms = Some(at);
+                released.push(pending.clone());
+            }
+        }
+        released
     }
 }
 
@@ -566,6 +646,7 @@ async fn run(
     target: Target,
     clocks: Clocks,
     carried: Carried,
+    releases: Releases,
     mut commands: mpsc::UnboundedReceiver<Command>,
     updates: std_mpsc::Sender<Update>,
 ) {
@@ -573,19 +654,31 @@ async fn run(
     fingerprint.copy_from_slice(&key.public()[..4]);
     let mut memory = Memory::carried(carried);
     memory.alerts = Some(Tracker::new(fingerprint));
+    memory.releases = releases;
     // A lost feed carried from the last run that still holds feeds back is
-    // announced again, so the integration's repair says so.
+    // announced again, so the integration's repairs say so: one not yet
+    // reported as pending, one reported as still unknown, whose repair
+    // lets the owner release it.
     for uncertain in &memory.uncertain {
-        if !uncertain.pending.reported
-            && updates
-                .send(Update::pending(uncertain.pending.clone()))
-                .is_err()
-        {
+        let pending = &uncertain.pending;
+        let again = match (pending.reported, pending.released_ms) {
+            (_, Some(_)) => continue,
+            (false, None) => Update::pending(pending.clone()),
+            (true, None) => Update::still_unknown(pending.clone()),
+        };
+        if updates.send(again).is_err() {
             return;
         }
     }
 
     loop {
+        // Releases made while no session was open.
+        for pending in memory.take_releases() {
+            if updates.send(Update::released(pending)).is_err() {
+                return;
+            }
+        }
+
         let Some(opened) = refusing(open(&key, &target, clocks.session), &mut commands).await
         else {
             return;
@@ -639,7 +732,7 @@ pub(crate) async fn pause(
                 Some(Command::Write { reply, .. }) => {
                     let _ = reply.send(Written::not_sent(NotSent::Disconnected));
                 }
-                Some(Command::Refresh) => {}
+                Some(Command::Refresh | Command::Release) => {}
             },
         }
     }
@@ -840,6 +933,10 @@ impl<'a> Session<'a> {
     }
 
     async fn follow(&mut self, commands: &mut mpsc::UnboundedReceiver<Command>) -> Ended {
+        // Releases made while this session connected.
+        if let Err(ended) = self.release() {
+            return ended;
+        }
         loop {
             // A lost feed is reported when its time comes, not at the next
             // message: one whose answer is held back may bring none.
@@ -853,6 +950,7 @@ impl<'a> Session<'a> {
                         None => Ok(()),
                     },
                     Some(Command::Refresh) => self.turn(),
+                    Some(Command::Release) => self.release(),
                 },
                 received = self.connection.receive(TURN) => match received {
                     Ok(Received::Answer { id, answer }) => self.answered(id, answer),
@@ -880,6 +978,15 @@ impl<'a> Session<'a> {
 
     fn send(&self, update: Update) -> Step {
         self.updates.send(update).map_err(|_| Ended::Dropped)
+    }
+
+    /// Release the lost feeds the owner released: new feeds go again once
+    /// none holds them back.
+    fn release(&mut self) -> Step {
+        for pending in self.memory.take_releases() {
+            self.send(Update::released(pending))?;
+        }
+        Ok(())
     }
 
     /// The state as it now stands, once the backlog is read.
@@ -1018,6 +1125,7 @@ impl<'a> Session<'a> {
             sent_ms: now_ms(),
             after: self.newest(),
             reported: false,
+            released_ms: None,
         };
         let id = pending.id.clone();
         // A handle gone has no one to tell.
@@ -1327,8 +1435,8 @@ impl<'a> Session<'a> {
 
     /// The backlog is read: the state is whole, and an uncertain feed with
     /// no `Fed` in it, on a feeder that is not feeding now, is still
-    /// unknown. It no longer holds feeds back, and its `Fed` still settles
-    /// it if it turns up later.
+    /// unknown. It holds feeds back until it settles or the owner releases
+    /// it, and its `Fed` still settles it if it turns up later.
     fn end_backlog(&mut self) -> Step {
         self.backlog = None;
         let feeding = self.memory.facts.status.as_ref().is_some_and(feeding_now);
@@ -1343,10 +1451,10 @@ impl<'a> Session<'a> {
     /// that read went, and whose `Fed` has not settled it, never ran by
     /// then: the feeder takes one session's requests in order, so the feed
     /// reached it first, and one that started would read as feeding or have
-    /// ended in an event already read. It is reported still unknown, so it
-    /// holds new feeds back no longer, and stays open to a late `Fed` as
-    /// any reported feed does. One the feeder is still feeding waits for a
-    /// later status (each event read asks one), or for [`Clocks::settle`].
+    /// ended in an event already read. It is reported still unknown, so the
+    /// owner may release it, and stays open to a late `Fed` as any reported
+    /// feed does. One the feeder is still feeding waits for a later status
+    /// (each event read asks one), or for [`Clocks::settle`].
     fn idle(&mut self, asked: u64) -> Step {
         let Some(status) = self.memory.facts.status.as_ref() else {
             return Ok(());
@@ -1416,8 +1524,8 @@ impl<'a> Session<'a> {
         let _ = self.updates.send(Update::forgotten(pending));
     }
 
-    /// Lost feeds past [`Clocks::settle`] with no `Fed` are still unknown;
-    /// those past [`KEEP_MS`] are forgotten.
+    /// Lost feeds past [`Clocks::settle`] with no `Fed` are still unknown,
+    /// and still held; those released [`KEEP_MS`] ago are forgotten.
     fn expire(&mut self) -> Step {
         for uncertain in self.memory.past_keep() {
             self.forget(uncertain.pending);
@@ -1561,25 +1669,55 @@ mod tests {
             sent_ms,
             after: Some(4),
             reported: false,
+            released_ms: None,
         }
     }
 
     /// A lost feed carried from a run that already reported it still
-    /// unknown waits for its `Fed`, but holds no feed back, whenever it
-    /// went out: the report is kept, not judged again by the clock.
+    /// unknown holds feeds back however long ago it went, past
+    /// [`SETTLE`] and past [`KEEP_MS`]: only the owner's release lets
+    /// feeds go again, and it stays open to its `Fed` after that.
     #[test]
-    fn a_carried_feed_reported_before_holds_no_feed_back() {
+    fn a_carried_feed_holds_feeds_back_until_the_owner_releases_it() {
         let reported = Pending {
             reported: true,
-            ..lost("reported", now_ms() - 1000)
+            ..lost("reported", now_ms() - KEEP_MS - 1000)
         };
         let carried = Carried {
             pending: vec![reported],
             answered: Vec::new(),
         };
-        let memory = Memory::carried(carried);
-        assert_eq!(memory.uncertain.len(), 1, "still waited on");
+        let mut memory = Memory::carried(carried);
+        assert!(memory.holds_feeds());
+        assert!(memory.past_keep().is_empty(), "never forgotten while held");
+
+        releases(&memory.releases).push("another".into());
+        assert!(memory.take_releases().is_empty());
+        assert!(memory.holds_feeds());
+
+        releases(&memory.releases).push("reported".into());
+        let released = memory.take_releases();
+        assert_eq!(released.len(), 1);
+        assert!(released[0].released_ms.is_some());
         assert!(!memory.holds_feeds());
+        assert_eq!(memory.uncertain.len(), 1, "still waited on");
+        assert!(memory.past_keep().is_empty(), "kept from its release");
+
+        memory.uncertain[0].pending.released_ms = Some(now_ms() - KEEP_MS);
+        assert_eq!(memory.past_keep().len(), 1);
+    }
+
+    /// A feed still waiting on its answer is not released: its answer, a
+    /// moment away, says how it ended.
+    #[test]
+    fn a_feed_awaiting_its_answer_is_not_released() {
+        let mut memory = Memory::default();
+        memory
+            .uncertain
+            .push(kept(lost("sending", now_ms()), Stage::Sending));
+        releases(&memory.releases).push("sending".into());
+        assert!(memory.take_releases().is_empty());
+        assert!(memory.holds_feeds());
     }
 
     /// One of this client's `Fed`s of 1 portion, ended at event `seq`.
@@ -1729,18 +1867,20 @@ mod tests {
         assert_eq!(memory.answered.len(), ANSWERED_TAIL);
     }
 
-    /// After a wall clock jump a week ahead, a lost feed is forgotten, but
-    /// a feed still waiting on its answer stays.
+    /// After a wall clock jump a week ahead, a released lost feed is
+    /// forgotten, but a feed still waiting on its answer stays.
     #[test]
     fn a_clock_jump_forgets_no_feed_still_sending() {
         let long_ago = now_ms() - KEEP_MS - 1000;
+        let released = Pending {
+            released_ms: Some(long_ago),
+            ..lost("lost", long_ago)
+        };
         let mut memory = Memory::default();
         memory
             .uncertain
             .push(kept(lost("sending", long_ago), Stage::Sending));
-        memory
-            .uncertain
-            .push(kept(lost("lost", long_ago), Stage::Lost));
+        memory.uncertain.push(kept(released, Stage::Lost));
 
         let gone = memory.past_keep();
         assert_eq!(gone.len(), 1);
@@ -1852,7 +1992,7 @@ mod tests {
                 update.pending.map(|pending| pending.id),
                 Some("lost".into())
             );
-            assert!(!session.memory.holds_feeds());
+            assert!(session.memory.holds_feeds(), "until the owner releases it");
         });
     }
 

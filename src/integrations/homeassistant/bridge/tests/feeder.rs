@@ -136,6 +136,19 @@ fn until<T>(feeder: &Feeder, mut want: impl FnMut(&Update) -> Option<T>) -> T {
 }
 
 /// The first state that `want` accepts.
+/// The owner releases the lost feed `pending` names, through its repair:
+/// it as the session confirms it.
+fn release(feeder: &Feeder, pending: &Pending) -> Pending {
+    feeder.release(pending.id.clone());
+    let released = until(feeder, |update| {
+        (update.kind == UpdateKind::Released).then(|| update.pending.clone())
+    })
+    .expect("the released feed");
+    assert_eq!(released.id, pending.id);
+    assert!(released.released_ms.is_some());
+    released
+}
+
 fn state_where(feeder: &Feeder, want: impl Fn(&State) -> bool) -> State {
     until(feeder, |update| {
         update.state.clone().filter(|state| want(state))
@@ -540,9 +553,10 @@ fn a_feed_that_never_reached_the_feeder_is_still_unknown_after_the_backlog() {
     assert_eq!((portions, which), (Some(1), Some(reported)));
 }
 
-/// A lost feed reported still unknown no longer holds feeds back, and stays
-/// open to its own `Fed`. A later lost feed of other portions that runs is
-/// settled by its own `Fed`, never the older one, which never ran.
+/// A lost feed reported still unknown and released by the owner holds
+/// feeds back no longer, and stays open to its own `Fed`. A later lost
+/// feed of other portions that runs is settled by its own `Fed`, never the
+/// older one, which never ran.
 #[test]
 fn a_fed_settles_the_lost_feed_of_its_portions_not_an_older_one() {
     let (sim, key) = joined();
@@ -570,6 +584,7 @@ fn a_fed_settles_the_lost_feed_of_its_portions_not_an_older_one() {
         ..older
     };
     assert_eq!(reported, Some(older.clone()));
+    release(&feeder, &older);
 
     // B, of one portion, goes out though A is still open; its answer is
     // lost, and it runs.
@@ -595,8 +610,9 @@ fn a_fed_settles_the_lost_feed_of_its_portions_not_an_older_one() {
     }
 }
 
-/// A feed reported still unknown stays open: its `Fed`, held back past the
-/// report, still settles it.
+/// A feed reported still unknown stays open, and holds new feeds back:
+/// its `Fed`, held back past the report, still settles it, and only then
+/// does a feed go again.
 #[test]
 fn a_feed_reported_unknown_is_settled_by_its_late_fed() {
     let (sim, key) = joined();
@@ -614,6 +630,7 @@ fn a_feed_reported_unknown_is_settled_by_its_late_fed() {
         (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
     });
     assert_eq!(reported.as_ref().map(|lost| &lost.id), Some(&pending.id));
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
 
     relay.resume();
     let (which, fed) = until(&feeder, |update| {
@@ -621,6 +638,7 @@ fn a_feed_reported_unknown_is_settled_by_its_late_fed() {
     });
     assert_eq!(which.map(|lost| lost.id), Some(pending.id));
     assert_eq!(fed.map(|fed| fed.requested), Some(1));
+    assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
 }
 
 /// Home Assistant stops while a feed is out, after a feed of the same
@@ -636,8 +654,8 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     let feeder = std::sync::Arc::new(session(&sim, key, relay.address, SHORT));
     state_where(&feeder, |_| true);
 
-    // U, of two portions, never reaches the feeder, and is reported
-    // still unknown at the next session's backlog.
+    // U, of two portions, never reaches the feeder, is reported still
+    // unknown at the next session's backlog, and the owner releases it.
     relay.pause();
     let fed = {
         let feeder = std::sync::Arc::clone(&feeder);
@@ -652,6 +670,7 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     })
     .expect("U");
     assert!(older.reported);
+    let older = release(&feeder, &older);
 
     // F, of two portions, goes out and runs; Home Assistant stops before
     // its answer, with what the store had by then: F as it went out.
@@ -703,8 +722,8 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     );
 }
 
-/// A lost feed carried from the last run that has waited a week is
-/// forgotten, still unknown.
+/// A lost feed carried from the last run, released by the owner a week
+/// ago, is forgotten, still unknown.
 #[test]
 fn a_lost_feed_a_week_old_is_forgotten() {
     let (sim, key) = joined();
@@ -720,9 +739,10 @@ fn a_lost_feed_a_week_old_is_forgotten() {
     let old = Pending {
         id: "old".into(),
         portions: 1,
-        sent_ms: i64::try_from(now_ms).unwrap() - week - 1000,
+        sent_ms: i64::try_from(now_ms).unwrap() - week - 60_000,
         after: Some(1),
         reported: true,
+        released_ms: Some(i64::try_from(now_ms).unwrap() - week - 1000),
     };
     let carried = Carried {
         pending: vec![old.clone()],
@@ -912,12 +932,12 @@ fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
     assert_eq!(which.map(|lost| lost.id), Some(pending.id));
 }
 
-/// A feed whose answer is lost mid-session holds new feeds back only until
+/// A feed whose answer is lost mid-session is reported still unknown once
 /// a status asked after it reads the feeder idle with no `Fed` for it, not
-/// for the whole settle window: the feeder refused it while busy, so it is
-/// reported still unknown once the feed it was busy with has ended.
+/// at the end of the whole settle window: the feeder refused it while
+/// busy. The report lets the owner release it; until then it holds.
 #[test]
-fn a_lost_feed_the_feeder_never_ran_holds_feeds_only_until_it_reads_idle() {
+fn a_lost_feed_the_feeder_never_ran_is_reported_once_it_reads_idle() {
     let (sim, key) = joined();
     let relays = relays();
     let relay = relays.block_on(Relay::start(sim.address));
@@ -952,7 +972,49 @@ fn a_lost_feed_the_feeder_never_ran_holds_feeds_only_until_it_reads_idle() {
     assert_eq!(reported.id, pending.id);
     assert!(reported.reported);
 
-    // It holds no feed back now.
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
+    release(&feeder, &reported);
+    assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
+}
+
+/// A lost feed holds new feeds back however long ago it went: past the
+/// 15 minutes it is reported still unknown by, across a restart, until the
+/// owner releases it. Its repair is raised again after the restart.
+#[test]
+fn a_lost_feed_holds_feeds_past_the_report_window_until_released() {
+    let (sim, key) = joined();
+    let target = Target {
+        identity: sim.identity,
+        address: Some(sim.address.to_string()),
+    };
+    let now_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+    let lost = Pending {
+        id: "lost".into(),
+        portions: 1,
+        sent_ms: now_ms - 20 * 60_000,
+        after: Some(1),
+        reported: true,
+        released_ms: None,
+    };
+    let carried = Carried {
+        pending: vec![lost.clone()],
+        answered: Vec::new(),
+    };
+    let feeder = Feeder::start(key, target, Clocks::DEFAULT, carried).unwrap();
+    let again = until(&feeder, |update| {
+        (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
+    });
+    assert_eq!(again, Some(lost.clone()), "its repair comes back");
+    state_where(&feeder, |_| true);
+
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
+    release(&feeder, &lost);
     assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
 }
 

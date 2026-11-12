@@ -444,6 +444,12 @@ class Feeder:
         """
         Start a feed; how it ended. Never retry an uncertain one.
         """
+    @property
+    def holds_lost_feeds(self, /) -> bool:
+        """
+        Whether a lost feed holds new feeds back until it settles or the
+        owner releases it: directly. Through the server none is held.
+        """
     def next_update(self, /, timeout: SupportsFloat | SupportsIndex) -> Update | None:
         """
         The next update within `timeout` seconds, or `None`.
@@ -458,6 +464,12 @@ class Feeder:
     def refresh(self, /) -> None:
         """
         Read the status now.
+        """
+    def release(self, /, id: str) -> None:
+        """
+        The owner releases the lost feed `id` names, through its repair: new
+        feeds go again though it may have run. A `Released` update confirms
+        it. Directly only; the server route holds no feed back.
         """
     def reset_desiccant(self, /) -> Written:
         """
@@ -683,7 +695,7 @@ class Pending:
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
-    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None, reported: bool) -> Pending:
+    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None, reported: bool, released_ms: SupportsIndex | None) -> Pending:
         """
         A pending feed as the integration kept it, to hand back to a new
         session.
@@ -703,16 +715,25 @@ class Pending:
     @property
     def portions(self, /) -> int: ...
     @property
+    def released_ms(self, /) -> int | None:
+        """
+        When the owner released it ([`UpdateKind::Released`]), in Unix
+        milliseconds. Directly, a lost feed holds new feeds back until it
+        settles or is released, however long that takes; once released it
+        is kept open to a late end for a week from then.
+        """
+    @property
     def reported(self, /) -> bool:
         """
-        Reported still unknown ([`UpdateKind::StillUnknown`]): it no longer
-        holds new feeds back, and is not reported again.
+        Reported still unknown ([`UpdateKind::StillUnknown`]): it is not
+        reported again.
         """
     @property
     def sent_ms(self, /) -> int:
         """
-        When it went out, in Unix milliseconds: it is still unknown once
-        the settle window has passed since.
+        When it went out, in Unix milliseconds: it is reported still
+        unknown once the settle window has passed since, if nothing showed
+        sooner that it never ran.
         """
 
 @final
@@ -1208,9 +1229,9 @@ class Update:
         """
         For [`UpdateKind::Pending`]: the feed to keep. For
         [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`],
-        [`UpdateKind::StillUnknown`], [`UpdateKind::Forgotten`],
-        [`UpdateKind::Sending`] and [`UpdateKind::Cleared`]: the pending
-        feed it accounts for.
+        [`UpdateKind::StillUnknown`], [`UpdateKind::Released`],
+        [`UpdateKind::Forgotten`], [`UpdateKind::Sending`] and
+        [`UpdateKind::Cleared`]: the pending feed it accounts for.
         """
     @property
     def portions(self, /) -> int | None:
@@ -1287,6 +1308,12 @@ class UpdateKind:
     A feed's answer never came: it is pending until a later update
     settles it, and comes before any update that does.
     """
+    Released: Final[UpdateKind]
+    """
+    The owner released a lost feed, in `pending` with when: it holds
+    new feeds back no longer, and stays pending, so a later update
+    may still settle it, until [`UpdateKind::Forgotten`].
+    """
     Revoked: Final[UpdateKind]
     """
     The feeder no longer knows this client's key; the session will
@@ -1320,9 +1347,11 @@ class UpdateKind:
     StillUnknown: Final[UpdateKind]
     """
     A feed whose answer never came has no `Fed` event this session
-    could find yet: whether it ran is not known. It no longer holds
-    new feeds back, and stays pending: a later update may still
-    settle it, until [`UpdateKind::Forgotten`].
+    could find yet: whether it ran is not known. It stays pending: a
+    later update may still settle it, until
+    [`UpdateKind::Forgotten`]. Directly, it holds new feeds back
+    until it settles or the owner releases it
+    ([`UpdateKind::Released`]); through the server, it holds none.
     """
     TokenRefused: Final[UpdateKind]
     """

@@ -58,8 +58,13 @@ RECENT_EVENTS = 20
 
 # A feed whose answer was lost, until its `Fed` event settles it.
 UNCERTAIN_ISSUE = "uncertain_feed"
-# A lost feed the feeder's history holds no record of.
+# Directly: a lost feed the feeder's history holds no record of, which holds
+# new feeds back until it settles or the owner releases it through this
+# repair.
 UNKNOWN_ISSUE = "unknown_feed"
+# Through the owner's server: a lost feed the journal holds no record of.
+# Nothing is held, so the owner only checks the bowl.
+UNKNOWN_SERVER_ISSUE = "unknown_feed_server"
 # A feeder of an older API revision: what it lacks needs it updated.
 UPDATE_FEEDER_ISSUE = "update_feeder"
 # A feeder of a newer API revision: what it added needs this integration updated.
@@ -216,9 +221,15 @@ class FeederSession:
         self._event_listeners: list[Callable[[bridge.Event], None]] = []
         # The feeder's open alerts, and who hears each that opens or clears.
         self.alerts: bridge.Alerts | None = None
-        # The lost feeds that hold new feeds back, by id: announced pending
-        # and not yet reported still unknown, settled or forgotten.
+        # Whether a lost feed holds new feeds back until it settles or the
+        # owner releases it, as the bridge's route says: directly.
+        self._holds = feeder.holds_lost_feeds
+        # The lost feeds not yet judged, by id: announced pending and not yet
+        # reported still unknown, settled or forgotten.
         self._holding: set[str] = set()
+        # Directly, the lost feeds reported still unknown that still hold new
+        # feeds back, by id: until they settle or the owner releases them.
+        self._unknown: set[str] = set()
         self._alert_listeners: list[Callable[[bridge.Alerts], None]] = []
         self._ready = asyncio.Event()
         # The last events as they happened, for diagnostics.
@@ -245,8 +256,9 @@ class FeederSession:
     def start(self) -> None:
         """Start pumping updates into the event loop."""
         # The bridge announces again each lost feed a run before this one
-        # left that still holds feeds back, and the repair follows those.
+        # left that still holds feeds back, and the repairs follow those.
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
+        ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
         self._pump = threading.Thread(target=self._run, name="wellfed-pump", daemon=True)
         self._pump.start()
 
@@ -478,11 +490,27 @@ class FeederSession:
                 "ran is not known",
                 update.portions,
             )
-            if update.pending is not None:
-                self.kept.mark_reported(update.pending)
-                self._holding.discard(update.pending.id)
+            pending = update.pending
+            if pending is not None:
+                self.kept.mark_reported(pending)
+                self._holding.discard(pending.id)
             self._uncertain_issue()
-            self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
+            placeholders = {"portions": str(update.portions)}
+            if not self._holds:
+                self._issue(UNKNOWN_SERVER_ISSUE, ir.IssueSeverity.WARNING, placeholders)
+            elif pending is not None and pending.released_ms is None:
+                self._unknown.add(pending.id)
+                self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, placeholders, fixable=True)
+        elif kind == bridge.UpdateKind.Released and update.pending is not None:
+            _LOGGER.info(
+                "A feed of %s portions whose answer was lost was released: feeds go again",
+                update.portions,
+            )
+            self.kept.mark_released(update.pending)
+            self._unknown.discard(update.pending.id)
+            self._holding.discard(update.pending.id)
+            self._uncertain_issue()
+            self._unknown_issue()
         elif kind == bridge.UpdateKind.Forgotten:
             _LOGGER.info(
                 "A feed of %s portions whose answer was lost is no longer watched for",
@@ -499,9 +527,11 @@ class FeederSession:
         if pending is not None:
             self.kept.settle(pending)
             self._holding.discard(pending.id)
+            self._unknown.discard(pending.id)
         self._uncertain_issue()
+        self._unknown_issue()
         if not self.kept.pending:
-            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_SERVER_ISSUE))
 
     @callback
     def _cleared(self, pending: bridge.Pending | None) -> None:
@@ -509,7 +539,27 @@ class FeederSession:
         if pending is not None:
             self.kept.settle(pending)
             self._holding.discard(pending.id)
+            self._unknown.discard(pending.id)
         self._uncertain_issue()
+        self._unknown_issue()
+
+    @callback
+    def _unknown_issue(self) -> None:
+        """Directly, the repair that releases lost feeds goes once none holds
+        new feeds back."""
+        if not self._unknown:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
+
+    @callback
+    def release_unknown(self) -> None:
+        """The owner releases every lost feed reported still unknown that
+        holds new feeds back: feeds go again, though those may have run. The
+        bridge confirms each with a `Released` update; until then, and
+        across a restart before it does, they still hold."""
+        if self._feeder is None:
+            return
+        for pending_id in self._unknown:
+            self._feeder.release(pending_id)
 
     @callback
     def _uncertain_issue(self) -> None:
@@ -554,12 +604,20 @@ class FeederSession:
         return f"{issue}_{self.identity.hex()}"
 
     @callback
-    def _issue(self, issue: str, severity: ir.IssueSeverity, placeholders: dict[str, str]) -> None:
+    def _issue(
+        self,
+        issue: str,
+        severity: ir.IssueSeverity,
+        placeholders: dict[str, str],
+        *,
+        fixable: bool = False,
+    ) -> None:
         ir.async_create_issue(
             self.hass,
             DOMAIN,
             self._issue_id(issue),
-            is_fixable=False,
+            is_fixable=fixable,
+            data={"identity": self.identity.hex()} if fixable else None,
             is_persistent=False,
             severity=severity,
             translation_key=issue,

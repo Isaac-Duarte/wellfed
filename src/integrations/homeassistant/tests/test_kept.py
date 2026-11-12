@@ -36,7 +36,9 @@ async def _flushed(hass: HomeAssistant) -> None:
 
 
 def _a_pending() -> bridge.Pending:
-    return bridge.Pending("01a0c450-6c00-7000-8000-000000000003", 3, 1790000002000, None, False)
+    return bridge.Pending(
+        "01a0c450-6c00-7000-8000-000000000003", 3, 1790000002000, None, False, None
+    )
 
 
 async def test_version_1_reads_as_its_sample(
@@ -46,10 +48,12 @@ async def test_version_1_reads_as_its_sample(
     store = kept(hass, ENTRY)
     await store.load()
 
-    pending = [(p.id, p.portions, p.sent_ms, p.after, p.reported) for p in store.pending]
+    pending = [
+        (p.id, p.portions, p.sent_ms, p.after, p.reported, p.released_ms) for p in store.pending
+    ]
     assert pending == [
-        ("01a0c450-6c00-7000-8000-000000000001", 2, 1790000000000, 41, True),
-        ("01a0c450-6c00-7000-8000-000000000002", 1, 1790000001000, None, False),
+        ("01a0c450-6c00-7000-8000-000000000001", 2, 1790000000000, 41, True, 1790000900000),
+        ("01a0c450-6c00-7000-8000-000000000002", 1, 1790000001000, None, False, None),
     ]
     assert store.answered == [41, 9]
     assert store.leftover_key == bytes([1] * 32)
@@ -121,6 +125,12 @@ def _with_pending(**changes: Any) -> dict[str, Any]:
         _with_pending(portions=0),
         _with_pending(sent_ms=2**63),
         _with_pending(after=-1),
+        _with_pending(released_ms=2**63),
+        _with_pending(released_ms="soon"),
+        {
+            **SAMPLE["data"],
+            "pending": [{k: v for k, v in SAMPLE["data"]["pending"][1].items() if k != "after"}],
+        },
         {**SAMPLE["data"], "answered": [-1]},
         {**SAMPLE["data"], "answered": [2**32]},
         {**SAMPLE["data"], "leftover_key": "not a key"},

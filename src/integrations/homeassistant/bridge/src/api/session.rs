@@ -23,15 +23,21 @@ pub struct Pending {
     /// under, which the server's journal answers by.
     pub id: String,
     pub portions: u8,
-    /// When it went out, in Unix milliseconds: it is still unknown once
-    /// the settle window has passed since.
+    /// When it went out, in Unix milliseconds: it is reported still
+    /// unknown once the settle window has passed since, if nothing showed
+    /// sooner that it never ran.
     pub sent_ms: i64,
     /// Directly: the newest event known when it went out, which its `Fed`
     /// comes after.
     pub after: Option<u64>,
-    /// Reported still unknown ([`UpdateKind::StillUnknown`]): it no longer
-    /// holds new feeds back, and is not reported again.
+    /// Reported still unknown ([`UpdateKind::StillUnknown`]): it is not
+    /// reported again.
     pub reported: bool,
+    /// When the owner released it ([`UpdateKind::Released`]), in Unix
+    /// milliseconds. Directly, a lost feed holds new feeds back until it
+    /// settles or is released, however long that takes; once released it
+    /// is kept open to a late end for a week from then.
+    pub released_ms: Option<i64>,
 }
 
 /// How a write ended.
@@ -134,9 +140,9 @@ pub struct Update {
     pub portions: Option<u8>,
     /// For [`UpdateKind::Pending`]: the feed to keep. For
     /// [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`],
-    /// [`UpdateKind::StillUnknown`], [`UpdateKind::Forgotten`],
-    /// [`UpdateKind::Sending`] and [`UpdateKind::Cleared`]: the pending
-    /// feed it accounts for.
+    /// [`UpdateKind::StillUnknown`], [`UpdateKind::Released`],
+    /// [`UpdateKind::Forgotten`], [`UpdateKind::Sending`] and
+    /// [`UpdateKind::Cleared`]: the pending feed it accounts for.
     pub pending: Option<Pending>,
     /// The first and last event lost, for a [`UpdateKind::Gap`] the feeder
     /// named; both `None` for a history that started over.
@@ -284,6 +290,15 @@ impl Update {
             portions: Some(pending.portions),
             pending: Some(pending),
             ..Self::kind(UpdateKind::Cleared)
+        }
+    }
+
+    /// The owner released a lost feed: it holds new feeds back no longer.
+    pub(crate) fn released(pending: Pending) -> Self {
+        Self {
+            portions: Some(pending.portions),
+            pending: Some(pending),
+            ..Self::kind(UpdateKind::Released)
         }
     }
 

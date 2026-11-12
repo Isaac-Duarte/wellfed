@@ -258,14 +258,22 @@ impl Pending {
     /// A pending feed as the integration kept it, to hand back to a new
     /// session.
     #[new]
-    #[pyo3(signature = (id, portions, sent_ms, after, reported))]
-    fn new(id: String, portions: u8, sent_ms: i64, after: Option<u64>, reported: bool) -> Self {
+    #[pyo3(signature = (id, portions, sent_ms, after, reported, released_ms))]
+    fn new(
+        id: String,
+        portions: u8,
+        sent_ms: i64,
+        after: Option<u64>,
+        reported: bool,
+        released_ms: Option<i64>,
+    ) -> Self {
         Self {
             id,
             portions,
             sent_ms,
             after,
             reported,
+            released_ms,
         }
     }
 }
@@ -390,6 +398,20 @@ impl Feeder {
     /// Read the status now.
     fn refresh(&self) {
         self.0.refresh();
+    }
+
+    /// The owner releases the lost feed `id` names, through its repair: new
+    /// feeds go again though it may have run. A `Released` update confirms
+    /// it. Directly only; the server route holds no feed back.
+    fn release(&self, id: String) {
+        self.0.release(id);
+    }
+
+    /// Whether a lost feed holds new feeds back until it settles or the
+    /// owner releases it: directly. Through the server none is held.
+    #[getter]
+    fn holds_lost_feeds(&self) -> bool {
+        self.0.holds_lost_feeds()
     }
 }
 

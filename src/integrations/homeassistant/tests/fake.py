@@ -138,7 +138,7 @@ def written(result: bridge.WriteResult, **fields: Any) -> SimpleNamespace:
 
 def pending(id: str = "a-lost-feed", portions: int = 1) -> bridge.Pending:
     """A feed whose answer was lost, as the bridge hands it out."""
-    return bridge.Pending(id, portions, 1_793_793_600_000, None, False)
+    return bridge.Pending(id, portions, 1_793_793_600_000, None, False, None)
 
 
 def uncertain(lost: bridge.Pending) -> SimpleNamespace:
@@ -180,6 +180,10 @@ class FakeFeeder:
     # `stopping` is set, and the stop's drain the rest.
     held: list[SimpleNamespace] = field(default_factory=list)
     stopping: threading.Event | None = None
+
+    # Directly, a lost feed holds new feeds back until it settles or the
+    # owner releases it; through the server none is held.
+    holds_lost_feeds: bool = True
 
     def push(self, *updates: SimpleNamespace) -> None:
         for item in updates:
@@ -238,3 +242,8 @@ class FakeFeeder:
 
     def set_lock(self, locked: bool) -> SimpleNamespace:
         return self._done("set_lock", locked)
+
+    def release(self, pending_id: str) -> None:
+        """The owner released a lost feed: the test confirms it, as the
+        bridge does, with a `Released` update."""
+        self.calls.append(("release", (pending_id,)))
