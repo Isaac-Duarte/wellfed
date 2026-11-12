@@ -10,17 +10,17 @@
 
 #![allow(dead_code, reason = "each consumer drives a subset")]
 
+use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_core::clock::wall::WallClock;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
-    Asked, Calibration, CalibrationResult, CalibrationView, LockResult, MealSkip, Origin,
+    Asked, Calibration, CalibrationResult, CalibrationView, Lock, LockResult, MealSkip, Origin,
     PlansResult, PlansView, PlayResult, Saved, SettingsFields, SettingsResult, SettingsView,
-    Lock, TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState,
+    TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState,
     WifiResult, WifiSource, WifiView,
 };
-use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_device_api::pairing::{Config, Event as PairingEvent, Pairing};
 use wellfed_device_api::setup::{Received, Responder};
 use wellfed_device_api::wifi::Credentials;
@@ -931,6 +931,22 @@ pub fn split(mut data: &[u8]) -> Vec<&[u8]> {
     out
 }
 
+/// Split fuzzer input into session requests: each starts with a two-byte
+/// little-endian length, capped at [`MESSAGE_MAX`], so a request reaches
+/// the sealed frame's limit (a whole update chunk, an offer carrying a
+/// downgrade statement).
+pub fn split_requests(mut data: &[u8]) -> Vec<&[u8]> {
+    let mut out = Vec::new();
+    while let Some((len, rest)) = data.split_first_chunk::<2>() {
+        let len = usize::from(u16::from_le_bytes(*len))
+            .min(MESSAGE_MAX)
+            .min(rest.len());
+        out.push(&rest[..len]);
+        data = &rest[len..];
+    }
+    out
+}
+
 /// A peer that has not authenticated: any bytes on a new connection, as
 /// they arrive, until the feeder closes it.
 pub fn connection(bytes: &[u8]) {
@@ -1034,6 +1050,29 @@ pub enum Setup {
     Refused,
     /// The proof completed and the feeder took this Wi-Fi.
     Proven(Option<Credentials>),
+}
+
+/// How a genuine client's setup must end, by the stores' rules: offered
+/// exactly when its label is one the client store takes, proven exactly
+/// when both sides hold the same code, and its Wi-Fi saved exactly when
+/// the Wi-Fi store takes it. The property test and the fuzz target both
+/// hold [`setup_client`] to this.
+pub fn expected_setup(
+    request: &[u8],
+    feeder_code: u16,
+    client_code: u16,
+    wifi: Option<setup::Wifi<'_>>,
+) -> Setup {
+    let offered = wellfed_proto::decode::<setup::Request<'_>>(request)
+        .is_ok_and(|request| Label::new(request.label.as_bytes()).is_some());
+    let codes_match = Code::from_bits(feeder_code) == Code::from_bits(client_code);
+
+    match wifi.map(|wifi| Credentials::new(wifi.ssid, wifi.psk.as_bytes())) {
+        _ if !offered || !codes_match => Setup::Refused,
+        Some(None) => Setup::Refused,
+        Some(Some(credentials)) => Setup::Proven(Some(credentials)),
+        None => Setup::Proven(None),
+    }
 }
 
 /// A genuine client: an XX handshake whose third message carries `request`

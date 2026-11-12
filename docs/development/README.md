@@ -181,11 +181,11 @@ The network parsers have [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuz
 | Target | Input |
 | --- | --- |
 | `api-connection` | Any bytes on a new device API connection: the clear opening frame, the IK, invite and recovery handshakes, and a full session table |
-| `api-session` | Requests sealed inside the owner's open session, each answer opened and decoded |
+| `api-session` | Requests up to the frame's limit, sealed inside the owner's open session, each answer opened and decoded |
 | `proto-decode` | Every device protocol and setup message type, decoded and re-encoded |
-| `noise-responder` | The first handshake message of each Noise pattern, into any payload buffer |
-| `setup` | BLE setup messages to the feeder's responder, and a genuine client's request, code proof and Wi-Fi |
-| `ota-manifest` | The version 2 update manifest an offer carries, and chunks to the bank-1 writer |
+| `noise-responder` | The first handshake message of each Noise pattern, into any payload buffer; only XX's may be read |
+| `setup` | BLE setup messages to the feeder's responder, and a genuine client's request, code proof and Wi-Fi, held to the stores' rules |
+| `ota-manifest` | The version 2 update manifest an offer carries (the bank-1 writer is held by its property tests) |
 
 Builds, grown corpora and crash inputs stay in the ignored `src/fuzz/target/`, `src/fuzz/corpus/` and `src/fuzz/artifacts/`. On disk a target's name uses underscores (`api_connection`), as `src/fuzz/Cargo.toml` lists it. The device API and setup targets share their drivers with the property tests ([support](../../src/product/wellfed-device-api/tests/support/mod.rs)).
 

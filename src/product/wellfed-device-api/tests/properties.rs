@@ -7,9 +7,7 @@ mod support;
 
 use proptest::prelude::*;
 use support::Setup;
-use wellfed_device_api::clients::Label;
-use wellfed_device_api::wifi::Credentials;
-use wellfed_proto::api::FRAME_MAX;
+use wellfed_proto::api::{FRAME_MAX, MESSAGE_MAX};
 use wellfed_proto::setup::{self, Request};
 
 /// A clear opening frame the server takes (session, the rig's live invite
@@ -84,23 +82,22 @@ fn the_recovery_and_invite_handshakes_answer_a_first_message() {
 }
 
 /// A sealed request: arbitrary, or a request tag, an id and an op tag in
-/// front of arbitrary fields, so the cases reach every op.
+/// front of arbitrary fields, so the cases reach every op, some of them
+/// as long as a sealed frame carries.
 fn request() -> impl Strategy<Value = Vec<u8>> {
+    let fields = prop_oneof![
+        4 => proptest::collection::vec(any::<u8>(), 0..48),
+        1 => proptest::collection::vec(any::<u8>(), 0..MESSAGE_MAX),
+    ];
     prop_oneof![
         proptest::collection::vec(any::<u8>(), 0..48),
-        (
-            0u8..2,
-            any::<[u8; 16]>(),
-            0u8..14,
-            proptest::collection::vec(any::<u8>(), 0..48)
-        )
-            .prop_map(|(tag, id, op, rest)| {
-                let mut bytes = vec![tag];
-                bytes.extend(id);
-                bytes.push(op);
-                bytes.extend(rest);
-                bytes
-            }),
+        (0u8..2, any::<[u8; 16]>(), 0u8..14, fields).prop_map(|(tag, id, op, rest)| {
+            let mut bytes = vec![tag];
+            bytes.extend(id);
+            bytes.push(op);
+            bytes.extend(rest);
+            bytes
+        }),
     ]
 }
 
@@ -134,9 +131,7 @@ proptest! {
         support::setup_messages(&messages);
     }
 
-    /// A genuine client is offered exactly when its label is one the
-    /// client store takes, proven exactly when both sides hold the same
-    /// code, and its Wi-Fi is saved exactly when the Wi-Fi store takes it.
+    /// A genuine client's setup ends as `support::expected_setup` says.
     #[test]
     fn a_genuine_setup_ends_as_the_stores_rules_say(
         label in proptest::collection::vec(any::<u8>(), 0..20),
@@ -161,19 +156,29 @@ proptest! {
 
         let outcome = support::setup_client(request, feeder_code, client_code, wifi);
 
-        let decoded = wellfed_proto::decode::<Request<'_>>(request).ok();
-        let offered = decoded.is_some_and(|r| Label::new(r.label.as_bytes()).is_some());
-        let codes_match = wellfed_session::setup_code::Code::from_bits(feeder_code)
-            == wellfed_session::setup_code::Code::from_bits(client_code);
-        let credentials = wifi.map(|w| Credentials::new(w.ssid, w.psk.as_bytes()));
-        let expected = match credentials {
-            _ if !offered || !codes_match => Setup::Refused,
-            Some(None) => Setup::Refused,
-            Some(Some(credentials)) => Setup::Proven(Some(credentials)),
-            None => Setup::Proven(None),
-        };
+        let expected = support::expected_setup(request, feeder_code, client_code, wifi);
         prop_assert_eq!(outcome, expected);
     }
+}
+
+/// A session request's two-byte length lets it run to the sealed frame's
+/// limit, past what one length byte could carry.
+#[test]
+fn a_session_request_runs_to_the_frame_s_limit() {
+    let mut data = vec![];
+    data.extend(600u16.to_le_bytes());
+    data.extend([7; 600]);
+    data.extend(u16::MAX.to_le_bytes());
+    data.extend([9; 1200]);
+
+    let requests = support::split_requests(&data);
+
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0], &[7; 600][..]);
+    assert_eq!(requests[1].len(), MESSAGE_MAX);
+    // The bytes past the cap start the next request, their first two
+    // its length.
+    assert_eq!(requests[2], &[9; 1200 - MESSAGE_MAX - 2][..]);
 }
 
 /// The session driver reaches the request handlers: a real request is
