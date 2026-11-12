@@ -3,8 +3,9 @@
 //!
 //! Every store the writer task saves (the plans, the calibration, the Wi-Fi
 //! and time settings, the client table, the device settings) takes its
-//! changes through one [`Handoff`]: the asking side fills the one slot and
-//! queues it, and the writer takes it, applies it and finishes it. The
+//! changes through one [`Handoff`], and so does the update stage's request:
+//! the asking side fills the one slot and queues it, and the consumer takes
+//! it, applies it and finishes it. The
 //! slot's states make each step exclusive, so no caller needs `unsafe`:
 //!
 //! - `Empty` to `Filling` is the producer's claim. Only the claimant writes
@@ -61,6 +62,21 @@ impl<T> Handoff<T> {
     /// with `fill` never called, while another value is being written,
     /// waits or is taken.
     pub fn offer(&self, fill: impl FnOnce(&mut T)) -> bool {
+        self.try_offer(|value| {
+            fill(value);
+            Ok::<(), ()>(())
+        })
+        .is_some()
+    }
+
+    /// [`Self::offer`] for a producer that may still decline once it holds
+    /// the claim: `fill`'s `Err` leaves the slot empty again, nothing
+    /// queued. `None`, with `fill` never called, while the slot is not
+    /// empty.
+    pub fn try_offer<R, E>(
+        &self,
+        fill: impl FnOnce(&mut T) -> Result<R, E>,
+    ) -> Option<Result<R, E>> {
         if self
             .state
             .compare_exchange(
@@ -71,14 +87,19 @@ impl<T> Handoff<T> {
             )
             .is_err()
         {
-            return false;
+            return None;
         }
         // SAFETY: `Filling` makes this the only accessor: no other producer
         // claims a slot that is not empty, and the consumer takes only a
         // queued one.
-        fill(unsafe { &mut *self.value.get() });
-        self.state.store(Hand::Queued as u8, Ordering::Release);
-        true
+        let filled = fill(unsafe { &mut *self.value.get() });
+        let next = if filled.is_ok() {
+            Hand::Queued
+        } else {
+            Hand::Empty
+        };
+        self.state.store(next as u8, Ordering::Release);
+        Some(filled)
     }
 
     /// Whether a value is being written, waits or is taken: a change still

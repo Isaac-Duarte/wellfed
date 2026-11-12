@@ -34,6 +34,32 @@ fn a_claim_is_refused_until_the_value_is_finished() {
 }
 
 #[test]
+fn a_producer_that_declines_under_its_claim_leaves_the_slot_empty() {
+    let slot = Handoff::new(0_u32);
+
+    let declined = slot.try_offer(|value| {
+        *value = 9;
+        Err::<(), _>("refused")
+    });
+    assert_eq!(declined, Some(Err("refused")));
+    assert!(!slot.waiting(), "nothing queued");
+    assert!(slot.take().is_none());
+
+    assert_eq!(
+        slot.try_offer(|value| {
+            *value = 3;
+            Ok::<_, ()>(11)
+        }),
+        Some(Ok(11))
+    );
+    assert!(
+        slot.try_offer(|_| -> Result<(), ()> { unreachable!("a claim while queued") })
+            .is_none()
+    );
+    assert_eq!(slot.take().map(|taken| *taken.get()), Some(3));
+}
+
+#[test]
 fn a_guard_dropped_unfinished_leaves_the_value_waiting() {
     let slot = Handoff::new([0_u8; 4]);
     assert!(slot.offer(|value| *value = [1, 2, 3, 4]));
