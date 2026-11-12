@@ -42,8 +42,7 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    DualSlot, Extent, Found, Layout, Pick, SlotIo, Version, get_u64, newest, put_u64, seal, target,
-    unwritten,
+    DualSlot, Extent, Found, Layout, Newest, SlotIo, Version, get_u64, put_u64, seal,
 };
 use wellfed_device_api::clients::{CLIENTS, Client, LABEL_LEN, Label, Role};
 use wellfed_device_api::mailbox::KeyResult;
@@ -232,8 +231,7 @@ fn decode(p: &[u8; RECORD_BYTES], table: &mut Table) -> Option<u64> {
 }
 
 impl<I: SlotIo> ClientStore<I> {
-    /// Scan `slot` into the store's own table, so open never holds two
-    /// decoded tables on the stack.
+    /// Scan `slot` into the store's own table: the winner's, read again.
     fn scan(&mut self, slot: c_uint) -> Option<Found<u64>> {
         let table = &mut self.table;
         self.units.scan(slot, |_, p| decode(p, table))
@@ -241,31 +239,25 @@ impl<I: SlotIo> ClientStore<I> {
 
     /// Bind to two exclusive erase units and load the newest valid table.
     pub fn open(&mut self, io: I) -> ClientStatus {
-        let unit = io.unit_bytes();
-        *self = Self {
-            units: DualSlot::new(io, &LAYOUT),
-            ..Self::default()
-        };
-        if (unit as usize) < RECORD_BYTES {
-            self.status = ClientStatus::Io;
-            return self.status;
-        }
-        let scanned = (self.scan(0), self.scan(1));
+        *self = Self::default();
+        // Each scan decodes into the store's own table, so open never holds
+        // two decoded tables on the stack.
+        let table = &mut self.table;
+        let found = self
+            .units
+            .open_newest(io, |p| decode(p, table).map(|generation| (generation, ())));
 
         // Both scans decode into the table, so it may hold either unit's,
         // possibly the older one: a client revoked since must not come back
         // because the newer unit's read failed. It holds the winner's alone,
         // reloaded below, or nothing.
         self.table = Table::EMPTY;
-        let (Some(a), Some(b)) = scanned else {
-            self.status = ClientStatus::Io;
-            return self.status;
-        };
-        let empty = unwritten(&a, &b);
-
-        self.status = match newest(a, b, |&generation| generation) {
-            Pick::Future => ClientStatus::ReadOnly,
-            Pick::Newest(slot, generation) => {
+        self.status = match found {
+            Newest::Io => ClientStatus::Io,
+            Newest::Future => ClientStatus::ReadOnly,
+            Newest::Loaded {
+                slot, generation, ..
+            } => {
                 if self.scan(slot) != Some(Found::Valid(generation)) {
                     self.table = Table::EMPTY;
                     self.status = ClientStatus::Io;
@@ -275,8 +267,8 @@ impl<I: SlotIo> ClientStore<I> {
                 self.generation = generation;
                 ClientStatus::Loaded
             }
-            Pick::Nothing if empty => ClientStatus::Empty,
-            Pick::Nothing => ClientStatus::Corrupt,
+            Newest::Nothing { unwritten: true } => ClientStatus::Empty,
+            Newest::Nothing { unwritten: false } => ClientStatus::Corrupt,
         };
         self.status
     }
@@ -362,12 +354,14 @@ impl<I: SlotIo> ClientStore<I> {
         if !self.writable() || !self.units.writable() {
             return Err(ClientError::NotWritable);
         }
-        let generation = self.generation + 1;
-        let slot = target(self.generation, self.slot);
-        let from = (self.generation > 0).then_some(self.slot);
-        if !self.units.replace(slot, from, &encode(generation, table)) {
-            return self.reread(generation);
-        }
+        let saved = self
+            .units
+            .save_newest(self.generation, self.slot, |generation| {
+                encode(generation, table)
+            });
+        let Some((slot, generation)) = saved else {
+            return self.reread(self.generation + 1);
+        };
         self.slot = slot;
         self.generation = generation;
         self.table = *table;

@@ -23,8 +23,7 @@ use core::ffi::c_uint;
 
 use crate::rng::{Drbg, Error};
 use crate::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u64, newest,
-    put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Newest, RECORD_BYTES, SlotIo, Version, get_u64, put_u64, seal,
 };
 
 pub const VERSION: Version = Version::new(1, 0);
@@ -100,32 +99,21 @@ fn decode(p: &[u8; RECORD_BYTES]) -> Option<(u64, [u8; 32])> {
 impl<I: SlotIo> SeedStore<I> {
     /// Bind to two exclusive erase units and load the newest valid seed.
     pub fn open(&mut self, io: I) -> SeedStatus {
-        let unit = io.unit_bytes();
-        *self = Self {
-            units: DualSlot::new(io, &LAYOUT),
-            ..Self::default()
-        };
-        if (unit as usize) < RECORD_BYTES {
-            self.status = SeedStatus::Io;
-            return self.status;
-        }
-        let (Some(a), Some(b)) = (
-            self.units.scan(0, |_, p| decode(p)),
-            self.units.scan(1, |_, p| decode(p)),
-        ) else {
-            self.status = SeedStatus::Io;
-            return self.status;
-        };
-
-        self.status = match newest(a, b, |&(generation, _)| generation) {
-            Pick::Future => SeedStatus::ReadOnly,
-            Pick::Newest(slot, (generation, seed)) => {
+        *self = Self::default();
+        self.status = match self.units.open_newest(io, decode) {
+            Newest::Io => SeedStatus::Io,
+            Newest::Future => SeedStatus::ReadOnly,
+            Newest::Loaded {
+                slot,
+                generation,
+                value,
+            } => {
                 self.slot = slot;
                 self.generation = generation;
-                self.seed = Some(seed);
+                self.seed = Some(value);
                 SeedStatus::Loaded
             }
-            Pick::Nothing => SeedStatus::Empty,
+            Newest::Nothing { .. } => SeedStatus::Empty,
         };
         self.status
     }
@@ -144,13 +132,15 @@ impl<I: SlotIo> SeedStore<I> {
         if !self.writable() || !self.units.writable() {
             return false;
         }
-        let generation = self.generation + 1;
-        let slot = target(self.generation, self.slot);
-        let from = (self.generation > 0).then_some(self.slot);
-        if !self.units.replace(slot, from, &encode(generation, seed)) {
+        let saved = self
+            .units
+            .save_newest(self.generation, self.slot, |generation| {
+                encode(generation, seed)
+            });
+        let Some((slot, generation)) = saved else {
             self.status = SeedStatus::Io;
             return false;
-        }
+        };
         self.slot = slot;
         self.generation = generation;
         self.seed = Some(*seed);

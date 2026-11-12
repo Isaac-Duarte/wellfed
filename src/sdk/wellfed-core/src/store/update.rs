@@ -77,8 +77,7 @@
 use core::ffi::c_uint;
 
 use crate::store::slot::{
-    DualSlot, Extent, Layout, Pick, SlotIo, Version, get_u32, get_u64, newest, put_u32, put_u64,
-    seal, target, unwritten,
+    DualSlot, Extent, Layout, Newest, SlotIo, Version, get_u32, get_u64, put_u32, put_u64, seal,
 };
 use wellfed_signed::offer::{ImageKind, KeyId, key_id};
 
@@ -396,34 +395,22 @@ fn decode_fields(p: &[u8; RECORD_BYTES]) -> Option<Update> {
 impl<I: SlotIo> UpdateStore<I> {
     /// Bind to two exclusive erase units and load the newest valid record.
     pub fn open(&mut self, io: I) -> UpdateStatus {
-        let unit = io.unit_bytes();
-        *self = Self {
-            units: DualSlot::new(io, &LAYOUT),
-            ..Self::default()
-        };
-        if (unit as usize) < RECORD_BYTES {
-            self.status = UpdateStatus::Io;
-            return self.status;
-        }
-        let (Some(a), Some(b)) = (
-            self.units.scan(0, |_, p| decode(p)),
-            self.units.scan(1, |_, p| decode(p)),
-        ) else {
-            self.status = UpdateStatus::Io;
-            return self.status;
-        };
-
-        let empty = unwritten(&a, &b);
-        self.status = match newest(a, b, |&(generation, _)| generation) {
-            Pick::Future => UpdateStatus::ReadOnly,
-            Pick::Newest(slot, (generation, record)) => {
+        *self = Self::default();
+        self.status = match self.units.open_newest(io, decode) {
+            Newest::Io => UpdateStatus::Io,
+            Newest::Future => UpdateStatus::ReadOnly,
+            Newest::Loaded {
+                slot,
+                generation,
+                value,
+            } => {
                 self.slot = slot;
                 self.generation = generation;
-                self.record = record;
+                self.record = value;
                 UpdateStatus::Loaded
             }
-            Pick::Nothing if empty => UpdateStatus::Empty,
-            Pick::Nothing => UpdateStatus::Corrupt,
+            Newest::Nothing { unwritten: true } => UpdateStatus::Empty,
+            Newest::Nothing { unwritten: false } => UpdateStatus::Corrupt,
         };
         self.status
     }
@@ -594,13 +581,15 @@ impl<I: SlotIo> UpdateStore<I> {
         if !self.writable() || !self.units.writable() {
             return Err(UpdateError::NotWritable);
         }
-        let generation = self.generation + 1;
-        let slot = target(self.generation, self.slot);
-        let from = (self.generation > 0).then_some(self.slot);
-        if !self.units.replace(slot, from, &encode(generation, next)) {
+        let saved = self
+            .units
+            .save_newest(self.generation, self.slot, |generation| {
+                encode(generation, next)
+            });
+        let Some((slot, generation)) = saved else {
             self.status = UpdateStatus::Io;
             return Err(UpdateError::Io);
-        }
+        };
         self.slot = slot;
         self.generation = generation;
         self.record = *next;

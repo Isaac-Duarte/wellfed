@@ -382,6 +382,27 @@ pub const fn unwritten<V>(a: &Found<V>, b: &Found<V>) -> bool {
     )
 }
 
+/// What a newest-valid-wins store found as it opened
+/// ([`DualSlot::open_newest`]); each store maps it to its own status, by its
+/// own policy for no valid record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Newest<V> {
+    /// A read failed, or a unit is too small for the record.
+    Io,
+    /// A newer format version is present: the store is read-only.
+    Future,
+    /// The newest valid record ([`newest`]): its unit, its generation and
+    /// what it decoded to.
+    Loaded {
+        slot: c_uint,
+        generation: u64,
+        value: V,
+    },
+    /// No valid record in either unit; `unwritten` when nothing was ever
+    /// committed there ([`unwritten`]).
+    Nothing { unwritten: bool },
+}
+
 /// The unit a save writes: the first after an empty start, then the one
 /// not holding the newest record.
 pub const fn target(generation: u64, slot: c_uint) -> c_uint {
@@ -507,6 +528,58 @@ impl<I: SlotIo> DualSlot<I> {
             Some(newer) => units.write_carried(slot, record, newer),
             None => units.write(slot, record, Prepare::Erase),
         }
+    }
+
+    /// Bind to `io` and read both units by the newest-valid-wins rule, the
+    /// skeleton the seed, update, Wi-Fi, time and client stores share.
+    /// `decode` takes a record whose header and checksum hold and gives its
+    /// generation and value, or `None` for one this store does not accept.
+    pub fn open_newest<const N: usize, V>(
+        &mut self,
+        io: I,
+        mut decode: impl FnMut(&[u8; N]) -> Option<(u64, V)>,
+    ) -> Newest<V> {
+        let unit = io.unit_bytes();
+        self.io = Some(io);
+        if (unit as usize) < N {
+            return Newest::Io;
+        }
+        let (Some(a), Some(b)) = (
+            self.scan(0, |_, p| decode(p)),
+            self.scan(1, |_, p| decode(p)),
+        ) else {
+            return Newest::Io;
+        };
+
+        let unwritten = unwritten(&a, &b);
+        match newest(a, b, |&(generation, _)| generation) {
+            Pick::Future => Newest::Future,
+            Pick::Newest(slot, (generation, value)) => Newest::Loaded {
+                slot,
+                generation,
+                value,
+            },
+            Pick::Nothing => Newest::Nothing { unwritten },
+        }
+    }
+
+    /// Save the record `encode` makes for the generation after `generation`,
+    /// whose record unit `slot` holds (none while `generation` is zero), to
+    /// the other unit by the torn-write rule, keeping what a newer minor
+    /// added ([`Self::replace`]). The unit and generation it now holds, or
+    /// `None` when a step failed: the unit may then hold any state a cut
+    /// leaves, and the record in `slot` is untouched.
+    pub fn save_newest<const N: usize>(
+        &self,
+        generation: u64,
+        slot: c_uint,
+        encode: impl FnOnce(u64) -> [u8; N],
+    ) -> Option<(c_uint, u64)> {
+        let next = generation + 1;
+        let written = target(generation, slot);
+        let from = (generation > 0).then_some(slot);
+        self.replace(written, from, &encode(next))
+            .then_some((written, next))
     }
 
     /// Erase both units and check them erased: a store's explicit reset.
