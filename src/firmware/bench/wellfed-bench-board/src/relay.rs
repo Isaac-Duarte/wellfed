@@ -63,7 +63,13 @@ async fn execute(sender: &mut Sender<'static, UsbDriver>, line: &[u8]) {
     } else {
         outputs::snapshot()
     };
-    let reply = wellfed_bench_at::reply(command, channels, &telemetry::latest(), VERSION);
+    let reply = wellfed_bench_at::reply(
+        command,
+        channels,
+        outputs::cuts(),
+        &telemetry::latest(),
+        VERSION,
+    );
     send(sender, &reply).await;
 
     if command == Command::Bootsel {

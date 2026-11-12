@@ -1,7 +1,7 @@
 //! The four emulated relays. This is the only module that drives the feeder
 //! power, strap and UART buffer-enable pins.
 
-use portable_atomic::{AtomicU8, Ordering};
+use portable_atomic::{AtomicU8, AtomicU32, Ordering};
 
 use embassy_rp::gpio::{Level, Output};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -22,6 +22,8 @@ pub(crate) struct Outputs {
 pub(crate) struct Relays {
     pins: Outputs,
     state: Channels,
+    /// Every feeder power cut since boot, from a random start.
+    cuts: u32,
 }
 
 impl Relays {
@@ -36,6 +38,10 @@ impl Relays {
             Level::High => Level::Low,
             Level::Low => Level::High,
         };
+        if self.state.cuts_power(channel, on) {
+            self.cuts = self.cuts.wrapping_add(1);
+            CUTS.store(self.cuts, Ordering::Relaxed);
+        }
         pin.set_level(if on { active } else { inactive });
         self.state.set(channel, on);
         SNAPSHOT.store(pack(self.state), Ordering::Relaxed);
@@ -70,10 +76,18 @@ static RELAYS: Mutex<CriticalSectionRawMutex, Option<Relays>> = Mutex::new(None)
 /// Lock-free copy of the state for the LEDs.
 static SNAPSHOT: AtomicU8 = AtomicU8::new(0);
 
-pub(crate) async fn init(pins: Outputs) {
+/// Lock-free copy of the power-cut count for `AT+CUTS?`.
+static CUTS: AtomicU32 = AtomicU32::new(0);
+
+/// `first_cut`, a random start for the power-cut count: a board reset
+/// restarts it, and from a fixed start the count after a reset and a
+/// power-on could match the one a host recorded before.
+pub(crate) async fn init(pins: Outputs, first_cut: u32) {
+    CUTS.store(first_cut, Ordering::Relaxed);
     *RELAYS.lock().await = Some(Relays {
         pins,
         state: Channels::default(),
+        cuts: first_cut,
     });
 }
 
@@ -103,6 +117,11 @@ pub(crate) async fn lock() -> Guard {
 /// them.
 pub(crate) fn try_lock() -> Option<Guard> {
     RELAYS.try_lock().ok().map(Guard)
+}
+
+/// The power-cut count `AT+CUTS?` reports.
+pub(crate) fn cuts() -> u32 {
+    CUTS.load(Ordering::Relaxed)
 }
 
 pub(crate) fn snapshot() -> Channels {

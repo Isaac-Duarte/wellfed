@@ -64,6 +64,14 @@ impl Channels {
     pub fn set(&mut self, channel: Channel, on: bool) {
         self.0[channel.index()] = on;
     }
+
+    /// Whether setting `channel` to `on` cuts the feeder's power: CH1 going
+    /// from on to off, whoever asks for it. The board counts these
+    /// ([`Command::PowerCuts`]), so a host can tell that a power cycle it
+    /// did not see ran between two of its commands.
+    pub fn cuts_power(self, channel: Channel, on: bool) -> bool {
+        channel == Channel::Power && self.get(Channel::Power) && !on
+    }
 }
 
 /// One parsed relay-port line.
@@ -91,6 +99,12 @@ pub enum Command {
     Alive,
     /// `AT+STAT?`: everything on one line.
     Status,
+    /// `AT+CUTS?`: the feeder power cuts the board has made, counted from
+    /// a random start at each board boot. The SH-UR04A has no such query:
+    /// its relays move only on a host command. This board's RECOVER button
+    /// cycles the feeder's power by itself, so a host that left the feeder
+    /// in a session compares the count to know the power stayed on.
+    PowerCuts,
     /// `AT+BOOTSEL`: reboot into the RP2040 UF2 bootloader.
     Bootsel,
 }
@@ -196,6 +210,7 @@ pub fn parse(line: &[u8]) -> Option<Command> {
         b"TXV?" => Command::TxLevel,
         b"ALIVE?" => Command::Alive,
         b"STAT?" => Command::Status,
+        b"CUTS?" => Command::PowerCuts,
         b"BOOTSEL" => Command::Bootsel,
         _ => return None,
     })
@@ -311,8 +326,15 @@ pub fn current_ma(raw: u16) -> u32 {
 /// The board revision `AT+VER?` reports, as printed on its silkscreen.
 pub const BOARD_REVISION: &str = "revB";
 
-/// Formats the reply to `command`. `channels` must already reflect a `Set`.
-pub fn reply(command: Command, channels: Channels, telemetry: &Telemetry, version: &str) -> Reply {
+/// Formats the reply to `command`. `channels` and `cuts` must already
+/// reflect a `Set`.
+pub fn reply(
+    command: Command,
+    channels: Channels,
+    cuts: u32,
+    telemetry: &Telemetry,
+    version: &str,
+) -> Reply {
     let mut out = Reply::new();
     // Every reply fits REPLY_MAX; a write error would only truncate it.
     let _ = match command {
@@ -330,6 +352,7 @@ pub fn reply(command: Command, channels: Channels, telemetry: &Telemetry, versio
         Command::Fault => write!(out, "OK+FLT={}", u8::from(telemetry.fault)),
         Command::TxLevel => write!(out, "OK+TXV={}", telemetry.tx_mv),
         Command::Alive => write!(out, "OK+ALIVE={}", u8::from(telemetry.alive())),
+        Command::PowerCuts => write!(out, "OK+CUTS={cuts}"),
         Command::Status => {
             let ch = |c| u8::from(channels.get(c));
             write!(
@@ -385,6 +408,22 @@ mod tests {
         }
     }
 
+    /// Only CH1 going from on to off is a cut: switching it on, setting it
+    /// off again, or any other channel is not.
+    #[test]
+    fn only_switching_the_powered_feeder_off_is_a_cut() {
+        let mut channels = Channels::default();
+        assert!(!channels.cuts_power(Channel::Power, false));
+        assert!(!channels.cuts_power(Channel::Power, true));
+
+        channels.set(Channel::Power, true);
+        channels.set(Channel::Strap, true);
+        assert!(channels.cuts_power(Channel::Power, false));
+        assert!(!channels.cuts_power(Channel::Power, true));
+        assert!(!channels.cuts_power(Channel::Strap, false));
+        assert!(!channels.cuts_power(Channel::UartTx, false));
+    }
+
     fn presses(down: u32) -> Vec<Press> {
         let mut classifier = PressClassifier::default();
         let mut out: Vec<Press> = (0..down).filter_map(|_| classifier.tick(true)).collect();
@@ -432,15 +471,15 @@ mod tests {
         if let Command::Set(c, on) = cmd {
             channels.set(c, on);
         }
-        assert_eq!(reply(cmd, channels, &t, "0.1.0"), "OK+CH1=1");
+        assert_eq!(reply(cmd, channels, 0, &t, "0.1.0"), "OK+CH1=1");
 
         let q1 = parse(b"AT+CH1=?").unwrap();
-        assert_eq!(reply(q1, channels, &t, "0.1.0"), "OK+CH1=1");
+        assert_eq!(reply(q1, channels, 0, &t, "0.1.0"), "OK+CH1=1");
         let q2 = parse(b"AT+CH2=?").unwrap();
-        assert_eq!(reply(q2, channels, &t, "0.1.0"), "OK+CH2=0");
+        assert_eq!(reply(q2, channels, 0, &t, "0.1.0"), "OK+CH2=0");
 
         let off = parse(b"AT+CH4=0").unwrap();
-        assert_eq!(reply(off, channels, &t, "0.1.0"), "OK+CH4=0");
+        assert_eq!(reply(off, channels, 0, &t, "0.1.0"), "OK+CH4=0");
     }
 
     #[test]
@@ -491,6 +530,7 @@ mod tests {
         );
         assert_eq!(parse(b"at"), Some(Command::Ping));
         assert_eq!(parse(b"at+stat?"), Some(Command::Status));
+        assert_eq!(parse(b"AT+CUTS?"), Some(Command::PowerCuts));
     }
 
     #[test]
@@ -536,7 +576,7 @@ mod tests {
         let mut ch = Channels::default();
         ch.set(Channel::Power, true);
         ch.set(Channel::UartRx, true);
-        let r = |cmd| reply(cmd, ch, &t, "0.1.0");
+        let r = |cmd| reply(cmd, ch, 7, &t, "0.1.0");
         assert_eq!(r(Command::Ping), "OK");
         assert_eq!(r(Command::Version), "OK+VER=0.1.0 revB");
         assert_eq!(r(Command::Vbus), "OK+VBUS=5012");
@@ -545,6 +585,7 @@ mod tests {
         assert_eq!(r(Command::Fault), "OK+FLT=0");
         assert_eq!(r(Command::TxLevel), "OK+TXV=3290");
         assert_eq!(r(Command::Alive), "OK+ALIVE=1");
+        assert_eq!(r(Command::PowerCuts), "OK+CUTS=7");
         assert_eq!(
             r(Command::Status),
             "OK+STAT=CH:1001;VBUS:5012;CUR:123;SRC:AUX;FLT:0;TXV:3290;ALIVE:1"
@@ -560,7 +601,7 @@ mod tests {
             fault: true,
             tx_mv: u32::MAX,
         };
-        let r = reply(Command::Status, Channels([true; 4]), &t, "0.1.0");
+        let r = reply(Command::Status, Channels([true; 4]), u32::MAX, &t, "0.1.0");
         assert!(r.ends_with("ALIVE:1"), "{r}");
     }
 }
