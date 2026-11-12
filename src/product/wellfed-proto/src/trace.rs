@@ -18,7 +18,14 @@
 //! current reading, 15 for the others) says a varint of the rest follows.
 //! The first current and battery readings are changes from 0. Varints are
 //! LEB128; a zigzag varint maps 0, -1, 1, -2 … to 0, 1, 2, 3 … first.
-//! Kinds `1100` to `1111` are reserved: a reader refuses them.
+//!
+//! **Kinds `1100` to `1111` are for a later build's entries**, and every
+//! such entry has the same shape: its time as above, then a varint length
+//! and that many bytes. A reader skips one it doesn't know by that length,
+//! taking its time as the next entry's base, and reads on: traces are
+//! served as the feeder stored them, so an older client meets a newer
+//! build's entries, and a newer build serves traces an older one stored
+//! ([device API](../../../../docs/firmware/device-api.md#evolution)).
 //!
 //! **A full body halves its current readings** ([`Writer::halve`]): the
 //! second of each pair goes, and its time and change fold into the entry
@@ -237,7 +244,9 @@ impl<const N: usize> Writer<N> {
         let mut nth = 0u32;
         let mut kept = 0u32;
         while read < self.len {
-            let Ok((entry, used)) = decode(&self.body[read..self.len], &mut decoded) else {
+            // This build writes no later kind, so a body it built holds
+            // none; one it can't rewrite ends the body.
+            let Ok((Some(entry), used)) = decode(&self.body[read..self.len], &mut decoded) else {
                 self.truncated = true;
                 break;
             };
@@ -269,7 +278,8 @@ impl<const N: usize> Writer<N> {
     }
 }
 
-/// The entries of a body, in order; a malformed one ends it.
+/// The entries of a body, in order, past those of a later build's kinds;
+/// a malformed one ends it.
 #[derive(Clone, Debug)]
 pub struct Reader<'a> {
     rest: &'a [u8],
@@ -293,19 +303,21 @@ impl Iterator for Reader<'_> {
     type Item = Result<Entry, Malformed>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.rest.is_empty() {
-            return None;
-        }
-        match decode(self.rest, &mut self.base) {
-            Ok((entry, used)) => {
-                self.rest = self.rest.get(used..).unwrap_or(&[]);
-                Some(Ok(entry))
+        while !self.rest.is_empty() {
+            match decode(self.rest, &mut self.base) {
+                Ok((entry, used)) => {
+                    self.rest = self.rest.get(used..).unwrap_or(&[]);
+                    if entry.is_some() {
+                        return Ok(entry).transpose();
+                    }
+                }
+                Err(error) => {
+                    self.rest = &[];
+                    return Some(Err(error));
+                }
             }
-            Err(error) => {
-                self.rest = &[];
-                Some(Err(error))
-            }
         }
+        None
     }
 }
 
@@ -355,7 +367,9 @@ fn encode(entry: Entry, base: &mut Base, out: &mut [u8; ENTRY_MAX]) -> usize {
     at
 }
 
-fn decode(bytes: &[u8], base: &mut Base) -> Result<(Entry, usize), Malformed> {
+/// The entry `bytes` start with, or `None` for one of a later build's
+/// kinds, and the bytes it took.
+fn decode(bytes: &[u8], base: &mut Base) -> Result<(Option<Entry>, usize), Malformed> {
     let (&first, _) = bytes.split_first().ok_or(Malformed)?;
     let mut at = 1;
     let (kind, field, limit) = if first & EVENT == 0 {
@@ -416,10 +430,20 @@ fn decode(bytes: &[u8], base: &mut Base) -> Result<(Entry, usize), Malformed> {
             let motor = Motor::from_code(code).ok_or(Malformed)?;
             (Entry::Motor { at_ms, motor }, 1)
         }
-        Some(_) => return Err(Malformed),
+        // Kinds 4 to 7: a later build's entry, behind its length.
+        Some(_) => {
+            let (len, used) = read_varint(payload)?;
+            let len = usize::try_from(len).map_err(|_| Malformed)?;
+            let end = used.checked_add(len).ok_or(Malformed)?;
+            if end > payload.len() {
+                return Err(Malformed);
+            }
+            base.at_ms = at_ms;
+            return Ok((None, at + end));
+        }
     };
     base.at_ms = at_ms;
-    Ok((entry, at + used))
+    Ok((Some(entry), at + used))
 }
 
 /// The low seven bits, which every caller has already bounded.
@@ -474,7 +498,10 @@ fn read_varint(bytes: &[u8]) -> Result<(u64, usize), Malformed> {
 mod tests {
     extern crate std;
 
+    use std::string::ToString;
     use std::vec::Vec;
+
+    use wellfed_session::hex::Lower;
 
     use super::*;
 
@@ -482,9 +509,16 @@ mod tests {
         Reader::new(body).map(|entry| entry.unwrap())
     }
 
-    #[test]
-    fn every_kind_reads_back() {
-        let written = [
+    fn hex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// One entry of every kind, with times and values at their limits.
+    fn every_kind() -> [Entry; 11] {
+        [
             Entry::Motor {
                 at_ms: 0,
                 motor: Motor::Drive0,
@@ -532,12 +566,18 @@ mod tests {
                 at_ms: u32::MAX,
                 motor: Motor::Stop,
             },
-        ];
+        ]
+    }
+
+    const GOLDEN: &str = "b001a0944b119a051e9f049d028fd53c02af2ddb017fe5e9a40484ffffff1f01fdffffff1f8fafd7dafb0f07b000";
+
+    #[test]
+    fn every_kind_reads_back() {
         let mut writer = Writer::<128>::new();
-        for entry in written {
+        for entry in every_kind() {
             assert_eq!(writer.push(entry), Pushed::Kept);
         }
-        assert!(entries(writer.bytes()).eq(written));
+        assert!(entries(writer.bytes()).eq(every_kind()));
         assert_eq!(writer.currents(), 4);
     }
 
@@ -662,10 +702,62 @@ mod tests {
         assert_eq!(entries(writer.bytes()).count(), 2);
     }
 
+    /// Every kind's bytes, pinned: traces outlive the build that stored
+    /// them, so a change to how any entry is coded misreads every trace an
+    /// older build stored and every one a newer build serves.
+    #[test]
+    fn every_kind_keeps_its_bytes() {
+        let mut writer = Writer::<128>::new();
+        for entry in every_kind() {
+            assert_eq!(writer.push(entry), Pushed::Kept);
+        }
+        assert_eq!(
+            Lower(writer.bytes()).to_string(),
+            GOLDEN,
+            "a trace entry's coding changed"
+        );
+        let golden = hex(GOLDEN);
+        assert!(entries(&golden).eq(every_kind()));
+    }
+
+    /// A later build's entry is skipped by its length, its time taken as
+    /// the base, and the entries around it read.
+    #[test]
+    fn a_later_kind_is_skipped_and_the_body_read_on() {
+        // A current at 17 ms, a kind-4 entry 5 ms later with three bytes,
+        // a kind-7 entry with a long time and none, then a current 10 ms
+        // on that changes by +1.
+        let body = [
+            0x11, 0x9a, 0x05, 0xc5, 0x03, 0xaa, 0xbb, 0xcc, 0xff, 0x01, 0x00, 0x0a, 0x02,
+        ];
+        let read: Vec<_> = Reader::new(&body).collect();
+        assert_eq!(
+            read,
+            [
+                Ok(Entry::Current {
+                    at_ms: 17,
+                    value: 333
+                }),
+                Ok(Entry::Current {
+                    at_ms: 17 + 5 + 16 + 10,
+                    value: 334
+                }),
+            ]
+        );
+        // A later entry alone reads as no entries; one whose length runs
+        // past the body is malformed.
+        assert_eq!(Reader::new(&[0xc0, 0x00]).count(), 0);
+        assert_eq!(
+            Reader::new(&[0x11, 0x9a, 0x05, 0xc0, 0x02, 0xaa]).last(),
+            Some(Err(Malformed))
+        );
+    }
+
     #[test]
     fn malformed_bodies_are_refused() {
-        // A reserved kind, a varint that never ends, a beam byte with
-        // unknown bits, a motor code past the three, and a time past u32.
+        // A later kind with no length, a varint that never ends, a beam
+        // byte with unknown bits, a motor code past the three, and a time
+        // past u32.
         for body in [
             &[0xc0][..],
             &[0x7f, 0x80, 0x80, 0x80, 0x80, 0x80],
