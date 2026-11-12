@@ -116,6 +116,13 @@ fn kind(error: &Error) -> ServerErrorKind {
 
     match error.failure() {
         Failure::Connect => return ServerErrorKind::Unreachable,
+        // An answer this app cannot read, or a status no call expects, is
+        // not a Wellfed server of this version (a router's page, say), and
+        // the words say so. The failure, which a routed write reads, still
+        // calls the write possibly run.
+        Failure::Interrupted if matches!(error, Error::Decode(_) | Error::Unexpected { .. }) => {
+            return ServerErrorKind::Protocol;
+        }
         Failure::Interrupted => return ServerErrorKind::Interrupted,
         Failure::OutcomeUnknown => return ServerErrorKind::OutcomeUnknown,
         Failure::FeederOffline => return ServerErrorKind::FeederOffline,
@@ -157,7 +164,8 @@ fn kind(error: &Error) -> ServerErrorKind {
             ServerErrorKind::Refused
         }
         // Of these, the failure rule leaves only a request that could not
-        // be built, or a login with no session: nothing was sent.
+        // be built, or a login with no session: nothing was sent. An
+        // unreadable answer returned above.
         Error::Http(_)
         | Error::Build(_)
         | Error::Unexpected { .. }
@@ -654,6 +662,31 @@ mod tests {
         let seqs: Vec<u64> = page.entries.iter().map(|entry| entry.entry.seq).collect();
         assert_eq!(seqs, [1, 4, 5]);
         assert_eq!(page.next, Some(5));
+    }
+
+    /// An address that answers with a page this app cannot read, or a
+    /// status no call expects, reads as not a Wellfed server, never as a
+    /// connection that broke, while a routed write still reads it as
+    /// possibly run.
+    #[test]
+    fn an_unreadable_answer_reads_as_another_server_and_still_may_have_run() {
+        use wellfed_server_client::{Failure, StatusCode};
+
+        let Err(decode) = serde_json::from_str::<u32>("<html>") else {
+            panic!("a page is not a number");
+        };
+        let unreadable = [
+            Error::Decode(decode),
+            Error::Unexpected {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                expected: StatusCode::OK,
+            },
+        ];
+
+        for error in unreadable {
+            assert_eq!(error.failure(), Failure::Interrupted, "{error}");
+            assert_eq!(ServerError::from(error).kind, ServerErrorKind::Protocol);
+        }
     }
 
     #[test]
