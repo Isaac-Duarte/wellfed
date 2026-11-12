@@ -152,6 +152,23 @@ The server announces itself on the home network over mDNS, so the app can list i
 - **At shutdown** the server withdraws the record, so the app drops it at once.
 - **`advertise = "off"`** (or `--no-advertise`) turns it off, separately from `discovery`, which finds feeders. On a container's bridged network the announcement doesn't leave the bridge, so turn it off there too.
 
+## Add the first owner
+
+A fresh server has no accounts, and the first visitor creates the first owner, over the API since the server has no web UI. Until then, anyone who reaches the server can claim it, through setup or by importing an archive, so add the owner while it still listens on `127.0.0.1` alone, before you [reach it from outside](#reach-it-from-outside).
+
+1. Run `curl http://127.0.0.1:8080/api/v1/setup`. You should see `"open": true`, and the host's time zone as `zone` if it has one.
+2. Create the owner with a name, a password of at least 10 characters, and the home's IANA zone:
+
+   ```sh
+   curl -X POST http://127.0.0.1:8080/api/v1/setup \
+       -H 'Content-Type: application/json' -H 'Origin: http://127.0.0.1:8080' \
+       -d '{"name": "alex", "password": "…", "zone": "Europe/Berlin"}'
+   ```
+
+3. Run `wellfed server login --server http://127.0.0.1:8080 --name alex` and type the password. You should see the CLI keep a token, after which `wellfed server feeders` works.
+
+Setup closes as soon as any account exists. The zone must be one the feeder can follow on its own, since the server writes its daylight-saving rule to each feeder: a zone with irregular changes no rule describes is refused `422 zone_unsupported`, and an unknown name `400 invalid`.
+
 ## Reach it from outside
 
 The app and the CLI speak plain `http://` only to this computer or the home network: a loopback, private or link-local address, `localhost`, or a `.local` name, as the [alert webhook](README.md#alert-webhook) does. Any other name takes the server's `https://` address, since a login sends the password and every later call a token that can feed. An address typed into the app with no scheme is `http://` for a home-network host and `https://` for any other. A name only your router resolves (`nas.lan`) counts as off the home network, so use the server's IP address or its `.local` name. Home Assistant asks you to confirm a plain `http://` address instead.
@@ -184,24 +201,7 @@ Caddy obtains and renews the certificate, preserves `Host` and sets `X-Forwarded
 > [!WARNING]
 > Anyone listed in `trusted_proxies` can claim to be any client. List only the proxy's own address, or a container network's range such as `172.16.0.0/12` when the proxy runs in one. Never list your LAN or the internet.
 
-The public name goes in `hosts`, since the server refuses names it wasn't given. The `Origin` check compares the browser's `Origin` with `Host`, so browser requests work through the proxy unchanged. A request's own `x-request-id` is kept when it is one plain id (at most 64 bytes of letters, digits, `.`, `_` and `-`), so the proxy's id appears in both logs; anything else gets a fresh UUID.
-
-## Add the first owner
-
-A fresh server has no accounts, and the first visitor creates the first owner, over the API since the server has no web UI.
-
-1. Run `curl http://127.0.0.1:8080/api/v1/setup`. You should see `"open": true`, and the host's time zone as `zone` if it has one.
-2. Create the owner with a name, a password of at least 10 characters, and the home's IANA zone:
-
-   ```sh
-   curl -X POST http://127.0.0.1:8080/api/v1/setup \
-       -H 'Content-Type: application/json' -H 'Origin: http://127.0.0.1:8080' \
-       -d '{"name": "alex", "password": "…", "zone": "Europe/Berlin"}'
-   ```
-
-3. Run `wellfed server login --server http://127.0.0.1:8080 --name alex` and type the password. You should see the CLI keep a token, after which `wellfed server feeders` works.
-
-Setup closes as soon as any account exists. The zone must be one the feeder can follow on its own, since the server writes its daylight-saving rule to each feeder: a zone with irregular changes no rule describes is refused `422 zone_unsupported`, and an unknown name `400 invalid`.
+The public name goes in `hosts`, since the server refuses names it wasn't given. The `Origin` check compares the request's `Origin` with `Host`, so the proxy must pass the client's `Host` on, as Caddy does. nginx does not by default: add `proxy_set_header Host $host;`, or every login and setup is refused `403 cross_origin`. A request's own `x-request-id` is kept when it is one plain id (at most 64 bytes of letters, digits, `.`, `_` and `-`), so the proxy's id appears in both logs; anything else gets a fresh UUID.
 
 ## Add a member's phone
 
