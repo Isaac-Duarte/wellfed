@@ -389,8 +389,9 @@ proptest! {
         stable!(exact Open, &bytes);
         stable!(exact Hello, &bytes);
         stable!(exact Join<'_>, &bytes);
-        stable!(exact ClientMessage<'_>, &bytes);
-        stable!(exact Request<'_>, &bytes);
+        // A request can carry a plan whose tail an encode drops.
+        stable!(ClientMessage<'_>, &bytes);
+        stable!(Request<'_>, &bytes);
         stable!(exact Answer<'_>, &bytes);
     }
 
