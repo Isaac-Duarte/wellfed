@@ -114,6 +114,15 @@ class _AddServerScreenState extends State<AddServerScreen> {
             Notice(tone: Tone.fault, text: serverErrorWords(error)),
             const SizedBox(height: Space.s3),
           ],
+          if (state.stage is AddServerNotKept) ...[
+            Notice(
+              tone: Tone.fault,
+              text:
+                  "This $deviceName's storage couldn't keep the sign-in, so nothing was kept. "
+                  'Try again; if this stays, restart the $deviceName.',
+            ),
+            const SizedBox(height: Space.s3),
+          ],
           FilledButton(onPressed: filled && !sending ? _logIn : null, child: Text(sending ? 'Logging in' : 'Log in')),
         ],
       );

@@ -11,6 +11,14 @@ final class LoginDone extends LoginOutcome {
   const LoginDone();
 }
 
+/// The server took the login, but this phone's storage could not keep its
+/// token: nothing of the login is kept, and the token is revoked if the
+/// server takes that.
+final class LoginNotKept extends LoginOutcome {
+  /// A login with nowhere to keep its token.
+  const LoginNotKept();
+}
+
 /// The server refused or could not be reached; `error` says which.
 final class LoginFailed extends LoginOutcome {
   /// A login that did not go through.

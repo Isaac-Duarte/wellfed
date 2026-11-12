@@ -241,11 +241,22 @@ class FakeServerPorts implements ServerPorts {
     return kept;
   }
 
+  /// What keeping or forgetting the token throws while set, as a Keystore
+  /// fault would.
+  Object? keepFails;
+  Object? forgetFails;
+
   @override
-  Future<void> keepSecret(String secret) async => kept = secret;
+  Future<void> keepSecret(String secret) async {
+    // ignore: only_throw_errors, this stands in for the platform's exception.
+    if (keepFails case final error?) throw error;
+    kept = secret;
+  }
 
   @override
   Future<void> forgetSecret() async {
+    // ignore: only_throw_errors, this stands in for the platform's exception.
+    if (forgetFails case final error?) throw error;
     kept = null;
     forgets++;
   }

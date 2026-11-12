@@ -28,6 +28,12 @@ final class AddServerDone extends AddServerStage {
   const AddServerDone();
 }
 
+/// The server took the login, and this phone could not keep its token.
+final class AddServerNotKept extends AddServerStage {
+  /// A login kept nowhere.
+  const AddServerNotKept();
+}
+
 /// The server refused, or could not be reached; `error` says which.
 final class AddServerFailed extends AddServerStage {
   /// A login that did not go through.
@@ -99,6 +105,7 @@ class AddServerFlow extends ChangeNotifier {
     if (_disposed) return;
     _stage(switch (outcome) {
       LoginDone() => const AddServerDone(),
+      LoginNotKept() => const AddServerNotKept(),
       LoginFailed(:final ServerError error) => AddServerFailed(error),
     });
   }

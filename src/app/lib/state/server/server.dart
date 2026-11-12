@@ -209,7 +209,19 @@ class HomeServer extends ChangeNotifier {
     // Through the queue, after any copy of the last server still writing;
     // then the secret, so a file with the old link never meets the new one.
     await _keep();
-    await _ports.keepSecret(session.secret());
+    try {
+      await _ports.keepSecret(session.secret());
+    } on Object catch (error) {
+      debugPrint('the server token could not be kept: $error');
+      // A token kept nowhere is lost at the next start: it goes now, login and all.
+      try {
+        await session.logout(password: password, key: _key);
+      } on ServerError {
+        // It stays valid until revoked on the server.
+      }
+      await _forget();
+      return const LoginNotKept();
+    }
     await _connect(session);
     return const LoginDone();
   }
@@ -448,7 +460,12 @@ class HomeServer extends ChangeNotifier {
     _set(const ServerAbsent());
     // A copy kept before this writes first, so none outlives the removal.
     await _kept;
-    await _ports.forgetSecret();
+    try {
+      await _ports.forgetSecret();
+    } on Object catch (error) {
+      // The file forgets it all the same: a token beside no server is never read.
+      debugPrint('the server token could not be forgotten: $error');
+    }
     await _book.setServer(null);
   }
 
