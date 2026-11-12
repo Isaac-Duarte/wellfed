@@ -73,6 +73,9 @@ pub enum DeviceError {
     },
     #[error("{}: the secret or a feeder identity is not 32 bytes of hex", .0.display())]
     BadKey(PathBuf),
+    /// The bench's owner key, which others could read.
+    #[error(transparent)]
+    SharedKey(wellfed_formats::Error),
     #[error("{}: {count} feeders enrolled this key; the bench talks to exactly one", path.display())]
     Feeders { path: PathBuf, count: usize },
     #[error("the random source: {0}")]
@@ -529,6 +532,8 @@ impl Owner {
     /// The key file at `keys` and the hotspot fields of the server config
     /// at `config`, both under `root`.
     pub fn open(root: &Path, keys: &Path, config: &Path) -> crate::Result<Self> {
+        wellfed_formats::private::require_unshared(&root.join(keys))
+            .map_err(DeviceError::SharedKey)?;
         let file: OwnerKeyFile =
             owner::load(&root.join(keys)).map_err(|error| DeviceError::Keys {
                 path: keys.to_path_buf(),

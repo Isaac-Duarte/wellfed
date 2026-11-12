@@ -27,6 +27,89 @@ pub fn random<const N: usize>() -> Result<[u8; N]> {
     Ok(bytes)
 }
 
+/// Refuse the secret key file at `path` if users other than its owner may
+/// read or write it. Every writer here creates key files 0600, so wider
+/// modes mean a copy, sync or restore widened them, and a signing seed or
+/// client secret others can read is as good as theirs. A filesystem that
+/// keeps no Unix modes at all (FAT or exFAT on a USB stick, NTFS), where
+/// every file reads as open, is the one place the mode says nothing, and
+/// there the check is skipped. Off Unix there are no modes to check.
+pub fn require_unshared(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = fs::metadata(path)?.permissions().mode();
+        let modes = filesystem_modes(path);
+        if let Some(mode) = shared(mode, modes) {
+            return Err(crate::Error::Shared {
+                path: path.to_path_buf(),
+                mode,
+            });
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+/// Whether a filesystem records each file's Unix mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Modes {
+    Kept,
+    /// FAT, exFAT or NTFS: every file shows the mount's own mode.
+    Absent,
+}
+
+/// The permission bits others hold on a file of `mode`, if any matter.
+fn shared(mode: u32, modes: Modes) -> Option<u32> {
+    (modes == Modes::Kept && mode & 0o077 != 0).then_some(mode & 0o777)
+}
+
+/// Whether the filesystem holding `path` keeps Unix modes. One that can't be
+/// asked is taken to keep them, so the check stays on.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn filesystem_modes(path: &Path) -> Modes {
+    // statfs(2) magic numbers: MSDOS (FAT, vfat), exFAT, NTFS (the old
+    // driver's and ntfs3's).
+    const NO_MODES: [i128; 4] = [0x4d44, 0x2011_bab0, 0x5346_544e, 0x7366_746e];
+
+    match rustix::fs::statfs(path) {
+        Ok(stat) if NO_MODES.contains(&i128::from(stat.f_type)) => Modes::Absent,
+        _ => Modes::Kept,
+    }
+}
+
+/// Whether the filesystem holding `path` keeps Unix modes, by its type name.
+#[cfg(target_vendor = "apple")]
+fn filesystem_modes(path: &Path) -> Modes {
+    const NO_MODES: [&[u8]; 3] = [b"msdos", b"exfat", b"ntfs"];
+
+    let Ok(stat) = rustix::fs::statfs(path) else {
+        return Modes::Kept;
+    };
+    let name: Vec<u8> = stat
+        .f_fstypename
+        .iter()
+        .take_while(|c| **c != 0)
+        .map(|c| c.to_ne_bytes()[0])
+        .collect();
+    if NO_MODES.contains(&name.as_slice()) {
+        Modes::Absent
+    } else {
+        Modes::Kept
+    }
+}
+
+/// Other Unix systems: no filesystem is known to lack modes.
+#[cfg(all(
+    unix,
+    not(any(target_os = "linux", target_os = "android", target_vendor = "apple"))
+))]
+fn filesystem_modes(_: &Path) -> Modes {
+    Modes::Kept
+}
+
 /// Create `path` exclusively, write it in full and fsync it.
 pub fn write_new(path: &Path, data: &[u8]) -> Result<()> {
     let mut file = create_private(path)?;
@@ -242,6 +325,36 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// A key file others can read is refused, by its mode; on a filesystem
+    /// without Unix modes every file reads open, and nothing is refused.
+    #[cfg(unix)]
+    #[test]
+    fn a_key_file_others_can_read_is_refused_where_modes_are_kept() {
+        use std::os::unix::fs::PermissionsExt;
+
+        use super::{Modes, require_unshared, shared};
+
+        let dir = tempfile::tempdir().unwrap();
+        let key = dir.path().join("key.json");
+        std::fs::write(&key, b"{}").unwrap();
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+        require_unshared(&key).unwrap();
+
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(
+            require_unshared(&key),
+            Err(crate::Error::Shared { mode: 0o644, .. })
+        ));
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o620)).unwrap();
+        assert!(require_unshared(&key).is_err());
+
+        // A FAT stick shows every file as the mount's mode.
+        assert_eq!(shared(0o100_755, Modes::Absent), None);
+        assert_eq!(shared(0o100_644, Modes::Kept), Some(0o644));
+        assert_eq!(shared(0o100_600, Modes::Kept), None);
+        assert_eq!(shared(0o100_400, Modes::Kept), None);
+    }
+
     /// Two keys' worth of bytes from the system's source: 256 bits each,
     /// so equal draws would mean the source is not random at all.
     #[test]

@@ -201,7 +201,7 @@ The build ID comes from the verified manifest (for the stock image, the review's
 
 ### The bench key
 
-`keygen`'s key is the bench key: it lives in a checkout's `private/` and signs development images for the bench's own units only. Every key file names its `scope`. The signer also loads an owner's key (`"scope": "owner"`, written by `wellfed update-key new`), which a feeder trusts only once the owner enrolls it there ([OTA design](../firmware/ota-design.md#keys-and-anti-rollback)), which signs no key statement (`revoke` and `add-key` refuse it), and which no image embeds. It loads the release key (`"scope": "release"`) too. No other scope loads.
+`keygen`'s key is the bench key: it lives in a checkout's `private/` and signs development images for the bench's own units only. Every key file names its `scope`. The signer also loads an owner's key (`"scope": "owner"`, written by `wellfed update-key new`), which a feeder trusts only once the owner enrolls it there ([OTA design](../firmware/ota-design.md#keys-and-anti-rollback)), which signs no key statement (`revoke` and `add-key` refuse it), and which no image embeds. It loads the release key (`"scope": "release"`) too. No other scope loads. A key file other users can read is refused, whatever its scope: every writer creates key files mode 0600, so `chmod 600` one a copy or restore widened, and treat its key as exposed if others could have read it. On a filesystem with no Unix modes, such as a FAT or exFAT USB stick, every file reads as open, so the check is skipped there.
 
 A bench build refuses an owner's key or the release key in `private/ota-key.json`: it embeds only the bench key from there.
 

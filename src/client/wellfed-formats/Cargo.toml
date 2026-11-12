@@ -20,7 +20,9 @@ sha2 = "0.11"
 thiserror.workspace = true
 uuid = { workspace = true, features = ["serde"] }
 
-[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+# Linux and Android rename without replacing; every Unix asks a key
+# file's filesystem whether it keeps modes at all.
+[target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1.5", default-features = false, features = ["fs", "std"] }
 
 [features]

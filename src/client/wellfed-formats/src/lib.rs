@@ -41,6 +41,13 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("the system's random source failed: {0}")]
     Random(#[from] getrandom::Error),
+    /// A key file other users could have read
+    /// ([`private::require_unshared`]).
+    #[error(
+        "{} holds a secret key and other users can read it (mode {mode:03o}); `chmod 600` it, and treat the key as exposed if they could have",
+        path.display()
+    )]
+    Shared { path: std::path::PathBuf, mode: u32 },
 }
 
 /// Read a JSON file into its type.

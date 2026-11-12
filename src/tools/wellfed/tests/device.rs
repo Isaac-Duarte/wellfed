@@ -41,6 +41,12 @@ impl Home {
             "feeders": [{ "identity": Lower(identity).to_string() }],
         });
         std::fs::write(&keys, file.to_string()).expect("the key file is written");
+        // As every writer makes a key file: the CLI refuses one others can read.
+        std::fs::set_permissions(
+            &keys,
+            <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o600),
+        )
+        .expect("the key file is made private");
         Self { dir, keys }
     }
 
