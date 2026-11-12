@@ -609,7 +609,10 @@ fn a_feed_past_its_claim_s_deadline_is_refused_and_its_id_stays_refused() {
         let begun = std::time::Instant::now();
         let answer = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(answer, Answer::Refused(Refusal::Busy));
-        assert!(begun.elapsed() >= Duration::from_millis(2_900), "its wait");
+        // The whole wait, less a pass of the simulator's loop for where in
+        // its pace the claim was first tried.
+        let wait = Duration::from_millis(u64::from(WRITE_WAIT_MS) - 50);
+        assert!(begun.elapsed() >= wait, "its wait: {:?}", begun.elapsed());
         assert_eq!(feeding::reserved(&flash), Ok(0), "nothing reserved");
         assert_eq!(readiness(&mut owner, 2).await, Readiness::Ready);
         sim.control(Control::HoldWrite(false));
