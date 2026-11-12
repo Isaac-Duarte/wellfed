@@ -30,7 +30,7 @@ use wellfed_bench_formats::progress::StepState;
 use wellfed_bench_formats::run::{Evidence, RunRecord, SUFFIX, ScenarioRecord, ScenarioVerdict};
 use wellfed_formats::VERIFICATION;
 use wellfed_formats::require;
-use wellfed_rig::commands::ota::{self, Outcome, Staged, Target, Watch};
+use wellfed_rig::commands::ota::{self, Outcome, Seen, Staged, Target, Watch};
 use wellfed_rig::commands::{Bench, Image, OtaArgs};
 use wellfed_rig::device::{Answer, Ask, DeviceStatus, Intruder, Rebuffed};
 use wellfed_rig::say;
@@ -412,9 +412,16 @@ impl<'r> Ctx<'r> {
             staged.version,
             short(&staged.build)
         ));
-        let outcome = self.watch(&staged.build, since, INSTALL_WAIT)?;
         // The UART's verdict is what bank 1 holds, whatever the status
-        // check after it says.
+        // check after it says. Any other end came after the offer went out,
+        // so bank 1 may have given way and taken part of the image.
+        let outcome = match self.watch(&staged.build, since, INSTALL_WAIT) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.rig.wrote(Bank::One, Content::Unknown);
+                return Err(error);
+            }
+        };
         match outcome {
             Outcome::Passed => self.rig.wrote(
                 Bank::One,
@@ -423,7 +430,9 @@ impl<'r> Ctx<'r> {
                 },
             ),
             Outcome::FellBack { .. } => self.rig.wrote(Bank::One, Content::Invalid),
-            Outcome::Failed { .. } | Outcome::Skipped => {}
+            Outcome::Failed { .. } | Outcome::Skipped => {
+                self.rig.wrote(Bank::One, Content::Unknown);
+            }
         }
         if outcome == Outcome::Passed {
             self.confirm(&staged.build)?;
@@ -458,8 +467,12 @@ impl<'r> Ctx<'r> {
                 }
             }
             // A push that ended before any UART outcome: the feeder refused
-            // the offer, or reported a stop over the API.
-            if let Some(Err(push)) = self.rig.offered() {
+            // the offer, or reported a stop over the API. Once the image
+            // activated, the trial decides what bank 1 runs whatever the
+            // push says (its session drops as the feeder restarts into it).
+            if let Some(Err(push)) = self.rig.offered()
+                && watch.seen() != Seen::Activated
+            {
                 return Err(Error::PushEnded(push));
             }
             if self.rig.clock() >= deadline {

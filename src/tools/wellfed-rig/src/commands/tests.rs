@@ -900,6 +900,37 @@ fn stock_prepare_then_execute_puts_the_original_back_into_bank_1() {
     assert!(flag(last, "--current").ends_with("st-full/flash-read.bin"));
 }
 
+/// A stock recovery that stops after erasing may leave bank 1 anything:
+/// the ledger says unknown, as for an update or a give-way that stopped,
+/// and nothing boots or is retried.
+#[test]
+fn a_stopped_stock_recovery_leaves_bank_1_unknown() {
+    for code in [1, 2] {
+        let mut rig = rig();
+        fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
+        let args = stock("st", None);
+        assert_eq!(rig.bench.stock_prepare(&args).unwrap(), 0);
+
+        rig.tools.0.borrow_mut().flash_codes.push_back(code);
+        let execute = stock_execute(args, "stock-recovery");
+        assert_eq!(rig.bench.stock_execute(&execute).unwrap(), 1);
+
+        assert_eq!(
+            rig.bench.written,
+            [Written {
+                bank: Bank::One,
+                content: Content::Unknown,
+                source: wellfed_bench_formats::banks::Source::StockExecute,
+            }],
+            "exit {code}"
+        );
+        assert!(
+            !captured(&rig).iter().any(|c| c == "st-boot"),
+            "nothing booted"
+        );
+    }
+}
+
 #[test]
 fn a_valid_bank_1_needs_the_give_way_first() {
     let mut rig = rig();
@@ -1723,15 +1754,68 @@ fn a_refused_offer_ends_the_run_before_any_activation() {
     }
 
     let error = rig.bench.ota(&args).unwrap_err();
-    let Error::Ota(OtaError::PushEnded { push, name, last }) = &error else {
+    let Error::Ota(OtaError::PushEnded {
+        push,
+        seen,
+        name,
+        last,
+    }) = &error
+    else {
         panic!("{error:?}");
     };
     assert!(
         matches!(**push, PushError::Device(DeviceError::Install(_))),
         "{push:?}"
     );
+    assert_eq!(*seen, ota::Seen::Nothing);
     assert_eq!((name.as_str(), *last), ("unit", 1));
     assert_eq!(captured(&rig), ["unit-01"]);
+    // The offer went out, so the ledger asks for a read of bank 1.
+    assert_eq!(
+        rig.bench.written,
+        [Written {
+            bank: Bank::One,
+            content: Content::Unknown,
+            source: wellfed_bench_formats::banks::Source::OtaStopped,
+        }]
+    );
+}
+
+/// A push that ends in an error once the image activated (its session
+/// drops as the feeder restarts into the new build) does not end the
+/// watch: the trial's confirmation decides, and is what the ledger keeps.
+#[test]
+fn a_push_error_after_the_activation_leaves_the_trial_to_decide() {
+    let mut rig = rig();
+    let args = plain_review(&rig);
+    {
+        let mut calls = rig.tools.0.borrow_mut();
+        calls
+            .install_results
+            .push_back(Err(Arc::new(PushError::Device(DeviceError::Install(
+                wellfed_client::update::InstallError::Refused(wellfed_model::Refusal::Update(
+                    wellfed_model::UpdateRefusal::Same,
+                )),
+            )))));
+        calls
+            .rx
+            .push_back(b"PLOTA1 activated version=1\r\n".to_vec());
+        calls.rx.push_back(
+            format!("PLFW1 start build={BUILD} bank=1\r\nPLCNF1 confirmed=1 healthy_ms=30000\r\n")
+                .into_bytes(),
+        );
+    }
+
+    assert_eq!(rig.bench.ota(&args).unwrap(), 0);
+    assert_eq!(captured(&rig), ["unit-01", "unit-02"]);
+    assert_eq!(
+        rig.bench.written,
+        [Written {
+            bank: Bank::One,
+            content: Content::Build { id: BUILD.into() },
+            source: wellfed_bench_formats::banks::Source::OtaConfirmed,
+        }]
+    );
 }
 
 #[test]
@@ -1856,9 +1940,39 @@ fn ota_stops_when_time_runs_out() {
     );
     assert_eq!(
         error.to_string(),
-        "No outcome within 2.5 min; the feeder is untouched. Captures unit-01…03"
+        "No outcome within 2.5 min; the UART showed no give-way, download or activation, so bank 1 is likely as it was; a read settles it. Captures unit-01…03"
     );
     assert_eq!(captured(&rig), ["unit-01", "unit-02", "unit-03"]);
+    assert_eq!(
+        rig.bench.written,
+        [Written {
+            bank: Bank::One,
+            content: Content::Unknown,
+            source: wellfed_bench_formats::banks::Source::OtaStopped,
+        }]
+    );
+}
+
+/// A run that times out after the UART showed the image activate never
+/// claims the feeder untouched: what bank 1 runs is unknown.
+#[test]
+fn a_timeout_after_the_activation_says_the_outcome_is_unknown() {
+    let mut rig = rig();
+    let mut args = plain_review(&rig);
+    args.minutes = 1.0;
+    rig.tools.0.borrow_mut().rx.push_back(
+        b"PLWCH1 give_way=1 version=1 restart=1\r\nPLOTA1 activated version=1\r\n".to_vec(),
+    );
+
+    let error = rig.bench.ota(&args).unwrap_err();
+    assert_matches!(
+        error,
+        Error::Ota(OtaError::NoOutcome {
+            seen: ota::Seen::Activated,
+            ..
+        })
+    );
+    assert!(!error.to_string().contains("untouched"), "{error}");
 }
 
 const OTHER: &str = "5b8433a4f795cb2178c7a38a45087a6727e7a2621fc557d146cff607556f991e";

@@ -121,6 +121,10 @@ struct Feeder {
     /// A feed a reset interrupted is handed to the owner again.
     reruns_interrupted: bool,
     silent: bool,
+    /// How the push ends once its image activated; `None` while it runs.
+    push_error: Option<Arc<PushError>>,
+    /// What the suite told the bench's ledger, in order.
+    written: Vec<(Bank, Content)>,
     admits_strangers: bool,
     settings_lost_on_boot: bool,
     /// A hotspot bounce changes the volume, which nothing in it checks.
@@ -188,6 +192,8 @@ impl Feeder {
             leaks: false,
             reruns_interrupted: false,
             silent: false,
+            push_error: None,
+            written: Vec::new(),
             admits_strangers: false,
             volume_drifts: false,
             settings_lost_on_boot: false,
@@ -875,7 +881,15 @@ impl Rig for Feeder {
     }
 
     fn offered(&mut self) -> Option<std::result::Result<(), Arc<PushError>>> {
-        None
+        // The push's session drops as the feeder restarts into the image it
+        // just activated.
+        let (start, _) = self.installing.as_ref()?;
+        let activated = self.now >= start + 100.0;
+        self.push_error.clone().filter(|_| activated).map(Err)
+    }
+
+    fn wrote(&mut self, bank: Bank, content: Content) {
+        self.written.push((bank, content));
     }
 
     fn device(&mut self, ask: &Ask) -> Result<Answer> {
@@ -1455,6 +1469,26 @@ fn settings_lost_across_a_cold_boot_fail_and_are_still_restored() {
     assert_eq!(
         (feeder.lights, feeder.sound, feeder.volume),
         (true, true, 40)
+    );
+}
+
+/// A push that ends in an error once its image activated leaves the
+/// trial to decide: the install passes on the UART's confirmation, and that
+/// is what the ledger keeps.
+#[test]
+fn a_push_error_after_the_activation_leaves_the_trial_to_decide() {
+    let mut feeder = Feeder::new(OLD);
+    feeder.push_error = Some(Arc::new(PushError::Panicked));
+    let (reports, _) = suite(&mut feeder, &["--build", "--only", "ota-update"]);
+
+    assert_eq!(verdicts(&reports)[0], ("ota-update", "pass"));
+    assert!(
+        matches!(
+            feeder.written.last(),
+            Some((Bank::One, Content::Build { .. }))
+        ),
+        "{:?}",
+        feeder.written
     );
 }
 

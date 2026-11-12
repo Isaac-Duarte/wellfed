@@ -1417,9 +1417,21 @@ impl Bench {
                 &self.out(&p.execute),
             ],
         );
-        if self.run(&command)? != 0 {
-            say!("Stock recovery stopped; the feeder stays powered and is not booted. No retry.");
-            return Ok(1);
+        match self.run(&command) {
+            Ok(0) => {}
+            Ok(_) => {
+                say!(
+                    "Stock recovery stopped; the feeder stays powered and is not booted. No retry."
+                );
+                self.stopped_write(1, Source::StockExecute);
+                return Ok(1);
+            }
+            // The flash client ran and stopped on the cancel.
+            Err(Error::Interrupted) => {
+                self.stopped_write(1, Source::StockExecute);
+                return Err(Error::Interrupted);
+            }
+            Err(error) => return Err(error),
         }
 
         self.wrote(Bank::One, Content::Stock, Source::StockExecute);
