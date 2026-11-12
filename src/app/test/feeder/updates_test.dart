@@ -340,6 +340,23 @@ void main() {
     expect(find.textContaining('Update this app to read it'), findsOneWidget);
   });
 
+  // Bank 1 checks bank 0 once a boot, so a broken recovery copy is shown
+  // whatever is offered: on this build, below the floor, or with no image.
+  testWidgets('a broken recovery copy shows on a feeder already running this build', (tester) async {
+    await _show(tester, build: _newBuild, bank0: const Bank0Check.blocked(Bank0Blocked.unrecorded));
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+  });
+
+  testWidgets('a broken recovery copy shows when the image is not newer', (tester) async {
+    await _show(tester, minVersion: 7, bank0: const Bank0Check.blocked(Bank0Blocked.unrecorded));
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+  });
+
+  testWidgets('a broken recovery copy shows when the app carries no image', (tester) async {
+    await _show(tester, image: const ImageCheck.absent(), bank0: const Bank0Check.blocked(Bank0Blocked.unrecorded));
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+  });
+
   testWidgets('a recovery copy that matches its record blocks nothing', (tester) async {
     await _show(tester, bank0: const Bank0Check.match());
     expect(find.textContaining('Updates are blocked'), findsNothing);

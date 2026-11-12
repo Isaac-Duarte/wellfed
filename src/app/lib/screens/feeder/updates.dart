@@ -8,7 +8,7 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/update.dart'
-    show UpdateOffer, UpdateOffer_Blocked, UpdateOffer_Current, UpdateOffer_Newer, UpdateOffer_Older;
+    show UpdateOffer, UpdateOffer_Current, UpdateOffer_Newer, UpdateOffer_Older;
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart' show Connection;
 import 'package:wellfed/state/update/update.dart';
@@ -122,9 +122,14 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                       : null;
                   final bool current = verdict is UpdateOffer_Current;
                   final bool older = verdict is UpdateOffer_Older;
-                  // Why bank 0 would refuse this image, as the rule says it.
-                  final Bank0Blocked? blocked = switch (verdict) {
-                    UpdateOffer_Blocked(:final Bank0Blocked reason) => reason,
+                  // The recovery copy's state, shown whatever is offered: bank 1
+                  // checks bank 0 once a boot, so a block is a standing fact
+                  // about the feeder's fallback (a feeder on this build with a
+                  // broken recovery copy has none if a later trial fails), not
+                  // only a reason this image is refused.
+                  final Bank0Blocked? blocked = switch (state?.bank0) {
+                    Bank0Check_Blocked(:final Bank0Blocked field0) => field0,
+                    Bank0Check_Unknown() => Bank0Blocked.unknown,
                     _ => null,
                   };
                   // A pre-revision build sends no status this app reads, so
