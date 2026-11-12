@@ -117,7 +117,7 @@ Use this to repeat the startup check or to record resets.
    wellfed-audit transients --device plaf103 --capture private/captures/NAME --output NEW-REPORT
    ```
 
-A cycle passes when it starts unpowered, no sample has INA ≠ INB or OUTA ≠ OUTB, there is no LOW, LOW coast when the board opens, and the brake is reached and held after boot (or standby held throughout a loader entry).
+A cycle passes when it starts unpowered, no sample has INA ≠ INB or OUTA ≠ OUTB, there is no LOW, LOW coast when the board opens, and the brake is reached and held after boot (or standby held throughout a loader entry). With the inputs probed, the first millisecond after power-on is the supply ramp: a difference there that lasts 5 µs or less is reported apart as a ramp skew (open check 4) rather than failing the cycle, and anything longer still fails it. An outputs-only capture takes no ramp.
 
 **If you can reach only the outputs:** the driver's pins are 1.27 mm apart, too close for ordinary hooks. `--probes outputs` records only D2 and D3 at the motor, with analyzer GND on the bench ground rail. Clip the motor terminals, or the suppression capacitor's legs where glue covers the tabs: the curved leg on the blue-lead side to D2, the straight leg to D3. Which is OUTA is untraced, and the check doesn't depend on it. The report records `probed: outputs` and what it could not see, and the polarity check stays open.
 
