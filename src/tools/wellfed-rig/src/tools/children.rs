@@ -149,7 +149,7 @@ fn signal(child: &Activity) {
         return;
     };
     match child.kind {
-        ActivityKind::Flash => {
+        ActivityKind::Flash(_) => {
             let _ = kill_process(pid, Signal::INT);
         }
         ActivityKind::Build | ActivityKind::Install | ActivityKind::Analyzer => {
@@ -173,6 +173,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 mod tests {
     use std::path::Path;
     use std::time::{Duration, Instant};
+
+    use wellfed_bench_formats::live::FlashUse;
 
     use super::*;
 
@@ -230,7 +232,11 @@ mod tests {
         let children = Children::new();
         let mut flash = trapping(flash_dir.path());
         let mut build = trapping(build_dir.path());
-        let _flash = children.track(&flash, ActivityKind::Flash, "update execute");
+        let _flash = children.track(
+            &flash,
+            ActivityKind::Flash(FlashUse::Write { counted: true }),
+            "update execute",
+        );
         let _build = children.track(&build, ActivityKind::Build, "build firstboot");
 
         children.interrupt();
@@ -252,7 +258,11 @@ mod tests {
 
         let mut flash = trapping(flash_dir.path());
         let mut build = trapping(build_dir.path());
-        let _flash = children.track(&flash, ActivityKind::Flash, "update execute");
+        let _flash = children.track(
+            &flash,
+            ActivityKind::Flash(FlashUse::Write { counted: true }),
+            "update execute",
+        );
         let _build = children.track(&build, ActivityKind::Build, "build firstboot");
         flash.wait().unwrap();
         build.wait().unwrap();

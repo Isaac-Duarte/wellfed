@@ -525,7 +525,7 @@ fn report_state(state: &BenchState) {
         }
     }
     for child in &state.activity {
-        wellfed_rig::say!("  child {}: {:?} {}", child.pid, child.kind, child.label);
+        wellfed_rig::say!("  child {}: {} {}", child.pid, child.kind, child.label);
     }
     if let Some(prompt) = &state.prompt {
         wellfed_rig::say!(

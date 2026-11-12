@@ -19,7 +19,7 @@ use wellfed_formats::canonical::sha256;
 
 use crate::device::{Answer, Ask, Device, DeviceError, DeviceLink, DeviceStatus, Fault};
 use crate::{Cancel, Error, Result, Waited, wait_child};
-use wellfed_bench_formats::live::ActivityKind;
+use wellfed_bench_formats::live::{ActivityKind, FlashUse};
 use wellfed_bench_formats::progress::{FlashTool, Status};
 use wellfed_bench_formats::relative;
 use wellfed_formats::require;
@@ -608,9 +608,11 @@ impl Tools for Processes {
             .args(["--seconds", &length.as_secs_f64().to_string()])
             .stdout(Stdio::null())
             .spawn()?;
-        let tracked = self
-            .children
-            .track(&child, ActivityKind::Flash, OBSERVE_LABEL);
+        let tracked = self.children.track(
+            &child,
+            ActivityKind::Flash(FlashUse::Observe),
+            OBSERVE_LABEL,
+        );
         let mut observer = Observing {
             child,
             output: output.to_path_buf(),
@@ -646,7 +648,7 @@ impl Tools for Processes {
         command.args(args);
         let spawn = Spawn {
             children: &self.children,
-            kind: ActivityKind::Flash,
+            kind: ActivityKind::Flash(FlashUse::of(args)),
             label: subcommand(args),
         };
         stream(command, status, &spawn)
@@ -775,7 +777,11 @@ impl Tools for Processes {
                     Ok(child) => child,
                     Err(error) => return chain.fail(CaptureFailure::Spawn(error)),
                 };
-                let tracked = children.track(&child, ActivityKind::Flash, OBSERVE_LABEL);
+                let tracked = children.track(
+                    &child,
+                    ActivityKind::Flash(FlashUse::Observe),
+                    OBSERVE_LABEL,
+                );
                 chain.started(output);
 
                 let waited = wait_child(

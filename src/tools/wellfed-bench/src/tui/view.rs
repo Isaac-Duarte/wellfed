@@ -287,7 +287,7 @@ fn activity_lines(state: &BenchState) -> Vec<Line<'static>> {
         .iter()
         .map(|child| {
             Line::from(format!(
-                "{:?} pid {}: {} (since {})",
+                "{} pid {}: {} (since {})",
                 child.kind,
                 child.pid,
                 child.label,

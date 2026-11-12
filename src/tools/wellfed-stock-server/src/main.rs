@@ -19,7 +19,7 @@ use serde::Serialize;
 use tracing::info;
 use wellfed_bench_formats::lease::Lease;
 use wellfed_client::install::{SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
-use wellfed_formats::stock::{INSTALLER_CONFIG, ServerConfig};
+use wellfed_formats::stock::INSTALLER_CONFIG;
 use wellfed_stock::{
     clock,
     config::{self, State},
@@ -291,9 +291,11 @@ async fn serve(path: PathBuf, enroll_minutes: Option<u64>) -> Result<()> {
     // Stock replaces its stored table with whatever a plan reply carries, an
     // empty list included, as soon as it connects. The library still replays
     // a snapshot; this command never starts on one.
-    let read: ServerConfig =
-        wellfed_formats::load(&path).with_context(|| format!("read {}", path.display()))?;
-    if read.has_plan_snapshot() {
+    let state =
+        wellfed_stock::config::state(&path).with_context(|| format!("read {}", path.display()))?;
+    if let wellfed_stock::config::State::Device(config) = &state
+        && config.plans.is_some()
+    {
         bail!(
             "{} holds a plan snapshot, which this server would send stock in place of its own plans; nothing was started. Use an installer's config (wellfed-stock init-installer), or remove the `plans` key",
             path.display()

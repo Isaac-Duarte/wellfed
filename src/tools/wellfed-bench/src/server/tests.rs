@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use wellfed_bench_formats::lease;
 use wellfed_bench_formats::live::{
-    ActivityKind, BenchState, CancelState, JOBS, JobEnd, JobId, Phase, Uart,
+    ActivityKind, BenchState, CancelState, FlashUse, JOBS, JobEnd, JobId, Phase, Uart,
 };
 use wellfed_relay::{AtBoard, Board, FakeBoard, POWER, STRAP, Switch};
 
@@ -367,7 +367,10 @@ async fn a_second_job_is_refused_while_one_runs() {
 
     // The capture holds the UART while it runs.
     let state = state_until(&server, "the capture", |state| !state.activity.is_empty()).await;
-    assert_eq!(state.activity[0].kind, ActivityKind::Flash);
+    assert_eq!(
+        state.activity[0].kind,
+        ActivityKind::Flash(FlashUse::Observe)
+    );
     assert!(
         matches!(state.uart, Uart::Capturing { .. }),
         "{:?}",

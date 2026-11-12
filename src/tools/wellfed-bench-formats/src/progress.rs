@@ -708,16 +708,47 @@ mod tests {
         );
     }
 
+    /// Each command's successor, through every variant: the match is
+    /// exhaustive, so a new command joins the chain before this builds.
+    fn after(command: BenchCommand) -> Option<BenchCommand> {
+        use BenchCommand::*;
+        match command {
+            Status => Some(Off),
+            Off => Some(On),
+            On => Some(Capture),
+            Capture => Some(Press),
+            Press => Some(Boot),
+            Boot => Some(Loader),
+            Loader => Some(RomInspect),
+            RomInspect => Some(Transients),
+            Transients => Some(Dump),
+            Dump => Some(FlashPrepare),
+            FlashPrepare => Some(FlashExecute),
+            FlashExecute => Some(GiveWayPrepare),
+            GiveWayPrepare => Some(GiveWayExecute),
+            GiveWayExecute => Some(StockPrepare),
+            StockPrepare => Some(StockExecute),
+            StockExecute => Some(Ota),
+            Ota => Some(Itest),
+            Itest => Some(RestoreStock),
+            RestoreStock => None,
+        }
+    }
+
     #[test]
-    fn a_command_s_word_is_its_history_name() {
-        for command in [
-            BenchCommand::Status,
-            BenchCommand::Capture,
-            BenchCommand::FlashExecute,
-            BenchCommand::GiveWayPrepare,
-        ] {
+    fn every_command_s_word_is_its_history_name() {
+        let every: Vec<BenchCommand> =
+            std::iter::successors(Some(BenchCommand::Status), |command| after(*command)).collect();
+
+        for command in &every {
             let named = serde_json::to_value(command).unwrap();
             assert_eq!(named, command.word(), "{command:?}");
+            let read: BenchCommand = serde_json::from_value(named).unwrap();
+            assert_eq!(read, *command);
         }
+        let mut words: Vec<&str> = every.iter().map(|command| command.word()).collect();
+        words.sort_unstable();
+        words.dedup();
+        assert_eq!(words.len(), every.len());
     }
 }

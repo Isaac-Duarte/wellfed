@@ -25,7 +25,7 @@ A client that disconnects (a closed terminal, say) only stops reading: the job r
 
 Ctrl+C, SIGTERM or a hangup of its terminal stops the server: it refuses new jobs, cancels the running one as a client's Ctrl+C does, waits for its cleanup, removes the socket and releases the lease. Each job's child runs in a process group of its own, so terminal signals reach only the server, never a writing `wellfed-flash`; the server forwards the cancel itself.
 
-A cancelled write stops terminally and leaves its bank half-written until another UART write, so while the flash client holds the UART nothing stops the server by accident:
+A cancelled write stops terminally and leaves its bank half-written until another UART write, so while the flash client holds the UART nothing stops the server by accident. The rig tags each `wellfed-flash` child with its use of the UART as it starts it, read from the command line: only a command known to leave flash alone (a read, an inspection, a plan) counts as one, and any other, a renamed or new writer included, is a write. During a write or loader session:
 
 - **Ctrl+C** in a line console during a write or loader session only says "A UART write is under way; press Ctrl+C again within 5 s to cancel it". A second press within 5 s stops the server, cancelling the write.
 - **`q` or Ctrl+C** in the full-screen console during one only shows "A UART write is under way; press y within 5 s to cancel it". `y` within 5 s stops the server, cancelling the write; no number of further `q`s does. The server decides each key against the UART as it is when the key reaches it, and pasted text presses nothing.
