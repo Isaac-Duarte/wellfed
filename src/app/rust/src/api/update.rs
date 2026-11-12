@@ -263,8 +263,10 @@ async fn try_update(
             refusal: refusal_of(refusal),
         },
         Pushed::Failed(InstallError::Stopped(stop)) => UpdateEnd::Stopped { stop },
-        Pushed::Failed(InstallError::Lost | InstallError::Unexpected) => UpdateEnd::Lost,
-        Pushed::Gone { offered: true } => UpdateEnd::Uncertain,
+        Pushed::Failed(InstallError::Lost) => UpdateEnd::Lost,
+        Pushed::Failed(InstallError::Uncertain(_)) | Pushed::Gone { offered: true } => {
+            UpdateEnd::Uncertain
+        }
         Pushed::Gone { offered: false } => UpdateEnd::NotOffered,
     })
 }

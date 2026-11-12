@@ -1229,3 +1229,34 @@ fn a_refused_update_says_why_in_words() {
     );
     assert!(words(UpdateRefusal::Store).contains("Store"));
 }
+
+/// An offer or a cancel answered in a way this build cannot read, or with
+/// another kind, may have taken: the install ends uncertain, never refused.
+#[test]
+fn an_answer_that_is_not_the_state_leaves_the_install_uncertain() {
+    use wellfed_client::write::Uncertain;
+
+    let offer = Offer::new(2, 0x22, SECTOR);
+    for (answer, why) in [
+        (Answer::Unreadable, Uncertain::Unreadable),
+        (Answer::Done { generation: None }, Uncertain::OtherKind),
+    ] {
+        let mut installer = Installer::new(offer.image());
+        installer.opened(0);
+        let _ = installer.poll();
+        assert_eq!(
+            installer.answer(Sent::Offer, &answer),
+            Err(InstallError::Uncertain(why))
+        );
+        assert_eq!(installer.poll(), Next::Failed(InstallError::Uncertain(why)));
+
+        let mut installer = Installer::new(offer.image());
+        installer.opened(0);
+        let _ = installer.poll();
+        installer.cancel();
+        assert_eq!(
+            installer.answer(Sent::Cancel, &answer),
+            Err(InstallError::Uncertain(why))
+        );
+    }
+}

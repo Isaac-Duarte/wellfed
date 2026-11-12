@@ -136,22 +136,21 @@ pub async fn push<S: Steps>(
             Next::Send(sent, op) => {
                 offered |= sent == Sent::Offer;
                 match steps.step(op).await? {
-                    // Only a state or a refusal says where the install
-                    // stands. An answer this build cannot read (a newer
-                    // build's), or of another kind, may follow an offer
-                    // that took: the push ends `Gone`, as with a feeder
-                    // that went silent, and nothing is sent again.
-                    Some(answer) if !matches!(answer, Answer::Update(_) | Answer::Refused(_)) => {
-                        return Ok(Pushed::Gone { offered });
-                    }
-                    // An answer the installer rejects ends the install; the
-                    // next poll says so.
-                    Some(answer) => {
-                        let _ = installer.answer(sent, &answer);
-                        if let (Answer::Update(_), Some(view)) = (&answer, installer.view()) {
-                            steps.progress(view);
+                    Some(answer) => match installer.answer(sent, &answer) {
+                        // Only a state or a refusal says where the install
+                        // stands; any other answer may follow an offer that
+                        // took. The push ends `Gone`, as with a feeder that
+                        // went silent, and nothing is sent again.
+                        Err(InstallError::Uncertain(_)) => return Ok(Pushed::Gone { offered }),
+                        // An answer the installer rejects ends the install;
+                        // the next poll says so.
+                        Err(_) => {}
+                        Ok(()) => {
+                            if let (Answer::Update(_), Some(view)) = (&answer, installer.view()) {
+                                steps.progress(view);
+                            }
                         }
-                    }
+                    },
                     None => {
                         installer.lost();
                         open = false;

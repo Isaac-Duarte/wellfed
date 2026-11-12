@@ -24,6 +24,8 @@ use wellfed_model::{
 };
 use wellfed_proto::api::UPDATE_CHUNK_MAX;
 
+use crate::write::{Uncertain, WriteEnd, write_end};
+
 /// What is offered: the signed manifest, the downgrade statement it may
 /// need, and the image the manifest names (the bank's contents, without
 /// the OTA container's header).
@@ -122,11 +124,11 @@ pub enum InstallError {
     Stopped(UpdateStop),
     #[error("bank 0 is not installing this update")]
     Lost,
-    /// An answer of another kind, or one this build cannot read. The
-    /// request may have run all the same, so a driver that meets one after
-    /// an offer reports the push unsettled, never as a refusal.
-    #[error("the feeder answered with something other than the update's state")]
-    Unexpected,
+    /// No answer this build reads as the update's state came: the request
+    /// may have run all the same, so a driver reports the push unsettled,
+    /// never as a refusal, and sends nothing again.
+    #[error("the update's answer is unsettled ({0}); the request may have run")]
+    Uncertain(Uncertain),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -340,14 +342,14 @@ impl<'a> Installer<'a> {
             Sent::Offer | Sent::Cancel => {}
         }
         if sent == Sent::Cancel {
-            return match answer {
-                Answer::Update(view) => {
+            return match write_end(Some(answer), update_view) {
+                WriteEnd::Done(view) => {
                     self.view = Some(view.clone());
                     self.stage = Stage::Cancelled;
                     Ok(())
                 }
-                Answer::Refused(refusal) => Err(self.fail(InstallError::Refused(*refusal))),
-                _ => Err(self.fail(InstallError::Unexpected)),
+                WriteEnd::Refused(refusal) => Err(self.fail(InstallError::Refused(refusal))),
+                WriteEnd::Uncertain(why) => Err(self.fail(InstallError::Uncertain(why))),
             };
         }
         // Whatever comes for the install after a cancel is moot.
@@ -358,12 +360,12 @@ impl<'a> Installer<'a> {
             return Ok(());
         }
 
-        let view = match answer {
-            Answer::Update(view) => view,
+        let view = match write_end(Some(answer), update_view) {
+            WriteEnd::Done(view) => view,
             // A full mailbox: the chunk goes again when it is still wanted.
-            Answer::Refused(Refusal::Busy) if matches!(sent, Sent::Chunk(_)) => return Ok(()),
+            WriteEnd::Refused(Refusal::Busy) if matches!(sent, Sent::Chunk(_)) => return Ok(()),
             // The install ended under the chunk: the state says why.
-            Answer::Refused(Refusal::Update(UpdateRefusal::NotInstalling))
+            WriteEnd::Refused(Refusal::Update(UpdateRefusal::NotInstalling))
                 if matches!(sent, Sent::Chunk(_)) =>
             {
                 if !self.reading {
@@ -371,20 +373,20 @@ impl<'a> Installer<'a> {
                 }
                 return Ok(());
             }
-            Answer::Refused(Refusal::Update(UpdateRefusal::NotInstalling))
+            WriteEnd::Refused(Refusal::Update(UpdateRefusal::NotInstalling))
                 if sent == Sent::State =>
             {
                 return Err(self.fail(InstallError::Lost));
             }
             // A re-offer after a lost answer finds its own install running.
-            Answer::Refused(Refusal::Update(UpdateRefusal::Installing))
+            WriteEnd::Refused(Refusal::Update(UpdateRefusal::Installing))
                 if sent == Sent::Offer && self.bank == Some(0) =>
             {
                 self.stage = Stage::Adopt;
                 return Ok(());
             }
-            Answer::Refused(refusal) => return Err(self.fail(InstallError::Refused(*refusal))),
-            _ => return Err(self.fail(InstallError::Unexpected)),
+            WriteEnd::Refused(refusal) => return Err(self.fail(InstallError::Refused(refusal))),
+            WriteEnd::Uncertain(why) => return Err(self.fail(InstallError::Uncertain(why))),
         };
         if sent == Sent::State && core::mem::take(&mut self.adopting) {
             let ours = view.digest.map(|digest| digest.0) == Some(self.digest);
@@ -422,6 +424,14 @@ impl<'a> Installer<'a> {
     fn fail(&mut self, error: InstallError) -> InstallError {
         self.stage = Stage::Failed(error);
         error
+    }
+}
+
+/// What every update op brings when the feeder took it: the state.
+fn update_view(answer: &Answer) -> Option<&UpdateView> {
+    match answer {
+        Answer::Update(view) => Some(view),
+        _ => None,
     }
 }
 

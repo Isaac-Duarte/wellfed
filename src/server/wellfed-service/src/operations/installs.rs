@@ -347,7 +347,7 @@ fn failure(error: UpdateError) -> InstallFailure {
         },
         UpdateError::Stopped(stop) => InstallFailure::Stopped { stop },
         UpdateError::Lost => InstallFailure::Lost,
-        UpdateError::Unexpected => InstallFailure::Unexpected,
+        UpdateError::Uncertain(_) => InstallFailure::Unexpected,
     }
 }
 
