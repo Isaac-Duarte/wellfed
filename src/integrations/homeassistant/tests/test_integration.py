@@ -86,7 +86,7 @@ async def test_a_spent_invite_asks_for_a_new_one(hass: HomeAssistant, simulator:
         result["flow_id"], {CONF_INVITE: invite, CONF_ADDRESS: simulator.address}
     )
     assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"base": "join_failed"}
+    assert result["errors"] == {"base": "join_not_accepted"}
 
 
 async def test_the_button_feeds_once_to_its_fed_event(

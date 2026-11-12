@@ -1,5 +1,6 @@
 """The config flows against a simulated feeder: zeroconf, reauth after a
-revocation, reconfigure, and an owner invite refused."""
+revocation, reconfigure, an owner invite refused, and a join left
+unchecked that the next try settles without spending another invite."""
 
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+import pytest
 
 from custom_components.wellfed.const import (
     CONF_ADDRESS,
@@ -202,7 +204,7 @@ async def test_an_owner_invite_is_refused_and_its_key_removed(
         {CONF_INVITE: simulator.invite("owner"), CONF_ADDRESS: simulator.address},
     )
     assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"base": "owner_invite"}
+    assert result["errors"] == {"base": "not_member_invite"}
     # Only the simulator's own owner is left.
     assert "home-assistant" not in simulator.owner("clients")
 
@@ -213,3 +215,47 @@ async def test_an_owner_invite_is_refused_and_its_key_removed(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     assert await hass.config_entries.async_unload(result["result"].entry_id)
+
+
+async def test_a_join_left_unchecked_is_checked_before_another_invite(
+    hass: HomeAssistant, simulator: Simulator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    joined: list[bytes] = []
+    real_join = bridge.join
+
+    def lost_answer(
+        secret: bytes, invite: str, label: str, address: str | None = None
+    ) -> bridge.Joined:
+        # The feeder enrolls the key; its answer, and the session that
+        # would check it, are lost.
+        real_join(secret, invite, label, address)
+        joined.append(secret)
+        raise bridge.JoinFailed(bridge.JoinProblem.Uncertain, "the join's answer was lost")
+
+    monkeypatch.setattr(bridge, "join", lost_answer)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "direct"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "join_uncertain"}
+    monkeypatch.undo()
+
+    # The next try asks the feeder about the key first: it was enrolled, so
+    # it is the entry's key, and the new invite is not redeemed.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    entry: ConfigEntry = result["result"]
+    assert bytes.fromhex(entry.data[CONF_SECRET]) == joined[0]
+    clients = simulator.owner("clients")
+    assert clients.count("home-assistant") == 1
+    assert bridge.public_key(joined[0]).hex() in clients
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)

@@ -19,12 +19,15 @@ use wellfed_client::api::Invite;
 use wellfed_connect::{Connection, Timing};
 use wellfed_feeder_sim::harness::{Relay, Threaded};
 use wellfed_feeder_sim::serve::Control;
+use wellfed_homeassistant::api::JoinProblem;
 use wellfed_homeassistant::api::{
     EventKind, FeedOutcome, NotSent, Pending, RefusalKind, Role, State, Update, UpdateKind,
     WriteResult, Written,
 };
 use wellfed_homeassistant::feeder::{Carried, Clocks, Feeder, Target};
-use wellfed_homeassistant::key::{ClientKey, invite_feeder, join, join_member};
+use wellfed_homeassistant::key::{
+    ClientKey, check_join, invite_feeder, join, join_member, join_problem,
+};
 use wellfed_model::{
     Answer, ClientRole, FeederSettingsPatch, Generation, MealReminder, Op, PLANS, Plan, Pushed,
     Weekdays,
@@ -951,4 +954,124 @@ fn a_lost_feed_the_feeder_never_ran_holds_feeds_only_until_it_reads_idle() {
 
     // It holds no feed back now.
     assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
+}
+
+/// Whether the simulated feeder lists `key`, as its owner reads it.
+fn listed(sim: &Threaded, key: [u8; 32]) -> bool {
+    let Answer::Clients(clients) = owner(sim, &Op::ListClients) else {
+        panic!("the owner lists the clients");
+    };
+    clients.iter().any(|client| client.key.0 == key)
+}
+
+/// How many bytes a join sends the feeder, from one that went through the
+/// relay: the same for every key and invite with a label of this length.
+fn join_size(sim: &Threaded, relay: &Relay) -> usize {
+    let before = relay.passed();
+    let other = ClientKey::generate().unwrap();
+    let address = relay.address.to_string();
+    let joined = runtime().block_on(join(&other, &invite(sim), "home-assistant", Some(&address)));
+    assert_eq!(joined.unwrap(), ClientRole::Member);
+    relay.passed() - before
+}
+
+/// A join whose answer is lost on its way back is settled by a session
+/// with the key, never sent again: the feeder enrolled it, so the join
+/// ends as a member's.
+#[test]
+fn a_join_whose_answer_is_lost_is_settled_by_a_session_with_the_key() {
+    let sim = Threaded::start(*Keypair::from_secret(OWNER).public());
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let size = join_size(&sim, &relay);
+
+    let text = invite(&sim);
+    let key = ClientKey::generate().unwrap();
+    let public = key.public();
+    let address = relay.address.to_string();
+    relay.hold_answers_after(size);
+    let joining = std::thread::spawn(move || {
+        runtime().block_on(join_member(&key, &text, "home-assistant", Some(&address)))
+    });
+    wait_for("the feeder to enroll the key", || listed(&sim, public));
+    relay.cut();
+    relay.resume();
+
+    let joined = joining
+        .join()
+        .unwrap()
+        .expect("the session found the key enrolled");
+    assert_eq!(joined.role, Role::Member);
+    assert!(!joined.removed);
+}
+
+/// A join whose answer is lost, with no session to check it, may have
+/// enrolled the key: it ends uncertain, and a later check with the same
+/// key finds it enrolled, with no second invite.
+#[test]
+fn a_join_no_session_could_check_is_checked_again_later() {
+    let sim = Threaded::start(*Keypair::from_secret(OWNER).public());
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let size = join_size(&sim, &relay);
+
+    let text = invite(&sim);
+    let secret = ClientKey::generate().unwrap().secret();
+    let public = ClientKey::from_secret(secret).public();
+    let address = relay.address.to_string();
+    relay.hold_answers_after(size);
+    let joining = {
+        let (text, address) = (text.clone(), address.clone());
+        std::thread::spawn(move || {
+            let key = ClientKey::from_secret(secret);
+            runtime().block_on(join_member(&key, &text, "home-assistant", Some(&address)))
+        })
+    };
+    wait_for("the feeder to enroll the key", || listed(&sim, public));
+    // The connection drops with the answer held, and the session that
+    // checks it gets no answer either.
+    relay.cut();
+    let error = joining
+        .join()
+        .unwrap()
+        .expect_err("no session could check it");
+    assert_eq!(join_problem(&error), JoinProblem::Uncertain, "{error}");
+
+    relay.resume();
+    let key = ClientKey::from_secret(secret);
+    let checked = runtime().block_on(check_join(&key, &sim.identity, Some(&address)));
+    let joined = checked.unwrap().expect("the key was enrolled");
+    assert_eq!(joined.role, Role::Member);
+}
+
+/// An invite whose secret is wrong ends the join as a lost answer does;
+/// the session that checks it finds the key unknown, so the invite was not
+/// taken.
+#[test]
+fn a_join_the_feeder_did_not_take_is_not_accepted() {
+    let sim = Threaded::start(*Keypair::from_secret(OWNER).public());
+    let Answer::Invite(invite) = owner(
+        &sim,
+        &Op::CreateInvite {
+            role: ClientRole::Member,
+        },
+    ) else {
+        panic!("no invite");
+    };
+    let wrong = Invite {
+        feeder: sim.identity,
+        id: invite.id,
+        secret: invite.secret.0.map(|byte| !byte),
+    }
+    .text();
+
+    let key = ClientKey::generate().unwrap();
+    let address = sim.address.to_string();
+    let error = runtime()
+        .block_on(join_member(&key, &wrong, "home-assistant", Some(&address)))
+        .expect_err("a wrong secret enrolls nothing");
+    assert_eq!(join_problem(&error), JoinProblem::NotAccepted, "{error}");
+    assert!(!listed(&sim, key.public()));
+    let checked = runtime().block_on(check_join(&key, &sim.identity, Some(&address)));
+    assert!(checked.unwrap().is_none());
 }

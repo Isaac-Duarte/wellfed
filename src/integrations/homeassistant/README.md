@@ -15,6 +15,8 @@ Every state is the feeder's, read from its status and events, never assumed afte
 
 Home Assistant is a member and nothing more. An invite doesn't say its role until it is redeemed, so the bridge redeems it, and a key enrolled as anything but a member revokes itself at once and asks for a member invite. A key an owner invite enrolled could change the Wi-Fi, remove clients and install firmware whatever Home Assistant shows.
 
+An invite is redeemed once and never sent again. When the join's answer is lost, a session with the new key says whether the feeder enrolled it, as `wellfed join` does. When that session fails too, the key may be enrolled: the flow says so, keeps the key, and asks the feeder about it first at the next try, so an enrolled key is kept rather than a second invite spent on another.
+
 | Entity | What it does |
 | --- | --- |
 | Feed (button) | Sends one feed of the Portions number's value. |

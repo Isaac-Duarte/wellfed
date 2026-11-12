@@ -12,7 +12,7 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::FeederSettingsPatch;
 
-use crate::api::{Pending, Role, ServerProblem, Tune, Update, Written};
+use crate::api::{JoinProblem, Pending, Role, ServerProblem, Tune, Update, Written};
 use crate::feeder::{self, Carried, Clocks, Target};
 use crate::key::{self, ClientKey, Joined, bytes32};
 use crate::server::{self, Login, ServerFeeder};
@@ -62,6 +62,32 @@ impl From<server::Refused> for PyErr {
     }
 }
 
+/// Redeeming an invite did not enroll Home Assistant's key; `problem` says
+/// how, as the setup flow words it.
+#[pyclass(extends = WellfedError, frozen, module = "wellfed_homeassistant")]
+struct JoinFailed {
+    #[pyo3(get)]
+    problem: JoinProblem,
+}
+
+#[pymethods]
+impl JoinFailed {
+    #[new]
+    #[pyo3(signature = (problem, *_args))]
+    fn new(problem: &JoinProblem, _args: &Bound<'_, PyTuple>) -> PyClassInitializer<Self> {
+        PyClassInitializer::from(WellfedError).add_subclass(Self { problem: *problem })
+    }
+}
+
+/// A join's error, raised as [`JoinFailed`].
+struct JoinError(Error);
+
+impl From<JoinError> for PyErr {
+    fn from(JoinError(error): JoinError) -> Self {
+        PyErr::new::<JoinFailed, _>((key::join_problem(&error), error.to_string()))
+    }
+}
+
 /// Run `future` to its end on a runtime of its own.
 fn block_on<T, E>(future: impl Future<Output = Result<T, E>>) -> PyResult<T>
 where
@@ -101,7 +127,10 @@ fn invite_feeder(text: &str) -> PyResult<Vec<u8>> {
 
 /// Redeem `invite` as the key `secret`, listed as `label`, keeping the key
 /// only as a member: any other role is revoked at once. Runs once: an invite
-/// is single-use.
+/// is single-use. A join that did not enroll the key raises `JoinFailed`;
+/// one whose answer was lost and could not be checked (`Uncertain`) may
+/// have, so the caller keeps `secret` and asks `join_check` before it
+/// spends another invite.
 #[pyfunction]
 #[pyo3(signature = (secret, invite, label, address=None))]
 fn join(
@@ -112,7 +141,37 @@ fn join(
     address: Option<&str>,
 ) -> PyResult<Joined> {
     let key = ClientKey::restore(secret)?;
-    py.detach(|| block_on(key::join_member(&key, invite, label, address)))
+    py.detach(|| {
+        block_on(async {
+            key::join_member(&key, invite, label, address)
+                .await
+                .map_err(JoinError)
+        })
+    })
+}
+
+/// How a join of the key `secret` with the feeder `identity` that ended
+/// `Uncertain` ended after all, by a session with the key: as `join`
+/// reports it, or `None` when the feeder does not know the key and a new
+/// invite is needed. Raises `JoinFailed` (`Uncertain`) while it still
+/// cannot tell.
+#[pyfunction]
+#[pyo3(signature = (secret, identity, address=None))]
+fn join_check(
+    py: Python<'_>,
+    secret: &[u8],
+    identity: &[u8],
+    address: Option<&str>,
+) -> PyResult<Option<Joined>> {
+    let key = ClientKey::restore(secret)?;
+    let identity = bytes32(identity, Error::IdentityLength)?;
+    py.detach(|| {
+        block_on(async {
+            key::check_join(&key, &identity, address)
+                .await
+                .map_err(JoinError)
+        })
+    })
 }
 
 /// Sign in to the owner's server at `url` as `name`, and create a token
@@ -315,16 +374,16 @@ impl Feeder {
 mod wellfed_homeassistant {
     #[pymodule_export]
     use super::{
-        Feeder, ServerRefused, WellfedError, generate_secret, invite_feeder, join, public_key,
-        role_writes, server_client_listed, server_feeders, server_login, server_revoke_client,
-        server_revoke_token,
+        Feeder, JoinFailed, ServerRefused, WellfedError, generate_secret,
+        invite_feeder, join, join_check, public_key, role_writes, server_client_listed,
+        server_feeders, server_login, server_revoke_client, server_revoke_token,
     };
     #[pymodule_export]
     use crate::api::{
         AccountRole, Alert, AlertKind, AlertLevel, Alerts, By, Capabilities, Event, EventKind,
-        Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel, NextMeal, NotSent, Pending, Plan,
-        PortionsToday, Readiness, RefusalKind, Role, ServerProblem, Settings, Skew, State, Status,
-        Tune, Update, UpdateKind, WriteResult, Written,
+        Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel, JoinProblem, NextMeal, NotSent,
+        Pending, Plan, PortionsToday, Readiness, RefusalKind, Role, ServerProblem, Settings, Skew,
+        State, Status, Tune, Update, UpdateKind, WriteResult, Written,
     };
     #[pymodule_export]
     use crate::key::Joined;

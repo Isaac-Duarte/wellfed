@@ -2,7 +2,7 @@ from _typeshed import SupportsGetItem
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "role_writes", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
+__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "JoinFailed", "JoinProblem", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "join_check", "public_key", "role_writes", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
 
 PORTIONS_MAX: Final[int]
 """
@@ -500,6 +500,49 @@ class FoodLevel:
     """
     Present: Final[FoodLevel]
     Unread: Final[FoodLevel]
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
+        """
+
+@final
+class JoinFailed(WellfedError):
+    """
+    Redeeming an invite did not enroll Home Assistant's key; `problem` says
+    how, as the setup flow words it.
+    """
+    def __new__(cls, /, problem: JoinProblem, *_args) -> JoinFailed: ...
+    @property
+    def problem(self, /) -> JoinProblem: ...
+
+@final
+class JoinProblem:
+    """
+    Why redeeming an invite did not enroll Home Assistant's key, as the
+    setup flow words it.
+    """
+    NotAccepted: Final[JoinProblem]
+    """
+    The feeder did not take the invite (unknown, expired or spent):
+    the key is not enrolled.
+    """
+    Uncertain: Final[JoinProblem]
+    """
+    The join went, its answer was lost, and no session could check
+    it: the key may be enrolled, so the flow keeps it and asks again
+    before it spends another invite.
+    """
+    Unreachable: Final[JoinProblem]
+    """
+    The feeder was not found, did not answer, or failed before the
+    join went: nothing was enrolled.
+    """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
     def __int__(self, /) -> int: ...
@@ -1384,7 +1427,19 @@ def join(secret: bytes, invite: str, label: str, address: str | None = None) -> 
     """
     Redeem `invite` as the key `secret`, listed as `label`, keeping the key
     only as a member: any other role is revoked at once. Runs once: an invite
-    is single-use.
+    is single-use. A join that did not enroll the key raises `JoinFailed`;
+    one whose answer was lost and could not be checked (`Uncertain`) may
+    have, so the caller keeps `secret` and asks `join_check` before it
+    spends another invite.
+    """
+
+def join_check(secret: bytes, identity: bytes, address: str | None = None) -> Joined | None:
+    """
+    How a join of the key `secret` with the feeder `identity` that ended
+    `Uncertain` ended after all, by a session with the key: as `join`
+    reports it, or `None` when the feeder does not know the key and a new
+    invite is needed. Raises `JoinFailed` (`Uncertain`) while it still
+    cannot tell.
     """
 
 def public_key(secret: bytes) -> bytes:

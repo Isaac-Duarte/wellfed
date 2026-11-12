@@ -2,11 +2,15 @@
 
 - **Directly:** pair by a member invite from a paired client. A feeder is
   found by hand (an invite, and an address or mDNS) or by zeroconf, which
-  fills in the address. An invite is single-use, so each join runs once: a
-  failure asks for a new invite rather than retrying. Home Assistant is a
-  member and nothing more. An invite does not say its role until it is
-  redeemed, so the bridge redeems it, and a key enrolled as anything but a
-  member removes itself at once; the flow then asks for a member invite.
+  fills in the address. An invite is single-use, so each join runs once and
+  is never sent again: a failure asks for a new invite rather than
+  retrying. A join whose answer was lost, and which the bridge could not
+  check, may have enrolled the key, so the flow keeps that key and asks the
+  feeder about it first when the owner tries again, before it spends
+  another invite. Home Assistant is a member and nothing more. An invite
+  does not say its role until it is redeemed, so the bridge redeems it, and
+  a key enrolled as anything but a member removes itself at once; the flow
+  then asks for a member invite.
 - **Through the owner's server:** sign in with an account's name and
   password, which the bridge trades for a token of Home Assistant's own and
   then forgets, and pick one of the server's feeders. An account that may
@@ -97,11 +101,45 @@ class NotMember(Exception):
         self.removed = removed
 
 
-def _join(invite: str, address: str | None) -> tuple[bytes, bytes]:
-    """A new key joined as a member with `invite`: its secret and the feeder."""
+class Unsettled(Exception):
+    """A join the bridge could not check: the key `secret` may be enrolled on
+    the feeder `identity`."""
+
+    def __init__(self, secret: bytes, identity: bytes) -> None:
+        super().__init__()
+        self.secret = secret
+        self.identity = identity
+
+
+def _join(
+    invite: str, address: str | None, held: tuple[bytes, bytes] | None
+) -> tuple[bytes, bytes]:
+    """A key joined as a member with `invite`: its secret and the feeder.
+    `held` is a key an unchecked join may have enrolled on a feeder: when it
+    is this invite's feeder's and was enrolled, it is the key, and the invite
+    is not spent."""
     identity = bridge.invite_feeder(invite)
+    if held is not None and held[1] == identity:
+        try:
+            enrolled = bridge.join_check(held[0], identity, address)
+        except bridge.JoinFailed as failed:
+            if failed.problem == bridge.JoinProblem.Uncertain:
+                raise Unsettled(*held) from failed
+            raise
+        if enrolled is not None:
+            return _member(held[0], identity, enrolled)
+
     secret = bridge.generate_secret()
-    joined = bridge.join(secret, invite, CLIENT_LABEL, address)
+    try:
+        joined = bridge.join(secret, invite, CLIENT_LABEL, address)
+    except bridge.JoinFailed as failed:
+        if failed.problem == bridge.JoinProblem.Uncertain:
+            raise Unsettled(secret, identity) from failed
+        raise
+    return _member(secret, identity, joined)
+
+
+def _member(secret: bytes, identity: bytes, joined: bridge.Joined) -> tuple[bytes, bytes]:
     if joined.role != bridge.Role.Member:
         raise NotMember(joined.removed)
     return secret, identity
@@ -173,6 +211,8 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         self._held: dict[str, Any] = {}
         self._held_step = ""
         self._confirmed = ""
+        # A key an unchecked join may have enrolled, and its feeder.
+        self._joining: tuple[bytes, bytes] | None = None
 
     def async_remove(self) -> None:
         """The flow ended: a token it made and no entry kept is revoked."""
@@ -498,11 +538,23 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             # An invite is single-use: this runs once, and a failure asks the
             # owner for a new invite rather than retrying.
-            return await self.hass.async_add_executor_job(_join, invite, address)
+            joined = await self.hass.async_add_executor_job(_join, invite, address, self._joining)
+        except Unsettled as unsettled:
+            self._joining = (unsettled.secret, unsettled.identity)
+            errors["base"] = "join_uncertain"
+            return None
         except NotMember as refused:
-            errors["base"] = "owner_invite" if refused.removed else "owner_invite_kept"
+            errors["base"] = "not_member_invite" if refused.removed else "not_member_invite_kept"
+        except bridge.JoinFailed as failed:
+            errors["base"] = f"join_{failed.problem.key}"
         except bridge.WellfedError:
             errors["base"] = "join_failed"
+        else:
+            self._joining = None
+            return joined
+        # The key held, if any, is not enrolled: the check said so, or a
+        # join answered for the invite.
+        self._joining = None
         return None
 
     async def _rejoin(

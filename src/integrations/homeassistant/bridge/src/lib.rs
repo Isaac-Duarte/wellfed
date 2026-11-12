@@ -47,6 +47,18 @@ pub enum Error {
     Connect(#[from] wellfed_connect::Error),
     #[error("the feeder refused: {0:?}")]
     Refused(wellfed_model::Refusal),
+    /// A join went and its answer was lost, and a session then found the
+    /// key unknown: the feeder did not take the invite.
+    #[error(
+        "the join's answer was lost, and the feeder does not know this key: it did not take the invite"
+    )]
+    JoinNotTaken,
+    /// A join went and its answer was lost, and no session could say
+    /// whether the feeder enrolled the key: it may have.
+    #[error(
+        "the join's answer was lost and a session to check it failed, so the key may be enrolled: {0}"
+    )]
+    JoinUnchecked(#[source] wellfed_connect::Error),
     #[error("start the session thread: {0}")]
     Thread(std::io::Error),
     #[error(transparent)]

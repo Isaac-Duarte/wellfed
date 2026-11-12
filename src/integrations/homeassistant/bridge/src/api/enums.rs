@@ -580,6 +580,23 @@ impl From<wellfed_server_client::api::Role> for AccountRole {
 }
 
 view_enum! {
+    /// Why redeeming an invite did not enroll Home Assistant's key, as the
+    /// setup flow words it.
+    JoinProblem {
+        /// The feeder was not found, did not answer, or failed before the
+        /// join went: nothing was enrolled.
+        Unreachable => "unreachable",
+        /// The feeder did not take the invite (unknown, expired or spent):
+        /// the key is not enrolled.
+        NotAccepted => "not_accepted",
+        /// The join went, its answer was lost, and no session could check
+        /// it: the key may be enrolled, so the flow keeps it and asks again
+        /// before it spends another invite.
+        Uncertain => "uncertain",
+    }
+}
+
+view_enum! {
     /// Why a call to the owner's server at setup failed, as the flow words
     /// it.
     ServerProblem {
