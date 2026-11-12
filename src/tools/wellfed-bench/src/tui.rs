@@ -11,8 +11,11 @@
 //! as SIGINT: cancel the job, wait for its cleanup, then release the bench.
 //! A job's question shows above the log, read-only: the `answer` command
 //! and an agent answer it.
-//! While the flash client holds the UART, the first press only shows the
-//! confirmation in the footer, and a second within 5 s stops.
+//! While the flash client holds the UART, a press only shows the
+//! confirmation in the footer, and `y` within 5 s stops. The console sends
+//! each press, and the server decides it against the UART as it is then.
+//! Keys pasted in, and every key after the first `q` of one read, press
+//! nothing.
 //!
 //! Should the console end on its own (a terminal error, its terminal hanging
 //! up, a panic), it tells the server, which puts its lines back on the
@@ -42,7 +45,7 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc::UnboundedSender;
 use wellfed_bench::server::Store;
-use wellfed_bench::server::stopping::{Ask, CONFIRM_PROMPT, Confirm, Held, Press};
+use wellfed_bench::server::stopping::{Ask, CONFIRM_PROMPT, CONFIRM_WINDOW, Held};
 use wellfed_bench_formats::live::{BenchState, Uart};
 
 use keys::{Input, Key, Keys};
@@ -101,8 +104,8 @@ pub(crate) struct Tui {
 
 impl Tui {
     /// Take over the terminal and draw `store` until [`Self::finish`];
-    /// a confirmed `q` or Ctrl+C sends [`Ask::Quit`] on `asks`, and a
-    /// console that ends on its own [`Ask::ConsoleEnded`].
+    /// `q` or Ctrl+C sends [`Ask::Quit`] on `asks`, `y` [`Ask::ConfirmQuit`],
+    /// and a console that ends on its own [`Ask::ConsoleEnded`].
     pub(crate) fn start(
         store: Store,
         lines: Receiver<String>,
@@ -173,25 +176,29 @@ impl Drop for Ended {
     }
 }
 
-/// What a press of `q` or Ctrl+C does, and the confirmation to show.
+/// The confirmation the footer shows after a press during a write. Only
+/// shown: the server decides each press itself.
 #[derive(Default)]
 struct Quitting {
-    confirm: Confirm,
+    asked: Option<Instant>,
 }
 
 impl Quitting {
-    /// A press, with the UART as the state has it: [`Ask::Quit`] to send,
-    /// or nothing while it waits for the second.
-    fn press(&mut self, uart: &Uart, at: Instant) -> Option<Ask> {
-        match self.confirm.press(Held::of(uart), at) {
-            Press::Stop => Some(Ask::Quit),
-            Press::Confirm => None,
-        }
+    /// A press at `at`, with the UART as the state last had it.
+    fn press(&mut self, uart: &Uart, at: Instant) {
+        self.asked = (Held::of(uart) != Held::Free).then_some(at);
     }
 
-    /// The footer's confirmation, while a first press waits.
+    /// `y` was pressed: the question is answered either way.
+    fn confirmed(&mut self) {
+        self.asked = None;
+    }
+
+    /// The footer's confirmation, while a press waits for its `y`.
     fn notice(&self, at: Instant) -> Option<&'static str> {
-        self.confirm.pending(at).then_some(CONFIRM_PROMPT)
+        self.asked
+            .is_some_and(|asked| at.saturating_duration_since(asked) <= CONFIRM_WINDOW)
+            .then_some(CONFIRM_PROMPT)
     }
 }
 
@@ -204,14 +211,25 @@ struct Screenful {
 impl Screenful {
     fn enter(mut tty: File) -> io::Result<Self> {
         terminal::enable_raw_mode()?;
-        crossterm::execute!(tty, EnterAlternateScreen, crossterm::cursor::Hide)?;
+        // Bracketed paste, so a paste's keys arrive marked and are dropped.
+        crossterm::execute!(
+            tty,
+            EnterAlternateScreen,
+            crossterm::cursor::Hide,
+            crossterm::event::EnableBracketedPaste
+        )?;
         Ok(Self { tty })
     }
 }
 
 impl Drop for Screenful {
     fn drop(&mut self) {
-        let _ = crossterm::execute!(self.tty, LeaveAlternateScreen, crossterm::cursor::Show);
+        let _ = crossterm::execute!(
+            self.tty,
+            crossterm::event::DisableBracketedPaste,
+            LeaveAlternateScreen,
+            crossterm::cursor::Show
+        );
         let _ = terminal::disable_raw_mode();
     }
 }
@@ -237,6 +255,8 @@ trait Feed {
     fn notice(&self, at: Instant) -> Option<&'static str>;
     /// `q` or Ctrl+C was pressed.
     fn quit_pressed(&mut self, at: Instant);
+    /// `y` was pressed.
+    fn confirm_pressed(&mut self);
     /// Whether to close the screen.
     fn finished(&self) -> bool;
 }
@@ -270,9 +290,13 @@ impl Feed for Served<'_> {
 
     fn quit_pressed(&mut self, at: Instant) {
         let uart = self.store.read().uart;
-        if let Some(ask) = self.quitting.press(&uart, at) {
-            let _ = self.asks.send(ask);
-        }
+        self.quitting.press(&uart, at);
+        let _ = self.asks.send(Ask::Quit);
+    }
+
+    fn confirm_pressed(&mut self) {
+        self.quitting.confirmed();
+        let _ = self.asks.send(Ask::ConfirmQuit);
     }
 
     fn finished(&self) -> bool {
@@ -347,10 +371,19 @@ fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
         };
 
         let page = usize::from(terminal.size()?.height / 2).max(1);
+        // One read is one press at most: two `q`s in it (a held key) are
+        // one, and a `y` in the read that asked is no answer to it.
+        let quit = pressed.contains(&Key::Quit);
+        if quit {
+            feed.quit_pressed(Instant::now());
+            drawn = None;
+        }
         for key in pressed {
             match key {
-                Key::Quit => {
-                    feed.quit_pressed(Instant::now());
+                Key::Quit => {}
+                Key::Confirm if quit => {}
+                Key::Confirm => {
+                    feed.confirm_pressed();
                     drawn = None;
                 }
                 Key::Up => scroll = (scroll + 1).min(log.len()),
@@ -392,27 +425,27 @@ mod tests {
     };
 
     #[test]
-    fn q_during_a_write_shows_the_confirmation_and_only_a_second_press_quits() {
+    fn q_during_a_write_shows_the_confirmation_until_y_or_five_seconds() {
         let start = Instant::now();
         let mut quitting = Quitting::default();
 
-        assert_eq!(quitting.press(&WRITING, start), None);
+        quitting.press(&WRITING, start);
         assert_eq!(quitting.notice(start), Some(CONFIRM_PROMPT));
+        quitting.confirmed();
+        assert_eq!(quitting.notice(start), None);
+
+        // In the loader too, for 5 s.
+        quitting.press(&Uart::Loader, start);
         assert_eq!(
-            quitting.press(&WRITING, start + Duration::from_secs(2)),
-            Some(Ask::Quit)
+            quitting.notice(start + Duration::from_secs(4)),
+            Some(CONFIRM_PROMPT)
         );
-        assert_eq!(quitting.notice(start + Duration::from_secs(2)), None);
+        assert_eq!(quitting.notice(start + Duration::from_secs(6)), None);
 
-        // In the loader too; a second press after 5 s only asks again.
-        assert_eq!(quitting.press(&Uart::Loader, start), None);
-        let late = start + Duration::from_secs(6);
-        assert_eq!(quitting.notice(late), None);
-        assert_eq!(quitting.press(&Uart::Loader, late), None);
-
-        // With the UART free, one press quits.
+        // With the UART free, nothing to confirm.
         let mut idle = Quitting::default();
-        assert_eq!(idle.press(&Uart::Idle, start), Some(Ask::Quit));
+        idle.press(&Uart::Idle, start);
+        assert_eq!(idle.notice(start), None);
     }
 
     #[test]

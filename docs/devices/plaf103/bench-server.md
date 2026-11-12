@@ -27,7 +27,8 @@ Ctrl+C, SIGTERM or a hangup of its terminal stops the server: it refuses new job
 
 A cancelled write stops terminally and leaves its bank half-written until another UART write, so while the flash client holds the UART nothing stops the server by accident:
 
-- **Ctrl+C or `q`** during a write or loader session only says "A UART write is under way; press again within 5 s to cancel it". A second press within 5 s stops the server, cancelling the write.
+- **Ctrl+C** in a line console during a write or loader session only says "A UART write is under way; press Ctrl+C again within 5 s to cancel it". A second press within 5 s stops the server, cancelling the write.
+- **`q` or Ctrl+C** in the full-screen console during one only shows "A UART write is under way; press y within 5 s to cancel it". `y` within 5 s stops the server, cancelling the write; no number of further `q`s does. The server decides each key against the UART as it is when the key reaches it, and pasted text presses nothing.
 - **SIGTERM or a hangup** during a write is deferred, however many arrive: the server says it will stop once the write ends, shows `server.stopping` (on the console's header and in `bench_status`), refuses new jobs, lets the job finish, then stops. Outside a write it stops at once.
 - **To stop a deferred server sooner,** send SIGINT twice within 5 s (`kill -INT PID` twice, no terminal needed), which cancels the write for good. SIGKILL is the last resort: the [lease](#bench-lease) and the orphan checks handle a killed server.
 - **The full-screen console ending on its own** (a terminal error or hangup, a panic) stops nothing. The server prints plain lines again, says the console ended, and Ctrl+C or SIGTERM stops it from then on.
@@ -107,7 +108,7 @@ Each entry is checked against what the feeder says it runs: the capture's `PLFW1
 
 On a terminal, `serve` draws its console full screen on `/dev/tty`: the UART-write banner with sectors verified; the job, its step and next steps; Activity; the relays and the lease; the feeder (banks, session, status, clock, journal high water, hotspot, capture and the device log's last lines); the operator's step, timers and evidence by card; and a scrolling log of every job's output. PgUp and PgDn scroll the log, Up and Down a line, and End follows it again. A job's question shows in a panel above the log with its number and the `wellfed-bench answer` line that answers it; the console only shows it.
 
-`q` or Ctrl+C stops the server as SIGINT does ([above](#stopping-the-server)). During a UART write or loader session, the first press only shows the confirmation in the footer. The screen redraws at most twice a second while the flash client writes, otherwise four times. It draws only from the live state and a channel, so a slow terminal never holds the output pump: it loses console lines instead, which the job's stream and log file keep. When the server stops, the screen closes and the log's last 30 lines print. Without a terminal (a service, a pipe), or with `--plain`, the console is plain lines on stdout.
+`q` or Ctrl+C stops the server as SIGINT does ([above](#stopping-the-server)). During a UART write or loader session, a press only shows the confirmation in the footer, and `y` within 5 s confirms it. The screen redraws at most twice a second while the flash client writes, otherwise four times. It draws only from the live state and a channel, so a slow terminal never holds the output pump: it loses console lines instead, which the job's stream and log file keep. When the server stops, the screen closes and the log's last 30 lines print. Without a terminal (a service, a pipe), or with `--plain`, the console is plain lines on stdout.
 
 ### Watching from another terminal
 

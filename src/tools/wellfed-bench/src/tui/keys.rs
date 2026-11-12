@@ -9,7 +9,9 @@
 //! and takes a hangup as an answer.
 //!
 //! Only the few keys the screen uses are understood; anything else is
-//! dropped. A resize needs nothing here: each frame's draw takes the
+//! dropped. Pasted text is dropped whole, its keys with it: the screen
+//! turns bracketed paste on, so a paste into the wrong pane cannot press
+//! `q` and `y`. A resize needs nothing here: each frame's draw takes the
 //! terminal's size as it is then.
 
 use std::fs::File;
@@ -26,6 +28,8 @@ const LONGEST_ESCAPE: usize = 16;
 pub(super) enum Key {
     /// `q`, or Ctrl+C, which raw mode delivers as a byte.
     Quit,
+    /// `y`: the confirmation a stop during a UART write asks for.
+    Confirm,
     Up,
     Down,
     PageUp,
@@ -48,6 +52,8 @@ pub(super) struct Keys {
     tty: File,
     /// The start of an escape sequence whose end has not arrived.
     pending: Vec<u8>,
+    /// Inside a bracketed paste, whose bytes are no keys.
+    pasting: bool,
 }
 
 impl Keys {
@@ -55,6 +61,7 @@ impl Keys {
         Self {
             tty,
             pending: Vec::new(),
+            pasting: false,
         }
     }
 
@@ -84,7 +91,7 @@ impl Keys {
         };
 
         self.pending.extend_from_slice(&chunk[..read]);
-        let keys = parse(&mut self.pending);
+        let keys = parse(&mut self.pending, &mut self.pasting);
         Ok(if keys.is_empty() {
             Input::Nothing
         } else {
@@ -128,16 +135,45 @@ enum Ready {
     HungUp,
 }
 
+/// Where a bracketed paste starts and ends.
+const PASTE_START: &[u8] = b"\x1b[200~";
+const PASTE_END: &[u8] = b"\x1b[201~";
+
 /// Take the keys from the front of `bytes`, leaving an escape sequence that
-/// has not ended for the next read.
-fn parse(bytes: &mut Vec<u8>) -> Vec<Key> {
+/// has not ended for the next read. Everything between a paste's start and
+/// its end is dropped; `pasting` carries a paste on to the next read.
+fn parse(bytes: &mut Vec<u8>, pasting: &mut bool) -> Vec<Key> {
     let mut keys = Vec::new();
     let mut at = 0;
 
-    while let Some(first) = bytes.get(at) {
+    loop {
+        if *pasting {
+            let rest = &bytes[at..];
+            if let Some(end) = rest
+                .windows(PASTE_END.len())
+                .position(|window| window == PASTE_END)
+            {
+                *pasting = false;
+                at += end + PASTE_END.len();
+                continue;
+            }
+            // Kept: the start of the end marker, if the read split it.
+            at += rest.len().saturating_sub(PASTE_END.len() - 1);
+            break;
+        }
+        let Some(first) = bytes.get(at) else { break };
+        if bytes[at..].starts_with(PASTE_START) {
+            *pasting = true;
+            at += PASTE_START.len();
+            continue;
+        }
         match first {
             b'q' | 0x03 => {
                 keys.push(Key::Quit);
+                at += 1;
+            }
+            b'y' => {
+                keys.push(Key::Confirm);
                 at += 1;
             }
             0x1b => match escape(&bytes[at..]) {
@@ -268,9 +304,31 @@ mod tests {
 
     fn keys_of(bytes: &[u8]) -> Vec<Key> {
         let mut bytes = bytes.to_vec();
-        let keys = parse(&mut bytes);
+        let mut pasting = false;
+        let keys = parse(&mut bytes, &mut pasting);
         assert!(bytes.is_empty(), "{bytes:?} left over");
+        assert!(!pasting);
         keys
+    }
+
+    /// A paste is no keys, however its reads split it: `qq` or `qy` pasted
+    /// into the console stops nothing.
+    #[test]
+    fn pasted_text_is_dropped_whole() {
+        assert_eq!(keys_of(b"\x1b[200~qqy query\x1b[201~"), []);
+        assert_eq!(
+            keys_of(b"\x1b[Aq\x1b[200~qy\x1b[201~y"),
+            [Key::Up, Key::Quit, Key::Confirm]
+        );
+
+        let mut pasting = false;
+        let mut first = b"\x1b[200~qyq\x1b[2".to_vec();
+        assert_eq!(parse(&mut first, &mut pasting), []);
+        assert!(pasting);
+        let mut second = first;
+        second.extend_from_slice(b"01~q");
+        assert_eq!(parse(&mut second, &mut pasting), [Key::Quit]);
+        assert!(!pasting && second.is_empty());
     }
 
     #[test]
@@ -278,6 +336,7 @@ mod tests {
         assert_eq!(keys_of(b"q"), [Key::Quit]);
         assert_eq!(keys_of(b"\x03"), [Key::Quit]);
         assert_eq!(keys_of(b"\x1bq"), [Key::Quit]);
+        assert_eq!(keys_of(b"y"), [Key::Confirm]);
 
         assert_eq!(keys_of(b"\x1b[A"), [Key::Up]);
         assert_eq!(keys_of(b"\x1b[B"), [Key::Down]);
@@ -301,7 +360,7 @@ mod tests {
     #[test]
     fn several_keys_come_in_order_and_anything_else_is_dropped() {
         assert_eq!(
-            keys_of(b"x\x1b[Ay\x1b[Zq\xc3\xa9\x1b[99~\x1b[B"),
+            keys_of(b"x\x1b[Az\x1b[Zq\xc3\xa9\x1b[99~\x1b[B"),
             [Key::Up, Key::Quit, Key::Down]
         );
         assert_eq!(keys_of(b"Q"), []);
@@ -310,11 +369,11 @@ mod tests {
     #[test]
     fn a_sequence_split_across_reads_waits_for_its_end() {
         let mut bytes = b"\x1b[5".to_vec();
-        assert_eq!(parse(&mut bytes), []);
+        assert_eq!(parse(&mut bytes, &mut false), []);
         assert_eq!(bytes, b"\x1b[5");
 
         bytes.extend_from_slice(b"~q");
-        assert_eq!(parse(&mut bytes), [Key::PageUp, Key::Quit]);
+        assert_eq!(parse(&mut bytes, &mut false), [Key::PageUp, Key::Quit]);
         assert!(bytes.is_empty());
     }
 
@@ -323,7 +382,7 @@ mod tests {
         let mut bytes = b"\x1b[".to_vec();
         bytes.extend_from_slice(&[b'1'; 100]);
 
-        assert_eq!(parse(&mut bytes), []);
+        assert_eq!(parse(&mut bytes, &mut false), []);
 
         assert!(bytes.len() <= LONGEST_ESCAPE, "{bytes:?}");
     }
@@ -336,10 +395,10 @@ mod tests {
 
         // Split across reads, it still waits for its last byte.
         let mut bytes = b"\x1b[M\x20\x71".to_vec();
-        assert_eq!(parse(&mut bytes), []);
+        assert_eq!(parse(&mut bytes, &mut false), []);
         assert_eq!(bytes, b"\x1b[M\x20\x71");
         bytes.push(0x71);
-        assert_eq!(parse(&mut bytes), []);
+        assert_eq!(parse(&mut bytes, &mut false), []);
         assert!(bytes.is_empty());
     }
 
