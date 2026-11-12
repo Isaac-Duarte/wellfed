@@ -7,31 +7,13 @@ import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 
-class RestoreUncertainPage extends StatefulWidget {
+/// An uncertain end, in the words the controller's look for the feeder
+/// allows so far.
+class RestoreUncertainPage extends StatelessWidget {
   const RestoreUncertainPage(this.flow, this.state, {super.key});
 
   final RestoreFlow flow;
   final RestoreUncertain state;
-
-  @override
-  State<RestoreUncertainPage> createState() => _UncertainState();
-}
-
-class _UncertainState extends State<RestoreUncertainPage> {
-  RestoreFlow get flow => widget.flow;
-  RestoreUncertain get state => widget.state;
-
-  @override
-  void initState() {
-    super.initState();
-    flow.startLook();
-  }
-
-  @override
-  void dispose() {
-    flow.stopLook();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {

@@ -123,14 +123,27 @@ RestoreFlow restoreFlow(FakeRestorePorts ports) =>
 
 /// The screen's stages, drawn from the flow itself: no Rust behind
 /// [identityBytes], which [RestoreScreen] calls.
-class RestoreHarness extends StatelessWidget {
+/// The restore's screens over `flow`, which goes with them as the app's
+/// screen lets it go.
+class RestoreHarness extends StatefulWidget {
   const RestoreHarness(this.flow, {super.key, this.brightness = Brightness.light});
 
   final RestoreFlow flow;
   final Brightness brightness;
 
   @override
-  Widget build(BuildContext context) => themed(RestoreView(flow: flow), brightness: brightness);
+  State<RestoreHarness> createState() => _RestoreHarnessState();
+}
+
+class _RestoreHarnessState extends State<RestoreHarness> {
+  @override
+  void dispose() {
+    widget.flow.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => themed(RestoreView(flow: widget.flow), brightness: widget.brightness);
 }
 
 Future<RestoreFlow> restoreOpen(

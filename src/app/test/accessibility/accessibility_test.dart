@@ -43,7 +43,6 @@ import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/state/join/join.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
-import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/state/update/update_state.dart';
@@ -465,12 +464,11 @@ void main() {
       ]) {
         testWidgets('a restore $name', (tester) async {
           final ports = FakeRestorePorts();
-          final RestoreFlow flow = await restoreOpen(tester, ports, brightness: brightness);
+          await restoreOpen(tester, ports, brightness: brightness);
           final FakeRestoreRun run = await restoreStarted(tester, ports);
           step(run);
           await settle(tester);
           await expectAccessible(tester);
-          flow.dispose();
           await tester.pumpWidget(const SizedBox());
         });
       }
