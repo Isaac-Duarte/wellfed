@@ -21,7 +21,8 @@ use clap::{Parser, Subcommand};
 use jiff::tz::TimeZone;
 use tracing_subscriber::EnvFilter;
 use wellfed_server::config::{BACKUPS, DATABASE, Overrides, RELEASES, STOCK, ServerConfig};
-use wellfed_server::{Announce, Beside, Hosts, Jobs, Serving, TrustedProxies};
+use wellfed_server::identity::Identity;
+use wellfed_server::{Announce, Beside, Hosts, Jobs, Listeners, Serving, Tls, TrustedProxies};
 use wellfed_service::{
     AlertReads, Backups, Clock, Config, Diagnostics, ReleaseFeed, ReleaseKeys, ReleasesConfig,
     Service, StockConfig, StockPins, SystemClock, SystemRandom, Timing,
@@ -74,6 +75,21 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(settings.listen)
         .await
         .with_context(|| format!("listen on {}", settings.listen))?;
+    let identity = Identity::derive(&key);
+    // The fingerprint the app shows, logged so the owner can compare them.
+    tracing::info!(
+        "the server's identity key: {}",
+        wellfed_api::fingerprint(&identity.public())
+    );
+    let https = match settings.tls_listen {
+        Some(address) => Some(Tls {
+            listener: tokio::net::TcpListener::bind(address)
+                .await
+                .with_context(|| format!("listen on {address}"))?,
+            config: identity.tls()?,
+        }),
+        None => None,
+    };
     let webhook = settings.webhook.target()?;
     let store = open(&cli.data.join(DATABASE)).await?;
     let config = Config {
@@ -133,7 +149,7 @@ async fn main() -> Result<()> {
     let serving = Serving {
         hosts: Hosts::new(settings.hosts),
         proxies: TrustedProxies::new(settings.trusted_proxies),
-        ..Serving::default()
+        ..Serving::new(identity.public())
     };
     let beside = Beside {
         jobs: Jobs::Run,
@@ -146,7 +162,14 @@ async fn main() -> Result<()> {
     if let Ok(address) = listener.local_addr() {
         tracing::info!("serving on http://{address}");
     }
-    wellfed_server::serve(service, listener, serving, beside, stopped())
+    if let Some(Ok(address)) = https.as_ref().map(|https| https.listener.local_addr()) {
+        tracing::info!("serving on https://{address}");
+    }
+    let listeners = Listeners {
+        http: listener,
+        https,
+    };
+    wellfed_server::serve(service, listeners, serving, beside, stopped())
         .await
         .context("serve")
 }

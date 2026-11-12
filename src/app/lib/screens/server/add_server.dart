@@ -47,8 +47,8 @@ class _AddServerScreenState extends State<AddServerScreen> {
     super.dispose();
   }
 
-  /// An address typed or heard with plain http, which carries the password
-  /// as it is.
+  /// An address typed with plain http, which the app takes only on this
+  /// device itself.
   static bool _plain(String url) => url.trim().toLowerCase().startsWith('http://');
 
   void _logIn() => unawaited(_flow.logIn(url: _url.text, name: _name.text, password: _password.text));
@@ -77,10 +77,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(found.name, style: TextStyle(color: c.text)),
-                subtitle: Text(
-                  _plain(found.url) ? '${found.url} · not encrypted' : found.url,
-                  style: TextStyle(color: c.textMuted),
-                ),
+                subtitle: Text(switch (found.fingerprint) {
+                  final String fingerprint? => '${found.url}\nKey $fingerprint',
+                  null => found.url,
+                }, style: TextStyle(color: c.textMuted)),
                 selected: _url.text == found.url,
                 onTap: () => _url.text = found.url,
               ),
@@ -88,19 +88,17 @@ class _AddServerScreenState extends State<AddServerScreen> {
           ],
           LabeledField(
             label: 'Address',
-            hint: 'As the server prints it, like http://192.168.1.20:8080',
+            hint: 'As the server prints it, like https://192.168.1.20:8443',
             child: TextField(controller: _url, keyboardType: TextInputType.url, autocorrect: false, enabled: !sending),
           ),
-          // Any device on the network can announce itself under a server's
-          // name, and plain http shows the password to anyone listening.
+          // Plain http shows the password to anyone listening, so the app
+          // takes it only on this device itself.
           if (_plain(_url.text)) ...[
             const SizedBox(height: Space.s2),
             const Notice(
               tone: Tone.warning,
               lead: 'Not encrypted.',
-              text:
-                  'Anyone on this Wi-Fi can read the password, and any device here can '
-                  "announce itself as a server. Log in only at your server's own address.",
+              text: "Plain http:// works only on this device itself. Use the server's https:// address.",
             ),
           ],
           const SizedBox(height: Space.s3),

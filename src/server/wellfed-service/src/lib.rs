@@ -82,7 +82,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 pub use accounts::{AccountError, BearerToken, Caller, Permission, SessionToken, can, reset_owner};
-pub use config::{Config, Timing};
+pub use config::{Config, Timing, identity_seed};
 pub use error::{Error, InternalError, Invalid, Reply, Resource, Result};
 pub use feeders::{
     ClientError, CommandError, FeederError, LogFollow, Method, NoRoute, Parity, parity, seal_key,

@@ -18,13 +18,17 @@ pub use wellfed_api::{
 pub use crate::api::model::{ClientRole, FeedOutcome, FeedReason, MissedReason, Skew};
 use crate::api::session::{Card, HistoryEntry};
 
-/// What the app keeps of a server in its own file: where it is, and which
-/// token is this phone's. The token's secret is not here; it lives in
-/// secure storage beside the client secret.
+/// What the app keeps of a server in its own file: where it is, which key
+/// proves it, and which token is this phone's. The token's secret is not
+/// here; it lives in secure storage beside the client secret.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ServerLink {
     /// The base URL, as the owner typed it or discovery found it.
     pub url: String,
+    /// The server's identity key, 64 lowercase hex digits, pinned when the
+    /// owner added it: its own HTTPS on the home network must prove it, and
+    /// a server reached by a public name must name it.
+    pub key: String,
     /// The account's name, for the account screen while offline.
     pub user: String,
     /// The phone token's id, which logging out revokes.

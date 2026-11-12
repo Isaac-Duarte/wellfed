@@ -6,6 +6,13 @@
 # serves the household's other devices.
 listen = "127.0.0.1:8080"
 
+# Where the same API also listens over HTTPS, with a certificate the
+# server's identity key signs: how the app reaches the server on the home
+# network, pinning that key, and the only port mDNS announces. The app
+# speaks no plain http on the home network, so set this for it to find the
+# server. (Default: none.)
+tls_listen = "0.0.0.0:8443"
+
 # Names the household reaches the server by. IP addresses and `localhost`
 # always work; any other name is refused, which stops DNS rebinding.
 # (Default: none.)
@@ -18,9 +25,10 @@ label = "wellfed-server"
 # reconnects by address only (a bridged container network).
 discovery = "mdns"
 
-# "mdns" announces the server on the LAN (`_wellfed-server._tcp`, named
-# after `label`, with its port, version and server id only) while it
-# listens beyond this computer, so the app finds it; "off" never does.
+# "mdns" announces the server's HTTPS on the LAN (`_wellfed-server._tcp`,
+# named after `label`, with its `tls_listen` port, version, server id and
+# identity key only) while it listens beyond this computer, so the app
+# finds it; "off" never does. Without `tls_listen` nothing is announced.
 # Apart from `discovery`, which finds feeders.
 advertise = "mdns"
 

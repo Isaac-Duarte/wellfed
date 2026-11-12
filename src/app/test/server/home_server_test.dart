@@ -144,6 +144,28 @@ void main() {
     expect(router.connected, isEmpty);
   });
 
+  testWidgets('a server that proves another key is not tried again', (tester) async {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, _) = _server();
+    ports.session.accountFails = serverError(ServerErrorKind.keyChanged);
+    await server.logIn(url: 'https://192.168.1.20:8443', name: 'ada', password: 'hunter2');
+    expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', ServerProblem.keyChanged));
+
+    ports.session.accountFails = null;
+    await tester.pump(HomeServer.retryWait * 2);
+    expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', ServerProblem.keyChanged));
+    expect(router.connected, isEmpty);
+  });
+
+  test("logging in again checks the kept server's key, whatever the network announces", () async {
+    final (HomeServer server, FakeServerPorts ports, _, _) = _server();
+    ports.session.accountFails = serverError(ServerErrorKind.tokenRevoked);
+    await server.logIn(url: 'https://192.168.1.20:8443', name: 'ada', password: 'hunter2', key: 'announced');
+    expect(ports.logins.last.key, 'announced');
+
+    await server.logIn(url: 'https://192.168.1.20:8443', name: 'ada', password: 'hunter2', key: 'another');
+    expect(ports.logins.last.key, serverLink.key, reason: 'the kept server stays pinned');
+  });
+
   test("a kept server whose token is gone keeps the phone's own keys closed", () {
     final book = FakeBook()
       ..feeders = [_kitchen]
@@ -304,7 +326,8 @@ void main() {
     final Future<void> refreshing = server.refresh();
     await pumpEventQueue();
     const other = ServerLink(
-      url: 'http://other.lan:8080',
+      url: 'https://192.168.1.30:8443',
+      key: 'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
       user: 'sam',
       tokenId: '00000000-0000-0000-0000-000000000009',
     );

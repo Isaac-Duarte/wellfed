@@ -12,6 +12,13 @@ anyhow.workspace = true
 axum = { workspace = true, features = ["macros"] }
 axum-extra = { workspace = true, features = ["cookie", "with-rejection"] }
 clap = { workspace = true, features = ["env"] }
+ed25519-dalek.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+tower = { workspace = true, features = ["util"] }
 futures-util.workspace = true
 socket2.workspace = true
 jiff.workspace = true
@@ -35,7 +42,6 @@ utoipa-axum.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-ed25519-dalek.workspace = true
 wellfed-model.workspace = true
 wellfed-formats = { workspace = true, features = ["export"] }
 wellfed-server-client.workspace = true

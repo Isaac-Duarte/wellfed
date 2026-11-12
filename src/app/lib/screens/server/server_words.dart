@@ -9,7 +9,7 @@ import 'package:wellfed/widgets/icons.dart';
 
 /// What a server error means to the owner, in a sentence.
 String serverErrorWords(ServerError error) => switch (error.kind) {
-  ServerErrorKind.address => 'That is not a server address. It looks like http://192.168.1.20:8080.',
+  ServerErrorKind.address => 'That is not a server address. It looks like https://192.168.1.20:8443.',
   ServerErrorKind.redirected => 'The server sent the $deviceName elsewhere. Use this address instead: ${error.message}',
   ServerErrorKind.unreachable => 'Nothing answered at that address. Check the $deviceName is on the home network.',
   ServerErrorKind.interrupted => 'The connection broke before the server answered.',
@@ -39,8 +39,14 @@ String serverErrorWords(ServerError error) => switch (error.kind) {
   ServerErrorKind.closed => 'The server connection is closed.',
   ServerErrorKind.feederBusy => 'This feeder is still being put on the server. Check the feeder list.',
   ServerErrorKind.plainHttp =>
-    'Plain http:// would send your password unencrypted beyond the home network. '
-        "Use the server's https:// address, or its home-network address like 192.168.1.20:8080.",
+    'Plain http:// would send your password unencrypted over the network. '
+        "Use the server's https:// address, like https://192.168.1.20:8443.",
+  ServerErrorKind.keyChanged =>
+    "The server at that address isn't the one it announced or the one you added: it proved another key. "
+        'Nothing was sent.',
+  ServerErrorKind.noIdentity =>
+    "That address answers, but not as a Wellfed server's own https:// port. "
+        'Use the address the server prints for the home network, like https://192.168.1.20:8443.',
 };
 
 /// What a records screen's last read or change ran into, in a sentence. A

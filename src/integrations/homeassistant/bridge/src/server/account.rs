@@ -205,8 +205,12 @@ fn problem(error: &CallError) -> ServerProblem {
         CallError::Http(http) if http.is_connect() || http.is_timeout() => {
             ServerProblem::Unreachable
         }
-        CallError::Build(_) => ServerProblem::Unreachable,
+        CallError::Build(_) | CallError::Tls(_) => ServerProblem::Unreachable,
+        // Only a client pinning the server's key meets these, and this one
+        // does not pin yet.
         CallError::Base(_)
+        | CallError::KeyChanged { .. }
+        | CallError::NoIdentity
         | CallError::PlainHttp { .. }
         | CallError::Http(_)
         | CallError::Decode(_)

@@ -8,12 +8,15 @@ import 'package:wellfed/src/rust/api/server_views.dart';
 /// account screens are tested with no Rust and no network.
 abstract interface class ServerPorts {
   /// Log in to the server at `url` as `name`, and mint a token for this phone
-  /// named `phone`. The password goes no further than this call.
+  /// named `phone`. The password goes no further than this call, and only
+  /// to a server that proves `key` (an announced or kept one), or for a
+  /// typed address the key its first handshake proves.
   Future<ServerSession> login({
     required String url,
     required String name,
     required String password,
     required String phone,
+    String? key,
   });
 
   /// The session a kept link and token secret make; nothing is sent yet.
@@ -30,6 +33,10 @@ abstract interface class ServerPorts {
 
   /// Owner's servers announcing themselves on the LAN, until cancelled.
   Stream<FoundServer> browse();
+
+  /// The part of the identity `key` a person compares with what the server
+  /// logs; throws for one that is not 64 hex digits.
+  String fingerprint(String key);
 }
 
 /// Where secure storage keeps the phone token's secret.
@@ -49,7 +56,8 @@ class AppServerPorts implements ServerPorts {
     required String name,
     required String password,
     required String phone,
-  }) => ServerSession.login(url: url, name: name, password: password, phone: phone);
+    String? key,
+  }) => ServerSession.login(url: url, name: name, password: password, phone: phone, key: key);
 
   @override
   ServerSession restore(ServerLink link, String secret) => ServerSession.restore(link: link, secret: secret);
@@ -65,4 +73,7 @@ class AppServerPorts implements ServerPorts {
 
   @override
   Stream<FoundServer> browse() => Discovery.browseServers();
+
+  @override
+  String fingerprint(String key) => serverFingerprint(key: key);
 }

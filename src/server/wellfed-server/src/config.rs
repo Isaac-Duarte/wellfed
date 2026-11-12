@@ -60,6 +60,10 @@ const BACKUPS_KEPT: NonZeroU32 = NonZeroU32::MIN.saturating_add(6);
 pub struct ServerConfig {
     /// Where the HTTP API listens.
     pub listen: SocketAddr,
+    /// Where the same API listens over HTTPS, with the certificate the
+    /// server's identity key signs: the address the app reaches it by on
+    /// the home network, and the one mDNS announces. None by default.
+    pub tls_listen: Option<SocketAddr>,
     /// Names the household reaches the server by, besides IP addresses and
     /// `localhost`, which always work.
     pub hosts: Vec<HostName>,
@@ -190,6 +194,12 @@ pub struct Overrides {
     /// (`0.0.0.0:8080`).
     #[arg(long, env = "WELLFED_SERVER_LISTEN")]
     pub listen: Option<SocketAddr>,
+    /// Where the API also listens over HTTPS, with the certificate the
+    /// server's identity key signs (`tls_listen`; default none), such as
+    /// `0.0.0.0:8443`: how the app reaches the server on the home network,
+    /// and the address mDNS announces.
+    #[arg(long, env = "WELLFED_SERVER_TLS_LISTEN")]
+    pub tls_listen: Option<SocketAddr>,
     /// A name the household reaches the server by (`hosts`), such as
     /// `feeder.lan`; IP addresses and `localhost` always work. Repeat for
     /// more names.
@@ -241,6 +251,7 @@ pub struct Overrides {
 #[serde(deny_unknown_fields)]
 struct File {
     listen: Option<SocketAddr>,
+    tls_listen: Option<SocketAddr>,
     hosts: Option<Vec<HostName>>,
     label: Option<Label>,
     discovery: Option<Discovery>,
@@ -307,6 +318,7 @@ impl ServerConfig {
                 .listen
                 .or(file.listen)
                 .unwrap_or(SocketAddr::from((Ipv4Addr::LOCALHOST, 8080))),
+            tls_listen: overrides.tls_listen.or(file.tls_listen),
             hosts: given(overrides.hosts).or(file.hosts).unwrap_or_default(),
             label: overrides
                 .label

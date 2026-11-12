@@ -3,8 +3,8 @@
 //! from a proxy the owner trusts (`trusted_proxies`).
 //!
 //! From anyone else those headers are the client's own words, so its
-//! address is the connection's and its scheme plain HTTP, which is all
-//! this server serves. Behind a trusted proxy the address is read from
+//! address and scheme are the connection's: HTTPS on the server's own TLS
+//! listener ([`crate::tls`]), plain HTTP on the other. Behind a trusted proxy the address is read from
 //! `X-Forwarded-For`, or `Forwarded` when that is absent, right to left:
 //! each proxy appends the address it heard from, so the first one that is
 //! not itself a trusted proxy is the client, and anything left of it is
@@ -30,6 +30,7 @@ use wellfed_api::ErrorCode;
 
 use crate::AppState;
 use crate::error::ApiError;
+use crate::tls::DirectTls;
 
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
@@ -138,10 +139,15 @@ impl TrustedProxies {
     }
 
     /// The client's address and scheme, for a request that came over a
-    /// connection from `peer`.
-    pub(crate) fn client(&self, peer: IpAddr, headers: &HeaderMap) -> (IpAddr, Scheme) {
+    /// connection from `peer` in `connection`'s scheme.
+    pub(crate) fn client(
+        &self,
+        peer: IpAddr,
+        connection: Scheme,
+        headers: &HeaderMap,
+    ) -> (IpAddr, Scheme) {
         if !self.trusts(peer) {
-            return (peer, Scheme::Http);
+            return (peer, connection);
         }
 
         let mut client = peer;
@@ -175,7 +181,12 @@ impl FromRequestParts<AppState> for Remote {
                 Some("the connection's address is unknown".into()),
             ));
         };
-        let (address, scheme) = state.proxies.client(peer.ip(), &parts.headers);
+        let connection = if parts.extensions.get::<DirectTls>().is_some() {
+            Scheme::Https
+        } else {
+            Scheme::Http
+        };
+        let (address, scheme) = state.proxies.client(peer.ip(), connection, &parts.headers);
         Ok(Self { address, scheme })
     }
 }

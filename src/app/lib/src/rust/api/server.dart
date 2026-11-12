@@ -17,10 +17,14 @@ import 'server_views.dart';
 import 'session.dart';
 part 'server.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `alert_client`, `follow`, `handle`, `open`, `stream`, `with_scheme`, `with_token`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ServerHandle`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `alert_client`, `base`, `follow`, `handle`, `open`, `options`, `parse_key`, `pins`, `reach`, `stream`, `with_scheme`, `with_token`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Reach`, `ServerHandle`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `fmt`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `restore_with`
+
+/// How many hex digits of the identity key the owner compares.
+String serverFingerprint({required String key}) =>
+    RustLib.instance.api.crateApiServerServerFingerprint(key: key);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ServerSession>>
 abstract class ServerSession implements RustOpaqueInterface {
@@ -111,18 +115,24 @@ abstract class ServerSession implements RustOpaqueInterface {
   /// Log in to the server at `url` as `name`, mint a token for this phone
   /// named `phone` (the phone's name, as feeders list it), and end the
   /// login: from here the token alone speaks for the phone. A `url` with
-  /// no scheme is `http://` for a host on the home network and `https://`
-  /// for any other, and is kept so.
+  /// no scheme is `https://`, but on this device itself, and is kept so.
+  ///
+  /// `key` is the identity key the server's mDNS record named, or the
+  /// link's when the owner logs in again; `None` for an address typed
+  /// first, whose key is learned from its handshake. Either way it is
+  /// checked before the password is sent, and pinned in the link.
   static Future<ServerSession> login({
     required String url,
     required String name,
     required String password,
     required String phone,
+    String? key,
   }) => RustLib.instance.api.crateApiServerServerSessionLogin(
     url: url,
     name: name,
     password: password,
     phone: phone,
+    key: key,
   );
 
   /// Log this phone out: revoke its token on the server while its own key

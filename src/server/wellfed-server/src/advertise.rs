@@ -1,16 +1,21 @@
 //! Announcing the server on the LAN over mDNS, so the app finds it without
 //! a typed address.
 //!
-//! Anyone on the LAN hears the record, so it carries the HTTP port, the
-//! server's version and its [`ServerId`], and nothing else: no household,
-//! account, feeder or machine name. The instance and the host are the
-//! server's `label` and the id's first digits, so two servers on the
-//! default label never announce one name, and the host never collides with
-//! the machine's own mDNS name. The app connects to the address it
-//! resolves, which the server always answers to, since an IP address passes
-//! the host check, and recognises the server by `id` when that address
-//! changes. Announcing is best effort: a host whose mDNS fails still
-//! serves, with a warning.
+//! Anyone on the LAN hears the record, so it carries the port of the
+//! server's own HTTPS (`tls_listen`), the server's version, its
+//! [`ServerId`] and its identity key, and nothing else: no household,
+//! account, feeder or machine name. The plain HTTP port is never announced:
+//! the app reaches the server on the home network only over HTTPS, pinning
+//! the key the record names, so a server without `tls_listen` announces
+//! nothing. The instance and the host are the server's `label` and the
+//! id's first digits, so two servers on the default label never announce
+//! one name, and the host never collides with the machine's own mDNS name.
+//! The app connects to the address it resolves, which the server always
+//! answers to, since an IP address passes the host check, and recognises
+//! the server by `id` when that address changes. A record anyone can forge
+//! is safe to follow because of the key: a host that announces another
+//! server's key cannot finish its handshake. Announcing is best effort: a
+//! host whose mDNS fails still serves, with a warning.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -33,20 +38,26 @@ const FALLBACK: &str = "wellfed-server";
 /// How long the goodbye and the daemon's stop may take at shutdown.
 const WITHDRAW: Duration = Duration::from_secs(2);
 
-/// Announce the server listening on `listener` as `label` until `cancel`,
-/// then withdraw the record, so the app drops it at once rather than at its
-/// TTL. `None` when nothing is announced: `advertise` is off, the server
-/// listens on this computer only, or mDNS failed.
+/// Announce the server's HTTPS on `listener` as `label`, with its identity
+/// `key`, until `cancel`, then withdraw the record, so the app drops it at
+/// once rather than at its TTL. `None` when nothing is announced:
+/// `advertise` is off, there is no HTTPS listener, the server listens on
+/// this computer only, or mDNS failed.
 pub fn spawn(
     advertise: Advertise,
-    listener: &TcpListener,
+    listener: Option<&TcpListener>,
     label: &str,
     id: ServerId,
+    key: [u8; 32],
     cancel: CancellationToken,
 ) -> Option<JoinHandle<()>> {
     if advertise == Advertise::Off {
         return None;
     }
+    let Some(listener) = listener else {
+        info!("not advertised over mDNS: the app finds the server only over HTTPS (`tls_listen`)");
+        return None;
+    };
     let listening = match listener.local_addr() {
         Ok(listening) => listening,
         Err(error) => {
@@ -58,7 +69,8 @@ pub fn spawn(
     // answer announces IPv6 alone rather than an address family it may not
     // serve.
     let v6_only = listening.is_ipv6() && socket2::SockRef::from(listener).only_v6().unwrap_or(true);
-    let record = match record(serves(listening.ip(), v6_only), listening.port(), label, id) {
+    let serves = serves(listening.ip(), v6_only);
+    let record = match record(serves, listening.port(), label, id, &key) {
         Ok(Some(record)) => record,
         Ok(None) => {
             info!("not advertised over mDNS: {listening} is this computer only");
@@ -138,18 +150,24 @@ fn serves(ip: IpAddr, v6_only: bool) -> Serves {
     }
 }
 
-/// The record announcing the server as `label`, on `port`; `None` on
-/// loopback, which nothing else could reach.
+/// The record announcing the server as `label`, its HTTPS on `port`;
+/// `None` on loopback, which nothing else could reach.
 fn record(
     serves: Serves,
     port: u16,
     label: &str,
     id: ServerId,
+    key: &[u8; 32],
 ) -> Result<Option<ServiceInfo>, mdns_sd::Error> {
     let instance = format!("{label}-{}", id.short());
     let host = format!("{}-{}.local.", host_stem(label), id.short());
     let id = id.to_string();
-    let properties = [("version", env!("CARGO_PKG_VERSION")), ("id", id.as_str())];
+    let key = wellfed_api::Hex(*key).to_string();
+    let properties = [
+        ("version", env!("CARGO_PKG_VERSION")),
+        ("id", id.as_str()),
+        (wellfed_api::TXT_KEY, key.as_str()),
+    ];
     let auto = |family| -> Result<_, mdns_sd::Error> {
         let record = ServiceInfo::new(SERVICE, &instance, &host, (), port, &properties[..])?;
         Ok((record.enable_addr_auto(), family))
@@ -203,11 +221,11 @@ mod tests {
     }
 
     fn at(serves: Serves) -> Option<ServiceInfo> {
-        record(serves, 8080, "wellfed-server", id()).unwrap()
+        record(serves, 8443, "wellfed-server", id(), &[0xab; 32]).unwrap()
     }
 
     #[test]
-    fn the_record_names_the_label_a_host_of_its_own_the_version_and_the_id() {
+    fn the_record_names_the_label_a_host_of_its_own_the_version_the_id_and_the_key() {
         let record = at(Serves::AllV4).unwrap();
 
         assert_eq!(record.get_type(), SERVICE);
@@ -216,16 +234,20 @@ mod tests {
             "wellfed-server-01234567._wellfed-server._tcp.local."
         );
         assert_eq!(record.get_hostname(), "wellfed-server-01234567.local.");
-        assert_eq!(record.get_port(), 8080);
+        assert_eq!(record.get_port(), 8443);
         assert_eq!(
             record.get_property_val_str("version"),
             Some(env!("CARGO_PKG_VERSION"))
         );
         assert_eq!(record.get_property_val_str("id"), Some("0123456789abcdef"));
         assert_eq!(
+            record.get_property_val_str("key"),
+            Some("ab".repeat(32).as_str())
+        );
+        assert_eq!(
             record.get_properties().len(),
-            2,
-            "nothing but the version and the id"
+            3,
+            "nothing but the version, the id and the key"
         );
     }
 
@@ -278,9 +300,30 @@ mod tests {
 
             let spawned = spawn(
                 Advertise::Off,
-                &listener,
+                Some(&listener),
                 "wellfed-server",
                 id(),
+                [0; 32],
+                CancellationToken::new(),
+            );
+
+            assert!(spawned.is_none());
+        });
+    }
+
+    #[test]
+    fn no_https_announces_nothing() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let spawned = spawn(
+                Advertise::Mdns,
+                None,
+                "wellfed-server",
+                id(),
+                [0; 32],
                 CancellationToken::new(),
             );
 

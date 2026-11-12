@@ -46,9 +46,15 @@ async fn started() -> (TestServer, Client) {
 }
 
 async fn login(server: &TestServer, name: &str, password: &str) -> ServerSession {
-    ServerSession::login(url(server), name.into(), password.into(), "pixel".into())
-        .await
-        .unwrap()
+    ServerSession::login(
+        url(server),
+        name.into(),
+        password.into(),
+        "pixel".into(),
+        None,
+    )
+    .await
+    .unwrap()
 }
 
 async fn ada(server: &TestServer) -> ServerSession {
@@ -509,24 +515,40 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
                 .err()
         };
 
-        for address in ["ftp://192.0.2.7", "not a url", "http://192.0.2.7/?a=1"] {
-            let result =
-                ServerSession::login(address.into(), "ada".into(), "x".into(), "pixel".into())
-                    .await;
+        for address in ["ftp://192.0.2.7", "not a url", "https://192.0.2.7/?a=1"] {
+            let result = ServerSession::login(
+                address.into(),
+                "ada".into(),
+                "x".into(),
+                "pixel".into(),
+                None,
+            )
+            .await;
             assert_eq!(kind(result), Some(ServerErrorKind::Address), "{address}");
         }
 
-        // Plain http beyond the home network sends nothing: no password, no
-        // token.
+        // Plain http anywhere but this device sends nothing: no password,
+        // no token.
         let link = |url: &str| ServerLink {
             url: url.into(),
+            key: "00".repeat(32),
             user: "ada".into(),
             token_id: "t".into(),
         };
-        for address in ["http://feeder.example", "http://203.0.113.4:8080"] {
-            let result =
-                ServerSession::login(address.into(), "ada".into(), "x".into(), "pixel".into())
-                    .await;
+        for address in [
+            "http://feeder.example",
+            "http://203.0.113.4:8080",
+            "http://192.168.1.20:8080",
+            "http://wellfed.local:8080",
+        ] {
+            let result = ServerSession::login(
+                address.into(),
+                "ada".into(),
+                "x".into(),
+                "pixel".into(),
+                None,
+            )
+            .await;
             assert_eq!(kind(result), Some(ServerErrorKind::PlainHttp), "{address}");
             assert_eq!(
                 kind(ServerSession::restore(link(address), "secret".into())),
@@ -534,7 +556,11 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
                 "{address}"
             );
         }
-        for address in ["http://192.168.1.20:8080", "https://feeder.example"] {
+        for address in [
+            "https://192.168.1.20:8443",
+            "https://feeder.example",
+            "http://127.0.0.1:8080",
+        ] {
             assert!(
                 ServerSession::restore(link(address), "secret".into()).is_ok(),
                 "{address}"
@@ -545,7 +571,8 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
         let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let closed = format!("http://{}", listener.local_addr().unwrap());
         drop(listener);
-        let result = ServerSession::login(closed, "ada".into(), "x".into(), "pixel".into()).await;
+        let result =
+            ServerSession::login(closed, "ada".into(), "x".into(), "pixel".into(), None).await;
         assert_eq!(kind(result), Some(ServerErrorKind::Unreachable));
 
         let session = Rc::new(ada(&server).await);
@@ -597,6 +624,7 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
                 "ada".into(),
                 "wrong password".into(),
                 "pixel".into(),
+                None,
             )
         };
         assert_eq!(kind(wrong().await), Some(ServerErrorKind::BadCredentials));

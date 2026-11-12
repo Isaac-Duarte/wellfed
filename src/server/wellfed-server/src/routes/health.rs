@@ -1,8 +1,8 @@
-//! Liveness for anyone, readiness for an owner.
+//! Liveness and the server's identity for anyone, readiness for an owner.
 
 use axum::Json;
 use axum::extract::State;
-use wellfed_api::{Health, Problem, ServerStatus};
+use wellfed_api::{Health, Hex, Problem, ServerIdentity, ServerStatus};
 
 use super::TAG_HEALTH;
 use crate::AppState;
@@ -22,6 +22,22 @@ pub(crate) async fn health() -> Json<Health> {
     Json(Health {
         version: VERSION.into(),
         revision: wellfed_api::REVISION,
+    })
+}
+
+/// The server's identity key, without authentication: what the app pins
+/// when it reaches the server by a name with a public certificate, as its
+/// own HTTPS on the home network proves the key in the handshake. The key
+/// is public, and the same for every caller.
+#[utoipa::path(
+    get,
+    path = "/identity",
+    tag = TAG_HEALTH,
+    responses((status = 200, body = ServerIdentity)),
+)]
+pub(crate) async fn identity(State(state): State<AppState>) -> Json<ServerIdentity> {
+    Json(ServerIdentity {
+        key: Hex(state.identity),
     })
 }
 

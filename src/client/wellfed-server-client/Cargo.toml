@@ -8,11 +8,13 @@ description = "A typed async client of the owner's server HTTP API, the event st
 publish.workspace = true
 
 [dependencies]
+ed25519-dalek.workspace = true
 futures-util.workspace = true
 wellfed-api.workspace = true
 # rustls with its own provider: a feature without one would make every
 # reqwest client in the workspace (wellfed-stock's too) panic on build.
-reqwest = { workspace = true, features = ["json", "query", "rustls", "stream"] }
+reqwest = { workspace = true, features = ["json", "query", "rustls", "socks", "stream"] }
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

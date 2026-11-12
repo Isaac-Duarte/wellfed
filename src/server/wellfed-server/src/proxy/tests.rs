@@ -68,12 +68,24 @@ fn an_untrusted_peers_forwarded_headers_are_ignored() {
     ]);
 
     assert_eq!(
-        trusted.client(ip("192.0.2.7"), &forged),
+        trusted.client(ip("192.0.2.7"), Scheme::Http, &forged),
         (ip("192.0.2.7"), Scheme::Http)
     );
     assert_eq!(
-        TrustedProxies::default().client(ip("127.0.0.1"), &forged),
+        TrustedProxies::default().client(ip("127.0.0.1"), Scheme::Http, &forged),
         (ip("127.0.0.1"), Scheme::Http)
+    );
+}
+
+#[test]
+fn a_direct_connection_keeps_its_own_scheme_whatever_its_headers_say() {
+    let trusted = proxies(&["127.0.0.1"]);
+    let plain = headers(&[("x-forwarded-proto", "http")]);
+
+    assert_eq!(
+        trusted.client(ip("192.0.2.7"), Scheme::Https, &plain),
+        (ip("192.0.2.7"), Scheme::Https),
+        "over the server's own TLS"
     );
 }
 
@@ -87,26 +99,38 @@ fn behind_a_trusted_proxy_the_client_is_the_first_untrusted_hop_from_the_right()
         ("x-forwarded-proto", "https"),
     ]);
     assert_eq!(
-        trusted.client(peer, &one),
+        trusted.client(peer, Scheme::Http, &one),
         (ip("203.0.113.9"), Scheme::Https)
     );
 
     let forged_left = headers(&[("x-forwarded-for", "1.1.1.1, 203.0.113.9, 10.1.2.3")]);
-    assert_eq!(trusted.client(peer, &forged_left).0, ip("203.0.113.9"));
+    assert_eq!(
+        trusted.client(peer, Scheme::Http, &forged_left).0,
+        ip("203.0.113.9")
+    );
 
     let lines = headers(&[
         ("x-forwarded-for", "1.1.1.1"),
         ("x-forwarded-for", "203.0.113.9:4711"),
     ]);
-    assert_eq!(trusted.client(peer, &lines).0, ip("203.0.113.9"));
+    assert_eq!(
+        trusted.client(peer, Scheme::Http, &lines).0,
+        ip("203.0.113.9")
+    );
 
     let all_proxies = headers(&[("x-forwarded-for", "10.0.0.2, 10.0.0.1")]);
-    assert_eq!(trusted.client(peer, &all_proxies).0, ip("10.0.0.2"));
+    assert_eq!(
+        trusted.client(peer, Scheme::Http, &all_proxies).0,
+        ip("10.0.0.2")
+    );
 
     let unknown = headers(&[("x-forwarded-for", "unknown")]);
-    assert_eq!(trusted.client(peer, &unknown).0, peer);
+    assert_eq!(trusted.client(peer, Scheme::Http, &unknown).0, peer);
 
-    assert_eq!(trusted.client(peer, &headers(&[])), (peer, Scheme::Http));
+    assert_eq!(
+        trusted.client(peer, Scheme::Http, &headers(&[])),
+        (peer, Scheme::Http)
+    );
 }
 
 #[test]
@@ -119,7 +143,7 @@ fn forwarded_is_read_when_x_forwarded_for_is_absent() {
         r#"for=198.51.100.1, for="[2001:db8::7]:4711";proto=https;by=127.0.0.1"#,
     )]);
     assert_eq!(
-        trusted.client(peer, &forwarded),
+        trusted.client(peer, Scheme::Http, &forwarded),
         (ip("2001:db8::7"), Scheme::Https)
     );
 
@@ -127,14 +151,17 @@ fn forwarded_is_read_when_x_forwarded_for_is_absent() {
         ("forwarded", "for=198.51.100.1"),
         ("x-forwarded-for", "203.0.113.9"),
     ]);
-    assert_eq!(trusted.client(peer, &both).0, ip("203.0.113.9"));
+    assert_eq!(
+        trusted.client(peer, Scheme::Http, &both).0,
+        ip("203.0.113.9")
+    );
 }
 
 #[test]
 fn the_scheme_is_the_last_proto_given() {
     let trusted = proxies(&["127.0.0.1"]);
     let peer = ip("127.0.0.1");
-    let scheme = |pairs| trusted.client(peer, &headers(pairs)).1;
+    let scheme = |pairs| trusted.client(peer, Scheme::Http, &headers(pairs)).1;
 
     assert_eq!(scheme(&[("x-forwarded-proto", "HTTPS")]), Scheme::Https);
     assert_eq!(
@@ -164,12 +191,15 @@ fn a_line_that_is_not_text_never_hands_over_to_forwarded() {
         HeaderValue::from_bytes(b"\xff\xfe, 203.0.113.9").unwrap(),
     );
 
-    assert_eq!(trusted.client(peer, &garbled).0, ip("203.0.113.9"));
+    assert_eq!(
+        trusted.client(peer, Scheme::Http, &garbled).0,
+        ip("203.0.113.9")
+    );
 
     let mut only_garbage = headers(&[("forwarded", "for=198.51.100.1")]);
     only_garbage.append(X_FORWARDED_FOR, HeaderValue::from_bytes(b"\xff").unwrap());
     assert_eq!(
-        trusted.client(peer, &only_garbage).0,
+        trusted.client(peer, Scheme::Http, &only_garbage).0,
         peer,
         "an entry that names nobody leaves the proxy"
     );
@@ -182,7 +212,10 @@ fn a_garbled_proto_is_plain_http_not_forwardeds() {
     let mut garbled = headers(&[("forwarded", "for=198.51.100.1;proto=https")]);
     garbled.append(X_FORWARDED_PROTO, HeaderValue::from_bytes(b"\xff").unwrap());
 
-    assert_eq!(trusted.client(ip("127.0.0.1"), &garbled).1, Scheme::Http);
+    assert_eq!(
+        trusted.client(ip("127.0.0.1"), Scheme::Http, &garbled).1,
+        Scheme::Http
+    );
 }
 
 #[test]

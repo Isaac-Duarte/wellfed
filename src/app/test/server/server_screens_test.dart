@@ -26,6 +26,7 @@ import 'package:wellfed/state/server/server_history.dart';
 import '../support/fakes.dart';
 
 const _kitchen = KnownFeeder(identity: 'aa', name: 'Kitchen', address: 'lan:4747');
+const _key = 'abababababababababababababababababababababababababababababababab';
 const _cat = ServerPet(id: 'p1', name: 'Miso', species: Species.cat, feeders: ['id-k']);
 
 (HomeServer, FakeServerPorts, FakeBook) _server() {
@@ -50,12 +51,13 @@ void main() {
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
     ports.found
-      ..add(const FoundServer(url: 'http://192.168.1.20:8080', name: 'home-1a2b3c4d'))
-      ..add(const FoundServer(url: 'http://192.168.1.20:8080', name: 'home-1a2b3c4d'));
+      ..add(const FoundServer(url: 'https://192.168.1.20:8443', name: 'home-1a2b3c4d', key: _key))
+      ..add(const FoundServer(url: 'https://192.168.1.20:8443', name: 'home-1a2b3c4d', key: _key));
     await settle(tester);
     expect(find.text('home-1a2b3c4d'), findsOneWidget, reason: 'heard twice, listed once');
+    expect(find.text('https://192.168.1.20:8443\nKey fp abab'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField).at(0), '192.168.1.20:8080');
+    await tester.enterText(find.byType(TextField).at(0), '192.168.1.20:8443');
     await tester.enterText(find.byType(TextField).at(1), 'ada');
     await tester.enterText(find.byType(TextField).at(2), 'hunter2');
     await tester.pump();
@@ -63,7 +65,8 @@ void main() {
     await tester.tap(find.text('Log in'));
     await settle(tester);
 
-    expect(ports.logins.single.url, '192.168.1.20:8080', reason: 'Rust picks the scheme, never Dart');
+    expect(ports.logins.single.url, '192.168.1.20:8443', reason: 'Rust picks the scheme, never Dart');
+    expect(ports.logins.single.key, isNull, reason: 'a typed address is pinned by its handshake');
     expect(book.server?.link, serverLink);
     expect(server.state, isA<ServerLinked>());
   });
@@ -85,27 +88,64 @@ void main() {
     await tester.ensureVisible(find.text('Log in'));
     await tester.tap(find.text('Log in'));
     await tester.pump();
-    ports.found.add(const FoundServer(url: 'http://192.168.1.21:8080', name: 'other'));
+    ports.found.add(const FoundServer(url: 'https://192.168.1.21:8443', name: 'other', key: _key));
     await settle(tester);
 
     expect(find.text('beneath'), findsOneWidget);
   });
 
-  testWidgets('a plain address heard on the network says the password would go unencrypted', (tester) async {
+  testWidgets('a server picked from the network must prove the key it announced', (tester) async {
     _phone(tester);
     final (HomeServer server, FakeServerPorts ports, _) = _server();
     await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
-    ports.found.add(const FoundServer(url: 'http://192.168.1.20:8080', name: 'home-1a2b3c4d'));
+    ports.found.add(const FoundServer(url: 'https://192.168.1.20:8443', name: 'home-1a2b3c4d', key: _key));
     await settle(tester);
 
-    expect(find.text('http://192.168.1.20:8080 · not encrypted'), findsOneWidget);
-    expect(find.textContaining('Not encrypted.', findRichText: true), findsNothing, reason: 'nothing picked yet');
     await tester.tap(find.text('home-1a2b3c4d'));
+    await tester.enterText(find.byType(TextField).at(1), 'ada');
+    await tester.enterText(find.byType(TextField).at(2), 'hunter2');
     await tester.pump();
-    expect(find.textContaining('Not encrypted.', findRichText: true), findsOneWidget);
+    await tester.ensureVisible(find.text('Log in'));
+    await tester.tap(find.text('Log in'));
+    await settle(tester);
+
+    expect(ports.logins.single.url, 'https://192.168.1.20:8443');
+    expect(ports.logins.single.key, _key);
   });
 
-  testWidgets('plain http beyond the home network is refused, and says how to reach the server', (tester) async {
+  testWidgets('a typed plain address says plain http works only on this device', (tester) async {
+    _phone(tester);
+    final (HomeServer server, _, _) = _server();
+    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+
+    expect(find.textContaining('Not encrypted.', findRichText: true), findsNothing);
+    await tester.enterText(find.byType(TextField).at(0), 'http://192.168.1.20:8080');
+    await tester.pump();
+    expect(find.textContaining('works only on this device', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('a server that announced another key than it proves is refused, and nothing is kept', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
+    ports.loginFails = serverError(ServerErrorKind.keyChanged);
+    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+    ports.found.add(const FoundServer(url: 'https://192.168.1.20:8443', name: 'home-1a2b3c4d', key: _key));
+    await settle(tester);
+
+    await tester.tap(find.text('home-1a2b3c4d'));
+    await tester.enterText(find.byType(TextField).at(1), 'ada');
+    await tester.enterText(find.byType(TextField).at(2), 'hunter2');
+    await tester.pump();
+    await tester.ensureVisible(find.text('Log in'));
+    await tester.tap(find.text('Log in'));
+    await settle(tester);
+
+    expect(find.textContaining('it proved another key'), findsOneWidget);
+    expect(book.server, isNull);
+    expect(ports.kept, isNull);
+  });
+
+  testWidgets('plain http off this device is refused, and says how to reach the server', (tester) async {
     _phone(tester);
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     ports.loginFails = serverError(ServerErrorKind.plainHttp);
@@ -119,7 +159,7 @@ void main() {
     await tester.tap(find.text('Log in'));
     await settle(tester);
 
-    expect(find.textContaining("Use the server's https:// address"), findsOneWidget);
+    expect(find.textContaining('would send your password unencrypted'), findsOneWidget);
     expect(book.server, isNull);
     expect(ports.kept, isNull);
   });
@@ -169,6 +209,27 @@ void main() {
     expect(ports.session.logoutPasswords, ['hunter2']);
     expect(book.server, isNull);
     expect(book.feeders, [_kitchen]);
+  });
+
+  testWidgets('a server that proves another key offers only its removal', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
+    ports.session.accountFails = serverError(ServerErrorKind.keyChanged);
+    await server.logIn(url: 'https://192.168.1.20:8443', name: 'ada', password: 'hunter2');
+    await tester.pumpWidget(themed(AccountScreen(server: server, phoneKey: FakeClientKey(), household: () {})));
+    await settle(tester);
+
+    expect(find.text('Key fp abab'), findsOneWidget);
+    expect(find.textContaining('proved a different key'), findsOneWidget);
+    expect(find.text('Log out'), findsNothing);
+    expect(find.text('Pets and foods'), findsNothing);
+    await tester.tap(find.text('Remove server'));
+    await settle(tester);
+    await tester.tap(find.widgetWithText(TextButton, 'Remove the server'));
+    await settle(tester);
+
+    expect(ports.session.logouts, 0, reason: 'nothing more goes to it');
+    expect(book.server, isNull);
   });
 
   test('pets and foods are read, and a change reads them again', () async {

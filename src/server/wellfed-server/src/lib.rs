@@ -19,6 +19,7 @@ mod auth;
 pub mod config;
 mod error;
 mod extract;
+pub mod identity;
 pub mod jobs;
 pub mod key;
 mod proxy;
@@ -27,6 +28,7 @@ mod routes;
 mod serve;
 pub mod server_id;
 mod staged;
+mod tls;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,7 +37,8 @@ pub use auth::Hosts;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 pub use proxy::{ProxyRange, TrustedProxies};
-pub use serve::{Announce, Beside, Jobs, Serving, serve};
+pub use serve::{Announce, Beside, Jobs, Listeners, Serving, serve};
+pub use tls::Tls;
 use tokio_util::sync::CancellationToken;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
@@ -61,6 +64,8 @@ pub(crate) struct AppState {
     proxies: Arc<TrustedProxies>,
     /// How often an open stream checks its caller.
     stream_check: Duration,
+    /// The server's identity key.
+    identity: [u8; 32],
 }
 
 #[derive(OpenApi)]
@@ -160,6 +165,7 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(audit::audit))
         .routes(routes!(stream::stream))
         .routes(routes!(health::status))
+        .routes(routes!(health::identity))
         .routes(routes!(releases::releases))
         .routes(routes!(releases::check_releases))
         .routes(routes!(pets::pets, pets::create_pet))
@@ -205,7 +211,7 @@ fn router() -> OpenApiRouter<AppState> {
 /// Serve it with its connections' addresses
 /// (`into_make_service_with_connect_info::<SocketAddr>`): a login is
 /// limited by its client's address, and refused without one. [`serve`]
-/// does, with the jobs beside it.
+/// does, on both its listeners, with the jobs beside it.
 pub fn app(service: Service, shutdown: CancellationToken, serving: Serving) -> Router {
     let state = AppState {
         service,
@@ -213,6 +219,7 @@ pub fn app(service: Service, shutdown: CancellationToken, serving: Serving) -> R
         hosts: serving.hosts,
         proxies: Arc::new(serving.proxies),
         stream_check: serving.stream_check,
+        identity: serving.identity,
     };
     let (router, _) = router().split_for_parts();
 

@@ -60,7 +60,7 @@ The API lives under `/api/v1`, as JSON. The complete reference is [`openapi.json
 | Server data | `/backups`, `/export`, `/import`, `/status` | Backups, a full export, import onto a fresh server, readiness |
 | Live | `/stream` | Server-Sent Events for every feeder you can see |
 
-`GET /health` sits outside `/api/v1`. It needs no login and answers the version and the API's revision.
+`GET /health` sits outside `/api/v1`. It needs no login and answers the version and the API's revision. `GET /api/v1/identity` needs no login either, and answers the server's identity key ([server identity](#server-identity)).
 
 Some conventions hold across the API:
 
@@ -72,6 +72,30 @@ Some conventions hold across the API:
   - A retry never undoes a later change. It is `409 superseded`, and sends nothing, if the feeder holds another clip than its first send found. The same goes for an upload the feeder had begun, once the feeder no longer holds its clip.
   - A delete erases only the clip it read: the feeder checks it, so an upload that lands between the read and the erase stays, and the delete is `409 superseded`.
 - **The stream** resumes from `Last-Event-ID`. When that id is too old, the server sends `resync` and the client fetches again.
+
+## Server identity
+
+The server holds one Ed25519 key for its life, its identity key. The app pins it when you add the server, so a password or a token never goes to a machine that only claims to be your server.
+
+- **Derived, not stored.** The key comes from the sealing key in `keys/server.key` (HMAC-SHA256 under a fixed label), so it needs no file of its own. A server restored with its sealing key keeps its identity. A server set up again with a new sealing key has a new identity, and every phone has to add it again.
+- **Logged at each start.** The log names its fingerprint, the key's first 16 bytes as eight groups of four hex digits, such as `the server's identity key: 3f2a 91c0 …`. The app shows the same fingerprint under the server's address, so you can compare the two.
+- **Its own HTTPS.** With `tls_listen` set, the server serves the same API over TLS 1.3 on a second port, with a certificate it signs itself with the identity key ([find it from the app](running.md#find-it-from-the-app)). The certificate names no host: no authority vouches for it, and a client checks only that the handshake is signed by the pinned key.
+- **Announced.** The mDNS record names that HTTPS port and the key in its TXT `key`. Anyone on the network can announce a record, so the key in it proves nothing by itself: the app checks the server's handshake against it before the password goes.
+- **Public.** `GET /api/v1/identity` answers the key on either listener, with no login. The app reads it from a server it reaches by a public name through a reverse proxy, which signs with the proxy's certificate instead.
+
+The app pins the key in three ways:
+
+| Server reached at | The app checks |
+| --- | --- |
+| An `https://` address found on the home network | That the handshake is signed by the key mDNS announced |
+| An `https://` address typed for the home network | The key the first handshake proves, which it then pins |
+| An `https://` public name | The system's certificate authorities, and the key `GET /identity` answers at each login |
+
+The app speaks no plain `http://` on the network: only to the phone or computer it runs on. Every later connection to a home-network address must prove the pinned key. One that proves another fails in the handshake, before anything is sent, the token included, and the app says the key changed. It never takes the new key by itself. The only thing it offers is removing the server; you add it again once you know why the key changed. Meanwhile the phone reaches its own feeders directly, as with the server down.
+
+The pinned key is part of the server link the app keeps in its own file. A file kept by an app from before the pin has no key, so it no longer reads: the app sets it aside with a notice, and you add the server and your feeders again.
+
+The CLI and Home Assistant don't pin the key yet. They still reach a server on the home network by its plain `http://` address (`listen`), and a public name by `https://` through the system's authorities.
 
 ## Alerts
 

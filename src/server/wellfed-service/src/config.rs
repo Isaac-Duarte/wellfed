@@ -6,8 +6,20 @@ use std::time::Duration;
 
 use crate::{AlertReads, Backups, Diagnostics, Discovery, ReleasesConfig, WebhookTarget};
 
+/// What the sealing key is keyed with to give the identity key's seed.
+const IDENTITY: &[u8] = b"wellfed server identity key v1";
+
+/// The seed of the server's Ed25519 identity key, which its sealing key
+/// `key` gives: the identity lasts as long as the sealing key, with no file
+/// of its own, and the derivation is one-way, so the public key the LAN
+/// hears says nothing of the sealing key.
+pub fn identity_seed(key: &[u8; 32]) -> [u8; 32] {
+    wellfed_session::mac::hmac_sha256(key, &[IDENTITY])
+}
+
 pub struct Config {
-    /// Seals the server's feeder keys at rest.
+    /// Seals the server's feeder keys at rest, and gives the server's
+    /// identity key ([`identity_seed`]).
     pub key: [u8; 32],
     /// The host's IANA zone, offered at setup as the household's.
     pub host_zone: Option<String>,

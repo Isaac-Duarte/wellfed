@@ -48,7 +48,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -579292934;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1571391320;
 
 // Section: executor
 
@@ -4229,6 +4229,7 @@ fn wire__crate__api__server__ServerSession_login_impl(
             let api_name = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
             let api_phone = <String>::sse_decode(&mut deserializer);
+            let api_key = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::server_error::ServerError>(
@@ -4238,6 +4239,7 @@ fn wire__crate__api__server__ServerSession_login_impl(
                             api_name,
                             api_password,
                             api_phone,
+                            api_key,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -6619,6 +6621,36 @@ fn wire__crate__api__alerts__save_instant_impl(
                     .await,
                 )
             }
+        },
+    )
+}
+fn wire__crate__api__server__server_fingerprint_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "server_fingerprint",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_key = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, crate::api::server_error::ServerError>((move || {
+                let output_ok = crate::api::server::server_fingerprint(api_key)?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -11957,6 +11989,8 @@ impl SseDecode for crate::api::server_error::ServerErrorKind {
             23 => crate::api::server_error::ServerErrorKind::Closed,
             24 => crate::api::server_error::ServerErrorKind::PlainHttp,
             25 => crate::api::server_error::ServerErrorKind::FeederBusy,
+            26 => crate::api::server_error::ServerErrorKind::KeyChanged,
+            27 => crate::api::server_error::ServerErrorKind::NoIdentity,
             _ => unreachable!("Invalid variant for ServerErrorKind: {}", inner),
         };
     }
@@ -12217,10 +12251,12 @@ impl SseDecode for crate::api::server_views::ServerLink {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_url = <String>::sse_decode(deserializer);
+        let mut var_key = <String>::sse_decode(deserializer);
         let mut var_user = <String>::sse_decode(deserializer);
         let mut var_tokenId = <String>::sse_decode(deserializer);
         return crate::api::server_views::ServerLink {
             url: var_url,
+            key: var_key,
             user: var_user,
             token_id: var_tokenId,
         };
@@ -13839,15 +13875,15 @@ fn pde_ffi_dispatcher_primary_impl(
             wire__crate__api__restore__read_restore_feeder_impl(port, ptr, rust_vec_len, data_len)
         }
         134 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
-        137 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
-        138 => wire__crate__api__feeder__settings_changes_default_impl(
+        138 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
+        139 => wire__crate__api__feeder__settings_changes_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        139 => wire__crate__api__setup__settle_setup_impl(port, ptr, rust_vec_len, data_len),
-        144 => wire__crate__api__store__swap_store_impl(port, ptr, rust_vec_len, data_len),
+        140 => wire__crate__api__setup__settle_setup_impl(port, ptr, rust_vec_len, data_len),
+        145 => wire__crate__api__store__swap_store_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -13932,14 +13968,15 @@ fn pde_ffi_dispatcher_sync_impl(
         123 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
         124 => wire__crate__api__install__kept_backups_impl(ptr, rust_vec_len, data_len),
         131 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
-        135 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
-        136 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
-        140 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
-        141 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
-        142 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
-        143 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
-        145 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
-        146 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
+        135 => wire__crate__api__server__server_fingerprint_impl(ptr, rust_vec_len, data_len),
+        136 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
+        137 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
+        141 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
+        142 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
+        143 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
+        144 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
+        146 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
+        147 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -17761,6 +17798,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_error::ServerErrorKind
             Self::Closed => 23.into_dart(),
             Self::PlainHttp => 24.into_dart(),
             Self::FeederBusy => 25.into_dart(),
+            Self::KeyChanged => 26.into_dart(),
+            Self::NoIdentity => 27.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -18084,6 +18123,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerLink {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.url.into_into_dart().into_dart(),
+            self.key.into_into_dart().into_dart(),
             self.user.into_into_dart().into_dart(),
             self.token_id.into_into_dart().into_dart(),
         ]
@@ -23596,6 +23636,8 @@ impl SseEncode for crate::api::server_error::ServerErrorKind {
                 crate::api::server_error::ServerErrorKind::Closed => 23,
                 crate::api::server_error::ServerErrorKind::PlainHttp => 24,
                 crate::api::server_error::ServerErrorKind::FeederBusy => 25,
+                crate::api::server_error::ServerErrorKind::KeyChanged => 26,
+                crate::api::server_error::ServerErrorKind::NoIdentity => 27,
                 _ => {
                     unimplemented!("");
                 }
@@ -23767,6 +23809,7 @@ impl SseEncode for crate::api::server_views::ServerLink {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.url, serializer);
+        <String>::sse_encode(self.key, serializer);
         <String>::sse_encode(self.user, serializer);
         <String>::sse_encode(self.token_id, serializer);
     }

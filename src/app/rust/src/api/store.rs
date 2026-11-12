@@ -294,7 +294,8 @@ mod tests {
                 appearance: Appearance::Dark,
                 server: Some(KnownServer {
                     link: ServerLink {
-                        url: "http://192.0.2.9:8080/".into(),
+                        url: "https://192.0.2.9:8443/".into(),
+                        key: "cd".repeat(32),
                         user: "ada".into(),
                         token_id: "01920000-0000-7000-8000-000000000001".into(),
                     },

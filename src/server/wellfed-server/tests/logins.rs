@@ -179,8 +179,8 @@ fn an_address_takes_twenty_failures_and_forged_headers_are_ignored() {
     });
 }
 
-/// The server serves only HTTP, so without a trusted proxy its cookie is
-/// never `Secure`, whatever the request claims.
+/// On the plain listener, without a trusted proxy, the cookie is never
+/// `Secure`, whatever the request claims.
 #[test]
 fn a_forged_scheme_never_makes_the_cookie_secure() {
     local(async {

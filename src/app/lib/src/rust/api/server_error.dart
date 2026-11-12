@@ -155,4 +155,17 @@ enum ServerErrorKind {
   /// which the server looks for up to twelve minutes: nothing was done.
   /// The server's feeder list shows the feeder once it is found.
   feederBusy,
+
+  /// The server at the link's address proved another identity key than
+  /// the one the phone pinned when the owner added it: another machine
+  /// answers there, or the server was set up again with a new key.
+  /// Nothing was sent, the token included. The phone never takes the new
+  /// key by itself: the only way on is to remove the server and add it
+  /// again, which the owner does only once they know why it changed.
+  keyChanged,
+
+  /// The address answers HTTPS with no identity key of a Wellfed server:
+  /// not the server's own `https://` port on the home network. Nothing
+  /// was sent.
+  noIdentity,
 }

@@ -1,5 +1,5 @@
 {
-  "revision": 8,
+  "revision": 9,
   "document": {
     "components": {
       "schemas": {
@@ -6247,6 +6247,17 @@
               "type": "object"
             }
           ]
+        },
+        "ServerIdentity": {
+          "properties": {
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object"
         },
         "ServerStatus": {
           "properties": {
@@ -13185,6 +13196,31 @@
               }
             },
             "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/v1/identity": {
+        "get": {
+          "operationId": "identity",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ServerIdentity"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {

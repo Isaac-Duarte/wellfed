@@ -118,6 +118,14 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
     use wellfed_api::ErrorCode;
     use wellfed_server_client::Failure;
 
+    // Refused in the handshake: nothing was sent, but the server is not
+    // the one the phone pinned, which is no outage to wait out.
+    match error {
+        Error::KeyChanged { .. } => return ServerErrorKind::KeyChanged,
+        Error::NoIdentity => return ServerErrorKind::NoIdentity,
+        _ => {}
+    }
+
     match error.failure() {
         Failure::Connect => return ServerErrorKind::Unreachable,
         // An answer this app cannot read, or a status no call expects, is
@@ -140,6 +148,8 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
 
     match error {
         Error::Base(_) => ServerErrorKind::Address,
+        Error::KeyChanged { .. } => ServerErrorKind::KeyChanged,
+        Error::NoIdentity => ServerErrorKind::NoIdentity,
         Error::PlainHttp { .. } => ServerErrorKind::PlainHttp,
         Error::Redirect { .. } => ServerErrorKind::Redirected,
         Error::Problem { problem, .. } => match problem.code {
@@ -177,6 +187,7 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
         // unreadable answer returned above.
         Error::Http(_)
         | Error::Build(_)
+        | Error::Tls(_)
         | Error::Unexpected { .. }
         | Error::Decode(_)
         | Error::NoSession => ServerErrorKind::Protocol,

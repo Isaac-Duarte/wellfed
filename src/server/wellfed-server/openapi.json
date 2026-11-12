@@ -5777,6 +5777,36 @@
         }
       }
     },
+    "/api/v1/identity": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "The server's identity key, without authentication: what the app pins\nwhen it reaches the server by a name with a public certificate, as its\nown HTTPS on the home network proves the key in the handshake. The key\nis public, and the same for every caller.",
+        "operationId": "identity",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerIdentity"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/import": {
       "post": {
         "tags": [
@@ -14871,6 +14901,19 @@
             }
           }
         ]
+      },
+      "ServerIdentity": {
+        "type": "object",
+        "description": "`GET /identity`: the server's identity key.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The Ed25519 public key, as 64 lowercase hex digits."
+          }
+        }
       },
       "ServerStatus": {
         "type": "object",

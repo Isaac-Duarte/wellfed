@@ -26,6 +26,7 @@ mod feeders;
 mod foods;
 mod health;
 mod home;
+mod identity;
 mod installs;
 mod pets;
 mod plain_http;
@@ -72,6 +73,7 @@ pub use health::{
     FeederLink, Health, Job, JobOutcome, JobRun, ServerSkew, ServerStatus, StoreState,
 };
 pub use home::{Home, HomePatch, TimeFormat, Units};
+pub use identity::{ServerIdentity, TXT_KEY, fingerprint};
 pub use installs::{Install, InstallFailure, InstallRequest, InstallState, InstallTarget};
 // The feeder's own values are the model's, served as they are; the HTTP
 // API adds only what the server knows (when it received them, its own ids).
@@ -119,7 +121,7 @@ pub const PREFIX: &str = "/api/v1";
 /// document to that ([API evolution]).
 ///
 /// [API evolution]: ../../../../docs/server/README.md#api-evolution
-pub const REVISION: u32 = 8;
+pub const REVISION: u32 = 9;
 
 /// How long the server looks for its key enrolled on a feeder after an
 /// adoption's join answer was lost (`504 outcome_unknown`): the feeder
