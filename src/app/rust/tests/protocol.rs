@@ -27,10 +27,10 @@ fn root() -> PathBuf {
 }
 
 /// Each limit as Dart names it, with its doc comment.
-fn limits() -> [(&'static str, &'static str, u32); 7] {
+fn limits() -> [(&'static str, &'static str, u32); 9] {
     use wellfed_model::{
-        CALL_PLAYS_MAX, CLIENTS_MAX, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, PORTIONS_MAX,
-        PORTIONS_MIN,
+        CALL_PLAYS_MAX, CLIENTS_MAX, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, PLANS, PORTION_MG_MAX,
+        PORTION_MG_MIN, PORTIONS_MAX, PORTIONS_MIN,
     };
 
     let count = |n: usize| u32::try_from(n).expect("a count the feeder keeps fits in 32 bits");
@@ -65,6 +65,16 @@ fn limits() -> [(&'static str, &'static str, u32); 7] {
             "portionMgMost",
             "The heaviest portion weight the feeder stores, in milligrams.",
             PORTION_MG_MAX,
+        ),
+        (
+            "desiccantDaysLeast",
+            "The shortest desiccant reminder period the feeder takes, in days.",
+            u32::from(DESICCANT_DAYS_MIN),
+        ),
+        (
+            "desiccantDaysMost",
+            "The longest desiccant reminder period the feeder takes, in days.",
+            u32::from(DESICCANT_DAYS_MAX),
         ),
     ]
 }

@@ -23,4 +23,10 @@ abstract final class Limits {
 
   /// The heaviest portion weight the feeder stores, in milligrams.
   static const portionMgMost = 50000;
+
+  /// The shortest desiccant reminder period the feeder takes, in days.
+  static const desiccantDaysLeast = 1;
+
+  /// The longest desiccant reminder period the feeder takes, in days.
+  static const desiccantDaysMost = 90;
 }
