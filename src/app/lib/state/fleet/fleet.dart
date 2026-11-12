@@ -84,6 +84,8 @@ class FeederFleet extends ChangeNotifier {
       }
     }
     for (final KnownFeeder feeder in own.values) {
+      // One already serving follows the file: a re-pair renames it.
+      _feeders[feeder.identity]?.knownChanged(feeder);
       _feeders.putIfAbsent(feeder.identity, () => FeederController(_book, _ports, feeder));
     }
     for (final ListedFeeder feeder in listed.values) {

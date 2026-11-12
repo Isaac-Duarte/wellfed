@@ -180,6 +180,14 @@ class FeederController extends ChangeNotifier {
   /// Take this feeder off this phone.
   Future<void> forgetHere() => _book.forget(_state.known.identity);
 
+  /// The app's file holds `known` for this feeder now: a re-pair, a recovery
+  /// or an install wrote its name and where it answers. Shown at once, and
+  /// the next dial goes there.
+  void knownChanged(KnownFeeder known) {
+    if (known == _state.known) return;
+    _setState(_state.copyWith(known: known));
+  }
+
   /// Call this feeder `name` on this phone; a blank name changes nothing.
   /// Whether this phone's file holds the name now.
   Future<bool> rename(String name) async {

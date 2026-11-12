@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 
@@ -33,6 +34,19 @@ void main() {
     await rename(tester, '  Pantry  ');
     expect(book.feeders.single.name, 'Pantry');
     expect(book.feeders.single.identity, feederKitchen.identity);
+    expect(find.widgetWithText(AppBar, 'Pantry'), findsOneWidget);
+  });
+
+  testWidgets('a feeder paired again under a new name and address is shown so at once', (tester) async {
+    final (FakeBook book, FeederController feeder) = await shell(tester);
+
+    await book.remember(
+      KnownFeeder(identity: feederKitchen.identity, name: 'Pantry', address: '10.0.0.9:4747'),
+      paired: true,
+    );
+    await tester.pump();
+    expect(feeder.state.known.name, 'Pantry');
+    expect(feeder.state.known.address, '10.0.0.9:4747');
     expect(find.widgetWithText(AppBar, 'Pantry'), findsOneWidget);
   });
 
