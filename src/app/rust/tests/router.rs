@@ -1519,11 +1519,18 @@ fn a_refused_token_stays_refused_when_the_server_then_goes_down() {
 }
 
 /// An address nothing listens on: a server that is down.
-fn nobody() -> String {
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{address}")
+/// A server address nothing answers: a socket bound there and never
+/// listening, which refuses every connection, and which keeps the port from
+/// any other test's listener for as long as the caller holds it. A port
+/// bound and let go could be taken meanwhile, and a call to it then reaches
+/// something that answers.
+fn nobody() -> (String, tokio::net::TcpSocket) {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket
+        .bind((std::net::Ipv4Addr::LOCALHOST, 0).into())
+        .unwrap();
+    let address = socket.local_addr().unwrap();
+    (format!("http://{address}"), socket)
 }
 
 #[test]
@@ -1569,8 +1576,9 @@ fn a_cold_start_with_the_server_down_goes_by_the_kept_account() {
     local(async {
         let sim = feeder::start().await;
         let kitchen = identity(&sim);
+        let (nobody, _refusing) = nobody();
         let down = ServerLink {
-            url: nobody(),
+            url: nobody,
             user: "ada".into(),
             token_id: "00000000-0000-0000-0000-000000000001".into(),
         };
