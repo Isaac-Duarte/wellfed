@@ -91,6 +91,9 @@ pub enum Error {
     /// A value to be written that the store's readers would refuse.
     #[error("{0} names a value this server does not know")]
     Unknown(&'static str),
+    /// An imported row that the store's readers would refuse once stored.
+    #[error("its {0} is one this server cannot read")]
+    Unreadable(&'static str),
     #[error("{0} does not fit the database")]
     TooLarge(&'static str),
     #[error("that {0} already exists")]

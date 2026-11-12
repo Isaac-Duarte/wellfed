@@ -44,10 +44,10 @@ impl Import {
     /// Insert one row. Rows must come in the archive's table order, so
     /// each row's foreign keys name rows already in.
     ///
-    /// A row with a code the store's readers refuse is refused here
-    /// ([`crate::Error::Unknown`]), before anything of it goes in.
+    /// A row the store's readers would refuse once stored is refused here
+    /// ([`crate::Error::Unreadable`]), before anything of it goes in.
     pub async fn insert(&mut self, row: &Row) -> Result<()> {
-        codes::check(row)?;
+        check::check(row)?;
         let tx = &mut *self.tx;
         match row {
             Row::Users(user) => {
@@ -240,5 +240,5 @@ impl Import {
     }
 }
 
-mod codes;
+mod check;
 mod rows;
