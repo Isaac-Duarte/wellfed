@@ -41,8 +41,11 @@
 //! leaves the feeder on bank 0's recovery copy, with the candidate pending
 //! and nothing installing, for as long as no other client offers one.
 //! After [`GIVEN_WAY_MS`] of that the stage records the install as stopped
-//! for want of a chunk, once a boot, which the rules report as a failed
-//! update: the feeder keeps running bank 0.
+//! for want of a chunk, which the rules report as a failed update: the
+//! feeder keeps running bank 0. It does so only on the give-way's own boot
+//! (as the boot read judged it) and only if no install ran and stopped
+//! since, so a stop is never reported twice and a later boot still holding
+//! the candidate reports nothing new.
 
 use wellfed_core_feeder::schedule::latest_due;
 use wellfed_device_api::SESSIONS;
@@ -296,10 +299,15 @@ impl AlertStage {
             return;
         }
         self.given_way_look_ms = Some(now_ms.wrapping_add(LOOK_MS));
-        let waiting = !platform.installing()
+        // Only on the give-way's own boot, and only while no install has
+        // run and stopped since: a stop is recorded as itself, and a later
+        // boot still holding the candidate was reported already.
+        let waiting = platform.alerts().gave_way()
+            && !platform.installing()
             && platform.update_progress().is_some_and(|progress| {
                 progress.bank == 0
                     && progress.phase == InstallPhase::Idle
+                    && progress.stopped.is_none()
                     && wellfed_device::update::candidate(progress.candidate)
                         == UpdateCandidate::Pending
             });
