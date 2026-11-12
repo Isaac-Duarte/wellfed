@@ -346,7 +346,9 @@ impl From<&model::Refusal> for RefusalKind {
             R::Unverified => Self::Unverified,
             R::Portions { .. } => Self::Portions,
             R::NoClock => Self::NoClock,
-            R::Unknown => Self::NewerBuild,
+            // Only a conditional meal-call erase gets it, which the
+            // integration never sends: the owner's server sends it.
+            R::Replaced | R::Unknown => Self::NewerBuild,
         }
     }
 }

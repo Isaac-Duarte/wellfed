@@ -150,6 +150,11 @@ pub(super) enum FeederAction {
     },
     DeleteCall,
     PlayCall,
+    /// Erase the clip only while it is still the one of `bytes` and `crc`.
+    DeleteCallIf {
+        bytes: u32,
+        crc: u32,
+    },
 }
 
 /// A feeder op as the server runs it: [`Action::Invalid`] for one whose
@@ -216,6 +221,7 @@ pub(super) fn action(op: FeederOp<'_>) -> Action {
             FeederAction::CallChunk { offset }
         }
         FeederOp::DeleteCall => FeederAction::DeleteCall,
+        FeederOp::DeleteCallIf { bytes, crc } => FeederAction::DeleteCallIf { bytes, crc },
         FeederOp::PlayCall => FeederAction::PlayCall,
         FeederOp::SkipMeal { slot, due_s } => FeederAction::SkipMeal {
             slot,
@@ -267,6 +273,7 @@ impl FeederAction {
             Self::CallChunk { .. } => Self::CALL_CHUNK,
             Self::DeleteCall => "delete-call",
             Self::PlayCall => "play-call",
+            Self::DeleteCallIf { .. } => "delete-call-if",
             Self::SkipMeal {
                 skip: MealSkip::Skip,
                 ..
@@ -433,6 +440,19 @@ impl Server {
                 }
                 Err(refusal) => Reply::Refused(refusal),
             },
+            FeederAction::DeleteCallIf { bytes, crc } => match delete_call_if(bytes, crc, device) {
+                Ok(Erase::Queued) => {
+                    let change = CallChange::Delete;
+                    return self.queued(
+                        index,
+                        id,
+                        whole,
+                        Wait::Feeder(FeederWait::Call { change }),
+                    );
+                }
+                Ok(Erase::Nothing) => Reply::Done(None),
+                Err(refusal) => Reply::Refused(refusal),
+            },
             FeederAction::CallChunk { offset } => match self.call_chunk(offset, device) {
                 Ok(()) => Reply::Feeder(FeederReply::Call),
                 Err(refusal) => Reply::Refused(refusal),
@@ -552,6 +572,42 @@ fn put_settings<F: FeederDevice>(
             SettingsResult::ReadOnly => Err(Refusal::NotWritable),
         },
     }
+}
+
+/// What a conditional erase of the meal call did.
+enum Erase {
+    /// The erase is queued for the writer.
+    Queued,
+    /// No clip is stored, so there is nothing to erase.
+    Nothing,
+}
+
+/// Queue the meal call's erase while the store still holds the clip of
+/// `bytes` and `crc`, stored or arriving. Another clip is an upload that
+/// came after the one the client read, and stays. Only the loop queues a
+/// change to the clip, and only once none is pending, so the clip read
+/// here is the one the erase meets.
+fn delete_call_if<F: FeederDevice>(bytes: u32, crc: u32, device: &mut F) -> Result<Erase, Refusal> {
+    if let CallResult::Current {
+        view,
+        pending: false,
+    } = device.call(None)
+    {
+        match view.clip {
+            CallClip::None => return Ok(Erase::Nothing),
+            CallClip::Stored {
+                bytes: held,
+                crc: held_crc,
+            }
+            | CallClip::Receiving {
+                bytes: held,
+                crc: held_crc,
+                ..
+            } if (held, held_crc) != (bytes, crc) => return Err(Refusal::Replaced),
+            CallClip::Stored { .. } | CallClip::Receiving { .. } => {}
+        }
+    }
+    put_call(CallChange::Delete, device).map(|()| Erase::Queued)
 }
 
 /// Queue a meal call change for the writer. A new upload or a delete

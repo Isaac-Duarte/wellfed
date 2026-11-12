@@ -629,6 +629,7 @@ impl Name for Reply {
                 Refusal::Unverified => "unverified",
                 Refusal::Portions { .. } => "portions",
                 Refusal::NoClock => "no-clock",
+                Refusal::Replaced => "replaced",
                 Refusal::Update(refusal) => update_refusal(*refusal),
             },
         }

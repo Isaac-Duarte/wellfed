@@ -79,7 +79,7 @@ pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 /// it knows, and reads a refused `Unavailable` as one the feeder's build
 /// lacks; a client below it still uses every op it knows, and only what
 /// the newer build added is out of its reach.
-pub const REVISION: u32 = 3;
+pub const REVISION: u32 = 4;
 
 /// Frozen. The largest frame either way, Noise tag included.
 pub const FRAME_MAX: usize = 1024;
@@ -501,6 +501,17 @@ pub enum FeederOp<'a> {
         slot: u8,
         due_s: u32,
     },
+    /// Erase the stored meal call only while it is still the clip of
+    /// `bytes` stream bytes whose CRC is `crc`, stored or arriving
+    /// ([`CallClip`]), answered `Done` once the store holds none, as
+    /// [`Self::DeleteCall`] is. With no clip stored it is answered `Done`
+    /// at once. Another clip is refused [`Refusal::Replaced`] and kept, so
+    /// a retry after a lost answer never erases an upload that came after
+    /// the clip its client read. Owner sessions only.
+    DeleteCallIf {
+        bytes: u32,
+        crc: u32,
+    },
 }
 
 /// The meal call's stream: 8 kHz mono, 4-bit IMA ADPCM, two samples a
@@ -720,7 +731,8 @@ impl FeederOp<'_> {
             | Self::DeleteCall
             | Self::PlayCall
             | Self::SkipMeal { .. }
-            | Self::UnskipMeal { .. } => true,
+            | Self::UnskipMeal { .. }
+            | Self::DeleteCallIf { .. } => true,
         }
     }
 }
@@ -1342,6 +1354,10 @@ pub enum Refusal {
     /// The clock is invalid, so the feeder cannot date the change: sync
     /// the time first.
     NoClock,
+    /// What the request named was replaced since its client read it (the
+    /// meal call another upload replaced, for
+    /// [`FeederOp::DeleteCallIf`]), and is kept: read again and decide.
+    Replaced,
 }
 
 impl Refusal {
@@ -1367,7 +1383,8 @@ impl Refusal {
             | Self::Fault
             | Self::Unverified
             | Self::Portions { .. }
-            | Self::NoClock => return None,
+            | Self::NoClock
+            | Self::Replaced => return None,
         })
     }
 }

@@ -183,9 +183,10 @@ pub enum CommandOutcome {
     Calibration { calibration: CalibrationView },
     /// The feeder stored the uploaded meal call, as it then said.
     Call { call: CallView },
-    /// Another change to the meal call reached the feeder between this
-    /// write's first send and its retry. The retry sent nothing, since it
-    /// would have undone that change.
+    /// Another change to the meal call reached the feeder after this write
+    /// read the clip it held: a later upload, before a delete's erase or
+    /// between a write's first send and its retry. Nothing that would undo
+    /// that change ran.
     Superseded,
     /// The feeder refused it; nothing ran.
     Refused { refusal: FeederRefusal },

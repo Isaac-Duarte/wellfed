@@ -36,7 +36,7 @@ Every kind of device serves these.
 | `GetPlans`, `PutPlans { base, plans }` | `GetPlans` is answered `Plans { generation, writable, plans, skipped }`, where `skipped` names each slot's skipped meal (Unix seconds) while its skip stands. `PutPlans` replaces all ten slots; a plan whose extension tail the build can't read is refused `Invalid` ([whole-replace writes](device-api.md#everything-else)). A plan's `call` is how many times the meal call plays before it, 0 to 5 |
 | `SkipMeal { slot, due_s }`, `UnskipMeal { slot, due_s }` | Skip one of today's meals still to come, or undo the skip until it is due |
 | `ResetDesiccant` | Records a desiccant replacement today by the feeder's clock |
-| `GetCall`, `StartCall { bytes, crc }`, `CallChunk { offset, data }`, `DeleteCall`, `PlayCall` | The meal call's clip. `GetCall` is answered `Call(CallView)`. The writes are owners only; `PlayCall` is any client's |
+| `GetCall`, `StartCall { bytes, crc }`, `CallChunk { offset, data }`, `DeleteCall`, `DeleteCallIf { bytes, crc }`, `PlayCall` | The meal call's clip. `GetCall` is answered `Call(CallView)`. The writes are owners only; `PlayCall` is any client's |
 
 ## What a feed records
 
@@ -142,6 +142,7 @@ A subscriber that asked for samples (`Samples::On`) gets every kind, each on its
 - `CallChunk { offset, data }` sends the stream from where the upload stands, 512 bytes a chunk (the last may be shorter). It is answered `Call(CallView)` once queued, `Busy` while the chunk before is still being written, and `Invalid` for any other offset or length. A chunk already received is answered without a write, so a retry is safe.
 - After the last chunk the writer reads the stream back against the CRC and stores the clip (`Stored`), or keeps none (`None`). `GetCall` shows which. A restart forgets an upload in progress.
 - `DeleteCall` is answered `Done` once no clip is stored.
+- `DeleteCallIf { bytes, crc }` erases the clip only while it is still the one of that length and CRC, stored or arriving. It is answered as `DeleteCall` is, and `Done` at once with no clip stored. Another clip is refused `Replaced` and kept, so a retry after a lost answer never erases an upload that came after the clip its client read. The owner's server erases this way (revision 4).
 - Each write is refused `Busy` while the outputs are claimed, and waits on the writer while a call plays, so the speaker never reads a clip being rewritten.
 - `PlayCall` plays the stored clip once so its owner can hear it, answered `Done` once queued. It is refused `NotFound` with no clip, `Muted` as a test tune is, and `Busy` under a test tune's rules, including when the clip would still sound as a meal's call begins.
 

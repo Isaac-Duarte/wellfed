@@ -163,6 +163,8 @@ fn op() -> impl Strategy<Value = Op<'static>> {
             .prop_map(|(slot, due_s)| Op::Feeder(FeederOp::SkipMeal { slot, due_s })),
         (any::<u8>(), any::<u32>())
             .prop_map(|(slot, due_s)| Op::Feeder(FeederOp::UnskipMeal { slot, due_s })),
+        (any::<u32>(), any::<u32>())
+            .prop_map(|(bytes, crc)| Op::Feeder(FeederOp::DeleteCallIf { bytes, crc })),
     ]
 }
 

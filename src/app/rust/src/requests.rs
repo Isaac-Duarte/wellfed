@@ -612,7 +612,9 @@ pub(crate) const fn refusal_of(refusal: Refusal) -> FeederRefusal {
         Refusal::Unverified => FeederRefusal::Unverified,
         Refusal::Portions { asked } => FeederRefusal::Portions { asked: Some(asked) },
         Refusal::NoClock => FeederRefusal::NoClock,
-        Refusal::Unknown => FeederRefusal::Unknown,
+        // Only a conditional meal-call erase gets it, which the app never
+        // sends: the owner's server sends it.
+        Refusal::Replaced | Refusal::Unknown => FeederRefusal::Unknown,
     }
 }
 

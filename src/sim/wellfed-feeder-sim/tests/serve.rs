@@ -10,6 +10,7 @@ use std::time::Duration;
 use wellfed_connect::Samples;
 
 use wellfed_client::api::Invite;
+use wellfed_client::call::Clip;
 use wellfed_connect::{AskError, Connection, Cursor, Error as ConnectError, join};
 use wellfed_core::clock::ntp;
 use wellfed_device_api::mailbox::KeyResult;
@@ -23,11 +24,11 @@ use wellfed_feeder_sim::harness::{self, local};
 use wellfed_feeder_sim::serve::{Control, Event};
 use wellfed_feeder_sim::sim::Record;
 use wellfed_model::{
-    Answer, Bowl, Calibration, CalibrationView, ClientRole, CoreEvent, Desiccant, EventBody,
-    FeederEvent, FeederSettings, FeederSettingsPatch, Generation, Joined, MealReminder, MetricKind,
-    Model, NtpResult, NtpServer, Op, PLANS, Phase, Plan, Plans, Pushed, Refusal, SampleValue,
-    Settings, Source, Stats, StatsSection, Status, TimeChanges, TimeSource, TimeSync, Tune,
-    Weekdays, Wifi,
+    Answer, Bowl, Calibration, CalibrationView, CallClip, ClientRole, CoreEvent, Desiccant,
+    EventBody, FeederEvent, FeederSettings, FeederSettingsPatch, Generation, Joined, MealReminder,
+    MetricKind, Model, NtpResult, NtpServer, Op, PLANS, Phase, Plan, Plans, Pushed, Refusal,
+    SampleValue, Settings, Source, Stats, StatsSection, Status, TimeChanges, TimeSource, TimeSync,
+    Tune, Weekdays, Wifi,
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
@@ -599,6 +600,80 @@ fn a_fifth_connection_takes_the_slot_of_the_session_idle_longest() {
             let answer = status(&mut sim, &mut open[index]).await;
             assert!(matches!(answer, Status { .. }), "session {index}");
         }
+        sim.stop().await;
+    });
+}
+
+/// Store `stream` as the meal call over `owner`'s session, a chunk at a
+/// time, and wait until the feeder holds it.
+async fn store_call(sim: &mut Running, owner: &mut Connection, stream: &[u8]) -> CallClip {
+    let clip = Clip::from_stream(stream.to_vec()).unwrap();
+    assert_eq!(
+        sim.ask(owner, &clip.start()).await,
+        Answer::Done { generation: None }
+    );
+    let mut offset = 0;
+    while let Some(chunk) = clip.chunk(offset) {
+        let Op::CallChunk { data, .. } = &chunk else {
+            panic!("{chunk:?}");
+        };
+        let len = u32::try_from(data.len()).unwrap();
+        match sim.ask(owner, &chunk).await {
+            Answer::Call(_) => offset += len,
+            Answer::Refused(Refusal::Busy) => tokio::time::sleep(Duration::from_millis(20)).await,
+            other => panic!("{other:?}"),
+        }
+    }
+    loop {
+        match sim.ask(owner, &Op::GetCall).await {
+            Answer::Call(view) if matches!(view.clip, CallClip::Stored { .. }) => {
+                return view.clip;
+            }
+            Answer::Call(_) | Answer::Refused(Refusal::Busy) => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
+/// The conditional erase erases only the clip it names: another clip is
+/// refused `Replaced` and kept, no clip at all is done.
+#[test]
+fn a_conditional_erase_keeps_a_clip_it_does_not_name() {
+    local(async {
+        let mut sim = Running::start(&Flash::memory(), true).await;
+        let mut owner = sim.open(OWNER).await.unwrap();
+        let first = Clip::from_stream(vec![0x11; 700]).unwrap();
+        let named = Op::DeleteCallIf {
+            bytes: first.bytes(),
+            crc: first.crc(),
+        };
+
+        let none = sim.ask(&mut owner, &named).await;
+        assert_eq!(none, Answer::Done { generation: None });
+
+        let stored = store_call(&mut sim, &mut owner, first.stream()).await;
+        let later = store_call(&mut sim, &mut owner, &[0x22; 600]).await;
+        assert_ne!(stored, later);
+        let kept = sim.ask(&mut owner, &named).await;
+        assert_eq!(kept, Answer::Refused(Refusal::Replaced));
+        let view = sim.ask(&mut owner, &Op::GetCall).await;
+        assert!(
+            matches!(view, Answer::Call(view) if view.clip == later),
+            "{view:?}"
+        );
+
+        let CallClip::Stored { bytes, crc } = later else {
+            panic!("{later:?}");
+        };
+        let erased = sim.ask(&mut owner, &Op::DeleteCallIf { bytes, crc }).await;
+        assert_eq!(erased, Answer::Done { generation: None });
+        let view = sim.ask(&mut owner, &Op::GetCall).await;
+        assert!(
+            matches!(view, Answer::Call(view) if view.clip == CallClip::None),
+            "{view:?}"
+        );
         sim.stop().await;
     });
 }
