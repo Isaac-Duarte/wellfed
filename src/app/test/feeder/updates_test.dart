@@ -333,6 +333,13 @@ void main() {
     expect(install.onPressed, isNull, reason: 'the feeder would refuse it');
   });
 
+  // The reason is the shared rule's: a state a newer build added blocks too.
+  testWidgets('a recovery copy in a state this app cannot name blocks updates', (tester) async {
+    await _show(tester, bank0: const Bank0Check.unknown());
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+    expect(find.textContaining('Update this app to read it'), findsOneWidget);
+  });
+
   testWidgets('a recovery copy that matches its record blocks nothing', (tester) async {
     await _show(tester, bank0: const Bank0Check.match());
     expect(find.textContaining('Updates are blocked'), findsNothing);
