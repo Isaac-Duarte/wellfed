@@ -21,18 +21,18 @@ use crate::evidence::report::{Session, Status, SummaryStatus, Transport};
 use crate::evidence::session::{
     self, Completion, Context, Outcome, Region, Saved, StatusEvent, progress,
 };
-use crate::link::protocol::{self, CAPACITY, Port, SECTOR};
+use crate::link::protocol::{CAPACITY, Port, SECTOR};
 use crate::link::sector::{self, Baseline};
 use crate::link::status;
 use crate::writers::development::{
     self, Acquired, BANK0, FACTORY, GiveWay, Layout, PinnedGiveWay, Transaction, Update,
 };
-use wellfed_formats::canonical::{canonical_of, sha256};
+use wellfed_bench_formats::session::Mode as ReportMode;
+use wellfed_formats::canonical::sha256;
 use wellfed_formats::flash_plan::{
     DevelopmentPlan, GiveWayBindings, GiveWayPlan, Reviewed, UpdateBindings,
 };
 use wellfed_formats::require;
-use wellfed_formats::session::Mode as ReportMode;
 use wellfed_image::review::{Frozen, frozen};
 use wellfed_proto::device::Model;
 
@@ -58,10 +58,6 @@ pub enum UpdateError {
     InspectedRegions,
     #[error("Complete guard acquisition required")]
     InspectedGuards,
-    #[error("Operation differs before serial access")]
-    OperationDiffers,
-    #[error("Execution bindings differ before serial access")]
-    BindingsDiffer,
 
     #[error(
         "A fountain update finished with --interrupted needs --stopped-session: the stopped session's output"
@@ -510,7 +506,7 @@ pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> 
             &loaded.update(),
             &current,
             Some(&other),
-            neighbors.clone(),
+            neighbors,
         )?,
     };
 
@@ -530,22 +526,6 @@ pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> 
         args.evidence.plan.as_deref(),
         args.evidence.expected_plan_sha256.as_deref(),
         &reviewed,
-    )?;
-
-    // Recheck the operation and bindings themselves before serial access.
-    require(
-        canonical_of(&reviewed.operation_plan)?
-            == canonical_of(&development::plan_bound(
-                &loaded.update(),
-                &current,
-                Some(&other),
-                neighbors,
-            )?)?,
-        || UpdateError::OperationDiffers,
-    )?;
-    require(
-        canonical_of(&reviewed.bindings)? == canonical_of(&loaded.bindings)?,
-        || UpdateError::BindingsDiffer,
     )?;
 
     let execution = Execution {
@@ -618,8 +598,7 @@ fn session_run(
     let update = loaded.update();
 
     let result = (|| -> Result<Option<development::Verified>> {
-        // A fresh ready wait before each command: see `Readiness`.
-        let mut port = protocol::Prompt(context.record(&args.evidence.port, &directory)?);
+        let mut port = context.record(&args.evidence.port, &directory)?;
         report.update(|r| r.status = Status::Running)?;
 
         progress(&format!(
@@ -728,6 +707,7 @@ fn session_run(
     })();
 
     finish(
+        args.mode,
         &directory,
         report,
         result,
@@ -737,6 +717,7 @@ fn session_run(
 
 /// Close a session's report the way the Python clients do.
 fn finish<B: Serialize>(
+    mode: Mode,
     directory: &Path,
     report: Session<Details<'_, B>>,
     result: Result<Option<development::Verified>>,
@@ -744,6 +725,7 @@ fn finish<B: Serialize>(
 ) -> Result<Outcome> {
     let completion = match &result {
         Ok(_) => Completion::Complete,
+        Err(error) if mode == Mode::Inspect && error.is_state_mismatch() => Completion::Mismatch,
         Err(_) => Completion::Stopped,
     };
 
@@ -766,6 +748,7 @@ fn finish<B: Serialize>(
             Completion::Stopped => {
                 "Stopped without replay; keep application boot excluded and inspect evidence"
             }
+            Completion::Mismatch => "Inspected: the bank is not in this command's state",
         });
     });
 
@@ -1027,6 +1010,7 @@ fn give_way_session(
     })();
 
     finish(
+        args.mode,
         &directory,
         report,
         result,
@@ -1092,7 +1076,14 @@ mod tests {
             application_boot_verified: false,
             scope: "scope".into(),
         };
-        let outcome = finish(&directory, report, Ok(Some(verified)), Some(b"plan")).unwrap();
+        let outcome = finish(
+            Mode::Execute,
+            &directory,
+            report,
+            Ok(Some(verified)),
+            Some(b"plan"),
+        )
+        .unwrap();
         let result = json!({"status": "verified_via_supplied_transports", "region_sha256": "r",
                             "erase_sectors": 2, "application_boot_verified": false,
                             "scope": "scope"});
@@ -1167,7 +1158,7 @@ mod tests {
             })
         });
         let stopped = Err(protocol::ProtocolError::Interrupted.into());
-        let outcome = finish(&directory, report, stopped, None).unwrap();
+        let outcome = finish(Mode::Inspect, &directory, report, stopped, None).unwrap();
 
         let closed = saved(&directory.join("report.json"));
         assert_eq!(
@@ -1189,6 +1180,50 @@ mod tests {
             outcome.summary,
             json!({"status": "stopped", "mode": "inspect", "output": directory,
                    "result": null, "error": "refused: Interrupted by the operator; no retry"})
+        );
+    }
+
+    /// An inspection that read the bank and found it in another state exits
+    /// 4, apart from a stop (1), so the bench's probes can tell "not this
+    /// state" from "nothing known". The same error in an execution, or any
+    /// other error in an inspection, is a stop.
+    #[test]
+    fn an_inspection_of_another_state_is_a_mismatch_not_a_stop() {
+        let checkout = tempfile::tempdir().unwrap();
+        std::fs::create_dir(checkout.path().join("private")).unwrap();
+        let context = context(checkout.path());
+        let directory = checkout.path().join("private");
+        let bindings = json!({"kind": "plaf103_bank1_development"});
+        let close = |mode, error: crate::Error| {
+            let report = Session::open(
+                directory.join("report.json"),
+                Details::new(&context, mode, &bindings),
+            )
+            .unwrap();
+            finish(mode, &directory, report, Err(error), None)
+                .unwrap()
+                .completion
+        };
+
+        let mismatch = close(
+            Mode::Inspect,
+            development::DevelopmentError::NotGivenWay.into(),
+        );
+        assert_eq!(mismatch, Completion::Mismatch);
+        assert_eq!(mismatch.code(), 4);
+        assert_eq!(
+            close(
+                Mode::Inspect,
+                development::DevelopmentError::FactoryDiffers.into()
+            ),
+            Completion::Stopped
+        );
+        assert_eq!(
+            close(
+                Mode::Execute,
+                development::DevelopmentError::NotSource.into()
+            ),
+            Completion::Stopped
         );
     }
 }

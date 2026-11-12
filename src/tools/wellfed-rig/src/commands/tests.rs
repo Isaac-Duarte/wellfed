@@ -842,6 +842,22 @@ fn a_write_that_exits_short_of_complete_leaves_its_bank_unknown_whatever_its_cod
     }
 }
 
+/// A cancel taken before a write starts keeps it from starting: no flash
+/// client runs, and the ledger keeps what it had, as nothing was written.
+#[test]
+fn a_cancel_before_the_write_starts_runs_nothing() {
+    let mut rig = rig();
+    let execute = prepared_give_way(&mut rig);
+    let ran = rig.tools.0.borrow().flash.len();
+    rig.bench.cancel.cancel();
+
+    let result = rig.bench.give_way_execute(&execute);
+
+    assert!(matches!(result, Err(Error::Interrupted)), "{result:?}");
+    assert_eq!(rig.tools.0.borrow().flash.len(), ran, "no flash client ran");
+    assert!(rig.bench.written.is_empty(), "{:?}", rig.bench.written);
+}
+
 fn stock(name: &str, fallback: Option<&str>) -> StockArgs {
     StockArgs {
         name: name.into(),
@@ -898,6 +914,37 @@ fn stock_prepare_then_execute_puts_the_original_back_into_bank_1() {
     );
     assert!(flag(last, "--plan").ends_with("st-plan.json"));
     assert!(flag(last, "--current").ends_with("st-full/flash-read.bin"));
+}
+
+/// A stock recovery that stops after erasing may leave bank 1 anything:
+/// the ledger says unknown, as for an update or a give-way that stopped,
+/// and nothing boots or is retried.
+#[test]
+fn a_stopped_stock_recovery_leaves_bank_1_unknown() {
+    for code in [1, 2] {
+        let mut rig = rig();
+        fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
+        let args = stock("st", None);
+        assert_eq!(rig.bench.stock_prepare(&args).unwrap(), 0);
+
+        rig.tools.0.borrow_mut().flash_codes.push_back(code);
+        let execute = stock_execute(args, "stock-recovery");
+        assert_eq!(rig.bench.stock_execute(&execute).unwrap(), 1);
+
+        assert_eq!(
+            rig.bench.written,
+            [Written {
+                bank: Bank::One,
+                content: Content::Unknown,
+                source: wellfed_bench_formats::banks::Source::StockExecute,
+            }],
+            "exit {code}"
+        );
+        assert!(
+            !captured(&rig).iter().any(|c| c == "st-boot"),
+            "nothing booted"
+        );
+    }
 }
 
 #[test]
@@ -1723,15 +1770,68 @@ fn a_refused_offer_ends_the_run_before_any_activation() {
     }
 
     let error = rig.bench.ota(&args).unwrap_err();
-    let Error::Ota(OtaError::PushEnded { push, name, last }) = &error else {
+    let Error::Ota(OtaError::PushEnded {
+        push,
+        seen,
+        name,
+        last,
+    }) = &error
+    else {
         panic!("{error:?}");
     };
     assert!(
         matches!(**push, PushError::Device(DeviceError::Install(_))),
         "{push:?}"
     );
+    assert_eq!(*seen, ota::Seen::Nothing);
     assert_eq!((name.as_str(), *last), ("unit", 1));
     assert_eq!(captured(&rig), ["unit-01"]);
+    // The offer went out, so the ledger asks for a read of bank 1.
+    assert_eq!(
+        rig.bench.written,
+        [Written {
+            bank: Bank::One,
+            content: Content::Unknown,
+            source: wellfed_bench_formats::banks::Source::OtaStopped,
+        }]
+    );
+}
+
+/// A push that ends in an error once the image activated (its session
+/// drops as the feeder restarts into the new build) does not end the
+/// watch: the trial's confirmation decides, and is what the ledger keeps.
+#[test]
+fn a_push_error_after_the_activation_leaves_the_trial_to_decide() {
+    let mut rig = rig();
+    let args = plain_review(&rig);
+    {
+        let mut calls = rig.tools.0.borrow_mut();
+        calls
+            .install_results
+            .push_back(Err(Arc::new(PushError::Device(DeviceError::Install(
+                wellfed_client::update::InstallError::Refused(wellfed_model::Refusal::Update(
+                    wellfed_model::UpdateRefusal::Same,
+                )),
+            )))));
+        calls
+            .rx
+            .push_back(b"PLOTA1 activated version=1\r\n".to_vec());
+        calls.rx.push_back(
+            format!("PLFW1 start build={BUILD} bank=1\r\nPLCNF1 confirmed=1 healthy_ms=30000\r\n")
+                .into_bytes(),
+        );
+    }
+
+    assert_eq!(rig.bench.ota(&args).unwrap(), 0);
+    assert_eq!(captured(&rig), ["unit-01", "unit-02"]);
+    assert_eq!(
+        rig.bench.written,
+        [Written {
+            bank: Bank::One,
+            content: Content::Build { id: BUILD.into() },
+            source: wellfed_bench_formats::banks::Source::OtaConfirmed,
+        }]
+    );
 }
 
 #[test]
@@ -1856,9 +1956,39 @@ fn ota_stops_when_time_runs_out() {
     );
     assert_eq!(
         error.to_string(),
-        "No outcome within 2.5 min; the feeder is untouched. Captures unit-01…03"
+        "No outcome within 2.5 min; the UART showed no give-way, download or activation, so bank 1 is likely as it was; a read settles it. Captures unit-01…03"
     );
     assert_eq!(captured(&rig), ["unit-01", "unit-02", "unit-03"]);
+    assert_eq!(
+        rig.bench.written,
+        [Written {
+            bank: Bank::One,
+            content: Content::Unknown,
+            source: wellfed_bench_formats::banks::Source::OtaStopped,
+        }]
+    );
+}
+
+/// A run that times out after the UART showed the image activate never
+/// claims the feeder untouched: what bank 1 runs is unknown.
+#[test]
+fn a_timeout_after_the_activation_says_the_outcome_is_unknown() {
+    let mut rig = rig();
+    let mut args = plain_review(&rig);
+    args.minutes = 1.0;
+    rig.tools.0.borrow_mut().rx.push_back(
+        b"PLWCH1 give_way=1 version=1 restart=1\r\nPLOTA1 activated version=1\r\n".to_vec(),
+    );
+
+    let error = rig.bench.ota(&args).unwrap_err();
+    assert_matches!(
+        error,
+        Error::Ota(OtaError::NoOutcome {
+            seen: ota::Seen::Activated,
+            ..
+        })
+    );
+    assert!(!error.to_string().contains("untouched"), "{error}");
 }
 
 const OTHER: &str = "5b8433a4f795cb2178c7a38a45087a6727e7a2621fc557d146cff607556f991e";
@@ -2699,7 +2829,7 @@ fn a_stopped_give_way_prints_the_way_on_bank_1_is_in() {
     );
     assert!(!steps.contains("boot unit-bank0"), "{steps}");
 
-    let given = stopped_at(0, &[2, 0]);
+    let given = stopped_at(0, &[4, 0]);
     assert_eq!(
         probes(&given),
         [
@@ -2733,12 +2863,23 @@ fn a_stopped_give_way_prints_the_way_on_bank_1_is_in() {
         2
     );
 
-    // Both refused (exit 2), as for a frame that cleared only some of byte
-    // 0's bits: no flash-client way on, and none printed.
-    assert_unrecognized(&stopped_at(0, &[2, 2]));
+    // Both read bank 1 in another state (exit 4), as for a frame that
+    // cleared only some of byte 0's bits: no flash-client way on, and none
+    // printed.
+    assert_unrecognized(&stopped_at(0, &[4, 4]));
+
+    // A refusal before the inspection's session (exit 2) read nothing, so
+    // it tells nothing either, and the next inspection is not run.
+    let refused = stopped_at(0, &[2]);
+    assert_eq!(probes(&refused).len(), 1);
+    assert!(
+        next(&refused).contains("if give-way-prepare accepts bank 1"),
+        "{}",
+        next(&refused)
+    );
 }
 
-/// The stop where every inspection refused bank 1: a full read to look,
+/// The stop where every inspection read bank 1 in another state: a full read to look,
 /// and none of the writes or conditions the inspections ruled out.
 fn assert_unrecognized(rig: &Rig) {
     let steps = next(rig);
@@ -2752,7 +2893,7 @@ fn assert_unrecognized(rig: &Rig) {
 }
 
 /// After a marker restore that stopped, the inspections tell the given-way
-/// state (a fresh `--restore-marker`), an erased or staged marker sector
+/// state (a fresh `--restore-marker`), an erased, part-programmed or staged marker sector
 /// (plain `--interrupted`) and a marker already back (boot bank 1) apart.
 #[test]
 fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
@@ -2765,7 +2906,7 @@ fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
     assert!(steps.contains("--restore-marker"), "{steps}");
     assert!(!steps.contains("--interrupted"), "{steps}");
 
-    let staged = stopped_at(1, &[2, 0]);
+    let staged = stopped_at(1, &[4, 0]);
     assert_eq!(
         probes(&staged),
         [
@@ -2777,18 +2918,18 @@ fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
     assert!(steps.contains("--interrupted"), "{steps}");
     assert!(!steps.contains("--restore-marker"), "{steps}");
 
-    let restored = stopped_at(1, &[2, 2, 0]);
+    let restored = stopped_at(1, &[4, 4, 0]);
     assert_eq!(
         probes(&restored)[2],
         ("update inspect".into(), false, false)
     );
     assert!(next(&restored).starts_with("wellfed-bench boot unit-bank1"));
 
-    assert_unrecognized(&stopped_at(1, &[2, 2, 2]));
+    assert_unrecognized(&stopped_at(1, &[4, 4, 4]));
 
     // The second inspection stopped: nothing is known, so every way on is
     // printed with its condition.
-    let unknown = stopped_at(1, &[2, 1]);
+    let unknown = stopped_at(1, &[4, 1]);
     assert_eq!(probes(&unknown).len(), 2);
     let steps = next(&unknown);
     for condition in [
@@ -2805,7 +2946,7 @@ fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
 /// flash client's own image checks accept for those states (its test
 /// `a_stopped_marker_restore_resumes_by_one_mode_never_both`, which this
 /// crate cannot link): `--restore-marker` alone from the given-way bytes,
-/// `--interrupted` alone from an erased or staged marker sector.
+/// `--interrupted` alone from an erased, part-programmed or staged marker sector.
 #[test]
 fn each_printed_marker_restore_names_exactly_one_mode() {
     use super::bank0::{At, Next, Resume, restore_args};

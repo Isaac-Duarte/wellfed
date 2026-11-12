@@ -287,7 +287,7 @@ fn activity_lines(state: &BenchState) -> Vec<Line<'static>> {
         .iter()
         .map(|child| {
             Line::from(format!(
-                "{:?} pid {}: {} (since {})",
+                "{} pid {}: {} (since {})",
                 child.kind,
                 child.pid,
                 child.label,
@@ -543,17 +543,20 @@ fn length(seconds: f64) -> String {
 
 fn draw_log(frame: &mut Frame<'_>, area: Rect, screen: &Screen<'_>) {
     let rows = usize::from(area.height.saturating_sub(2));
-    let end = screen.log.len().saturating_sub(screen.scroll);
+    // Scrolled to the top (Home, or past it), the oldest page still fills
+    // the box rather than leave it empty.
+    let scroll = screen.scroll.min(screen.log.len().saturating_sub(rows));
+    let end = screen.log.len().saturating_sub(scroll);
     let start = end.saturating_sub(rows);
     let lines: Vec<Line<'_>> = screen
         .log
         .range(start..end)
         .map(|line| Line::from(line.as_str()))
         .collect();
-    let title = if screen.scroll == 0 {
+    let title = if scroll == 0 {
         " Log ".to_string()
     } else {
-        format!(" Log ({} lines up; End follows) ", screen.scroll)
+        format!(" Log ({scroll} lines up; End follows) ")
     };
     frame.render_widget(
         Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title)),

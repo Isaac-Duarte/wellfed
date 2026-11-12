@@ -9,6 +9,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::flash::FlashUse;
+
 use serde::{Deserialize, Serialize};
 
 use super::banks::Ledger;
@@ -222,14 +224,28 @@ pub struct Activity {
 #[serde(rename_all = "lowercase")]
 pub enum ActivityKind {
     /// `wellfed-flash`, which a cancel only ever interrupts: SIGINT makes
-    /// it stop its session terminally and record it.
-    Flash,
+    /// it stop its session terminally and record it. What it does with the
+    /// UART decides [`Uart`], and with it every guard on a write.
+    Flash(FlashUse),
     /// `wellfed-build`.
     Build,
     /// `wellfed restore-stock`, which ends through its own stop on SIGTERM.
     Install,
     /// `sigrok-cli`.
     Analyzer,
+}
+
+/// The child's tool, as a person reads it: its use of the UART is shown
+/// by the UART's own state.
+impl std::fmt::Display for ActivityKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Flash(_) => "Flash",
+            Self::Build => "Build",
+            Self::Install => "Install",
+            Self::Analyzer => "Analyzer",
+        })
+    }
 }
 
 /// What the feeder's UART is doing, for the banner that says not to touch
@@ -254,28 +270,24 @@ pub enum Uart {
     },
 }
 
-/// The flash client's subcommands that write flash, and whether each
-/// prints a sector count as it verifies.
-const WRITES: [(&str, bool); 3] = [
-    ("update execute", true),
-    ("give-way execute", false),
-    ("stock-recovery execute", false),
-];
-const OBSERVE: &str = "read observe";
-
 impl Uart {
     /// The UART's state from the job's record and its running children:
     /// a writing flash client outranks a capture, which outranks a loader
     /// session.
     pub fn of(record: Option<&Current>, activity: &[Activity]) -> Self {
-        let flash: Vec<&str> = activity
+        let flash: Vec<FlashUse> = activity
             .iter()
-            .filter(|child| child.kind == ActivityKind::Flash)
-            .map(|child| child.label.as_str())
+            .filter_map(|child| match child.kind {
+                ActivityKind::Flash(how) => Some(how),
+                _ => None,
+            })
             .collect();
 
-        let write = WRITES.iter().find(|(write, _)| flash.contains(write));
-        if let Some(&(_, counted)) = write {
+        let write = flash.iter().find_map(|how| match how {
+            FlashUse::Write { counted } => Some(*counted),
+            _ => None,
+        });
+        if let Some(counted) = write {
             let (done, total) = record
                 .and_then(|record| record.progress.as_ref())
                 .filter(|progress| progress.unit == Unit::Sectors)
@@ -286,7 +298,7 @@ impl Uart {
                 counted,
             };
         }
-        if flash.contains(&OBSERVE) {
+        if flash.contains(&FlashUse::Observe) {
             let path = record
                 .and_then(|record| record.capture.as_ref())
                 .map(|capture| capture.path.clone());
@@ -586,8 +598,9 @@ mod tests {
     }
 
     fn flash(label: &str) -> Activity {
+        let args: Vec<String> = label.split(' ').map(String::from).collect();
         Activity {
-            kind: ActivityKind::Flash,
+            kind: ActivityKind::Flash(FlashUse::of(&args)),
             pid: 7,
             label: label.into(),
             started: 1.0,

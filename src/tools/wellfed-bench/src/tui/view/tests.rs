@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, VecDeque};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use wellfed_bench_formats::banks::{Check, Content, Entry, Ledger, Source, Witness};
+use wellfed_bench_formats::flash::FlashUse;
 use wellfed_bench_formats::live::{
     Activity, ActivityKind, BenchState, CancelState, ClockView, FeederStatus, FeederView, JobView,
     Journal, JournalSource, Phase, ServerView, Session, Uart,
@@ -102,7 +103,7 @@ fn writing() -> BenchState {
         job: Some(job),
         prompt: None,
         activity: vec![Activity {
-            kind: ActivityKind::Flash,
+            kind: ActivityKind::Flash(FlashUse::Write { counted: true }),
             pid: 4300,
             label: "update execute".into(),
             started: NOW - 20.0,
@@ -323,6 +324,11 @@ fn an_idle_bench_has_no_banner_and_a_scrolled_log_holds_its_place() {
     );
     assert!(screen.contains("job line 400"), "{screen}");
     assert!(!screen.contains("job line 401"), "{screen}");
+
+    // Home scrolls the whole log up: the oldest page fills the box.
+    let top = render(&state, &log(100), 100);
+    assert!(top.contains("job line 1 "), "{top}");
+    assert!(!top.contains("Log (100 lines up"), "{top}");
 }
 
 #[test]

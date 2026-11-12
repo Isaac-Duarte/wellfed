@@ -170,8 +170,11 @@ pub struct Key {
 }
 
 impl Key {
-    /// Load a key file, refusing one whose public key is not its seed's.
+    /// Load a key file, refusing one whose public key is not its seed's, or
+    /// one other users can read where its filesystem keeps Unix modes: a
+    /// seed others could read signs for them too.
     pub fn load(path: &Path) -> Result<Self> {
+        wellfed_formats::private::require_unshared(path)?;
         let file: OtaKeyFile = wellfed_formats::load(path)?;
         require(file.version == 1, || KeyError::Version {
             version: file.version,
@@ -842,18 +845,57 @@ mod tests {
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(file["scope"], json!("bench"));
 
+        let private = |path: &Path, text: String| {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::write(path, text).unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+        };
         let mut unscoped = file.clone();
         unscoped.as_object_mut().unwrap().remove("scope");
         let edited = dir.path().join("edited.json");
-        fs::write(&edited, unscoped.to_string()).unwrap();
-        assert!(matches!(Key::load(&edited), Err(Error::Formats(_))));
+        private(&edited, unscoped.to_string());
+        assert!(matches!(
+            Key::load(&edited),
+            Err(Error::Formats(wellfed_formats::Error::Json(_)))
+        ));
 
         file["public_key"] = json!("00".repeat(32));
-        fs::write(&edited, file.to_string()).unwrap();
+        private(&edited, file.to_string());
         assert!(matches!(
             Key::load(&edited),
             Err(Error::Key(KeyError::PublicKey))
         ));
+    }
+
+    /// A key file others can read is refused before its seed is read, for
+    /// every scope: the bench's, an owner's and the release key.
+    #[test]
+    fn a_key_file_others_can_read_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        for scope in [KeyScope::Bench, KeyScope::Owner, KeyScope::Release] {
+            let path = dir.path().join(format!("{scope:?}.json"));
+            if scope == KeyScope::Release {
+                crate::release::release_keygen(&path).unwrap();
+            } else {
+                keygen(&path, scope).unwrap();
+            }
+            assert!(Key::load(&path).is_ok(), "{scope:?}");
+
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+            assert!(
+                matches!(
+                    Key::load(&path),
+                    Err(Error::Formats(wellfed_formats::Error::Shared {
+                        mode: 0o640,
+                        ..
+                    }))
+                ),
+                "{scope:?}"
+            );
+        }
     }
 
     /// An owner's key is the same file under its own scope, and signs what

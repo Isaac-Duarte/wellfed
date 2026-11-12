@@ -105,6 +105,9 @@ impl Feed for Attached {
         self.left.store(true, Ordering::SeqCst);
     }
 
+    /// Leaving another process's screen asks nothing to confirm.
+    fn confirm_pressed(&mut self) {}
+
     fn finished(&self) -> bool {
         self.left.load(Ordering::SeqCst)
     }

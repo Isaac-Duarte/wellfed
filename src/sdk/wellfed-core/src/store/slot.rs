@@ -295,7 +295,11 @@ pub enum Found<V> {
     Future,
     /// Committed and checked, in a major older than any this build
     /// decodes: its own record, which no decoder here reads. Settings takes
-    /// it as superseded; the client and update stores never write over it.
+    /// it as superseded; the client and update stores never write over it
+    /// while it is the only record. Beside a valid record, [`newest`] opens
+    /// on that one and the next save goes into this unit: the record rules
+    /// keep a newer build's records readable here (a minor) or out of
+    /// these sectors (a major), so it holds nothing newer.
     Older,
     /// No marker, and the bytes could be this store's own record cut
     /// short: its magic and marker fields keep every bit they keep set.

@@ -9,13 +9,16 @@
 //! its bank 0 must stay exactly stock.
 //!
 //! An interrupted transaction is finished from a fresh acquisition, never
-//! from the stopped journal: the marker sector must already be staged, and
-//! every sector must equal its source, its staged target or erased flash.
-//! One sector may instead hold the staged target's first one to three program
-//! frames followed by erased flash, the only state a stopped program of an
-//! erased sector leaves. The one other state accepted is a stop between the
-//! marker sector's erase and its first frame: that sector wholly erased, and
-//! every other sector exactly the source's.
+//! from the stopped journal. The marker sector is staged first, so either a
+//! stop came inside its own step, or that sector is already staged:
+//! - Inside the marker sector's step, after its erase: that sector holds
+//!   none to three of its staged program frames followed by erased flash,
+//!   and every other sector is still exactly the source's. A stopped marker
+//!   restore, whose one changed sector is the marker's, always leaves this.
+//! - After it: every sector equals its source, its staged target or erased
+//!   flash, and one sector may instead hold the staged target's first one
+//!   to three program frames followed by erased flash, the only state a
+//!   stopped program of an erased sector leaves.
 
 use std::path::Path;
 
@@ -266,12 +269,13 @@ pub fn images(update: &Update, current: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
     let staged = staged_of(&proposed);
     let erased = [0xffu8; SECTOR];
 
-    // The first step's erase took and its program never started: the marker
-    // sector is wholly erased and every other sector is still exactly the
-    // source's. It is the staged-marker state before its first frame, so the
-    // plan stages the marker sector first and commits the marker last, as
-    // for a fresh update.
-    if current[..SECTOR] == erased {
+    // The first step's erase took and its program stopped before its last
+    // frame: the marker sector holds none to three of its staged frames
+    // followed by erased flash, and every other sector is still exactly the
+    // source's. Its marker bytes are erased, as staging withholds them, so
+    // the plan stages the marker sector again first and commits the marker
+    // last, as for a fresh update.
+    if part_programmed(&current[..SECTOR], &staged[..SECTOR], 0) {
         let mismatch = (SECTOR..current.len())
             .step_by(SECTOR)
             .find(|at| current[*at..at + SECTOR] != union[*at..at + SECTOR]);
@@ -294,11 +298,10 @@ pub fn images(update: &Update, current: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
         if sector == &union[at..at + SECTOR] || sector == want || sector == erased {
             continue;
         }
-        let frames = (FRAME..SECTOR)
-            .step_by(FRAME)
-            .any(|n| sector[..n] == want[..n] && sector[n..].iter().all(|b| *b == 0xff));
-        require(frames, || DevelopmentError::UnknownSector {
-            offset: layout.start + at,
+        require(part_programmed(sector, want, FRAME), || {
+            DevelopmentError::UnknownSector {
+                offset: layout.start + at,
+            }
         })?;
         partial += 1;
     }
@@ -307,6 +310,33 @@ pub fn images(update: &Update, current: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
         count: partial,
     })?;
     Ok((proposed, staged))
+}
+
+/// Whether `sector` is `want`'s first whole program frames, at least
+/// `least` bytes of them and short of all, followed by erased flash: what a
+/// program stopped after the sector's erase leaves. A sector that is `want`
+/// whole is programmed, even when `want` itself ends in erased frames.
+fn part_programmed(sector: &[u8], want: &[u8], least: usize) -> bool {
+    sector != want
+        && (least..SECTOR)
+            .step_by(FRAME)
+            .any(|n| sector[..n] == want[..n] && sector[n..].iter().all(|b| *b == 0xff))
+}
+
+impl DevelopmentError {
+    /// Whether the inspected bank read whole and is simply not in the state
+    /// the command takes on, rather than the read or a guard failing.
+    pub fn is_state_mismatch(&self) -> bool {
+        matches!(
+            self,
+            Self::NotGivenWay
+                | Self::NotSource
+                | Self::MarkerNotStaged
+                | Self::UnknownSector { .. }
+                | Self::PartialSectors { .. }
+                | Self::NothingToGiveWay
+        )
+    }
 }
 
 /// The reviewed plan; `other` is the inspected other-bank sector, whose hash

@@ -751,6 +751,8 @@ mod tests {
     }
 
     fn key_file(path: &Path, secret: [u8; 32], feeder: &Threaded) {
+        use std::os::unix::fs::PermissionsExt;
+
         let file = serde_json::json!({
             "version": 1,
             "secret": wellfed_session::hex::Lower(&secret).to_string(),
@@ -758,6 +760,7 @@ mod tests {
             "feeders": [{ "identity": wellfed_session::hex::Lower(&feeder.identity).to_string() }],
         });
         fs::write(path, file.to_string()).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
     }
 
     /// A checkout holding the owner's key file, a stand-in server on its

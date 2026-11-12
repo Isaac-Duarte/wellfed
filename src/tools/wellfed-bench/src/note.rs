@@ -8,7 +8,7 @@
 //! `--`: `wellfed-bench note step -- "- flash bank 1"`. The MCP tools build
 //! the same arguments directly, with no command line to parse.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::Context;
@@ -115,7 +115,10 @@ fn timer_body(args: TimerArgs, now: &Zoned) -> anyhow::Result<Body> {
 
     let due = match (&args.at, &args.after) {
         (Some(at), _) => next_at(at, now)?,
-        (None, Some(after)) => now.timestamp() + duration("--in", after)?,
+        (None, Some(after)) => now
+            .timestamp()
+            .checked_add(duration("--in", after)?)
+            .with_context(|| format!("--in {after}: past any date"))?,
         (None, None) => anyhow::bail!("--at, --in or --clear says when"),
     };
     let window = match &args.window {
@@ -167,10 +170,23 @@ fn seconds(at: Timestamp) -> f64 {
 }
 
 /// `path` as the server keeps it: root-relative, inside `private/`.
+///
+/// Judged by its words, as the server judges them: `..` goes up a word and
+/// no link is followed, so a worktree's `private/` subdirectories linked to
+/// the main checkout's are inside, as the server takes them.
 fn inside_private(root: &Path, path: &Path) -> anyhow::Result<String> {
-    let path = path
-        .canonicalize()
-        .with_context(|| format!("{}", path.display()))?;
+    std::fs::metadata(path).with_context(|| format!("{}", path.display()))?;
+    let mut lexical = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                lexical.pop();
+            }
+            other => lexical.push(other),
+        }
+    }
+    let path = lexical;
     let private = root.join("private");
     let inside = path
         .strip_prefix(root)
@@ -227,7 +243,10 @@ pub(crate) fn describe(note: &Note) -> String {
 
 /// `at`, Unix seconds, as the bench host's local wall clock.
 pub(crate) fn clock(at: f64) -> String {
-    let Ok(at) = Timestamp::from_duration(SignedDuration::from_secs_f64(at)) else {
+    let Some(at) = SignedDuration::try_from_secs_f64(at)
+        .ok()
+        .and_then(|since| Timestamp::from_duration(since).ok())
+    else {
         return format!("{at:.0}");
     };
     at.to_zoned(jiff::tz::TimeZone::system())
@@ -399,5 +418,46 @@ mod tests {
             );
             assert!(refused.is_err(), "{outside}");
         }
+
+        // A subdirectory linked from elsewhere, as a worktree's are, is
+        // inside by its words.
+        let elsewhere = tempfile::tempdir().unwrap();
+        std::fs::create_dir(elsewhere.path().join("boot-02")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), root.join("private/linked")).unwrap();
+        let linked = body(
+            parse(&[
+                "evidence",
+                "--card",
+                "schedule",
+                "private/linked/boot-02",
+                "--pass",
+            ]),
+            &root,
+            &root,
+            &noon(),
+        )
+        .unwrap();
+        assert!(matches!(
+            linked,
+            Body::Evidence { path: Some(path), .. } if path == "private/linked/boot-02"
+        ));
+    }
+
+    /// A time past what a clock can show is written as a number, never a
+    /// panic, and a timer past any date is refused before it is sent.
+    #[test]
+    fn a_timer_past_any_date_is_refused_and_no_time_panics() {
+        assert_eq!(clock(1e19), "10000000000000000000");
+        assert_eq!(clock(f64::NAN), "NaN");
+        assert_eq!(clock(f64::INFINITY), "inf");
+
+        let (_dir, root) = checkout();
+        let far = body(
+            parse(&["timer", "t", "--in", "300000000h"]),
+            &root,
+            &root,
+            &noon(),
+        );
+        assert!(far.is_err(), "{far:?}");
     }
 }

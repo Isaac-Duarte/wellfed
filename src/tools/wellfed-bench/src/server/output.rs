@@ -311,13 +311,47 @@ fn pump(reader: &mut BufReader<PipeReader>, output: &Output) {
 fn write_console(mut console: File, queue: &mpsc::Receiver<String>) {
     for line in queue {
         // A closed terminal loses the console, never the server.
-        let _ = writeln!(console, "{line}");
+        let _ = writeln!(console, "{}", printable(&line));
     }
+}
+
+/// `line` made inert for a terminal: device and job output (a feeder's
+/// UART, a tool's stderr) may carry escape sequences that would retitle the
+/// operator's terminal, change its modes or write its clipboard. Every
+/// control character but a tab shows as `^X`, or as `U+NNNN` past ASCII's.
+/// The job streams and logs on disk keep the bytes as they came.
+pub fn printable(line: &str) -> String {
+    let mut shown = String::with_capacity(line.len());
+    for c in line.chars() {
+        match c {
+            '\t' => shown.push(c),
+            '\u{7f}' => shown.push_str("^?"),
+            c if c.is_ascii_control() => {
+                shown.push('^');
+                shown.push(char::from(b'@' + u8::try_from(u32::from(c)).unwrap_or(0)));
+            }
+            c if c.is_control() => shown.push_str(&format!("U+{:04X}", u32::from(c))),
+            c => shown.push(c),
+        }
+    }
+    shown
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An escape sequence a feeder or a tool printed reaches the terminal
+    /// as text, never as a command to it.
+    #[test]
+    fn device_text_reaches_the_terminal_inert() {
+        assert_eq!(
+            printable("\u{1b}]52;c;cGF5\u{7}tab\there"),
+            "^[]52;c;cGF5^Gtab\there"
+        );
+        assert_eq!(printable("\u{9b}2J del\u{7f}"), "U+009B2J del^?");
+        assert_eq!(printable("PLFW1 start bank=1 é"), "PLFW1 start bank=1 é");
+    }
 
     /// Run `body` with a file standing as the terminal on descriptors 1 and
     /// 2, then put the test's own back; what reached the file.

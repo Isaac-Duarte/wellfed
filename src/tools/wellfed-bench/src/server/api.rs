@@ -131,6 +131,18 @@ pub enum Refusal {
     /// A command that parses but that the client answers itself.
     #[error("`{what}` is answered by the client and is no job")]
     NotAJob { what: String },
+    /// Motion needs a person at the bench, or an empty hopper the poster
+    /// vouches for.
+    #[error("`{what}` can feed: add --confirm-motion once the hopper is empty")]
+    UnconfirmedMotion { what: String },
+    #[error(
+        "A Reset hold of {hold_ms} ms can reach the panel's 5 s factory restore, which erases the enrolled keys: add --confirm-destructive to mean it"
+    )]
+    UnconfirmedReset { hold_ms: u32 },
+    #[error(
+        "`{what}` cuts power mid-update, and a failed recovery is a UART flash: add --confirm-destructive to mean it"
+    )]
+    UnconfirmedDestructive { what: String },
     #[error("Session name {name:?} must be a single plain name")]
     BadName { name: String },
     #[error("--off-seconds {value} must be a finite, non-negative number, at most a week")]
@@ -165,6 +177,8 @@ pub enum NoteError {
     NoLabel,
     #[error("Timer {label:?}: its window must end at or after its due time")]
     Window { label: String },
+    #[error("Timer {label:?}: it must fall due, and its window end, within ten years")]
+    TooFar { label: String },
     #[error("Timer {label:?}: an empty expectation would match every line")]
     EmptyExpect { label: String },
     #[error("{kind:?} is no device event kind; the device API has {known}")]

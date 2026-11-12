@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::evidence::{self, utc};
 
-pub use wellfed_formats::session::{Status, Transport};
+pub use wellfed_bench_formats::session::{Status, Transport};
 
 /// Hashes of the finished serial streams, once a session closes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

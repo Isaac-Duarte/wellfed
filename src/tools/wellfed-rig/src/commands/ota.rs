@@ -28,9 +28,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::Args;
+use wellfed_bench_formats::capture::arrival;
 use wellfed_core::ota::install::{Blocked, RefusedReason, StopStage};
 use wellfed_core::record::{self, Confirm, Record, Trial, Update, Watch as Watching};
-use wellfed_formats::capture::arrival;
 use wellfed_formats::manifest::{BuildManifest, Provisioning};
 use wellfed_formats::private::write_new;
 use wellfed_formats::review::ImageKind;
@@ -77,10 +77,10 @@ pub enum Source {
     Build,
 }
 
-/// Status steps for one `ota` run.
 /// `ota --cancel`'s one step.
 pub const CANCEL_STEP: &str = "cancel";
 
+/// Status steps for one `ota` run.
 pub fn steps(source: Source) -> Vec<&'static str> {
     let built: &[&str] = match source {
         Source::Build => &BUILD_STEPS,
@@ -140,12 +140,14 @@ pub enum OtaError {
     /// `--fault give-way-only`: the push ended without the give-way.
     #[error("The give-way did not happen: {0}")]
     GiveWay(Arc<PushError>),
-    /// The push ended before the UART showed any outcome.
+    /// The push ended before the UART showed an activation. That alone
+    /// does not prove bank 1 untouched: `seen` says what the UART showed.
     #[error(
-        "The update over the device API ended: {push}; bank 1 was not activated. Captures {name}-01…{last:02}"
+        "The update over the device API ended before the UART showed an activation: {push}; {seen}. Captures {name}-01…{last:02}"
     )]
     PushEnded {
         push: Arc<PushError>,
+        seen: Seen,
         name: String,
         last: u32,
     },
@@ -170,11 +172,10 @@ pub enum OtaError {
         "An update attempt reset and the recovery role will not retry until a cold boot; look for a fault before the skip. Captures {name}-01…{last:02}"
     )]
     Skipped { name: String, last: u32 },
-    #[error(
-        "No outcome within {minutes} min; the feeder is untouched. Captures {name}-01…{last:02}"
-    )]
+    #[error("No outcome within {minutes} min; {seen}. Captures {name}-01…{last:02}")]
     NoOutcome {
         minutes: f64,
+        seen: Seen,
         name: String,
         last: u32,
     },
@@ -184,6 +185,35 @@ pub enum OtaError {
         HEALTH_WAIT.as_secs_f64()
     )]
     Unhealthy { last: Box<Error> },
+}
+
+/// How far the UART showed an install get before it ended without an
+/// outcome. Only what was seen is claimed: a record the capture missed
+/// leaves the feeder further on than this says, never less.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Seen {
+    /// No give-way, download or activation record.
+    Nothing,
+    /// Bank 1 gave way or took sectors, short of an activation.
+    Written,
+    /// The image activated, or the offered build started on bank 1.
+    Activated,
+}
+
+impl fmt::Display for Seen {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Nothing => {
+                "the UART showed no give-way, download or activation, so bank 1 is likely as it was; a read settles it"
+            }
+            Self::Written => {
+                "bank 1 gave way or took sectors before it, so it may hold part of the image; a read settles it"
+            }
+            Self::Activated => {
+                "the image activated, but neither a confirmation nor a fall-back was seen, so what bank 1 runs is unknown"
+            }
+        })
+    }
 }
 
 /// A boot count, or `?` when the feeder did not say.
@@ -721,6 +751,8 @@ pub struct Watch {
     consumed: u64,
     started: bool,
     activated: bool,
+    /// What the UART showed of the install so far, whatever came after.
+    seen: Seen,
     trial_boot: Option<u32>,
     outcome: Option<Outcome>,
 }
@@ -737,6 +769,7 @@ impl Watch {
             consumed: 0,
             started: false,
             activated: false,
+            seen: Seen::Nothing,
             trial_boot: None,
             outcome: None,
         }
@@ -744,6 +777,15 @@ impl Watch {
 
     pub fn outcome(&self) -> Option<&Outcome> {
         self.outcome.as_ref()
+    }
+
+    /// How far the install got by what the UART showed.
+    pub fn seen(&self) -> Seen {
+        self.seen
+    }
+
+    fn saw(&mut self, seen: Seen) {
+        self.seen = self.seen.max(seen);
     }
 
     /// Take more UART bytes; the events in the complete lines among them. A
@@ -801,19 +843,29 @@ impl Watch {
 
     fn apply(&mut self, event: record::Event<'_>) -> Option<Event> {
         match event {
-            record::Event::Watch(Watching::GiveWay { version }) => Some(Event::GiveWay { version }),
+            record::Event::Watch(Watching::GiveWay { version }) => {
+                self.saw(Seen::Written);
+                Some(Event::GiveWay { version })
+            }
             record::Event::Watch(Watching::Offer { version }) => Some(Event::Offer { version }),
             record::Event::Watch(Watching::GiveWayRefused { reason }) => {
                 Some(Event::GiveWayRefused { reason })
             }
 
             record::Event::Update(update) => match update {
-                Update::Manifest { version, bytes } => Some(Event::Manifest { version, bytes }),
-                Update::Progress { sectors, total } => Some(Event::Progress {
-                    done: sectors,
-                    total,
-                }),
+                Update::Manifest { version, bytes } => {
+                    self.saw(Seen::Written);
+                    Some(Event::Manifest { version, bytes })
+                }
+                Update::Progress { sectors, total } => {
+                    self.saw(Seen::Written);
+                    Some(Event::Progress {
+                        done: sectors,
+                        total,
+                    })
+                }
                 Update::Activated { version } => {
+                    self.saw(Seen::Activated);
                     self.activated = true;
                     self.trial_boot = None;
                     Some(Event::Activated { version })
@@ -839,6 +891,9 @@ impl Watch {
                 // Each boot replaces the last: a later boot of another build
                 // or bank inherits nothing from the offered build's.
                 self.started = new;
+                if new {
+                    self.saw(Seen::Activated);
+                }
                 Some(Event::Started { build, bank, new })
             }
 
@@ -1174,7 +1229,10 @@ impl Bench {
             Err(Error::Ota(OtaError::FellBack { .. })) => {
                 self.wrote(Bank::One, Content::Invalid, Wrote::OtaFellBack);
             }
-            Err(_) => {}
+            // The offer went out: bank 1 may have given way and taken part
+            // of the image, whatever ended the run. Unknown only asks for a
+            // read.
+            Err(_) => self.wrote(Bank::One, Content::Unknown, Wrote::OtaStopped),
         }
         watched?;
         self.ota_after(args, &staged, timing)
@@ -1192,9 +1250,13 @@ impl Bench {
                     self.wrote(Bank::One, Content::Invalid, Wrote::GiveWay);
                     return Ok(0);
                 }
-                Some(Err(push)) => return Err(OtaError::GiveWay(push).into()),
+                Some(Err(push)) => {
+                    self.wrote(Bank::One, Content::Unknown, Wrote::OtaStopped);
+                    return Err(OtaError::GiveWay(push).into());
+                }
                 None if self.cancel.is_cancelled() => {
                     installing.stop();
+                    self.wrote(Bank::One, Content::Unknown, Wrote::OtaStopped);
                     return Err(Error::Interrupted);
                 }
                 None => std::thread::sleep(Duration::from_millis(500)),
@@ -1529,19 +1591,29 @@ impl Bench {
 
             // The push's own steps, and an end before any UART outcome: a
             // refused offer, or a stop the feeder reported over the API.
-            if let Some(installing) = installing.as_deref_mut() {
-                for note in installing.notes() {
+            // Once the image activated, the trial decides what bank 1 runs
+            // whatever the push says (its session drops as the feeder
+            // restarts into it), so the watch goes on to its outcome.
+            if let Some(push) = installing.as_deref_mut() {
+                for note in push.notes() {
                     self.note(&format!("  {note}"));
                 }
                 if watch.outcome().is_none()
-                    && let Some(Err(push)) = installing.finished()
+                    && let Some(Err(error)) = push.finished()
                 {
-                    return Err(OtaError::PushEnded {
-                        push,
-                        name: args.name.clone(),
-                        last: n,
+                    if watch.seen() != Seen::Activated {
+                        return Err(OtaError::PushEnded {
+                            push: error,
+                            seen: watch.seen(),
+                            name: args.name.clone(),
+                            last: n,
+                        }
+                        .into());
                     }
-                    .into());
+                    self.note(&format!(
+                        "  The push ended after the activation ({error}); watching for the trial's outcome"
+                    ));
+                    installing = None;
                 }
             }
 
@@ -1587,6 +1659,7 @@ impl Bench {
 
         Err(OtaError::NoOutcome {
             minutes: args.minutes,
+            seen: watch.seen(),
             name: args.name.clone(),
             last: n,
         }

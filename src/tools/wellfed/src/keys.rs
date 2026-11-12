@@ -69,6 +69,9 @@ impl OwnerKey {
 
     /// The key file at `path`, relabelled when `label` differs.
     fn existing(path: &Path, label: Option<&str>) -> Result<Self> {
+        // The client secret is the owner's identity at every feeder.
+        private::require_unshared(path)
+            .with_context(|| format!("read the key file {}", path.display()))?;
         let file =
             owner::load(path).with_context(|| format!("read the key file {}", path.display()))?;
         let mut key = Self::of(path, file)?;
@@ -260,6 +263,11 @@ mod tests {
         std::fs::write(
             &path,
             r#"{"version":1,"secret":"00","label":"x","feeders":[]}"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            &path,
+            <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o600),
         )
         .unwrap();
         assert!(OwnerKey::open(&path, None, Missing::Create).is_err());

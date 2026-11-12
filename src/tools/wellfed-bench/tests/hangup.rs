@@ -395,6 +395,10 @@ fn a_first_q_during_a_write_shows_the_prompt_and_touches_nothing() {
     serving.screen.press("q");
 
     serving.screen.until_shown(CONFIRM_PROMPT);
+    // More `q`s, in one read as a held key or a paste sends them, confirm
+    // nothing.
+    serving.screen.press("qq");
+    std::thread::sleep(Duration::from_millis(300));
     let state = serving.assert_write_untouched();
     assert!(state.server.stopping.is_none(), "{:?}", state.server);
 

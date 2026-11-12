@@ -1,7 +1,7 @@
 //! The files one host tool writes and another reads, typed once.
 //!
-//! Build manifests, device configs, the stock layout, the SDK and toolchain locks, serial
-//! captures, the credential and key files and the flash client's reviewed plans
+//! Build manifests, device configs, the stock layout, the SDK and toolchain locks,
+//! the credential and key files and the flash client's reviewed plans
 //! each cross crate boundaries (the builder writes what the audit, flash review
 //! and bench read; the bench summarizes the flash plans), so their shape lives
 //! here rather than as `Value` lookups in every reader. The relay bench's own
@@ -15,7 +15,6 @@
 
 pub mod audit;
 pub mod canonical;
-pub mod capture;
 #[cfg(feature = "clap")]
 pub mod cli;
 pub mod credentials;
@@ -30,9 +29,7 @@ pub mod manifest;
 pub mod owner;
 pub mod private;
 pub mod review;
-pub mod session;
 pub mod stock;
-pub mod transients;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -44,6 +41,13 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("the system's random source failed: {0}")]
     Random(#[from] getrandom::Error),
+    /// A key file other users could have read
+    /// ([`private::require_unshared`]).
+    #[error(
+        "{} holds a secret key and other users can read it (mode {mode:03o}); `chmod 600` it, and treat the key as exposed if they could have",
+        path.display()
+    )]
+    Shared { path: std::path::PathBuf, mode: u32 },
 }
 
 /// Read a JSON file into its type.

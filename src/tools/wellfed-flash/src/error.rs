@@ -105,7 +105,9 @@ impl Error {
                 | wellfed_image::Error::Root(_)
                 | wellfed_image::Error::Review(_),
             )
-            | Self::Formats(wellfed_formats::Error::NotInteger)
+            | Self::Formats(
+                wellfed_formats::Error::NotInteger | wellfed_formats::Error::Shared { .. },
+            )
             | Self::Lease(_)
             | Self::Protocol(_)
             | Self::Sector(_)
@@ -119,6 +121,14 @@ impl Error {
             | Self::Recovery(_)
             | Self::Device(_) => ErrorKind::Refused,
         }
+    }
+}
+
+impl Error {
+    /// Whether an inspection found the bank whole and not in the state the
+    /// command takes on ([`development::DevelopmentError::is_state_mismatch`]).
+    pub fn is_state_mismatch(&self) -> bool {
+        matches!(self, Self::Development(error) if error.is_state_mismatch())
     }
 }
 

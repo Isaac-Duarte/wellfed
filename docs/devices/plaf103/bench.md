@@ -50,7 +50,7 @@ The older relay bench added four switches to a bare FT232R adapter's [UART wirin
    cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock-server -p wellfed
    ```
 
-   The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another, and `restore-stock` the `wellfed` beside it unless `serve --wellfed-bin` does.
+   The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another (named `wellfed-flash` too, which the orphan check finds it by), and `restore-stock` the `wellfed` beside it unless `serve --wellfed-bin` does.
 
 2. Write the ignored `private/bench.json` with `/dev/serial/by-id/` paths, since the relay board also enumerates as a USB serial port and can take the UART adapter's old name:
 
@@ -95,7 +95,7 @@ Dependencies run down the table. Their shared shapes (the bench config, progress
 | `mcp` | The bench's tools for an agent, over the [Model Context Protocol](bench-server.md#mcp) on stdio, as a client of the server |
 | `on`, `off` | Power the feeder with the strap released, or cut power and release the strap |
 | `capture NAME` | Receive-only recording of the running feeder; power untouched |
-| `press CHORD` | Hold panel buttons on a running `virtual-panel` build ([below](#virtual-panel)): `dispense`, or several joined by `+` (`lock+dispense`), for `--hold-ms` (150 by default, at most 15000); power untouched |
+| `press CHORD` | Hold panel buttons on a running `virtual-panel` build ([below](#virtual-panel)): `dispense`, or several joined by `+` (`lock+dispense`), for `--hold-ms` (150 by default, at most 15000); power untouched. A chord with Dispense can feed, so it needs `--confirm-motion` (the hopper empty), and a Reset hold over 1000 ms can reach the 5 s factory restore, so it needs `--confirm-destructive`: the server refuses either without it, whichever client posts it |
 | `boot NAME` | Power off, start a receive-only capture, confirm it holds the port, then power on |
 | `loader NAME` | The same, with the strap held for 2 s across power-on. Requires the download banner and a NAK run, or powers off |
 | `rom-inspect NAME --candidate-rom ROM` | `boot`, then `wellfed-flash read inspect-rom` on the stock console it reached, into `private/captures/NAME/rom`. The report names the model whose console answered, which every later read of that model needs. `--candidate-rom` repeats; `--seconds` (20) is the boot capture's length. Stops, powered and with nothing retried, on a boot that reached the loader or a failed inspection |
@@ -178,9 +178,9 @@ When bank 0's own record failed, `store` and `read` get another boot of bank 0, 
 **A stopped give-way or marker restore.** The feeder has not booted since, so unless power was cut the job enters the loader once more and tells bank 1's state from `wellfed-flash`'s read-only inspections, writing nothing:
 
 - After a stopped **give-way**, an inspection that accepts the give-way means the marker is intact: run a fresh give-way. One that accepts a marker restore means byte 0 is cleared: boot bank 0, wait for its record, then restore.
-- After a stopped **marker restore**, an inspection that accepts `--restore-marker` means bank 1 still has the given-way bytes: run a fresh restore. One that accepts `--interrupted` means the marker sector is erased or staged: run the restore with `--interrupted` alone (the updater refuses the two flags together). A plain inspection that accepts bank 1 as its review means the marker is back: boot bank 1 and look for its check.
+- After a stopped **marker restore**, an inspection that accepts `--restore-marker` means bank 1 still has the given-way bytes: run a fresh restore. One that accepts `--interrupted` means the marker sector is erased, part-programmed or staged: run the restore with `--interrupted` alone (the updater refuses the two flags together). A plain inspection that accepts bank 1 as its review means the marker is back: boot bank 1 and look for its check.
 
-Only the matching way on is printed. When every inspection runs and refuses (exit 2), bank 1 is in none of these states, as after a restore stopped between sector 0's program frames or a give-way frame that cleared only some of byte 0's bits. No `wellfed-flash` command applies; bank 1's marker is invalid, so the feeder boots bank 0, and the job prints only a full read to investigate. When the inspections could not run, or one stopped, every way on is printed with the result that selects it.
+Only the matching way on is printed. When every inspection reads bank 1 and finds it in another state (exit 4), bank 1 is in none of these states, as after a give-way frame that cleared only some of byte 0's bits. No `wellfed-flash` command applies; bank 1's marker is invalid, so the feeder boots bank 0, and the job prints only a full read to investigate. When the inspections could not run, or one stopped or was refused before reading, every way on is printed with the result that selects it.
 
 A bank-0 write reported with exit 0 came from an older `wellfed-flash` than the bench's: the job records the write, says so, and lists the rebuild, give-way and restore steps without running them.
 
@@ -271,7 +271,7 @@ target/release/wellfed-bench stock-execute NAME --expected-plan-sha256 <sha>
 
 ### Restore as a job
 
-`restore-stock` runs `wellfed restore-stock` ([rollback](../../firmware/consumer-installation.md#rollback)) as the server's job, so the server never stops for it: a fresh update key enrolled with a Dispense press (unless `--key` names one the feeder trusts), then stock over the device API. Nothing is offered twice, and a feeder gone after the offer ends it uncertain. `--backup`, `--key`, `--version`, `--keys`, `--feeder` and `--address` pass through; `--virtual-panel` is the server's own.
+`restore-stock` runs `wellfed restore-stock` ([rollback](../../firmware/consumer-installation.md#rollback)) as the server's job, so the server never stops for it: a fresh update key enrolled with a Dispense press (unless `--key` names one the feeder trusts), then stock over the device API. Nothing is offered twice, and a feeder gone after the offer ends it uncertain. `--backup`, `--key`, `--version`, `--keys`, `--feeder` and `--address` pass through; `--virtual-panel` is the server's own, and needs `--confirm-motion` (the hopper empty), since the job's Dispense press can feed outside the enrollment window.
 
 ```sh
 target/release/wellfed-bench restore-stock --key private/ota-key.json

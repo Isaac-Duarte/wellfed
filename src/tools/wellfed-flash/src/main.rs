@@ -1,9 +1,12 @@
 //! `wellfed-flash`: the UART flash client.
 //!
 //! Progress goes to stderr; stdout carries exactly one JSON summary, so a
-//! script or agent can act on the result. Exit status: 0 complete, 1 stopped
-//! after the port was opened (inspect the evidence; nothing is retried), 2
-//! refused before any serial access.
+//! script or agent can act on the result. Exit status: 0 complete; 1 stopped
+//! once the serial session began, whether or not the port opened (inspect
+//! the evidence; nothing is retried); 2 refused before the session began; 3
+//! a bank-0 write that verified but is a step, not the write's end (its
+//! summary names the steps that finish it); 4 an inspection that read the
+//! bank and found it in another state than the command takes on.
 
 #![forbid(unsafe_code)]
 
@@ -33,7 +36,10 @@ use wellfed_proto::device::Model;
     long_about = "UART flash reads, development updates and stock recovery for the PLAF103 and PLWF106 research units.\n\n\
         Every device command continues the supervised bench procedure in docs/development/uart-development.md: \
         nothing here enters the loader, controls power, retries or boots. Progress goes to stderr and one JSON \
-        summary to stdout. Exit status: 0 complete, 1 stopped after the port opened, 2 refused before serial access."
+        summary to stdout. Exit status: 0 complete; 1 stopped once the serial session began, whether or not the port opened; \
+        2 refused before the session began; 3 a bank-0 write that verified but is a step, not the write's end \
+        (the summary names the steps that finish it); 4 an inspection that read the bank and found it in \
+        another state than the command takes on."
 )]
 struct Cli {
     /// Repository checkout whose ignored private/ holds all evidence.
@@ -442,4 +448,86 @@ fn main() -> ExitCode {
 
     println!("{summary}");
     ExitCode::from(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::ValueEnum;
+    use wellfed_bench_formats::flash::FlashUse;
+
+    use super::*;
+
+    /// What each command does with the UART. Every match is exhaustive, so
+    /// a new command or mode is decided here before it builds.
+    fn flash_use(command: &Command) -> FlashUse {
+        let update = |phase: update::Mode, counted| match phase {
+            update::Mode::Inspect | update::Mode::Prepare => FlashUse::Session,
+            update::Mode::Execute => FlashUse::Write { counted },
+        };
+        match command {
+            Command::Read(args) => match args.mode {
+                read::Mode::Observe => FlashUse::Observe,
+                read::Mode::InspectRom
+                | read::Mode::Small
+                | read::Mode::Full
+                | read::Mode::Status
+                | read::Mode::Press => FlashUse::Session,
+            },
+            Command::Update(args) => update(args.phase, true),
+            Command::GiveWay(args) => update(args.phase, false),
+            Command::StockRecovery(args) => match args.phase {
+                stock::Phase::Prepare => FlashUse::Session,
+                stock::Phase::Execute => FlashUse::Write { counted: false },
+            },
+            Command::PlanStockRecovery { .. }
+            | Command::DecodeStatus { .. }
+            | Command::InspectJournal { .. } => FlashUse::Session,
+        }
+    }
+
+    fn name(value: &impl ValueEnum) -> String {
+        value
+            .to_possible_value()
+            .map(|value| value.get_name().to_owned())
+            .unwrap_or_default()
+    }
+
+    /// The bench reads a child's use from its command line alone; it must
+    /// agree with what every command and mode here does, writes above all.
+    #[test]
+    fn the_bench_reads_every_command_s_use_of_the_uart_as_it_is() {
+        let evidence =
+            "--device plaf103 --port p --baseline b --rom-report r --small-report s --output o";
+        let mut lines: Vec<String> = Vec::new();
+        for mode in read::Mode::value_variants() {
+            lines.push(format!("read {} --port p --output o", name(mode)));
+        }
+        for phase in update::Mode::value_variants() {
+            lines.push(format!("update {} {evidence} --target t", name(phase)));
+            lines.push(format!("give-way {} {evidence}", name(phase)));
+        }
+        for phase in stock::Phase::value_variants() {
+            lines.push(format!(
+                "stock-recovery {} {evidence} --current c",
+                name(phase)
+            ));
+        }
+        lines.push("plan-stock-recovery --baseline b --current c --output o".into());
+        lines.push("decode-status --sr1 0 --sr2 0 --sr3 0".into());
+        lines.push("inspect-journal j".into());
+
+        let mut writes = 0;
+        for line in &lines {
+            let words: Vec<String> = line.split(' ').map(String::from).collect();
+            let cli = Cli::try_parse_from(
+                std::iter::once("wellfed-flash".to_owned()).chain(words.clone()),
+            )
+            .unwrap_or_else(|error| panic!("{line}: {error}"));
+            let expected = flash_use(&cli.command);
+
+            assert_eq!(FlashUse::of(&words), expected, "{line}");
+            writes += usize::from(matches!(expected, FlashUse::Write { .. }));
+        }
+        assert_eq!(writes, 3);
+    }
 }

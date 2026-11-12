@@ -4,10 +4,14 @@
 //! its write terminally: the feeder then holds a half-written bank that
 //! only another UART write recovers. So while the flash client holds the
 //! UART, nothing stops the server by accident:
-//! - the operator's Ctrl+C (SIGINT in a line console, a key in the
-//!   full-screen one) and the full-screen console's `q` stop only when
+//! - the operator's Ctrl+C in a line console (SIGINT) stops only when
 //!   pressed twice within [`CONFIRM_WINDOW`] during a write or a loader
 //!   session;
+//! - the full-screen console's `q` or Ctrl+C during one stops only once
+//!   `y` follows within [`CONFIRM_WINDOW`], so no run of `q`s (a paste, a
+//!   held key) can confirm itself. The console sends the presses, and this
+//!   decides them against the UART as it is when each is handled, never as
+//!   the console last drew it;
 //! - SIGTERM and SIGHUP during a write are deferred, however many come:
 //!   the job finishes and the server then stops as usual. SIGKILL remains
 //!   the operator's last resort; the lease and orphan checks handle it;
@@ -29,7 +33,7 @@ pub const CONFIRM_WINDOW: Duration = Duration::from_secs(5);
 
 /// What a first press during a write shows, in the full-screen console's
 /// footer.
-pub const CONFIRM_PROMPT: &str = "A UART write is under way; press again within 5 s to cancel it";
+pub const CONFIRM_PROMPT: &str = "A UART write is under way; press y within 5 s to cancel it";
 
 /// What asks the server to stop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,8 +42,11 @@ pub enum Ask {
     Interrupt,
     /// SIGTERM, or the terminal hanging up.
     Terminate,
-    /// The full-screen console's `q` or Ctrl+C, confirmed there.
+    /// The full-screen console's `q` or Ctrl+C.
     Quit,
+    /// The full-screen console's `y`: the confirmation a [`Self::Quit`]
+    /// during a write asked for.
+    ConfirmQuit,
     /// The full-screen console ended without being asked to.
     ConsoleEnded,
 }
@@ -124,6 +131,8 @@ impl Stopper {
     /// stops only once a deferred stop is due.
     pub async fn until_stop(self, mut asks: UnboundedReceiver<Ask>) {
         let mut confirm = Confirm::default();
+        // When the console's `q` during a write asked for its `y`.
+        let mut console: Option<Instant> = None;
         // The job a signal's stop waits for, once a write is under way.
         let mut deferred: Option<Option<JobId>> = None;
         let mut states = self.store.subscribe();
@@ -146,7 +155,23 @@ impl Stopper {
                     let state = self.store.read();
                     let held = Held::of(&state.uart);
                     match ask {
-                        Ask::Quit => return,
+                        Ask::Quit if held == Held::Free => return,
+                        Ask::Quit => {
+                            console = Some(Instant::now());
+                            (self.say)(CONFIRM_PROMPT.into());
+                        }
+                        Ask::ConfirmQuit => {
+                            // The window runs from the `q`, not from the
+                            // write it was pressed during: a `y` inside it
+                            // stops a write that started since, which still
+                            // takes that deliberate `y`.
+                            let asked = console
+                                .take()
+                                .is_some_and(|at| at.elapsed() <= CONFIRM_WINDOW);
+                            if asked {
+                                return;
+                            }
+                        }
                         Ask::ConsoleEnded => {
                             (self.console_ended)();
                             (self.say)(
@@ -378,6 +403,42 @@ mod tests {
         );
 
         asks.send(Ask::Interrupt).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), stopping)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    /// The console's `q` during a write is decided against the UART as it
+    /// is when handled: no number of them stops, and only `y` after one
+    /// does.
+    #[tokio::test]
+    async fn q_during_a_write_stops_only_once_y_confirms_it() {
+        let Fixture {
+            store,
+            said,
+            stopper,
+            ..
+        } = fixture();
+        store.update(|state| writing(state, 3));
+        let (asks, asked) = unbounded_channel();
+        let mut stopping = tokio::spawn(stopper.until_stop(asked));
+
+        // A `y` before any `q` confirms nothing.
+        asks.send(Ask::ConfirmQuit).unwrap();
+        for _ in 0..3 {
+            asks.send(Ask::Quit).unwrap();
+        }
+        assert!(still_serving(&mut stopping).await);
+        assert!(
+            said.lock()
+                .unwrap()
+                .iter()
+                .all(|line| line == CONFIRM_PROMPT),
+            "{said:?}"
+        );
+
+        asks.send(Ask::ConfirmQuit).unwrap();
         tokio::time::timeout(Duration::from_secs(2), stopping)
             .await
             .unwrap()

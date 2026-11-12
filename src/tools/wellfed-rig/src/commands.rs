@@ -17,11 +17,11 @@ use std::time::{Duration, Instant};
 
 use clap::{Args, ValueEnum};
 use serde::Deserialize;
+use wellfed_bench_formats::transients::{self, TransientCycle, TransientsManifest};
 use wellfed_core::buttons::Buttons;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::flash_plan::{DevelopmentPlan, GiveWayPlan, StockRecoveryReviewed};
 use wellfed_formats::manifest::BuildManifest;
-use wellfed_formats::transients::{self, TransientCycle, TransientsManifest};
 
 use crate::tools::{Analyzer, Children, Observation, Observer, Tools};
 use crate::{Cancel, Error, Result};
@@ -473,9 +473,22 @@ impl Bench {
         result
     }
 
-    /// Run one `wellfed-flash` command; its exit status. An interrupt during
-    /// it stops the sequence even if the child finished, so no step follows.
+    /// Before a write: a cancel already taken stops the job here, with
+    /// nothing written, so its bank keeps what the ledger says.
+    fn not_cancelled(&self) -> Result<()> {
+        if self.cancel.is_cancelled() {
+            return Err(Error::Interrupted);
+        }
+        Ok(())
+    }
+
+    /// Run one `wellfed-flash` command; its exit status. A cancel before it
+    /// keeps it from starting, and one during it stops the sequence even if
+    /// the child finished, so no step follows.
     fn run(&mut self, args: &[String]) -> Result<i32> {
+        if self.cancel.is_cancelled() {
+            return Err(Error::Interrupted);
+        }
         say!("+ wellfed-flash {}", args.join(" "));
         self.status
             .step(&format!("wellfed-flash {} {}", args[0], args[1]));
@@ -1133,6 +1146,7 @@ impl Bench {
         );
         // A verified bank-0 write exits 3: written, but not yet recorded.
         let written = if args.update.bank == 0 { 3 } else { 0 };
+        self.not_cancelled()?;
         match self.run(&command) {
             Ok(code) if code == written => {}
             Ok(0) => {
@@ -1267,6 +1281,7 @@ impl Bench {
                 &self.out(&p.execute),
             ],
         );
+        self.not_cancelled()?;
         match self.run(&command) {
             Ok(0) => {}
             Ok(_) => {
@@ -1417,9 +1432,22 @@ impl Bench {
                 &self.out(&p.execute),
             ],
         );
-        if self.run(&command)? != 0 {
-            say!("Stock recovery stopped; the feeder stays powered and is not booted. No retry.");
-            return Ok(1);
+        self.not_cancelled()?;
+        match self.run(&command) {
+            Ok(0) => {}
+            Ok(_) => {
+                say!(
+                    "Stock recovery stopped; the feeder stays powered and is not booted. No retry."
+                );
+                self.stopped_write(1, Source::StockExecute);
+                return Ok(1);
+            }
+            // The flash client ran and stopped on the cancel.
+            Err(Error::Interrupted) => {
+                self.stopped_write(1, Source::StockExecute);
+                return Err(Error::Interrupted);
+            }
+            Err(error) => return Err(error),
         }
 
         self.wrote(Bank::One, Content::Stock, Source::StockExecute);

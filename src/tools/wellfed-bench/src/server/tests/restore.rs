@@ -9,7 +9,7 @@ use wellfed_install::prompt::{Answer, Prompt};
 use super::*;
 
 /// A restore that answers its panel prompt itself.
-const RESTORE: &[&str] = &["restore-stock", "--virtual-panel"];
+const RESTORE: &[&str] = &["restore-stock", "--virtual-panel", "--confirm-motion"];
 
 /// Write `script` as the checkout's `name`, executable.
 fn stand_in(checkout: &Checkout, name: &str, script: &str) {

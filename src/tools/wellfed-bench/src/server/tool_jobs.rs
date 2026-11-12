@@ -72,6 +72,10 @@ pub struct RestoreStockArgs {
     /// build. The server's own flag; the tool never sees it.
     #[arg(long)]
     pub virtual_panel: bool,
+    /// Required with --virtual-panel, whose Dispense press can feed: the
+    /// hopper is empty. The server's own flag; the tool never sees it.
+    #[arg(long)]
+    pub confirm_motion: bool,
     /// This computer's client key; the tool's default otherwise.
     #[arg(long)]
     pub keys: Option<PathBuf>,

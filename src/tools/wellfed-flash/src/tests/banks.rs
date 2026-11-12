@@ -326,11 +326,82 @@ fn an_erased_marker_sector_is_accepted_only_with_the_rest_exactly_the_source() {
             ))
         ));
     }
-    // The staged sector's own first frames are still the staged sector's
-    // partial program, which the marker rule never accepted either.
+    // The staged sector's own first frames are its stopped program, which
+    // is accepted only with the rest exactly the source, as an erased one.
     let mut own = erased;
     own[..1024].copy_from_slice(&staged[..1024]);
+    assert!(development::images(&finish, &own).is_ok());
+    own[3 * SECTOR + 17] ^= 1;
     assert!(development::images(&finish, &own).is_err());
+}
+
+/// A marker sector staged whole is finished, not part-programmed, even
+/// when the staged sector's last frames are erased bytes: a finish that
+/// stopped after it, with a later sector staged too, still completes.
+#[test]
+fn a_staged_marker_sector_ending_in_erased_frames_is_staged_whole() {
+    for frames in 1..=3 {
+        let mut payload = development::payload(&image(30000, 3), &BANK1)
+            .unwrap()
+            .to_vec();
+        payload[SECTOR - frames * 1024..SECTOR].fill(0xff);
+        let source = wellfed_image::fixtures::wrap(&payload);
+        let target = variant(&source, false);
+        let old = development::payload(&source, &BANK1).unwrap().to_vec();
+        let (_, staged) =
+            development::images(&update(Some(&source), &target, BANK1), &old).unwrap();
+        assert!(
+            staged[SECTOR - frames * 1024..SECTOR]
+                .iter()
+                .all(|b| *b == 0xff)
+        );
+
+        let later = (SECTOR..old.len())
+            .step_by(SECTOR)
+            .find(|at| old[*at..at + SECTOR] != staged[*at..at + SECTOR])
+            .unwrap();
+        let mut current = old.clone();
+        current[..SECTOR].copy_from_slice(&staged[..SECTOR]);
+        current[later..later + SECTOR].copy_from_slice(&staged[later..later + SECTOR]);
+
+        let mut finish = update(Some(&source), &target, BANK1);
+        finish.interrupted = true;
+        let finished = development::images(&finish, &current);
+        assert!(finished.is_ok(), "{frames}: {finished:?}");
+    }
+}
+
+/// A marker restore that stops part-way through the marker sector's
+/// program, its one changed sector, is finished by the interrupted mode
+/// from a fresh read, whichever frame it stopped after.
+#[test]
+fn a_marker_restore_stopped_inside_its_program_is_finished() {
+    for frame in 1..=3 {
+        let (_checkout, root) = private_root();
+        let source = image(30000, 7);
+        let payload = development::payload(&source, &BANK1).unwrap().to_vec();
+        let mut given_way = payload.clone();
+        given_way[0] = 0;
+        let unit = unit(&payload);
+        let mut flash = unit.flash.clone();
+        flash[START..START + given_way.len()].copy_from_slice(&given_way);
+        let mut port = Fake::new(flash);
+        port.0.borrow_mut().fault = Fault::LostProgramAck(frame);
+
+        let mut restore = update(Some(&source), &source, BANK1);
+        restore.restore = true;
+        assert!(develop(&root, &unit, &mut port, &restore, "restore").is_err());
+        let held = port.0.borrow().flash[START..START + SECTOR].to_vec();
+        assert!(held[frame * 1024..].iter().all(|b| *b == 0xff), "{frame}");
+        port.0.borrow_mut().reconnect();
+
+        // Neither the restore nor a plain update takes it on.
+        assert!(develop(&root, &unit, &mut port, &restore, "again").is_err());
+        let mut finish = update(Some(&source), &source, BANK1);
+        finish.interrupted = true;
+        develop(&root, &unit, &mut port, &finish, "finish").unwrap();
+        assert!(port.0.borrow().flash == unit.flash, "{frame}");
+    }
 }
 
 /// The erased-marker finish keeps the other bank's guards: bank 1 must be
@@ -486,6 +557,9 @@ fn give_way_then_restore_marker_round_trip() {
 
     assert_eq!(port.0.borrow().flash[START], 0);
     assert!(port.0.borrow().erased.is_empty(), "a give-way never erases");
+    let given = receipt(&root, "give-way");
+    assert_eq!(given.terminal_event, "give_way_verified");
+    assert!(given.verified_terminal);
 
     // Restoring needs the explicit mode; a plain update refuses.
     let plain = update(Some(&installed), &installed, BANK1);
@@ -499,7 +573,8 @@ fn give_way_then_restore_marker_round_trip() {
 
 /// A marker restore that stopped resumes by exactly one mode, picked by what
 /// bank 1 holds: `--restore-marker` alone from the given-way bytes,
-/// `--interrupted` alone from an erased or staged marker sector, and never
+/// `--interrupted` alone from an erased, part-programmed or staged marker
+/// sector, and never
 /// both. The bench job prints these two flag sets; its tests pin that it
 /// prints no other.
 #[test]
@@ -512,6 +587,8 @@ fn a_stopped_marker_restore_resumes_by_one_mode_never_both() {
     erased[..SECTOR].fill(0xff);
     let mut staged = payload.clone();
     staged[..8].fill(0xff);
+    let mut programming = erased.clone();
+    programming[..2048].copy_from_slice(&staged[..2048]);
 
     let checks = |restore: bool, interrupted: bool, current: &[u8]| {
         let mut mode = update(Some(&source), &source, BANK1);
@@ -529,8 +606,10 @@ fn a_stopped_marker_restore_resumes_by_one_mode_never_both() {
     assert!(fresh(&staged).is_some());
     assert_eq!(interrupted(&erased), None);
     assert_eq!(interrupted(&staged), None);
+    assert!(fresh(&programming).is_some());
+    assert_eq!(interrupted(&programming), None);
     assert!(interrupted(&given_way).is_some());
-    for current in [&given_way, &erased, &staged] {
+    for current in [&given_way, &erased, &staged, &programming] {
         assert_eq!(
             checks(true, true, current),
             Some(development::DevelopmentError::RestoreScope.to_string())

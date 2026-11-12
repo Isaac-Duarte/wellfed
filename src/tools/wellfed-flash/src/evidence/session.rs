@@ -14,10 +14,10 @@ use crate::evidence::report::{Status, Streams, Transport};
 use crate::evidence::{self, EvidencePort, Root};
 use crate::link::protocol::{self, HELPER_SHA256, Port, ROM_SHA256, Transfer};
 use crate::link::sector::Baseline;
+use wellfed_bench_formats::session::Mode;
 use wellfed_formats::canonical::{canonical, canonical_of, sha256};
 use wellfed_formats::flash_plan::ToolHashes;
 use wellfed_formats::require;
-use wellfed_formats::session::Mode;
 use wellfed_proto::device::Model;
 
 /// Saved evidence or a reviewed plan that a session refuses to continue
@@ -195,10 +195,6 @@ impl<P: Port + ?Sized> Port for Box<P> {
     fn in_waiting(&mut self) -> std::io::Result<usize> {
         (**self).in_waiting()
     }
-
-    fn readiness(&self) -> crate::link::protocol::Readiness {
-        (**self).readiness()
-    }
 }
 
 /// Whether a session ran to its end once its port was opened.
@@ -211,16 +207,22 @@ pub enum Completion {
     /// the update store, so bank 1 refuses every update until it boots
     /// once: a step of a bank-0 write, not its end.
     Unrecorded,
+    /// An inspection read the bank, and it is not in the state this
+    /// command takes on. Nothing was written. The bench's probes tell this
+    /// from a stop, after which nothing is known.
+    Mismatch,
 }
 
 impl Completion {
     /// The process's exit status: 0 complete, 1 stopped, 3 written but
-    /// unrecorded (2 is a refusal before serial access).
+    /// unrecorded, 4 inspected and not this command's state (2 is a
+    /// refusal before serial access).
     pub const fn code(self) -> u8 {
         match self {
             Self::Complete => 0,
             Self::Stopped => 1,
             Self::Unrecorded => 3,
+            Self::Mismatch => 4,
         }
     }
 }

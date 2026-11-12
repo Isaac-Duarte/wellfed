@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::{mpsc, oneshot};
+use wellfed_bench_formats::flash::FlashUse;
 use wellfed_bench_formats::lease;
 use wellfed_bench_formats::live::{
     ActivityKind, BenchState, CancelState, JOBS, JobEnd, JobId, Phase, Uart,
@@ -18,7 +19,7 @@ use wellfed_bench_formats::live::{
 use wellfed_relay::{AtBoard, Board, FakeBoard, POWER, STRAP, Switch};
 
 use super::*;
-use crate::server::api::{DuringWrite, Wait, WaitFor};
+use crate::server::api::{DuringWrite, Wait, WaitFor, Waited};
 use crate::server::stopping::Ask;
 
 mod feeder;
@@ -127,9 +128,9 @@ case "$3 $4" in
   case "$out" in *burst)
     i=0; while [ $i -lt 3000 ]; do echo "burst line $i of the capture's own output" >&2; i=$((i+1)); done ;;
   esac
-  echo '{{"status":"running"}}' > "$out/report.json"
   trap 'echo INT > "$out/signal"; kill $! 2>/dev/null; exit 1' INT
   trap 'echo TERM > "$out/signal"; kill $! 2>/dev/null; exit 1' TERM
+  echo '{{"status":"running"}}' > "$out/report.json"
   case "$out" in
   */held-*) until [ -e "$out/release" ]; do sleep 0.05; done & wait $! ;;
   *) sleep {hold} & wait $! ;;
@@ -317,6 +318,29 @@ async fn a_job_streams_its_output_and_ends_with_its_code() {
     assert_eq!(state.relays.len(), 4);
     assert_eq!(state.server.phase, Phase::Serving);
 
+    // A wait for a job of the earlier server is met at once: it ended
+    // with that server.
+    let earlier = server
+        .client
+        .wait(&Wait {
+            what: WaitFor::Job,
+            id: Some(41),
+            text: None,
+            kind: None,
+            build: None,
+            bank: None,
+            label: None,
+            timeout_ms: 60_000,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        earlier,
+        Waited::Met {
+            detail: "job 41 ended before this server started".into()
+        }
+    );
+
     let id = server.submit(&["capture", "c1"]).await.unwrap();
     assert_eq!(id, 42);
     let (end, lines) = follow(&server.client, id).await;
@@ -344,7 +368,10 @@ async fn a_second_job_is_refused_while_one_runs() {
 
     // The capture holds the UART while it runs.
     let state = state_until(&server, "the capture", |state| !state.activity.is_empty()).await;
-    assert_eq!(state.activity[0].kind, ActivityKind::Flash);
+    assert_eq!(
+        state.activity[0].kind,
+        ActivityKind::Flash(FlashUse::Observe)
+    );
     assert!(
         matches!(state.uart, Uart::Capturing { .. }),
         "{:?}",
@@ -434,6 +461,9 @@ async fn a_cancel_interrupts_the_flash_client_and_the_cleanup_cuts_power() {
         log.ends_with(&[(STRAP, false)]) && log.contains(&(POWER, true))
     })
     .await;
+    // The stand-in capture says it runs once it traps the signal.
+    let report = checkout.capture("l1").join("report.json");
+    until("the capture", || report.exists()).await;
     server.client.cancel(id, DuringWrite::Refuse).await.unwrap();
 
     let (end, lines) = follow(&server.client, id).await;
@@ -563,6 +593,12 @@ async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
     .await;
     asks.send(Ask::Terminate).unwrap();
     asks.send(Ask::Terminate).unwrap();
+    // The stop shows once the stopper took the first signal, however slow
+    // a loaded host makes that; then nothing more may happen.
+    state_until(&server, "the deferred stop", |state| {
+        state.server.stopping.is_some()
+    })
+    .await;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // The writer was never signalled, and the server still serves, shows

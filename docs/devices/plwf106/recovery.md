@@ -28,7 +28,7 @@ The loader tries bank 1, then bank 0 ([flash layout](flash-layout.md#loader-sele
 
 - **Install.** The test image goes into bank 1 only, marker last, so a stop part-way leaves bank 1 unbootable and stock still boots.
 - **Give way.** If the test image boots but misbehaves, clearing bank 1's first byte sends the loader back to stock bank 0: one 1 KiB program, no erase.
-- **Restore.** Stock recovery then puts the backup's bank 1 back exactly, altered marker included.
+- **Restore.** Stock recovery then puts the backup's bank 1 back exactly, altered marker included. Stock's marker can't boot, so bank 1's first sector can already match the backup while a later one differs; the plan then rewrites that first sector too, with its marker withheld, so the marker is still committed last.
 
 Nothing falls back on its own ([loader failure behavior](flash-layout.md#loader-selection-and-failure-behavior)): recovering is the manual path of download mode, a give-way and a restore. The ROM enters download mode before the flash loader runs, so the fountain stays reachable over UART. Nothing outside bank 1 is ever written ([what the writers allow](flash-layout.md#what-the-writers-allow)).
 

@@ -56,8 +56,10 @@ pub(crate) const BANK0_BOOT_SECONDS: f64 = 60.0;
 /// Under the flash client's 180 s cap on one capture.
 pub(crate) const BANK1_BOOT_SECONDS: f64 = 170.0;
 
-/// The flash client's exit for a refusal: its checks ran and said no.
-const REFUSED: i32 = 2;
+/// The flash client's exit for an inspection that read the bank whole and
+/// found it in another state than the command takes on. A refusal before
+/// the session (2) and a stop (1) say nothing about the bank.
+const MISMATCH: i32 = 4;
 
 /// Where a bank-0 prepare binds the bank-1 review it checked.
 pub(crate) fn binding(root: &Path, name: &str) -> PathBuf {
@@ -107,7 +109,7 @@ pub(crate) fn seen(boot: &Path) -> Seen {
 }
 
 /// How a marker restore runs: fresh from the given-way state, or finishing
-/// one that stopped after it erased or staged the marker sector. The flash
+/// one that stopped after it erased, part-programmed or staged the marker sector. The flash
 /// client takes `--restore-marker` only for the first and `--interrupted`
 /// only without it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,7 +147,7 @@ pub(crate) enum Bank1 {
     Intact,
     /// Exactly its review with the first marker byte cleared.
     GivenWay,
-    /// The marker sector erased or staged by a stopped restore.
+    /// The marker sector erased, part-programmed or staged by a stopped restore.
     Staged,
     /// Exactly its review, marker and all.
     Restored,
@@ -197,13 +199,13 @@ pub(crate) enum At {
     GivenWay,
     /// Bank 0 recorded itself; bank 1 given way.
     Recorded,
-    /// A stopped restore left the marker sector erased or staged.
+    /// A stopped restore left the marker sector erased, part-programmed or staged.
     RestoreStaged,
     /// The restore may have stopped anywhere.
     RestoreUnknown,
     /// Bank 1's marker is back; its check not seen.
     Restored,
-    /// A write stopped part way and every inspection refused bank 1.
+    /// A write stopped part way and every inspection read bank 1 in another state.
     Unrecognized,
 }
 
@@ -381,7 +383,7 @@ impl Next<'_> {
             ),
             At::RestoreStaged => (
                 format!(
-                    "the marker restore stopped with bank 1's marker sector erased or staged, \
+                    "the marker restore stopped with bank 1's marker sector erased, part-programmed or staged, \
                      after bank 0 recorded itself; {NOT_BOOTED}"
                 ),
                 self.restore(Resume::Interrupted),
@@ -414,7 +416,7 @@ impl Next<'_> {
             ),
             At::Unrecognized => (
                 format!(
-                    "the write stopped part way and every read-only inspection refused bank 1, \
+                    "the write stopped part way and every read-only inspection read bank 1 in another state, \
                      so no wellfed-flash command applies to it; its marker is not valid, so \
                      the feeder boots bank 0 when it next boots; {NOT_BOOTED}"
                 ),
@@ -752,8 +754,9 @@ impl Bench {
 
     /// After a write that stopped: which state bank 1 is in, by the first of
     /// `probes` whose read-only inspection passes. Nothing is written. Every
-    /// one refusing (exit 2) is [`Bank1::Unrecognized`]; one that stops, or
-    /// cannot run, and a cancel, are [`Bank1::Uninspected`].
+    /// one reading bank 1 in another state (exit 4) is
+    /// [`Bank1::Unrecognized`]; one that stops, is refused or cannot run,
+    /// and a cancel, are [`Bank1::Uninspected`].
     fn probe(&mut self, update: &UpdateArgs, bank1: &Path, probes: &[Probe]) -> Bank1 {
         if self.cancel.is_cancelled() {
             return Bank1::Uninspected;
@@ -822,11 +825,11 @@ impl Bench {
                     say!("Bank 1 after the stop: {:?}", probe.passed());
                     return Ok(probe.passed());
                 }
-                REFUSED => {}
+                MISMATCH => {}
                 _ => return Ok(Bank1::Uninspected),
             }
         }
-        say!("Bank 1 after the stop: every inspection refused it");
+        say!("Bank 1 after the stop: every inspection read it in another state");
         Ok(Bank1::Unrecognized)
     }
 

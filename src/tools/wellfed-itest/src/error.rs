@@ -57,7 +57,7 @@ pub enum Error {
         "The integration suite installs replacement builds only; offer stock with `wellfed-bench ota`"
     )]
     StockInstall,
-    #[error("The update over the device API ended before any UART outcome: {0}")]
+    #[error("The update over the device API ended before the UART showed an activation: {0}")]
     PushEnded(Arc<PushError>),
     /// `build` is the offered build's first 12 digits.
     #[error("No update outcome for {build} within {:.0} min", within.as_secs_f64() / 60.0)]

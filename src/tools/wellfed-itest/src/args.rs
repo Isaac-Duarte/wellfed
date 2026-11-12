@@ -40,10 +40,18 @@ pub struct ItestArgs {
     /// from them over the air; if it does not, recovery is a UART flash.
     #[arg(long, requires = "power")]
     pub destructive: bool,
+    /// Required with --destructive: the bench server refuses a destructive
+    /// run that does not confirm it.
+    #[arg(long)]
+    pub confirm_destructive: bool,
     /// Allow feeds through the device API (`feed-writes`): they move the
     /// motor, and run unattended, so the hopper may be empty.
     #[arg(long)]
     pub feeds: bool,
+    /// Required with --feeds: the bench server refuses unattended feeds
+    /// that do not confirm the hopper is empty.
+    #[arg(long)]
+    pub confirm_motion: bool,
     /// Run the remaining scenarios after one fails (never after the feeder goes silent).
     #[arg(long)]
     pub keep_going: bool,

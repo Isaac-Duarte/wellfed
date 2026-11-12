@@ -31,7 +31,7 @@ The libraries the tools share with the app, the server and the installer live in
 
 | Library | What it holds |
 | --- | --- |
-| [wellfed-formats](../client/wellfed-formats) | The files these tools pass to each other, typed once: build manifest, frozen review, stock layout, locks, captures, credentials and keys, flash plans and the export archive. Also the private-file writer |
+| [wellfed-formats](../client/wellfed-formats) | The files these tools pass to each other, typed once: build manifest, frozen review, stock layout, locks, credentials and keys, flash plans and the export archive. Also the private-file writer |
 | [wellfed-image](../client/wellfed-image) | The OTA image as every tool checks it: the container and core images, the two banks' layouts, the `private/` evidence root and frozen image reviews. The builder, the signer and the audits share these with `wellfed-flash` without linking it |
 | [wellfed-signing](../client/wellfed-signing) | Update signing, only ever of a frozen review: the bench key, version 2 manifests for the device API, and the downgrade and key statements. `wellfed-build keygen`/`sign`, the bench's offers, the app's installer and `wellfed restore-stock` use it |
 | [wellfed-stock](../client/wellfed-stock) | What stock 1.1.15 speaks, run in the caller's process: the installer's and the `wellfed-stock` binary's |
@@ -100,7 +100,7 @@ wellfed-flash    CLI            every bench write goes through it as a process
 
 | Crate | Holds | Depends on |
 | --- | --- | --- |
-| `wellfed-bench-formats` | The bench's protocol, which the server writes and its clients read: the bench config, the session evidence layout, the lease, a command's progress record and its writer, the server's live state and job stream, the bank ledger, the operator's notes, the run record (`NAME-itest.json`) and the suite's scenario catalog | `wellfed-formats`; `wellfed-install` for a job's questions (feature `live`) and `wellfed-model` for the `/device/*` routes (feature `device`) |
+| `wellfed-bench-formats` | The bench's protocol, which the server writes and its clients read: the bench config, the session evidence layout, a capture's serial events, a flash session's report lifecycle, a transient session's manifest, the lease, a command's progress record and its writer, the server's live state and job stream, the bank ledger, the operator's notes, the run record (`NAME-itest.json`) and the suite's scenario catalog | `wellfed-formats`; `wellfed-install` for a job's questions (feature `live`) and `wellfed-model` for the `/device/*` routes (feature `device`) |
 | `wellfed-relay` | The relay board driver: power, the loader strap and the UART lines | Nothing first-party |
 | `wellfed-rig` | The operator sequences: power, loader, boot, capture, dump, the UART update and recovery chains, transients, the OTA loop, and the device API and server steps the suite builds on | `wellfed-relay`, `wellfed-bench-formats`, `wellfed-formats`, `wellfed-client`, `wellfed-signing`, `wellfed-build`, and `wellfed-flash` as a process for every build, read and write |
 | `wellfed-itest` | The integration suite: scenarios, the live and scripted rigs, and their arguments | `wellfed-rig`, `wellfed-relay`, `wellfed-bench-formats`, `wellfed-formats` |

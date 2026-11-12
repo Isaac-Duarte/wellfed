@@ -205,8 +205,10 @@ impl Server {
             tapped.seen(&Seen::Line(line));
         })));
 
+        let last = last_job(&options.root.join(JOBS));
         let jobs = Jobs {
-            last: last_job(&options.root.join(JOBS)),
+            last,
+            first: last + 1,
             ..Jobs::default()
         };
         let bed = Bed {
@@ -479,6 +481,9 @@ pub(crate) struct Shared {
 struct Jobs {
     /// The last id given; the next job takes one more.
     last: JobId,
+    /// The first id this server gives: every job before it ended with an
+    /// earlier server.
+    first: JobId,
     running: Option<Running>,
     logs: Logs,
     stopping: bool,
@@ -524,6 +529,11 @@ impl Shared {
     /// checkout.
     pub(crate) fn last_job(&self) -> JobId {
         self.jobs().last
+    }
+
+    /// The first job id this server gives.
+    pub(crate) fn first_job(&self) -> JobId {
+        self.jobs().first
     }
 
     /// The locks [`Self::start`] takes for a job that starts, in its
@@ -650,13 +660,20 @@ impl Shared {
     fn run_job(&self, id: JobId, spec: &jobs::JobSpec, run: Run, log: &Arc<JobLog>) {
         // The port is the job's alone: the server's own capture lets go of
         // it first, and the session closes for a job that holds the UART.
-        if spec.command.holds_uart() {
-            self.bed.feeder.hold(Some(Pause::UartJob {
+        let pause = if spec.command.holds_uart() {
+            Some(Pause::UartJob {
                 job: id,
                 label: spec.command.describe(),
-            }));
+            })
         } else if spec.command.own_sessions() {
-            self.bed.feeder.hold(Some(Pause::StockInstall { job: id }));
+            Some(Pause::StockInstall { job: id })
+        } else {
+            None
+        };
+        // Neither replaces a stop that came first, nor clears one that
+        // comes after.
+        if let Some(pause) = &pause {
+            self.bed.feeder.pause(pause.clone());
         }
         self.capture.stop();
 
@@ -677,9 +694,8 @@ impl Shared {
         // The board's front buttons may have moved a relay meanwhile.
         self.look_at_bench();
         self.banks.record(&written, spec.command.name());
-        let stopping = self.jobs().stopping;
-        if !stopping {
-            self.bed.feeder.hold(None);
+        if let Some(pause) = &pause {
+            self.bed.feeder.release(pause);
         }
         self.finish(id, Some(log), code, error);
         self.resume_capture();
@@ -805,8 +821,9 @@ impl Shared {
     /// would have.
     /// A job that writes flash over UART is cancelled only with
     /// [`DuringWrite::Cancel`]. The check covers a write already under way:
-    /// a writer the job spawns between the check and the signals still gets
-    /// SIGINT, at its very start.
+    /// a writer the job spawns after the check gets SIGINT at its very
+    /// start, as the registry keeps the cancel, and a step not yet spawned
+    /// never starts.
     pub(crate) fn cancel(&self, id: JobId, during_write: DuringWrite) -> Result<(), Refusal> {
         let jobs = self.jobs();
         let Some(running) = jobs.running.as_ref().filter(|running| running.id == id) else {
@@ -829,12 +846,9 @@ impl Shared {
     }
 
     fn interrupt(&self, stopping: &Stopping) {
-        // The flag first: the rig's own waits then stop their receive-only
-        // captures, and a flash client that exits on the signal is read as
-        // the interrupt it was.
-        stopping.cancel.cancel();
-        stopping.children.interrupt();
-
+        // Recorded before anything is signalled: a job that ends on the
+        // signal would otherwise end first, and its state never show the
+        // cancel that ended it.
         let id = stopping.id;
         self.store.update(|state| {
             if let Some(job) = state
@@ -849,13 +863,19 @@ impl Shared {
             log.push(format!("Cancel requested for job {id}"));
         }
         self.output.say(format!("Job {id}: cancel requested"));
+
+        // The flag before the signals: the rig's own waits then stop their
+        // receive-only captures, and a flash client that exits on the
+        // signal is read as the interrupt it was.
+        stopping.cancel.cancel();
+        stopping.children.interrupt();
     }
 
     /// Refuse new jobs and cancel the running one; its thread, to wait on.
     fn stop(&self) -> Option<std::thread::JoinHandle<()>> {
         self.store
             .update(|state| state.server.phase = Phase::Stopping);
-        self.bed.feeder.hold(Some(Pause::Stopping));
+        self.bed.feeder.stop();
         let mut jobs = self.jobs();
         jobs.stopping = true;
         let log = jobs

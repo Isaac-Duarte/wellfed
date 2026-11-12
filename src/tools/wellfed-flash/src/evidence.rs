@@ -20,8 +20,8 @@ pub(crate) use wellfed_image::root::Root;
 use crate::error::Result;
 use crate::evidence::report::Streams;
 use crate::link::protocol::Port;
+use wellfed_bench_formats::capture::{Direction, SerialEvent};
 use wellfed_formats::canonical::sha256;
-use wellfed_formats::capture::{Direction, SerialEvent};
 
 /// ISO-8601 UTC as Python's `datetime.now(timezone.utc).isoformat()` gives.
 pub fn utc() -> String {
@@ -134,10 +134,6 @@ impl<P: Port> Port for EvidencePort<P> {
 
     fn in_waiting(&mut self) -> io::Result<usize> {
         self.port.in_waiting()
-    }
-
-    fn readiness(&self) -> crate::link::protocol::Readiness {
-        self.port.readiness()
     }
 }
 

@@ -41,7 +41,6 @@ pub enum RecoveryError {
     NotBaseline,
     #[error("Target marker is still valid; refuse an in-place rewrite of a bootable bank")]
     MarkerStillValid,
-
     #[error("Reviewed plan required")]
     ReviewedPlanMissing,
     #[error("Plan differs from recomputed exact baseline/current plan")]
@@ -161,13 +160,22 @@ pub fn plan(pinned: &Baseline, current: &[u8]) -> Result<Plan> {
 
     let mut sectors = Vec::new();
     let mut proposed = current.to_vec();
+    // The run restores every sector, then commits the marker sector's
+    // withheld bytes last, so a recovery always includes that sector: the
+    // fountain's stock marker is not bootable, so its first sector can
+    // already match the backup while a later one differs. Staged again,
+    // with its marker withheld, it is erased and written like the others
+    // and its marker committed last.
+    let restoring = (START..end)
+        .step_by(SECTOR)
+        .any(|offset| current[offset..offset + SECTOR] != baseline[offset..offset + SECTOR]);
 
     for offset in (START..end).step_by(SECTOR) {
         let (before, after) = (
             &current[offset..offset + SECTOR],
             &baseline[offset..offset + SECTOR],
         );
-        if before == after {
+        if before == after && !(offset == START && restoring) {
             continue;
         }
 

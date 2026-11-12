@@ -330,8 +330,10 @@ async fn follow(
 /// Run the server until Ctrl+C or SIGTERM, held back during a UART write
 /// as `wellfed_bench::server::stopping` says.
 fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> anyhow::Result<u8> {
+    let flash_bin = args.flash_bin.clone().unwrap_or_else(default_flash_bin);
+    orphans::flash_named(&flash_bin)?;
     let tools = ToolPaths {
-        flash_bin: args.flash_bin.clone().unwrap_or_else(default_flash_bin),
+        flash_bin,
         build_bin: args.build_bin.clone().unwrap_or_else(default_build_bin),
         wellfed_bin: args.wellfed_bin.clone().unwrap_or_else(default_wellfed_bin),
     };
@@ -525,7 +527,7 @@ fn report_state(state: &BenchState) {
         }
     }
     for child in &state.activity {
-        wellfed_rig::say!("  child {}: {:?} {}", child.pid, child.kind, child.label);
+        wellfed_rig::say!("  child {}: {} {}", child.pid, child.kind, child.label);
     }
     if let Some(prompt) = &state.prompt {
         wellfed_rig::say!(

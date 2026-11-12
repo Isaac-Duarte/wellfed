@@ -47,8 +47,17 @@ pub struct Children {
 
 #[derive(Default)]
 struct Shared {
-    running: Mutex<Vec<Activity>>,
+    running: Mutex<Running>,
     watcher: Mutex<Option<Watcher>>,
+}
+
+/// The children registered and not yet reaped, and whether the job was
+/// interrupted: a cancel holds for every child tracked after it too, so one
+/// spawned in the instant before it registers is signalled as it does.
+#[derive(Default)]
+struct Running {
+    children: Vec<Activity>,
+    interrupted: bool,
 }
 
 impl Children {
@@ -60,62 +69,52 @@ impl Children {
     /// as it is.
     pub fn watch(&self, watcher: impl Fn(&[Activity]) + Send + Sync + 'static) {
         let running = self.running_list();
-        watcher(&running);
+        watcher(&running.children);
         *lock(&self.shared.watcher) = Some(Box::new(watcher));
     }
 
     /// The children registered and not yet reaped.
     #[cfg(test)]
     pub(crate) fn running(&self) -> Vec<Activity> {
-        self.running_list().clone()
+        self.running_list().children.clone()
     }
 
     /// Register `child`, started through [`own_group`], until the returned
     /// guard drops. Its owner drops the guard as soon as it reaps the child.
-    /// `label` is its subcommand words.
+    /// `label` is its subcommand words. After [`Self::interrupt`] the child
+    /// is signalled at once, as the cancel would have.
     pub fn track(&self, child: &Child, kind: ActivityKind, label: &str) -> Tracked {
         let pid = child.id();
-        let mut running = self.running_list();
-        running.push(Activity {
+        let activity = Activity {
             kind,
             pid,
             label: label.to_string(),
             started: now(),
-        });
-        self.notify(&running);
+        };
+        let mut running = self.running_list();
+        if running.interrupted {
+            signal(&activity);
+        }
+        running.children.push(activity);
+        self.notify(&running.children);
         Tracked {
             children: self.clone(),
             pid,
         }
     }
 
-    /// Signal every registered child as a cancel stops it. Nothing is
-    /// waited on here; each owner reaps its child through its own cleanup.
+    /// Signal every registered child as a cancel stops it, and every child
+    /// registered from now on. Nothing is waited on here; each owner reaps
+    /// its child through its own cleanup.
     pub fn interrupt(&self) {
-        let running = self.running_list();
-        for child in running.iter() {
-            // Owners drop a child's entry as soon as they reap it, so a
-            // listed pid is still that child's (exited at worst, never
-            // reused) but for the instant between the two.
-            let Some(pid) = i32::try_from(child.pid).ok().and_then(Pid::from_raw) else {
-                continue;
-            };
-            match child.kind {
-                ActivityKind::Flash => {
-                    let _ = kill_process(pid, Signal::INT);
-                }
-                ActivityKind::Build | ActivityKind::Install | ActivityKind::Analyzer => {
-                    // The child leads its own group; the pid alone if it
-                    // somehow does not.
-                    if kill_process_group(pid, Signal::TERM).is_err() {
-                        let _ = kill_process(pid, Signal::TERM);
-                    }
-                }
-            }
+        let mut running = self.running_list();
+        running.interrupted = true;
+        for child in &running.children {
+            signal(child);
         }
     }
 
-    fn running_list(&self) -> MutexGuard<'_, Vec<Activity>> {
+    fn running_list(&self) -> MutexGuard<'_, Running> {
         lock(&self.shared.running)
     }
 
@@ -136,8 +135,30 @@ pub struct Tracked {
 impl Drop for Tracked {
     fn drop(&mut self) {
         let mut running = self.children.running_list();
-        running.retain(|child| child.pid != self.pid);
-        self.children.notify(&running);
+        running.children.retain(|child| child.pid != self.pid);
+        self.children.notify(&running.children);
+    }
+}
+
+/// Signal `child` as a cancel stops its kind.
+fn signal(child: &Activity) {
+    // Owners drop a child's entry as soon as they reap it, so a listed pid
+    // is still that child's (exited at worst, never reused) but for the
+    // instant between the two.
+    let Some(pid) = i32::try_from(child.pid).ok().and_then(Pid::from_raw) else {
+        return;
+    };
+    match child.kind {
+        ActivityKind::Flash(_) => {
+            let _ = kill_process(pid, Signal::INT);
+        }
+        ActivityKind::Build | ActivityKind::Install | ActivityKind::Analyzer => {
+            // The child leads its own group; the pid alone if it somehow
+            // does not.
+            if kill_process_group(pid, Signal::TERM).is_err() {
+                let _ = kill_process(pid, Signal::TERM);
+            }
+        }
     }
 }
 
@@ -152,6 +173,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 mod tests {
     use std::path::Path;
     use std::time::{Duration, Instant};
+
+    use wellfed_bench_formats::flash::FlashUse;
 
     use super::*;
 
@@ -209,10 +232,38 @@ mod tests {
         let children = Children::new();
         let mut flash = trapping(flash_dir.path());
         let mut build = trapping(build_dir.path());
-        let _flash = children.track(&flash, ActivityKind::Flash, "update execute");
+        let _flash = children.track(
+            &flash,
+            ActivityKind::Flash(FlashUse::Write { counted: true }),
+            "update execute",
+        );
         let _build = children.track(&build, ActivityKind::Build, "build firstboot");
 
         children.interrupt();
+        flash.wait().unwrap();
+        build.wait().unwrap();
+
+        let got = |dir: &Path| std::fs::read_to_string(dir.join("got")).unwrap();
+        assert_eq!(got(flash_dir.path()).trim(), "INT");
+        assert_eq!(got(build_dir.path()).trim(), "TERM");
+    }
+
+    /// A cancel holds for a child spawned before it and tracked after it:
+    /// it is signalled as it registers, by its kind's rule.
+    #[test]
+    fn a_child_tracked_after_the_cancel_is_signalled_as_it_registers() {
+        let (flash_dir, build_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let children = Children::new();
+        children.interrupt();
+
+        let mut flash = trapping(flash_dir.path());
+        let mut build = trapping(build_dir.path());
+        let _flash = children.track(
+            &flash,
+            ActivityKind::Flash(FlashUse::Write { counted: true }),
+            "update execute",
+        );
+        let _build = children.track(&build, ActivityKind::Build, "build firstboot");
         flash.wait().unwrap();
         build.wait().unwrap();
 
