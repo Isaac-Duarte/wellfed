@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' hide Card;
 import 'package:wellfed/screens/feeder/settings_tab.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -146,6 +147,12 @@ class SettingsDesiccantRow extends StatefulWidget {
 }
 
 class _DesiccantRowState extends State<SettingsDesiccantRow> {
+  /// The periods offered: the usual ones the feeder's limits take.
+  static final List<int> _periods = [
+    for (final int days in const [7, 14, 30, 60, 90])
+      if (days >= Limits.desiccantDaysLeast && days <= Limits.desiccantDaysMost) days,
+  ];
+
   bool _asking = false;
 
   Future<void> _changed() async {
@@ -162,7 +169,7 @@ class _DesiccantRowState extends State<SettingsDesiccantRow> {
       builder: (context) => SimpleDialog(
         title: const Text('Change the desiccant every'),
         children: [
-          for (final days in const [7, 14, 30, 60, 90])
+          for (final int days in _periods)
             SimpleDialogOption(onPressed: () => Navigator.pop(context, days), child: Text('$days days')),
         ],
       ),

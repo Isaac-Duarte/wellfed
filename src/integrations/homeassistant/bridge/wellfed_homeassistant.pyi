@@ -2,7 +2,27 @@ from _typeshed import SupportsGetItem
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
+__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "role_writes", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
+
+PORTIONS_MAX: Final[int]
+"""
+The most portions one feed asks for.
+"""
+
+PORTIONS_MIN: Final[int]
+"""
+The fewest portions one feed asks for.
+"""
+
+PORTION_MG_MAX: Final[int]
+"""
+The heaviest portion weight the feeder stores, in milligrams.
+"""
+
+PORTION_MG_MIN: Final[int]
+"""
+The lightest portion weight the feeder stores, in milligrams.
+"""
 
 @final
 class AccountRole:
@@ -1370,6 +1390,12 @@ def join(secret: bytes, invite: str, label: str, address: str | None = None) -> 
 def public_key(secret: bytes) -> bytes:
     """
     The public key of `secret`, as the feeder lists this client.
+    """
+
+def role_writes(role: Role) -> bool:
+    """
+    Whether `role` may make every write the integration offers, by the
+    feeder's own matrix: its write entities show only then.
     """
 
 def server_client_listed(url: str, token: str, feeder_id: str, key: bytes) -> bool | None:

@@ -3,9 +3,7 @@
 //! an install, and over whatever session a CLI command holds (the bench
 //! server's among them) on their own.
 
-use std::path::Path;
-
-use wellfed_formats::private::{self, SYSTEM_RANDOM};
+use wellfed_formats::private;
 use wellfed_model::{Answer, ClientRole, Op};
 
 use crate::Error;
@@ -45,5 +43,5 @@ impl Session for wellfed_connect::Connection {
 /// Fresh bytes from the system's random source: request ids, ephemeral
 /// keys, code bits.
 pub fn random<const N: usize>() -> Result<[u8; N], Error> {
-    private::random(Path::new(SYSTEM_RANDOM)).map_err(Error::Random)
+    private::random().map_err(Error::Random)
 }

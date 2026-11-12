@@ -28,7 +28,7 @@ use serde_json::Value;
 use wellfed_bench::server::api::{ReadOnly, Refusal, WAIT_MAX_MS, Wait, WaitFor};
 use wellfed_bench::server::{Client, ClientError};
 use wellfed_bench_formats::live::BenchState;
-use wellfed_formats::private::{SYSTEM_RANDOM, random};
+use wellfed_formats::private::random;
 
 use tools::{Call, LogSource, Until, WaitArgs};
 
@@ -174,7 +174,7 @@ impl Bench {
                     "Only reads and the clock sync go to the feeder from here: status, settings, \
                      time, plans, clients, update_state, calibration, call or stats",
                 )?;
-                let id = random::<16>(Path::new(SYSTEM_RANDOM))?;
+                let id = random::<16>()?;
                 serde_json::to_value(client.ask(id, read.op(jiff::Timestamp::now())).await?)?
             }
 

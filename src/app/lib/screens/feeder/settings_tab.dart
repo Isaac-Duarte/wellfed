@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/settings_owner.dart';
 import 'package:wellfed/screens/feeder/settings_rows.dart';
 import 'package:wellfed/screens/feeder/settings_window.dart';
+import 'package:wellfed/src/roles.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -36,7 +37,12 @@ class SettingsTab extends StatelessWidget {
     builder: (context, _) {
       final ThemeTokens c = context.colors;
       final SettingsView? settings = feeder.state.card?.settings;
-      final owner = feeder.state.role == ClientRole.owner;
+      // The owner's section: Wi-Fi, people, updates, the time and the meal
+      // call there are the owner's alone.
+      final bool owner = switch (feeder.state.role) {
+        final ClientRole role => mayAsk(role, Ask.putWifi),
+        null => false,
+      };
       final online = feeder.state.connection == Connection.online;
       // Read-only settings show what the feeder holds, with nothing to change.
       final bool canChange = online && (settings?.writable ?? false);

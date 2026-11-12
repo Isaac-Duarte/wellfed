@@ -20,7 +20,7 @@ use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::platform::Random;
 use wellfed_feeder_sim::serve::{self, Advertise, Control, Event, Feeder};
 use wellfed_formats::owner::{self, EnrolledFeeder};
-use wellfed_formats::private::{self, SYSTEM_RANDOM};
+use wellfed_formats::private;
 use wellfed_proto::api::PORT;
 use wellfed_session::hex;
 use wellfed_session::hex::Lower;
@@ -87,7 +87,7 @@ fn remember(path: &Path, identity: &[u8; 32]) -> Result<()> {
 }
 
 fn system_random() -> Random {
-    Box::new(|| private::random(Path::new(SYSTEM_RANDOM)).ok())
+    Box::new(|| private::random().ok())
 }
 
 async fn run(cli: Cli, flash: Rc<Flash>, owner: Option<([u8; 32], Label)>) -> Result<()> {

@@ -6,12 +6,12 @@ use super::handshake::find;
 use super::recovery::Rescue;
 use super::request::{Action, Reply, proto_role};
 use super::{Phase, Server, proto_encode, slot_id};
-use crate::access::Access;
 use crate::pairing::Pairing;
 use crate::{
     Device, EventRead, HANDSHAKE_MS, IDLE_MS, KeyChange, KeyOutcome, Reader, Reason, Record,
 };
 use wellfed_core::deadline_passed;
+use wellfed_proto::access::Access;
 use wellfed_proto::api::{
     self as proto, ClientMessage, Clients, DeviceMessage, EventBatchWriter, Joined, LOG_TEXT_MAX,
     Open, Outcome, Refusal, RequestId,

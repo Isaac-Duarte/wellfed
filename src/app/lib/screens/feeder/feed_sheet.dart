@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart' show CalibrationInfo;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
@@ -75,7 +76,6 @@ class _Confirm extends StatefulWidget {
 }
 
 class _ConfirmState extends State<_Confirm> {
-  static const _most = 48;
   int _portions = 1;
 
   /// The portion size read as this sheet opened. Grams come only from it, never
@@ -112,7 +112,11 @@ class _ConfirmState extends State<_Confirm> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _Stepper(Glyph.minus, 'One fewer portion', _portions > 1 ? () => setState(() => _portions--) : null),
+            _Stepper(
+              Glyph.minus,
+              'One fewer portion',
+              _portions > Limits.portionsLeast ? () => setState(() => _portions--) : null,
+            ),
             const SizedBox(width: 28),
             SizedBox(
               width: 96,
@@ -142,7 +146,11 @@ class _ConfirmState extends State<_Confirm> {
               ),
             ),
             const SizedBox(width: 28),
-            _Stepper(Glyph.add, 'One more portion', _portions < _most ? () => setState(() => _portions++) : null),
+            _Stepper(
+              Glyph.add,
+              'One more portion',
+              _portions < Limits.portionsMost ? () => setState(() => _portions++) : null,
+            ),
           ],
         ),
         const SizedBox(height: 20),

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/meal_choices.dart';
 import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/schedule.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
@@ -190,6 +191,31 @@ void main() {
       await tapIn(tester, find.text('Delete meal'));
       await tapIn(tester, find.widgetWithText(FilledButton, 'Delete'));
       expect((session.requests.single as FeederRequest_EditPlans).edit, const PlanEdit.delete(slot: 0));
+    });
+
+    bool enabled(WidgetTester tester, String tooltip) =>
+        tester
+            .widget<IconButton>(find.ancestor(of: find.byTooltip(tooltip), matching: find.byType(IconButton)))
+            .onPressed !=
+        null;
+
+    testWidgets("a meal at the feeder's most portions steps only down", (tester) async {
+      await show(tester, planPlans([planPlan(60, portions: Limits.portionsMost)]));
+
+      await tapIn(tester, find.text('1:00 AM'));
+      expect(find.text('${Limits.portionsLeast} to ${Limits.portionsMost}'), findsOneWidget);
+      expect(enabled(tester, 'One more'), isFalse);
+      await tapIn(tester, find.byTooltip('One fewer'));
+      expect(enabled(tester, 'One more'), isTrue);
+    });
+
+    testWidgets("a new meal starts at the feeder's fewest portions and steps only up", (tester) async {
+      await show(tester, planPlans([planPlan(60)]));
+
+      await tapIn(tester, find.text('Add meal'));
+      expect(enabled(tester, 'One fewer'), isFalse);
+      await tapIn(tester, find.byTooltip('One more'));
+      expect(enabled(tester, 'One fewer'), isTrue);
     });
 
     testWidgets("the editor's switch is its own node, named On", (tester) async {

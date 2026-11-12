@@ -21,7 +21,8 @@ use jiff::tz::TimeZone;
 use wellfed_client::plans::{Edit, edited, to_skip, to_undo};
 use wellfed_client::time::feeder_zone;
 use wellfed_model::{
-    Answer, CALL_PLAYS_MAX, Op, PLANS, PORTIONS_MAX, Plan, Plans, Refusal, TimeOfDay, Weekdays,
+    Answer, CALL_PLAYS_MAX, Op, PLANS, PORTIONS_MAX, PORTIONS_MIN, Plan, Plans, Refusal, TimeOfDay,
+    Weekdays,
 };
 
 use crate::{Target, connect, print_answer, text};
@@ -192,10 +193,10 @@ fn slot() -> clap::builder::RangedI64ValueParser<u8> {
     clap::value_parser!(u8).range(0..i64::try_from(PLANS).unwrap_or(i64::MAX))
 }
 
-/// Portions for a feed or a plan: 1 to the feeder's cap, which it checks
-/// again and refuses by name.
+/// Portions for a feed or a plan: within the feeder's limits, which it
+/// checks again and refuses by name.
 pub(crate) fn portions() -> clap::builder::RangedI64ValueParser<u8> {
-    clap::value_parser!(u8).range(1..=i64::from(PORTIONS_MAX))
+    clap::value_parser!(u8).range(i64::from(PORTIONS_MIN)..=i64::from(PORTIONS_MAX))
 }
 
 /// The meal call's plays before a meal.

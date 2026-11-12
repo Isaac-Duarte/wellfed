@@ -23,6 +23,8 @@
 
 /// Plan slots a feeder keeps, as stock keeps at most ten plans.
 pub const PLANS: usize = 10;
+/// The fewest portions one plan asks for: the fewest one feed may.
+pub const PORTIONS_MIN: u8 = 1;
 /// The most portions one plan asks for: the most one feed may.
 pub const PORTIONS_MAX: u8 = 48;
 
@@ -75,7 +77,7 @@ impl Plan {
     /// (a plan at "99:99" stored as given); this one refuses them.
     pub const fn valid(&self) -> bool {
         self.minute < DAY_MINUTES
-            && self.portions >= 1
+            && self.portions >= PORTIONS_MIN
             && self.portions <= PORTIONS_MAX
             && self.days.valid()
             && self.call <= wellfed_core::clip::PLAYS_MAX

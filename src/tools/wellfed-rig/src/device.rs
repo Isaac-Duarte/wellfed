@@ -38,7 +38,7 @@ use wellfed_bench_formats::live::Unavailable;
 use wellfed_client::api::{Error as SessionError, Incoming, Session};
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
 use wellfed_formats::owner::{self, OwnerKeyFile};
-use wellfed_formats::private::{self, SYSTEM_RANDOM};
+use wellfed_formats::private;
 use wellfed_model::{
     FeederSettingsPatch, Generation, Op, OpenRefusal, Refusal, Settings, Stats, StatsSection,
     Status, TimeView, UpdateView, Wifi, WifiSource,
@@ -575,7 +575,7 @@ pub struct Device {
 }
 
 fn random<const N: usize>() -> Result<[u8; N], DeviceError> {
-    private::random(Path::new(SYSTEM_RANDOM)).map_err(DeviceError::Random)
+    private::random().map_err(DeviceError::Random)
 }
 
 impl Device {

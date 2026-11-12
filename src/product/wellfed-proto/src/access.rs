@@ -1,18 +1,41 @@
-//! Which role may send which op. Every op has a class, matched with no
-//! wildcard, so an op added to the API fails to compile until someone
+//! Which role may send which op: the one matrix the device enforces and
+//! every client gates its controls on. Every op has a class, matched with
+//! no wildcard, so an op added to the API fails to compile until someone
 //! decides who may send it, rather than falling to whatever a deny list
-//! forgot. A role the class does not name is refused `Forbidden` before
-//! the op runs or is converted, so a malformed op from a role that may not
-//! send it is refused the same way as a well-formed one.
+//! forgot. The device refuses a role the class does not name `Forbidden`
+//! before the op runs or is converted, so a malformed op from a role that
+//! may not send it is refused the same way as a well-formed one.
 //!
 //! The classes read the wire op alone, with nothing the device holds, so a
-//! client can ask the same question before it sends.
+//! client asks the same question, [`allowed`], before it sends. An invite
+//! passes a second check once the matrix lets it through: pairing refuses
+//! an invite granting a role its asker may not hand out ([`may_invite`]).
+//! The matrix is behavior, not wire: changing a row changes who may do what
+//! on every feeder that runs it, and the table tests below pin every row.
 
-use wellfed_proto::api::{FeederOp, Op, Role, StatsSection, UpdateOp};
+use crate::api::{FeederOp, Op, Role, StatsSection, UpdateOp};
+
+/// Whether a client holding `role` may send `op`.
+pub const fn allowed(role: Role, op: &Op<'_>) -> bool {
+    Access::of(op).allows(role)
+}
+
+/// Whether a client with role `by` may make an invite granting `role`: the
+/// check pairing makes after the matrix lets `by` ask for an invite at all,
+/// refusing the rest `NotAllowed`. An owner invites any role but an update
+/// signer, whose key is enrolled only at the feeder; a member invites
+/// members; the server invites no one.
+pub const fn may_invite(by: Role, role: Role) -> bool {
+    match by {
+        Role::Owner => !matches!(role, Role::UpdateSigner),
+        Role::Member => matches!(role, Role::Member),
+        Role::Server | Role::UpdateSigner => false,
+    }
+}
 
 /// Who may send an op.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Access {
+pub enum Access {
     /// Every role that opens a session: an owner, a member and the server.
     Clients,
     /// An owner and a member, the people at the feeder: the portion
@@ -27,7 +50,7 @@ pub(crate) enum Access {
 
 impl Access {
     /// The class of `op`.
-    pub(crate) const fn of(op: &Op<'_>) -> Self {
+    pub const fn of(op: &Op<'_>) -> Self {
         match op {
             Op::Alive
             | Op::Status
@@ -87,7 +110,7 @@ impl Access {
 
     /// Whether `role` may send an op of this class. An update signer's key
     /// never opens a session, so it may send nothing.
-    pub(crate) const fn allows(self, role: Role) -> bool {
+    pub const fn allows(self, role: Role) -> bool {
         match role {
             Role::Owner => true,
             Role::Member => match self {
@@ -106,9 +129,7 @@ impl Access {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wellfed_proto::api::{
-        Bowl, Calibration, Lenient, SettingsChanges, TimeChanges, TimeSync, Tune,
-    };
+    use crate::api::{Bowl, Calibration, Lenient, SettingsChanges, TimeChanges, TimeSync, Tune};
 
     /// One op of every kind, with who may send it: owner, member, server.
     /// `kind` matches every variant with no wildcard and numbers it, so a
@@ -243,7 +264,7 @@ mod tests {
         (
             Op::Feeder(FeederOp::PutPlans {
                 base: 0,
-                plans: [None; wellfed_proto::api::PLANS_MAX],
+                plans: [None; crate::api::PLANS_MAX],
             }),
             [true, true, true],
         ),
@@ -347,14 +368,31 @@ mod tests {
         assert!(seen.iter().all(|&seen| seen), "an op without a row");
     }
 
+    /// Who may invite whom: the asker's role down, the granted role across
+    /// (owner, member, server, update signer).
+    #[test]
+    fn each_role_may_grant_exactly_its_invites() {
+        let roles = [Role::Owner, Role::Member, Role::Server, Role::UpdateSigner];
+        let rows = [
+            (Role::Owner, [true, true, true, false]),
+            (Role::Member, [false, true, false, false]),
+            (Role::Server, [false, false, false, false]),
+            (Role::UpdateSigner, [false, false, false, false]),
+        ];
+        for (by, may) in rows {
+            for (role, may) in roles.into_iter().zip(may) {
+                assert_eq!(may_invite(by, role), may, "{by:?} inviting {role:?}");
+            }
+        }
+    }
+
     #[test]
     fn each_role_may_send_exactly_its_ops() {
         for (op, [owner, member, server]) in ROWS {
-            let access = Access::of(op);
-            assert_eq!(access.allows(Role::Owner), *owner, "owner {op:?}");
-            assert_eq!(access.allows(Role::Member), *member, "member {op:?}");
-            assert_eq!(access.allows(Role::Server), *server, "server {op:?}");
-            assert!(!access.allows(Role::UpdateSigner), "signer {op:?}");
+            assert_eq!(allowed(Role::Owner, op), *owner, "owner {op:?}");
+            assert_eq!(allowed(Role::Member, op), *member, "member {op:?}");
+            assert_eq!(allowed(Role::Server, op), *server, "server {op:?}");
+            assert!(!allowed(Role::UpdateSigner, op), "signer {op:?}");
         }
     }
 }

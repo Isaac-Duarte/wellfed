@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/widgets/desktop.dart';
 
@@ -33,7 +34,8 @@ String refusalWords(FeederRefusal refusal) => switch (refusal) {
   FeederRefusal_Fault() => 'It stopped on a fault and needs a restart.',
   FeederRefusal_Update() => 'The feeder refused the update.',
   FeederRefusal_Unverified() => 'This feeder has not verified that mode.',
-  FeederRefusal_Portions(:final asked) => 'A feed is 1 to 48 portions, not $asked.',
+  FeederRefusal_Portions(:final asked) =>
+    'A feed is ${Limits.portionsLeast} to ${Limits.portionsMost} portions, not $asked.',
   FeederRefusal_NoClock() => "The feeder doesn't know the date. Set its time first.",
   FeederRefusal_Unknown() => 'The feeder refused it for a reason this app does not know. Update this app.',
 };
@@ -43,9 +45,10 @@ String notAskedWords(NotAsked reason) => switch (reason) {
     'A network name is 1 to 32 bytes, and its password 8 to 63 plain '
         'characters.',
   NotAsked.emptySlot => "That meal isn't there any more.",
-  NotAsked.plansFull => 'A feeder keeps 10 meals, and this one has 10.',
+  NotAsked.plansFull => 'A feeder keeps ${Limits.meals} meals, and this one has ${Limits.meals}.',
   NotAsked.nothingToChange => 'Nothing changed.',
-  NotAsked.badPlan => 'A meal is 1 to 48 portions, with up to 5 calls.',
+  NotAsked.badPlan =>
+    'A meal is ${Limits.portionsLeast} to ${Limits.portionsMost} portions, with up to ${Limits.callPlaysMost} calls.',
   NotAsked.badWeight => 'Give the weight in grams, like 9.8.',
   NotAsked.badNtp => 'Give an IPv4 address, like 192.168.1.1.',
   NotAsked.badZone => "The feeder can't follow that time zone.",

@@ -900,16 +900,15 @@ impl<'a> Session<'a> {
             plans: facts.plans.as_ref(),
             calibration: self.memory.calibration.as_ref(),
         };
-        let built = writes::gate(self.role)
-            .and_then(|()| writes::build(&write, &read))
-            .and_then(|(op, kind)| {
-                writes::served(&op, self.connection.kind())?;
-                let busy = matches!(kind, Kind::Store { store, .. } if self.store_busy(store));
-                wellfed_formats::require(!busy, || NotSent::Busy)?;
-                let held = matches!(kind, Kind::Feed { .. }) && self.feed_unsettled();
-                wellfed_formats::require(!held, || NotSent::Held)?;
-                Ok((op, kind))
-            });
+        let built = writes::build(&write, &read).and_then(|(op, kind)| {
+            writes::gate(self.role, &op)?;
+            writes::served(&op, self.connection.kind())?;
+            let busy = matches!(kind, Kind::Store { store, .. } if self.store_busy(store));
+            wellfed_formats::require(!busy, || NotSent::Busy)?;
+            let held = matches!(kind, Kind::Feed { .. }) && self.feed_unsettled();
+            wellfed_formats::require(!held, || NotSent::Held)?;
+            Ok((op, kind))
+        });
         let (op, kind) = match built {
             Ok(built) => built,
             Err(why) => {

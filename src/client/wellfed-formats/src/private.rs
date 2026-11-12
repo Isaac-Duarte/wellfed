@@ -7,21 +7,23 @@
 //! exists. New secrets come from [`random`].
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
 use serde::Serialize;
 
 use crate::Result;
 
-/// The operating system's CSPRNG, which the kernel seeds before userspace
-/// can run a tool.
-pub const SYSTEM_RANDOM: &str = "/dev/urandom";
-
-/// `N` bytes from `source` (normally [`SYSTEM_RANDOM`]), for new secrets.
-pub fn random<const N: usize>(source: &Path) -> Result<[u8; N]> {
+/// `N` bytes from the operating system's CSPRNG, for new secrets: every
+/// client's static and ephemeral keys, signing seeds and request ids. It
+/// goes through `getrandom`, the system's own call on each platform
+/// (`getrandom(2)` on Linux and Android, `ProcessPrng` on Windows), rather
+/// than a device file only some systems have. A source that fails is an
+/// error ([`Error::Random`](crate::Error::Random)); nothing falls back to a
+/// weaker one.
+pub fn random<const N: usize>() -> Result<[u8; N]> {
     let mut bytes = [0u8; N];
-    fs::File::open(source)?.read_exact(&mut bytes)?;
+    getrandom::fill(&mut bytes)?;
     Ok(bytes)
 }
 
@@ -175,7 +177,7 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     fs::create_dir_all(parent)?;
-    let tag = wellfed_session::hex::Lower(&random::<8>(Path::new(SYSTEM_RANDOM))?).to_string();
+    let tag = wellfed_session::hex::Lower(&random::<8>()?).to_string();
     let temp = parent.join(format!(".{tag}.tmp"));
 
     let result = (|| {
@@ -204,6 +206,16 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// Two keys' worth of bytes from the system's source: 256 bits each,
+    /// so equal draws would mean the source is not random at all.
+    #[test]
+    fn each_draw_is_fresh() {
+        let first: [u8; 32] = super::random().unwrap();
+        let second: [u8; 32] = super::random().unwrap();
+        assert_ne!(first, second);
+        assert_ne!(first, [0; 32]);
+    }
+
     #[test]
     fn setting_aside_numbers_the_file_and_replaces_nothing() {
         let dir = tempfile::tempdir().unwrap();

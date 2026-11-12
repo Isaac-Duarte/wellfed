@@ -42,7 +42,7 @@ use wellfed_bench_formats::live::{
 use wellfed_bench_formats::notes::Seen;
 use wellfed_bench_formats::now;
 use wellfed_connect::{Connection, Cursor, Received, Resume};
-use wellfed_formats::private::{self, SYSTEM_RANDOM};
+use wellfed_formats::private;
 use wellfed_model::{Answer, LogLines, Op, Pushed, Skew, Status};
 use wellfed_rig::device::{self, DeviceError, DeviceLink, Owner};
 use wellfed_session::hex;
@@ -261,7 +261,7 @@ impl Feeder {
 }
 
 fn random<const N: usize>() -> Option<[u8; N]> {
-    private::random(Path::new(SYSTEM_RANDOM)).ok()
+    private::random().ok()
 }
 
 /// The server's session lent to a job: a blocking request over the task's
@@ -275,7 +275,7 @@ pub(crate) struct SessionLink {
 
 impl DeviceLink for SessionLink {
     fn ask(&mut self, ask: &device::Ask) -> Result<device::Answer, DeviceError> {
-        let id = private::random(Path::new(SYSTEM_RANDOM)).map_err(DeviceError::Random)?;
+        let id = private::random().map_err(DeviceError::Random)?;
         let (reply, answer) = oneshot::channel();
         let request = Request {
             id,

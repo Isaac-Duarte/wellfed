@@ -593,9 +593,13 @@ pub struct CalibrationView {
 
 /// Plan slots a feeder keeps, as stock keeps at most ten plans.
 pub const PLANS_MAX: usize = 10;
+/// The fewest portions one feed asks for, whoever asks: a feed of none is
+/// refused [`Refusal::Portions`], as one over [`PORTIONS_MAX`] is.
+pub const PORTIONS_MIN: u8 = 1;
 /// The most portions one feed asks for, whoever asks (a client, a plan or
-/// Dispense): the vendor app's cap on this model. Every feed asks for 1 to
-/// this many; anything else is refused [`Refusal::Portions`].
+/// Dispense): the vendor app's cap on this model. Every feed asks for
+/// [`PORTIONS_MIN`] to this many; anything else is refused
+/// [`Refusal::Portions`].
 pub const PORTIONS_MAX: u8 = 48;
 
 /// One feeding plan: `portions` at minute `minute` of the local day

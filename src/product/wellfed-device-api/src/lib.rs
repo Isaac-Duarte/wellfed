@@ -57,6 +57,13 @@
 //! `Unavailable`. The firmware implements both, and the host tests
 //! a fake of them.
 //!
+//! The crate is not yet kind-neutral: its [`mailbox`] carries the feeder's
+//! settings and plans (`wellfed-core-feeder`'s types), so every crate that
+//! links it, `wellfed-device` and `wellfed-device-runtime` among them,
+//! links the feeder's core too. Only the feeder has a network image, so no
+//! image pays for it; the shared stores' vocabulary moves out when a second
+//! kind gets one.
+//!
 //! Beside the server sit what its requests hand the rest of the feeder
 //! ([`mailbox`]), who may become a client and when ([`pairing`]), the setup
 //! exchange that BLE and the recovery window share ([`setup`]), and the
@@ -66,7 +73,6 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-mod access;
 pub mod clients;
 mod device;
 pub mod mailbox;

@@ -12,9 +12,6 @@ import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 
-/// How many keys a feeder lists.
-const clientsMost = 8;
-
 String roleName(ClientRole role) => switch (role) {
   ClientRole.owner => 'Owner',
   ClientRole.member => 'Member',

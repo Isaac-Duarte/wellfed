@@ -439,7 +439,7 @@ impl Server {
             },
             // Named before anything else is checked, so the refusal says
             // what to change rather than when to try again.
-            FeederAction::Feed { portions } if !(1..=proto::PORTIONS_MAX).contains(&portions) => {
+            FeederAction::Feed { portions } if !PORTIONS.contains(&portions) => {
                 Reply::Refused(Refusal::Portions { asked: portions })
             }
             // A restart is due: a feed now would be cut by it.
@@ -676,7 +676,13 @@ fn wire_reminder(reminder: MealReminder) -> proto::MealReminder {
 }
 
 const _: () = assert!(PLANS == proto::PLANS_MAX);
-const _: () = assert!(wellfed_core_feeder::schedule::PORTIONS_MAX == proto::PORTIONS_MAX);
+const _: () = assert!(
+    wellfed_core_feeder::schedule::PORTIONS_MIN == proto::PORTIONS_MIN
+        && wellfed_core_feeder::schedule::PORTIONS_MAX == proto::PORTIONS_MAX
+);
+
+/// The portions a feed or a plan may ask for.
+const PORTIONS: core::ops::RangeInclusive<u8> = proto::PORTIONS_MIN..=proto::PORTIONS_MAX;
 const _: () = assert!(
     wellfed_core_feeder::desiccant::PERIOD_MIN == proto::DESICCANT_DAYS_MIN
         && wellfed_core_feeder::desiccant::PERIOD_MAX == proto::DESICCANT_DAYS_MAX
@@ -706,7 +712,7 @@ fn table(plans: &[Option<proto::Plan>; PLANS]) -> Result<Table, Refusal> {
                     enabled: plan.enabled,
                     call: plan.call,
                 };
-                if !(1..=proto::PORTIONS_MAX).contains(&plan.portions) {
+                if !PORTIONS.contains(&plan.portions) {
                     return Err(Refusal::Portions {
                         asked: plan.portions,
                     });

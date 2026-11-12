@@ -1740,7 +1740,9 @@ impl From<proto::UpdateRefusal> for UpdateRefusal {
     }
 }
 
-const _: () = assert!(crate::PORTIONS_MAX == proto::PORTIONS_MAX);
+const _: () = assert!(
+    crate::PORTIONS_MIN == proto::PORTIONS_MIN && crate::PORTIONS_MAX == proto::PORTIONS_MAX
+);
 
 impl From<proto::Refusal> for Refusal {
     fn from(refusal: proto::Refusal) -> Self {
@@ -1808,6 +1810,26 @@ impl Op {
     /// is sent every op, since the API only grows.
     pub fn is_frozen(&self) -> bool {
         self.to_proto().is_ok_and(|op| op.is_frozen())
+    }
+
+    /// Whether a client holding `role` may send the op, by the device's own
+    /// rules: first the matrix ([`wellfed_proto::access::allowed`]), which
+    /// the device checks before anything else, then, for an invite, the role
+    /// it grants ([`wellfed_proto::access::may_invite`]), which pairing
+    /// checks next. A role only a newer build names grants nothing, and an
+    /// op with no wire form is never sent.
+    pub fn allowed(&self, role: ClientRole) -> bool {
+        let (Ok(role), Ok(op)) = (proto::Role::try_from(role), self.to_proto()) else {
+            return false;
+        };
+        let grants = match op {
+            proto::Op::CreateInvite { role: granted }
+            | proto::Op::CreateBoundInvite { role: granted, .. } => {
+                wellfed_proto::access::may_invite(role, granted)
+            }
+            _ => true,
+        };
+        wellfed_proto::access::allowed(role, &op) && grants
     }
 
     /// The wire form, borrowing this op's strings; none for an op holding
@@ -2043,6 +2065,52 @@ pub fn setup_reply(reply: proto_setup::Reply) -> Option<setup::Reply> {
 mod tests {
     use super::*;
     use crate::{AlertKey, AlertKind, AlertLevel};
+
+    /// The client's gate is the device's matrix: one op of each class, by
+    /// owner, member, server, update signer and a role a newer build named.
+    #[test]
+    fn a_role_may_send_what_the_device_allows_it() {
+        let roles = [
+            ClientRole::Owner,
+            ClientRole::Member,
+            ClientRole::Server,
+            ClientRole::UpdateSigner,
+            ClientRole::Unknown,
+        ];
+        let calibrate = Op::PutCalibration {
+            base: Generation(0),
+            calibration: crate::Calibration {
+                portion_mg: Some(9_000),
+                bowl: crate::Bowl::Single,
+            },
+        };
+        let invite = |role| Op::CreateInvite { role };
+        let rows = [
+            (Op::Feed { portions: 1 }, [true, true, true, false, false]),
+            (calibrate, [true, true, false, false, false]),
+            (Op::Reboot, [true, false, false, false, false]),
+            // The matrix lets all three ask for an invite; the role it
+            // grants is pairing's second check.
+            (
+                invite(ClientRole::Member),
+                [true, true, false, false, false],
+            ),
+            (
+                invite(ClientRole::Owner),
+                [true, false, false, false, false],
+            ),
+            (
+                invite(ClientRole::UpdateSigner),
+                [false, false, false, false, false],
+            ),
+        ];
+
+        for (op, may) in rows {
+            for (role, may) in roles.into_iter().zip(may) {
+                assert_eq!(op.allowed(role), may, "{role:?} {op:?}");
+            }
+        }
+    }
 
     /// One alert of every kind, as the feeder's rules hold them.
     fn every_alert() -> Vec<proto::OpenAlert> {

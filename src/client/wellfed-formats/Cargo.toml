@@ -10,6 +10,8 @@ publish.workspace = true
 [dependencies]
 clap = { workspace = true, optional = true }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "serde"] }
+# The OS CSPRNG for new secrets; `std` makes its error a `std::error::Error`.
+getrandom = { workspace = true, features = ["std"] }
 wellfed-session.workspace = true
 wellfed-proto.workspace = true
 serde.workspace = true

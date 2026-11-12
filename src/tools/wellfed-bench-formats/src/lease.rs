@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use wellfed_formats::private::{SYSTEM_RANDOM, random, write_json};
+use wellfed_formats::private::{random, write_json};
 use wellfed_formats::require;
 
 /// Root-relative: the lease file.
@@ -275,8 +275,7 @@ impl Holder {
     pub fn of(pid: u32, command: Vec<String>) -> Result<Self> {
         let path = stat_path(pid);
         let stat = Stat::read(pid)?.ok_or(LeaseError::Identity { path })?;
-        let token =
-            wellfed_session::hex::Lower(&random::<16>(Path::new(SYSTEM_RANDOM))?).to_string();
+        let token = wellfed_session::hex::Lower(&random::<16>()?).to_string();
 
         Ok(Self {
             pid,

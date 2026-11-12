@@ -345,6 +345,9 @@ impl<'a> Session<'a> {
         let stream = Stream::read(stream);
         let detail = self.detail().await?;
 
+        // The account's role as the feeder's, for the write gate: what the
+        // person may do, not the server's key it goes out under
+        // (`writes::gate`).
         self.role = match self.account {
             server::Role::Owner => ClientRole::Owner,
             server::Role::Member => ClientRole::Member,
@@ -722,7 +725,6 @@ impl<'a> Session<'a> {
 
     /// The op `write` becomes, unless it is never sent.
     fn prepare(&self, write: &Write) -> Result<(Op, Kind), NotSent> {
-        writes::gate(self.role)?;
         wellfed_formats::require(self.online, || NotSent::Disconnected)?;
         wellfed_formats::require(!self.legacy, || NotSent::Legacy)?;
 
@@ -738,6 +740,7 @@ impl<'a> Session<'a> {
             calibration: self.memory.calibration.as_ref(),
         };
         let (op, kind) = writes::build(write, &read)?;
+        writes::gate(self.role, &op)?;
         writes::served(&op, self.kind.ok_or(NotSent::Unsupported)?)?;
         Ok((op, kind))
     }

@@ -41,8 +41,8 @@ pub use event::{
     Source, UnknownEvent,
 };
 pub use plan::{
-    NextMeal, PLANS, PORTIONS_MAX, Plan, Plans, SkippedMeals, TimeOfDay, Weekday, Weekdays,
-    WeekdaysError,
+    NextMeal, PLANS, PORTIONS_MAX, PORTIONS_MIN, Plan, Plans, SkippedMeals, TimeOfDay, Weekday,
+    Weekdays, WeekdaysError,
 };
 pub use request::{
     Answer, Bowl, Calibration, CalibrationView, Client, Invite, NtpResult, NtpServer, Op, Phase,
@@ -66,6 +66,9 @@ pub use update::{
     Bank0Blocked, Bank0Check, Bank1Page, UpdateCandidate, UpdatePhase, UpdateRefusal, UpdateStop,
     UpdateView,
 };
+/// The clients a feeder lists at most, owners, members and the server
+/// together.
+pub use wellfed_proto::api::CLIENTS_MAX;
 /// What a feeder's settings report as their generation while it has none.
 pub use wellfed_proto::api::NO_SETTINGS_GENERATION;
 /// The desiccant reminder's period limits and default, in days.

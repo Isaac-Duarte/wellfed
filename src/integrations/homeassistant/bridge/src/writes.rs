@@ -2,28 +2,35 @@
 //! need no connection: whether this client may send it at all, the op it
 //! becomes on what the session last read, and what a store's answer means.
 //!
-//! - **Gates.** A write this client's role may not make, or one the
-//!   device's kind does not serve ([`served`], by the op's own kind), is
-//!   never sent.
+//! - **Gates.** A write this client's role may not make ([`gate`], by the
+//!   feeder's own matrix), or one the device's kind does not serve
+//!   ([`served`], by the op's own kind), is never sent.
 //! - **Stores.** A change to the settings, the plans or the calibration
 //!   names the generation it was made on. One goes out at a time per store,
 //!   and it has landed only when the feeder answers the next generation.
 //!   A stale one is reported and the store read again; it is never sent
 //!   again here.
 
+use std::ops::RangeInclusive;
+
 use wellfed_client::plans::{self, Edit};
 use wellfed_model::{
-    Answer, Calibration, CalibrationView, ClientRole, DeviceKind, FeederSettingsPatch, Generation,
-    Op, Refusal,
+    Answer, Bowl, Calibration, CalibrationView, ClientRole, DeviceKind, FeederSettingsPatch,
+    Generation, Op, PLANS, Refusal,
 };
 
-use crate::api::{NotSent, Tune};
+use crate::api::{NotSent, Role, Tune};
 
-/// The feeder's limits on a portion's weight, in milligrams (1-50 g).
-pub const PORTION_MG: std::ops::RangeInclusive<u32> = 1_000..=50_000;
+/// The feeder's limits on a portion's weight, in milligrams.
+const PORTION_MG: RangeInclusive<u32> =
+    wellfed_model::PORTION_MG_MIN..=wellfed_model::PORTION_MG_MAX;
 
 /// The feeder's limits on the desiccant reminder's period, in days.
-const DESICCANT_DAYS: std::ops::RangeInclusive<u8> = 1..=90;
+const DESICCANT_DAYS: RangeInclusive<u8> =
+    wellfed_model::DESICCANT_DAYS_MIN..=wellfed_model::DESICCANT_DAYS_MAX;
+
+/// The portions one feed may ask for.
+const PORTIONS: RangeInclusive<u8> = wellfed_model::PORTIONS_MIN..=wellfed_model::PORTIONS_MAX;
 
 /// One write Home Assistant asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +43,68 @@ pub enum Write {
     Settings(FeederSettingsPatch),
     PlanEnabled { slot: u8, enabled: bool },
     PortionWeight { mg: u32 },
+}
+
+impl Write {
+    /// One write of each kind, to ask the feeder's matrix about a role as a
+    /// whole.
+    fn every() -> [Self; 8] {
+        [
+            Self::Feed { portions: 1 },
+            Self::CancelFeed { feed: 0 },
+            Self::SetLock { locked: true },
+            Self::ResetDesiccant,
+            Self::Play { tune: Tune::Chime },
+            Self::Settings(FeederSettingsPatch::default()),
+            Self::PlanEnabled {
+                slot: 0,
+                enabled: true,
+            },
+            Self::PortionWeight { mg: 0 },
+        ]
+    }
+
+    /// The kind of op the write becomes, on no particular base: all the
+    /// matrix reads.
+    fn kind(&self) -> Op {
+        let base = Generation(0);
+        match *self {
+            Self::Feed { portions } => Op::Feed { portions },
+            Self::CancelFeed { feed } => Op::CancelFeed { feed },
+            Self::SetLock { locked } => Op::SetLock { locked },
+            Self::ResetDesiccant => Op::ResetDesiccant,
+            Self::Play { tune } => Op::Play { tune: tune.into() },
+            Self::Settings(changes) => Op::PutSettings { base, changes },
+            Self::PlanEnabled { .. } => Op::PutPlans {
+                base,
+                plans: [None; PLANS],
+            },
+            Self::PortionWeight { mg } => Op::PutCalibration {
+                base,
+                calibration: Calibration {
+                    portion_mg: Some(mg),
+                    bowl: Bowl::Single,
+                },
+            },
+        }
+    }
+}
+
+/// Whether `role` may make every write Home Assistant offers, by the
+/// feeder's own matrix: its write entities show only then. A viewer's
+/// account and a role a newer build added write nothing, and the server's
+/// key, which may not set the portion weight, is not one it joins with.
+pub fn writes_all(role: Role) -> bool {
+    let role = match role {
+        Role::Owner => ClientRole::Owner,
+        Role::Member => ClientRole::Member,
+        Role::Server => ClientRole::Server,
+        Role::UpdateSigner => ClientRole::UpdateSigner,
+        Role::Viewer | Role::NewerBuild => ClientRole::Unknown,
+    };
+    Write::every()
+        .iter()
+        .all(|write| write.kind().allowed(role))
 }
 
 /// A store whose writes name the generation they were made on.
@@ -70,12 +139,20 @@ pub struct Read<'a> {
     pub calibration: Option<&'a CalibrationView>,
 }
 
-/// Whether this client's role may send a write at all: every write here is
-/// a member's, and an update signer's key may only sign.
-pub fn gate(role: ClientRole) -> Result<(), NotSent> {
-    // A role a newer build added grants nothing here.
-    let allowed = !matches!(role, ClientRole::UpdateSigner | ClientRole::Unknown);
-    wellfed_formats::require(allowed, || NotSent::Forbidden)
+/// Whether this client's role may send `op`, by the feeder's own matrix
+/// ([`Op::allowed`]): what it would refuse `Forbidden` is never sent. A
+/// role a newer build added grants nothing here. An op holding a value
+/// only a newer build names has no wire form for the matrix to class; the
+/// connection refuses it `Invalid` before a byte goes out.
+///
+/// Through the owner's server, `role` is the account's, read as the
+/// feeder's owner or member: the gate asks what that person may do, but
+/// the server sends with its own key, whose role the feeder checks. So a
+/// write the gate lets through, such as the portion weight, which the
+/// server's key may not set, can still come back refused.
+pub fn gate(role: ClientRole, op: &Op) -> Result<(), NotSent> {
+    let unsendable = op.to_proto().is_err();
+    wellfed_formats::require(unsendable || op.allowed(role), || NotSent::Forbidden)
 }
 
 /// Whether a device of `kind` serves `op`: the shared core, or its own
@@ -89,7 +166,7 @@ pub fn served(op: &Op, kind: DeviceKind) -> Result<(), NotSent> {
 pub fn build(write: &Write, read: &Read<'_>) -> Result<(Op, Kind), NotSent> {
     let built = match *write {
         Write::Feed { portions } => {
-            let valid = (1..=wellfed_model::PORTIONS_MAX).contains(&portions);
+            let valid = PORTIONS.contains(&portions);
             wellfed_formats::require(valid, || NotSent::Invalid)?;
             (Op::Feed { portions }, Kind::Feed { portions })
         }
@@ -165,16 +242,119 @@ pub fn landed(answer: Option<&Answer>, base: Generation) -> Landed {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_model::{Bowl, PLANS, Plan, Plans, Weekdays};
+    use wellfed_model::{Plan, Plans, Weekdays};
 
     use super::*;
 
+    /// Every write Home Assistant makes, by owner, member, server, update
+    /// signer and a role a newer build named: a member makes them all, the
+    /// server all but the portion weight, which its key may not set.
     #[test]
-    fn a_member_may_make_every_write_and_an_update_signer_none() {
-        assert_eq!(gate(ClientRole::Member), Ok(()));
-        assert_eq!(gate(ClientRole::Server), Ok(()));
-        assert_eq!(gate(ClientRole::UpdateSigner), Err(NotSent::Forbidden));
-        assert_eq!(gate(ClientRole::Unknown), Err(NotSent::Forbidden));
+    fn a_role_makes_only_the_writes_the_feeder_allows_it() {
+        let calibration = CalibrationView {
+            generation: Generation(4),
+            writable: true,
+            calibration: Calibration {
+                portion_mg: None,
+                bowl: Bowl::Single,
+            },
+            phase: None,
+        };
+        let mut table = [None; PLANS];
+        table[0] = Some(Plan {
+            minute: 7 * 60,
+            portions: 2,
+            days: Weekdays::DAILY,
+            enabled: true,
+            call: 0,
+        });
+        let plans = Plans {
+            generation: Generation(3),
+            writable: true,
+            plans: table,
+            skipped: wellfed_model::SkippedMeals::NONE,
+        };
+        let read = Read {
+            settings: Some(Generation(2)),
+            plans: Some(&plans),
+            calibration: Some(&calibration),
+        };
+        let people = [true, true, false, false, false];
+        let clients = [true, true, true, false, false];
+        let rows = [
+            (Write::Feed { portions: 1 }, clients),
+            (Write::CancelFeed { feed: 1 }, clients),
+            (Write::SetLock { locked: true }, clients),
+            (Write::ResetDesiccant, clients),
+            (Write::Play { tune: Tune::Chime }, clients),
+            (Write::Settings(FeederSettingsPatch::default()), clients),
+            (
+                Write::PlanEnabled {
+                    slot: 0,
+                    enabled: false,
+                },
+                clients,
+            ),
+            (Write::PortionWeight { mg: 9_000 }, people),
+        ];
+        let roles = [
+            ClientRole::Owner,
+            ClientRole::Member,
+            ClientRole::Server,
+            ClientRole::UpdateSigner,
+            ClientRole::Unknown,
+        ];
+
+        for (write, may) in rows {
+            let (op, _) = build(&write, &read).unwrap();
+            for (role, may) in roles.into_iter().zip(may) {
+                let want = if may { Ok(()) } else { Err(NotSent::Forbidden) };
+                assert_eq!(gate(role, &op), want, "{role:?} {write:?}");
+            }
+        }
+    }
+
+    /// Home Assistant shows its write entities to an owner and a member: the
+    /// roles that may make every write it offers.
+    #[test]
+    fn only_an_owner_or_a_member_writes_everything() {
+        let roles = [
+            (Role::Owner, true),
+            (Role::Member, true),
+            (Role::Server, false),
+            (Role::UpdateSigner, false),
+            (Role::Viewer, false),
+            (Role::NewerBuild, false),
+        ];
+        for (role, writes) in roles {
+            assert_eq!(writes_all(role), writes, "{role:?}");
+        }
+    }
+
+    /// `every` holds one write of each kind: `index` numbers every variant
+    /// with no wildcard, so a new write fails to compile here until it has
+    /// a number, and the test fails until `every` holds it.
+    #[test]
+    fn every_kind_of_write_is_asked_about() {
+        const KINDS: usize = 8;
+        const fn index(write: &Write) -> usize {
+            match write {
+                Write::Feed { .. } => 0,
+                Write::CancelFeed { .. } => 1,
+                Write::SetLock { .. } => 2,
+                Write::ResetDesiccant => 3,
+                Write::Play { .. } => 4,
+                Write::Settings(_) => 5,
+                Write::PlanEnabled { .. } => 6,
+                Write::PortionWeight { .. } => 7,
+            }
+        }
+
+        let mut seen = [false; KINDS];
+        for write in Write::every() {
+            seen[index(&write)] = true;
+        }
+        assert!(seen.iter().all(|&seen| seen));
     }
 
     /// A write's op goes only to a device whose kind serves it, as the op
@@ -240,19 +420,51 @@ mod tests {
             volume: Some(101),
             ..FeederSettingsPatch::default()
         };
-        let never = FeederSettingsPatch {
-            desiccant_days: Some(0),
-            ..FeederSettingsPatch::default()
+        let desiccant = |days| {
+            Write::Settings(FeederSettingsPatch {
+                desiccant_days: Some(days),
+                ..FeederSettingsPatch::default()
+            })
         };
+        let (portions, days, mg) = (
+            [wellfed_model::PORTIONS_MIN, wellfed_model::PORTIONS_MAX],
+            [
+                wellfed_model::DESICCANT_DAYS_MIN,
+                wellfed_model::DESICCANT_DAYS_MAX,
+            ],
+            [wellfed_model::PORTION_MG_MIN, wellfed_model::PORTION_MG_MAX],
+        );
+
+        // Each limit is the feeder's own constant, the one Python reads
+        // too: a value just outside it is never sent, and the limit is.
         for write in [
-            Write::Feed { portions: 0 },
-            Write::Feed { portions: 49 },
+            Write::Feed {
+                portions: portions[0] - 1,
+            },
+            Write::Feed {
+                portions: portions[1] + 1,
+            },
             Write::Settings(loud),
-            Write::Settings(never),
-            Write::PortionWeight { mg: 999 },
-            Write::PortionWeight { mg: 50_001 },
+            desiccant(days[0] - 1),
+            desiccant(days[1] + 1),
+            Write::PortionWeight { mg: mg[0] - 1 },
+            Write::PortionWeight { mg: mg[1] + 1 },
         ] {
             assert_eq!(build(&write, &read), Err(NotSent::Invalid), "{write:?}");
+        }
+        for write in [
+            Write::Feed {
+                portions: portions[0],
+            },
+            Write::Feed {
+                portions: portions[1],
+            },
+            desiccant(days[0]),
+            desiccant(days[1]),
+            Write::PortionWeight { mg: mg[0] },
+            Write::PortionWeight { mg: mg[1] },
+        ] {
+            assert!(build(&write, &read).is_ok(), "{write:?}");
         }
 
         let (op, kind) = build(&Write::PortionWeight { mg: 9_500 }, &read).unwrap();

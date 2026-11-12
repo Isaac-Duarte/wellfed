@@ -13,8 +13,12 @@ use crate::status::{WindowError, minute};
 
 /// Plan slots a feeder keeps.
 pub const PLANS: usize = 10;
+/// The fewest portions one feed asks for: a feed of none is refused
+/// [`Refusal::Portions`](crate::Refusal::Portions), as one over
+/// [`PORTIONS_MAX`] is.
+pub const PORTIONS_MIN: u8 = 1;
 /// The most portions one feed asks for, whoever asks (a client, a plan or
-/// Dispense); a request outside 1 to this is refused
+/// Dispense); a request outside [`PORTIONS_MIN`] to this is refused
 /// [`Refusal::Portions`](crate::Refusal::Portions).
 pub const PORTIONS_MAX: u8 = 48;
 
@@ -51,7 +55,7 @@ impl Plan {
     /// Whether the feeder accepts the plan.
     pub fn valid(&self) -> bool {
         self.minute < 24 * 60
-            && (1..=PORTIONS_MAX).contains(&self.portions)
+            && (PORTIONS_MIN..=PORTIONS_MAX).contains(&self.portions)
             && self.call <= crate::CALL_PLAYS_MAX
     }
 }

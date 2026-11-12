@@ -42,6 +42,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
+    #[error("the system's random source failed: {0}")]
+    Random(#[from] getrandom::Error),
 }
 
 /// Read a JSON file into its type.

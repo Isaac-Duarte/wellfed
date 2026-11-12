@@ -9,6 +9,7 @@ import 'package:wellfed/screens/feeder/portion.dart';
 import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart' show CalibrationInfo, CallInfo, FeederReply, FeederRequest;
 import 'package:wellfed/src/rust/api/model.dart' show CallClip_None, CallClip_Receiving, CallClip_Stored;
 import 'package:wellfed/src/rust/api/session.dart';
@@ -54,7 +55,9 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
       >= -72 => 'Fair signal',
       _ => 'Weak signal',
     };
-    final String? people = feeder.state.clients.isEmpty ? null : '${feeder.state.clients.length} of $clientsMost';
+    final String? people = feeder.state.clients.isEmpty
+        ? null
+        : '${feeder.state.clients.length} of ${Limits.clientsMost}';
     final String? portion = switch (feeder.state.calibration) {
       null => null,
       CalibrationInfo(portionMg: null) => 'Not measured',

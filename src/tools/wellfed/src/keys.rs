@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use wellfed_formats::owner::{self, EnrolledFeeder, OwnerKeyFile, VERSION};
-use wellfed_formats::private::{self, SYSTEM_RANDOM};
+use wellfed_formats::private;
 use wellfed_session::hex;
 use wellfed_session::noise::Keypair;
 
@@ -53,18 +53,13 @@ pub(crate) struct OwnerKey {
 impl OwnerKey {
     /// The key at `path`; with [`Missing::Create`], a new one written there
     /// when there is none. `label` replaces the stored label when given.
-    pub(crate) fn open(
-        path: &Path,
-        label: Option<&str>,
-        missing: Missing,
-        random: &Path,
-    ) -> Result<Self> {
+    pub(crate) fn open(path: &Path, label: Option<&str>, missing: Missing) -> Result<Self> {
         let exists = path
             .try_exists()
             .with_context(|| format!("look for {}", path.display()))?;
         match (exists, missing) {
             (true, _) => Self::existing(path, label),
-            (false, Missing::Create) => Self::create(path, label, random),
+            (false, Missing::Create) => Self::create(path, label),
             (false, Missing::Refuse) => Err(KeyError::Missing {
                 path: path.to_path_buf(),
             }
@@ -89,8 +84,8 @@ impl OwnerKey {
     /// two runs that both found no key race to write it, and the one that
     /// loses opens the winner's rather than replace a key a feeder may
     /// already have enrolled.
-    fn create(path: &Path, label: Option<&str>, random: &Path) -> Result<Self> {
-        let secret: [u8; 32] = private::random(random).context("read the system random source")?;
+    fn create(path: &Path, label: Option<&str>) -> Result<Self> {
+        let secret: [u8; 32] = private::random().context("read the system random source")?;
         let file = OwnerKeyFile {
             version: VERSION,
             secret: hex::Lower(&secret).to_string(),
@@ -128,11 +123,6 @@ impl OwnerKey {
             keypair: Keypair::from_secret(secret),
             file,
         })
-    }
-
-    /// The default random source.
-    pub(crate) fn system() -> &'static Path {
-        Path::new(SYSTEM_RANDOM)
     }
 
     pub(crate) fn keypair(&self) -> &Keypair {
@@ -212,10 +202,8 @@ mod tests {
     fn a_key_is_created_once_and_remembers_its_feeders() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("owner.json");
-        let random = dir.path().join("random");
-        std::fs::write(&random, [9u8; 32]).unwrap();
 
-        let Err(refused) = OwnerKey::open(&path, None, Missing::Refuse, &random) else {
+        let Err(refused) = OwnerKey::open(&path, None, Missing::Refuse) else {
             panic!("a missing key is refused");
         };
         assert!(matches!(
@@ -224,14 +212,13 @@ mod tests {
         ));
         assert!(!path.exists(), "a refused open makes nothing");
 
-        let mut key = OwnerKey::open(&path, None, Missing::Create, &random).unwrap();
+        let mut key = OwnerKey::open(&path, None, Missing::Create).unwrap();
         assert_eq!(key.label(), DEFAULT_LABEL);
         let public = *key.keypair().public();
         key.remember(&[5; 32]).unwrap();
         key.remember(&[5; 32]).unwrap();
 
-        std::fs::write(&random, [1u8; 32]).unwrap();
-        let again = OwnerKey::open(&path, Some("laptop"), Missing::Create, &random).unwrap();
+        let again = OwnerKey::open(&path, Some("laptop"), Missing::Create).unwrap();
         assert_eq!(*again.keypair().public(), public, "the same key");
         assert_eq!(again.label(), "laptop");
         assert_eq!(again.file.feeders.len(), 1);
@@ -240,7 +227,7 @@ mod tests {
         // Opening a key that does not change leaves its file alone.
         let modified = || std::fs::metadata(&path).unwrap().modified().unwrap();
         let before = modified();
-        let mut same = OwnerKey::open(&path, Some("laptop"), Missing::Create, &random).unwrap();
+        let mut same = OwnerKey::open(&path, Some("laptop"), Missing::Create).unwrap();
         same.remember(&[5; 32]).unwrap();
         assert_eq!(modified(), before);
     }
@@ -251,13 +238,11 @@ mod tests {
     fn a_key_made_by_a_concurrent_run_is_opened_not_replaced() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("home").join("owner.json");
-        let random = dir.path().join("random");
-        std::fs::write(&random, [9u8; 32]).unwrap();
-        let first = OwnerKey::create(&path, None, &random).unwrap();
+        let first = OwnerKey::create(&path, None).unwrap();
         let written = std::fs::read(&path).unwrap();
 
-        std::fs::write(&random, [1u8; 32]).unwrap();
-        let second = OwnerKey::create(&path, None, &random).unwrap();
+        // The second run draws its own secret, which never reaches the file.
+        let second = OwnerKey::create(&path, None).unwrap();
 
         assert_eq!(second.keypair().public(), first.keypair().public());
         assert_eq!(std::fs::read(&path).unwrap(), written, "not replaced");
@@ -277,7 +262,7 @@ mod tests {
             r#"{"version":1,"secret":"00","label":"x","feeders":[]}"#,
         )
         .unwrap();
-        assert!(OwnerKey::open(&path, None, Missing::Create, &path).is_err());
+        assert!(OwnerKey::open(&path, None, Missing::Create).is_err());
         assert_eq!(
             std::fs::read(&path).unwrap(),
             br#"{"version":1,"secret":"00","label":"x","feeders":[]}"#,

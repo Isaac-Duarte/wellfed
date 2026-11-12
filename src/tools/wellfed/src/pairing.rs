@@ -42,7 +42,7 @@ pub(crate) struct SetupArgs {
 /// there only with `create`.
 pub(crate) fn open_key(keys: Option<&Path>, label: Option<&str>, create: bool) -> Result<OwnerKey> {
     let keys = home::or_home(keys, Home::owner_key)?;
-    OwnerKey::open(&keys, label, Missing::when(create), OwnerKey::system())
+    OwnerKey::open(&keys, label, Missing::when(create))
 }
 
 pub(crate) async fn setup(args: SetupArgs) -> Result<()> {

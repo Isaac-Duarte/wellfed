@@ -322,7 +322,7 @@ async fn connect_via(
             target.address.as_deref(),
         )
         .await?;
-        let key = OwnerKey::open(&keys, None, Missing::Refuse, OwnerKey::system())?;
+        let key = OwnerKey::open(&keys, None, Missing::Refuse)?;
         let identity = key.feeder(target.feeder.as_deref())?;
         if wellfed_session::hex::Lower(&identity).to_string() != lent.identity() {
             bail!(
@@ -340,7 +340,7 @@ async fn connect_via(
         return Ok((key, identity, Connection::Bench(Box::new(lent))));
     }
 
-    let key = OwnerKey::open(&keys, None, Missing::Refuse, OwnerKey::system())?;
+    let key = OwnerKey::open(&keys, None, Missing::Refuse)?;
     let identity = key.feeder(target.feeder.as_deref())?;
     let address = device::locate(&identity, target.address.as_deref())?;
     let connection = Connection::open(&key, identity, address).await?;

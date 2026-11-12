@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/clock.dart';
 import 'package:wellfed/screens/feeder/portion.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -194,12 +195,12 @@ void main() {
   });
 
   group('Portion size', () {
-    Future<FakeSession> show(WidgetTester tester) async {
+    Future<FakeSession> show(WidgetTester tester, {CalibrationInfo held = calibration}) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(time: time));
       // Every read of the portion answers; anything else takes the queue.
       session.answering = (request) async => switch (request) {
-        FeederRequest_GetCalibration() => const FeederReply.calibration(calibration: calibration),
+        FeederRequest_GetCalibration() => FeederReply.calibration(calibration: held),
         _ => session.replies.isEmpty ? const FeederReply.done() : session.replies.removeAt(0),
       };
       await showTab(tester, PortionScreen(feeder: feeder));
@@ -231,6 +232,26 @@ void main() {
       final weighed = put.portion as PortionChange_Weighed;
       expect(weighed.grams, '98.4');
       expect(weighed.portions, 10);
+    });
+
+    bool enabled(WidgetTester tester, String tooltip) =>
+        tester
+            .widget<IconButton>(find.ancestor(of: find.byTooltip(tooltip), matching: find.byType(IconButton)))
+            .onPressed !=
+        null;
+    CalibrationInfo weighing(int mg) =>
+        CalibrationInfo(generation: 2, writable: true, portionMg: mg, bowl: Bowl.single);
+
+    testWidgets("a portion at the feeder's heaviest steps only down", (tester) async {
+      await show(tester, held: weighing(Limits.portionMgMost));
+      expect(enabled(tester, 'A gram more'), isFalse);
+      expect(enabled(tester, 'A gram less'), isTrue);
+    });
+
+    testWidgets("a portion at the feeder's lightest steps only up", (tester) async {
+      await show(tester, held: weighing(Limits.portionMgLeast));
+      expect(enabled(tester, 'A gram less'), isFalse);
+      expect(enabled(tester, 'A gram more'), isTrue);
     });
 
     testWidgets('a portion refused says so', (tester) async {
