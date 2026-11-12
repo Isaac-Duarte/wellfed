@@ -54,8 +54,9 @@ pub(crate) async fn feed(connection: &mut Connection, portions: u8) -> Result<()
     connection.subscribe(status.last_event, false).await?;
 
     let answer = connection.ask(&Op::Feed { portions }).await?;
-    print_json(&answer)?;
+    let printed = print_json(&answer);
     let feed = started(&answer)?;
+    shown(printed);
 
     // The feed runs now: whatever ends this wait leaves its result to the
     // history, never to a second feed.
@@ -79,7 +80,7 @@ pub(crate) async fn feed(connection: &mut Connection, portions: u8) -> Result<()
         if let Pushed::Event(event) = message
             && let Some(ended) = fed(&event, feed)
         {
-            print_json(&event)?;
+            shown(print_json(&event));
             eprintln!("{}", text::fed(&ended));
             return match settled(ended.outcome)? {
                 Settled::Known => Ok(()),
@@ -110,6 +111,15 @@ fn started(answer: &Answer) -> Result<u32> {
             "the feeder answered the feed with something other than its start, so it may have \
              started: `wellfed feeds` shows whether it ran",
         )),
+    }
+}
+
+/// A print that failed once the feed went out, said on standard error: the
+/// exit stays the feed's own, never a plain failure that reads as a feed
+/// that did not run.
+fn shown(printed: Result<()>) {
+    if let Err(error) = printed {
+        eprintln!("(could not print it: {error:#})");
     }
 }
 
