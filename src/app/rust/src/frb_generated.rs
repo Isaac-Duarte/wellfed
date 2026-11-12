@@ -10861,19 +10861,6 @@ impl SseDecode for Option<crate::api::server_views::ServerAccount> {
     }
 }
 
-impl SseDecode for Option<crate::api::server::ServerCommandOutcome> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        if (<bool>::sse_decode(deserializer)) {
-            return Some(<crate::api::server::ServerCommandOutcome>::sse_decode(
-                deserializer,
-            ));
-        } else {
-            return None;
-        }
-    }
-}
-
 impl SseDecode for Option<crate::api::server_error::ServerError> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -10981,6 +10968,17 @@ impl SseDecode for Option<crate::api::feeder::SettingsView> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::feeder::SettingsView>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::router::Settlement> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::router::Settlement>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -11852,8 +11850,7 @@ impl SseDecode for crate::api::server::ServerCommand {
         let mut var_feeder = <String>::sse_decode(deserializer);
         let mut var_kind = <crate::api::server_views::CommandKind>::sse_decode(deserializer);
         let mut var_state = <crate::api::server_views::CommandState>::sse_decode(deserializer);
-        let mut var_outcome =
-            <Option<crate::api::server::ServerCommandOutcome>>::sse_decode(deserializer);
+        let mut var_settlement = <Option<crate::api::router::Settlement>>::sse_decode(deserializer);
         let mut var_feed = <Option<u32>>::sse_decode(deserializer);
         let mut var_sentMs = <i64>::sse_decode(deserializer);
         let mut var_updatedMs = <i64>::sse_decode(deserializer);
@@ -11862,76 +11859,11 @@ impl SseDecode for crate::api::server::ServerCommand {
             feeder: var_feeder,
             kind: var_kind,
             state: var_state,
-            outcome: var_outcome,
+            settlement: var_settlement,
             feed: var_feed,
             sent_ms: var_sentMs,
             updated_ms: var_updatedMs,
         };
-    }
-}
-
-impl SseDecode for crate::api::server::ServerCommandOutcome {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut tag_ = <i32>::sse_decode(deserializer);
-        match tag_ {
-            0 => {
-                return crate::api::server::ServerCommandOutcome::Done;
-            }
-            1 => {
-                return crate::api::server::ServerCommandOutcome::Settings;
-            }
-            2 => {
-                return crate::api::server::ServerCommandOutcome::Plans;
-            }
-            3 => {
-                return crate::api::server::ServerCommandOutcome::Calibration;
-            }
-            4 => {
-                return crate::api::server::ServerCommandOutcome::Call;
-            }
-            5 => {
-                return crate::api::server::ServerCommandOutcome::Superseded;
-            }
-            6 => {
-                let mut var_refusal = <crate::api::server::ServerRefusal>::sse_decode(deserializer);
-                return crate::api::server::ServerCommandOutcome::Refused {
-                    refusal: var_refusal,
-                };
-            }
-            7 => {
-                let mut var_invite = <u32>::sse_decode(deserializer);
-                let mut var_seconds = <u16>::sse_decode(deserializer);
-                return crate::api::server::ServerCommandOutcome::Invited {
-                    invite: var_invite,
-                    seconds: var_seconds,
-                };
-            }
-            8 => {
-                let mut var_feed = <u32>::sse_decode(deserializer);
-                return crate::api::server::ServerCommandOutcome::Feeding { feed: var_feed };
-            }
-            9 => {
-                let mut var_feed = <u32>::sse_decode(deserializer);
-                let mut var_requested = <u8>::sse_decode(deserializer);
-                let mut var_completed = <u8>::sse_decode(deserializer);
-                let mut var_outcome = <crate::api::model::FeedOutcome>::sse_decode(deserializer);
-                let mut var_reason = <crate::api::model::FeedReason>::sse_decode(deserializer);
-                return crate::api::server::ServerCommandOutcome::Fed {
-                    feed: var_feed,
-                    requested: var_requested,
-                    completed: var_completed,
-                    outcome: var_outcome,
-                    reason: var_reason,
-                };
-            }
-            10 => {
-                return crate::api::server::ServerCommandOutcome::Unrecorded;
-            }
-            _ => {
-                unimplemented!("");
-            }
-        }
     }
 }
 
@@ -17685,7 +17617,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerCommand {
             self.feeder.into_into_dart().into_dart(),
             self.kind.into_into_dart().into_dart(),
             self.state.into_into_dart().into_dart(),
-            self.outcome.into_into_dart().into_dart(),
+            self.settlement.into_into_dart().into_dart(),
             self.feed.into_into_dart().into_dart(),
             self.sent_ms.into_into_dart().into_dart(),
             self.updated_ms.into_into_dart().into_dart(),
@@ -17701,61 +17633,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::server::ServerCommand>
     for crate::api::server::ServerCommand
 {
     fn into_into_dart(self) -> crate::api::server::ServerCommand {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::server::ServerCommandOutcome {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            crate::api::server::ServerCommandOutcome::Done => [0.into_dart()].into_dart(),
-            crate::api::server::ServerCommandOutcome::Settings => [1.into_dart()].into_dart(),
-            crate::api::server::ServerCommandOutcome::Plans => [2.into_dart()].into_dart(),
-            crate::api::server::ServerCommandOutcome::Calibration => [3.into_dart()].into_dart(),
-            crate::api::server::ServerCommandOutcome::Call => [4.into_dart()].into_dart(),
-            crate::api::server::ServerCommandOutcome::Superseded => [5.into_dart()].into_dart(),
-            crate::api::server::ServerCommandOutcome::Refused { refusal } => {
-                [6.into_dart(), refusal.into_into_dart().into_dart()].into_dart()
-            }
-            crate::api::server::ServerCommandOutcome::Invited { invite, seconds } => [
-                7.into_dart(),
-                invite.into_into_dart().into_dart(),
-                seconds.into_into_dart().into_dart(),
-            ]
-            .into_dart(),
-            crate::api::server::ServerCommandOutcome::Feeding { feed } => {
-                [8.into_dart(), feed.into_into_dart().into_dart()].into_dart()
-            }
-            crate::api::server::ServerCommandOutcome::Fed {
-                feed,
-                requested,
-                completed,
-                outcome,
-                reason,
-            } => [
-                9.into_dart(),
-                feed.into_into_dart().into_dart(),
-                requested.into_into_dart().into_dart(),
-                completed.into_into_dart().into_dart(),
-                outcome.into_into_dart().into_dart(),
-                reason.into_into_dart().into_dart(),
-            ]
-            .into_dart(),
-            crate::api::server::ServerCommandOutcome::Unrecorded => [10.into_dart()].into_dart(),
-            _ => {
-                unimplemented!("");
-            }
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::server::ServerCommandOutcome
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::api::server::ServerCommandOutcome>
-    for crate::api::server::ServerCommandOutcome
-{
-    fn into_into_dart(self) -> crate::api::server::ServerCommandOutcome {
         self
     }
 }
@@ -22762,16 +22639,6 @@ impl SseEncode for Option<crate::api::server_views::ServerAccount> {
     }
 }
 
-impl SseEncode for Option<crate::api::server::ServerCommandOutcome> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.is_some(), serializer);
-        if let Some(value) = self {
-            <crate::api::server::ServerCommandOutcome>::sse_encode(value, serializer);
-        }
-    }
-}
-
 impl SseEncode for Option<crate::api::server_error::ServerError> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -22858,6 +22725,16 @@ impl SseEncode for Option<crate::api::feeder::SettingsView> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::feeder::SettingsView>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::router::Settlement> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::router::Settlement>::sse_encode(value, serializer);
         }
     }
 }
@@ -23619,69 +23496,10 @@ impl SseEncode for crate::api::server::ServerCommand {
         <String>::sse_encode(self.feeder, serializer);
         <crate::api::server_views::CommandKind>::sse_encode(self.kind, serializer);
         <crate::api::server_views::CommandState>::sse_encode(self.state, serializer);
-        <Option<crate::api::server::ServerCommandOutcome>>::sse_encode(self.outcome, serializer);
+        <Option<crate::api::router::Settlement>>::sse_encode(self.settlement, serializer);
         <Option<u32>>::sse_encode(self.feed, serializer);
         <i64>::sse_encode(self.sent_ms, serializer);
         <i64>::sse_encode(self.updated_ms, serializer);
-    }
-}
-
-impl SseEncode for crate::api::server::ServerCommandOutcome {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        match self {
-            crate::api::server::ServerCommandOutcome::Done => {
-                <i32>::sse_encode(0, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Settings => {
-                <i32>::sse_encode(1, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Plans => {
-                <i32>::sse_encode(2, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Calibration => {
-                <i32>::sse_encode(3, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Call => {
-                <i32>::sse_encode(4, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Superseded => {
-                <i32>::sse_encode(5, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Refused { refusal } => {
-                <i32>::sse_encode(6, serializer);
-                <crate::api::server::ServerRefusal>::sse_encode(refusal, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Invited { invite, seconds } => {
-                <i32>::sse_encode(7, serializer);
-                <u32>::sse_encode(invite, serializer);
-                <u16>::sse_encode(seconds, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Feeding { feed } => {
-                <i32>::sse_encode(8, serializer);
-                <u32>::sse_encode(feed, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Fed {
-                feed,
-                requested,
-                completed,
-                outcome,
-                reason,
-            } => {
-                <i32>::sse_encode(9, serializer);
-                <u32>::sse_encode(feed, serializer);
-                <u8>::sse_encode(requested, serializer);
-                <u8>::sse_encode(completed, serializer);
-                <crate::api::model::FeedOutcome>::sse_encode(outcome, serializer);
-                <crate::api::model::FeedReason>::sse_encode(reason, serializer);
-            }
-            crate::api::server::ServerCommandOutcome::Unrecorded => {
-                <i32>::sse_encode(10, serializer);
-            }
-            _ => {
-                unimplemented!("");
-            }
-        }
     }
 }
 

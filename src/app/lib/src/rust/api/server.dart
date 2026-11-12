@@ -11,6 +11,7 @@ import 'model.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 
+import 'router.dart';
 import 'server_error.dart';
 import 'server_views.dart';
 import 'session.dart';
@@ -206,7 +207,11 @@ class ServerCommand {
   final String feeder;
   final CommandKind kind;
   final CommandState state;
-  final ServerCommandOutcome? outcome;
+
+  /// What its outcome settles of the write, by the reading every server
+  /// client shares; `None` while it is unknown or in flight, or for an
+  /// outcome a newer server added.
+  final Settlement? settlement;
 
   /// The feed it started, for a feed.
   final int? feed;
@@ -218,7 +223,7 @@ class ServerCommand {
     required this.feeder,
     required this.kind,
     required this.state,
-    this.outcome,
+    this.settlement,
     this.feed,
     required this.sentMs,
     required this.updatedMs,
@@ -230,7 +235,7 @@ class ServerCommand {
       feeder.hashCode ^
       kind.hashCode ^
       state.hashCode ^
-      outcome.hashCode ^
+      settlement.hashCode ^
       feed.hashCode ^
       sentMs.hashCode ^
       updatedMs.hashCode;
@@ -244,53 +249,10 @@ class ServerCommand {
           feeder == other.feeder &&
           kind == other.kind &&
           state == other.state &&
-          outcome == other.outcome &&
+          settlement == other.settlement &&
           feed == other.feed &&
           sentMs == other.sentMs &&
           updatedMs == other.updatedMs;
-}
-
-@freezed
-sealed class ServerCommandOutcome with _$ServerCommandOutcome {
-  const ServerCommandOutcome._();
-
-  const factory ServerCommandOutcome.done() = ServerCommandOutcome_Done;
-
-  /// The settings the write left.
-  const factory ServerCommandOutcome.settings() = ServerCommandOutcome_Settings;
-
-  /// The plans the write left.
-  const factory ServerCommandOutcome.plans() = ServerCommandOutcome_Plans;
-
-  /// The calibration the write left.
-  const factory ServerCommandOutcome.calibration() =
-      ServerCommandOutcome_Calibration;
-
-  /// The meal call the upload stored.
-  const factory ServerCommandOutcome.call() = ServerCommandOutcome_Call;
-
-  /// Another change to the meal call came first; the retry sent nothing.
-  const factory ServerCommandOutcome.superseded() =
-      ServerCommandOutcome_Superseded;
-  const factory ServerCommandOutcome.refused({required ServerRefusal refusal}) =
-      ServerCommandOutcome_Refused;
-  const factory ServerCommandOutcome.invited({
-    required int invite,
-    required int seconds,
-  }) = ServerCommandOutcome_Invited;
-  const factory ServerCommandOutcome.feeding({required int feed}) =
-      ServerCommandOutcome_Feeding;
-  const factory ServerCommandOutcome.fed({
-    required int feed,
-    required int requested,
-    required int completed,
-    required FeedOutcome outcome,
-    required FeedReason reason,
-  }) = ServerCommandOutcome_Fed;
-
-  /// The answer was lost and the feeder's history never named it.
-  const factory ServerCommandOutcome.unrecorded() =
-      ServerCommandOutcome_Unrecorded;
 }
 
 @freezed

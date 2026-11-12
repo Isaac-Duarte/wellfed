@@ -5,17 +5,14 @@
 
 use jiff::Timestamp;
 use wellfed_api::{
-    Command, CommandOutcome, EventPage, FeedAnomaly, Feeder, FeederDetail, FeederFood,
-    FeederRefusal, Food, FoodLeft, FoodPeriod, HistoryEvent, Install, IntakeDay, IntakeFeeder, Pet,
-    PetIntake, Refill, RefillPage, Role, SinceRefill, StatusSnapshot, StreamEvent, User, Weight,
-    WeightPage,
+    Command, EventPage, FeedAnomaly, Feeder, FeederDetail, FeederFood, FeederRefusal, Food,
+    FoodLeft, FoodPeriod, HistoryEvent, Install, IntakeDay, IntakeFeeder, Pet, PetIntake, Refill,
+    RefillPage, Role, SinceRefill, StatusSnapshot, StreamEvent, User, Weight, WeightPage,
 };
 use wellfed_model::{DeviceKind, Event, Gap, MaybeKnown};
 use wellfed_server_client::Error;
 
-use crate::api::server::{
-    ServerCommand, ServerCommandOutcome, ServerEvent, ServerInstall, ServerRefusal,
-};
+use crate::api::server::{ServerCommand, ServerEvent, ServerInstall, ServerRefusal};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::{
     ServerAccount, ServerAnomaly, ServerConnection, ServerDevice, ServerEntry, ServerEventPage,
@@ -24,6 +21,7 @@ use crate::api::server_views::{
     ServerPet, ServerPetIntake, ServerRefill, ServerRefillPage, ServerRole, ServerSinceRefill,
     ServerSnapshot, ServerWeight, ServerWeightPage,
 };
+use crate::route::core::settled_by_command;
 use crate::today::{Facts, event_entry, gap_entry};
 
 /// Ids as Dart passes them back: the UUID strings the views gave.
@@ -351,49 +349,11 @@ impl From<Command> for ServerCommand {
             feeder: command.feeder.to_string(),
             kind: command.kind,
             state: command.state,
-            outcome: command
-                .outcome
-                .as_ref()
-                .and_then(ServerCommandOutcome::known),
+            settlement: settled_by_command(command.state, command.outcome.as_ref()),
             feed: command.feed,
             sent_ms: ms(command.sent),
             updated_ms: ms(command.updated),
         }
-    }
-}
-
-impl ServerCommandOutcome {
-    /// The outcome as the app shows it; `None` for one a newer server
-    /// added, which reads as not known.
-    fn known(outcome: &CommandOutcome) -> Option<Self> {
-        Some(match *outcome {
-            CommandOutcome::Done => Self::Done,
-            CommandOutcome::Settings { .. } => Self::Settings,
-            CommandOutcome::Plans { .. } => Self::Plans,
-            CommandOutcome::Calibration { .. } => Self::Calibration,
-            CommandOutcome::Call { .. } => Self::Call,
-            CommandOutcome::Superseded => Self::Superseded,
-            CommandOutcome::Refused { refusal } => Self::Refused {
-                refusal: refusal.into(),
-            },
-            CommandOutcome::Invited { invite, seconds } => Self::Invited { invite, seconds },
-            CommandOutcome::Feeding { feed } => Self::Feeding { feed },
-            CommandOutcome::Fed {
-                feed,
-                requested,
-                completed,
-                outcome,
-                reason,
-            } => Self::Fed {
-                feed,
-                requested,
-                completed,
-                outcome,
-                reason,
-            },
-            CommandOutcome::Unrecorded => Self::Unrecorded,
-            CommandOutcome::Unknown => return None,
-        })
     }
 }
 

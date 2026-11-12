@@ -22,6 +22,7 @@ use wellfed_server_client::{Auth, Client, PlainHttp, Url};
 
 use crate::api::keys::ClientKey;
 pub use crate::api::model::{FeedOutcome, FeedReason};
+use crate::api::router::Settlement;
 use crate::api::server_error::{ServerError, ServerErrorKind};
 pub use crate::api::server_views::{
     CommandKind, CommandState, InstallState, NewRefill, ServerAccount, ServerConnection,
@@ -81,45 +82,14 @@ pub struct ServerCommand {
     pub feeder: String,
     pub kind: CommandKind,
     pub state: CommandState,
-    pub outcome: Option<ServerCommandOutcome>,
+    /// What its outcome settles of the write, by the reading every server
+    /// client shares; `None` while it is unknown or in flight, or for an
+    /// outcome a newer server added.
+    pub settlement: Option<Settlement>,
     /// The feed it started, for a feed.
     pub feed: Option<u32>,
     pub sent_ms: i64,
     pub updated_ms: i64,
-}
-
-/// How a command ended, as the feeder answered.
-pub enum ServerCommandOutcome {
-    Done,
-    /// The settings the write left.
-    Settings,
-    /// The plans the write left.
-    Plans,
-    /// The calibration the write left.
-    Calibration,
-    /// The meal call the upload stored.
-    Call,
-    /// Another change to the meal call came first; the retry sent nothing.
-    Superseded,
-    Refused {
-        refusal: ServerRefusal,
-    },
-    Invited {
-        invite: u32,
-        seconds: u16,
-    },
-    Feeding {
-        feed: u32,
-    },
-    Fed {
-        feed: u32,
-        requested: u8,
-        completed: u8,
-        outcome: FeedOutcome,
-        reason: FeedReason,
-    },
-    /// The answer was lost and the feeder's history never named it.
-    Unrecorded,
 }
 
 /// A firmware install the server runs on a feeder.

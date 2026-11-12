@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Instant;
 
 use jiff::Timestamp;
@@ -24,9 +24,7 @@ use crate::api::router::{
     NotSentReason, PendingWrite, RetryOutcome, RoutePath, RoutedFeed, RoutedReply, RouterUpdate,
     Settlement,
 };
-use crate::api::server::{
-    ServerCommand, ServerCommandOutcome, ServerEvent, ServerHandle, ServerRefusal, ServerUpdate,
-};
+use crate::api::server::{ServerCommand, ServerEvent, ServerHandle, ServerRefusal, ServerUpdate};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::{
     KnownServer, ServerAccount, ServerConnection, ServerFeeder, ServerRole,
@@ -794,9 +792,10 @@ impl Router {
         let feeder = link.feeder.clone();
         let weak = Arc::downgrade(&self.inner);
         let heard = feeder.clone();
+        let own = Arc::downgrade(&link);
         link.listen(Arc::new(move |news| {
             if let Some(inner) = weak.upgrade() {
-                Self { inner }.link_news(&heard, news);
+                Self { inner }.link_news(&heard, &own, news);
             }
         }));
 
@@ -806,14 +805,15 @@ impl Router {
         state.announce();
     }
 
-    fn link_news(&self, feeder: &str, news: LinkNews) {
+    /// News from `from`, a session attached for `feeder`.
+    fn link_news(&self, feeder: &str, from: &Weak<DirectLink>, news: LinkNews) {
         let mut state = self.state();
-        // A session the router no longer holds says nothing of the feeder.
+        // A session another attach replaced says nothing of the feeder.
         let current = state
             .feeders
             .get(feeder)
             .and_then(|entry| entry.direct.as_ref());
-        if current.is_none() {
+        if !current.is_some_and(|current| std::ptr::eq(Arc::as_ptr(current), from.as_ptr())) {
             return;
         }
         if let LinkNews::Fed = news {
@@ -1074,9 +1074,7 @@ impl Router {
             Err(_) | Ok(Heard::Unanswered) => FeedTry::Uncertain,
             Ok(Heard::NotSent | Heard::Held) => FeedTry::Unsent(NotSentReason::Session, None),
             Ok(Heard::Answer(Answer::Feeding { feed })) => FeedTry::Started(feed),
-            Ok(Heard::Answer(Answer::Refused(refusal))) => {
-                FeedTry::Refused(calls::feed_refusal(requests::refusal_of(refusal)))
-            }
+            Ok(Heard::Answer(Answer::Refused(refusal))) => FeedTry::Refused(refusal.into()),
             // An answer that fits no feed says nothing of whether it ran.
             Ok(Heard::Answer(_)) => FeedTry::Uncertain,
         }
@@ -1528,7 +1526,7 @@ fn commanded(state: &mut State, command: &ServerCommand) {
     let Ok(key) = Uuid::parse_str(&command.key) else {
         return;
     };
-    let settlement = view_settlement(command);
+    let settlement = command.settlement.clone();
 
     match state.book.get(key).map(|pin| pin.state) {
         Some(PinState::Uncertain) => {
@@ -1640,41 +1638,6 @@ fn no_route() -> ServerError {
         ServerErrorKind::Refused,
         "the server has no route for this request, and this phone holds no key of its own",
     )
-}
-
-/// What a journal entry the stream carried settles; `None` while unknown
-/// or in flight.
-fn view_settlement(command: &ServerCommand) -> Option<Settlement> {
-    use wellfed_api::CommandState;
-    if matches!(command.state, CommandState::Sent | CommandState::Unknown) {
-        return None;
-    }
-    let outcome = command.outcome.as_ref()?;
-    Some(match outcome {
-        ServerCommandOutcome::Done
-        | ServerCommandOutcome::Settings
-        | ServerCommandOutcome::Plans
-        | ServerCommandOutcome::Calibration
-        | ServerCommandOutcome::Call
-        | ServerCommandOutcome::Invited { .. } => Settlement::Done,
-        ServerCommandOutcome::Superseded => Settlement::Superseded,
-        ServerCommandOutcome::Refused { refusal } => Settlement::Refused { refusal: *refusal },
-        ServerCommandOutcome::Feeding { feed } => Settlement::Started { feed: *feed },
-        ServerCommandOutcome::Fed {
-            feed,
-            requested,
-            completed,
-            outcome,
-            reason,
-        } => Settlement::Fed {
-            feed: *feed,
-            requested: *requested,
-            completed: *completed,
-            outcome: *outcome,
-            reason: *reason,
-        },
-        ServerCommandOutcome::Unrecorded => Settlement::Unrecorded,
-    })
 }
 
 /// What a feed call's answer settles of its pin, for a screen that holds
