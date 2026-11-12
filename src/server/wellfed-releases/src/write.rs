@@ -74,8 +74,6 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    use std::sync::Arc;
-
     use super::*;
 
     /// A writer whose caller is dropped mid-write keeps the lock until its
