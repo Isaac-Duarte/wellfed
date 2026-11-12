@@ -10,8 +10,10 @@
 //! (`sdk::task_create(c"name", words, ...)`) or declared by the firmware
 //! (`#[wellfed_sdk::task(name = "name", stack = WORDS, priority = N)] fn entry`),
 //! it walks the direct call graph from the task's entry function and
-//! sums the frames along the deepest path. Frames come from each function's
-//! prologue (`push`, `stmdb sp!`, `vpush`, `str [sp, #-n]!`, `sub sp`), and a linker veneer
+//! sums the frames along the deepest path. A function's frame is the sum of
+//! every stack decrement in it (`push`, `stmdb sp!`, `vpush`, `str [sp, #-n]!`,
+//! `sub sp, #n`), not only the prologue's, and one that lowers the stack by a
+//! register's value is refused ([`StackError::Variable`]). A linker veneer
 //! (`__name_veneer`, the long branch into RAM or ROM) leads to its target.
 //! Recursion is cut at the cycle.
 //!
@@ -128,6 +130,16 @@ pub enum StackError {
          it data: the stack audit cannot say what it does"
     )]
     Undecoded {
+        function: String,
+        address: u64,
+        line: String,
+    },
+    /// A stack decrement by a register, whose size only the run knows.
+    #[error(
+        "{function} lowers the stack by a register's value ({line:?} at {address:#x}): \
+         the stack audit cannot bound a frame sized at run time"
+    )]
+    Variable {
         function: String,
         address: u64,
         line: String,
@@ -431,6 +443,10 @@ static SUB: LazyLock<Regex> = LazyLock::new(|| {
     // up to 4 KiB; missing it hid curve25519's 1948-byte frame.
     pattern(r"^sub(?:w)?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?#(\d+)")
 });
+/// A stack decrement by a register's value: a frame sized at run time
+/// (`alloca`, a variable-length array), which no static bound covers.
+static SUB_REGISTER: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^subs?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?(?:r\d+|sb|sl|fp|ip|lr)\b"));
 
 /// {entry function name: (task name, stack bytes)} from the task sources.
 ///
@@ -585,7 +601,9 @@ struct Function {
     frame: u64,
     calls: BTreeSet<String>,
     indirect: bool,
-    sized: bool,
+    /// The first stack decrement by a register (`sub sp, r3`), whose size
+    /// no listing shows: its address and text.
+    variable: Option<(u64, String)>,
     /// Addresses the function builds or loads (`movw`/`movt` pairs and
     /// literal words): the formatting methods and vtables it passes on.
     refs: BTreeSet<u64>,
@@ -646,26 +664,33 @@ fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
             continue;
         }
 
-        if !f.sized {
-            if let Some(push) = PUSH.captures(insn) {
-                f.frame += 4 * push[1].split(',').filter(|r| !r.trim().is_empty()).count() as u64;
-                continue;
-            }
-            if let Some(vpush) = VPUSH.captures(insn) {
-                let (low, high): (u64, u64) =
-                    (vpush[1].parse().unwrap_or(0), vpush[2].parse().unwrap_or(0));
-                f.frame += 8 * (high + 1).saturating_sub(low);
-                continue;
-            }
-            if let Some(slot) = WRITEBACK.captures(insn) {
-                f.frame += slot[1].parse::<u64>().unwrap_or(0);
-                continue;
-            }
-            if let Some(sub) = SUB.captures(insn) {
-                f.frame += sub[1].parse::<u64>().unwrap_or(0);
-                f.sized = true;
-                continue;
-            }
+        // Every stack decrement in the function counts, wherever it sits: a
+        // frame too large for one immediate is two `sub sp`, and GCC spills
+        // stacked argument registers with `sub sp, #8` before its push. The
+        // sum can only overstate a frame (an epilogue's `add sp` is not
+        // taken off), never understate it.
+        if let Some(push) = PUSH.captures(insn) {
+            f.frame += 4 * push[1].split(',').filter(|r| !r.trim().is_empty()).count() as u64;
+            continue;
+        }
+        if let Some(vpush) = VPUSH.captures(insn) {
+            let (low, high): (u64, u64) =
+                (vpush[1].parse().unwrap_or(0), vpush[2].parse().unwrap_or(0));
+            f.frame += 8 * (high + 1).saturating_sub(low);
+            continue;
+        }
+        if let Some(slot) = WRITEBACK.captures(insn) {
+            f.frame += slot[1].parse::<u64>().unwrap_or(0);
+            continue;
+        }
+        if let Some(sub) = SUB.captures(insn) {
+            f.frame += sub[1].parse::<u64>().unwrap_or(0);
+            continue;
+        }
+        if SUB_REGISTER.is_match(insn) {
+            f.variable
+                .get_or_insert_with(|| (address, line.trim().to_string()));
+            continue;
         }
         if let Some(call) = CALL.captures(line) {
             f.calls.insert(call[1].to_string());
@@ -1004,15 +1029,26 @@ fn listing(elf: &Path, binutils: &Binutils) -> Result<(String, CodeMap)> {
     Ok((tool(&binutils.objdump(), &["-d"], &stripped)?, map))
 }
 
-/// The first line of code in `functions` that didn't decode, refused.
+/// The first line of code in `functions` that didn't decode, or that sizes
+/// a frame at run time, refused.
 fn all_decoded(functions: &HashMap<String, Function>) -> Result<()> {
-    let undecoded = functions
-        .iter()
-        .filter_map(|(name, f)| Some((name, f.undecoded.as_ref()?)))
-        .min_by_key(|(_, (address, _))| *address);
+    let first = |line: fn(&Function) -> Option<&(u64, String)>| {
+        functions
+            .iter()
+            .filter_map(|(name, f)| Some((name, line(f)?)))
+            .min_by_key(|(_, (address, _))| *address)
+    };
 
-    match undecoded {
-        Some((function, (address, line))) => Err(StackError::Undecoded {
+    if let Some((function, (address, line))) = first(|f| f.undecoded.as_ref()) {
+        return Err(StackError::Undecoded {
+            function: demangle(function),
+            address: *address,
+            line: line.clone(),
+        }
+        .into());
+    }
+    match first(|f| f.variable.as_ref()) {
+        Some((function, (address, line))) => Err(StackError::Variable {
             function: demangle(function),
             address: *address,
             line: line.clone(),
@@ -1525,8 +1561,8 @@ mod tests {
 
         assert_eq!(
             functions["fn"].frame,
-            20 + 4 + 64,
-            "after `sub sp` is the body"
+            20 + 4 + 64 + 4,
+            "a decrement after `sub sp` counts too"
         );
         assert_eq!(functions["other"].frame, 8, "a plain store moves nothing");
     }
@@ -1613,6 +1649,62 @@ mod tests {
         assert!(f.refs.contains(&0x1001_dcc0), "{:x?}", f.refs);
         assert!(f.refs.contains(&0xf800_f000), "{:x?}", f.refs);
         assert_eq!(f.undecoded, None);
+    }
+
+    /// A frame of 4 KiB or more is two `sub sp`; GCC spills stacked
+    /// argument registers with `sub sp` before its push; and a split
+    /// allocation can come in two encodable halves. Each decrement counts.
+    #[test]
+    fn every_stack_decrement_counts_not_only_the_first_sub() {
+        let listing = "\
+0e00bebe <split>:
+ e00bebe:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}
+ e00bec0:\te92d 0f00 \tstmdb\tsp!, {r8, r9, sl, fp}
+ e00bec4:\tf5ad 5d88 \tsub.w\tsp, sp, #4352
+ e00bec8:\tb085      \tsub\tsp, #20
+0e00c000 <spill>:
+ e00c000:\tb082      \tsub\tsp, #8
+ e00c002:\tb570      \tpush\t{r4, r5, r6, lr}
+ e00c004:\tb084      \tsub\tsp, #16
+0e00d000 <task>:
+ e00d000:\tb580      \tpush\t{r7, lr}
+ e00d002:\tf5ad 5d80 \tsub.w\tsp, sp, #4096
+ e00d006:\tf5ad 6d00 \tsub.w\tsp, sp, #2048
+";
+        let functions: HashMap<String, Function> =
+            frames(listing, &code_only()).into_iter().collect();
+
+        assert_eq!(functions["split"].frame, 20 + 16 + 4352 + 20);
+        assert_eq!(functions["spill"].frame, 8 + 16 + 16);
+        assert_eq!(functions["task"].frame, 8 + 4096 + 2048);
+
+        let graph = Graph::new(&functions, &[]);
+        let error = bound(&graph, "task", "task", "task", 6144, 0).unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                Error::Stack(StackError::Overflow { bound: 6408, .. })
+            ),
+            "{error:?}"
+        );
+    }
+
+    /// A frame sized by a register has no static bound, so it is refused
+    /// rather than counted as nothing.
+    #[test]
+    fn a_stack_decrement_by_a_register_is_refused() {
+        for line in [
+            "    1002:\tebad 0d03 \tsub.w\tsp, sp, r3",
+            "    1002:\tebad 0d03 \tsub\tsp, r3",
+            "    1002:\tebad 0d03 \tsubne.w\tsp, sp, ip",
+        ] {
+            let listing = format!("00001000 <fn>:\n    1000:\tb500      \tpush\t{{lr}}\n{line}\n");
+            let error = refused(&listing, &code_only());
+            assert!(
+                matches!(&error, StackError::Variable { function, address: 0x1002, .. } if function == "fn"),
+                "{error:?}"
+            );
+        }
     }
 
     /// What the pinned objdump hides, once decoded, counts.
@@ -1749,6 +1841,7 @@ mod tests {
         assert_eq!(&SUB.captures("subwls\tsp, sp, #1032").unwrap()[1], "1032");
         assert_eq!(&SUB.captures("subhi.w\tsp, sp, #1032").unwrap()[1], "1032");
         assert_eq!(&MOVE.captures("movwhi\tr0, #4097").unwrap()[3], "4097");
+        assert!(SUB_REGISTER.is_match("subhi.w\tsp, sp, r3"));
         assert!(INDIRECT.is_match("    1010:\t4798      \tblxhi\tr3"));
         assert!(!INDIRECT.is_match("    1010:\t4770      \tbxhi\tlr"));
     }
