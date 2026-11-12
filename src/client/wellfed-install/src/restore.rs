@@ -46,9 +46,10 @@ use tokio::time::Instant;
 use wellfed_client::install::{InstallError, StockBackup};
 use wellfed_client::update::{Image, InstallError as UpdateError};
 use wellfed_client::update_key::{EnrollError, Enrolled};
+use wellfed_connect::update::{self, Opened, Steps, Way};
 use wellfed_connect::{AskError, Connection};
 use wellfed_formats::credentials::KeyScope;
-use wellfed_model::{Answer, ClientRole, Op, UpdatePhase, UpdateView};
+use wellfed_model::{Answer, ClientRole, Op, UpdateView};
 use wellfed_session::noise::Keypair;
 use wellfed_signing::{Frozen, Key, Motion};
 
@@ -528,31 +529,43 @@ async fn state(session: &mut Connection) -> Result<UpdateView, Error> {
     }
 }
 
-/// The floor, with the way clear for this run's offer. A running install is
-/// left alone. A candidate a cut or kill left pending refuses every other
-/// manifest, and a restore's is always another, so it is cancelled once; a
-/// cancel with any doubt about it stops the run, since the one offer is not
-/// to be spent on a refusal.
+/// The floor, with the way clear for this run's offer, by the rule every
+/// client shares ([`wellfed_connect::update::clear_stale`]): a restore's
+/// manifest is never one already offered, so any candidate pending is
+/// stale and cancelled once. A running install is left alone, and a cancel
+/// with any doubt about it stops the run, since the one offer is not to be
+/// spent on a refusal.
 async fn clear_floor(session: &mut Connection, report: &impl Report) -> Result<u32, Error> {
     let view = state(session).await?;
-    if view.phase != UpdatePhase::Idle {
-        return Err(Error::RestoreInstallRunning { phase: view.phase });
+    let cancelling = || report.event(Event::StaleInstallCancelled);
+    match update::clear_stale(&mut Asking(session), view, None, cancelling).await? {
+        Way::Clear(view) => Ok(view.min_version),
+        Way::Running(phase) => Err(Error::RestoreInstallRunning { phase }),
+        Way::Refused(_) | Way::CancelUnknown => Err(Error::RestoreCancelUnknown),
     }
-    if view.digest.is_none() {
-        return Ok(view.min_version);
+}
+
+/// The restore's session, as the shared driver's steps: one request at a
+/// time on the session it signs on, never reopened. A request that fails
+/// is a lost answer, which the cancel's rule reads as doubt.
+struct Asking<'a>(&'a mut Connection);
+
+impl Steps for Asking<'_> {
+    type Error = Error;
+
+    async fn step(&mut self, op: Op) -> Result<Option<Answer>, Error> {
+        Ok(self.0.ask(random()?, &op).await.ok())
     }
 
-    report.event(Event::StaleInstallCancelled);
-    let cancelled = session.ask(random()?, &Op::CancelUpdate).await;
-    if !matches!(cancelled, Ok(Answer::Update(_))) {
-        return Err(Error::RestoreCancelUnknown);
+    async fn reopen(&mut self) -> Result<Option<Opened>, Error> {
+        Ok(None)
     }
-    match state(session).await {
-        Ok(view) if view.phase == UpdatePhase::Idle && view.digest.is_none() => {
-            Ok(view.min_version)
-        }
-        _ => Err(Error::RestoreCancelUnknown),
+
+    fn activated(&mut self, _: &Opened) -> bool {
+        false
     }
+
+    fn progress(&mut self, _: &UpdateView) {}
 }
 
 /// Sessions with the feeder, wherever it answers now: a restart may move it.
@@ -602,7 +615,7 @@ mod tests {
     use wellfed_feeder_sim::flash::Flash;
     use wellfed_feeder_sim::harness::Running;
     use wellfed_feeder_sim::serve::Control;
-    use wellfed_model::{Refusal, UpdateRefusal};
+    use wellfed_model::{Refusal, UpdatePhase, UpdateRefusal};
     use wellfed_signed::{MARKER, SECTOR};
 
     use super::*;
