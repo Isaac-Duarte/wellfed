@@ -155,28 +155,69 @@ pub(crate) async fn clients_command(target: Target) -> Result<()> {
 }
 
 pub(crate) async fn revoke_command(args: RevokeArgs) -> Result<()> {
-    if args.client.len() < 8 {
-        bail!("give at least 8 hex digits of the client's key");
-    }
+    let prefix = client_prefix(&args.client)?;
     let (_, _, mut connection) = connect(&args.target).await?;
     let Answer::Clients(clients) = connection.ask(&Op::ListClients).await? else {
         bail!("the feeder did not list its clients");
     };
-    let matches: Vec<[u8; 32]> = clients
-        .iter()
-        .filter(|c| c.key.to_string().starts_with(&args.client))
-        .map(|c| c.key.0)
-        .collect();
-    let [key] = matches.as_slice() else {
-        bail!("{} clients match {}", matches.len(), args.client);
-    };
-    let answer = connection.ask(&Op::RevokeClient { key: *key }).await?;
+    let chosen = one_client(&clients, |c| c.key.to_string(), &prefix)?;
+    let answer = connection
+        .ask(&Op::RevokeClient { key: chosen.key.0 })
+        .await?;
     print_answer(&answer)
+}
+
+/// A client key's prefix as typed, in either case: at least 8 hex digits,
+/// lowercased to match the keys as they print.
+pub(crate) fn client_prefix(typed: &str) -> Result<String> {
+    if typed.len() < 8 || !typed.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("give at least 8 hex digits of the client's key");
+    }
+    Ok(typed.to_ascii_lowercase())
+}
+
+/// The one client whose key, as `key` prints it, starts with `prefix`.
+pub(crate) fn one_client<'a, T>(
+    clients: &'a [T],
+    key: impl Fn(&T) -> String,
+    prefix: &str,
+) -> Result<&'a T> {
+    let matching: Vec<&T> = clients
+        .iter()
+        .filter(|client| key(client).starts_with(prefix))
+        .collect();
+    let [chosen] = matching.as_slice() else {
+        bail!("{} clients match {prefix}", matching.len());
+    };
+    Ok(chosen)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Both revokes take a client's key prefix in either case, and at
+    /// least 8 hex digits of it.
+    #[test]
+    fn a_client_prefix_matches_in_either_case() {
+        let keys = [
+            "abcdef12aa".to_owned(),
+            "abcdef12bb".to_owned(),
+            "12345678cc".to_owned(),
+        ];
+        let prefix = client_prefix("ABCDEF12BB").unwrap();
+        assert_eq!(
+            one_client(&keys, Clone::clone, &prefix).unwrap(),
+            "abcdef12bb"
+        );
+        let prefix = client_prefix("abcdef12").unwrap();
+        assert!(
+            one_client(&keys, Clone::clone, &prefix).is_err(),
+            "two match"
+        );
+        assert!(client_prefix("abcdef1").is_err());
+        assert!(client_prefix("abcdefgh").is_err());
+    }
 
     /// A wrapped message reads as one sentence, with no run of spaces
     /// where its source line broke.

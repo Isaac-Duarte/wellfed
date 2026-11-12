@@ -136,14 +136,14 @@ impl OwnerKey {
         &self.file.label
     }
 
-    /// The feeder to talk to: the one whose identity starts with `prefix`,
-    /// or the only one this key knows.
+    /// The feeder to talk to: the one whose identity starts with `prefix`
+    /// (in either case), or the only one this key knows.
     pub(crate) fn feeder(&self, prefix: Option<&str>) -> Result<[u8; 32]> {
         let matching: Vec<&EnrolledFeeder> = self
             .file
             .feeders
             .iter()
-            .filter(|f| prefix.is_none_or(|p| f.identity.starts_with(p)))
+            .filter(|f| prefix.is_none_or(|p| f.identity.starts_with(&p.to_ascii_lowercase())))
             .collect();
         let [feeder] = matching.as_slice() else {
             anyhow::bail!(
@@ -233,6 +233,26 @@ mod tests {
         let mut same = OwnerKey::open(&path, Some("laptop"), Missing::Create).unwrap();
         same.remember(&[5; 32]).unwrap();
         assert_eq!(modified(), before);
+    }
+
+    /// `--feeder` names a feeder by a prefix of its identity in either
+    /// case, as the bench path always took it.
+    #[test]
+    fn a_feeder_prefix_matches_in_either_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("owner.json");
+        let mut key = OwnerKey::open(&path, None, Missing::Create).unwrap();
+        key.remember(&[0xab; 32]).unwrap();
+        key.remember(&[0xcd; 32]).unwrap();
+
+        assert_eq!(key.feeder(Some("ABAB")).unwrap(), [0xab; 32]);
+        assert_eq!(key.feeder(Some("cdcd")).unwrap(), [0xcd; 32]);
+        assert!(key.feeder(None).is_err(), "two feeders, no prefix");
+        assert_eq!(
+            crate::bench::short("ab"),
+            "ab",
+            "a short answer is no panic"
+        );
     }
 
     /// Two runs that both found no key: the one that writes second opens

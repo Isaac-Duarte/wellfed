@@ -99,15 +99,6 @@ pub(crate) enum BenchRefusal {
         session: Box<Session>,
     },
     #[error(
-        "the bench server for {} holds a session with feeder {served}, not {asked}",
-        root.display()
-    )]
-    OtherFeeder {
-        root: PathBuf,
-        served: String,
-        asked: String,
-    },
-    #[error(
         "the bench server for {} did not open its feeder session within {} s",
         root.display(),
         OPEN_WAIT.as_secs()
@@ -318,12 +309,10 @@ impl Reading {
 }
 
 /// The server's session for `keys`, refusing whatever it cannot lend.
-pub(crate) async fn lend(
-    bench: Bench,
-    keys: &Path,
-    feeder: Option<&str>,
-    address: Option<&str>,
-) -> Result<Lent> {
+///
+/// Which feeder it holds is the caller's to check, against the full
+/// identity its key file names.
+pub(crate) async fn lend(bench: Bench, keys: &Path, address: Option<&str>) -> Result<Lent> {
     if address.is_some() {
         return Err(BenchRefusal::Address { root: bench.root }.into());
     }
@@ -333,17 +322,7 @@ pub(crate) async fn lend(
         return Err(BenchRefusal::OtherKey {
             root: bench.root,
             keys: keys.to_path_buf(),
-            owner: info.owner[..16].to_string(),
-        }
-        .into());
-    }
-    if let Some(prefix) = feeder
-        && !info.identity.starts_with(&prefix.to_ascii_lowercase())
-    {
-        return Err(BenchRefusal::OtherFeeder {
-            root: bench.root,
-            served: info.identity[..16].to_string(),
-            asked: prefix.to_string(),
+            owner: short(&info.owner).to_string(),
         }
         .into());
     }
@@ -367,6 +346,12 @@ pub(crate) async fn lend(
         events: Reading::default(),
         logs: Reading::default(),
     })
+}
+
+/// The first 16 characters of a hex key the bench server sent, or all of
+/// one shorter: the server is local and trusted, but its answer is input.
+pub(crate) fn short(hex: &str) -> &str {
+    hex.get(..16).unwrap_or(hex)
 }
 
 impl Lent {

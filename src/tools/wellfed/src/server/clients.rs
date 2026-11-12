@@ -3,7 +3,7 @@
 //! restarts the feeder. All three are an owner's, and the feeder runs a
 //! revoke or a restart only for a server adopted with an owner's invite.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::Args;
 use uuid::Uuid;
 use wellfed_server_client::Client;
@@ -33,19 +33,10 @@ pub(super) async fn clients(client: &Client, which: &Which, out: Output) -> Resu
 /// Revoke one client, sent once under a fresh key. The server's own key is
 /// refused: removing the feeder revokes it.
 pub(super) async fn revoke(client: &Client, args: RevokeArgs, out: Output) -> Result<Settled> {
-    let prefix = args.client.to_lowercase();
-    if prefix.len() < 8 {
-        bail!("give at least 8 hex digits of the client's key");
-    }
+    let prefix = crate::access::client_prefix(&args.client)?;
     let id = args.which.id(client).await?;
     let clients = client.clients(id).await?;
-    let matching: Vec<&FeederClient> = clients
-        .iter()
-        .filter(|listed| listed.key.to_string().starts_with(&prefix))
-        .collect();
-    let [chosen] = matching.as_slice() else {
-        bail!("{} clients match {}", matching.len(), args.client);
-    };
+    let chosen = crate::access::one_client(&clients, |listed| listed.key.to_string(), &prefix)?;
 
     let key = Uuid::new_v4();
     let sent = client.revoke_client(id, chosen.key, key);
