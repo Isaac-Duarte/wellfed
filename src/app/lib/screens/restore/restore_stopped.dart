@@ -138,11 +138,6 @@ class RestoreStoppedPage extends StatelessWidget {
       'Nothing was sent. Check that it is plugged in and this $deviceName is '
           'on the same Wi-Fi.',
     ),
-    RestoreStop.noUpdates => (
-      "$name can't take this",
-      'The firmware it runs takes no updates from this app. Nothing was '
-          'sent.',
-    ),
     RestoreStop.backupRefused => (
       "That isn't the original firmware",
       "It doesn't match the vendor's 1.1.15 exactly, so nothing was sent.",

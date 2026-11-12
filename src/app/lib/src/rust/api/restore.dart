@@ -165,9 +165,6 @@ enum RestoreStop {
   /// The feeder does not answer this phone. Nothing was offered.
   notAnswering,
 
-  /// This firmware takes no updates over the device API.
-  noUpdates,
-
   /// The copy is not stock's pinned image, or could not be read.
   backupRefused,
 
