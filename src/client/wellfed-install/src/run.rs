@@ -21,6 +21,7 @@ use wellfed_client::install::{
 use wellfed_client::setup::Credentials;
 use wellfed_client::update::{Image, InstallError as UpdateError};
 use wellfed_client::update_key::{EnrollError, Enrolled};
+use wellfed_connect::AskError;
 use wellfed_formats::bench::prompt::Prompt;
 use wellfed_formats::manifest::Provisioning;
 use wellfed_formats::stock::TrialPhase;
@@ -1209,7 +1210,11 @@ where
         loop {
             let read = async {
                 let mut connection = self.connect().await?;
-                match connection.ask(random()?, &Op::UpdateState).await? {
+                match connection
+                    .ask(random()?, &Op::UpdateState)
+                    .await
+                    .map_err(AskError::into_error)?
+                {
                     Answer::Update(view) => Ok(view.min_version),
                     other => Err(Error::Answered {
                         request: "update state",
@@ -1336,7 +1341,11 @@ where
     async fn status(&self) -> Result<(String, u8), Error> {
         let mut connection = self.connect().await?;
         let build = connection.build().to_owned();
-        match connection.ask(random()?, &Op::UpdateState).await? {
+        match connection
+            .ask(random()?, &Op::UpdateState)
+            .await
+            .map_err(AskError::into_error)?
+        {
             Answer::Update(view) => Ok((build, view.bank)),
             other => Err(Error::Answered {
                 request: "update state",

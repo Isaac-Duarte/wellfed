@@ -46,7 +46,7 @@ use tokio::time::Instant;
 use wellfed_client::install::{InstallError, StockBackup};
 use wellfed_client::update::{Image, InstallError as UpdateError};
 use wellfed_client::update_key::{EnrollError, Enrolled};
-use wellfed_connect::Connection;
+use wellfed_connect::{AskError, Connection};
 use wellfed_formats::credentials::KeyScope;
 use wellfed_model::{Answer, ClientRole, Op, UpdatePhase, UpdateView};
 use wellfed_session::noise::Keypair;
@@ -468,7 +468,11 @@ async fn signed_up<D: Discovery>(
 }
 
 async fn state(session: &mut Connection) -> Result<UpdateView, Error> {
-    match session.ask(random()?, &Op::UpdateState).await? {
+    match session
+        .ask(random()?, &Op::UpdateState)
+        .await
+        .map_err(AskError::into_error)?
+    {
         Answer::Update(view) => Ok(view),
         other => Err(Error::Answered {
             request: "update state",

@@ -38,7 +38,7 @@ use jiff::tz::TimeZone;
 use tokio::sync::{mpsc, oneshot};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::plans::Edit;
-use wellfed_connect::{Connection, Received};
+use wellfed_connect::{AskError, Connection, Received};
 use wellfed_model::{
     Answer, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed, Settings, Skew,
 };
@@ -351,7 +351,11 @@ async fn serve(
         return serve_legacy(&mut connection, commands).await;
     }
 
-    let Answer::Status(status) = connection.ask(random()?, &Op::Status).await? else {
+    let Answer::Status(status) = connection
+        .ask(random()?, &Op::Status)
+        .await
+        .map_err(AskError::into_error)?
+    else {
         return Err(BridgeError::new(
             ErrorKind::Protocol,
             "the feeder did not answer with its status",
@@ -435,10 +439,17 @@ async fn serve_legacy(
                         Ok(answer) => {
                             let _ = reply.send(Heard::Answer(answer));
                         }
-                        Err(wellfed_connect::Error::Timeout) => {
+                        Err(AskError::MayHaveRun(wellfed_connect::Error::Unanswered)) => {
                             let _ = reply.send(Heard::Unanswered);
                         }
-                        Err(error) => {
+                        Err(AskError::Unsent(error)) if error.keeps_session() => {
+                            let _ = reply.send(Heard::NotSent);
+                        }
+                        Err(AskError::Unsent(error)) => {
+                            let _ = reply.send(Heard::NotSent);
+                            return Err(error.into());
+                        }
+                        Err(AskError::MayHaveRun(error)) => {
                             let _ = reply.send(Heard::Unanswered);
                             return Err(error.into());
                         }
@@ -457,9 +468,10 @@ async fn serve_legacy(
 }
 
 impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
-    /// Send `op`. It is outstanding before a byte goes, so a send that
-    /// fails part way is answered as one that may have run when the
-    /// session ends.
+    /// Send `op`. Queued, it is outstanding: a session that then ends
+    /// answers it as one that may have run. A request the connection
+    /// refuses was never queued, so it alone is answered unsent, and the
+    /// session goes on unless the refusal was the session's end.
     fn request(&mut self, op: &Op, what: Asked) -> Result<(), BridgeError> {
         let id = match random() {
             Ok(id) => id,
@@ -468,9 +480,44 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 return Err(error);
             }
         };
-        self.out.asked.insert(id, what);
-        self.connection.request(id, op)?;
-        Ok(())
+
+        match self.connection.request(id, op) {
+            Ok(()) => {
+                self.out.asked.insert(id, what);
+                Ok(())
+            }
+            Err(error) if error.keeps_session() => {
+                self.unsent(what);
+                Ok(())
+            }
+            Err(error) => {
+                what.never_sent();
+                Err(error.into())
+            }
+        }
+    }
+
+    /// `what` never went, on a session that goes on: whoever waits hears so,
+    /// and a write's queue lets go of it. The writes waiting behind it were
+    /// asked on what it would have made, so each is held to be asked again.
+    fn unsent(&mut self, what: Asked) {
+        if let Asked::Write { write, .. } = &what {
+            let next = match write.queue() {
+                Some(Line::Settings) => self.out.settings.answered(None),
+                Some(Line::Plans) => self.out.plans.answered(None),
+                None => Next::Idle,
+            };
+            let waiting = match next {
+                Next::Idle => Vec::new(),
+                Next::Send(outgoing) => outgoing.replies,
+                Next::Unsent(waiting) => waiting,
+            };
+            for reply in waiting {
+                // Dart stopped waiting: nothing to tell it.
+                let _ = reply.send(Heard::Held);
+            }
+        }
+        what.never_sent();
     }
 
     /// Send what Dart asked for; `false` once it closes the session.

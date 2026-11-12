@@ -895,7 +895,7 @@ fn events_that_arrive_while_a_request_waits_are_kept_for_next() {
         );
         assert!(matches!(
             owner.ask(wellfed_connect::KEEPALIVE_ID, &Op::Status).await,
-            Err(ConnectError::ReservedId)
+            Err(wellfed_connect::AskError::Unsent(ConnectError::ReservedId))
         ));
         sim.stop().await;
     });
