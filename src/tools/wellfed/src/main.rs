@@ -243,8 +243,14 @@ fn uncertain(what: impl std::fmt::Display + Send + Sync + 'static) -> anyhow::Er
 
 /// The passphrase: typed at a terminal with no echo, or piped in by a script.
 fn passphrase() -> Result<String> {
+    secret("Password for the feeder's Wi-Fi")
+}
+
+/// A secret from standard input: asked for after `prompt`, unechoed, at a
+/// terminal, and otherwise its first line, as a test or a script pipes it.
+fn secret(prompt: &str) -> Result<String> {
     if std::io::stdin().is_terminal() {
-        eprint!("Password for the feeder's Wi-Fi (it won't show as you type): ");
+        eprint!("{prompt} (it won't show as you type): ");
         return rpassword::read_password().context("read the password");
     }
 
