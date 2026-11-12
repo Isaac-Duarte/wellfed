@@ -71,13 +71,25 @@ fn a_guard_dropped_unfinished_leaves_the_value_waiting() {
     again.finish();
     assert!(!slot.waiting());
 
-    // Cleared under a held guard, the slot stays empty when it drops.
+    // A clear leaves a held value held, so no producer writes under the
+    // guard; once it drops back to queued, a clear empties the slot.
     assert!(slot.offer(|value| *value = [5; 4]));
     let held = slot.take().expect("queued");
     slot.clear();
+    assert!(!slot.offer(|_| unreachable!("a claim while taken")));
+    assert_eq!(*held.get(), [5; 4]);
     drop(held);
+    slot.clear();
     assert!(!slot.waiting());
     assert!(slot.take().is_none());
+
+    // Nor does a clear while the value is written free the claim.
+    assert!(slot.offer(|value| {
+        *value = [6; 4];
+        slot.clear();
+        assert!(!slot.offer(|_| unreachable!("a second claim while filling")));
+    }));
+    assert_eq!(slot.take().map(|taken| *taken.get()), Some([6; 4]));
 }
 
 #[test]

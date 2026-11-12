@@ -246,6 +246,7 @@ pub fn publish<I: SlotIo>(store: &NetStore<I>, armed: bool) {
 /// # Safety
 /// No Wi-Fi task or settings writer is running: the join state is the Wi-Fi
 /// task's own, and the save outcomes the writer's.
+#[cfg(not(target_os = "none"))]
 pub unsafe fn reset() {
     for flag in [&LOADED, &WRITABLE, &STORED, &RELOAD, &HANDOVER_PUT_OFF] {
         flag.store(false, Ordering::Release);
@@ -257,7 +258,6 @@ pub unsafe fn reset() {
     unsafe { *SAVED.get() = Saved::default() };
     // SAFETY: the caller's contract: no Wi-Fi task holds `JOIN`.
     unsafe { *JOIN.get() = Join::default() };
-    #[cfg(not(target_os = "none"))]
     INTERLOCK.reset();
 }
 

@@ -89,6 +89,7 @@ pub fn publish<I: SlotIo>(store: &PlansStore<I>, armed: bool) {
 }
 
 /// Forget everything (host tests).
+#[cfg(not(target_os = "none"))]
 pub fn reset() {
     PUBLISHED.clear(EMPTY);
     PENDING.clear();

@@ -69,6 +69,7 @@ pub fn publish(view: SettingsView) {
 }
 
 /// Forget the device's published settings (host tests).
+#[cfg(not(target_os = "none"))]
 pub fn reset() {
     DEVICE_LOADED.store(false, Ordering::Release);
     let _guard = IrqGuard::lock();
@@ -171,6 +172,7 @@ impl<K: KindSettings> Mailbox<K> {
     }
 
     /// Forget everything, the device's part included (host tests).
+    #[cfg(not(target_os = "none"))]
     pub fn reset(&self) {
         reset();
         self.loaded.store(false, Ordering::Release);

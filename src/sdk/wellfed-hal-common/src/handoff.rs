@@ -124,10 +124,19 @@ impl<T> Handoff<T> {
             .map(|_| Taken { handoff: self })
     }
 
-    /// Empty the slot whatever it holds (a host test's fresh start). A
-    /// guard still held then puts nothing back.
+    /// Drop a queued value nobody has taken (a host test's fresh start).
+    /// A value being written or held through a guard stays as it is:
+    /// emptying either would let the next producer write the slot while its
+    /// claimant or the guard still reaches it. Host builds alone, where tests
+    /// start fresh; no firmware forgets a change it was asked for.
+    #[cfg(not(target_os = "none"))]
     pub fn clear(&self) {
-        self.state.store(Hand::Empty as u8, Ordering::Release);
+        let _ = self.state.compare_exchange(
+            Hand::Queued as u8,
+            Hand::Empty as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
     }
 }
 
@@ -154,8 +163,7 @@ impl<T> Taken<'_, T> {
 }
 
 impl<T> Drop for Taken<'_, T> {
-    /// Unfinished, the value waits for the next take. A slot cleared
-    /// meanwhile stays empty.
+    /// Unfinished, the value waits for the next take.
     fn drop(&mut self) {
         let _ = self.handoff.state.compare_exchange(
             Hand::Taken as u8,
@@ -207,6 +215,7 @@ impl<V: Copy> Published<V> {
 
     /// Forget the view, as before the first publish (a host test's fresh
     /// start).
+    #[cfg(not(target_os = "none"))]
     pub fn clear(&self, empty: V) {
         self.loaded.store(false, Ordering::Release);
         let _guard = IrqGuard::lock();
