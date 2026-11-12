@@ -48,6 +48,12 @@ const SHORT: Clocks = Clocks {
     settle: Clocks::DEFAULT.settle,
 };
 
+/// [`SHORT`], with a lost feed reported still unknown after seconds.
+const QUICK_REPORT: Clocks = Clocks {
+    settle: Duration::from_secs(3),
+    ..SHORT
+};
+
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -586,6 +592,34 @@ fn a_fed_settles_the_lost_feed_of_its_portions_not_an_older_one() {
     }
 }
 
+/// A feed reported still unknown stays open: its `Fed`, held back past the
+/// report, still settles it.
+#[test]
+fn a_feed_reported_unknown_is_settled_by_its_late_fed() {
+    let (sim, key) = joined();
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let feeder = session(&sim, key, relay.address, QUICK_REPORT);
+    state_where(&feeder, |_| true);
+
+    relay.hold_answers();
+    let written = feeder.feed(1);
+    assert_eq!(written.result, WriteResult::Uncertain, "{written:?}");
+    let pending = written.pending.expect("the feed is kept pending");
+    let reported = until(&feeder, |update| {
+        assert_ne!(update.kind, UpdateKind::Settled, "its `Fed` is held back");
+        (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
+    });
+    assert_eq!(reported.as_ref().map(|lost| &lost.id), Some(&pending.id));
+
+    relay.resume();
+    let (which, fed) = until(&feeder, |update| {
+        (update.kind == UpdateKind::Settled).then(|| (update.pending.clone(), update.feed.clone()))
+    });
+    assert_eq!(which.map(|lost| lost.id), Some(pending.id));
+    assert_eq!(fed.map(|fed| fed.requested), Some(1));
+}
+
 /// Home Assistant stops while a feed is out, after a feed of the same
 /// portions was reported still unknown. The feed it was sending is in its
 /// store, so after the restart that feed's `Fed` could be either's, and
@@ -664,6 +698,39 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
             (UpdateKind::StillUnknown, f)
         ]
     );
+}
+
+/// A lost feed carried from the last run that has waited a week is
+/// forgotten, still unknown.
+#[test]
+fn a_lost_feed_a_week_old_is_forgotten() {
+    let (sim, key) = joined();
+    let target = Target {
+        identity: sim.identity,
+        address: Some(sim.address.to_string()),
+    };
+    let week = 7 * 24 * 3_600_000;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let old = Pending {
+        id: "old".into(),
+        portions: 1,
+        sent_ms: i64::try_from(now_ms).unwrap() - week - 1000,
+        after: Some(1),
+        reported: true,
+    };
+    let carried = Carried {
+        pending: vec![old.clone()],
+        answered: Vec::new(),
+    };
+    let feeder = Feeder::start(key, target, SHORT, carried).unwrap();
+    let which = until(&feeder, |update| {
+        assert_ne!(update.kind, UpdateKind::StillUnknown, "reported before");
+        (update.kind == UpdateKind::Forgotten).then(|| update.pending.clone())
+    });
+    assert_eq!(which, Some(old));
 }
 
 /// Home Assistant restarts while a feed's answer is lost: the feed it kept
