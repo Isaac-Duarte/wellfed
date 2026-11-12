@@ -4,7 +4,6 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
-import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -44,7 +43,8 @@ class _TodayFactsState extends State<TodayFacts> {
       if (card.desiccant case Desiccant_Remaining(due: true)) _Fact.desiccant,
     };
     final List<_Fact> shown = _open ? _Fact.values : _Fact.values.where(unusual.contains).toList();
-    final online = widget.feeder.state.connection == Connection.online;
+    // The facts speak of the feeder now only once this session has read them.
+    final bool online = widget.feeder.state.cardIsCurrent;
 
     return Panel(
       child: Column(

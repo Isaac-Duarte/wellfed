@@ -125,7 +125,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
             Expanded(
               child: ListView(
                 children: [
-                  if (online && !(card?.clockSet ?? true)) ...[
+                  if (feeder.state.cardIsCurrent && !(card?.clockSet ?? true)) ...[
                     NoTimeNotice(feeder: feeder),
                     const SizedBox(height: Space.s3),
                   ],

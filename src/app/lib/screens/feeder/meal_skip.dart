@@ -5,7 +5,6 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
-import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
 
@@ -68,7 +67,8 @@ class _MealSkipButtonState extends State<MealSkipButton> {
 
   @override
   Widget build(BuildContext context) {
-    final bool online = widget.feeder.state.connection == Connection.online;
+    // The meal's standing is the card's: only this session's card can say.
+    final bool online = widget.feeder.state.cardIsCurrent;
     // The hold ends once the card shows the meal otherwise, or the session
     // drops: a new session reads the card afresh.
     if (!online || _took != (widget.meal.standing, widget.action)) _took = null;
