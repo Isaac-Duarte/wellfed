@@ -11,8 +11,9 @@ use wellfed_api::{
     CommandKind, Connection as Link, FeederId, Generation, KeyRemoval, PlayRequest, Removal,
     RevokeAttempt, TuneName, WifiChange,
 };
-use wellfed_mirror::{AlertHold, Mirror, MirrorEvent, hmac_sha256};
+use wellfed_mirror::{AlertHold, Mirror, MirrorEvent};
 use wellfed_model::{Op, Tune, Wifi};
+use wellfed_session::mac::hmac_sha256;
 
 use crate::feeders::commands::done;
 use crate::feeders::journal::Write;

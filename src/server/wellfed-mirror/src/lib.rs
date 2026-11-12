@@ -98,9 +98,6 @@ pub use kept::{
 pub use time::{Clock, Random, RandomFailed, SystemClock, SystemRandom};
 pub use wellfed_client::api::{Invite, InviteText};
 pub use wellfed_connect::update::Pace;
-/// HMAC-SHA256, for the service's keyed digests: the workspace's one
-/// implementation, which the service reaches through the mirror.
-pub use wellfed_session::mac::hmac_sha256;
 pub use zone::{Zone, ZoneError};
 
 /// A device request id: the feeder answers a repeated one from memory.
