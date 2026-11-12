@@ -30,15 +30,13 @@ use crate::catch_up::{self, ServerRoute, Target};
 /// How the phone is connected, as Android says.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PhoneNetwork {
-    /// On a Wi-Fi network this app may use now, by its addresses: what tells
-    /// one network from another with no location permission, which its name
-    /// would need.
-    Wifi {
-        gateway: String,
-        subnet: String,
-        dns: Vec<String>,
-        domains: Option<String>,
-    },
+    /// On a Wi-Fi network this app may use now, by its IPv4 gateway and
+    /// subnet: what tells one network from another with no location
+    /// permission, which its name would need. Its DNS servers and search
+    /// domains are left out: an ISP rotating its IPv6 prefix, or a router
+    /// handing out another resolver, would otherwise make home look like
+    /// another network, where a failed catch-up counts for nothing.
+    Wifi { gateway: String, subnet: String },
     /// Off Wi-Fi, or Android keeps this app off the network for now: a
     /// catch-up that fails here says nothing about the feeder.
     Elsewhere,
@@ -46,22 +44,10 @@ pub enum PhoneNetwork {
 
 impl PhoneNetwork {
     /// A digest of the network's addresses, so the file keeps none of them. A
-    /// lookalike with all the same addresses still passes.
+    /// lookalike with the same gateway and subnet still passes.
     fn fingerprint(&self) -> Result<Option<String>, BridgeError> {
         match self {
-            Self::Wifi {
-                gateway,
-                subnet,
-                dns,
-                domains,
-            } => {
-                // Android promises no order of the servers.
-                let mut dns = dns.clone();
-                dns.sort_unstable();
-                Ok(Some(sha256(&canonical_of(&(
-                    gateway, subnet, dns, domains,
-                ))?)))
-            }
+            Self::Wifi { gateway, subnet } => Ok(Some(sha256(&canonical_of(&(gateway, subnet))?))),
             Self::Elsewhere => Ok(None),
         }
     }

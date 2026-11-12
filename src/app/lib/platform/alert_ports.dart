@@ -63,14 +63,9 @@ abstract interface class AlertPorts {
 
 /// The Wi-Fi network as Kotlin described it, or none.
 PhoneNetwork phoneNetwork(Map<Object?, Object?>? found) => switch (found) {
-  {'gateway': final String gateway, 'subnet': final String subnet, 'dns': final List<Object?> dns} => PhoneNetwork.wifi(
+  {'gateway': final String gateway, 'subnet': final String subnet} => PhoneNetwork.wifi(
     gateway: gateway,
     subnet: subnet,
-    dns: dns.whereType<String>().toList(),
-    domains: switch (found['domains']) {
-      final String domains => domains,
-      _ => null,
-    },
   ),
   _ => const PhoneNetwork.elsewhere(),
 };

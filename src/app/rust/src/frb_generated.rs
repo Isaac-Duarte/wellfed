@@ -11235,13 +11235,9 @@ impl SseDecode for crate::api::alerts::PhoneNetwork {
             0 => {
                 let mut var_gateway = <String>::sse_decode(deserializer);
                 let mut var_subnet = <String>::sse_decode(deserializer);
-                let mut var_dns = <Vec<String>>::sse_decode(deserializer);
-                let mut var_domains = <Option<String>>::sse_decode(deserializer);
                 return crate::api::alerts::PhoneNetwork::Wifi {
                     gateway: var_gateway,
                     subnet: var_subnet,
-                    dns: var_dns,
-                    domains: var_domains,
                 };
             }
             1 => {
@@ -16902,17 +16898,10 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::model::Phase>>
 impl flutter_rust_bridge::IntoDart for crate::api::alerts::PhoneNetwork {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
-            crate::api::alerts::PhoneNetwork::Wifi {
-                gateway,
-                subnet,
-                dns,
-                domains,
-            } => [
+            crate::api::alerts::PhoneNetwork::Wifi { gateway, subnet } => [
                 0.into_dart(),
                 gateway.into_into_dart().into_dart(),
                 subnet.into_into_dart().into_dart(),
-                dns.into_into_dart().into_dart(),
-                domains.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::alerts::PhoneNetwork::Elsewhere => [1.into_dart()].into_dart(),
@@ -23041,17 +23030,10 @@ impl SseEncode for crate::api::alerts::PhoneNetwork {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         match self {
-            crate::api::alerts::PhoneNetwork::Wifi {
-                gateway,
-                subnet,
-                dns,
-                domains,
-            } => {
+            crate::api::alerts::PhoneNetwork::Wifi { gateway, subnet } => {
                 <i32>::sse_encode(0, serializer);
                 <String>::sse_encode(gateway, serializer);
                 <String>::sse_encode(subnet, serializer);
-                <Vec<String>>::sse_encode(dns, serializer);
-                <Option<String>>::sse_encode(domains, serializer);
             }
             crate::api::alerts::PhoneNetwork::Elsewhere => {
                 <i32>::sse_encode(1, serializer);

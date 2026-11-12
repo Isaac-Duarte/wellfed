@@ -45,8 +45,6 @@ fn home() -> PhoneNetwork {
     PhoneNetwork::Wifi {
         gateway: "192.168.1.1".into(),
         subnet: "192.168.1.0/24".into(),
-        dns: vec!["192.168.1.1".into()],
-        domains: None,
     }
 }
 
@@ -271,8 +269,6 @@ fn only_the_home_networks_last_try_counts_towards_unreachable() {
         let cafe = PhoneNetwork::Wifi {
             gateway: "10.0.0.1".into(),
             subnet: "10.0.0.0/24".into(),
-            dns: vec![],
-            domains: None,
         };
         for _ in 0..5 {
             let away = try_at(Attempt::Last { located: None }, cafe.clone()).await;

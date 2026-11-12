@@ -47,6 +47,21 @@ Future<void> _showSettings(
 }
 
 void main() {
+  test('home is told by its gateway and subnet, not by DNS that drifts under it', () {
+    final Map<Object?, Object?> home = {'gateway': '192.168.1.1', 'subnet': '192.168.1.0/24'};
+    expect(phoneNetwork(home), const PhoneNetwork.wifi(gateway: '192.168.1.1', subnet: '192.168.1.0/24'));
+    expect(
+      phoneNetwork({
+        ...home,
+        'dns': ['192.168.1.1', '2001:db8::1'],
+        'domains': 'lan',
+      }),
+      phoneNetwork(home),
+      reason: 'a rotated IPv6 resolver is still home',
+    );
+    expect(phoneNetwork(null), const PhoneNetwork.elsewhere());
+  });
+
   group("a feeder's alerts", () {
     test('load, check and dismiss reach the ports and list again', () async {
       final ports = FakeAlertPorts()..notices = [failedMeal(), foodLow()];

@@ -497,14 +497,15 @@ class NoticeView {
 sealed class PhoneNetwork with _$PhoneNetwork {
   const PhoneNetwork._();
 
-  /// On a Wi-Fi network this app may use now, by its addresses: what tells
-  /// one network from another with no location permission, which its name
-  /// would need.
+  /// On a Wi-Fi network this app may use now, by its IPv4 gateway and
+  /// subnet: what tells one network from another with no location
+  /// permission, which its name would need. Its DNS servers and search
+  /// domains are left out: an ISP rotating its IPv6 prefix, or a router
+  /// handing out another resolver, would otherwise make home look like
+  /// another network, where a failed catch-up counts for nothing.
   const factory PhoneNetwork.wifi({
     required String gateway,
     required String subnet,
-    required List<String> dns,
-    String? domains,
   }) = PhoneNetwork_Wifi;
 
   /// Off Wi-Fi, or Android keeps this app off the network for now: a

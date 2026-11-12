@@ -8932,8 +8932,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return PhoneNetwork_Wifi(
           gateway: dco_decode_String(raw[1]),
           subnet: dco_decode_String(raw[2]),
-          dns: dco_decode_list_String(raw[3]),
-          domains: dco_decode_opt_String(raw[4]),
         );
       case 1:
         return PhoneNetwork_Elsewhere();
@@ -14556,14 +14554,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 0:
         var var_gateway = sse_decode_String(deserializer);
         var var_subnet = sse_decode_String(deserializer);
-        var var_dns = sse_decode_list_String(deserializer);
-        var var_domains = sse_decode_opt_String(deserializer);
-        return PhoneNetwork_Wifi(
-          gateway: var_gateway,
-          subnet: var_subnet,
-          dns: var_dns,
-          domains: var_domains,
-        );
+        return PhoneNetwork_Wifi(gateway: var_gateway, subnet: var_subnet);
       case 1:
         return PhoneNetwork_Elsewhere();
       default:
@@ -20314,17 +20305,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_phone_network(PhoneNetwork self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
-      case PhoneNetwork_Wifi(
-        gateway: final gateway,
-        subnet: final subnet,
-        dns: final dns,
-        domains: final domains,
-      ):
+      case PhoneNetwork_Wifi(gateway: final gateway, subnet: final subnet):
         sse_encode_i_32(0, serializer);
         sse_encode_String(gateway, serializer);
         sse_encode_String(subnet, serializer);
-        sse_encode_list_String(dns, serializer);
-        sse_encode_opt_String(domains, serializer);
       case PhoneNetwork_Elsewhere():
         sse_encode_i_32(1, serializer);
     }

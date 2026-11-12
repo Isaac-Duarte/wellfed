@@ -32,8 +32,6 @@ fn home() -> PhoneNetwork {
     PhoneNetwork::Wifi {
         gateway: "192.168.1.1".into(),
         subnet: "192.168.1.0/24".into(),
-        dns: vec!["192.168.1.1".into()],
-        domains: None,
     }
 }
 
