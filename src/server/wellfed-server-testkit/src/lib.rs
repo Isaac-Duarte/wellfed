@@ -39,7 +39,7 @@ use wellfed_api::{
 };
 use wellfed_server_client::StatusCode;
 
-pub use server::TestServer;
+pub use server::{STREAM_CHECK, TestServer};
 pub use service::{TempStore, TestService, config};
 /// What a test sets to have the server read alerts, as [`config`] doesn't.
 pub use wellfed_service::AlertReads;

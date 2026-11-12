@@ -2,25 +2,30 @@
 //! [`TestService`].
 
 use std::net::{Ipv4Addr, SocketAddr};
-
 use std::sync::Arc;
-use wellfed_api::FeederId;
-use wellfed_server::{Hosts, TrustedProxies};
-use wellfed_server_client::{Client, Url};
+use std::time::Duration;
 
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use wellfed_api::FeederId;
+use wellfed_server::{Beside, Jobs, Serving, TrustedProxies};
+use wellfed_server_client::{Client, Url};
 use wellfed_service::{Clock, Config, Service};
 
 use crate::service::{TempStore, TestService, config};
 
-/// The server, serving until [`Self::stop`].
+/// How often an open stream checks its caller here: a test sees a stream
+/// end soon after its caller lost it.
+pub const STREAM_CHECK: Duration = Duration::from_millis(100);
+
+/// The server, serving until [`Self::stop`], as `wellfed-server` runs it
+/// ([`wellfed_server::serve`]), with the jobs off unless a test asks.
 #[derive(Debug)]
 pub struct TestServer {
     service: TestService,
     address: SocketAddr,
     shutdown: CancellationToken,
-    served: JoinHandle<()>,
+    served: JoinHandle<std::io::Result<()>>,
 }
 
 impl TestServer {
@@ -36,6 +41,14 @@ impl TestServer {
     /// The server with [`config`] on a fresh store, reading `clock`.
     pub async fn start_with_clock(clock: Arc<dyn Clock>) -> Self {
         Self::serve(TestService::start_with_clock(clock).await).await
+    }
+
+    /// [`Self::start_with_clock`], with the background jobs running on
+    /// `clock`, as the server runs them.
+    pub async fn start_with_jobs(clock: Arc<dyn Clock>) -> Self {
+        let service = TestService::start_with_clock(clock).await;
+        let address = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        Self::serve_at(service, TrustedProxies::default(), Jobs::Run, address).await
     }
 
     /// The server with `config` on a fresh store, reading `clock`.
@@ -62,38 +75,44 @@ impl TestServer {
     /// comes back where its clients knew it.
     pub async fn reopen_at(store: TempStore, config: Config, address: SocketAddr) -> Self {
         let service = TestService::open(store, config).await;
-        Self::serve_at(service, TrustedProxies::default(), address).await
+        Self::serve_at(service, TrustedProxies::default(), Jobs::Off, address).await
     }
 
     async fn serve_behind(service: TestService, proxies: TrustedProxies) -> Self {
-        Self::serve_at(service, proxies, SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await
+        let address = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        Self::serve_at(service, proxies, Jobs::Off, address).await
     }
 
-    async fn serve_at(service: TestService, proxies: TrustedProxies, address: SocketAddr) -> Self {
-        let shutdown = CancellationToken::new();
-        let app = wellfed_server::app(
-            service.service().clone(),
-            shutdown.clone(),
-            Hosts::default(),
-            proxies,
-        );
-
+    async fn serve_at(
+        service: TestService,
+        proxies: TrustedProxies,
+        jobs: Jobs,
+        address: SocketAddr,
+    ) -> Self {
         let listener = tokio::net::TcpListener::bind(address)
             .await
             .expect("bind the server's port");
         let address = listener
             .local_addr()
             .expect("a bound listener has an address");
+        let serving = Serving {
+            proxies,
+            stream_check: STREAM_CHECK,
+            ..Serving::default()
+        };
+        let beside = Beside {
+            jobs,
+            announce: None,
+        };
+        let shutdown = CancellationToken::new();
         let stop = shutdown.clone();
-        let served = tokio::spawn(async move {
-            axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .with_graceful_shutdown(async move { stop.cancelled().await })
-            .await
-            .expect("the server serves until shut down");
-        });
+        let served = tokio::spawn(wellfed_server::serve(
+            service.service().clone(),
+            listener,
+            serving,
+            beside,
+            async move { stop.cancelled().await },
+        ));
 
         Self {
             service,
@@ -132,16 +151,23 @@ impl TestServer {
 
     /// End the open streams, stop serving, and stop the service, keeping
     /// its database for [`Self::reopen_at`].
-    pub async fn stop_keeping(self) -> TempStore {
-        self.shutdown.cancel();
-        self.served.await.expect("the server's task ends cleanly");
+    pub async fn stop_keeping(mut self) -> TempStore {
+        self.end().await;
         self.service.stop().await
     }
 
     /// End the open streams, stop serving, and stop the service.
-    pub async fn stop(self) {
+    pub async fn stop(mut self) {
+        self.end().await;
+    }
+
+    /// Stop as the server does at a signal: serving ends, then what runs
+    /// beside it, then the service.
+    async fn end(&mut self) {
         self.shutdown.cancel();
-        self.served.await.expect("the server's task ends cleanly");
-        self.service.shutdown().await;
+        let served = (&mut self.served).await;
+        served
+            .expect("the server's task ends cleanly")
+            .expect("the server serves until it is stopped");
     }
 }

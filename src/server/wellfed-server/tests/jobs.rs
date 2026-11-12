@@ -1,7 +1,7 @@
 //! The background jobs' supervisor on a manual clock: each job runs at
 //! its time, one at a time, catching up once after downtime, and stops
-//! when the server does. Then the real jobs on the service: expiry ends
-//! sessions, and readiness shows each job's last run.
+//! when the server does. Then the real jobs beside the server, as it runs
+//! them: expiry ends sessions, and readiness shows each job's last run.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -374,10 +374,10 @@ fn bob() -> Credentials {
 #[tokio::test]
 async fn expiry_ends_an_expired_accounts_sessions_and_readiness_shows_the_runs() {
     let clock = ManualClock::new();
-    let server = TestServer::start_with_clock(Arc::new(clock.clone())).await;
+    let start = wellfed_service::Clock::now(&clock);
+    let server = TestServer::start_with_jobs(Arc::new(clock.clone())).await;
     let mut owner = server.client();
     owner.setup(&ada_setup()).await.unwrap();
-    let start = wellfed_service::Clock::now(&clock);
     let expires = start
         .checked_add(jiff::SignedDuration::from_mins(59))
         .unwrap();
@@ -397,8 +397,6 @@ async fn expiry_ends_an_expired_accounts_sessions_and_readiness_shows_the_runs()
     let service = server.service().clone();
     assert!(!service.job_scheduled(Job::ReleaseCheck), "fetching is off");
     assert!(service.job_scheduled(Job::Backup));
-    let cancel = CancellationToken::new();
-    let task = jobs::spawn(service.clone(), service.clock(), cancel.clone());
     until("the hourly jobs run at start", || async {
         service.job_runs().await.unwrap().len() == 2
     })
@@ -447,7 +445,6 @@ async fn expiry_ends_an_expired_accounts_sessions_and_readiness_shows_the_runs()
     };
     assert_eq!(status.jobs, [ran(Job::Rollups), ran(Job::Expiry)]);
 
-    cancel.cancel();
-    task.await.expect("the supervisor ends cleanly");
+    // The jobs stop with the server, before its service.
     server.stop().await;
 }

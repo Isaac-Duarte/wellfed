@@ -13,16 +13,15 @@
 //! `wellfed-server reset-owner` gives a locked-out owner a new temporary
 //! password, straight on the database, and prints it.
 
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use jiff::tz::TimeZone;
-use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 use wellfed_server::config::{BACKUPS, DATABASE, Overrides, RELEASES, STOCK, ServerConfig};
+use wellfed_server::{Announce, Beside, Hosts, Jobs, Serving, TrustedProxies};
 use wellfed_service::{
     AlertReads, Backups, Clock, Config, Diagnostics, ReleaseFeed, ReleaseKeys, ReleasesConfig,
     Service, StockConfig, StockPins, SystemClock, SystemRandom, Timing,
@@ -69,6 +68,13 @@ async fn main() -> Result<()> {
     let (key, _) = wellfed_server::key::sealing_key(&cli.data, &SystemRandom)?;
     let id = wellfed_server::server_id::server_id(&cli.data, &SystemRandom)?;
     let label = settings.label.as_str().to_owned();
+    // Bound before anything starts, so a taken port fails the start
+    // before any feeder is contacted, and nothing can fail between the
+    // service starting and its shutdown.
+    let listener = tokio::net::TcpListener::bind(settings.listen)
+        .await
+        .with_context(|| format!("listen on {}", settings.listen))?;
+    let webhook = settings.webhook.target()?;
     let store = open(&cli.data.join(DATABASE)).await?;
     let config = Config {
         key,
@@ -107,15 +113,12 @@ async fn main() -> Result<()> {
             dir: cli.data.join(BACKUPS),
             keep: settings.backups.keep,
         },
-        // Checked as the settings were read.
-        webhook: settings.webhook.target()?,
+        webhook,
     };
     let service = Service::start(store, config, Arc::new(SystemClock), Arc::new(SystemRandom))
         .await
         .context("start the feeder connections")?;
 
-    let shutdown = CancellationToken::new();
-    let hosts = wellfed_server::Hosts::new(settings.hosts);
     if !settings.trusted_proxies.is_empty() {
         let proxies: Vec<String> = settings
             .trusted_proxies
@@ -127,47 +130,25 @@ async fn main() -> Result<()> {
             proxies.join(", ")
         );
     }
-    let proxies = wellfed_server::TrustedProxies::new(settings.trusted_proxies);
-    let app = wellfed_server::app(service.clone(), shutdown.clone(), hosts, proxies);
-    let listener = tokio::net::TcpListener::bind(settings.listen)
+    let serving = Serving {
+        hosts: Hosts::new(settings.hosts),
+        proxies: TrustedProxies::new(settings.trusted_proxies),
+        ..Serving::default()
+    };
+    let beside = Beside {
+        jobs: Jobs::Run,
+        announce: Some(Announce {
+            advertise: settings.advertise,
+            label,
+            id,
+        }),
+    };
+    if let Ok(address) = listener.local_addr() {
+        tracing::info!("serving on http://{address}");
+    }
+    wellfed_server::serve(service, listener, serving, beside, stopped())
         .await
-        .with_context(|| format!("listen on {}", settings.listen))?;
-    tracing::info!("serving on http://{}", listener.local_addr()?);
-    let jobs = wellfed_server::jobs::spawn(service.clone(), service.clock(), shutdown.clone());
-    let advertised = wellfed_server::advertise::spawn(
-        settings.advertise,
-        &listener,
-        &label,
-        id,
-        shutdown.clone(),
-    );
-
-    let stop = shutdown.clone();
-    // Each request knows its connection's address: logins are limited by
-    // the client's.
-    let served = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(async move {
-        stopped().await;
-        stop.cancel();
-    })
-    .await;
-
-    // The jobs stop before the service, so none is cut off by the store
-    // closing under it.
-    shutdown.cancel();
-    if let Err(error) = jobs.await {
-        tracing::error!("the jobs' task: {error}");
-    }
-    if let Some(advertised) = advertised
-        && let Err(error) = advertised.await
-    {
-        tracing::error!("the mDNS announcement's task: {error}");
-    }
-    service.shutdown().await;
-    served.context("serve")
+        .context("serve")
 }
 
 /// Print a new password for the owner, on an existing database only.
