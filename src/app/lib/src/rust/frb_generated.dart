@@ -85,7 +85,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1874673895;
+  int get rustContentHash => 1941014399;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -674,6 +674,22 @@ abstract class RustLibApi extends BaseApi {
   String crateApiSetupSetupService();
 
   void crateApiStoreStoreNoticeRead({required String path});
+
+  UnknownEnd crateApiUpdateUnknownEnd({
+    String? served,
+    required int version,
+    required UpdateInfo update,
+    String? running,
+    required bool ready,
+  });
+
+  UpdateOffer crateApiUpdateUpdateOffer({
+    required String build,
+    required int version,
+    String? running,
+    required Skew skew,
+    UpdateInfo? update,
+  });
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ClientKey;
@@ -5547,6 +5563,84 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiStoreStoreNoticeReadConstMeta =>
       const TaskConstMeta(debugName: "store_notice_read", argNames: ["path"]);
 
+  @override
+  UnknownEnd crateApiUpdateUnknownEnd({
+    String? served,
+    required int version,
+    required UpdateInfo update,
+    String? running,
+    required bool ready,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(served, serializer);
+          sse_encode_u_32(version, serializer);
+          sse_encode_box_autoadd_update_info(update, serializer);
+          sse_encode_opt_String(running, serializer);
+          sse_encode_bool(ready, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 143,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unknown_end,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiUpdateUnknownEndConstMeta,
+        argValues: [served, version, update, running, ready],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiUpdateUnknownEndConstMeta => const TaskConstMeta(
+    debugName: "unknown_end",
+    argNames: ["served", "version", "update", "running", "ready"],
+  );
+
+  @override
+  UpdateOffer crateApiUpdateUpdateOffer({
+    required String build,
+    required int version,
+    String? running,
+    required Skew skew,
+    UpdateInfo? update,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(build, serializer);
+          sse_encode_u_32(version, serializer);
+          sse_encode_opt_String(running, serializer);
+          sse_encode_skew(skew, serializer);
+          sse_encode_opt_box_autoadd_update_info(update, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 144,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_update_offer,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiUpdateUpdateOfferConstMeta,
+        argValues: [build, version, running, skew, update],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiUpdateUpdateOfferConstMeta => const TaskConstMeta(
+    debugName: "update_offer",
+    argNames: ["build", "version", "running", "skew", "update"],
+  );
+
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ClientKey => wire
       .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerClientKey;
@@ -8635,6 +8729,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UpdateInfo? dco_decode_opt_box_autoadd_update_info(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_update_info(raw);
+  }
+
+  @protected
   WeighedIntake? dco_decode_opt_box_autoadd_weighed_intake(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_weighed_intake(raw);
@@ -10058,6 +10158,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UnknownEnd dco_decode_unknown_end(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return UnknownEnd.values[raw as int];
+  }
+
+  @protected
   UpdateEnd dco_decode_update_end(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
@@ -10082,6 +10188,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 8:
         return UpdateEnd_WentBack();
       case 9:
+        return UpdateEnd_WrongBuild();
+      case 10:
         return UpdateEnd_Failed(detail: dco_decode_String(raw[1]));
       default:
         throw Exception("unreachable");
@@ -10103,6 +10211,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       written: dco_decode_u_32(arr[5]),
       bank0: dco_decode_bank_0_check(arr[6]),
     );
+  }
+
+  @protected
+  UpdateOffer dco_decode_update_offer(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return UpdateOffer_Newer(
+          build: dco_decode_String(raw[1]),
+          version: dco_decode_u_32(raw[2]),
+        );
+      case 1:
+        return UpdateOffer_Current();
+      case 2:
+        return UpdateOffer_Older();
+      case 3:
+        return UpdateOffer_Blocked(reason: dco_decode_bank_0_blocked(raw[1]));
+      case 4:
+        return UpdateOffer_Unread();
+      default:
+        throw Exception("unreachable");
+    }
   }
 
   @protected
@@ -14175,6 +14305,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UpdateInfo? sse_decode_opt_box_autoadd_update_info(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_update_info(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   WeighedIntake? sse_decode_opt_box_autoadd_weighed_intake(
     SseDeserializer deserializer,
   ) {
@@ -15855,6 +15998,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UnknownEnd sse_decode_unknown_end(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return UnknownEnd.values[inner];
+  }
+
+  @protected
   UpdateEnd sse_decode_update_end(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -15881,6 +16031,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 8:
         return UpdateEnd_WentBack();
       case 9:
+        return UpdateEnd_WrongBuild();
+      case 10:
         var var_detail = sse_decode_String(deserializer);
         return UpdateEnd_Failed(detail: var_detail);
       default:
@@ -15907,6 +16059,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       written: var_written,
       bank0: var_bank0,
     );
+  }
+
+  @protected
+  UpdateOffer sse_decode_update_offer(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_build = sse_decode_String(deserializer);
+        var var_version = sse_decode_u_32(deserializer);
+        return UpdateOffer_Newer(build: var_build, version: var_version);
+      case 1:
+        return UpdateOffer_Current();
+      case 2:
+        return UpdateOffer_Older();
+      case 3:
+        var var_reason = sse_decode_bank_0_blocked(deserializer);
+        return UpdateOffer_Blocked(reason: var_reason);
+      case 4:
+        return UpdateOffer_Unread();
+      default:
+        throw UnimplementedError('');
+    }
   }
 
   @protected
@@ -19906,6 +20082,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_update_info(
+    UpdateInfo? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_update_info(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_weighed_intake(
     WeighedIntake? self,
     SseSerializer serializer,
@@ -21267,6 +21456,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_unknown_end(UnknownEnd self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_update_end(UpdateEnd self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
@@ -21290,8 +21485,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(7, serializer);
       case UpdateEnd_WentBack():
         sse_encode_i_32(8, serializer);
-      case UpdateEnd_Failed(detail: final detail):
+      case UpdateEnd_WrongBuild():
         sse_encode_i_32(9, serializer);
+      case UpdateEnd_Failed(detail: final detail):
+        sse_encode_i_32(10, serializer);
         sse_encode_String(detail, serializer);
     }
   }
@@ -21306,6 +21503,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.imageLen, serializer);
     sse_encode_u_32(self.written, serializer);
     sse_encode_bank_0_check(self.bank0, serializer);
+  }
+
+  @protected
+  void sse_encode_update_offer(UpdateOffer self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case UpdateOffer_Newer(build: final build, version: final version):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(build, serializer);
+        sse_encode_u_32(version, serializer);
+      case UpdateOffer_Current():
+        sse_encode_i_32(1, serializer);
+      case UpdateOffer_Older():
+        sse_encode_i_32(2, serializer);
+      case UpdateOffer_Blocked(reason: final reason):
+        sse_encode_i_32(3, serializer);
+        sse_encode_bank_0_blocked(reason, serializer);
+      case UpdateOffer_Unread():
+        sse_encode_i_32(4, serializer);
+    }
   }
 
   @protected

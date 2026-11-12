@@ -9,18 +9,19 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use flutter_rust_bridge::frb;
+use wellfed_client::offer::{self, Candidate, Confirmation, Gate, Offer, Restarted, confirmation};
 use wellfed_client::update::{Image, InstallError};
 use wellfed_connect::Connection;
 use wellfed_connect::update::Pushed;
 use wellfed_install::event::Event;
 use wellfed_install::push::push;
 use wellfed_install::{Discovery, Review};
-use wellfed_model::{Answer, Op, Readiness, Skew, UpdateView};
+use wellfed_model::{Answer, Bank0Blocked, Op, Readiness, Skew, UpdatePhase, UpdateView};
 use wellfed_session::hex;
 use wellfed_session::noise::Keypair;
 
 use crate::api::error::{BridgeError, ErrorKind};
-use crate::api::feeder::FeederRefusal;
+use crate::api::feeder::{FeederRefusal, UpdateInfo};
 use crate::api::install::{ImageCheck, InstallAnswer, InstallAsk, InstallUpdate};
 use crate::api::keys::ClientKey;
 use crate::api::model::UpdateStop;
@@ -82,6 +83,9 @@ pub enum UpdateEnd {
     /// The new version was activated, and the feeder runs bank 0's copy, which
     /// may be older than what it ran before the update: a trial that failed.
     WentBack,
+    /// The new version was activated, and bank 1 runs some other build: an
+    /// update from elsewhere came between.
+    WrongBuild,
     /// Something of this phone's before any offer: the image, or its address.
     Failed {
         detail: String,
@@ -279,14 +283,30 @@ async fn confirm(
     version: u32,
 ) -> UpdateEnd {
     tokio::time::sleep(RESTART).await;
+    after_restart(connect, served, version).await
+}
+
+/// [`confirm`] once the restart has begun: read until the shared rule
+/// settles the end, or [`CONFIRM_WAIT`] passes.
+async fn after_restart(
+    connect: &impl AsyncFn() -> Result<Connection, wellfed_install::Error>,
+    served: &str,
+    version: u32,
+) -> UpdateEnd {
     let deadline = Instant::now() + CONFIRM_WAIT;
     while Instant::now() < deadline {
         if let Some(read) = reading(connect).await {
-            if read.view.bank == 0 || !read.build.eq_ignore_ascii_case(served) {
-                return UpdateEnd::WentBack;
-            }
-            if read.view.min_version >= version || read.ready {
-                return UpdateEnd::Confirmed;
+            let restarted = Restarted {
+                build: &read.build,
+                bank: read.view.bank,
+                confirmed: read.view.min_version,
+                ready: read.ready,
+            };
+            match confirmation(served, version, restarted) {
+                Confirmation::Confirmed => return UpdateEnd::Confirmed,
+                Confirmation::FellBack => return UpdateEnd::WentBack,
+                Confirmation::WrongBuild => return UpdateEnd::WrongBuild,
+                Confirmation::Pending => {}
             }
         }
         tokio::time::sleep(POLL).await;
@@ -333,8 +353,107 @@ async fn reading(
     Some(Reading { build, view, ready })
 }
 
+/// Whether this app offers its image to a feeder.
+pub enum UpdateOffer {
+    /// Newer than what the feeder confirmed, and bank 0 allows it: offer
+    /// it. The only value an update starts from.
+    Newer { build: String, version: u32 },
+    /// The feeder runs this build already.
+    Current,
+    /// The feeder runs newer firmware than this app carries: update the app.
+    Older,
+    /// Bank 1 refuses every update until bank 0 checks itself in.
+    Blocked { reason: Bank0Blocked },
+    /// The feeder's update state is not read, or its read failed: not this
+    /// build and not ahead of this app, but nothing is offered until the
+    /// state says what it confirmed.
+    Unread,
+}
+
+/// Whether to offer the image `build` at `version` to a feeder that runs
+/// `running` (`None` before its status is read) at `skew`, with `update`
+/// its update state (`None` before it is read, or when its read failed):
+/// the rule every client shares.
+#[frb(sync)]
+pub fn update_offer(
+    build: String,
+    version: u32,
+    running: Option<String>,
+    skew: Skew,
+    update: Option<UpdateInfo>,
+) -> UpdateOffer {
+    let candidate = Candidate {
+        build: &build,
+        version,
+    };
+    let gate = update.map(|update| Gate {
+        confirmed: update.min_version,
+        bank0: update.bank0,
+    });
+    match offer::offer(candidate, running.as_deref(), skew, gate) {
+        Offer::Newer => UpdateOffer::Newer { build, version },
+        Offer::Current => UpdateOffer::Current,
+        Offer::Older => UpdateOffer::Older,
+        Offer::Blocked(reason) => UpdateOffer::Blocked { reason },
+        Offer::Unread => UpdateOffer::Unread,
+    }
+}
+
+/// What a read settles of an update whose end was unknown.
+pub enum UnknownEnd {
+    /// Nothing is under way and the new build does not run: the owner may
+    /// decide again.
+    Decide,
+    /// The new build runs and has confirmed itself.
+    Confirmed,
+    /// Still unknown: look again later.
+    Unknown,
+}
+
+/// What `update` (the update state a fresh read gave) and the feeder's
+/// current status settle of the update that sent `served` at `version`
+/// (`None` when this app does not know what it sent): `running` is the
+/// status's build and `ready` whether it can feed, `None` and `false` while
+/// the status is not current. Idle alone settles nothing: a bank 1 on trial
+/// reads idle too, before its verdict.
+#[frb(sync)]
+pub fn unknown_end(
+    served: Option<String>,
+    version: u32,
+    update: UpdateInfo,
+    running: Option<String>,
+    ready: bool,
+) -> UnknownEnd {
+    if update.phase != UpdatePhase::Idle {
+        return UnknownEnd::Unknown;
+    }
+    if update.bank == 0 {
+        return UnknownEnd::Decide;
+    }
+    let (Some(served), Some(running)) = (served, running) else {
+        return UnknownEnd::Unknown;
+    };
+
+    let restarted = Restarted {
+        build: &running,
+        bank: update.bank,
+        confirmed: update.min_version,
+        ready,
+    };
+    match confirmation(&served, version, restarted) {
+        Confirmation::Confirmed => UnknownEnd::Confirmed,
+        // Bank 0 answered above; another build is not this update's to
+        // settle.
+        Confirmation::FellBack | Confirmation::WrongBuild | Confirmation::Pending => {
+            UnknownEnd::Unknown
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use wellfed_model::Bank0Check;
+
     use super::*;
 
     /// The check comes before the first connection and the first ask.
@@ -357,5 +476,177 @@ mod tests {
         ));
 
         assert!(matches!(end, UpdateEnd::Failed { .. }));
+    }
+
+    /// An update state read idle on `bank`, with floor `floor` and bank 0's
+    /// check `bank0`.
+    fn state(bank: u8, floor: u32, bank0: Bank0Check) -> UpdateInfo {
+        UpdateInfo {
+            phase: UpdatePhase::Idle,
+            bank,
+            min_version: floor,
+            version: 0,
+            image_len: 0,
+            written: 0,
+            bank0,
+        }
+    }
+
+    /// The bridge hands Dart the shared rule's verdict, the build and version
+    /// with an offer, and decides what runs and the skew say before the
+    /// update state is read.
+    #[test]
+    fn the_offer_is_the_shared_rules() {
+        let offer = |running: Option<&str>, skew, update| {
+            update_offer("BB22".into(), 5, running.map(str::to_owned), skew, update)
+        };
+        let running = Some("aa11");
+
+        assert!(matches!(
+            offer(running, Skew::Same, Some(state(1, 4, Bank0Check::Match))),
+            UpdateOffer::Newer { build, version: 5 } if build == "BB22"
+        ));
+        assert!(matches!(
+            offer(
+                Some("bb22"),
+                Skew::Same,
+                Some(state(1, 4, Bank0Check::Match))
+            ),
+            UpdateOffer::Current
+        ));
+        assert!(matches!(
+            offer(running, Skew::Same, Some(state(1, 5, Bank0Check::Match))),
+            UpdateOffer::Older
+        ));
+        assert!(matches!(
+            offer(
+                running,
+                Skew::FeederAhead,
+                Some(state(1, 0, Bank0Check::Match))
+            ),
+            UpdateOffer::Older
+        ));
+        let unrecorded = Bank0Check::Blocked(Bank0Blocked::Unrecorded);
+        assert!(matches!(
+            offer(running, Skew::Same, Some(state(1, 4, unrecorded))),
+            UpdateOffer::Blocked {
+                reason: Bank0Blocked::Unrecorded
+            }
+        ));
+        assert!(matches!(
+            offer(running, Skew::Same, Some(state(1, 4, Bank0Check::Unknown))),
+            UpdateOffer::Blocked {
+                reason: Bank0Blocked::Unknown
+            }
+        ));
+
+        // Before the update state reads, or when its read failed.
+        assert!(matches!(
+            offer(running, Skew::Same, None),
+            UpdateOffer::Unread
+        ));
+        assert!(matches!(offer(None, Skew::Same, None), UpdateOffer::Unread));
+        assert!(matches!(
+            offer(Some("bb22"), Skew::Same, None),
+            UpdateOffer::Current
+        ));
+        assert!(matches!(
+            offer(running, Skew::FeederAhead, None),
+            UpdateOffer::Older
+        ));
+    }
+
+    /// An unknown end settles only on bank 0 idle (decide again), or on the
+    /// served build running on bank 1 with its version confirmed or ready to
+    /// feed; anything else stays unknown.
+    #[test]
+    fn an_unknown_end_settles_by_the_shared_rule() {
+        let end = |served: Option<&str>, update, running: Option<&str>, ready| {
+            unknown_end(
+                served.map(str::to_owned),
+                5,
+                update,
+                running.map(str::to_owned),
+                ready,
+            )
+        };
+        let served = Some("bb22");
+        let unchecked = Bank0Check::Unchecked;
+
+        let mut receiving = state(1, 5, unchecked);
+        receiving.phase = UpdatePhase::Receiving;
+        assert!(matches!(
+            end(served, receiving, served, true),
+            UnknownEnd::Unknown
+        ));
+        for known in [served, None] {
+            assert!(matches!(
+                end(known, state(0, 4, unchecked), None, false),
+                UnknownEnd::Decide
+            ));
+        }
+
+        assert!(matches!(
+            end(served, state(1, 5, unchecked), Some("BB22"), false),
+            UnknownEnd::Confirmed
+        ));
+        assert!(
+            matches!(
+                end(served, state(1, 4, unchecked), served, true),
+                UnknownEnd::Confirmed
+            ),
+            "ready, its floor below: a reinstall the feeder confirmed before"
+        );
+        assert!(matches!(
+            end(served, state(1, 4, unchecked), served, false),
+            UnknownEnd::Unknown
+        ));
+
+        assert!(
+            matches!(
+                end(served, state(1, 5, unchecked), Some("aa11"), true),
+                UnknownEnd::Unknown
+            ),
+            "another build is not this update's to settle"
+        );
+        assert!(matches!(
+            end(None, state(1, 5, unchecked), served, true),
+            UnknownEnd::Unknown
+        ));
+        assert!(matches!(
+            end(served, state(1, 5, unchecked), None, true),
+            UnknownEnd::Unknown
+        ));
+    }
+
+    /// Bank 1 running some other build than the one activated is not a
+    /// fallback: another update came between, and the end says so rather
+    /// than that the trial failed. The simulator's bank 1 runs its own build;
+    /// the same reads of that build confirm it.
+    #[test]
+    fn another_build_on_bank_1_ends_on_the_wrong_build() {
+        use wellfed_feeder_sim::banks::BANK1_BUILD;
+        use wellfed_feeder_sim::flash::Flash;
+        use wellfed_feeder_sim::harness::{Running, local};
+
+        const OWNER: [u8; 32] = [7; 32];
+        local(async {
+            let keys = Keypair::from_secret(OWNER);
+            let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
+            let (identity, address) = (sim.identity, sim.address);
+            let connect = async || -> Result<Connection, wellfed_install::Error> {
+                let ephemeral = wellfed_install::session::random()?;
+                Ok(Connection::open(&keys, identity, address, ephemeral).await?)
+            };
+
+            let another = hex::Lower(&[0xcd; 32]).to_string();
+            let end = after_restart(&connect, &another, 1).await;
+            assert!(matches!(end, UpdateEnd::WrongBuild));
+            let running = hex::Lower(&BANK1_BUILD).to_string();
+            let end = after_restart(&connect, &running, 0).await;
+            assert!(matches!(end, UpdateEnd::Confirmed));
+
+            sim.stop().await;
+        });
     }
 }

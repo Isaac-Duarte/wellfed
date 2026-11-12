@@ -14,8 +14,46 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'update.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `confirm`, `reading`, `try_update`, `update`
+// These functions are ignored because they are not marked as `pub`: `after_restart`, `confirm`, `reading`, `try_update`, `update`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Reading`
+
+/// Whether to offer the image `build` at `version` to a feeder that runs
+/// `running` (`None` before its status is read) at `skew`, with `update`
+/// its update state (`None` before it is read, or when its read failed):
+/// the rule every client shares.
+UpdateOffer updateOffer({
+  required String build,
+  required int version,
+  String? running,
+  required Skew skew,
+  UpdateInfo? update,
+}) => RustLib.instance.api.crateApiUpdateUpdateOffer(
+  build: build,
+  version: version,
+  running: running,
+  skew: skew,
+  update: update,
+);
+
+/// What `update` (the update state a fresh read gave) and the feeder's
+/// current status settle of the update that sent `served` at `version`
+/// (`None` when this app does not know what it sent): `running` is the
+/// status's build and `ready` whether it can feed, `None` and `false` while
+/// the status is not current. Idle alone settles nothing: a bank 1 on trial
+/// reads idle too, before its verdict.
+UnknownEnd unknownEnd({
+  String? served,
+  required int version,
+  required UpdateInfo update,
+  String? running,
+  required bool ready,
+}) => RustLib.instance.api.crateApiUpdateUnknownEnd(
+  served: served,
+  version: version,
+  update: update,
+  running: running,
+  ready: ready,
+);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FirmwareUpdate>>
 abstract class FirmwareUpdate implements RustOpaqueInterface {
@@ -37,6 +75,19 @@ abstract class FirmwareUpdate implements RustOpaqueInterface {
   /// Offer the image once, and report until the update ends. The stream
   /// closes with the run.
   Stream<UpdateProgress> run();
+}
+
+/// What a read settles of an update whose end was unknown.
+enum UnknownEnd {
+  /// Nothing is under way and the new build does not run: the owner may
+  /// decide again.
+  decide,
+
+  /// The new build runs and has confirmed itself.
+  confirmed,
+
+  /// Still unknown: look again later.
+  unknown,
 }
 
 @freezed
@@ -73,8 +124,39 @@ sealed class UpdateEnd with _$UpdateEnd {
   /// may be older than what it ran before the update: a trial that failed.
   const factory UpdateEnd.wentBack() = UpdateEnd_WentBack;
 
+  /// The new version was activated, and bank 1 runs some other build: an
+  /// update from elsewhere came between.
+  const factory UpdateEnd.wrongBuild() = UpdateEnd_WrongBuild;
+
   /// Something of this phone's before any offer: the image, or its address.
   const factory UpdateEnd.failed({required String detail}) = UpdateEnd_Failed;
+}
+
+@freezed
+sealed class UpdateOffer with _$UpdateOffer {
+  const UpdateOffer._();
+
+  /// Newer than what the feeder confirmed, and bank 0 allows it: offer
+  /// it. The only value an update starts from.
+  const factory UpdateOffer.newer({
+    required String build,
+    required int version,
+  }) = UpdateOffer_Newer;
+
+  /// The feeder runs this build already.
+  const factory UpdateOffer.current() = UpdateOffer_Current;
+
+  /// The feeder runs newer firmware than this app carries: update the app.
+  const factory UpdateOffer.older() = UpdateOffer_Older;
+
+  /// Bank 1 refuses every update until bank 0 checks itself in.
+  const factory UpdateOffer.blocked({required Bank0Blocked reason}) =
+      UpdateOffer_Blocked;
+
+  /// The feeder's update state is not read, or its read failed: not this
+  /// build and not ahead of this app, but nothing is offered until the
+  /// state says what it confirmed.
+  const factory UpdateOffer.unread() = UpdateOffer_Unread;
 }
 
 @freezed

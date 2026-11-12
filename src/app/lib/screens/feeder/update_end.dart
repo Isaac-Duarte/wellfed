@@ -51,6 +51,11 @@ import 'package:wellfed/widgets/replies.dart';
     "The new version didn't start properly, so it runs its other copy of "
         'Wellfed. That copy can feed, and may be older than the one it ran.',
   ),
+  UpdateEnd_WrongBuild() => (
+    '$name runs another version',
+    "It took the update, but now runs a version this app didn't send: another "
+        'update came in between. Check which version it runs before updating again.',
+  ),
   UpdateEnd_Failed(:final detail) => ("This $deviceName couldn't send it", 'Nothing was installed. $detail'),
 };
 

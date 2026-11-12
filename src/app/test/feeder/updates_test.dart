@@ -20,6 +20,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   int minVersion = 6,
   Skew skew = Skew.same,
   bool card = true,
+  bool stateRead = true,
 }) async {
   final book = FakeBook()..feeders = [kitchen];
   final ports = FakeFeederPorts()..image = image;
@@ -31,17 +32,19 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   if (card) ports.session.status(fakeCard(build: build));
   await tester.pump();
   ports.session.replies.add(
-    FeederReply.update(
-      update: UpdateInfo(
-        phase: UpdatePhase.idle,
-        bank: 1,
-        minVersion: minVersion,
-        version: 0,
-        imageLen: 0,
-        written: 0,
-        bank0: bank0,
-      ),
-    ),
+    stateRead
+        ? FeederReply.update(
+            update: UpdateInfo(
+              phase: UpdatePhase.idle,
+              bank: 1,
+              minVersion: minVersion,
+              version: 0,
+              imageLen: 0,
+              written: 0,
+              bank0: bank0,
+            ),
+          )
+        : const FeederReply.unanswered(),
   );
   await showTab(tester, UpdatesScreen(feeder: feeder));
   ports.session.requests.clear();
@@ -87,6 +90,33 @@ void main() {
     await _show(tester, build: _newBuild);
     expect(find.textContaining('runs the version'), findsOneWidget);
     expect(find.text('Install on Kitchen'), findsNothing);
+  });
+
+  // With no update state, what runs and the skew still say the feeder is
+  // current or ahead; anything else shows the image, and offers it once the
+  // state says what the feeder confirmed.
+  group('before the update state answers', () {
+    testWidgets('the running build is up to date', (tester) async {
+      await _show(tester, build: _newBuild, stateRead: false);
+      expect(find.textContaining('runs the version'), findsOneWidget);
+      expect(find.text('Install on Kitchen'), findsNothing);
+    });
+
+    testWidgets('a feeder on a newer API revision is told to update the app', (tester) async {
+      await _show(tester, skew: Skew.feederAhead, stateRead: false);
+      expect(find.textContaining('newer firmware than this app carries'), findsOneWidget);
+      expect(find.text('Install on Kitchen'), findsNothing);
+    });
+
+    testWidgets('another build shows the image, and offers nothing yet', (tester) async {
+      await _show(tester, stateRead: false);
+      expect(find.text('7'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Install on Kitchen'), 200);
+      final FilledButton install = tester.widget(
+        find.ancestor(of: find.text('Install on Kitchen'), matching: find.byType(FilledButton)),
+      );
+      expect(install.onPressed, isNull, reason: 'nothing says what it confirmed');
+    });
   });
 
   testWidgets('one press sends once and shows its progress', (tester) async {
@@ -212,6 +242,42 @@ void main() {
     expect(find.text('7'), findsOneWidget, reason: 'the floor, read again');
   });
 
+  // A reinstall of a build the feeder confirmed before skips the trial and
+  // leaves the floor below the version. A trial build takes no feed until it
+  // confirms, so the served build ready to feed has kept the update, as the
+  // installer's confirm step reads it; one not ready stays unknown.
+  testWidgets('the served build ready to feed has kept the update, its floor below', (tester) async {
+    final (FakeFeederPorts ports, FakeSession session) = await _show(tester);
+    await tapIn(tester, find.text('Install on Kitchen'));
+    ports.progress.add(const UpdateProgress.ended(end: UpdateEnd.unconfirmed()));
+    await settle(tester);
+    const below = FeederReply.update(
+      update: UpdateInfo(
+        phase: UpdatePhase.idle,
+        bank: 1,
+        minVersion: 6,
+        version: 0,
+        imageLen: 0,
+        written: 0,
+        bank0: Bank0Check.unchecked(),
+      ),
+    );
+
+    session.status(fakeCard(build: _newBuild, ready: false));
+    await settle(tester);
+    session.replies.add(below);
+    await tapIn(tester, find.text('Look again'));
+    expect(find.textContaining("hasn't settled"), findsOneWidget);
+    expect(find.text('Updated'), findsNothing);
+
+    session.status(fakeCard(build: _newBuild));
+    await settle(tester);
+    session.replies.add(below);
+    await tapIn(tester, find.text('Look again'));
+    expect(find.text('Updated'), findsOneWidget);
+    expect(ports.pushes, hasLength(1), reason: 'settled by reading, never sent again');
+  });
+
   testWidgets('an offer held by an earlier stop offers its cancel, once', (tester) async {
     final (FakeFeederPorts ports, FakeSession session) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
@@ -267,6 +333,30 @@ void main() {
     expect(install.onPressed, isNull, reason: 'the feeder would refuse it');
   });
 
+  // The reason is the shared rule's: a state a newer build added blocks too.
+  testWidgets('a recovery copy in a state this app cannot name blocks updates', (tester) async {
+    await _show(tester, bank0: const Bank0Check.unknown());
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+    expect(find.textContaining('Update this app to read it'), findsOneWidget);
+  });
+
+  // Bank 1 checks bank 0 once a boot, so a broken recovery copy is shown
+  // whatever is offered: on this build, below the floor, or with no image.
+  testWidgets('a broken recovery copy shows on a feeder already running this build', (tester) async {
+    await _show(tester, build: _newBuild, bank0: const Bank0Check.blocked(Bank0Blocked.unrecorded));
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+  });
+
+  testWidgets('a broken recovery copy shows when the image is not newer', (tester) async {
+    await _show(tester, minVersion: 7, bank0: const Bank0Check.blocked(Bank0Blocked.unrecorded));
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+  });
+
+  testWidgets('a broken recovery copy shows when the app carries no image', (tester) async {
+    await _show(tester, image: const ImageCheck.absent(), bank0: const Bank0Check.blocked(Bank0Blocked.unrecorded));
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+  });
+
   testWidgets('a recovery copy that matches its record blocks nothing', (tester) async {
     await _show(tester, bank0: const Bank0Check.match());
     expect(find.textContaining('Updates are blocked'), findsNothing);
@@ -318,6 +408,15 @@ void main() {
       expect(find.textContaining('other copy of Wellfed'), findsOneWidget);
       expect(find.textContaining('still runs'), findsNothing);
       expect(find.text('Running now'), findsOneWidget);
+    });
+
+    // Bank 1 running some other build is not a fallback: the words must not
+    // say the trial failed.
+    testWidgets('another build on bank 1 says so, not that it went back', (tester) async {
+      await end(tester, const UpdateEnd.wrongBuild());
+      expect(find.text('Kitchen runs another version'), findsOneWidget);
+      expect(find.textContaining("didn't send"), findsOneWidget);
+      expect(find.textContaining("didn't start properly"), findsNothing);
     });
 
     testWidgets('a run that loses its stream is uncertain', (tester) async {

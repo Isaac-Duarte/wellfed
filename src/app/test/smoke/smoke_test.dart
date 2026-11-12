@@ -17,6 +17,8 @@ import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/router.dart' as settled_feed show feedDueSeconds, settledFeed;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/src/rust/api/update.dart';
+import 'package:wellfed/src/rust/api/update.dart' as update_rules show unknownEnd, updateOffer;
 import 'package:wellfed/src/rust/frb_generated.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
@@ -160,6 +162,24 @@ class _Ports implements FeederPorts {
   Future<ImageCheck> updateImage() => throw UnimplementedError();
 
   @override
+  UpdateOffer updateOffer({
+    required String build,
+    required int version,
+    String? running,
+    required Skew skew,
+    UpdateInfo? update,
+  }) => update_rules.updateOffer(build: build, version: version, running: running, skew: skew, update: update);
+
+  @override
+  UnknownEnd unknownEnd({
+    String? served,
+    required int version,
+    required UpdateInfo update,
+    String? running,
+    required bool ready,
+  }) => update_rules.unknownEnd(served: served, version: version, update: update, running: running, ready: ready);
+
+  @override
   UpdatePush pushUpdate(String identity, String? address) => throw UnimplementedError();
 
   @override
@@ -227,6 +247,64 @@ void main() {
     feeder.dispose();
     await sim.stop();
     await pins.delete(recursive: true);
+  });
+
+  // The screens' tests decide offers with a Dart copy of the rules; it must
+  // answer as the app's Rust does, case by case.
+  test("the update rules the screens are tested with are the app's", skip: absent, () {
+    final real = _Ports(owner, PathRouter(pinsPath: '${pins.path}/rules.json'));
+    final fake = FakeFeederPorts();
+    UpdateInfo state({int bank = 1, int floor = 4, Bank0Check bank0 = const Bank0Check.match(), bool idle = true}) =>
+        UpdateInfo(
+          phase: idle ? UpdatePhase.idle : UpdatePhase.receiving,
+          bank: bank,
+          minVersion: floor,
+          version: 0,
+          imageLen: 0,
+          written: 0,
+          bank0: bank0,
+        );
+    final List<UpdateInfo> states = [
+      for (final int bank in [0, 1])
+        for (final int floor in [4, 5, 6])
+          for (final Bank0Check bank0 in const [
+            Bank0Check.unchecked(),
+            Bank0Check.match(),
+            Bank0Check.blocked(Bank0Blocked.unrecorded),
+            Bank0Check.unknown(),
+          ])
+            for (final bool idle in [true, false]) state(bank: bank, floor: floor, bank0: bank0, idle: idle),
+    ];
+    // An update state not read yet, or whose read failed.
+    for (final String? running in [null, 'BB22', 'aa11']) {
+      for (final Skew skew in Skew.values) {
+        expect(
+          fake.updateOffer(build: 'bb22', version: 5, running: running, skew: skew),
+          real.updateOffer(build: 'bb22', version: 5, running: running, skew: skew),
+          reason: 'unread $running $skew',
+        );
+      }
+    }
+    for (final UpdateInfo update in states) {
+      for (final String? running in [null, 'BB22', 'aa11']) {
+        for (final Skew skew in Skew.values) {
+          expect(
+            fake.updateOffer(build: 'bb22', version: 5, running: running, skew: skew, update: update),
+            real.updateOffer(build: 'bb22', version: 5, running: running, skew: skew, update: update),
+            reason: '$update $running $skew',
+          );
+        }
+        for (final String? served in [null, 'bb22']) {
+          for (final bool ready in [false, true]) {
+            expect(
+              fake.unknownEnd(served: served, version: 5, update: update, running: running, ready: ready),
+              real.unknownEnd(served: served, version: 5, update: update, running: running, ready: ready),
+              reason: '$update $served $running $ready',
+            );
+          }
+        }
+      }
+    }
   });
 
   test('a session opens and reads the card', skip: absent, () {

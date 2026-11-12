@@ -72,6 +72,7 @@ pub use frame::{FrameError, SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
 
 use wellfed_model::{Client, ClientRole, Readiness};
 
+use crate::offer::{Confirmation, Restarted, confirmation};
 use crate::update::InstallError as UpdateError;
 use crate::update_key::{EnrollError, Enrolled};
 
@@ -878,22 +879,33 @@ impl Install {
         if self.stage != Stage::AwaitConfirm {
             return;
         }
-        let reported = status.build.to_ascii_lowercase();
-        match status.bank {
-            0 => self.stage = Stage::Failed(InstallError::FellBack),
-            _ if reported != self.build => {
-                self.stage = Stage::Failed(InstallError::WrongPromotion { reported });
-            }
-            _ => match self.version {
-                Some(version)
-                    if confirmed_version >= version || readiness == Some(Readiness::Ready) =>
-                {
-                    self.stage = Stage::Done;
-                }
-                Some(_) => {}
-                None => self.stage = Stage::Failed(InstallError::PromotionUnknown),
-            },
-        }
+        let restarted = Restarted {
+            build: status.build,
+            bank: status.bank,
+            confirmed: confirmed_version,
+            ready: readiness == Some(Readiness::Ready),
+        };
+        let wrong = || InstallError::WrongPromotion {
+            reported: status.build.to_ascii_lowercase(),
+        };
+        // A run that never chose a version cannot tell its build confirmed,
+        // so it fails; the bank and the build, which need no version, say
+        // whether it fell back or another build runs.
+        let Some(version) = self.version else {
+            self.stage = Stage::Failed(match confirmation(&self.build, 0, restarted) {
+                Confirmation::FellBack => InstallError::FellBack,
+                Confirmation::WrongBuild => wrong(),
+                Confirmation::Confirmed | Confirmation::Pending => InstallError::PromotionUnknown,
+            });
+            return;
+        };
+
+        self.stage = match confirmation(&self.build, version, restarted) {
+            Confirmation::FellBack => Stage::Failed(InstallError::FellBack),
+            Confirmation::WrongBuild => Stage::Failed(wrong()),
+            Confirmation::Confirmed => Stage::Done,
+            Confirmation::Pending => return,
+        };
     }
 
     /// The caller's bound on the current wait ran out.

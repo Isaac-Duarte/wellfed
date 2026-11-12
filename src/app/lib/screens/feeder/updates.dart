@@ -7,6 +7,8 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/src/rust/api/update.dart'
+    show UpdateOffer, UpdateOffer_Current, UpdateOffer_Newer, UpdateOffer_Older;
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart' show Connection;
 import 'package:wellfed/state/update/update.dart';
@@ -109,22 +111,24 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                     ImageCheck_Ready(:final String build, :final int version) => (build, version),
                     _ => null,
                   };
-                  final bool current = offered != null && build != null && offered.$1 == build;
-                  // Never a downgrade: this app sends no downgrade statement,
-                  // so an image at or below the version the feeder confirmed,
-                  // or any image for a feeder on a newer API revision, is not
-                  // offered. The feeder is newer than this app, which is the
-                  // side to update.
-                  final bool older =
-                      !current &&
-                      offered != null &&
-                      (_feeder.state.skew == Skew.feederAhead || (state != null && offered.$2 <= state.minVersion));
-                  // The feeder refuses every update until its recovery copy
-                  // checks itself in, so none is offered meanwhile.
+                  // What to offer is the rule every client shares, decided in
+                  // Rust: never the build it runs, never an image at or below
+                  // what it confirmed or to a feeder ahead of this app, and
+                  // nothing while bank 0 blocks updates. Before the update
+                  // state is read, or when its read failed, what runs and the
+                  // skew still decide the first two.
+                  final UpdateOffer? verdict = offered != null
+                      ? _flow.offer(build: offered.$1, version: offered.$2, update: state)
+                      : null;
+                  final bool current = verdict is UpdateOffer_Current;
+                  final bool older = verdict is UpdateOffer_Older;
+                  // The recovery copy's state, shown whatever is offered: bank 1
+                  // checks bank 0 once a boot, so a block is a standing fact
+                  // about the feeder's fallback (a feeder on this build with a
+                  // broken recovery copy has none if a later trial fails), not
+                  // only a reason this image is refused.
                   final Bank0Blocked? blocked = switch (state?.bank0) {
                     Bank0Check_Blocked(:final Bank0Blocked field0) => field0,
-                    // A state a newer build added: nothing says bank 0 may
-                    // take an update, so none is offered.
                     Bank0Check_Unknown() => Bank0Blocked.unknown,
                     _ => null,
                   };
@@ -133,13 +137,10 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                   // is all it takes, and what this screen is for.
                   final bool legacy =
                       _feeder.state.skew == Skew.legacy && _feeder.state.connection == Connection.online;
-                  final bool can =
-                      offered != null &&
-                      !current &&
-                      !older &&
-                      state != null &&
-                      blocked == null &&
-                      (_feeder.state.cardIsCurrent || legacy);
+                  final UpdateOffer_Newer? newer = switch (verdict) {
+                    final UpdateOffer_Newer newer when _feeder.state.cardIsCurrent || legacy => newer,
+                    _ => null,
+                  };
 
                   return ListView(
                     padding: const EdgeInsets.all(Space.s4),
@@ -200,7 +201,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                         ),
                         const SizedBox(height: Space.s4),
                         FilledButton(
-                          onPressed: can ? () => unawaited(_flow.start(build: offered.$1, version: offered.$2)) : null,
+                          onPressed: newer != null ? () => unawaited(_flow.start(newer)) : null,
                           child: Text('Install on $name'),
                         ),
                       ],
