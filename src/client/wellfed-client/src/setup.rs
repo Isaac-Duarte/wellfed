@@ -19,7 +19,7 @@
 //! Every message travels in one length-prefixed frame on the setup
 //! characteristic ([`frame`], [`Deframer`]); notifications may split a frame.
 
-use wellfed_core::ble_setup::{self, PREFIX};
+use wellfed_core::ble_setup;
 use wellfed_proto::setup::{Answer, LABEL_MAX, PROLOGUE, Reply, Request, Wifi};
 use wellfed_session::noise::{self, Handshake, Keypair, Pattern, Role, Transport};
 use wellfed_session::setup_code::{self, Button, Code, Exchange, Round, Side};
@@ -330,28 +330,28 @@ pub fn frame(message: &[u8]) -> Result<Vec<u8>, Error> {
 }
 
 /// Reassembles frames from notifications, which may split or join them.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Deframer {
-    buffer: Vec<u8>,
+    frames: crate::frames::Frames,
+}
+
+impl Default for Deframer {
+    fn default() -> Self {
+        Self {
+            frames: crate::frames::Frames::new(ble_setup::MAX_MESSAGE),
+        }
+    }
 }
 
 impl Deframer {
     pub fn push(&mut self, bytes: &[u8]) {
-        self.buffer.extend_from_slice(bytes);
+        self.frames.push(bytes);
     }
 
     /// The next whole message, if one has arrived.
     pub fn next_message(&mut self) -> Result<Option<Vec<u8>>, Error> {
-        let Some(prefix) = self.buffer.first_chunk::<PREFIX>() else {
-            return Ok(None);
-        };
-        let announced = usize::from(u16::from_le_bytes(*prefix));
-        let len = ble_setup::parse_prefix(*prefix).ok_or(Error::TooLong(announced))?;
-        if self.buffer.len() < PREFIX + len {
-            return Ok(None);
-        }
-        let message = self.buffer[PREFIX..PREFIX + len].to_vec();
-        self.buffer.drain(..PREFIX + len);
-        Ok(Some(message))
+        self.frames
+            .next()
+            .map_err(|crate::frames::TooLong(announced)| Error::TooLong(announced))
     }
 }
