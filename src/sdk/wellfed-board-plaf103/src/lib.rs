@@ -219,27 +219,25 @@ pub mod storage {
         nth_cleared(&FACTORY_KEPT, CLIENTS, index)
     }
 
-    /// What the handover from stock keeps: everything a first install
-    /// keeps, and what it clears in steps of its own (the clients, keeping
-    /// the identity; the update store's floor; the boot confirmation; the
-    /// handover's own mark). It erases every other sector in region order:
-    /// the Wi-Fi credentials, the plans and whatever a later build adds,
-    /// for the same reason as [`FACTORY_KEPT`].
-    pub const HANDOVER_KEPT: [Sectors; 14] = [
+    /// What the handover from stock keeps: what belongs to the feeder
+    /// rather than its owner (the feed journal, the generator's seed, the
+    /// lifetime statistics, the portion calibration), and what it clears in
+    /// steps of its own (the clients, keeping the identity; the update
+    /// store's floor; the boot confirmation; the handover's own mark). The
+    /// feeder may have changed hands while it ran stock, so it erases every
+    /// other sector in region order, the previous owner's data among them:
+    /// the settings, Wi-Fi, plans, history, traces, time zone and meal-call
+    /// recording, and whatever a later build adds, for the same reason as
+    /// [`FACTORY_KEPT`].
+    pub const HANDOVER_KEPT: [Sectors; 8] = [
         JOURNAL,
-        SETTINGS,
         CONFIRM,
         SEED,
         CLIENTS,
-        EVENTS,
         UPDATE,
-        TIME,
-        TRACES,
         STATS,
         CALIBRATION,
         RESET,
-        CALL,
-        FEEDER_SETTINGS,
     ];
 
     /// The sectors the handover erases.

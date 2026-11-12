@@ -104,18 +104,35 @@ fn the_factory_reset_clears_every_sector_it_does_not_keep() {
     );
 }
 
-/// The handover from stock erases the Wi-Fi, the plans and the uplink
-/// store's sectors, in region order, and nothing it keeps or clears in a
-/// step of its own.
+/// The handover from stock erases every store of the previous owner's, in
+/// region order, and nothing it keeps or clears in a step of its own.
 #[test]
 fn the_handover_clears_every_sector_it_does_not_keep() {
     let cleared: Vec<u32> = (0..storage::HANDOVER_CLEARED_SECTORS)
         .map(|index| storage::handover_cleared(index).unwrap())
         .collect();
-    assert_eq!(cleared, [5, 6, 11, 12, 37, 38, 39]);
-    assert!(
-        storage::HANDOVER_KEPT.contains(&storage::FEEDER_SETTINGS),
-        "the feeder's settings stay with the device's"
+    let mut expected = Vec::new();
+    for owners in [
+        storage::SETTINGS,
+        storage::NET,
+        storage::PLANS,
+        storage::EVENTS,
+        storage::TIME,
+        storage::TRACES,
+        storage::UPLINK,
+        storage::CALL,
+        storage::FEEDER_SETTINGS,
+    ] {
+        expected.extend(owners.first..owners.first + owners.count);
+    }
+    expected.sort_unstable();
+    assert_eq!(cleared, expected);
+    assert_eq!(
+        cleared,
+        [
+            2, 3, 5, 6, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 27, 28, 29, 30, 31,
+            37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49
+        ]
     );
     assert_eq!(
         storage::handover_cleared(storage::HANDOVER_CLEARED_SECTORS),

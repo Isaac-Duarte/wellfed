@@ -15,9 +15,9 @@
 //! time through the mapped flash: a read takes no lease. The settings
 //! writer changes those sectors only while no call plays
 //! ([`call_write_begin`]), so a call never reads a clip being rewritten.
-//! A factory reset erases them without that hold: it runs on a boot that
-//! starts with no clip ([`publish_call`]) and publishes none until it is
-//! done.
+//! A factory reset and the handover from stock erase them without that
+//! hold: each runs on a boot that starts with no clip ([`publish_call`])
+//! and publishes none until it is done.
 //!
 //! Nothing here touches the motor or the emitters or writes flash, and the
 //! device API only reaches [`request`] and [`request_call`], through the

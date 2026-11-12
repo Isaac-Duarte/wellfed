@@ -676,8 +676,10 @@ impl<F: FlashOps> Product<F> for FeederStores<F> {
     }
 
     fn reopen_handed_over(&mut self) {
+        self.settings = FeederSettingsStore::default();
         self.plans = PlansStore::default();
-        self.plans.open(Slots::new());
+        self.call = CallStore::default();
+        self.open_cleared();
     }
 
     fn publish(&self, armed: bool) {
