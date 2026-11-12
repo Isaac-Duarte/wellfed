@@ -111,7 +111,7 @@ const STRAP_HOLD: Duration = Duration::from_secs(2);
 pub(crate) async fn recover() -> ! {
     loop {
         let press = PRESS.wait().await;
-        // Holding the lock makes host relay commands wait for the sequence.
+        // Holding the lock refuses host switches for the whole sequence.
         let mut relays = outputs::lock().await;
         relays.cut_power();
         Timer::after(OFF).await;

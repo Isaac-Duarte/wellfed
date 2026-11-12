@@ -110,7 +110,7 @@ At power-up, and after any reset including the 2 s watchdog, all four channels a
 | **RECOVER, short press** | A plain feeder power cycle |
 | **RESET / BOOT** | RP2040 reset and BOOTSEL |
 
-While a RECOVER sequence runs, relay commands from the host wait until it finishes.
+While a RECOVER sequence runs, a host command that switches a relay (`AT+CHn=0|1`, `AT+BOOTSEL`) is answered `ERROR` at once and never runs later; queries answer with the current state.
 
 ## Pin map
 

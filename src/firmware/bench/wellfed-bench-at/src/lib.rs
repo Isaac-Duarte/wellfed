@@ -95,6 +95,31 @@ pub enum Command {
     Bootsel,
 }
 
+impl Command {
+    /// Whether the command switches an output: it needs the relays, which a
+    /// RECOVER sequence holds for seconds. The host waits 1 s for a reply
+    /// and takes none as a refusal, so such a command is refused at once
+    /// while they are held ([`refused`]), never queued to run after the
+    /// host has given up. Every other command reads the last state and
+    /// never waits.
+    pub fn switches(self) -> bool {
+        matches!(self, Self::Set(..) | Self::Bootsel)
+    }
+}
+
+/// Whether the board's own sequence holds the relays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Relays {
+    Free,
+    /// A RECOVER sequence runs.
+    Held,
+}
+
+/// Whether `command` is answered [`ERROR`] at once instead of run.
+pub fn refused(command: Command, relays: Relays) -> bool {
+    relays == Relays::Held && command.switches()
+}
+
 /// Parses one line without its terminator. Case-insensitive, surrounding
 /// whitespace and NULs ignored.
 pub fn parse(line: &[u8]) -> Option<Command> {
@@ -297,6 +322,26 @@ fn source_name(source: Source) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// While RECOVER holds the relays, a switch is refused and a query is
+    /// answered; with them free, nothing is refused.
+    #[test]
+    fn only_a_switch_is_refused_while_recover_holds_the_relays() {
+        let switches = [Command::Set(Channel::Power, true), Command::Bootsel];
+        let queries = [
+            Command::Ping,
+            Command::Get(Channel::Power),
+            Command::Status,
+            Command::Alive,
+        ];
+        for command in switches {
+            assert!(refused(command, Relays::Held), "{command:?}");
+            assert!(!refused(command, Relays::Free), "{command:?}");
+        }
+        for command in queries {
+            assert!(!refused(command, Relays::Held), "{command:?}");
+        }
+    }
 
     fn lines(input: &[u8]) -> Vec<Line> {
         let mut buf = LineBuffer::default();
