@@ -356,3 +356,37 @@ fn a_reread_that_reads_nothing_after_a_failed_save_fails_closed() {
     );
     assert_eq!(keys(&mut f), [[1; 32]]);
 }
+
+/// A re-read after a failed save that finds an older table than the store
+/// held is a misread too: taken as read, it would serve a client a revocation
+/// had removed and leave the store open to a save over the unit holding the
+/// current table. The clients fail closed instead.
+#[test]
+fn a_reread_that_reads_an_older_table_after_a_failed_save_fails_closed() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    s.enroll([1; 32], label("a"), Role::Owner).unwrap();
+    s.enroll([2; 32], label("b"), Role::Member).unwrap();
+    s.revoke(&[2; 32]).unwrap();
+    let held = s.slot;
+
+    // The erase of the other unit fails, and the re-read misses the unit
+    // holding the revocation, so it finds the table that still has [2; 32].
+    f.budget = 0;
+    f.misread_unit = Some(held);
+    assert_eq!(
+        s.enroll([3; 32], label("c"), Role::Member),
+        Err(ClientError::Io)
+    );
+    assert_eq!(s.status, ClientStatus::Io);
+    assert_eq!(s.clients().count(), 0);
+    assert!(!s.writable());
+
+    f.budget = -1;
+    f.misread_unit = None;
+    assert_eq!(
+        s.enroll([4; 32], label("d"), Role::Member),
+        Err(ClientError::NotWritable)
+    );
+    assert_eq!(keys(&mut f), [[1; 32]]);
+}

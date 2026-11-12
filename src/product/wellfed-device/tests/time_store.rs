@@ -213,3 +213,29 @@ fn a_reread_that_reads_nothing_after_a_failed_save_is_a_misread() {
     assert!(!s.save(&settings(3)), "closed to writes");
     assert_eq!(open(&mut f).settings, settings(1));
 }
+
+/// A re-read after a failed save that finds an older record than the store
+/// held is a misread too: the settings stay, marked `Io`, and the next save
+/// is refused rather than erase the unit still holding them.
+#[test]
+fn a_reread_that_reads_an_older_record_after_a_failed_save_is_a_misread() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&settings(1)) && s.save(&settings(2)));
+    let held = s.slot;
+
+    // The erase of the other unit fails, and the re-read misses the unit
+    // holding generation 2, so it finds generation 1 alone.
+    f.budget = 0;
+    f.misread_unit = Some(held);
+    assert!(!s.save(&settings(3)));
+    assert_eq!(
+        (s.status, s.slot, s.generation, s.settings),
+        (TimeStatus::Io, held, 2, settings(2))
+    );
+
+    f.budget = -1;
+    f.misread_unit = None;
+    assert!(!s.save(&settings(4)), "closed to writes");
+    assert_eq!(open(&mut f).settings, settings(2));
+}

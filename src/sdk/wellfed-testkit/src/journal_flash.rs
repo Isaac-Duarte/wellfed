@@ -62,6 +62,10 @@ pub struct FakeJournalFlash {
     /// Every read returns erased bytes, as a misread of a written unit
     /// might, while reporting success.
     pub reads_erased: bool,
+    /// Reads of this unit alone return erased bytes while reporting
+    /// success: a misread of one written unit, so a scan finds only the
+    /// other unit's record.
+    pub misread_unit: Option<u32>,
     pub program_order: ProgramOrder,
 
     /// Runs after every durable mutation. No reference to the flash is live
@@ -97,6 +101,7 @@ impl FakeJournalFlash {
             silent_erase: false,
             reads_fail: false,
             reads_erased: false,
+            misread_unit: None,
             program_order: ProgramOrder::Bytes,
             after_mutation: None,
             mutation_context: core::ptr::null_mut(),
@@ -279,12 +284,13 @@ impl SlotIo for FlashIo {
     fn read(&self, slot: u32, offset: u32, bytes: &mut [u8]) -> bool {
         // SAFETY: the constructor's contract; no other reference is live.
         let f = unsafe { &mut *self.0 };
+        let misread = f.reads_erased || f.misread_unit == Some(slot);
         let (slot, offset) = f.bounds(slot, offset, bytes.len());
         if !f.call() || f.reads_fail {
             return false;
         }
 
-        if f.reads_erased {
+        if misread {
             bytes.fill(u8::MAX);
         } else {
             bytes.copy_from_slice(&f.bytes[slot][offset..offset + bytes.len()]);
