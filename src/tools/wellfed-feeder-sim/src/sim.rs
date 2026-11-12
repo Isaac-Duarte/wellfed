@@ -34,7 +34,7 @@ use wellfed_hal::trial::Storm;
 use wellfed_session::noise::Keypair;
 
 use crate::banks::Banks;
-use crate::feeding::SimFeeds;
+use crate::feeding::{SimFeeds, WriteWaits};
 use crate::flash::Flash;
 use crate::platform::{DeviceError, Random, SimPlatform};
 
@@ -250,8 +250,8 @@ impl Sim {
     }
 
     /// Hold a storage write in the way of a feed's claim, or end it.
-    pub fn hold_write(&mut self, held: bool) {
-        self.feeds.hold_write(held);
+    pub fn hold_write(&mut self, held: bool) -> Result<(), WriteWaits> {
+        self.feeds.hold_write(held)
     }
 
     /// Whether a feed's claim on the outputs was taken and has not ended.

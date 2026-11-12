@@ -27,6 +27,7 @@ use wellfed_core::mdns;
 use wellfed_core_feeder::feed::controller::FeedReason;
 
 use crate::banks::Banks;
+use crate::feeding::WriteWaits;
 use crate::flash::Flash;
 use crate::platform::{DeviceError, Random, SimSupply};
 use crate::sim::{Record, Sim};
@@ -112,6 +113,8 @@ pub enum Event {
     Prepare(DeviceError),
     /// Accepting a connection failed; the listener pauses.
     Accept(io::ErrorKind),
+    /// A [`Control::HoldWrite`] the interlock made wait; nothing is held.
+    HoldWrite(WriteWaits),
     /// The loop's delay until its next pass changed.
     Pace {
         delay_ms: u32,
@@ -168,7 +171,11 @@ pub async fn serve(
                     reboot = true;
                 }
                 Some(Control::StallFeeds(stalled)) => booted.sim.stall_feeds(stalled),
-                Some(Control::HoldWrite(held)) => booted.sim.hold_write(held),
+                Some(Control::HoldWrite(held)) => {
+                    if let Err(waits) = booted.sim.hold_write(held) {
+                        log(Event::HoldWrite(waits));
+                    }
+                }
                 Some(Control::HoldPlans(held)) => booted.sim.platform().hold_plans(held),
                 Some(Control::Adapter(adapter)) => {
                     supply.adapter = adapter;

@@ -167,15 +167,19 @@ impl SimFeeds {
         self.owner().inner.borrow_mut().refusing = refusing;
     }
 
-    /// Hold a storage write in the way of a feed's claim, or end it.
-    pub fn hold_write(&mut self, held: bool) {
+    /// Hold a storage write in the way of a feed's claim, or end it. A
+    /// hold is refused while a feed holds the outputs or a write is held
+    /// already, as the firmware's writer would wait.
+    pub fn hold_write(&mut self, held: bool) -> Result<(), WriteWaits> {
         let runtime = self.feeding.runtime();
-        if held {
-            let now = runtime.owner.now_ms.get();
-            let begun = WriteTurn::new().begin(&runtime.interlock, now, || true);
-            assert!(matches!(begun, WriteStep::Go(_)), "one write at a time");
-        } else {
+        if !held {
             runtime.interlock.end_write();
+            return Ok(());
+        }
+        let now = runtime.owner.now_ms.get();
+        match WriteTurn::new().begin(&runtime.interlock, now, || true) {
+            WriteStep::Go(_) => Ok(()),
+            WriteStep::Wait => Err(WriteWaits),
         }
     }
 
@@ -194,6 +198,12 @@ impl SimFeeds {
         (fed, delay)
     }
 }
+
+/// A held write the interlock made wait: a feed holds the outputs, or a
+/// write is held already.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("the write waits: a feed holds the outputs or another write is held")]
+pub struct WriteWaits;
 
 /// The adapter's runtime in the simulator: the owner below, an interlock
 /// of its own, and nothing of the board's (no trial, no reset storm, no
