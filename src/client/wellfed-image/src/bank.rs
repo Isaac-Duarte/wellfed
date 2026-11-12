@@ -14,7 +14,7 @@ use crate::error::Result;
 /// A bank this layout does not have, or an image that does not fit one.
 #[derive(Debug, thiserror::Error)]
 pub enum BankError {
-    #[error("Unknown bank")]
+    #[error("Unknown bank {bank}")]
     Unknown { bank: u8 },
     #[error("Development image exceeds aligned bank-{bank} footprint")]
     Footprint { bank: u8 },

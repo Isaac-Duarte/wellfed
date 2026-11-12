@@ -1,7 +1,5 @@
 //! The known PLAF103 OTA container and region profile.
 //!
-//! Port of `container` and `regions` in `src/tools/audit/audit-ota-layout.py`.
-//!
 //! Development updates and frozen reviews take a bank's payload only through
 //! `container` and `regions`, so an image outside this one profile is refused.
 
@@ -90,7 +88,7 @@ pub fn container(data: &[u8]) -> Result<&[u8]> {
     Ok(payload)
 }
 
-/// One core image in a bank payload, as `audit-ota-layout.py` lists it.
+/// One core image in a bank payload, as the layout audit lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Image {
     pub name: &'static str,
