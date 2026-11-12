@@ -1810,15 +1810,24 @@ impl Op {
         self.to_proto().is_ok_and(|op| op.is_frozen())
     }
 
-    /// Whether a client holding `role` may send the op: the device's own
-    /// rule ([`wellfed_proto::access::allowed`]), so a client's gate and
-    /// the device's refusal never disagree. A role only a newer build
-    /// names grants nothing, and an op with no wire form is never sent.
+    /// Whether a client holding `role` may send the op, by the device's own
+    /// rules: first the matrix ([`wellfed_proto::access::allowed`]), which
+    /// the device checks before anything else, then, for an invite, the role
+    /// it grants ([`wellfed_proto::access::may_invite`]), which pairing
+    /// checks next. A role only a newer build names grants nothing, and an
+    /// op with no wire form is never sent.
     pub fn allowed(&self, role: ClientRole) -> bool {
         let (Ok(role), Ok(op)) = (proto::Role::try_from(role), self.to_proto()) else {
             return false;
         };
-        wellfed_proto::access::allowed(role, &op)
+        let grants = match op {
+            proto::Op::CreateInvite { role: granted }
+            | proto::Op::CreateBoundInvite { role: granted, .. } => {
+                wellfed_proto::access::may_invite(role, granted)
+            }
+            _ => true,
+        };
+        wellfed_proto::access::allowed(role, &op) && grants
     }
 
     /// The wire form, borrowing this op's strings; none for an op holding
@@ -2073,10 +2082,25 @@ mod tests {
                 bowl: crate::Bowl::Single,
             },
         };
+        let invite = |role| Op::CreateInvite { role };
         let rows = [
             (Op::Feed { portions: 1 }, [true, true, true, false, false]),
             (calibrate, [true, true, false, false, false]),
             (Op::Reboot, [true, false, false, false, false]),
+            // The matrix lets all three ask for an invite; the role it
+            // grants is pairing's second check.
+            (
+                invite(ClientRole::Member),
+                [true, true, false, false, false],
+            ),
+            (
+                invite(ClientRole::Owner),
+                [true, false, false, false, false],
+            ),
+            (
+                invite(ClientRole::UpdateSigner),
+                [false, false, false, false, false],
+            ),
         ];
 
         for (op, may) in rows {

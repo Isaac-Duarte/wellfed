@@ -7,15 +7,30 @@
 //! may not send it is refused the same way as a well-formed one.
 //!
 //! The classes read the wire op alone, with nothing the device holds, so a
-//! client asks the same question, [`allowed`], before it sends. The matrix
-//! is behavior, not wire: changing a row changes who may do what on every
-//! feeder that runs it, and the table test below pins every row.
+//! client asks the same question, [`allowed`], before it sends. An invite
+//! passes a second check once the matrix lets it through: pairing refuses
+//! an invite granting a role its asker may not hand out ([`may_invite`]).
+//! The matrix is behavior, not wire: changing a row changes who may do what
+//! on every feeder that runs it, and the table tests below pin every row.
 
 use crate::api::{FeederOp, Op, Role, StatsSection, UpdateOp};
 
 /// Whether a client holding `role` may send `op`.
 pub const fn allowed(role: Role, op: &Op<'_>) -> bool {
     Access::of(op).allows(role)
+}
+
+/// Whether a client with role `by` may make an invite granting `role`: the
+/// check pairing makes after the matrix lets `by` ask for an invite at all,
+/// refusing the rest `NotAllowed`. An owner invites any role but an update
+/// signer, whose key is enrolled only at the feeder; a member invites
+/// members; the server invites no one.
+pub const fn may_invite(by: Role, role: Role) -> bool {
+    match by {
+        Role::Owner => !matches!(role, Role::UpdateSigner),
+        Role::Member => matches!(role, Role::Member),
+        Role::Server | Role::UpdateSigner => false,
+    }
 }
 
 /// Who may send an op.
@@ -351,6 +366,24 @@ mod tests {
             seen[kind] = true;
         }
         assert!(seen.iter().all(|&seen| seen), "an op without a row");
+    }
+
+    /// Who may invite whom: the asker's role down, the granted role across
+    /// (owner, member, server, update signer).
+    #[test]
+    fn each_role_may_grant_exactly_its_invites() {
+        let roles = [Role::Owner, Role::Member, Role::Server, Role::UpdateSigner];
+        let rows = [
+            (Role::Owner, [true, true, true, false]),
+            (Role::Member, [false, true, false, false]),
+            (Role::Server, [false, false, false, false]),
+            (Role::UpdateSigner, [false, false, false, false]),
+        ];
+        for (by, may) in rows {
+            for (role, may) in roles.into_iter().zip(may) {
+                assert_eq!(may_invite(by, role), may, "{by:?} inviting {role:?}");
+            }
+        }
     }
 
     #[test]

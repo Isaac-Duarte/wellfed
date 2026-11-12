@@ -310,9 +310,10 @@ fn roles_dart() -> String {
     }
     out.push_str(
         "}\n\n\
-         /// Whether a client holding [role] may send [ask]: the feeder's own matrix,\n\
-         /// so a control the feeder would refuse is never offered. A role a newer\n\
-         /// build added may send nothing.\n\
+         /// Whether a client holding [role] may send [ask], by the feeder's own\n\
+         /// rules: its matrix first, then for an invite the role it grants, which\n\
+         /// pairing checks next; the invite rows ask about inviting a member. A\n\
+         /// role a newer build added may send nothing.\n\
          bool mayAsk(ClientRole role, Ask ask) => _senders(ask).contains(role);\n",
     );
     for may in sets {

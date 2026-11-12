@@ -51,9 +51,10 @@ enum Ask {
   statsPortions,
 }
 
-/// Whether a client holding [role] may send [ask]: the feeder's own matrix,
-/// so a control the feeder would refuse is never offered. A role a newer
-/// build added may send nothing.
+/// Whether a client holding [role] may send [ask], by the feeder's own
+/// rules: its matrix first, then for an invite the role it grants, which
+/// pairing checks next; the invite rows ask about inviting a member. A
+/// role a newer build added may send nothing.
 bool mayAsk(ClientRole role, Ask ask) => _senders(ask).contains(role);
 
 const Set<ClientRole> _owner = {ClientRole.owner};
@@ -70,8 +71,8 @@ Set<ClientRole> _senders(Ask ask) => switch (ask) {
   Ask.setLock => _ownerMemberServer,
   Ask.play => _ownerMemberServer,
   Ask.timeSync => _ownerMemberServer,
-  Ask.createInvite => _ownerMemberServer,
-  Ask.createBoundInvite => _ownerMemberServer,
+  Ask.createInvite => _ownerMember,
+  Ask.createBoundInvite => _ownerMember,
   Ask.listClients => _ownerMemberServer,
   Ask.revokeClient => _owner,
   Ask.feed => _ownerMemberServer,

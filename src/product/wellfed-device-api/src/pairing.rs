@@ -417,12 +417,7 @@ impl Pairing {
         key: Option<[u8; 32]>,
         secret: [u8; 32],
     ) -> Event {
-        let allowed = match by {
-            Role::Owner => role != Role::UpdateSigner,
-            Role::Member => role == Role::Member,
-            Role::Server | Role::UpdateSigner => false,
-        };
-        if !allowed {
+        if !wellfed_proto::access::may_invite(crate::proto_role(by), crate::proto_role(role)) {
             return refused(Path::Invite, Refusal::NotAllowed);
         }
         self.expire_invites(now_ms);
