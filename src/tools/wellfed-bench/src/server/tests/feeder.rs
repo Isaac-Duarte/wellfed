@@ -605,6 +605,57 @@ async fn an_install_push_closes_the_session_until_it_ends_and_no_clock_sync_leav
     server.quit().await;
 }
 
+/// A push's hold ends the server's attempt to open a session, however long
+/// that attempt would take: the push never opens beside it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_install_push_ends_a_session_still_opening() {
+    let Some(_turn) = turn().await else { return };
+    // A feeder that takes the connection and never answers the handshake.
+    let silent = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = silent.local_addr().unwrap();
+    let checkout = checkout();
+    checkout.enroll_identity(&[0x7e; 32]);
+    let server = Running::start(
+        checkout
+            .open_device(DeviceOptions {
+                address: Some(address),
+                ..DeviceOptions::default()
+            })
+            .unwrap(),
+    );
+    // The first attempt gives up; the hold comes inside the second.
+    let state = state_until(&server, "a retry", |state| {
+        matches!(
+            state.feeder.session,
+            Session::Connecting { retry: Some(_), .. }
+        )
+    })
+    .await;
+    let Session::Connecting {
+        retry: Some(retry), ..
+    } = state.feeder.session
+    else {
+        unreachable!()
+    };
+    let until = retry - wellfed_bench_formats::now() + 0.5;
+    tokio::time::sleep(Duration::from_secs_f64(until.max(0.0))).await;
+    let _silent = silent;
+
+    let (_, mut link) = server.shared.feeder().link();
+    let release = tokio::task::spawn_blocking(move || link.hold_for_push().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        server.state().await.feeder.session,
+        Session::Paused {
+            pause: Pause::Install
+        }
+    );
+
+    release();
+    server.quit().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_capture_never_starts_under_a_job_however_the_starts_interleave() {
     let Some(_turn) = turn().await else { return };

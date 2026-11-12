@@ -1,7 +1,8 @@
 //! `GET /wait?for=...&timeout_ms=...`: hold the request until a condition
 //! holds, so a client (the MCP server, a script) waits on the bench rather
 //! than polling it:
-//! - `for=job&id=N`: job `N` ended, or a later job started, so it had;
+//! - `for=job&id=N`: job `N` ended, or a later job started, so it had; a
+//!   job of an earlier server ended with it;
 //! - `for=line&text=T`: a UART, device log or job output line containing
 //!   `T` arrived after the wait began;
 //! - `for=event&kind=K`: a device event of kind `K` arrived after it began;
@@ -39,6 +40,8 @@ const TICK: Duration = Duration::from_millis(500);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Condition {
     Job(JobId),
+    /// A job an earlier server ran, which ended when that server did.
+    Earlier(JobId),
     Line(String),
     Event(String),
     Status {
@@ -96,10 +99,12 @@ impl Condition {
     /// have, or a job no later than the next to be given (`last` + 1).
     fn possible(&self, state: &BenchState, last: JobId) -> Result<(), WaitError> {
         match self {
-            Self::Job(id) => wellfed_formats::require(*id <= last + 1, || WaitError::NoSuchJob {
-                id: *id,
-                next: last + 1,
-            }),
+            Self::Job(id) | Self::Earlier(id) => {
+                wellfed_formats::require((1..=last + 1).contains(id), || WaitError::NoSuchJob {
+                    id: *id,
+                    next: last + 1,
+                })
+            }
             Self::Timer(label) => wellfed_formats::require(
                 state
                     .operator
@@ -176,6 +181,7 @@ impl Condition {
                     prompt.text
                 )
             }),
+            Self::Earlier(id) => Some(format!("job {id} ended before this server started")),
             Self::Line(_) | Self::Event(_) => None,
         }
     }
@@ -200,7 +206,12 @@ pub(crate) fn checked(shared: &Shared, wait: &Wait) -> Result<Condition, WaitErr
     let condition = Condition::try_from(wait)?;
     // The jobs lock before the state's, never inside it: a job that starts
     // holds the jobs lock while it updates the state.
-    let last = shared.last_job();
+    let (first, last) = (shared.first_job(), shared.last_job());
+    let condition = match condition {
+        // Its server's end ended it, and this server's state never names it.
+        Condition::Job(id) if id < first => Condition::Earlier(id),
+        condition => condition,
+    };
     shared.store.with(|state| condition.possible(state, last))?;
     Ok(condition)
 }
@@ -301,6 +312,22 @@ mod tests {
                 build: Some("a1b2".into()),
                 bank: None
             })
+        );
+    }
+
+    /// A job an earlier server ran is over at once; id 0 was never given.
+    #[test]
+    fn a_job_of_an_earlier_server_has_ended() {
+        let state = crate::server::tests::idle_state();
+        let earlier = Condition::Earlier(3);
+        assert_eq!(earlier.possible(&state, 5), Ok(()));
+        assert_eq!(
+            earlier.held(&state, 0.0).as_deref(),
+            Some("job 3 ended before this server started")
+        );
+        assert_eq!(
+            Condition::Job(0).possible(&state, 5),
+            Err(WaitError::NoSuchJob { id: 0, next: 6 })
         );
     }
 

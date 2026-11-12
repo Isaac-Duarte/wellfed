@@ -217,9 +217,20 @@ impl Feeder {
         (feeder, task)
     }
 
-    /// Close the session for `pause`, or let it open again with `None`.
-    pub(crate) fn hold(&self, pause: Option<Pause>) {
-        self.hold.send_replace(pause);
+    /// Close the session for `pause`, unless the server already stops.
+    pub(crate) fn pause(&self, pause: Pause) {
+        pause_unless_stopping(&self.hold, pause);
+    }
+
+    /// Let the session open again, if `pause` is still what holds it.
+    pub(crate) fn release(&self, pause: &Pause) {
+        release_own(&self.hold, pause);
+    }
+
+    /// The server stops: the session closes and stays closed, whatever a
+    /// job holds or releases after.
+    pub(crate) fn stop(&self) {
+        self.hold.send_replace(Some(Pause::Stopping));
     }
 
     /// Send `op` under `id` and wait for what came of it.
@@ -285,22 +296,22 @@ impl DeviceLink for SessionLink {
             reply,
             resent: false,
         };
+        let write = !read_only(&request.op);
         if self.requests.send(request).is_err() {
             return Err(Unavailable::Ended.into());
         }
-        match answer.blocking_recv() {
-            Ok(Ok(Asked::Answered { answer })) => Ok(device::Answer::of(answer)),
-            Ok(Ok(Asked::Uncertain)) => Err(DeviceError::Uncertain(ask.name())),
-            Ok(Err(unavailable)) => Err(unavailable.into()),
-            Err(_) => Err(Unavailable::Ended.into()),
+        match settled(answer.blocking_recv(), write) {
+            Ok(Asked::Answered { answer }) => Ok(device::Answer::of(answer)),
+            Ok(Asked::Uncertain) => Err(DeviceError::Uncertain(ask.name())),
+            Err(unavailable) => Err(unavailable.into()),
         }
     }
 
     /// The push's sessions are the feeder's owner sessions until it ends;
     /// the server's own closes meanwhile and resumes after its cursor. It
-    /// returns once the server's session has closed, or after
-    /// [`PUSH_CLOSE_WAIT`] (a session mid-request takes a moment), so the
-    /// push never opens beside it.
+    /// returns once the server's session has closed, an attempt to open
+    /// one included, or after [`PUSH_CLOSE_WAIT`] (a session mid-request
+    /// takes a moment), so the push never opens beside it.
     fn hold_for_push(&mut self) -> Option<Box<dyn FnOnce() + Send>> {
         self.hold.send_if_modified(|hold| {
             let free = hold.is_none();
@@ -317,17 +328,33 @@ impl DeviceLink for SessionLink {
             std::thread::sleep(Duration::from_millis(10));
         }
         let hold = Arc::clone(&self.hold);
-        Some(Box::new(move || {
-            // A stop that came meanwhile stays.
-            hold.send_if_modified(|hold| {
-                let ours = *hold == Some(Pause::Install);
-                if ours {
-                    *hold = None;
-                }
-                ours
-            });
-        }))
+        // A stop that came meanwhile stays.
+        Some(Box::new(move || release_own(&hold, &Pause::Install)))
     }
+}
+
+/// Close the session for `pause`. A stop is never replaced: once the server
+/// stops, the session stays closed.
+fn pause_unless_stopping(hold: &watch::Sender<Option<Pause>>, pause: Pause) {
+    hold.send_if_modified(|hold| {
+        let stopping = *hold == Some(Pause::Stopping);
+        if !stopping {
+            *hold = Some(pause);
+        }
+        !stopping
+    });
+}
+
+/// Let the session open again if `pause` still holds it; another hold,
+/// a stop above all, stays.
+fn release_own(hold: &watch::Sender<Option<Pause>>, pause: &Pause) {
+    hold.send_if_modified(|hold| {
+        let ours = hold.as_ref() == Some(pause);
+        if ours {
+            *hold = None;
+        }
+        ours
+    });
 }
 
 /// The longest a push waits for the server's session to close.
@@ -462,7 +489,15 @@ async fn replied(
     answer: oneshot::Receiver<Result<Asked, Unavailable>>,
     write: bool,
 ) -> Result<Asked, Unavailable> {
-    match answer.await {
+    settled(answer.await, write)
+}
+
+/// [`replied`]'s rule, for a reply received either way.
+fn settled(
+    received: Result<Result<Asked, Unavailable>, oneshot::error::RecvError>,
+    write: bool,
+) -> Result<Asked, Unavailable> {
+    match received {
         Ok(answered) => answered,
         Err(_) if write => Ok(Asked::Uncertain),
         Err(_) => Err(Unavailable::Ended),
@@ -528,7 +563,13 @@ impl Task {
                 continue;
             }
 
-            let opened = self.open(&owner, &mut cursor).await;
+            // A hold set while the attempt runs ends it: nothing was sent on
+            // it, and the push it makes way for must not open beside it.
+            let mut held = self.hold.clone();
+            let opened = tokio::select! {
+                opened = self.open(&owner, &mut cursor) => opened,
+                _ = held.wait_for(Option::is_some) => continue,
+            };
             let (mut connection, address) = match opened {
                 Ok(opened) => opened,
                 Err(error) => {
@@ -1168,6 +1209,55 @@ mod tests {
         assert_eq!(dropped(true), Ok(Asked::Uncertain));
         assert!(read_only(&Op::Status));
         assert_eq!(dropped(false), Err(Unavailable::Ended));
+    }
+
+    /// A job's link reads a reply the session dropped by the same rule: a
+    /// write may have gone out, so it is uncertain, never unsent.
+    #[test]
+    fn a_job_s_write_whose_reply_was_dropped_is_uncertain() {
+        let (requests, mut queued) = mpsc::unbounded_channel::<Request>();
+        let dropper = std::thread::spawn(move || {
+            while let Some(request) = queued.blocking_recv() {
+                drop(request);
+            }
+        });
+        let mut link = SessionLink {
+            requests,
+            hold: Arc::new(watch::channel(None).0),
+            store: Store::new(BenchState::default()),
+        };
+
+        let feed = link.ask(&device::Ask::Feed { portions: 1 });
+        assert!(
+            matches!(feed, Err(DeviceError::Uncertain("feed"))),
+            "{feed:?}"
+        );
+        let status = link.ask(&device::Ask::Status);
+        assert!(
+            matches!(status, Err(DeviceError::Unavailable(Unavailable::Ended))),
+            "{status:?}"
+        );
+        drop(link);
+        dropper.join().unwrap();
+    }
+
+    /// Once the server stops, a job's hold or release leaves the session
+    /// closed, and a release clears only its own hold.
+    #[test]
+    fn a_stop_outlasts_every_job_hold_and_release() {
+        let (hold, held) = watch::channel(None);
+        let job = Pause::StockInstall { job: 3 };
+
+        pause_unless_stopping(&hold, job.clone());
+        release_own(&hold, &Pause::Install);
+        assert_eq!(*held.borrow(), Some(job.clone()));
+        release_own(&hold, &job);
+        assert_eq!(*held.borrow(), None);
+
+        hold.send_replace(Some(Pause::Stopping));
+        pause_unless_stopping(&hold, job.clone());
+        release_own(&hold, &job);
+        assert_eq!(*held.borrow(), Some(Pause::Stopping));
     }
 
     fn event(seq: u64) -> Pushed {

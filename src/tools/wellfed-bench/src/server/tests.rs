@@ -18,7 +18,7 @@ use wellfed_bench_formats::live::{
 use wellfed_relay::{AtBoard, Board, FakeBoard, POWER, STRAP, Switch};
 
 use super::*;
-use crate::server::api::{DuringWrite, Wait, WaitFor};
+use crate::server::api::{DuringWrite, Wait, WaitFor, Waited};
 use crate::server::stopping::Ask;
 
 mod feeder;
@@ -316,6 +316,29 @@ async fn a_job_streams_its_output_and_ends_with_its_code() {
     let state = server.state().await;
     assert_eq!(state.relays.len(), 4);
     assert_eq!(state.server.phase, Phase::Serving);
+
+    // A wait for a job of the earlier server is met at once: it ended
+    // with that server.
+    let earlier = server
+        .client
+        .wait(&Wait {
+            what: WaitFor::Job,
+            id: Some(41),
+            text: None,
+            kind: None,
+            build: None,
+            bank: None,
+            label: None,
+            timeout_ms: 60_000,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        earlier,
+        Waited::Met {
+            detail: "job 41 ended before this server started".into()
+        }
+    );
 
     let id = server.submit(&["capture", "c1"]).await.unwrap();
     assert_eq!(id, 42);
