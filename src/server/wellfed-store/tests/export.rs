@@ -438,6 +438,10 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
     ("tokens", "a credential's hash"),
     ("job_runs", "this server's schedule"),
     (
+        "retired_keys",
+        "keys read unfound, which only requests in flight to this server need",
+    ),
+    (
         "feeder_alerts",
         "a copy of the feeder's RAM, read again from it",
     ),

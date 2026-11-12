@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT EXISTS (SELECT 1 FROM retired_keys WHERE key = ?) AS \"retired: bool\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "retired: bool",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ce561428dad999726dbb4fdb5e1261348e956e6a65691994379bda7eee2da28f"
+}

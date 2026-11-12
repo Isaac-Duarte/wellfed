@@ -63,6 +63,18 @@ fn the_journal_reads_by_key_and_in_pages() {
         http.set_lock(kitchen, Lock::Unlocked, key(1))
             .await
             .unwrap();
+        // A key read and found unfound takes no write after: the client
+        // took it as never sent.
+        refused(
+            http.command(key(9)).await,
+            StatusCode::NOT_FOUND,
+            ErrorCode::NotFound,
+        );
+        refused(
+            http.set_lock(kitchen, Lock::Locked, key(9)).await,
+            StatusCode::CONFLICT,
+            ErrorCode::KeyRetired,
+        );
 
         let first = http
             .commands(&CommandQuery {

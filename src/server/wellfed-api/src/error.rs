@@ -164,6 +164,12 @@ pub enum ErrorCode {
     /// unknown, used, expired, another token's, or a MAC the key's secret
     /// did not make. Ask for a new challenge.
     PhoneKeyProofRefused,
+    /// A read of the journal (`GET /commands/{key}`) found no write under
+    /// this `Idempotency-Key`, which a client takes as never sent, so the
+    /// server takes no write under it now: one that reaches the journal
+    /// late never runs behind its client's back. Nothing was sent; send it
+    /// under a new key.
+    KeyRetired,
     Internal,
     /// A code a newer server added, which this client cannot name. The
     /// server never sends it; a client reads the request as refused by a

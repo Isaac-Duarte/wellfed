@@ -33,6 +33,12 @@ pub enum CommandError {
         "the meal call changed on the feeder after this write was first sent; nothing was sent again"
     )]
     Superseded,
+    /// A read of the journal found no write under the key before this one
+    /// arrived, and its client took that as never sent.
+    #[error(
+        "the journal was read for this Idempotency-Key and held no write, so it takes none under it now; nothing was sent: send it under a new key"
+    )]
+    Retired,
 }
 
 impl CommandError {
@@ -43,6 +49,7 @@ impl CommandError {
             Self::Unknown => ErrorCode::OutcomeUnknown,
             Self::KeyReused => ErrorCode::KeyReused,
             Self::Superseded => ErrorCode::Superseded,
+            Self::Retired => ErrorCode::KeyRetired,
         }
     }
 }

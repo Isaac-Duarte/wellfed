@@ -197,6 +197,7 @@ impl Service {
                     Retry::Resend(request) => (request, Attempt::Retry),
                 }
             }
+            Journaled::Retired => return Err(CommandError::Retired.into()),
         };
 
         let service = self.clone();

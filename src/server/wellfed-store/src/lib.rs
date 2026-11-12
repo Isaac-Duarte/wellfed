@@ -47,6 +47,7 @@ mod pets;
 mod phones;
 mod projections;
 mod refills;
+mod retired;
 mod samples;
 mod tokens;
 mod users;

@@ -15,13 +15,26 @@ const CURSOR_MAX: u64 = i64::MAX.unsigned_abs();
 impl Service {
     /// One entry: the caller's own, or anyone's for an owner. Another
     /// user's entry is not found, so a member learns nothing of it.
+    ///
+    /// A client takes a key with no write as never sent, so the key is
+    /// retired then: a write under it that reaches the journal later,
+    /// after a stall in front of it, is refused rather than run behind the
+    /// client's back ([`CommandError::Retired`]).
     pub async fn command(&self, user: &User, key: IdempotencyKey) -> Result<Command> {
         let row = self.shared.store.command(&key).await?;
         match row {
             Some(row) if can(user.role, Permission::AllHistory) || row.user == user.id => {
                 Ok(view(row))
             }
-            _ => Err(Error::NotFound(Resource::Command)),
+            Some(_) => Err(Error::NotFound(Resource::Command)),
+            None => {
+                let now = self.shared.clock.now();
+                if !self.shared.store.retire_key(&key, now).await? {
+                    // Journaled in the meantime: read as it now stands.
+                    return Box::pin(self.command(user, key)).await;
+                }
+                Err(Error::NotFound(Resource::Command))
+            }
         }
     }
 
