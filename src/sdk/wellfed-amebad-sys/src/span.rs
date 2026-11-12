@@ -105,12 +105,15 @@ mod tests {
     #[test]
     fn spans_stay_inside_their_sector_and_region() {
         let sector = SECTOR_BYTES as usize;
-        assert_eq!(storage(0, 0, sector), Some(0));
-        assert_eq!(storage(1, 8, 4), Some(SECTOR_BYTES + 8));
-        assert_eq!(storage(0, 4, sector), None, "past the sector's end");
-        assert_eq!(storage(0, u32::MAX, 4), None, "an offset that wraps");
-        assert_eq!(storage(0, 0, usize::MAX), None, "a length past u32");
         assert_eq!(storage(STORAGE_SECTORS, 0, 4), None, "past the store");
+        #[cfg(wellfed_board_store)]
+        {
+            assert_eq!(storage(0, 0, sector), Some(0));
+            assert_eq!(storage(1, 8, 4), Some(SECTOR_BYTES + 8));
+            assert_eq!(storage(0, 4, sector), None, "past the sector's end");
+            assert_eq!(storage(0, u32::MAX, 4), None, "an offset that wraps");
+            assert_eq!(storage(0, 0, usize::MAX), None, "a length past u32");
+        }
 
         assert_eq!(bank1(Some(0), 0, 0, sector), Some(0));
         assert_eq!(
@@ -135,6 +138,8 @@ mod tests {
     #[test]
     fn every_span_lands_in_its_region() {
         let sector = SECTOR_BYTES as usize;
+        // A board with no store has no storage span to check.
+        #[cfg(wellfed_board_store)]
         for index in 0..STORAGE_SECTORS {
             let span = storage(index, 0, sector).unwrap();
             assert!(span + SECTOR_BYTES <= STORAGE_SECTORS * SECTOR_BYTES);
