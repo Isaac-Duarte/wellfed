@@ -10909,7 +10909,7 @@
       },
       "Feeder": {
         "type": "object",
-        "description": "A device the server mirrors. The API names every one a feeder for now;\n`kind` says which it is, and an op of another kind is refused\n`not_this_kind` before it is sent.",
+        "description": "A device the server mirrors. The API names every one a feeder for now;\n`kind` says which it is, and an op of another kind is refused\n`other_kind` before it is sent.",
         "required": [
           "id",
           "home",
@@ -11997,7 +11997,7 @@
       },
       "FoodPatch": {
         "type": "object",
-        "description": "A change to a food; an absent field is left as it is. A change applies\nto the past too: a new recipe is a new food.",
+        "description": "A change to a food; an absent field, or one sent as `null`, is left as\nit is. A change applies to the past too: a new recipe is a new food.",
         "properties": {
           "bag_grams": {
             "type": [
@@ -12219,7 +12219,7 @@
       },
       "HomePatch": {
         "type": "object",
-        "description": "A change to the home; an absent field is left as it is. A new\nzone goes to every feeder: those offline get it when they reconnect.",
+        "description": "A change to the home; an absent field, or one sent as `null`, is left\nas it is. A new zone goes to every feeder: those offline get it when\nthey reconnect.",
         "properties": {
           "name": {
             "type": [
@@ -13479,7 +13479,7 @@
       },
       "PetPatch": {
         "type": "object",
-        "description": "A change to a pet; an absent field is left as it is, and `null` clears\nan optional one.",
+        "description": "A change to a pet; an absent field is left as it is, and `null` clears\nan optional one (`birth_date`, `daily_kcal`). A field that cannot be\ncleared (`name`, `species`) sent as `null` is left as it is too.",
         "properties": {
           "birth_date": {
             "type": [
@@ -16514,7 +16514,7 @@
       },
       "UserPatch": {
         "type": "object",
-        "description": "A change to an account; an absent field is left as it is.",
+        "description": "A change to an account; an absent field is left as it is, and so is\n`role` or `password` sent as `null`.",
         "properties": {
           "expires": {
             "type": [

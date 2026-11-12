@@ -73,8 +73,9 @@ pub struct Home {
     pub zone: String,
 }
 
-/// A change to the home; an absent field is left as it is. A new
-/// zone goes to every feeder: those offline get it when they reconnect.
+/// A change to the home; an absent field, or one sent as `null`, is left
+/// as it is. A new zone goes to every feeder: those offline get it when
+/// they reconnect.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HomePatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,6 +93,14 @@ pub struct HomePatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `null` for a field the home cannot clear changes nothing, as the
+    /// patch's doc says, rather than being refused.
+    #[test]
+    fn a_null_field_is_left_as_it_is() {
+        let patch: HomePatch = serde_json::from_str(r#"{"name":null,"zone":null}"#).unwrap();
+        assert_eq!(patch, HomePatch::default());
+    }
 
     #[test]
     fn spellings_round_trip() {

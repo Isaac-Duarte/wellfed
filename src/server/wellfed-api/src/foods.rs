@@ -35,8 +35,8 @@ pub struct NewFood {
     pub bag_grams: u32,
 }
 
-/// A change to a food; an absent field is left as it is. A change applies
-/// to the past too: a new recipe is a new food.
+/// A change to a food; an absent field, or one sent as `null`, is left as
+/// it is. A change applies to the past too: a new recipe is a new food.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct FoodPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]

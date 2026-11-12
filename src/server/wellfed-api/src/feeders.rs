@@ -64,7 +64,7 @@ pub enum Connection {
 
 /// A device the server mirrors. The API names every one a feeder for now;
 /// `kind` says which it is, and an op of another kind is refused
-/// `not_this_kind` before it is sent.
+/// `other_kind` before it is sent.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Feeder {
     pub id: FeederId,

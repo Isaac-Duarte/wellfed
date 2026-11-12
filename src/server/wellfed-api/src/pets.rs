@@ -70,7 +70,8 @@ pub struct NewPet {
 }
 
 /// A change to a pet; an absent field is left as it is, and `null` clears
-/// an optional one.
+/// an optional one (`birth_date`, `daily_kcal`). A field that cannot be
+/// cleared (`name`, `species`) sent as `null` is left as it is too.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PetPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
