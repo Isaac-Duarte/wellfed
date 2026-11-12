@@ -214,7 +214,7 @@ fn update_store_reads_the_pinned_records() {
 
 // The pinned records, as deployed feeders hold them.
 
-/// First seed.
+/// First seed, as a minor 0 record holds it: no epoch.
 const FIRST_SEED_MINOR_0: &[&str] = &[
     "504c465345454431010080000100000000000000a5a2abb0b9868f949d9ae3e8",
     "f1fec7ccd5d2db2029363f040d0a1318616e777c000000000000000000000000",
@@ -222,7 +222,7 @@ const FIRST_SEED_MINOR_0: &[&str] = &[
     "000000000000000000000000000000000000000000000000536f144e434d4954",
 ];
 
-/// Second seed.
+/// First seed, with the ring's epoch (minor 1).
 const FIRST_SEED: &[&str] = &[
     "504c465345454431010180000100000000000000a5a2abb0b9868f949d9ae3e8",
     "f1fec7ccd5d2db2029363f040d0a1318616e777c0100ed5e0000000000000000",
@@ -230,6 +230,7 @@ const FIRST_SEED: &[&str] = &[
     "00000000000000000000000000000000000000000000000078859b72434d4954",
 ];
 
+/// Second seed, with the next boot's epoch.
 const SECOND_SEED: &[&str] = &[
     "504c465345454431010180000200000000000000ffffffffffffffffffffffff",
     "ffffffffffffffffffffffffffffffffffffffff0200ed5e0000000000000000",

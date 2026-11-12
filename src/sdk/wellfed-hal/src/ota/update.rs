@@ -1307,9 +1307,11 @@ impl<I: SlotIo + Clone> Update<I> {
         // program or its readback reported, so the activation and the
         // handover mark stand and the restart decides: the new build
         // boots and raises the floor when it confirms, or this bank boots
-        // again with the manifest activated, as after a failed trial, and
-        // never takes it again. Unarmed hooks refuse the program before
-        // it touches flash, so that is never written.
+        // again with the manifest activated. Then a marker with any bit
+        // down reads as a build that failed and is refused, while one still
+        // wholly erased never booted and may install again (`never_marked`).
+        // Unarmed hooks refuse the program before it touches flash, so that
+        // is never written.
         let marking = match install.commit() {
             Ok((offset, _)) if offset == BANK1_OFFSET && !flash.armed() => Marking::Unwritten,
             Ok((offset, marker)) if offset == BANK1_OFFSET => {
@@ -1354,8 +1356,10 @@ impl<I: SlotIo + Clone> Update<I> {
     /// Take an activation whose marker was never written back to pending,
     /// so the same offer may try again. A store that won't take the write
     /// reads `Io` for the rest of the boot, so every offer is refused
-    /// unreadable; the next boot reads it still activated, as a build that
-    /// failed, and a cancel clears it.
+    /// unreadable; the next boot reads it still activated over an erased
+    /// marker, which never booted, so the same offer installs again
+    /// (`never_marked`). A stock activation stays refused; a cancel clears
+    /// it.
     fn unactivate(&mut self, candidate: Candidate) {
         let _ = under_marker(|| self.store.set_pending(candidate));
     }

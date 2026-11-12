@@ -122,3 +122,31 @@ fn an_owner_sync_held_behind_a_pending_write_only_narrows_the_clock() {
     assert!(answer(&mut rig, slot, &mut transport, [4; 16]).starts_with("Done"));
     assert_eq!(rig.clock_origin(), Some(Origin::Owner));
 }
+
+/// A frame that won't read, arriving while a write is pending, ends the
+/// session only once the write's answer has gone out.
+#[test]
+fn a_bad_frame_behind_a_pending_write_ends_the_session_after_its_answer() {
+    let mut rig = Rig::new();
+    let (slot, mut transport) = rig.open();
+    rig.hold_writes(true);
+    let put = Op::Feeder(FeederOp::PutSettings {
+        base: 0,
+        changes: volume(10),
+    });
+    ask(&mut rig, slot, &mut transport, [2; 16], put);
+    // A length prefix past any frame the server takes.
+    assert_eq!(rig.deliver(slot, &[0xff, 0xff]), 2);
+    for _ in 0..4 {
+        rig.pass();
+    }
+    assert!(!rig.ended(slot), "the write is still pending");
+
+    rig.hold_writes(false);
+    assert!(answer(&mut rig, slot, &mut transport, [2; 16]).starts_with("Done"));
+    for _ in 0..4 {
+        rig.pass();
+    }
+    assert!(rig.ended(slot));
+    assert_eq!(rig.ended_for(), [wellfed_device_api::Reason::Malformed]);
+}

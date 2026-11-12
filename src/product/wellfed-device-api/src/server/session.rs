@@ -216,7 +216,10 @@ impl Server {
             pending: Some(_), ..
         } = self.slots[index].phase
         {
-            if self.slots[index].wire.frame()?.is_some() {
+            // A frame that won't read ends the session, but only once the
+            // pending write's answer has gone out: the read after it finds
+            // the same bytes and fails then.
+            if matches!(self.slots[index].wire.frame(), Ok(Some(_))) {
                 self.held[index] = true;
             }
             return Ok(false);

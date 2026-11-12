@@ -1057,6 +1057,14 @@ fn bank_0_installs_only_the_pending_manifest_and_never_a_failed_one() {
     let mut rig = Rig::bench(0);
     assert_eq!(rig.offer(&first, None), Err(Refused::Failed));
 
+    // A marker a cut left half programmed may have booted: still failed.
+    fake::with(|h| {
+        h.bank1[..8].fill(0xff);
+        h.bank1[4..8].copy_from_slice(&MARKER[4..8]);
+    });
+    let mut rig = Rig::bench(0);
+    assert_eq!(rig.offer(&first, None), Err(Refused::Failed));
+
     // Activated over a marker still erased: a cut came between the record
     // and the marker, the loader never booted the build, and it installs
     // again.
