@@ -19,6 +19,8 @@ use futures_util::{Stream, StreamExt};
 use tracing::info;
 use wellfed_api::{Imported, ImportedTable};
 use wellfed_formats::export::{Item, Reader};
+use wellfed_mirror::{stored_body, stored_sample};
+use wellfed_store::Decoders;
 
 use crate::operations::export::ExportError;
 use crate::{Result, Service};
@@ -38,7 +40,16 @@ impl Service {
         if !self.setup_open().await? {
             return Err(ExportError::ImportClosed.into());
         }
-        let Some(mut import) = self.shared.store.begin_import(NO_PASSWORD).await? else {
+        let decoders = Decoders {
+            event: |body| stored_body(body).is_some(),
+            sample: |value| stored_sample(value).is_some(),
+        };
+        let begun = self
+            .shared
+            .store
+            .begin_import(NO_PASSWORD, decoders)
+            .await?;
+        let Some(mut import) = begun else {
             return Err(ExportError::ImportClosed.into());
         };
 

@@ -68,7 +68,7 @@ pub use export::Snapshot;
 pub use feeders::{FeederRow, FeederState, NewFeeder, SealedKey, Synced};
 pub use foods::FoodSet;
 pub use history::{EventRow, NewEvent};
-pub use import::Import;
+pub use import::{Decoders, Import};
 pub use pets::WeightCursor;
 pub use phones::{Invitation, Listed, NewPhone, Recorded, Whose};
 pub use projections::{Boot, ClockSync, Feed, LockChange, PROJECTION_VERSION, Projected, Refresh};

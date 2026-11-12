@@ -9,9 +9,10 @@
 //! runs here on the archive's, and a row it refuses refuses the import,
 //! which rolls it all back.
 
-use wellfed_api::{Food, Install, PhoneKey};
+use wellfed_api::{Food, Install, MetricKind, PhoneKey};
 use wellfed_formats::export::Row;
 
+use super::Decoders;
 use crate::commands::{self, CommandRow};
 use crate::phones;
 use crate::projections::{Feed, FeedRow, Projected, read};
@@ -21,15 +22,16 @@ use crate::{
     users,
 };
 
-/// Refuse `row` if a store reader would refuse it once stored.
-pub(super) fn check(row: &Row) -> Result<()> {
-    readable(row).map_err(|error| match error {
+/// Refuse `row` if a store reader, or a page decoding what it keeps by
+/// `decoders`, would refuse it once stored.
+pub(super) fn check(row: &Row, decoders: Decoders) -> Result<()> {
+    readable(row, decoders).map_err(|error| match error {
         Error::Corrupt(what) => Error::Unreadable(what),
         error => error,
     })
 }
 
-fn readable(row: &Row) -> Result<()> {
+fn readable(row: &Row, decoders: Decoders) -> Result<()> {
     match row {
         Row::Users(user) => {
             users::user(user.id, user.name.clone(), &user.role, user.expires_ms)?;
@@ -98,15 +100,18 @@ fn readable(row: &Row) -> Result<()> {
         Row::DroppedPhones(_) => {}
         Row::Events(event) => {
             history::event_epoch(event.epoch)?;
-            // The body is kept as it came; a body no build reads is one
-            // the projections skip.
-            history::event(
+            let read = history::event(
                 event.seq,
                 event.at_s,
                 event.received_ms,
                 &event.kind,
                 Vec::new(),
             )?;
+            // A body of a kind this build does not know is kept and skipped;
+            // one it knows is decoded by every page that lists it.
+            if read.kind.is_some() && !(decoders.event)(&event.body) {
+                return Err(Error::Corrupt("event body"));
+            }
         }
         Row::Gaps(gap) => {
             let epoch = history::event_epoch(gap.epoch)?;
@@ -114,6 +119,11 @@ fn readable(row: &Row) -> Result<()> {
         }
         Row::Samples(sample) => {
             samples::times(sample.received_ms, sample.uptime_ms)?;
+            // A metric this build does not know is never asked for.
+            if MetricKind::from_code(&sample.metric).is_some() && !(decoders.sample)(&sample.value)
+            {
+                return Err(Error::Corrupt("sample value"));
+            }
         }
         Row::SampleRollups(rollup) => {
             rollups::hour(

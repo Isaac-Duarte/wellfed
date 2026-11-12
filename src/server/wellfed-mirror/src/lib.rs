@@ -88,7 +88,7 @@ pub use config::{Config, Diagnostics, Discovery, Timing};
 pub use connect::Enrolled;
 pub use desk::AlertHold;
 pub use error::{AskError, ConnectError, LogError, Unreachable};
-pub use ingest::{stored_event, stored_sample};
+pub use ingest::{stored_body, stored_event, stored_sample};
 pub use install::{BankReadError, PushError, Pushed, ReadError, Restore, Update, UpdateError};
 pub use kept::{
     FORMAT as KEPT_FORMAT, Kept, KeptError, ReadTable, change as change_kept, load as load_kept,

@@ -66,7 +66,7 @@ pub fn stored_event(epoch: u32, row: &EventRow) -> Option<HistoryEvent> {
 /// A stored body as the event it encodes, or `None` when it does not
 /// decode. A body that came unread is stored as the feeder's ring keeps it,
 /// trailing zeros trimmed, so it is read padded back to the ring's size.
-pub(crate) fn stored_body(raw: &[u8]) -> Option<EventBody> {
+pub fn stored_body(raw: &[u8]) -> Option<EventBody> {
     let mut padded = [0; proto::EVENT_BODY_MAX];
     padded.get_mut(..raw.len())?.copy_from_slice(raw);
     let body: proto::EventBody = wellfed_proto::decode_padded(&padded)?;

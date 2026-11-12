@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 use wellfed_formats::export::{Row, Table};
-use wellfed_store::Store;
+use wellfed_store::{Decoders, Store};
 
 /// A row in every exported table, and a second with every nullable column
 /// null where the table has one, beside the rows that are not exported.
@@ -118,6 +118,15 @@ INSERT INTO audit (seq, at_ms, user_id, user_name, token_id, action, command_seq
 INSERT INTO job_runs VALUES ('backup', 1, 2, 'ok');
 ";
 
+/// Bytes no decoder reads, which [`DECODERS`] refuses and every other
+/// value passes, so the fixture's short bodies stand for real ones.
+const UNDECODABLE: &[u8] = b"undecodable";
+
+const DECODERS: Decoders = Decoders {
+    event: |body| body != UNDECODABLE,
+    sample: |value| value != UNDECODABLE,
+};
+
 fn at(ms: i64) -> Timestamp {
     Timestamp::from_millisecond(ms).unwrap()
 }
@@ -168,7 +177,7 @@ async fn every_table_comes_out_in_order_and_goes_back_in_whole() {
     assert_eq!(seqs, [1, 2], "in the key's order, not the insert's");
 
     let (second, raw) = open(&dir, "second.db").await;
-    let mut import = second.begin_import("").await.unwrap().unwrap();
+    let mut import = second.begin_import("", DECODERS).await.unwrap().unwrap();
     for (_, rows) in &exported {
         for row in rows {
             import.insert(row).await.unwrap();
@@ -258,10 +267,10 @@ async fn an_import_is_refused_where_an_account_exists_and_rolls_back_when_droppe
     sqlx::raw_sql(FILL).execute(&pool).await.unwrap();
     let exported = export(&first).await;
 
-    assert!(first.begin_import("").await.unwrap().is_none());
+    assert!(first.begin_import("", DECODERS).await.unwrap().is_none());
 
     let (second, raw) = open(&dir, "second.db").await;
-    let mut import = second.begin_import("").await.unwrap().unwrap();
+    let mut import = second.begin_import("", DECODERS).await.unwrap().unwrap();
     for row in &exported[0].1 {
         import.insert(row).await.unwrap();
     }
@@ -271,7 +280,7 @@ async fn an_import_is_refused_where_an_account_exists_and_rolls_back_when_droppe
         .await
         .unwrap();
     assert_eq!(users, 0);
-    assert!(second.begin_import("").await.unwrap().is_some());
+    assert!(second.begin_import("", DECODERS).await.unwrap().is_some());
 }
 
 /// A row with a value the store's readers would refuse is refused before it
@@ -286,7 +295,7 @@ async fn a_value_the_readers_refuse_is_refused_and_nothing_is_imported() {
 
     for (i, what) in REFUSED.iter().copied().enumerate() {
         let (second, raw) = open(&dir, &format!("second-{i}.db")).await;
-        let mut import = second.begin_import("").await.unwrap().unwrap();
+        let mut import = second.begin_import("", DECODERS).await.unwrap().unwrap();
 
         let mut refused = None;
         let mut edited = false;
@@ -314,7 +323,10 @@ async fn a_value_the_readers_refuse_is_refused_and_nothing_is_imported() {
             .await
             .unwrap();
         assert_eq!(users, 0, "{what}: nothing kept");
-        assert!(second.begin_import("").await.unwrap().is_some(), "{what}");
+        assert!(
+            second.begin_import("", DECODERS).await.unwrap().is_some(),
+            "{what}"
+        );
     }
 }
 
@@ -336,6 +348,8 @@ const REFUSED: &[&str] = &[
     "invitation epoch",
     "invitee prefix",
     "event epoch",
+    "event body",
+    "sample value",
     "event source",
     "client fingerprint",
     "trace",
@@ -402,6 +416,8 @@ fn unreadable_number(what: &str, row: &mut Row, wide: i64) -> bool {
         ("invitation epoch", Row::Invitations(invitation)) => invitation.epoch = wide,
         ("invitee prefix", Row::Invitations(invitation)) => invitation.invitee.push(0),
         ("event epoch", Row::Events(event)) => event.epoch = wide,
+        ("event body", Row::Events(event)) => event.body = UNDECODABLE.to_vec(),
+        ("sample value", Row::Samples(sample)) => sample.value = UNDECODABLE.to_vec(),
         ("client fingerprint", Row::Feeds(feed)) => feed.client = Some(vec![1; 3]),
         ("trace", Row::FeedTraces(trace)) => trace.refusal = Some("\"busy\"".into()),
         ("command key", Row::Commands(command)) => command.key.truncate(15),
