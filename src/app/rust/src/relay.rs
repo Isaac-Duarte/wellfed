@@ -27,14 +27,18 @@
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use subtle::ConstantTimeEq;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::sync::Semaphore;
 use wellfed_api::at_home;
 use wellfed_server_client::reqwest::Proxy;
+
+use crate::api::server::home_name;
 
 /// The handle of the network the relay goes out on; zero for none.
 static UPLINK: AtomicU64 = AtomicU64::new(0);
@@ -45,6 +49,11 @@ static RELAY: OnceLock<Option<Relay>> = OnceLock::new();
 /// The longest a client may take to open its tunnel, and the relay to
 /// connect it.
 const HANDSHAKE: Duration = Duration::from_secs(10);
+
+/// The most connections the relay carries at once. The app keeps a few to
+/// its one server; anything past this waits, so a local app that opens
+/// connections without end cannot run the process out of descriptors.
+const CONNECTIONS: usize = 32;
 
 /// The network to reach a server by while the bound Wi-Fi has no way out:
 /// an Android `net_handle_t`, or zero for none.
@@ -63,7 +72,8 @@ fn uplink() -> Option<u64> {
 
 /// Whether a request to `host` goes through the relay now.
 fn relayed(host: &str) -> bool {
-    uplink().is_some() && !at_home(host)
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    uplink().is_some() && !at_home(host) && !home_name(bare)
 }
 
 /// The server client's proxy: the relay, for a request it should carry
@@ -128,7 +138,12 @@ impl Relay {
     }
 
     async fn serve(self, listener: TcpListener) {
+        let open = Arc::new(Semaphore::new(CONNECTIONS));
         loop {
+            // Never closed, so a permit always comes.
+            let Ok(permit) = open.clone().acquire_owned().await else {
+                return;
+            };
             let client = match listener.accept().await {
                 Ok((client, _)) => client,
                 Err(error) => {
@@ -143,6 +158,7 @@ impl Relay {
                 if let Err(error) = relay.carry(client).await {
                     log::debug!("a relayed connection ended: {error}");
                 }
+                drop(permit);
             });
         }
     }
@@ -172,7 +188,11 @@ impl Relay {
         let user = read_vec(client, user_len).await?;
         let [password_len] = read_array(client).await?;
         let password = read_vec(client, password_len).await?;
-        if user != self.user.as_bytes() || password != self.password.as_bytes() {
+        // Compared in constant time, both, so a local app timing the answer
+        // learns nothing of either.
+        let user_ok = user.ct_eq(self.user.as_bytes());
+        let password_ok = password.ct_eq(self.password.as_bytes());
+        if !bool::from(user_ok & password_ok) {
             client.write_all(&[1, 1]).await?;
             return Err(refused("a wrong user or password"));
         }
@@ -451,6 +471,8 @@ mod tests {
             "10.0.0.4",
             "127.0.0.1",
             "[fd00::4]",
+            "nas.lan",
+            "nas",
         ] {
             assert!(!relayed(home), "{home}");
         }
