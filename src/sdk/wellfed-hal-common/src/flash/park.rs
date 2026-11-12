@@ -128,18 +128,17 @@ fn context<M: Mmio>() -> bool {
     M::mask() == 1 && M::load(SYSTICK_CTRL) & SYSTICK_CONTROL_BITS == 0
 }
 
+/// The SYSTIMER count, sampled as the SDK's `RTIM_GetCount` does on both
+/// cores: twice, then once more on a change. The counter runs on the 32 kHz
+/// domain, so a single read can catch it mid-transition, and one torn
+/// sample that reads backward would fault a lease as CLOCK. Leaf code: no
+/// ROM call from the park.
 #[inline(always)]
 fn ticks<M: Mmio>() -> u32 {
-    if M::KM0 {
-        // Pinned KM0 ROM RTIM_GetCount reads twice, then once more on change.
-        // Keep that bounded asynchronous-counter sampling without calling ROM.
-        let first = M::load(TICKS);
-        let second = M::load(TICKS);
-        if first == second {
-            second
-        } else {
-            M::load(TICKS)
-        }
+    let first = M::load(TICKS);
+    let second = M::load(TICKS);
+    if first == second {
+        second
     } else {
         M::load(TICKS)
     }

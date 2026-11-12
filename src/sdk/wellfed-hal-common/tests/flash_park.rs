@@ -17,6 +17,10 @@ struct Model {
     stores: u32,
     barriers: u32,
     tick_reads: u32,
+    /// A slow counter, as the 32 kHz SYSTIMER is beside the core: it moves
+    /// every fourth read, and the read that catches it moving is torn,
+    /// reading far behind the count.
+    torn_transitions: bool,
 
     release_at: u32,
     tear_at: u32,
@@ -128,6 +132,13 @@ impl<const KM0: bool> Mmio for Fake<KM0> {
                     }
                 }
 
+                if m.torn_transitions {
+                    if m.tick_reads % 4 == 0 {
+                        m.ticks = m.ticks.wrapping_add(1);
+                        return m.ticks.wrapping_sub(0x1000);
+                    }
+                    return m.ticks;
+                }
                 if m.mode == 1 {
                     return m.ticks;
                 }
@@ -253,7 +264,7 @@ fn reset<const KM0: bool>() {
             mask: 1,
             foreign_slot: 5,
             response_delay: 3,
-            release_at: if KM0 { 10 } else { 4 },
+            release_at: 10,
             tear_at: 3,
             input: token,
             original: token,
@@ -562,6 +573,28 @@ fn countflag_is_not_an_enabled_systick<const KM0: bool>() {
     assert!(m(|m| !m.acked && m.stores == 0));
 }
 
+/// A torn SYSTIMER read, on either core, is re-sampled rather than read as
+/// a clock that went backward: the park and both owner exchanges complete
+/// although every read that catches the counter moving is torn.
+fn a_torn_tick_read_is_resampled<const KM0: bool>() {
+    reset::<KM0>();
+    with(|m| m.torn_transitions = true);
+    // SAFETY: the token is null or points into the live model.
+    assert!(unsafe { wait::<Fake<KM0>>(input(), 20, 30) });
+    assert!(m(|m| m.regs[m.own][10] == RELEASED));
+
+    reset::<KM0>();
+    with(|m| {
+        older_lease_reply(m);
+        m.torn_transitions = true;
+    });
+    // SAFETY: the token is null or points into the live model.
+    assert!(unsafe { owner_begin::<Fake<KM0>>(input(), 16, 20, 30) });
+    // SAFETY: the token is null or points into the live model.
+    assert!(unsafe { owner_end::<Fake<KM0>>(input(), 30, 20, 30) });
+    assert!(m(|m| m.regs[m.other()][10] == RELEASED));
+}
+
 macro_rules! both_cores {
     ($($name:ident),*) => {
         mod km0 { $(#[test] fn $name() { super::$name::<true>(); })* }
@@ -577,5 +610,6 @@ both_cores!(
     bounded_semaphore_attempts_and_ownership,
     owner_requires_current_ack_and_verified_release,
     owner_bad_context_stale_reply_and_deadlines_never_grant,
-    countflag_is_not_an_enabled_systick
+    countflag_is_not_an_enabled_systick,
+    a_torn_tick_read_is_resampled
 );
