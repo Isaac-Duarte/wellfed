@@ -67,9 +67,10 @@ Progress goes to stderr; stdout carries exactly one JSON object: `status`, the o
 | Exit code | Meaning |
 | --- | --- |
 | 0 | Complete: inspected, prepared, verified, or a clean offline result |
-| 1 | Stopped after the port opened; inspect the report and journal. Nothing was retried |
+| 1 | Stopped once the serial session began, a port that would not open included; inspect the report and journal. Nothing was retried |
 | 2 | Refused before any serial access: no port opened, and no output directory was created unless the error says otherwise |
 | 3 | Incomplete: an `update --bank 0` wrote and verified bank 0, which has not recorded itself yet, so bank 1 refuses every update. The summary's `bank0.next` and stderr list the steps that finish it ([OTA design](../firmware/ota-design.md#bootstrap)) |
+| 4 | Mismatch: an `update inspect` or `give-way inspect` read the bank whole and found it in another state than the command takes on (not the source, not given way, nothing to give way, or no state `--interrupted` finishes). Nothing was written. The bench's probes after a stopped bank-0 write read this, and only this, as "not this state" |
 
 A command that opens the serial port first takes the [bench lease](../devices/plaf103/bench-server.md#bench-lease) under `--root`, or runs on its parent's when `wellfed-bench` started it. Another holder, or a lease a killed run left, is a refusal (exit 2) naming the holder. The offline commands take no lease.
 

@@ -5,7 +5,8 @@
 //! once the serial session began, whether or not the port opened (inspect
 //! the evidence; nothing is retried); 2 refused before the session began; 3
 //! a bank-0 write that verified but is a step, not the write's end (its
-//! summary names the steps that finish it).
+//! summary names the steps that finish it); 4 an inspection that read the
+//! bank and found it in another state than the command takes on.
 
 #![forbid(unsafe_code)]
 
@@ -37,7 +38,8 @@ use wellfed_proto::device::Model;
         nothing here enters the loader, controls power, retries or boots. Progress goes to stderr and one JSON \
         summary to stdout. Exit status: 0 complete; 1 stopped once the serial session began, whether or not the port opened; \
         2 refused before the session began; 3 a bank-0 write that verified but is a step, not the write's end \
-        (the summary names the steps that finish it)."
+        (the summary names the steps that finish it); 4 an inspection that read the bank and found it in \
+        another state than the command takes on."
 )]
 struct Cli {
     /// Repository checkout whose ignored private/ holds all evidence.

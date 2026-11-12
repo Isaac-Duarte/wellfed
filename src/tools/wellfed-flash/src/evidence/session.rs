@@ -207,16 +207,22 @@ pub enum Completion {
     /// the update store, so bank 1 refuses every update until it boots
     /// once: a step of a bank-0 write, not its end.
     Unrecorded,
+    /// An inspection read the bank, and it is not in the state this
+    /// command takes on. Nothing was written. The bench's probes tell this
+    /// from a stop, after which nothing is known.
+    Mismatch,
 }
 
 impl Completion {
     /// The process's exit status: 0 complete, 1 stopped, 3 written but
-    /// unrecorded (2 is a refusal before serial access).
+    /// unrecorded, 4 inspected and not this command's state (2 is a
+    /// refusal before serial access).
     pub const fn code(self) -> u8 {
         match self {
             Self::Complete => 0,
             Self::Stopped => 1,
             Self::Unrecorded => 3,
+            Self::Mismatch => 4,
         }
     }
 }

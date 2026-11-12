@@ -2699,7 +2699,7 @@ fn a_stopped_give_way_prints_the_way_on_bank_1_is_in() {
     );
     assert!(!steps.contains("boot unit-bank0"), "{steps}");
 
-    let given = stopped_at(0, &[2, 0]);
+    let given = stopped_at(0, &[4, 0]);
     assert_eq!(
         probes(&given),
         [
@@ -2733,12 +2733,23 @@ fn a_stopped_give_way_prints_the_way_on_bank_1_is_in() {
         2
     );
 
-    // Both refused (exit 2), as for a frame that cleared only some of byte
-    // 0's bits: no flash-client way on, and none printed.
-    assert_unrecognized(&stopped_at(0, &[2, 2]));
+    // Both read bank 1 in another state (exit 4), as for a frame that
+    // cleared only some of byte 0's bits: no flash-client way on, and none
+    // printed.
+    assert_unrecognized(&stopped_at(0, &[4, 4]));
+
+    // A refusal before the inspection's session (exit 2) read nothing, so
+    // it tells nothing either, and the next inspection is not run.
+    let refused = stopped_at(0, &[2]);
+    assert_eq!(probes(&refused).len(), 1);
+    assert!(
+        next(&refused).contains("if give-way-prepare accepts bank 1"),
+        "{}",
+        next(&refused)
+    );
 }
 
-/// The stop where every inspection refused bank 1: a full read to look,
+/// The stop where every inspection read bank 1 in another state: a full read to look,
 /// and none of the writes or conditions the inspections ruled out.
 fn assert_unrecognized(rig: &Rig) {
     let steps = next(rig);
@@ -2765,7 +2776,7 @@ fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
     assert!(steps.contains("--restore-marker"), "{steps}");
     assert!(!steps.contains("--interrupted"), "{steps}");
 
-    let staged = stopped_at(1, &[2, 0]);
+    let staged = stopped_at(1, &[4, 0]);
     assert_eq!(
         probes(&staged),
         [
@@ -2777,18 +2788,18 @@ fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
     assert!(steps.contains("--interrupted"), "{steps}");
     assert!(!steps.contains("--restore-marker"), "{steps}");
 
-    let restored = stopped_at(1, &[2, 2, 0]);
+    let restored = stopped_at(1, &[4, 4, 0]);
     assert_eq!(
         probes(&restored)[2],
         ("update inspect".into(), false, false)
     );
     assert!(next(&restored).starts_with("wellfed-bench boot unit-bank1"));
 
-    assert_unrecognized(&stopped_at(1, &[2, 2, 2]));
+    assert_unrecognized(&stopped_at(1, &[4, 4, 4]));
 
     // The second inspection stopped: nothing is known, so every way on is
     // printed with its condition.
-    let unknown = stopped_at(1, &[2, 1]);
+    let unknown = stopped_at(1, &[4, 1]);
     assert_eq!(probes(&unknown).len(), 2);
     let steps = next(&unknown);
     for condition in [

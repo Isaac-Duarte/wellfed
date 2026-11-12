@@ -122,4 +122,12 @@ impl Error {
     }
 }
 
+impl Error {
+    /// Whether an inspection found the bank whole and not in the state the
+    /// command takes on ([`development::DevelopmentError::is_state_mismatch`]).
+    pub fn is_state_mismatch(&self) -> bool {
+        matches!(self, Self::Development(error) if error.is_state_mismatch())
+    }
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;

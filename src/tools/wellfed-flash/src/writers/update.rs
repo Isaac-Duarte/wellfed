@@ -707,6 +707,7 @@ fn session_run(
     })();
 
     finish(
+        args.mode,
         &directory,
         report,
         result,
@@ -716,6 +717,7 @@ fn session_run(
 
 /// Close a session's report the way the Python clients do.
 fn finish<B: Serialize>(
+    mode: Mode,
     directory: &Path,
     report: Session<Details<'_, B>>,
     result: Result<Option<development::Verified>>,
@@ -723,6 +725,7 @@ fn finish<B: Serialize>(
 ) -> Result<Outcome> {
     let completion = match &result {
         Ok(_) => Completion::Complete,
+        Err(error) if mode == Mode::Inspect && error.is_state_mismatch() => Completion::Mismatch,
         Err(_) => Completion::Stopped,
     };
 
@@ -745,6 +748,7 @@ fn finish<B: Serialize>(
             Completion::Stopped => {
                 "Stopped without replay; keep application boot excluded and inspect evidence"
             }
+            Completion::Mismatch => "Inspected: the bank is not in this command's state",
         });
     });
 
@@ -1006,6 +1010,7 @@ fn give_way_session(
     })();
 
     finish(
+        args.mode,
         &directory,
         report,
         result,
@@ -1071,7 +1076,14 @@ mod tests {
             application_boot_verified: false,
             scope: "scope".into(),
         };
-        let outcome = finish(&directory, report, Ok(Some(verified)), Some(b"plan")).unwrap();
+        let outcome = finish(
+            Mode::Execute,
+            &directory,
+            report,
+            Ok(Some(verified)),
+            Some(b"plan"),
+        )
+        .unwrap();
         let result = json!({"status": "verified_via_supplied_transports", "region_sha256": "r",
                             "erase_sectors": 2, "application_boot_verified": false,
                             "scope": "scope"});
@@ -1146,7 +1158,7 @@ mod tests {
             })
         });
         let stopped = Err(protocol::ProtocolError::Interrupted.into());
-        let outcome = finish(&directory, report, stopped, None).unwrap();
+        let outcome = finish(Mode::Inspect, &directory, report, stopped, None).unwrap();
 
         let closed = saved(&directory.join("report.json"));
         assert_eq!(
@@ -1168,6 +1180,50 @@ mod tests {
             outcome.summary,
             json!({"status": "stopped", "mode": "inspect", "output": directory,
                    "result": null, "error": "refused: Interrupted by the operator; no retry"})
+        );
+    }
+
+    /// An inspection that read the bank and found it in another state exits
+    /// 4, apart from a stop (1), so the bench's probes can tell "not this
+    /// state" from "nothing known". The same error in an execution, or any
+    /// other error in an inspection, is a stop.
+    #[test]
+    fn an_inspection_of_another_state_is_a_mismatch_not_a_stop() {
+        let checkout = tempfile::tempdir().unwrap();
+        std::fs::create_dir(checkout.path().join("private")).unwrap();
+        let context = context(checkout.path());
+        let directory = checkout.path().join("private");
+        let bindings = json!({"kind": "plaf103_bank1_development"});
+        let close = |mode, error: crate::Error| {
+            let report = Session::open(
+                directory.join("report.json"),
+                Details::new(&context, mode, &bindings),
+            )
+            .unwrap();
+            finish(mode, &directory, report, Err(error), None)
+                .unwrap()
+                .completion
+        };
+
+        let mismatch = close(
+            Mode::Inspect,
+            development::DevelopmentError::NotGivenWay.into(),
+        );
+        assert_eq!(mismatch, Completion::Mismatch);
+        assert_eq!(mismatch.code(), 4);
+        assert_eq!(
+            close(
+                Mode::Inspect,
+                development::DevelopmentError::FactoryDiffers.into()
+            ),
+            Completion::Stopped
+        );
+        assert_eq!(
+            close(
+                Mode::Execute,
+                development::DevelopmentError::NotSource.into()
+            ),
+            Completion::Stopped
         );
     }
 }

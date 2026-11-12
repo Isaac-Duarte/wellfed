@@ -321,6 +321,22 @@ fn part_programmed(sector: &[u8], want: &[u8], least: usize) -> bool {
         .any(|n| sector[..n] == want[..n] && sector[n..].iter().all(|b| *b == 0xff))
 }
 
+impl DevelopmentError {
+    /// Whether the inspected bank read whole and is simply not in the state
+    /// the command takes on, rather than the read or a guard failing.
+    pub fn is_state_mismatch(&self) -> bool {
+        matches!(
+            self,
+            Self::NotGivenWay
+                | Self::NotSource
+                | Self::MarkerNotStaged
+                | Self::UnknownSector { .. }
+                | Self::PartialSectors { .. }
+                | Self::NothingToGiveWay
+        )
+    }
+}
+
 /// The reviewed plan; `other` is the inspected other-bank sector, whose hash
 /// it pins.
 pub fn plan(update: &Update, current: &[u8], other: Option<&[u8]>) -> Result<DevelopmentPlan> {
