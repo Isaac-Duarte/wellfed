@@ -24,7 +24,7 @@ pub use wellfed_amebad_sys as sdk;
 // The board the ports drive, through the board contract: its pins, its
 // outputs' safe state and its storage sector map.
 pub use wellfed_board as board;
-pub use wellfed_hal_common::{cell, flash, trial};
+pub use wellfed_hal_common::{cell, flash, handoff, trial};
 
 #[cfg(all(target_os = "none", not(feature = "km4")))]
 compile_error!("wellfed-hal target builds are KM4-only; KM0 links wellfed-hal-common");
