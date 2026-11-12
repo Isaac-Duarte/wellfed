@@ -6,6 +6,7 @@
 use std::cell::Cell;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use flutter_rust_bridge::frb;
@@ -99,6 +100,8 @@ pub struct FirmwareUpdate {
     address: Option<String>,
     image_dir: String,
     asks: Arc<Asks>,
+    /// The image is offered once, by the first [`Self::run`].
+    started: AtomicBool,
 }
 
 impl FirmwareUpdate {
@@ -117,6 +120,7 @@ impl FirmwareUpdate {
             address,
             image_dir,
             asks: Arc::new(Asks::new()),
+            started: AtomicBool::new(false),
         })
     }
 
@@ -127,8 +131,18 @@ impl FirmwareUpdate {
     }
 
     /// Offer the image once, and report until the update ends. The stream
-    /// closes with the run.
+    /// closes with the run. A second call offers nothing and leaves the
+    /// first run's asks where they go: its own stream hears that it ran.
     pub fn run(&self, updates: StreamSink<UpdateProgress>) {
+        if !self.first_run() {
+            let _ = updates.add(UpdateProgress::Ended {
+                end: UpdateEnd::Failed {
+                    detail: "this update already ran".to_string(),
+                },
+            });
+            return;
+        }
+
         let keys = self.keys.clone();
         let (feeder, address) = (self.feeder, self.address.clone());
         let image_dir = self.image_dir.clone();
@@ -185,6 +199,13 @@ impl FirmwareUpdate {
     }
 }
 
+impl FirmwareUpdate {
+    /// Whether this is the first run, which alone may offer the image.
+    fn first_run(&self) -> bool {
+        !self.started.swap(true, Ordering::SeqCst)
+    }
+}
+
 async fn update(
     keys: &Keypair,
     feeder: [u8; 32],
@@ -195,8 +216,21 @@ async fn update(
 ) -> UpdateEnd {
     match try_update(keys, feeder, address, image_dir, asks, report).await {
         Ok(end) => end,
-        Err(detail) => UpdateEnd::Failed { detail },
+        Err(failure) => UpdateEnd::Failed {
+            detail: crate::install::text(&failure),
+        },
     }
+}
+
+/// What of this phone's stopped an update before any offer.
+#[derive(Debug, thiserror::Error)]
+enum NotOffered {
+    #[error("this app's image did not pass its check")]
+    ImageUnchecked,
+    #[error("read the image's review")]
+    Review(#[source] wellfed_install::Error),
+    #[error("read the image's update manifest")]
+    Manifest(#[source] std::io::Error),
 }
 
 async fn try_update(
@@ -206,18 +240,18 @@ async fn try_update(
     image_dir: &str,
     asks: Arc<Asks>,
     report: &impl Fn(UpdateProgress),
-) -> Result<UpdateEnd, String> {
+) -> Result<UpdateEnd, NotOffered> {
     // The image is the one this build pinned, or nothing goes out.
     let ImageCheck::Ready { version, .. } = check_image(Path::new(image_dir), pin().as_ref())
     else {
-        return Err("this app's image did not pass its check".to_string());
+        return Err(NotOffered::ImageUnchecked);
     };
     let last = Cell::new(address.and_then(|address| wellfed_connect::parse_address(address).ok()));
     let discovery = AppDiscovery(asks);
-    let review = Review::open(Path::new(image_dir)).map_err(|error| error.to_string())?;
-    let manifest = std::fs::read(Path::new(image_dir).join(UPDATE_MANIFEST))
-        .map_err(|error| error.to_string())?;
-    let payload = review.payload().map_err(|error| error.to_string())?;
+    let review = Review::open(Path::new(image_dir)).map_err(NotOffered::Review)?;
+    let manifest =
+        std::fs::read(Path::new(image_dir).join(UPDATE_MANIFEST)).map_err(NotOffered::Manifest)?;
+    let payload = review.payload().map_err(NotOffered::Review)?;
     let served = review.build().to_owned();
 
     // Where it last answered, then where NSD says: a restart can move it.
@@ -476,6 +510,16 @@ mod tests {
         ));
 
         assert!(matches!(end, UpdateEnd::Failed { .. }));
+    }
+
+    /// A second run of one update offers nothing: only the first may.
+    #[test]
+    fn an_update_offers_once() {
+        let key = ClientKey::from_secret([7; 32]);
+        let update = FirmwareUpdate::new(&key, vec![0; 32], None, String::new()).unwrap();
+
+        assert!(update.first_run());
+        assert!(!update.first_run());
     }
 
     /// An update state read idle on `bank`, with floor `floor` and bank 0's

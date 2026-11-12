@@ -26,9 +26,14 @@ class _AddServerScreenState extends State<AddServerScreen> {
   final _name = TextEditingController();
   final _password = TextEditingController();
 
+  /// This screen has popped itself: it is still mounted while it leaves.
+  bool _left = false;
+
   void _changed() {
-    // Logged in: the account screen is where the owner goes next.
-    if (_flow.state.stage is AddServerDone && mounted) Navigator.pop(context, true);
+    // Logged in: the account screen is where the owner goes next, once.
+    if (_flow.state.stage is! AddServerDone || !mounted || _left) return;
+    _left = true;
+    Navigator.pop(context, true);
   }
 
   @override
@@ -41,6 +46,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
     _password.dispose();
     super.dispose();
   }
+
+  /// An address typed or heard with plain http, which carries the password
+  /// as it is.
+  static bool _plain(String url) => url.trim().toLowerCase().startsWith('http://');
 
   void _logIn() => unawaited(_flow.logIn(url: _url.text, name: _name.text, password: _password.text));
 
@@ -68,7 +77,10 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(found.name, style: TextStyle(color: c.text)),
-                subtitle: Text(found.url, style: TextStyle(color: c.textMuted)),
+                subtitle: Text(
+                  _plain(found.url) ? '${found.url} · not encrypted' : found.url,
+                  style: TextStyle(color: c.textMuted),
+                ),
                 selected: _url.text == found.url,
                 onTap: () => _url.text = found.url,
               ),
@@ -79,6 +91,18 @@ class _AddServerScreenState extends State<AddServerScreen> {
             hint: 'As the server prints it, like http://192.168.1.20:8080',
             child: TextField(controller: _url, keyboardType: TextInputType.url, autocorrect: false, enabled: !sending),
           ),
+          // Any device on the network can announce itself under a server's
+          // name, and plain http shows the password to anyone listening.
+          if (_plain(_url.text)) ...[
+            const SizedBox(height: Space.s2),
+            const Notice(
+              tone: Tone.warning,
+              lead: 'Not encrypted.',
+              text:
+                  'Anyone on this Wi-Fi can read the password, and any device here can '
+                  "announce itself as a server. Log in only at your server's own address.",
+            ),
+          ],
           const SizedBox(height: Space.s3),
           LabeledField(
             label: 'Name',
@@ -93,6 +117,15 @@ class _AddServerScreenState extends State<AddServerScreen> {
           const SizedBox(height: Space.s4),
           if (state.stage case AddServerFailed(:final error)) ...[
             Notice(tone: Tone.fault, text: serverErrorWords(error)),
+            const SizedBox(height: Space.s3),
+          ],
+          if (state.stage is AddServerNotKept) ...[
+            Notice(
+              tone: Tone.fault,
+              text:
+                  "This $deviceName's storage couldn't keep the sign-in, so nothing was kept. "
+                  'Try again; if this stays, restart the $deviceName.',
+            ),
             const SizedBox(height: Space.s3),
           ],
           FilledButton(onPressed: filled && !sending ? _logIn : null, child: Text(sending ? 'Logging in' : 'Log in')),

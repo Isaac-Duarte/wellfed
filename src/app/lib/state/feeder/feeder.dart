@@ -180,6 +180,14 @@ class FeederController extends ChangeNotifier {
   /// Take this feeder off this phone.
   Future<void> forgetHere() => _book.forget(_state.known.identity);
 
+  /// The app's file holds `known` for this feeder now: a re-pair, a recovery
+  /// or an install wrote its name and where it answers. Shown at once, and
+  /// the next dial goes there.
+  void knownChanged(KnownFeeder known) {
+    if (known == _state.known) return;
+    _setState(_state.copyWith(known: known));
+  }
+
   /// Call this feeder `name` on this phone; a blank name changes nothing.
   /// Whether this phone's file holds the name now.
   Future<bool> rename(String name) async {
@@ -240,8 +248,18 @@ class FeederController extends ChangeNotifier {
   /// goes at all, as a write the router cannot pin must not.
   Future<FeederReply> ask(FeederRequest request) async {
     final PathRouter? router = _ports.router;
-    if (router == null) return const FeederReply.notSent();
-    final RoutedReply routed = await router.ask(feeder: _state.known.identity, request: request);
+    if (router == null) return const FeederReply.notSent(reason: NotSentReason.store);
+    final RoutedReply routed;
+    try {
+      routed = await router.ask(feeder: _state.known.identity, request: request);
+    } on Object catch (error) {
+      // The bridge failed, a panic among them: a write may have gone, so its
+      // end is unknown and it is never sent again. What the router pinned
+      // is read again.
+      debugPrint('the router failed a request: $error');
+      if (!_disposed) _readUnconfirmed();
+      return const FeederReply.unanswered();
+    }
     if (_disposed) return routed.reply;
     _keep(request, routed.reply);
     if (routed.pending != null) _readUnconfirmed();

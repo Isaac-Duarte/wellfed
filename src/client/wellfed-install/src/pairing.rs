@@ -98,11 +98,33 @@ pub async fn over_link(
     let mut session = session(keys, wifi)?;
     let result = exchange(&mut session, &mut link, prompter).await;
     link.close().await;
-    let outcome = result?;
+    let outcome = result.map_err(|error| unsettled(keys, &session, error))?;
 
     let identity = session.feeder_key().ok_or(Error::NoProof)?;
     keys.remember(&identity).map_err(Error::Platform)?;
     Ok((identity, outcome))
+}
+
+/// What an exchange that ended in `error` leaves. Once the feeder has proven
+/// the code and the last step went out, the feeder goes on without the
+/// client: a link or a wait that ends then says nothing of the outcome. The
+/// proof makes the identity trustworthy, so it is remembered, and the error
+/// says the setup is unsettled rather than failed. A refusal is the
+/// feeder's own answer, and stays one.
+fn unsettled(keys: &mut impl Keys, session: &Session, error: Error) -> Error {
+    let Some(identity) = session.feeder_key() else {
+        return error;
+    };
+    if matches!(error, Error::SetupRefused(_)) {
+        return error;
+    }
+    if let Err(platform) = keys.remember(&identity) {
+        return Error::Platform(platform);
+    }
+    Error::Unsettled {
+        identity,
+        source: Box::new(error),
+    }
 }
 
 /// Run the session over `link` to its end.
@@ -156,9 +178,15 @@ pub async fn recover(
     let mut wait = HANDSHAKE_WAIT;
     let outcome = loop {
         let reply = match recovery.reply(wait).await {
-            Err(wellfed_connect::Error::Closed) => return Err(Error::RecoveryClosed),
-            Err(wellfed_connect::Error::Timeout) => return Err(Error::RecoveryTimeout),
-            other => other?,
+            Ok(reply) => reply,
+            Err(error) => {
+                let error = match error {
+                    wellfed_connect::Error::Closed => Error::RecoveryClosed,
+                    wellfed_connect::Error::Timeout => Error::RecoveryTimeout,
+                    other => other.into(),
+                };
+                return Err(unsettled(keys, recovery.session(), error));
+            }
         };
         match next(reply)? {
             Next::EnterCode(seconds) => {
@@ -172,4 +200,153 @@ pub async fn recover(
     let identity = recovery.session().feeder_key().ok_or(Error::NoProof)?;
     keys.remember(&identity).map_err(Error::Platform)?;
     Ok((identity, outcome))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use std::time::Duration;
+
+    use wellfed_feeder_sim::harness::SetupFeeder;
+    use wellfed_session::noise::Keypair;
+
+    use super::*;
+    use crate::platform::PlatformError;
+    use crate::prompt::Prompt;
+
+    /// This client's key, and the feeders it was told enrolled it.
+    struct Remembering {
+        keypair: Keypair,
+        remembered: Vec<[u8; 32]>,
+    }
+
+    impl Keys for Remembering {
+        fn keypair(&self) -> &Keypair {
+            &self.keypair
+        }
+
+        fn label(&self) -> &str {
+            "phone"
+        }
+
+        fn feeder(&self, _prefix: Option<&str>) -> Option<[u8; 32]> {
+            None
+        }
+
+        fn remember(&mut self, identity: &[u8; 32]) -> Result<(), PlatformError> {
+            self.remembered.push(*identity);
+            Ok(())
+        }
+    }
+
+    /// The owner at the panel: the code the client announces is the one
+    /// keyed in.
+    struct Owner(Rc<Cell<Option<Code>>>);
+
+    impl Prompter for Owner {
+        async fn done(&mut self, _prompt: Prompt) -> Result<(), PlatformError> {
+            Ok(())
+        }
+
+        async fn yes(&mut self, _prompt: Prompt) -> Result<bool, PlatformError> {
+            Ok(false)
+        }
+
+        async fn announce(&mut self, announcement: Announcement) -> Result<(), PlatformError> {
+            if let Announcement::SetupCode { code, .. } = announcement {
+                self.0.set(Some(code));
+            }
+            Ok(())
+        }
+
+        async fn settle(&mut self) -> Result<(), PlatformError> {
+            Ok(())
+        }
+    }
+
+    /// A feeder in setup mode behind a link that drops once the client's
+    /// last step arrives: the feeder goes on without it.
+    struct Dropping {
+        feeder: SetupFeeder,
+        keyed: Rc<Cell<Option<Code>>>,
+        /// The feeder's next message to the client.
+        next: Option<Vec<u8>>,
+        /// Drop before the feeder proves the code, not after the last step.
+        early: bool,
+    }
+
+    impl SetupLink for Dropping {
+        async fn send(&mut self, message: &[u8]) -> Result<(), PlatformError> {
+            let answer = self.feeder.hear(message);
+            if !self.feeder.proven() {
+                self.next = Some(answer);
+            }
+            Ok(())
+        }
+
+        async fn receive(&mut self, _wait: Duration) -> Result<Vec<u8>, PlatformError> {
+            if self.feeder.proven() {
+                return Err("the link dropped".into());
+            }
+            if let Some(next) = self.next.take() {
+                return Ok(next);
+            }
+
+            // The code is in: the feeder starts the proof.
+            if self.early {
+                return Err("the link dropped".into());
+            }
+            let code = self.keyed.take().ok_or("no code was keyed in")?;
+            Ok(self.feeder.prove(code))
+        }
+
+        async fn close(self) {}
+    }
+
+    fn dropping(feeder: &Keypair, keyed: &Rc<Cell<Option<Code>>>, early: bool) -> Dropping {
+        Dropping {
+            feeder: SetupFeeder::new(feeder),
+            keyed: Rc::clone(keyed),
+            next: None,
+            early,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_link_lost_before_the_proof_is_a_failure_and_keeps_nothing() {
+        let feeder = Keypair::from_secret([1; 32]);
+        let mut keys = Remembering {
+            keypair: Keypair::from_secret([2; 32]),
+            remembered: Vec::new(),
+        };
+        let keyed = Rc::new(Cell::new(None));
+        let link = dropping(&feeder, &keyed, true);
+
+        let paired = over_link(&mut keys, None, link, &mut Owner(keyed)).await;
+
+        assert!(matches!(paired, Err(Error::Platform(_))), "{paired:?}");
+        assert!(keys.remembered.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_link_lost_after_the_last_step_is_unsettled_and_keeps_the_proven_feeder() {
+        let feeder = Keypair::from_secret([1; 32]);
+        let mut keys = Remembering {
+            keypair: Keypair::from_secret([2; 32]),
+            remembered: Vec::new(),
+        };
+        let keyed = Rc::new(Cell::new(None));
+        let link = dropping(&feeder, &keyed, false);
+        let wifi = Credentials::new(b"Lab".to_vec(), "pass word!".into()).unwrap();
+
+        let paired = over_link(&mut keys, Some(wifi), link, &mut Owner(keyed)).await;
+
+        let Err(Error::Unsettled { identity, source }) = paired else {
+            panic!("a lost link after the last step is not a failure: {paired:?}");
+        };
+        assert_eq!(identity, *feeder.public());
+        assert!(matches!(*source, Error::Platform(_)), "{source:?}");
+        assert_eq!(keys.remembered, [*feeder.public()]);
+    }
 }

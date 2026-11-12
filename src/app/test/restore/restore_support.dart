@@ -13,7 +13,6 @@ import '../support/fakes.dart';
 
 /// A run the test drives.
 class FakeRestoreRun implements RestoreRun, RustOpaqueInterface {
-  // ignore: the test ends with it
   final updates = StreamController<RestoreUpdate>();
   final answers = <int, InstallAnswer>{};
   int stops = 0;
@@ -79,13 +78,19 @@ class FakeRestorePorts implements RestorePorts {
   }
 
   @override
+  String hexOf(List<int> identity) => identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+
+  @override
   Future<String?> locate(String identity) async => located;
 
   /// What a read over a session says.
   RestoreSeen seen = RestoreSeen.idle;
 
+  /// Holds a read open until the test completes it.
+  Completer<RestoreSeen>? reading;
+
   @override
-  Future<RestoreSeen> readFeeder(List<int> identity, String address) async => seen;
+  Future<RestoreSeen> readFeeder(List<int> identity, String address) => reading?.future ?? Future.value(seen);
 
   /// Where the feeder shows up on the network, if it does.
   String? located;
@@ -120,14 +125,27 @@ RestoreFlow restoreFlow(FakeRestorePorts ports) =>
 
 /// The screen's stages, drawn from the flow itself: no Rust behind
 /// [identityBytes], which [RestoreScreen] calls.
-class RestoreHarness extends StatelessWidget {
+/// The restore's screens over `flow`, which goes with them as the app's
+/// screen lets it go.
+class RestoreHarness extends StatefulWidget {
   const RestoreHarness(this.flow, {super.key, this.brightness = Brightness.light});
 
   final RestoreFlow flow;
   final Brightness brightness;
 
   @override
-  Widget build(BuildContext context) => themed(RestoreView(flow: flow), brightness: brightness);
+  State<RestoreHarness> createState() => _RestoreHarnessState();
+}
+
+class _RestoreHarnessState extends State<RestoreHarness> {
+  @override
+  void dispose() {
+    widget.flow.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => themed(RestoreView(flow: widget.flow), brightness: widget.brightness);
 }
 
 Future<RestoreFlow> restoreOpen(

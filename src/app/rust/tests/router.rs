@@ -441,7 +441,10 @@ fn a_direct_feed_whose_answer_is_lost_stays_direct_and_feeds_once() {
         let router = Rc::clone(&phone.router);
         let asked = kitchen.clone();
         let feeding = tokio::task::spawn_local(async move { router.feed(asked, 1).await });
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        eventually("the feed is reserved", async || {
+            (feeder::feeds(&flash) == 1).then_some(())
+        })
+        .await;
         relay.cut();
         let pending = uncertain(feeding.await.unwrap());
         assert_eq!(pending.path, RoutePath::Direct);
@@ -477,7 +480,10 @@ fn a_server_that_stops_mid_feed_keeps_it_pinned_and_unsent_direct_until_it_retur
         let router = Rc::clone(&phone.router);
         let asked = kitchen.clone();
         let feeding = tokio::task::spawn_local(async move { router.feed(asked, 1).await });
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        eventually("the feed is reserved", async || {
+            (feeder::feeds(&flash) == 1).then_some(())
+        })
+        .await;
         let address = server.address();
         let store = server.stop_keeping().await;
         let pending = uncertain(feeding.await.unwrap());
@@ -631,7 +637,10 @@ fn a_direct_feed_left_uncertain_is_never_resent_through_the_server_once_it_is_ba
         let router = Rc::clone(&phone.router);
         let asked = kitchen.clone();
         let feeding = tokio::task::spawn_local(async move { router.feed(asked, 1).await });
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        eventually("the feed is reserved", async || {
+            (feeder::feeds(&flash) == 1).then_some(())
+        })
+        .await;
         relay.cut();
         let pending = uncertain(feeding.await.unwrap());
         assert_eq!(pending.path, RoutePath::Direct);
@@ -987,10 +996,14 @@ fn a_direct_feed_never_takes_the_end_of_one_already_running() {
         // The first feed's end, and the next feed's answer, are held back
         // and lost with the session.
         relay.hold_answers();
+        let sent = relay.passed();
         let router = Rc::clone(&phone.router);
         let asked = kitchen.clone();
         let feeding = tokio::task::spawn_local(async move { router.feed(asked, 1).await });
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        eventually("the second feed reaches the feeder", async || {
+            (relay.passed() > sent).then_some(())
+        })
+        .await;
         relay.cut();
         let second = uncertain(feeding.await.unwrap());
         direct.closed().await;
@@ -1118,11 +1131,14 @@ fn a_server_that_refuses_the_phones_token_closes_the_direct_path_too() {
             .ask(kitchen.clone(), FeederRequest::GetCalibration)
             .await;
         assert_eq!(read.path, Some(RoutePath::Server));
-        assert_eq!(read.reply, FeederReply::NotSent);
-        assert_eq!(
-            read.server_error.map(|error| error.kind),
-            Some(ServerErrorKind::TokenRevoked)
-        );
+        let FeederReply::NotSent {
+            reason: NotSentReason::Server,
+            server: Some(error),
+        } = read.reply
+        else {
+            panic!("the refused token reads nothing: {read:?}");
+        };
+        assert_eq!(error.kind, ServerErrorKind::TokenRevoked);
         let invite = phone
             .router
             .ask(
@@ -1425,7 +1441,16 @@ fn a_router_left_behind_is_fenced_by_the_next_and_sends_no_write() {
             .router
             .ask(kitchen.clone(), FeederRequest::SetLock { locked: true })
             .await;
-        assert_eq!(reply.reply, FeederReply::NotSent);
+        assert!(
+            matches!(
+                reply.reply,
+                FeederReply::NotSent {
+                    reason: NotSentReason::Store,
+                    server: None
+                }
+            ),
+            "{reply:?}"
+        );
         assert_eq!(feeder::feeds(&flash), 0);
 
         // The new one, with its own session, feeds.

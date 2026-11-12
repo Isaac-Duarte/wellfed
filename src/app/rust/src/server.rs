@@ -90,6 +90,11 @@ impl From<Error> for ServerError {
             .retry_after()
             .map(|wait| u32::try_from(wait.as_secs()).unwrap_or(u32::MAX));
         let kind = kind(&error);
+        let may_have_run = matches!(
+            error.failure(),
+            wellfed_server_client::Failure::Interrupted
+                | wellfed_server_client::Failure::OutcomeUnknown
+        );
 
         let message = match &error {
             Error::Problem { problem, .. } => match &problem.detail {
@@ -102,6 +107,7 @@ impl From<Error> for ServerError {
             kind,
             message,
             retry_after_seconds,
+            may_have_run,
         }
     }
 }
@@ -110,7 +116,7 @@ impl From<Error> for ServerError {
 /// run is the server client's [`Error::failure`], the one reading every
 /// client shares, so a kind never calls definite what that reads as
 /// possibly run; only the failures it leaves definite get their own words.
-fn kind(error: &Error) -> ServerErrorKind {
+pub(crate) fn kind(error: &Error) -> ServerErrorKind {
     use wellfed_api::ErrorCode;
     use wellfed_server_client::Failure;
 
@@ -122,6 +128,10 @@ fn kind(error: &Error) -> ServerErrorKind {
         // calls the write possibly run.
         Failure::Interrupted if matches!(error, Error::Decode(_) | Error::Unexpected { .. }) => {
             return ServerErrorKind::Protocol;
+        }
+        // The server itself said it failed: the connection held.
+        Failure::Interrupted if matches!(error, Error::Problem { .. }) => {
+            return ServerErrorKind::ServerFailed;
         }
         Failure::Interrupted => return ServerErrorKind::Interrupted,
         Failure::OutcomeUnknown => return ServerErrorKind::OutcomeUnknown,
@@ -685,7 +695,66 @@ mod tests {
 
         for error in unreadable {
             assert_eq!(error.failure(), Failure::Interrupted, "{error}");
-            assert_eq!(ServerError::from(error).kind, ServerErrorKind::Protocol);
+            let error = ServerError::from(error);
+            assert_eq!(error.kind, ServerErrorKind::Protocol);
+            assert!(error.may_have_run, "{error}");
+        }
+    }
+
+    /// A Wellfed server that answers it failed inside reads as that, not as
+    /// a connection that broke, and still as possibly run.
+    #[test]
+    fn a_server_that_says_it_failed_reads_so_and_still_may_have_run() {
+        use wellfed_api::{ErrorCode, Problem};
+        use wellfed_server_client::{Failure, StatusCode};
+
+        for (status, code) in [
+            (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Internal),
+            (StatusCode::BAD_GATEWAY, ErrorCode::Unreachable),
+        ] {
+            let error = Error::Problem {
+                status,
+                problem: Box::new(Problem {
+                    kind: "about:blank".into(),
+                    title: "It failed".into(),
+                    status: status.as_u16(),
+                    code,
+                    detail: None,
+                    refusal: None,
+                    release: None,
+                }),
+                retry_after: None,
+            };
+            assert_eq!(error.failure(), Failure::Interrupted, "{error}");
+            let error = ServerError::from(error);
+            assert_eq!(error.kind, ServerErrorKind::ServerFailed);
+            assert!(error.may_have_run, "{error}");
+        }
+    }
+
+    /// A refusal, or a call that never left the phone, did not run.
+    #[test]
+    fn a_refusal_or_an_unsent_call_did_not_run() {
+        use wellfed_api::{ErrorCode, Problem};
+        use wellfed_server_client::StatusCode;
+
+        let refused = Error::Problem {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            problem: Box::new(Problem {
+                kind: "about:blank".into(),
+                title: "No".into(),
+                status: StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
+                code: ErrorCode::Invalid,
+                detail: None,
+                refusal: None,
+                release: None,
+            }),
+            retry_after: None,
+        };
+
+        for error in [refused, Error::NoSession] {
+            let error = ServerError::from(error);
+            assert!(!error.may_have_run, "{error}");
         }
     }
 

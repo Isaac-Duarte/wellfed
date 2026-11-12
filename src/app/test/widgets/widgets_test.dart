@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
 import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
 
 Widget _themed(Widget child, {Brightness brightness = Brightness.light}) => MaterialApp(
@@ -14,8 +16,14 @@ Widget _themed(Widget child, {Brightness brightness = Brightness.light}) => Mate
 
 void main() {
   // Dart's local time cannot be faked, so this needs a host zone with DST:
-  // `make check-app` sets TZ for it. Under UTC it passes without proving this.
+  // `make check-app` sets TZ for it. Under one with none it fails rather than
+  // pass without proving anything.
   test('yesterday is yesterday on every day of the year, DST days included', () {
+    expect(
+      DateTime(2026).timeZoneOffset,
+      isNot(DateTime(2026, 7).timeZoneOffset),
+      reason: 'run with a zone that has daylight saving, like TZ=America/Denver',
+    );
     for (var day = 1; day <= 366; day++) {
       final now = DateTime(2026, 1, day, 12);
       expect(dayText(DateTime(2026, 1, day, 6), now: now), 'Today');
@@ -135,5 +143,10 @@ void main() {
     for (final Blocked reason in Blocked.values) {
       expect(blockedWords(reason), isNotEmpty);
     }
+  });
+
+  test("a refused feed's size names the portions asked only when they came back", () {
+    expect(refusalWords(const FeederRefusal.portions(asked: 9)), endsWith('portions, not 9.'));
+    expect(refusalWords(const FeederRefusal.portions()), endsWith('portions.'));
   });
 }

@@ -28,6 +28,12 @@ final class AddServerDone extends AddServerStage {
   const AddServerDone();
 }
 
+/// The server took the login, and this phone could not keep its token.
+final class AddServerNotKept extends AddServerStage {
+  /// A login kept nowhere.
+  const AddServerNotKept();
+}
+
 /// The server refused, or could not be reached; `error` says which.
 final class AddServerFailed extends AddServerStage {
   /// A login that did not go through.
@@ -97,8 +103,15 @@ class AddServerFlow extends ChangeNotifier {
     _stage(const AddServerLoggingIn());
     final LoginOutcome outcome = await _server.logIn(url: url.trim(), name: name.trim(), password: password);
     if (_disposed) return;
+    if (outcome is LoginDone) {
+      // Nothing listens for another server once one is in: a server heard
+      // now would only stir a screen on its way out.
+      unawaited(_browsing?.cancel());
+      _browsing = null;
+    }
     _stage(switch (outcome) {
       LoginDone() => const AddServerDone(),
+      LoginNotKept() => const AddServerNotKept(),
       LoginFailed(:final ServerError error) => AddServerFailed(error),
     });
   }

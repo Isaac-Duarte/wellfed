@@ -22,7 +22,7 @@ use wellfed_app_bridge::api::server::{
 use wellfed_app_bridge::api::server_error::ServerErrorKind;
 use wellfed_app_bridge::api::server_views::{ServerLink, ServerRole};
 use wellfed_app_bridge::api::session::HistoryBody;
-use wellfed_app_bridge::api::store::{AppStore, KnownServer, ListedFeeder, load_store, save_store};
+use wellfed_app_bridge::api::store::{AppStore, KnownServer, ListedFeeder, load_store, swap_store};
 use wellfed_server_client::{Auth, Client, Lock};
 use wellfed_server_testkit::{TestServer, ada_login, ada_setup, feeder, local};
 
@@ -661,7 +661,7 @@ fn the_app_file_keeps_the_server_link_and_its_list_and_no_secret() {
             }),
             ..AppStore::default()
         };
-        save_store(path, &store).unwrap();
+        assert!(swap_store(path, &load_store(path).unwrap(), &store).unwrap());
 
         assert_eq!(load_store(path).unwrap(), store);
         let text = std::fs::read_to_string(path).unwrap();

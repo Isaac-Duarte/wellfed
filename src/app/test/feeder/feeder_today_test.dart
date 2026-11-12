@@ -126,7 +126,7 @@ void main() {
       await tapIn(tester, find.widgetWithText(FilledButton, 'Use Cloudflare'));
       final put = session.requests.first as FeederRequest_PutTime;
       expect(put.base, 4);
-      expect(put.ntp, '162.159.200.1');
+      expect(put.ntp, const NtpChoice.address(address: '162.159.200.1'));
       expect(session.requests.last, const FeederRequest.getTime());
     });
 
@@ -174,8 +174,8 @@ void main() {
     final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
     await feederShowShell(tester, fleet);
 
-    final DateTime yesterday = DateTime.now().subtract(const Duration(days: 1));
-    final int at = DateTime(yesterday.year, yesterday.month, yesterday.day, 21).millisecondsSinceEpoch;
+    final DateTime now = DateTime.now();
+    final int at = DateTime(now.year, now.month, now.day - 1, 21).millisecondsSinceEpoch;
     session.status(
       fakeCard(
         lastFed: fakeFed(atMs: at),

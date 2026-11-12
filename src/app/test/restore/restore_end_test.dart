@@ -28,6 +28,61 @@ void main() {
       expect(find.textContaining('hold Reset', findRichText: true), findsNothing);
     });
 
+    testWidgets("a second uncertain run looks again, and never opens on the first one's verdict", (tester) async {
+      final ports = FakeRestorePorts()..located = '10.0.0.9:7700';
+      await uncertain(tester, ports);
+      await tester.pump();
+      expect(find.text('Kitchen is still running Wellfed'), findsOneWidget);
+
+      await tester.tap(find.text('Restore again'));
+      await settle(tester);
+      ports.located = null;
+      final FakeRestoreRun second = await restoreStarted(tester, ports);
+      second.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
+      await tester.pump();
+
+      expect(find.text("We can't tell if it went through"), findsOneWidget);
+      expect(find.text('Kitchen is still running Wellfed'), findsNothing);
+      expect(find.text('Restore again'), findsNothing);
+
+      await tester.pump(RestoreFlow.lookFor);
+      await tester.pump();
+      expect(find.text("It's probably on the original firmware"), findsOneWidget);
+    });
+
+    testWidgets("an earlier run's look that answers late decides nothing for the next run", (tester) async {
+      final ports = FakeRestorePorts()
+        ..located = '10.0.0.9:7700'
+        ..reading = Completer<RestoreSeen>();
+      final RestoreFlow flow = restoreFlow(ports);
+      addTearDown(flow.dispose);
+      await flow.load();
+      flow.setUnderstood(true);
+      await flow.start();
+      ports.runs.last.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
+      await tester.pump();
+
+      // The first look's read is out when setup is heard, and the owner
+      // starts again; the second look finds nothing on the network.
+      ports.heard.add(null);
+      await tester.pump();
+      flow.again();
+      flow.setUnderstood(true);
+      ports.located = null;
+      await flow.start();
+      ports.runs.last.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
+      await tester.pump();
+
+      final Completer<RestoreSeen>? first = ports.reading;
+      ports.reading = null;
+      first?.complete(RestoreSeen.idle);
+      await tester.pump();
+      expect(flow.state, isA<RestoreUncertain>().having((state) => state.look, 'look', RestoreLook.looking));
+
+      await tester.pump(RestoreFlow.lookFor);
+      expect(flow.state, isA<RestoreUncertain>().having((state) => state.look, 'look', RestoreLook.nothing));
+    });
+
     testWidgets('a sighting that never reads idle says only that', (tester) async {
       final ports = FakeRestorePorts()
         ..located = '10.0.0.9:7700'
@@ -71,14 +126,13 @@ void main() {
 
   testWidgets('leaving after a stopped run forgets the key', (tester) async {
     final ports = FakeRestorePorts();
-    final RestoreFlow flow = await restoreOpen(tester, ports);
+    await restoreOpen(tester, ports);
     final FakeRestoreRun run = await restoreStarted(tester, ports);
     run.stopped(RestoreStop.notAnswering);
     await settle(tester);
     expect(ports.forgotten, 0, reason: 'Try again still wants it');
 
     await tester.pumpWidget(const SizedBox.shrink());
-    flow.dispose();
     expect(ports.forgotten, 1);
   });
 
@@ -107,7 +161,6 @@ void main() {
     await tester.pump();
 
     await tester.pumpWidget(const SizedBox.shrink());
-    flow.dispose();
     final int before = ports.released;
     ports.holding!.complete();
     await tester.pump();

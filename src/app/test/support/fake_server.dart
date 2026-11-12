@@ -16,7 +16,9 @@ const serverLink = ServerLink(
 );
 const serverOwner = ServerAccount(id: 'u1', name: 'ada', role: ServerRole.owner);
 
-ServerError serverError(ServerErrorKind kind) => ServerError(kind: kind, message: kind.name);
+/// An error of `kind`; a change that ended so `mayHaveRun` when set.
+ServerError serverError(ServerErrorKind kind, {bool mayHaveRun = false}) =>
+    ServerError(kind: kind, message: kind.name, mayHaveRun: mayHaveRun);
 
 /// A session with the owner's server the test answers. Only what the app's
 /// controllers call is here; anything else fails the test.
@@ -95,6 +97,26 @@ class FakeServerSession with FakeOpaque implements ServerSession {
         home.pets = [...home.pets, pet];
         return pet;
       });
+
+  @override
+  Future<ServerPet> updatePet({
+    required String id,
+    required String name,
+    required Species species,
+    String? birthDate,
+    int? dailyKcal,
+  }) => home.write('update pet $id $name', () {
+    final pet = ServerPet(
+      id: id,
+      name: name,
+      species: species,
+      birthDate: birthDate,
+      dailyKcal: dailyKcal,
+      feeders: const [],
+    );
+    home.pets = home.pets.map((each) => each.id == id ? pet : each).toList();
+    return pet;
+  });
 
   @override
   Future<void> deletePet({required String id}) =>
@@ -221,11 +243,22 @@ class FakeServerPorts implements ServerPorts {
     return kept;
   }
 
+  /// What keeping or forgetting the token throws while set, as a Keystore
+  /// fault would.
+  Object? keepFails;
+  Object? forgetFails;
+
   @override
-  Future<void> keepSecret(String secret) async => kept = secret;
+  Future<void> keepSecret(String secret) async {
+    // ignore: only_throw_errors, this stands in for the platform's exception.
+    if (keepFails case final error?) throw error;
+    kept = secret;
+  }
 
   @override
   Future<void> forgetSecret() async {
+    // ignore: only_throw_errors, this stands in for the platform's exception.
+    if (forgetFails case final error?) throw error;
     kept = null;
     forgets++;
   }
@@ -257,6 +290,9 @@ class FakeHome {
   /// What every read and change throws while set.
   ServerError? fails;
 
+  /// What the next change throws after it ran, its answer lost on the way.
+  ServerError? lost;
+
   /// Every change asked, in order.
   final changes = <String>[];
 
@@ -273,7 +309,12 @@ class FakeHome {
     changes.add(change);
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (fails case final error?) throw error;
-    return made();
+    final T result = made();
+    final ServerError? gone = lost;
+    lost = null;
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
+    if (gone != null) throw gone;
+    return result;
   }
 }
 

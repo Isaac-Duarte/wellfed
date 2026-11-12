@@ -15,19 +15,20 @@ use tokio::sync::{Notify, mpsc};
 use tokio::task::LocalSet;
 use wellfed_app_bridge::api::error::ErrorKind;
 use wellfed_app_bridge::api::feeder::{
-    FeederRefusal, FeederReply, FeederRequest, NotAsked, PlanEdit, PlanView, PortionChange,
-    SettingsChanges,
+    FeederRefusal, FeederReply, FeederRequest, NotAsked, NtpChoice, PlanEdit, PlanView,
+    PortionChange, SettingsChanges,
 };
 use wellfed_app_bridge::api::join::{JoinAnswer, invite_feeder, join_feeder};
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::{CallClip, ClientRole, FeedOutcome, StatsSection};
+use wellfed_app_bridge::api::router::NotSentReason;
 use wellfed_app_bridge::api::session::{Card, FedBy, FeedRefusal, HistoryBody, SessionUpdate};
 use wellfed_app_bridge::api::setup::{
     SetupDriver, SetupStep, recover, setup_control, setup_service,
 };
 use wellfed_app_bridge::api::store::{
     AppStore, KnownFeeder, OpenedStore, StoreKind, feeder_address, load_store, open_store,
-    save_store, store_notice_read,
+    store_notice_read, swap_store,
 };
 use wellfed_app_bridge::requests;
 use wellfed_app_bridge::session::{self, Command};
@@ -103,6 +104,7 @@ fn the_setup_driver_proves_its_code_and_enrolls_as_owner() {
                         done @ SetupStep::Done { .. } => break 'exchange done,
                         SetupStep::Refused { refusal } => panic!("refused: {refusal:?}"),
                         SetupStep::Failed { error } => panic!("failed: {error}"),
+                        SetupStep::Unsettled { .. } => panic!("the link held"),
                     }
                 }
             }
@@ -773,7 +775,7 @@ fn the_store_round_trips_and_starts_empty() {
         }],
         server: None,
     };
-    save_store(path, &store).unwrap();
+    assert!(swap_store(path, &AppStore::default(), &store).unwrap());
     assert_eq!(load_store(path).unwrap(), store);
     assert_eq!(
         open_store(path).unwrap(),
@@ -809,7 +811,7 @@ fn a_store_that_does_not_read_is_set_aside_at_the_start() {
         label: "Pixel 8".into(),
         ..AppStore::default()
     };
-    save_store(path, &named).unwrap();
+    assert!(swap_store(path, &AppStore::default(), &named).unwrap());
     let again = open_store(path).unwrap();
     assert_eq!(again.store, named);
     assert_eq!(again.set_aside, Some(set_aside));
@@ -891,7 +893,7 @@ fn a_screens_read_of_the_time_reaches_the_card() {
             FeederRequest::PutTime {
                 base: time.generation,
                 zone: None,
-                ntp: Some("off".into()),
+                ntp: Some(NtpChoice::Off),
             },
         )
         .await;
@@ -1021,7 +1023,9 @@ fn requests_read_and_change_the_feeder_through_the_session() {
         let reply = ask(FeederRequest::PutTime {
             base: time.generation,
             zone: None,
-            ntp: Some("pool.ntp.org".into()),
+            ntp: Some(NtpChoice::Address {
+                address: "pool.ntp.org".into(),
+            }),
         })
         .await;
         assert_eq!(
@@ -1248,7 +1252,13 @@ fn a_write_whose_answer_never_comes_says_so_and_a_request_after_the_end_went_now
         .await;
         tokio::time::sleep(Duration::from_millis(50)).await;
         let reply = requests::run(&commands, sim.identity, FeederRequest::Reboot).await;
-        assert_eq!(reply, FeederReply::NotSent);
+        assert_eq!(
+            reply,
+            FeederReply::NotSent {
+                reason: NotSentReason::Session,
+                server: None
+            }
+        );
         sim.stop().await;
     });
 }
@@ -1506,7 +1516,10 @@ fn a_session_nobody_listens_to_still_answers_its_callers() {
         // The change's event may end the session before its answer does;
         // either way the change that waited never went.
         let (_, waiting) = tokio::join!(ask(volume(20)), ask(volume(40)));
-        assert!(matches!(waiting, FeederReply::NotSent), "{waiting:?}");
+        assert!(
+            matches!(waiting, FeederReply::NotSent { .. }),
+            "{waiting:?}"
+        );
         sim.stop().await;
     });
 }

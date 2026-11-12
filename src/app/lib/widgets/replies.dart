@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/widgets/desktop.dart';
 
 /// Why a request came to nothing, or may have: `null` once it worked. An
@@ -12,12 +14,30 @@ String? replyProblem(FeederReply reply) => switch (reply) {
   FeederReply_Unanswered() =>
     "No answer came, so it may or may not have gone through. Wellfed won't "
         'send it again.',
-  FeederReply_NotSent() => 'The connection dropped before this went out. Nothing changed.',
+  FeederReply_NotSent(:final reason, :final server) => notSentWords(reason, server?.kind),
   FeederReply_Unexpected() => 'The feeder answered something unexpected.',
   FeederReply_Unreadable() =>
     "The feeder runs newer firmware and answered in a way this app can't read, so "
         "it may or may not have gone through. Wellfed won't send it again. Update this app.",
   _ => null,
+};
+
+/// Why a request never reached the feeder. Nothing changed, whatever the
+/// cause, and the cause says what to do next.
+String notSentWords(NotSentReason reason, ServerErrorKind? server) => switch ((reason, server)) {
+  (_, ServerErrorKind.tokenRevoked) => 'The server no longer takes this $deviceName. Log in again. Nothing changed.',
+  (_, ServerErrorKind.accountDisabled) =>
+    'This account on the server has expired, so it sent nothing. An owner can extend it.',
+  (_, ServerErrorKind.forbidden) => 'Your account on the server may not do that. Nothing changed.',
+  (_, ServerErrorKind.feederOffline) => "The server can't reach the feeder right now. Nothing changed.",
+  (_, ServerErrorKind.unreachable) => "The server didn't answer, so this didn't go. Nothing changed.",
+  (NotSentReason.server, _) => "The server didn't pass this on. Nothing changed.",
+  (NotSentReason.noPath, _) => "This $deviceName can't reach the feeder right now. Nothing changed.",
+  (NotSentReason.store || NotSentReason.random, _) =>
+    "This $deviceName couldn't note it down before sending, so it didn't send it. Nothing changed.",
+  (NotSentReason.setAside, _) =>
+    'A record of changes that may have gone was set aside, so this waits until you say the bowls are checked.',
+  (NotSentReason.session, _) => 'The connection dropped before this went out. Nothing changed.',
 };
 
 String refusalWords(FeederRefusal refusal) => switch (refusal) {
@@ -34,8 +54,9 @@ String refusalWords(FeederRefusal refusal) => switch (refusal) {
   FeederRefusal_Fault() => 'It stopped on a fault and needs a restart.',
   FeederRefusal_Update() => 'The feeder refused the update.',
   FeederRefusal_Unverified() => 'This feeder has not verified that mode.',
-  FeederRefusal_Portions(:final asked) =>
+  FeederRefusal_Portions(:final asked?) =>
     'A feed is ${Limits.portionsLeast} to ${Limits.portionsMost} portions, not $asked.',
+  FeederRefusal_Portions() => 'A feed is ${Limits.portionsLeast} to ${Limits.portionsMost} portions.',
   FeederRefusal_NoClock() => "The feeder doesn't know the date. Set its time first.",
   FeederRefusal_Unknown() => 'The feeder refused it for a reason this app does not know. Update this app.',
 };

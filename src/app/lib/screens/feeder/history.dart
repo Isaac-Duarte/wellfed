@@ -24,7 +24,7 @@ bool _shown(_Filter filter, HistoryBody body) => switch (filter) {
   _Filter.all => body is! HistoryBody_Other,
   _Filter.feeds => body is HistoryBody_Fed || body is HistoryBody_Missed,
   _Filter.problems => switch (body) {
-    HistoryBody_Fed(:final result) => result.outcome != FeedOutcome.done || result.confirmed != result.requested,
+    HistoryBody_Fed(:final result) => fedKind(result) != FedKind.full,
     HistoryBody_Food(:final level) => level == FoodLevel.low,
     // Setup mode is the owner's own choice, not something gone wrong.
     HistoryBody_FeedingBlocked(:final reason) => reason != null && reason != Blocked.setup,

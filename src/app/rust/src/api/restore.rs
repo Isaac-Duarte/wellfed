@@ -91,8 +91,6 @@ pub enum RestoreStop {
     NotOwner,
     /// The feeder does not answer this phone. Nothing was offered.
     NotAnswering,
-    /// This firmware takes no updates over the device API.
-    NoUpdates,
     /// The copy is not stock's pinned image, or could not be read.
     BackupRefused,
     /// This phone could not make or keep the restore's key: its own storage,

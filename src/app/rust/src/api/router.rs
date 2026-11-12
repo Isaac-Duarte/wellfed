@@ -1,8 +1,8 @@
 //! Every request to a feeder, through the owner's server or the phone's own
 //! session. With no server configured the router passes everything to the
 //! phone's own session, but it still pins every write, so Dart makes every
-//! request through it once the app has one, and never around it: a session
-//! the router holds refuses [`FeederSession::feed`]. A pins file that does
+//! request through it once the app has one, and never around it: a
+//! [`FeederSession`] has no request of its own. A pins file that does
 //! not read is set aside, never deleted, and the router opens on a new one
 //! that holds every feed back until the owner has looked at the bowls
 //! ([`PathRouter::set_aside`], [`PathRouter::bowls_checked`]). One that
@@ -170,7 +170,8 @@ pub enum NotSentReason {
     Random,
     /// The pin could not be written down, so it did not go.
     Store,
-    /// The server did not send it: `server_error` says why.
+    /// The server did not send it: the reply's `server` says why, when it
+    /// answered at all.
     Server,
     /// The phone's own session ended before it went.
     Session,
@@ -228,16 +229,11 @@ pub struct RoutedReply {
     /// The path it went on; `None` when it went nowhere.
     pub path: Option<RoutePath>,
     /// The feeder's answer. `Unanswered` is a write that may have run, now
-    /// in `pending`; `NotSent` went nowhere, and `server_error` says why
-    /// when the server refused it or could not be reached.
+    /// in `pending`; `NotSent` went nowhere, and says why. A write whose call
+    /// ended unanswered after the server's stream had already said what
+    /// became of it carries that end here instead, and is not pending.
     pub reply: FeederReply,
     pub pending: Option<PendingWrite>,
-    pub server_error: Option<ServerError>,
-    /// Why, when it went nowhere.
-    pub not_sent: Option<NotSentReason>,
-    /// A write whose call ended unanswered while the server's stream had
-    /// already said what became of it: not pending.
-    pub settlement: Option<Settlement>,
 }
 
 /// What a retry of a pending write found.

@@ -54,6 +54,9 @@ class RestoreFlow extends ChangeNotifier {
   RestoreLook _look = RestoreLook.looking;
   Timer? _lookEnd;
   Timer? _lookAgain;
+
+  /// How many looks have started; a round keeps the count of its own.
+  int _looks = 0;
   StreamSubscription<void>? _setup;
   bool _sighted = false;
 
@@ -157,6 +160,7 @@ class RestoreFlow extends ChangeNotifier {
   /// Back at the facts after a stop that left the way open. The owner gives
   /// their word again.
   void again() {
+    _stopLook();
     _understood = false;
     _stage = _Stage.before;
     _changed();
@@ -213,6 +217,7 @@ class RestoreFlow extends ChangeNotifier {
         _uncertain = why;
         _detail = words;
         _stage = _Stage.uncertain;
+        _startLook();
       case RestoreEnd_Stopped(:final case_, detail: final words):
         _stop = case_;
         _detail = words;
@@ -227,7 +232,10 @@ class RestoreFlow extends ChangeNotifier {
     if (_stage != _Stage.running) return;
     _stage = _sending == CheckState.waiting ? _Stage.stopped : _Stage.uncertain;
     if (_stage == _Stage.stopped) _stop = RestoreStop.other;
-    if (_stage == _Stage.uncertain) _uncertain = UncertainWhy.failed;
+    if (_stage == _Stage.uncertain) {
+      _uncertain = UncertainWhy.failed;
+      _startLook();
+    }
     _finish();
     _changed();
   }
@@ -249,42 +257,48 @@ class RestoreFlow extends ChangeNotifier {
     if (_dataDir case final dataDir?) _ports.forgetKey(dataDir, identity);
   }
 
-  /// Look for the feeder, since the words for an uncertain end depend on it.
-  /// Wellfed advertises on the network with its people in place, or Bluetooth
-  /// setup with them cleared; stock does neither. This reads and listens, and
-  /// offers the feeder nothing.
-  void startLook() {
+  /// Look for the feeder, since the words for an uncertain end depend on it,
+  /// from the moment the run ends uncertain: a verdict an earlier run's look
+  /// left is never shown for this one. Wellfed advertises on the network with
+  /// its people in place, or Bluetooth setup with them cleared; stock does
+  /// neither. This reads and listens, and offers the feeder nothing.
+  void _startLook() {
+    _stopLook();
+    _looks++;
     _look = RestoreLook.looking;
     _sighted = false;
     _lookEnd = Timer(lookFor, () => _looked(_sighted ? RestoreLook.sighted : RestoreLook.nothing));
     _setup = _ports.setupHeard().listen((_) => _looked(RestoreLook.setup), onError: (Object _) {});
-    unawaited(_locate());
+    unawaited(_locate(_looks));
   }
 
-  Future<void> _locate() async {
-    final String hex = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-    final String? found = await _ports.locate(hex);
-    if (_look != RestoreLook.looking || _lookEnd == null) return;
+  /// One round of look `look`, which a later look's start leaves to lapse:
+  /// a search or read still out from an earlier run decides nothing for
+  /// this one, and starts no second chain of rounds.
+  Future<void> _locate(int look) async {
+    bool current() => look == _looks && _look == RestoreLook.looking && _lookEnd != null;
+
+    final String? found = await _ports.locate(_ports.hexOf(identity));
+    if (!current()) return;
     if (found != null) {
       _sighted = true;
       final RestoreSeen seen = await _ports.readFeeder(identity, found);
-      if (_look != RestoreLook.looking || _lookEnd == null) return;
+      if (!current()) return;
       if (seen == RestoreSeen.idle) {
         _looked(RestoreLook.wellfed);
         return;
       }
     }
-    _lookAgain = Timer(_lookEvery, () => unawaited(_locate()));
+    _lookAgain = Timer(_lookEvery, () => unawaited(_locate(look)));
   }
 
   void _looked(RestoreLook found) {
-    stopLook();
+    _stopLook();
     _look = found;
     _changed();
   }
 
-  /// Stop looking for the feeder.
-  void stopLook() {
+  void _stopLook() {
     _lookEnd?.cancel();
     _lookEnd = null;
     _lookAgain?.cancel();
@@ -325,7 +339,7 @@ class RestoreFlow extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    stopLook();
+    _stopLook();
     if (_run case final run?) {
       // Its end does the rest: the key goes once the run can no longer use it.
       run.stop();

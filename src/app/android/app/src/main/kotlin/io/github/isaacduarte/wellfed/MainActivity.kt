@@ -39,8 +39,11 @@ class MainActivity : FlutterActivity() {
     // Feeders live on the Wi-Fi network, but Android keeps mobile data as
     // the default network while that Wi-Fi has no internet (a feeder's own
     // network, a hotspot), so the device API sessions Rust opens would go
-    // out over mobile data and never arrive. The app talks to nothing but
-    // feeders, so every socket it opens follows the Wi-Fi network.
+    // out over mobile data and never arrive. So every socket the process
+    // opens follows the Wi-Fi network, the owner's server's among them: on a
+    // Wi-Fi with no way out (a captive portal, a hotspot with no uplink) the
+    // server is out of reach even with mobile data up, and a catch-up there
+    // reads as the server not answering.
     private val wifi =
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {

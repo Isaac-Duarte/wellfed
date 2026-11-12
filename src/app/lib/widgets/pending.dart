@@ -112,8 +112,15 @@ class _PendingState<T> extends State<Pending<T>> implements PendingWrite<T> {
       _out++;
     });
 
-    final FeederReply reply = await send();
-    _out--;
+    // The controller turns the bridge's failures into an unknown end; should
+    // `send` throw all the same, the write still stops counting as out, so
+    // a card that agrees settles the control.
+    final FeederReply reply;
+    try {
+      reply = await send();
+    } finally {
+      _out--;
+    }
     if (!mounted) return;
     if (ticket == _ticket) {
       setState(() {

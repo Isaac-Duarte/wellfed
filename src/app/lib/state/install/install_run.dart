@@ -98,18 +98,34 @@ extension InstallRunning on InstallFlow {
       case InstallAsk_OpenLink():
         _stage = InstallStage.claim;
         _searchBluetooth();
+        final InstallLink link;
         try {
-          _link = await _ports.openLink(
+          link = await _ports.openLink(
             onBytes: (bytes) => run.notified(bytes: bytes),
             onLost: run.linkLost,
           );
-          answer(const InstallAnswer.done());
         } on Object catch (error) {
           answer(InstallAnswer.failed(reason: '$error'));
+          return;
         }
+        // The run ended, or the screen went, while the scan and the connect
+        // were out: nothing will ask to close this one, and a feeder still
+        // linked does not advertise for the next run's scan.
+        if (_disposed || !identical(_run, run)) {
+          _closeLink(link);
+          return;
+        }
+        _closeLink(_link);
+        _link = link;
+        answer(const InstallAnswer.done());
       case InstallAsk_WriteLink(:final pieces):
+        final InstallLink? link = _link;
+        if (link == null) {
+          answer(const InstallAnswer.failed(reason: 'no Bluetooth link is open'));
+          return;
+        }
         try {
-          await _link?.write(pieces);
+          await link.write(pieces);
           answer(const InstallAnswer.done());
         } on Object catch (error) {
           answer(InstallAnswer.failed(reason: '$error'));
@@ -161,7 +177,7 @@ extension InstallRunning on InstallFlow {
       case InstallEvent_Paired(:final identity, :final address, :final rebooting):
         _stage = InstallStage.finishing;
         _identityBytes = identity;
-        _identity = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+        _identity = _ports.hexOf(identity);
         _address = address ?? _address;
         _joining = rebooting ? CheckState.running : CheckState.waiting;
       case InstallEvent_Joined(:final address):
@@ -247,6 +263,7 @@ extension InstallRunning on InstallFlow {
         unawaited(_release());
       case final InstallEnd_Stopped stopped:
         _stop = stopped;
+        if (stopped.case_ case StopCase_UncertainWrite(write: UncertainWrite.promotion)) _promotionMayHaveGone = true;
         _readPending();
         _stage = InstallStage.stopped;
         _windowAsk = null;
@@ -262,9 +279,10 @@ extension InstallRunning on InstallFlow {
 
   /// A feeder still linked does not advertise, so a pick-up would never find
   /// it. The run asks for this itself, unless it stopped first.
-  void _closeLink() {
-    final InstallLink? link = _link;
-    _link = null;
+  /// Hang up `link`, or the open one when none is named.
+  void _closeLink([InstallLink? other]) {
+    final InstallLink? link = other ?? _link;
+    if (identical(link, _link)) _link = null;
     unawaited(
       link?.close().catchError((Object _) {
         // A link the feeder dropped has nothing left to close.

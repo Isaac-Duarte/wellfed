@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/today.dart';
 import 'package:wellfed/screens/home/home.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart' show PendingInstall;
 import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -12,6 +14,7 @@ import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/state/server/server.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 import '../support/fakes.dart';
 
@@ -53,6 +56,16 @@ void main() {
     expect(again.state.feed, same(running));
   });
 
+  test('a request the bridge fails reads as unanswered, never as a throw', () async {
+    final ports = FakeFeederPorts();
+    ports.fakeRouter.routed = (request) => throw StateError('a bridge panic');
+    final feeder = FeederController(FakeBook()..feeders = [_kitchen], ports, _kitchen);
+    addTearDown(feeder.dispose);
+
+    final FeederReply reply = await feeder.ask(const FeederRequest.setLock(locked: true));
+    expect(reply, const FeederReply.unanswered());
+  });
+
   test('a change that never said how it ended is shown, checked only by reading, and put away', () async {
     final ports = FakeFeederPorts();
     ports.fakeRouter.held.addAll([_held('s1', WriteKind.settings), _held('f1', WriteKind.feed)]);
@@ -68,6 +81,58 @@ void main() {
     ports.fakeRouter.held.removeWhere((pending) => pending.key == 's1');
     kitchen.putAwayWrite('s1');
     expect(ports.fakeRouter.acknowledged, ['s1']);
+    expect(kitchen.state.unconfirmed, isEmpty);
+  });
+
+  testWidgets('a change left unanswered is pinned, shown at once, and never sent again', (tester) async {
+    final ports = FakeFeederPorts();
+    final kitchen = FeederController(FakeBook()..feeders = [_kitchen], ports, _kitchen);
+    addTearDown(kitchen.dispose);
+    await tester.pump();
+    ports.session
+      ..opened()
+      ..status(fakeCard());
+    await tester.pump();
+    ports.session.answering = (request) async => const FeederReply.unanswered();
+    await tester.pumpWidget(themed(FeederShell(feeder: kitchen)));
+    await settle(tester);
+
+    final FeederReply reply = await kitchen.ask(const FeederRequest.setLock(locked: true));
+    await settle(tester);
+    expect(replyProblem(reply), contains('may or may not have gone through'));
+    expect(kitchen.state.unconfirmed.map((pending) => pending.kind), [WriteKind.lock]);
+    expect(find.textContaining('may not have reached the feeder', findRichText: true), findsOneWidget);
+    expect(ports.session.requests, hasLength(1), reason: 'nothing sends it again');
+  });
+
+  test('a change that never went says why, and what to do next', () async {
+    final ports = FakeFeederPorts();
+    final kitchen = FeederController(FakeBook()..feeders = [_kitchen], ports, _kitchen);
+    addTearDown(kitchen.dispose);
+    RoutedReply notSent(NotSentReason reason, [ServerErrorKind? kind]) => RoutedReply(
+      path: RoutePath.server,
+      reply: FeederReply.notSent(
+        reason: reason,
+        server: kind == null ? null : ServerError(kind: kind, message: 'no', mayHaveRun: false),
+      ),
+    );
+
+    for (final (routed, words) in [
+      (notSent(NotSentReason.server, ServerErrorKind.tokenRevoked), 'Log in again'),
+      (notSent(NotSentReason.server, ServerErrorKind.forbidden), 'may not do that'),
+      (notSent(NotSentReason.server, ServerErrorKind.feederOffline), "can't reach the feeder"),
+      (notSent(NotSentReason.noPath), "can't reach the feeder"),
+      (notSent(NotSentReason.store), "couldn't note it down"),
+      (notSent(NotSentReason.session), 'The connection dropped'),
+    ]) {
+      ports.fakeRouter.routed = (_) => routed;
+      final String? problem = replyProblem(await kitchen.ask(const FeederRequest.resetDesiccant()));
+      expect(problem, contains(words), reason: '$routed');
+      expect(problem, contains('Nothing changed'));
+      if (routed.reply case FeederReply_NotSent(server: ServerError())) {
+        expect(problem, isNot(contains('The connection dropped')), reason: 'the server said why');
+      }
+    }
     expect(kitchen.state.unconfirmed, isEmpty);
   });
 

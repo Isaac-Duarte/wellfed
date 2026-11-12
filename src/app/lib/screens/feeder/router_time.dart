@@ -36,7 +36,7 @@ class RouterTimeNotice extends StatefulWidget {
 class _RouterTimeNoticeState extends State<RouterTimeNotice> {
   bool _asking = false;
 
-  Future<void> _use(String ntp) async {
+  Future<void> _use(NtpChoice ntp) async {
     setState(() => _asking = true);
     final FeederReply reply = await widget.feeder.ask(FeederRequest.putTime(base: widget.time.generation, ntp: ntp));
     if (!mounted) return;
@@ -64,8 +64,14 @@ class _RouterTimeNoticeState extends State<RouterTimeNotice> {
               'can keep it set: the feeder asks it every 17 minutes.',
         ),
         const SizedBox(height: Space.s2),
-        FilledButton(onPressed: _asking ? null : () => _use(cloudflare.ip), child: Text('Use ${cloudflare.name}')),
-        TextButton(onPressed: _asking ? null : () => _use('off'), child: const Text('Keep phones only')),
+        FilledButton(
+          onPressed: _asking ? null : () => _use(NtpChoice.address(address: cloudflare.ip)),
+          child: Text('Use ${cloudflare.name}'),
+        ),
+        TextButton(
+          onPressed: _asking ? null : () => _use(const NtpChoice.off()),
+          child: const Text('Keep phones only'),
+        ),
       ],
     );
   }

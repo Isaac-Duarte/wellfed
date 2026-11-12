@@ -168,7 +168,11 @@ class AppFeederPorts implements FeederPorts {
     if (routing == null) {
       return Future.value(
         const Adoption.failed(
-          error: ServerError(kind: ServerErrorKind.closed, message: 'the pending writes could not be opened'),
+          error: ServerError(
+            kind: ServerErrorKind.closed,
+            message: 'the pending writes could not be opened',
+            mayHaveRun: false,
+          ),
         ),
       );
     }

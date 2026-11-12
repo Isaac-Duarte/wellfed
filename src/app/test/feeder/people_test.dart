@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
@@ -115,6 +116,18 @@ void main() {
       expect(session.requests.last, const FeederRequest.listClients());
     });
 
+    testWidgets('a create settled as made after its answer was lost asks for another', (tester) async {
+      final (_, FakeSession session) = await _people(tester);
+      session.replies.add(const FeederReply.done());
+
+      await tapIn(tester, find.text('Invite someone'));
+      await tapIn(tester, find.text('Create invite'));
+
+      expect(find.text("The invite was made, but its code didn't come back. Make another."), findsOneWidget);
+      expect(find.text('Owner invite'), findsNothing);
+      expect(find.text('Member invite'), findsNothing);
+    });
+
     testWidgets('a create refused or unanswered shows no invite', (tester) async {
       final (_, FakeSession session) = await _people(tester);
       session.replies
@@ -147,6 +160,25 @@ void main() {
 
       await tester.pump(const Duration(seconds: 3));
       expect(find.textContaining('has expired'), findsOneWidget);
+    });
+
+    testWidgets('an invite runs out by the clock, though the app missed its ticks', (tester) async {
+      var now = DateTime(2026, 11, 12, 9);
+      await withClock(Clock(() => now), () async {
+        await showTab(
+          tester,
+          InviteScreen(
+            invite: const InviteView(text: 'wellfed-invite:1:x', seconds: 300, role: ClientRole.member),
+            share: (text) async {},
+          ),
+        );
+        expect(find.textContaining('5:00 until it expires'), findsOneWidget);
+
+        // Frozen for five minutes: one tick comes back, not three hundred.
+        now = now.add(const Duration(minutes: 5));
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.textContaining('has expired'), findsOneWidget);
+      });
     });
   });
 
@@ -270,6 +302,20 @@ void main() {
       expect(book.feeders, isEmpty);
       final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
+    });
+
+    test('the flow itself sends an invite once, whoever asks again', () async {
+      final ports = _FakeJoin()..answers.add(const BridgeError(kind: ErrorKind.interrupted, message: 'reset'));
+      final flow = JoinFlow(FakeBook(), ports);
+      addTearDown(flow.dispose);
+      flow.seen('wellfed-invite:1:x');
+      await flow.find();
+
+      final Future<void> first = flow.join(label: 'phone', feederName: 'Kitchen');
+      await flow.join(label: 'phone', feederName: 'Kitchen');
+      await first;
+      await flow.join(label: 'phone', feederName: 'Kitchen');
+      expect(ports.joins, ['wellfed-invite:1:x'], reason: 'neither while out nor once it may be spent');
     });
 
     /// The join screen as a Mac shows it, counting the cameras it builds.

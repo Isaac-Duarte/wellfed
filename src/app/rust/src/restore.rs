@@ -93,7 +93,60 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         Error::RestoreInstallRunning { .. } => RestoreStop::InstallRunning,
         Error::RestoreCancelUnknown => RestoreStop::CancelUnknown,
         Error::RestoreStopped(_) => RestoreStop::Cancelled,
-        _ => RestoreStop::Other,
+        // What a restore never meets, or meets only as the run's own words.
+        Error::Platform(_)
+        | Error::Handover(_)
+        | Error::ShowCode(_)
+        | Error::Connect { .. }
+        | Error::Random(_)
+        | Error::Clock
+        | Error::Parse { .. }
+        | Error::Write { .. }
+        | Error::ReviewManifest { .. }
+        | Error::NoStartupIdentity
+        | Error::Frame(_)
+        | Error::Signing(_)
+        | Error::StockServer(_)
+        | Error::Images(_)
+        | Error::StockServerGone
+        | Error::StockServerFailed(_)
+        | Error::RequestRefused(_)
+        | Error::Trial(_)
+        | Error::NoPeer
+        | Error::EnrollmentUnreadable { .. }
+        | Error::UdpSocket(_)
+        | Error::FrameSend { .. }
+        | Error::OtherDevice { .. }
+        | Error::NoHomeNetwork
+        | Error::NoAddress
+        | Error::OtherFeeder { .. }
+        | Error::SetupRefused(_)
+        | Error::SetupSession(_)
+        | Error::NoProof
+        | Error::Unsettled { .. }
+        | Error::RecoveryClosed
+        | Error::RecoveryTimeout
+        | Error::Answered { .. }
+        | Error::ClientsRefused(_)
+        | Error::Legacy
+        | Error::NoIdentity
+        | Error::NoSession(_)
+        | Error::NoBackupServed
+        | Error::Bank1(_)
+        | Error::NotStock(_)
+        | Error::BackupExists { .. }
+        | Error::BackupNotSetAside { .. }
+        | Error::Unverified
+        | Error::Backup(_)
+        | Error::KeepGiven(_)
+        | Error::Setup(_)
+        | Error::NoUpdateKey
+        | Error::NoSigner
+        | Error::NoManifest
+        | Error::ShortImage
+        | Error::EnrollmentEnded
+        | Error::Steps(_)
+        | Error::Stopped(_) => RestoreStop::Other,
     }
 }
 
@@ -152,7 +205,8 @@ impl RestoreThread {
 
     /// Start `spec` on its own thread. `deliver` hears the run to its end and
     /// returns `false` once nobody listens. A run starts once: a second call,
-    /// with no spec left, reports that and ends.
+    /// with no spec left, tells its own `deliver` so and leaves the first
+    /// run's updates where they go.
     pub fn start(
         &self,
         spec: Option<RestoreSpec>,
@@ -170,12 +224,23 @@ impl RestoreThread {
     }
 
     /// [`Self::start`] on a plan already made, or the end that stopped it.
+    /// An end goes to `deliver` alone: no thread starts, and a run already
+    /// going keeps its updates.
     pub fn start_plan(
         &self,
         plan: Result<Plan, RestoreEnd>,
         keys: Keypair,
         deliver: impl Fn(RestoreUpdate) -> bool + Send + Sync + 'static,
     ) {
+        let plan = match plan {
+            Ok(plan) => plan,
+            Err(end) => {
+                crate::trace::restore_end(&end);
+                deliver(RestoreUpdate::Ended { end });
+                return;
+            }
+        };
+
         let deliver = Arc::new(deliver);
         let heard = deliver.clone();
         *self.asks.deliver() = Some(Box::new(move |update| match update {
@@ -198,10 +263,7 @@ impl RestoreThread {
                 let _held = held;
                 let shown = offering.clone();
                 let end = guarded(
-                    || match plan {
-                        Ok(plan) => run_on_this_thread(plan, keys, asks.clone(), stop, offering),
-                        Err(end) => end,
-                    },
+                    || run_on_this_thread(plan, keys, asks.clone(), stop, offering),
                     |detail| {
                         // A panic says nothing about an offer that may be out.
                         if shown.may_be_out() {
@@ -214,17 +276,19 @@ impl RestoreThread {
                         }
                     },
                 );
+                crate::trace::restore_end(&end);
                 last(RestoreUpdate::Ended { end });
                 // Dropping the sink closes Dart's stream.
                 *asks.deliver() = None;
             });
         if let Err(error) = thread {
-            deliver(RestoreUpdate::Ended {
-                end: stopped_with(
-                    RestoreStop::Other,
-                    format!("no thread for the restore: {error}"),
-                ),
-            });
+            let end = stopped_with(
+                RestoreStop::Other,
+                format!("no thread for the restore: {error}"),
+            );
+            crate::trace::restore_end(&end);
+            deliver(RestoreUpdate::Ended { end });
+            *self.asks.deliver() = None;
         }
     }
 

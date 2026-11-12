@@ -97,6 +97,11 @@ class InstallFlow extends ChangeNotifier {
   CheckState _checked = CheckState.waiting;
   CheckState _promoting = CheckState.waiting;
   double _written = 0;
+
+  /// A promotion of this install's may have gone in: a run stopped
+  /// unsure of it. Until a clean start, what the feeder holds in place of
+  /// its original firmware is not known here, and no stop says it does.
+  bool _promotionMayHaveGone = false;
   CheckState _confirming = CheckState.waiting;
 
   /// A checked copy of stock.
@@ -414,16 +419,22 @@ class InstallFlow extends ChangeNotifier {
         confirming: _confirming,
       ),
       InstallStage.done => InstallDone(facts, backupPath: _backupPath),
-      InstallStage.stopped => InstallStopped(
-        facts,
-        stop: _stop,
-        listening: _listening,
-        listened: _listened,
-        listeningForEarlier: _listeningForEarlier,
-        stockSeen: _stockSeen,
-        setupSeen: _setupSeen,
-        listenerDetail: _listenerDetail,
-      ),
+      InstallStage.stopped => switch (_stop) {
+        final InstallEnd_Stopped stop => InstallStopped(
+          facts,
+          stop: stop,
+          listening: _listening,
+          listened: _listened,
+          listeningForEarlier: _listeningForEarlier,
+          stockSeen: _stockSeen,
+          setupSeen: _setupSeen,
+          listenerDetail: _listenerDetail,
+          promotionMayHaveGone: _promotionMayHaveGone,
+        ),
+        // Every way into the stage sets the stop first; should one ever not,
+        // the first screen stands in rather than a page with no way out.
+        null => InstallBefore(facts, image: _image, build: _build),
+      },
     };
   }
 

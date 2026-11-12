@@ -415,6 +415,19 @@ impl FeederSettings {
             self.meal_reminder = reminder;
         }
     }
+
+    /// Put `changes`, a write on `base` the feeder answered done, on these
+    /// settings at the generation it made; whether they moved. Settings no
+    /// longer at `base` stay as they are: something else changed them, and
+    /// only a read says how.
+    pub fn landed(&mut self, base: Generation, changes: FeederSettingsPatch) -> bool {
+        if self.generation != Some(base) {
+            return false;
+        }
+        self.apply(changes);
+        self.generation = Some(base.next());
+        true
+    }
 }
 
 /// The feeder's settings to change; absent fields stay as they are.
@@ -597,7 +610,41 @@ pub(crate) fn minute(text: &str) -> Result<u16, WindowError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MealReminder, MealReminderError, Window, WindowError};
+    use super::{
+        FeederSettings, FeederSettingsPatch, MealReminder, MealReminderError, Window, WindowError,
+    };
+    use crate::Generation;
+
+    #[test]
+    fn a_landed_write_moves_settings_at_its_base_and_no_others() {
+        let at_base = FeederSettings {
+            generation: Some(Generation(4)),
+            lights: true,
+            sound: true,
+            volume: 50,
+            lights_window: Window::Always,
+            sound_window: Window::Always,
+            desiccant_days: 30,
+            desiccant_replaced: None,
+            meal_reminder: MealReminder::Off,
+            writable: true,
+        };
+        let quieter = FeederSettingsPatch {
+            volume: Some(20),
+            ..FeederSettingsPatch::default()
+        };
+
+        let mut landed = at_base;
+        assert!(landed.landed(Generation(4), quieter));
+        assert_eq!(landed.volume, 20);
+        assert_eq!(landed.generation, Some(Generation(5)));
+        assert!(landed.lights, "what the write does not name stays");
+
+        let mut moved_on = at_base;
+        assert!(!moved_on.landed(Generation(3), quieter));
+        assert_eq!(moved_on, at_base);
+        assert_eq!(Generation(u32::MAX - 1).next(), Generation(u32::MAX));
+    }
 
     #[test]
     fn a_meal_reminder_parses_off_or_its_minutes() {

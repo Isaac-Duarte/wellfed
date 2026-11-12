@@ -114,6 +114,25 @@ void main() {
     expect(server.session.logouts, 0);
   });
 
+  test('a server read that lands after a newer one leaves the newer card', () async {
+    final (FeederFleet fleet, _, _, _) = await _fleet([_listed('id-h', 'cc', 'Hall')]);
+    final FeederController hall = fleet['cc']!;
+
+    hall.serverDetail(
+      ServerFeederDetail(
+        feeder: _listed('id-h', 'cc', 'Hall'),
+        status: ServerSnapshot(atMs: 2000, live: true, card: fakeCard(build: 'newer')),
+      ),
+    );
+    hall.serverDetail(
+      ServerFeederDetail(
+        feeder: _listed('id-h', 'cc', 'Hall'),
+        status: ServerSnapshot(atMs: 1000, live: true, card: fakeCard(build: 'older')),
+      ),
+    );
+    expect(hall.state.card?.build, 'newer');
+  });
+
   test('a feeder the server reaches on a newer revision is served, and names the server to update', () async {
     const ServerFeeder hall = ServerFeeder(
       id: 'id-h',

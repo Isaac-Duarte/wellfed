@@ -1779,10 +1779,10 @@ return elsewhere(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String gateway,  String subnet,  List<String> dns,  String? domains)?  wifi,TResult Function()?  elsewhere,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String gateway,  String subnet)?  wifi,TResult Function()?  elsewhere,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi() when wifi != null:
-return wifi(_that.gateway,_that.subnet,_that.dns,_that.domains);case PhoneNetwork_Elsewhere() when elsewhere != null:
+return wifi(_that.gateway,_that.subnet);case PhoneNetwork_Elsewhere() when elsewhere != null:
 return elsewhere();case _:
   return orElse();
 
@@ -1801,10 +1801,10 @@ return elsewhere();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String gateway,  String subnet,  List<String> dns,  String? domains)  wifi,required TResult Function()  elsewhere,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String gateway,  String subnet)  wifi,required TResult Function()  elsewhere,}) {final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi():
-return wifi(_that.gateway,_that.subnet,_that.dns,_that.domains);case PhoneNetwork_Elsewhere():
+return wifi(_that.gateway,_that.subnet);case PhoneNetwork_Elsewhere():
 return elsewhere();}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -1819,10 +1819,10 @@ return elsewhere();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String gateway,  String subnet,  List<String> dns,  String? domains)?  wifi,TResult? Function()?  elsewhere,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String gateway,  String subnet)?  wifi,TResult? Function()?  elsewhere,}) {final _that = this;
 switch (_that) {
 case PhoneNetwork_Wifi() when wifi != null:
-return wifi(_that.gateway,_that.subnet,_that.dns,_that.domains);case PhoneNetwork_Elsewhere() when elsewhere != null:
+return wifi(_that.gateway,_that.subnet);case PhoneNetwork_Elsewhere() when elsewhere != null:
 return elsewhere();case _:
   return null;
 
@@ -1835,19 +1835,11 @@ return elsewhere();case _:
 
 
 class PhoneNetwork_Wifi extends PhoneNetwork {
-  const PhoneNetwork_Wifi({required this.gateway, required this.subnet, required  List<String> dns, this.domains}): _dns = dns,super._();
+  const PhoneNetwork_Wifi({required this.gateway, required this.subnet}): super._();
   
 
  final  String gateway;
  final  String subnet;
- final  List<String> _dns;
- List<String> get dns {
-  if (_dns is EqualUnmodifiableListView) return _dns;
-  // ignore: implicit_dynamic_type
-  return EqualUnmodifiableListView(_dns);
-}
-
- final  String? domains;
 
 /// Create a copy of PhoneNetwork
 /// with the given fields replaced by the non-null parameter values.
@@ -1859,18 +1851,18 @@ $PhoneNetwork_WifiCopyWith<PhoneNetwork_Wifi> get copyWith => _$PhoneNetwork_Wif
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is PhoneNetwork_Wifi&&(identical(other.gateway, gateway) || other.gateway == gateway)&&(identical(other.subnet, subnet) || other.subnet == subnet)&&const DeepCollectionEquality().equals(other.dns, _dns)&&(identical(other.domains, domains) || other.domains == domains));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is PhoneNetwork_Wifi&&(identical(other.gateway, gateway) || other.gateway == gateway)&&(identical(other.subnet, subnet) || other.subnet == subnet));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,gateway,subnet,const DeepCollectionEquality().hash(_dns),domains);
+    return Object.hash(runtimeType,gateway,subnet);
 }
 
 @override
 String toString() {
-    return 'PhoneNetwork.wifi(gateway: $gateway, subnet: $subnet, dns: $dns, domains: $domains)';
+    return 'PhoneNetwork.wifi(gateway: $gateway, subnet: $subnet)';
 }
 
 
@@ -1881,7 +1873,7 @@ abstract mixin class $PhoneNetwork_WifiCopyWith<$Res> implements $PhoneNetworkCo
   factory $PhoneNetwork_WifiCopyWith(PhoneNetwork_Wifi value, $Res Function(PhoneNetwork_Wifi) _then) = _$PhoneNetwork_WifiCopyWithImpl;
 @useResult
 $Res call({
- String gateway, String subnet, List<String> dns, String? domains
+ String gateway, String subnet
 });
 
 
@@ -1898,13 +1890,11 @@ class _$PhoneNetwork_WifiCopyWithImpl<$Res>
 
 /// Create a copy of PhoneNetwork
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? gateway = null,Object? subnet = null,Object? dns = null,Object? domains = freezed,}) {
+@pragma('vm:prefer-inline') $Res call({Object? gateway = null,Object? subnet = null,}) {
   return _then(PhoneNetwork_Wifi(
 gateway: null == gateway ? _self.gateway : gateway // ignore: cast_nullable_to_non_nullable
 as String,subnet: null == subnet ? _self.subnet : subnet // ignore: cast_nullable_to_non_nullable
-as String,dns: null == dns ? _self._dns : dns // ignore: cast_nullable_to_non_nullable
-as List<String>,domains: freezed == domains ? _self.domains : domains // ignore: cast_nullable_to_non_nullable
-as String?,
+as String,
   ));
 }
 

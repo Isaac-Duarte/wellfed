@@ -41,7 +41,7 @@ class _ClockScreenState extends State<ClockScreen> {
     unawaited(widget.feeder.ask(const FeederRequest.getTime()));
   }
 
-  Future<void> _time({ZoneChange? zone, String? ntp}) async {
+  Future<void> _time({ZoneChange? zone, NtpChoice? ntp}) async {
     final TimeInfo? time = widget.feeder.state.card?.time;
     if (time == null) return;
     setState(() => _asking = true);
@@ -49,18 +49,19 @@ class _ClockScreenState extends State<ClockScreen> {
       FeederRequest.putTime(base: time.generation, zone: zone, ntp: ntp),
     );
     if (!mounted) return;
-    setState(() => _asking = false);
     showProblem(context, reply);
 
     // The feeder writes no event for a time setting, so nothing else would
     // tell the card: its choices would stay as they were, and its old
-    // generation would get the next change refused as stale.
-    unawaited(widget.feeder.ask(const FeederRequest.getTime()));
+    // generation would get the next change refused as stale. The choices
+    // wait for the read, as a second tap would go against the old one.
+    await widget.feeder.ask(const FeederRequest.getTime());
+    if (mounted) setState(() => _asking = false);
   }
 
   Future<void> _address() async {
     final String? address = await askNtpServer(context);
-    if (address != null && mounted) await _time(ntp: address);
+    if (address != null && mounted) await _time(ntp: NtpChoice.address(address: address));
   }
 
   @override
@@ -127,7 +128,7 @@ class _ClockScreenState extends State<ClockScreen> {
                     "Asks your router's time server",
                     first: true,
                     chosen: time?.ntp is NtpView_Gateway,
-                    onTap: can ? () => unawaited(_time(ntp: 'gateway')) : null,
+                    onTap: can ? () => unawaited(_time(ntp: const NtpChoice.gateway())) : null,
                   ),
                   _Source(
                     'A time server',
@@ -142,7 +143,7 @@ class _ClockScreenState extends State<ClockScreen> {
                     'Phones only',
                     'Set each time a phone connects',
                     chosen: time?.ntp is NtpView_Off,
-                    onTap: can ? () => unawaited(_time(ntp: 'off')) : null,
+                    onTap: can ? () => unawaited(_time(ntp: const NtpChoice.off())) : null,
                   ),
                 ],
               ),

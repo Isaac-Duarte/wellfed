@@ -190,7 +190,7 @@ void main() {
 
     kitchen.feedNow(1);
     expect(kitchen.state.feed, isA<FeedNotSent>().having((feed) => feed.why, 'why', NotSentWhy.notPinned));
-    expect(await kitchen.ask(const FeederRequest.getPlans()), const FeederReply.notSent());
+    expect(await kitchen.ask(const FeederRequest.getPlans()), const FeederReply.notSent(reason: NotSentReason.store));
     expect(ports.session.feeds, isEmpty);
     expect(ports.session.requests, isEmpty);
   });

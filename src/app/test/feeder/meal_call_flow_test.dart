@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/meal_call.dart';
 
@@ -37,7 +38,10 @@ void main() {
 
   testWidgets('only "not sent" sends again; an unanswered upload does not', (tester) async {
     final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-    final answers = <FeederReply>[const FeederReply.notSent(), const FeederReply.unanswered()];
+    final answers = <FeederReply>[
+      const FeederReply.notSent(reason: NotSentReason.session),
+      const FeederReply.unanswered(),
+    ];
     session.answering = (request) async => request is FeederRequest_UploadCall ? answers.removeAt(0) : held;
     final reads = <FeederReply>[];
 
@@ -53,7 +57,8 @@ void main() {
   // the deadline ends them.
   testWidgets('an upload never sent waits between tries, and stops at the deadline', (tester) async {
     final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-    session.answering = (request) async => request is FeederRequest_UploadCall ? const FeederReply.notSent() : held;
+    session.answering = (request) async =>
+        request is FeederRequest_UploadCall ? const FeederReply.notSent(reason: NotSentReason.session) : held;
 
     FeederReply? reply = const FeederReply.done();
     var ended = false;

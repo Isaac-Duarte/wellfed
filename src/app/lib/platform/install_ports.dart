@@ -18,6 +18,7 @@ import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 import 'package:wellfed/src/rust/api/install.dart' as rust;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/store.dart' show identityHex;
 import 'package:wellfed/state/wifi/networks.dart';
 
 /// Where the installer's files live on this phone.
@@ -122,6 +123,9 @@ abstract interface class InstallPorts {
   /// Whether a feeder is advertising Bluetooth setup: the replacement is
   /// running, and waiting for its owner. Each sighting is an event.
   Stream<void> setupHeard();
+
+  /// A feeder's identity, as lowercase hex.
+  String hexOf(List<int> identity);
 
   /// Where the feeder `identity` (hex) answers.
   Future<String?> locate(String identity);
@@ -259,6 +263,9 @@ class AppInstallPorts implements InstallPorts {
 
   @override
   Stream<void> setupHeard() => SetupLink.scan().map((_) {});
+
+  @override
+  String hexOf(List<int> identity) => identityHex(identity: identity);
 
   @override
   Future<String?> locate(String identity) => Discovery.locate(identity, _locateWait);

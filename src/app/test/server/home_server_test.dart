@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
@@ -56,6 +57,27 @@ void main() {
     router.refreshWait = Completer<List<ServerFeeder>>()..completeError(serverError(ServerErrorKind.unreachable));
     await server.refresh();
     expect(router.claims, hasLength(2), reason: 'a list that failed claims nothing');
+  });
+
+  test('a login whose token storage cannot keep revokes it and keeps nothing', () async {
+    final (HomeServer server, FakeServerPorts ports, _, FakeBook book) = _server();
+    ports.keepFails = PlatformException(code: 'keystore');
+    final LoginOutcome outcome = await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+
+    expect(outcome, isA<LoginNotKept>());
+    expect(ports.session.logouts, 1, reason: 'a token kept nowhere is revoked');
+    expect(book.server, isNull);
+    expect(server.state, isA<ServerAbsent>());
+  });
+
+  test('a server removed while storage cannot forget its token is still gone from the file', () async {
+    final (HomeServer server, FakeServerPorts ports, _, FakeBook book) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    ports.forgetFails = PlatformException(code: 'keystore');
+
+    await server.removeServer();
+    expect(book.server, isNull);
+    expect(server.state, isA<ServerAbsent>());
   });
 
   test('a refused login says why and keeps nothing', () async {

@@ -16,10 +16,12 @@ pub enum ServerErrorKind {
     Redirected,
     /// Nothing answered at the address, or not in time to connect.
     Unreachable,
-    /// The request broke after it was sent, its answer was cut off, the
-    /// server went quiet past the phone's timeouts, or it failed inside (a
-    /// `5xx` problem): it may have run.
+    /// The request broke after it was sent, its answer was cut off, or the
+    /// server went quiet past the phone's timeouts: it may have run.
     Interrupted,
+    /// The server answered that it failed inside, or lost the feeder part
+    /// way (a `5xx` problem): it may have run.
+    ServerFailed,
     /// The name or the password is wrong.
     BadCredentials,
     /// Too many failed logins: `retry_after_seconds` says when the server
@@ -89,11 +91,23 @@ pub struct ServerError {
     /// The wait the server named in `Retry-After`, as on a rate-limited
     /// login.
     pub retry_after_seconds: Option<u32>,
+    /// A change that ended so may have run all the same: its answer was
+    /// lost, could not be read, or the server failed partway. The kind
+    /// names the words; this, from the server client's one reading of a
+    /// failure, says whether a change took, so a screen never resends one
+    /// that may have.
+    pub may_have_run: bool,
 }
 
 impl ServerError {
+    /// An error the app built itself, which may have run only when its kind
+    /// says the answer was lost.
     pub(crate) fn new(kind: ServerErrorKind, message: impl fmt::Display) -> Self {
         Self {
+            may_have_run: matches!(
+                kind,
+                ServerErrorKind::Interrupted | ServerErrorKind::OutcomeUnknown
+            ),
             kind,
             message: message.to_string(),
             retry_after_seconds: None,

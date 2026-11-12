@@ -15,7 +15,7 @@ use tokio::task::LocalSet;
 use wellfed_app_bridge::api::install::PendingInstall;
 use wellfed_app_bridge::api::install::{
     ImageCheck, ImageProvisioning, InstallAnswer, InstallAsk, InstallEnd, InstallEvent,
-    InstallSpec, InstallStart, InstallUpdate, ListenUpdate, Resume, StopCase,
+    InstallSpec, InstallStart, InstallUpdate, ListenFailure, ListenUpdate, Resume, StopCase,
 };
 use wellfed_app_bridge::api::model::SetupRefusal;
 use wellfed_app_bridge::api::setup::WifiCredentials;
@@ -294,6 +294,36 @@ fn a_run_starts_once() {
             ..
         }
     ));
+}
+
+/// A second start while the first runs says so on its own stream, and the
+/// first run's asks and end still reach the first.
+#[test]
+fn a_second_start_leaves_the_first_run_heard() {
+    // SAFETY: nextest runs each test in a process of its own, and no other
+    // thread is running yet.
+    unsafe { std::env::set_var("WELLFED_ALLOW_UNREVIEWED_OTA_BUILD", "1") };
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let (run, mut heard) = started(&fixture, fixture.spec(InstallStart::Reset, "127.41.8.58"));
+        let (again, mut second) = mpsc::unbounded_channel();
+        run.start(None, Keypair::from_secret([0x51; 32]), move |update| {
+            again.send(update).is_ok()
+        });
+
+        let InstallEnd::Stopped { detail, .. } = ended(&mut second).await else {
+            panic!("a second start ran");
+        };
+        assert_eq!(detail, "this install already ran");
+
+        let (_, ask) = next_ask(&mut heard).await;
+        assert_eq!(ask, InstallAsk::JoinFeederNetwork);
+        run.stop();
+        let InstallEnd::Stopped { case, .. } = ended(&mut heard).await else {
+            panic!("a stopped run did not stop");
+        };
+        assert_eq!(case, StopCase::Cancelled);
+    });
 }
 
 /// An image the review cannot hold together stops before the feeder is
@@ -599,6 +629,8 @@ fn the_image_is_checked_against_its_pin_and_its_own_review() {
     ));
 }
 
+/// Stock's server will not start with no feeder enrolled, as a run's would
+/// not: the listener says its server failed.
 #[test]
 fn a_listener_with_no_enrolled_feeder_says_so() {
     let dir = tempfile::tempdir().unwrap();
@@ -612,7 +644,40 @@ fn a_listener_with_no_enrolled_feeder_says_so() {
         move |update| done.send(update).is_ok(),
     );
     let update = finished.recv_timeout(WAIT).unwrap();
-    assert!(matches!(update, ListenUpdate::Failed { .. }));
+    assert!(matches!(
+        update,
+        ListenUpdate::Failed {
+            why: ListenFailure::ServerFailed,
+            ..
+        }
+    ));
+}
+
+/// A ledger that does not parse is named as such, so the screen offers to
+/// set it aside rather than show the listener's words alone.
+#[test]
+fn a_listener_with_a_damaged_ledger_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("installer.json");
+    std::fs::write(&config, "{}").unwrap();
+    let ledger = wellfed_install::stock::ledger_path(&config, "AF_A").unwrap();
+    std::fs::write(ledger, "not json").unwrap();
+
+    let listener = Listener::new();
+    let (done, finished) = std::sync::mpsc::channel();
+    listener.start(
+        dir.path().to_str().unwrap(),
+        Duration::ZERO,
+        move |update| done.send(update).is_ok(),
+    );
+    let update = finished.recv_timeout(WAIT).unwrap();
+    assert!(matches!(
+        update,
+        ListenUpdate::Failed {
+            why: ListenFailure::LedgerDamaged,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -975,7 +1040,9 @@ fn a_run_refuses_an_image_its_pin_does_not_name() {
             matches!(
                 end,
                 InstallEnd::Stopped {
-                    case: StopCase::Other,
+                    case: StopCase::ImageRefused {
+                        check: ImageCheck::Mismatch { .. }
+                    },
                     resume: Resume::Nothing,
                     ..
                 }

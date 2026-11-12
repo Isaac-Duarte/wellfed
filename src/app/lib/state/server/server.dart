@@ -10,7 +10,10 @@ import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/server/log_in.dart';
 import 'package:wellfed/state/server/log_out.dart';
+
+export 'package:wellfed/state/server/log_in.dart';
 
 /// Why the owner's server is not serving this phone right now.
 enum ServerProblem {
@@ -111,26 +114,6 @@ final class OtherDevice {
   final ServerDevice device;
 }
 
-/// How a login ended.
-sealed class LoginOutcome {
-  const LoginOutcome();
-}
-
-/// Logged in: the phone's token is kept, and the password is not.
-final class LoginDone extends LoginOutcome {
-  /// A login that went through.
-  const LoginDone();
-}
-
-/// The server refused or could not be reached; `error` says which.
-final class LoginFailed extends LoginOutcome {
-  /// A login that did not go through.
-  const LoginFailed(this.error);
-
-  /// What the server, or the way to it, said.
-  final ServerError error;
-}
-
 /// The owner's server: the login, the phone's token, the feeders it lists
 /// and its live stream, which goes through the path router so the router
 /// settles pinned writes by what the server says. The app with no server is
@@ -226,7 +209,19 @@ class HomeServer extends ChangeNotifier {
     // Through the queue, after any copy of the last server still writing;
     // then the secret, so a file with the old link never meets the new one.
     await _keep();
-    await _ports.keepSecret(session.secret());
+    try {
+      await _ports.keepSecret(session.secret());
+    } on Object catch (error) {
+      debugPrint('the server token could not be kept: $error');
+      // A token kept nowhere is lost at the next start: it goes now, login and all.
+      try {
+        await session.logout(password: password, key: _key);
+      } on ServerError {
+        // It stays valid until revoked on the server.
+      }
+      await _forget();
+      return const LoginNotKept();
+    }
     await _connect(session);
     return const LoginDone();
   }
@@ -465,7 +460,12 @@ class HomeServer extends ChangeNotifier {
     _set(const ServerAbsent());
     // A copy kept before this writes first, so none outlives the removal.
     await _kept;
-    await _ports.forgetSecret();
+    try {
+      await _ports.forgetSecret();
+    } on Object catch (error) {
+      // The file forgets it all the same: a token beside no server is never read.
+      debugPrint('the server token could not be forgotten: $error');
+    }
     await _book.setServer(null);
   }
 

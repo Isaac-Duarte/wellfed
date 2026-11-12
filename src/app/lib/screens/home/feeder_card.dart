@@ -223,7 +223,7 @@ class FeederCard extends StatelessWidget {
   bool get _unreachable => controller.state.connection == Connection.offline;
 
   /// The live card: the status read in the session now open.
-  api.Card? get _live => controller.state.connection == Connection.online ? controller.state.card : null;
+  api.Card? get _live => controller.state.cardIsCurrent ? controller.state.card : null;
 
   List<Widget> _notices(BuildContext context) {
     final api.Card? card = controller.state.card;
@@ -390,7 +390,7 @@ class _Chips extends StatelessWidget {
     final ThemeTokens c = context.colors;
     final FeederState state = controller.state;
     final api.Card? card = state.card;
-    final api.Card? live = state.connection == Connection.online ? card : null;
+    final api.Card? live = state.cardIsCurrent ? card : null;
     final FeedState feed = state.feed;
 
     final StatusChip status = switch (state.connection) {
@@ -402,6 +402,8 @@ class _Chips extends StatelessWidget {
         'Feeding ${feed.portions == 1 ? '1 portion' : '${feed.portions} portions'}',
         color: c.accent,
       ),
+      // Open, and its status not read yet: the last session's card says nothing now.
+      Connection.online when live == null => StatusChip('Connecting…', color: c.textMuted),
       Connection.online when live?.ready ?? false => StatusChip('Ready', color: c.ok),
       Connection.online when live?.blocked == Blocked.feeding => StatusChip('Feeding', color: c.accent),
       Connection.online => StatusChip("Can't feed now", color: c.warning),

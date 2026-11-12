@@ -37,7 +37,8 @@ class TodayTab extends StatelessWidget {
     listenable: feeder,
     builder: (context, _) {
       final api.Card? card = feeder.state.card;
-      final api.Card? live = feeder.state.connection == Connection.online ? card : null;
+      // Only what this session read is the feeder now; an earlier card is history.
+      final api.Card? live = feeder.state.cardIsCurrent ? card : null;
       final stopped = live?.blocked == Blocked.fault;
 
       final List<Widget> facts = [
@@ -159,7 +160,8 @@ class _Summary extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final bool online = feeder.state.connection == Connection.online;
-    final api.Card? card = online ? feeder.state.card : null;
+    final bool current = feeder.state.cardIsCurrent;
+    final api.Card? card = current ? feeder.state.card : null;
     // What the feeder last said, even offline: the picture dims instead.
     final api.Card? read = feeder.state.card;
     final (Color dot, String title) = switch (feeder.state.connection) {
@@ -168,6 +170,8 @@ class _Summary extends StatelessWidget {
       Connection.offline => (c.textMuted, "Can't reach it"),
       Connection.otherVersion => (c.warning, 'This feeder needs a different app version'),
       Connection.online when feeder.state.feed.active => (c.accent, 'Feeding'),
+      // Open, and its status not read yet: the last session's card says nothing now.
+      Connection.online when card == null => (c.textMuted, 'Connecting…'),
       Connection.online when card?.ready ?? false => (c.ok, 'Ready to feed'),
       Connection.online when card?.blocked == Blocked.feeding => (c.accent, 'Feeding'),
       Connection.online when card?.blocked == Blocked.fault => (c.fault, "Can't feed"),
@@ -203,7 +207,7 @@ class _Summary extends StatelessWidget {
                 ],
               ),
               // Offline, everything under this is what the feeder said then.
-              if (feeder.state.cardAt case final DateTime at? when !online)
+              if (feeder.state.cardAt case final DateTime at? when !current)
                 Text(lastHeardText(context, at), style: small)
               else if (blocked == Blocked.fault)
                 Text('Meals are held until it restarts', style: small)
@@ -239,7 +243,7 @@ class _Summary extends StatelessWidget {
                         _ => 'Buttons unlocked',
                       },
                       tapHint: shownLocked ? 'Unlock the buttons' : 'Lock the buttons',
-                      onTap: online && locked != null
+                      onTap: current && locked != null
                           ? () => unawaited(
                               write.ask(!shownLocked, () => feeder.ask(FeederRequest.setLock(locked: !shownLocked))),
                             )

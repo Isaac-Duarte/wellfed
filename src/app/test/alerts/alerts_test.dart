@@ -47,6 +47,21 @@ Future<void> _showSettings(
 }
 
 void main() {
+  test('home is told by its gateway and subnet, not by DNS that drifts under it', () {
+    final Map<Object?, Object?> home = {'gateway': '192.168.1.1', 'subnet': '192.168.1.0/24'};
+    expect(phoneNetwork(home), const PhoneNetwork.wifi(gateway: '192.168.1.1', subnet: '192.168.1.0/24'));
+    expect(
+      phoneNetwork({
+        ...home,
+        'dns': ['192.168.1.1', '2001:db8::1'],
+        'domains': 'lan',
+      }),
+      phoneNetwork(home),
+      reason: 'a rotated IPv6 resolver is still home',
+    );
+    expect(phoneNetwork(null), const PhoneNetwork.elsewhere());
+  });
+
   group("a feeder's alerts", () {
     test('load, check and dismiss reach the ports and list again', () async {
       final ports = FakeAlertPorts()..notices = [failedMeal(), foodLow()];
@@ -95,6 +110,26 @@ void main() {
       expect(shown.notices, hasLength(1));
       expect(shown.checking, isFalse);
       expect(shown.problem, contains('disk'));
+    });
+
+    test('a check the server turned away says so, and anything else thrown still stops the spinner', () async {
+      final ports = FakeAlertPorts()..notices = [foodLow()];
+      final alerts = FeederAlertsController(ports, kitchen);
+      addTearDown(alerts.dispose);
+      await alerts.load();
+
+      ports.fails = const ServerTurnedAway();
+      await alerts.check();
+      AlertsShown shown = alerts.state as AlertsShown;
+      expect(shown.checking, isFalse);
+      expect(shown.problem, contains('your server turned this phone away'));
+
+      ports.fails = StateError('a bridge panic');
+      await alerts.check();
+      shown = alerts.state as AlertsShown;
+      expect(shown.checking, isFalse);
+      expect(shown.problem, contains('a bridge panic'));
+      expect(shown.notices, hasLength(1));
     });
 
     testWidgets('the screen words each alert, dismisses one and checks', (tester) async {

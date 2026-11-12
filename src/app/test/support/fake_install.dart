@@ -10,7 +10,6 @@ import 'fakes.dart';
 
 /// A run the test drives: its updates are the test's, its answers recorded.
 class FakeRun with FakeOpaque implements InstallRun {
-  // ignore: the test ends with it
   final updates = StreamController<InstallUpdate>();
   final answers = <int, InstallAnswer>{};
   final notifications = <List<int>>[];
@@ -212,11 +211,19 @@ class FakeInstallPorts implements InstallPorts {
     if (linkFails case final error?) throw error;
     this.onBytes = onBytes;
     this.onLost = onLost;
+    await linkGate?.future;
     return link;
   }
 
+  /// While set, a link opens only once it completes: a scan and a connect
+  /// still out.
+  Completer<void>? linkGate;
+
   @override
   Stream<void> setupHeard() => heard.stream;
+
+  @override
+  String hexOf(List<int> identity) => identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 
   @override
   Future<String?> locate(String identity) async => located;
@@ -253,4 +260,10 @@ class FakeDriver with FakeOpaque implements SetupDriver {
 
   @override
   List<SetupStep> notified({required List<int> bytes}) => script;
+
+  /// The feeder that proved the code, once the last step went.
+  Uint8List? provenFeeder;
+
+  @override
+  Uint8List? proven() => provenFeeder;
 }

@@ -14,8 +14,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'update.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `after_restart`, `confirm`, `reading`, `try_update`, `update`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Reading`
+// These functions are ignored because they are not marked as `pub`: `after_restart`, `confirm`, `first_run`, `reading`, `try_update`, `update`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `NotOffered`, `Reading`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`, `source`
 
 /// Whether to offer the image `build` at `version` to a feeder that runs
 /// `running` (`None` before its status is read) at `skew`, with `update`
@@ -73,7 +74,8 @@ abstract class FirmwareUpdate implements RustOpaqueInterface {
   );
 
   /// Offer the image once, and report until the update ends. The stream
-  /// closes with the run.
+  /// closes with the run. A second call offers nothing and leaves the
+  /// first run's asks where they go: its own stream hears that it ran.
   Stream<UpdateProgress> run();
 }
 

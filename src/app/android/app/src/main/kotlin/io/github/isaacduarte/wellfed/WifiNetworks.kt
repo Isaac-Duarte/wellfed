@@ -112,11 +112,11 @@ object WifiNetworks {
                 ?.hostAddress
                 ?: return null
         val link = properties.linkAddresses.firstOrNull { it.address is Inet4Address } ?: return null
+        // Only what stays put on one network: its DNS servers (an IPv6 prefix
+        // the ISP rotates) and search domains change under a phone at home.
         return mapOf(
             "gateway" to gateway,
             "subnet" to subnetOf(link.address.address, link.prefixLength),
-            "dns" to properties.dnsServers.mapNotNull { it.hostAddress },
-            "domains" to properties.domains,
         )
     }
 

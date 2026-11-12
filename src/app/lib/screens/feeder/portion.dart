@@ -10,6 +10,7 @@ import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// What a portion weighs (13.4), so feeds and meals can say grams: set by
 /// hand a gram at a time, or from weighing ten portions.
@@ -179,6 +180,3 @@ class _PortionScreenState extends State<PortionScreen> {
     },
   );
 }
-
-/// `9.8`, or `11` when it is whole.
-String gramsText(int mg) => mg % 1000 == 0 ? '${mg ~/ 1000}' : (mg / 1000).toStringAsFixed(1);

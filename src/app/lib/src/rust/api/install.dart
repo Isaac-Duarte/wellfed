@@ -15,7 +15,7 @@ import 'setup.dart';
 import 'store.dart';
 part 'install.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// The image unpacked in `dir`, checked against this build's pin and against
 /// its own review.
@@ -505,6 +505,16 @@ class KeptBackup {
           path == other.path;
 }
 
+/// Why the listener could not run, as far as the screen can act on it.
+enum ListenFailure {
+  /// A stock ledger does not parse: the install's own action sets it aside.
+  ledgerDamaged,
+
+  /// Stock's server could not start: its port is taken, say.
+  serverFailed,
+  other,
+}
+
 @freezed
 sealed class ListenUpdate with _$ListenUpdate {
   const ListenUpdate._();
@@ -530,8 +540,10 @@ sealed class ListenUpdate with _$ListenUpdate {
   const factory ListenUpdate.silent() = ListenUpdate_Silent;
 
   /// The listener could not run.
-  const factory ListenUpdate.failed({required String detail}) =
-      ListenUpdate_Failed;
+  const factory ListenUpdate.failed({
+    required ListenFailure why,
+    required String detail,
+  }) = ListenUpdate_Failed;
 
   /// The owner, or the replacement advertising setup, stopped it.
   const factory ListenUpdate.stopped() = ListenUpdate_Stopped;
@@ -692,6 +704,11 @@ sealed class StopCase with _$StopCase {
 
   /// The stock server could not start: its port is taken, say.
   const factory StopCase.serverFailed() = StopCase_ServerFailed;
+
+  /// This build will not install the image it carries: the check the
+  /// first screen made no longer passes. Nothing was sent.
+  const factory StopCase.imageRefused({required ImageCheck check}) =
+      StopCase_ImageRefused;
 
   /// The owner stopped the run, with nothing unsettled.
   const factory StopCase.cancelled() = StopCase_Cancelled;

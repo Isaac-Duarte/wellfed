@@ -31,7 +31,6 @@ dependencies:
   wellfed_app_bridge:
     path: rust_builder
 
-  reactive_ble_platform_interface: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

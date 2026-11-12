@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/discovery.dart';
@@ -5,6 +7,7 @@ import 'package:wellfed/screens/server/account.dart';
 import 'package:wellfed/screens/server/add_server.dart';
 import 'package:wellfed/screens/server/feeder_food.dart';
 import 'package:wellfed/screens/server/pet.dart';
+import 'package:wellfed/screens/server/server_words.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
@@ -15,6 +18,7 @@ import 'package:wellfed/state/server/add_server.dart';
 import 'package:wellfed/state/server/feeder_food.dart';
 import 'package:wellfed/state/server/household.dart';
 import 'package:wellfed/state/server/pet.dart';
+import 'package:wellfed/state/server/records.dart';
 import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/state/server/server_history.dart';
 
@@ -54,6 +58,7 @@ void main() {
     await tester.enterText(find.byType(TextField).at(1), 'ada');
     await tester.enterText(find.byType(TextField).at(2), 'hunter2');
     await tester.pump();
+    await tester.ensureVisible(find.text('Log in'));
     await tester.tap(find.text('Log in'));
     await settle(tester);
 
@@ -62,15 +67,54 @@ void main() {
     expect(server.state, isA<ServerLinked>());
   });
 
+  testWidgets('a login pops the add-server screen once, though a server is heard as it leaves', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, _) = _server();
+    await tester.pumpWidget(themed(const Text('beneath')));
+    final NavigatorState navigator = tester.state(find.byType(Navigator));
+    unawaited(
+      navigator.push(MaterialPageRoute<bool>(builder: (_) => AddServerScreen(newFlow: () => AddServerFlow(server)))),
+    );
+    await settle(tester);
+
+    await tester.enterText(find.byType(TextField).at(1), 'ada');
+    await tester.enterText(find.byType(TextField).at(2), 'hunter2');
+    await tester.enterText(find.byType(TextField).at(0), '192.168.1.20:8080');
+    await tester.pump();
+    await tester.ensureVisible(find.text('Log in'));
+    await tester.tap(find.text('Log in'));
+    await tester.pump();
+    ports.found.add(const FoundServer(url: 'http://192.168.1.21:8080', name: 'other'));
+    await settle(tester);
+
+    expect(find.text('beneath'), findsOneWidget);
+  });
+
+  testWidgets('a plain address heard on the network says the password would go unencrypted', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, _) = _server();
+    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+    ports.found.add(const FoundServer(url: 'http://192.168.1.20:8080', name: 'home-1a2b3c4d'));
+    await settle(tester);
+
+    expect(find.text('http://192.168.1.20:8080 · not encrypted'), findsOneWidget);
+    expect(find.textContaining('Not encrypted.', findRichText: true), findsNothing, reason: 'nothing picked yet');
+    await tester.tap(find.text('home-1a2b3c4d'));
+    await tester.pump();
+    expect(find.textContaining('Not encrypted.', findRichText: true), findsOneWidget);
+  });
+
   testWidgets('plain http beyond the home network is refused, and says how to reach the server', (tester) async {
     _phone(tester);
     final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
     ports.loginFails = serverError(ServerErrorKind.plainHttp);
     await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
-    await tester.enterText(find.byType(TextField).at(0), 'http://feeder.example');
+    // The address last: a plain one adds a notice that moves the others.
     await tester.enterText(find.byType(TextField).at(1), 'ada');
     await tester.enterText(find.byType(TextField).at(2), 'hunter2');
+    await tester.enterText(find.byType(TextField).at(0), 'http://feeder.example');
     await tester.pump();
+    await tester.ensureVisible(find.text('Log in'));
     await tester.tap(find.text('Log in'));
     await settle(tester);
 
@@ -79,21 +123,30 @@ void main() {
     expect(ports.kept, isNull);
   });
 
-  testWidgets('a refused login says why, and keeps nothing', (tester) async {
-    _phone(tester);
-    final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
-    ports.loginFails = serverError(ServerErrorKind.badCredentials);
-    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
-    await tester.enterText(find.byType(TextField).at(0), 'http://home.lan:8080');
-    await tester.enterText(find.byType(TextField).at(1), 'ada');
-    await tester.enterText(find.byType(TextField).at(2), 'wrong');
-    await tester.pump();
-    await tester.tap(find.text('Log in'));
-    await settle(tester);
+  // A login changes nothing a retry could repeat, so a server that failed
+  // partway asks for another try, not a check.
+  for (final (ServerErrorKind kind, String words) in [
+    (ServerErrorKind.badCredentials, 'The name or the password is wrong.'),
+    (ServerErrorKind.serverFailed, 'The server failed partway through. Try again in a while.'),
+  ]) {
+    testWidgets('a login refused as ${kind.name} says why, and keeps nothing', (tester) async {
+      _phone(tester);
+      final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
+      ports.loginFails = serverError(kind);
+      await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+      // The address last: a plain one adds a notice that moves the others.
+      await tester.enterText(find.byType(TextField).at(1), 'ada');
+      await tester.enterText(find.byType(TextField).at(2), 'wrong');
+      await tester.enterText(find.byType(TextField).at(0), 'http://home.lan:8080');
+      await tester.pump();
+      await tester.ensureVisible(find.text('Log in'));
+      await tester.tap(find.text('Log in'));
+      await settle(tester);
 
-    expect(find.text('The name or the password is wrong.'), findsOneWidget);
-    expect(book.server, isNull);
-  });
+      expect(find.text(words), findsOneWidget);
+      expect(book.server, isNull);
+    });
+  }
 
   testWidgets('the account says the phone keeps its keys, and logging out asks the password for it', (tester) async {
     _phone(tester);
@@ -130,7 +183,101 @@ void main() {
 
     session.home.fails = serverError(ServerErrorKind.foodInUse);
     expect(await flow.deleteFood('f1'), isFalse);
-    expect(flow.state.error?.kind, ServerErrorKind.foodInUse);
+    expect(flow.state.problem?.error.kind, ServerErrorKind.foodInUse);
+    expect(flow.state.problem?.mayHaveRun, isFalse);
+  });
+
+  test('a new pet whose answer was lost is read back and said to be unsure, never added again', () async {
+    final session = FakeServerSession();
+    final flow = HouseholdFlow(session);
+    addTearDown(flow.dispose);
+    await flow.load();
+
+    session.home.lost = serverError(ServerErrorKind.interrupted, mayHaveRun: true);
+    expect(await flow.addPet(name: 'Tom', species: Species.cat), isFalse);
+    expect(flow.state.pets.map((pet) => pet.name), ['Tom'], reason: 'the read after it shows it took');
+    expect(flow.state.problem?.mayHaveRun, isTrue);
+    expect(flow.state.busy, isFalse);
+    expect(session.home.changes, ['create pet Tom']);
+
+    // A server that said it failed partway reads the same way.
+    session.home.lost = serverError(ServerErrorKind.serverFailed, mayHaveRun: true);
+    expect(await flow.saveFood(brand: 'Acme', name: 'Fish', kcalPerKg: 3500, bagGrams: 2000), isFalse);
+    expect(flow.state.foods.map((food) => food.name), ['Fish']);
+    expect(flow.state.problem?.mayHaveRun, isTrue);
+
+    // So does a page no Wellfed server sends, as a proxy's after the insert
+    // landed: the bridge says it may have run, whatever its words.
+    session.home.lost = serverError(ServerErrorKind.protocol, mayHaveRun: true);
+    expect(await flow.addPet(name: 'Kit', species: Species.cat), isFalse);
+    expect(flow.state.pets.map((pet) => pet.name), ['Tom', 'Kit']);
+    final RecordProblem? problem = flow.state.problem;
+    expect(problem?.mayHaveRun, isTrue);
+    expect(problem == null ? null : recordProblemWords(problem), contains('may or may not have taken'));
+    expect(session.home.changes, ['create pet Tom', 'create food Fish', 'create pet Kit']);
+  });
+
+  testWidgets('a pet edit shows the new pet, and a refused one says why', (tester) async {
+    _phone(tester);
+    final session = FakeServerSession();
+    session.home.pets = const [_cat];
+    await tester.pumpWidget(themed(PetScreen(flow: PetFlow(session, _cat), feeders: const [])));
+    await settle(tester);
+
+    session.home.fails = serverError(ServerErrorKind.invalid);
+    await tester.tap(find.text('Edit'));
+    await settle(tester);
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(find.textContaining('The server did not take that'), findsOneWidget);
+
+    session.home.fails = null;
+    await tester.tap(find.text('Edit'));
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, 'Miso'), 'Tom');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(find.text('Tom'), findsOneWidget);
+    expect(find.textContaining('The server did not take that'), findsNothing);
+  });
+
+  testWidgets('removing a pet closes its screen, and a refused removal stays and says why', (tester) async {
+    _phone(tester);
+    final session = FakeServerSession();
+    session.home.pets = const [_cat];
+    await tester.pumpWidget(
+      themed(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => PetScreen(flow: PetFlow(session, _cat), feeders: const []),
+              ),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await settle(tester);
+
+    Future<void> remove() async {
+      await tester.tap(find.text('Remove'));
+      await settle(tester);
+      await tester.tap(find.widgetWithText(TextButton, 'Remove').last);
+      await settle(tester);
+    }
+
+    session.home.fails = serverError(ServerErrorKind.forbidden);
+    await remove();
+    expect(find.text('Your account may not do that.'), findsOneWidget);
+
+    session.home.fails = null;
+    await remove();
+    expect(find.text('Open'), findsOneWidget);
+    expect(session.home.pets, isEmpty);
   });
 
   testWidgets('an uncalibrated feeder counts portions: no grams and no food left', (tester) async {
@@ -185,13 +332,10 @@ void main() {
         unweighed: [ServerFeederPortions(feeder: 'id-k', portions: 3, uncertainPortions: 0)],
       ),
     ];
-    final household = HouseholdFlow(session);
-    addTearDown(household.dispose);
     await tester.pumpWidget(
       themed(
         PetScreen(
           flow: PetFlow(session, _cat),
-          household: household,
           feeders: const [ListedFeeder(id: 'id-k', identity: 'aa', name: 'Kitchen')],
         ),
       ),

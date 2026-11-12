@@ -155,6 +155,19 @@ pub enum Error {
     SetupSession(#[from] wellfed_client::setup::Error),
     #[error("the feeder never proved the code")]
     NoProof,
+    /// The feeder proved the code and had this client's last step, and then
+    /// the link or the wait ended before its answer: it most likely
+    /// enrolled this key, saved the Wi-Fi and is restarting onto it. The
+    /// identity is remembered, and a session that opens with it settles it.
+    #[error(
+        "{source}, after feeder {} proved the code and had the last step: it most likely enrolled this key and is restarting onto its Wi-Fi, and a session with it on the LAN settles that",
+        wellfed_session::hex::Lower(identity).to_string()
+    )]
+    Unsettled {
+        identity: [u8; 32],
+        #[source]
+        source: Box<Error>,
+    },
     #[error("the feeder closed the connection: is its recovery window open?")]
     RecoveryClosed,
     #[error("the feeder did not answer in time")]

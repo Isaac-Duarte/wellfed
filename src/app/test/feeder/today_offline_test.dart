@@ -35,4 +35,31 @@ void main() {
       await tester.pump(const Duration(minutes: 1));
     });
   });
+
+  testWidgets('a session open again, its status not read yet, claims nothing of the old card', (tester) async {
+    final ports = FakeFeederPorts();
+    final fleet = FeederFleet(FakeBook()..feeders = [feederKitchen], ports);
+    addTearDown(fleet.dispose);
+    await tester.pump();
+    final FakeSession session = ports.session..opened();
+    await tester.pump();
+    await feederShowShell(tester, fleet);
+    session.status(fullCard());
+    await settle(tester);
+    expect(find.text('Ready to feed'), findsOneWidget);
+
+    session.updates.add(
+      const SessionUpdate.closed(
+        error: BridgeError(kind: ErrorKind.closed, message: 'gone'),
+      ),
+    );
+    await session.updates.close();
+    await tester.pump(const Duration(minutes: 1));
+    ports.session.opened();
+    await tester.pump();
+
+    expect(find.text('Ready to feed'), findsNothing);
+    expect(find.text('Power, Wi-Fi and clock look fine'), findsNothing);
+    expect(find.text('Power, Wi-Fi and clock were fine then'), findsOneWidget);
+  });
 }

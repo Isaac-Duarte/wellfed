@@ -19,9 +19,12 @@ _Words _describe(BuildContext context, FeederController feeder, HistoryBody body
       'Fed between ${result.confirmed} and ${result.atMost}',
       result.by is FedBy_Unknown ? 'Interrupted · not repeated' : '${asker(result.by)} · not repeated',
     ),
-    HistoryBody_Fed(:final FeedResult result)
-        when result.outcome == FeedOutcome.done && result.confirmed == result.requested =>
-      loud(Glyph.check, c.ok, 'Fed ${fedAmountText(result)}', asker(result.by)),
+    HistoryBody_Fed(:final FeedResult result) when fedKind(result) == FedKind.full => loud(
+      Glyph.check,
+      c.ok,
+      'Fed ${fedAmountText(result)}',
+      asker(result.by),
+    ),
     HistoryBody_Fed(:final FeedResult result) => loud(
       Glyph.warning,
       c.warning,

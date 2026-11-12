@@ -38,12 +38,12 @@ use wellfed_session::noise::Keypair;
 
 use crate::api::install::{
     ImageCheck, ImageProvisioning, InstallAnswer, InstallAsk, InstallEnd, InstallEvent,
-    InstallSpec, InstallStart, InstallUpdate, ListenUpdate, PendingInstall, RequestRefusal, Resume,
-    StopCase, UncertainWrite, WaitReason,
+    InstallSpec, InstallStart, InstallUpdate, ListenFailure, ListenUpdate, PendingInstall,
+    RequestRefusal, Resume, StopCase, UncertainWrite, WaitReason,
 };
 use crate::api::model::SetupRefusal;
 use crate::api::setup::CONTROL_PIECE;
-use crate::api::store::{KnownFeeder, load_store, save_store};
+use crate::api::store::{KnownFeeder, update_store};
 use wellfed_install::StockPlans;
 use wellfed_install::storage::BackupFault;
 
@@ -497,18 +497,19 @@ impl Keys for AppKeys {
             self.feeders.push(*identity);
         }
 
-        let store = self.store.to_string_lossy().into_owned();
-        let mut saved = load_store(&store)?;
         let hex = wellfed_session::hex::Lower(identity).to_string();
-        if !saved.feeders.iter().any(|known| known.identity == hex) {
+        update_store(&self.store, |saved| {
+            if saved.feeders.iter().any(|known| known.identity == hex) {
+                return false;
+            }
             saved.feeders.push(KnownFeeder {
                 identity: hex,
                 name: self.name.clone(),
                 address: None,
                 manual_address: None,
             });
-            save_store(&store, &saved)?;
-        }
+            true
+        })?;
         Ok(())
     }
 }
@@ -724,6 +725,9 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             (StopCase::Other, FromBank0)
         }
         Error::NotAnswering { .. } | Error::NoAddress => (StopCase::NotAnswering, FromBank0),
+        // The feeder had the last step of a recovery and no session opened
+        // with it since: a new run from bank 0 reads whether it took.
+        Error::Unsettled { .. } => (StopCase::NotAnswering, FromBank0),
         // A pick-up whose record no longer leads anywhere goes through setup
         // again, which takes the Wi-Fi.
         Error::NoHomeNetwork => (StopCase::NoWifiGiven, FromBank0),
@@ -741,7 +745,41 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             }
             None => (StopCase::Cancelled, FromBank0),
         },
-        _ => (StopCase::Other, Nothing),
+        // This phone's own files, keys and platform, and what an install's
+        // route never meets: the run's words are all there is to say.
+        Error::Platform(_)
+        | Error::ShowCode(_)
+        | Error::Random(_)
+        | Error::Clock
+        | Error::Read { .. }
+        | Error::Parse { .. }
+        | Error::Create { .. }
+        | Error::Write { .. }
+        | Error::Remove { .. }
+        | Error::ReviewManifest { .. }
+        | Error::NoStartupIdentity
+        | Error::Signing(_)
+        | Error::Trial(_)
+        | Error::NoPeer
+        | Error::OtherDevice { .. }
+        | Error::ClientsRefused(_)
+        | Error::Legacy
+        | Error::NoIdentity
+        | Error::NoBackupServed
+        | Error::Bank1(_)
+        | Error::BackupNotSetAside { .. }
+        | Error::RestoreNotFound
+        | Error::RestoreEnroll(_)
+        | Error::RestoreKey(_)
+        | Error::RestoreKeyGone
+        | Error::RestoreInstallRunning { .. }
+        | Error::RestoreCancelUnknown
+        | Error::RestoreStopped(_)
+        | Error::NoUpdateKey
+        | Error::NoSigner
+        | Error::NoManifest
+        | Error::ShortImage
+        | Error::EnrollmentEnded => (StopCase::Other, Nothing),
     }
 }
 
@@ -781,7 +819,13 @@ const fn timed_out(phase: Phase, from_stock: bool) -> (StopCase, Resume) {
         Phase::Pair | Phase::ReadStatus | Phase::AwaitInstall => {
             (StopCase::NoSetupFeeder, Resume::FromBank0)
         }
-        _ => (StopCase::Other, Resume::FromBank0),
+        // Waits a run gives up on only once the replacement answers.
+        Phase::CloseTrial
+        | Phase::UpdateKey
+        | Phase::Backup
+        | Phase::Sign
+        | Phase::Promote
+        | Phase::Done => (StopCase::Other, Resume::FromBank0),
     }
 }
 
@@ -998,13 +1042,25 @@ impl Run {
 
     /// Start `spec` on its own thread. `deliver` hears the run to its end
     /// and returns `false` once nobody listens. A run starts once: a second
-    /// call, with no spec left, reports that and ends.
+    /// call, with no spec left, tells its own `deliver` so and leaves the
+    /// first run's updates where they go.
     pub fn start(
         &self,
         spec: Option<InstallSpec>,
         keys: Keypair,
         deliver: impl Fn(InstallUpdate) -> bool + Send + 'static,
     ) {
+        let Some(spec) = spec else {
+            deliver(InstallUpdate::Ended {
+                end: InstallEnd::Stopped {
+                    case: StopCase::Other,
+                    resume: Resume::Nothing,
+                    detail: "this install already ran".to_string(),
+                },
+            });
+            return;
+        };
+
         *self.asks.deliver() = Some(Box::new(deliver));
         let asks = self.asks.clone();
         let stop = self.stop.subscribe();
@@ -1019,16 +1075,7 @@ impl Run {
             .spawn(move || {
                 let _held = held;
                 let end = guarded(
-                    || match spec {
-                        Some(spec) => {
-                            run_on_this_thread(spec, keys, pin.as_ref(), poll, asks.clone(), stop)
-                        }
-                        None => InstallEnd::Stopped {
-                            case: StopCase::Other,
-                            resume: Resume::Nothing,
-                            detail: "this install already ran".to_string(),
-                        },
-                    },
+                    || run_on_this_thread(spec, keys, pin.as_ref(), poll, asks.clone(), stop),
                     |detail| InstallEnd::Stopped {
                         case: StopCase::Other,
                         resume: Resume::Nothing,
@@ -1047,6 +1094,7 @@ impl Run {
                     detail: format!("no thread for the install: {error}"),
                 },
             });
+            *self.asks.deliver() = None;
         }
     }
 
@@ -1134,11 +1182,11 @@ fn run_on_this_thread(
                 detail,
             };
         }
-        Err(NotPlanned::Image(refused)) => {
+        Err(NotPlanned::Image(check)) => {
             return InstallEnd::Stopped {
-                case: StopCase::Other,
+                case: StopCase::ImageRefused { check },
                 resume: Resume::Nothing,
-                detail: format!("this build will not install its image: {refused:?}"),
+                detail: String::new(),
             };
         }
         Err(NotPlanned::Run(error)) => {
@@ -1224,12 +1272,16 @@ impl Listener {
                 let _held = held;
                 let last = guarded(
                     || listen_on_this_thread(&config, wait, on_thread.as_ref(), stop),
-                    |detail| ListenUpdate::Failed { detail },
+                    |detail| ListenUpdate::Failed {
+                        why: ListenFailure::Other,
+                        detail,
+                    },
                 );
                 on_thread(last);
             });
         if let Err(error) = thread {
             deliver(ListenUpdate::Failed {
+                why: ListenFailure::Other,
                 detail: format!("no thread for the listener: {error}"),
             });
         }
@@ -1248,6 +1300,7 @@ fn listen_on_this_thread(
 ) -> ListenUpdate {
     if wellfed_install::stock::damaged_ledgers(config) {
         return ListenUpdate::Failed {
+            why: ListenFailure::LedgerDamaged,
             detail: "a stock ledger does not parse".to_string(),
         };
     }
@@ -1259,6 +1312,7 @@ fn listen_on_this_thread(
         Ok(runtime) => runtime,
         Err(error) => {
             return ListenUpdate::Failed {
+                why: ListenFailure::Other,
                 detail: format!("no runtime for the listener: {error}"),
             };
         }
@@ -1278,6 +1332,12 @@ fn listen_on_this_thread(
         Ok(Listened::Silent) => ListenUpdate::Silent,
         Err(Error::Stopped(_)) => ListenUpdate::Stopped,
         Err(error) => ListenUpdate::Failed {
+            // Read as a run's stop reads it, so the two agree on the server.
+            why: if stop_of(&error, false).0 == StopCase::ServerFailed {
+                ListenFailure::ServerFailed
+            } else {
+                ListenFailure::Other
+            },
             detail: text(&error),
         },
     }
@@ -1482,6 +1542,16 @@ mod tests {
             stop_of(&Error::NoAddress, true),
             (StopCase::NotAnswering, Resume::FromBank0)
         );
+        // A recovery the feeder may have taken is read from bank 0, never
+        // called failed.
+        let unsettled = Error::Unsettled {
+            identity: [0xab; 32],
+            source: Box::new(Error::RecoveryTimeout),
+        };
+        assert_eq!(
+            stop_of(&unsettled, true),
+            (StopCase::NotAnswering, Resume::FromBank0)
+        );
     }
 
     /// A panic on the run's thread still ends the stream, in words.
@@ -1559,7 +1629,7 @@ mod tests {
 
         keys.remember(&[0xab; 32]).unwrap();
         keys.remember(&[0xab; 32]).unwrap();
-        let saved = load_store(store.to_str().unwrap()).unwrap();
+        let saved = crate::api::store::load_store(store.to_str().unwrap()).unwrap();
         assert_eq!(saved.feeders.len(), 1);
         assert_eq!(saved.feeders[0].identity, "ab".repeat(32));
         assert_eq!(saved.feeders[0].name, "Kitchen");
@@ -1570,5 +1640,33 @@ mod tests {
         // Two known: only a prefix names one.
         assert_eq!(keys.feeder(None), None);
         assert_eq!(keys.feeder(Some("cd")), Some([0xcd; 32]));
+    }
+
+    /// Dart reads the file, the run remembers its feeder, and Dart's change
+    /// made from what it read is refused rather than saved over the feeder;
+    /// made again from the file, it keeps both.
+    #[test]
+    fn a_change_dart_made_before_the_run_remembered_never_drops_the_feeder() {
+        use crate::api::store::{load_store, swap_store};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("app.json");
+        let path = store.to_str().unwrap();
+        let mut keys = keys(&store);
+        let renamed = |read: &crate::api::store::AppStore| crate::api::store::AppStore {
+            label: "renamed".into(),
+            ..read.clone()
+        };
+
+        let read = load_store(path).unwrap();
+        keys.remember(&[0xab; 32]).unwrap();
+        assert!(!swap_store(path, &read, &renamed(&read)).unwrap());
+        assert_eq!(load_store(path).unwrap().feeders.len(), 1);
+
+        let read = load_store(path).unwrap();
+        assert!(swap_store(path, &read, &renamed(&read)).unwrap());
+        let saved = load_store(path).unwrap();
+        assert_eq!(saved.label, "renamed");
+        assert_eq!(saved.feeders[0].identity, "ab".repeat(32));
     }
 }

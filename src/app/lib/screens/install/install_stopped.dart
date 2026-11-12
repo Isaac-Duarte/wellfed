@@ -21,24 +21,23 @@ class InstallStoppedPage extends StatelessWidget {
   final InstallStopped state;
 
   /// The design's other ways an install stops, for the owner who meets one
-  /// later. The one on the screen is not listed again.
-  static const _others = [
-    (
-      'Different vendor firmware',
-      'Wellfed installs over 1.1.15 only, for now. Nothing on the feeder '
-          'changed.',
-    ),
-    ('Two feeders answered', "We can't tell which one is yours. Unplug the others and start again."),
-    (
-      "The backup didn't match",
-      "Wellfed won't make itself permanent without a good backup, so this "
-          'stop changed nothing on the feeder.',
-    ),
+  /// later. The stop on the screen, `shown`, is not listed again.
+  List<(String, String)> _others(StopCase shown) => [
+    if (shown is! StopCase_OtherFirmware)
+      ('Different vendor firmware', 'Wellfed installs over 1.1.15 only, for now. Nothing on the feeder changed.'),
+    if (shown is! StopCase_TwoFeeders) _words(const StopCase.twoFeeders()),
+    if (shown is! StopCase_BackupMismatch) _words(const StopCase.backupMismatch()),
   ];
+
+  /// What the feeder holds beside Wellfed, as far as this install knows: a
+  /// promotion that may have gone in may have replaced its original firmware.
+  String _stockHeld() => state.promotionMayHaveGone
+      ? 'the backup of its original firmware stays on this $deviceName'
+      : 'still holds its original firmware';
 
   (String, String) _words(StopCase stop) => switch (stop) {
     StopCase_Uncertain() => switch (state.listening) {
-      Listening.stockStayed when state.stop?.resume == Resume.fromStart => (
+      Listening.stockStayed when state.stop.resume == Resume.fromStart => (
         "It didn't install",
         'The feeder came back on its original firmware, and nothing changed '
             'on it. You can start again.',
@@ -60,6 +59,16 @@ class InstallStoppedPage extends StatelessWidget {
       Listening.failed => (
         "We can't listen for the feeder",
         state.listenerDetail ?? 'Something on this $deviceName stopped it.',
+      ),
+      Listening.ledgerDamaged => (
+        "This $deviceName can't read an install request's record",
+        'Nothing was sent a second time. Until you set the record aside, '
+            'Wellfed treats that request as still open and cannot listen for it.',
+      ),
+      Listening.serverFailed => (
+        "We can't listen for the feeder",
+        'This $deviceName could not start what listens for it. Another app may '
+            'hold the port it needs. Nothing was sent a second time.',
       ),
       _ when state.listeningForEarlier => (
         'Waiting to hear from the feeder',
@@ -184,7 +193,7 @@ class InstallStoppedPage extends StatelessWidget {
         SetupRefusal.invalid => 'It rejected the $deviceName name or the Wi-Fi. Check them and start again.',
         null =>
           'The Bluetooth exchange broke off. Move closer and try again. It '
-              'runs Wellfed and still holds its original firmware.',
+              'runs Wellfed and ${_stockHeld()}.',
       },
     ),
     StopCase_OtherFeeder() => (
@@ -246,7 +255,7 @@ class InstallStoppedPage extends StatelessWidget {
     ),
     StopCase_PromotionFailed() => (
       "Wellfed didn't become permanent",
-      'The feeder runs Wellfed for now and still holds its original firmware.',
+      'The feeder runs Wellfed for now and ${_stockHeld()}.',
     ),
     StopCase_FellBack() => (
       'It went back after restarting',
@@ -257,6 +266,8 @@ class InstallStoppedPage extends StatelessWidget {
       "This $deviceName couldn't serve the feeder",
       'Another app may hold the port it needs. Nothing was sent.',
     ),
+    StopCase_ImageRefused(:final check) =>
+      imageRefusal(check) ?? ("This build's firmware doesn't check out.", 'Nothing was sent.'),
     StopCase_Cancelled() => ('You stopped the install', 'Nothing is waiting on it.'),
     StopCase_Other() => ('The install stopped', 'See below for what it said.'),
   };
@@ -264,16 +275,12 @@ class InstallStoppedPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final InstallEnd_Stopped? stop = state.stop;
-    if (stop == null) return const SizedBox.shrink();
+    final InstallEnd_Stopped stop = state.stop;
     final uncertain = stop.case_ is StopCase_Uncertain;
     final (String title, String body) = _words(stop.case_);
     final bool listening = uncertain && state.listening == Listening.running;
     final int minutes = state.listened.inMinutes;
-    final List<(String, String)> others = [
-      for (final other in _others)
-        if (other.$1 != title) other,
-    ];
+    final List<(String, String)> others = _others(stop.case_);
 
     return StepScaffold(
       leading: Leading.close,
@@ -332,10 +339,15 @@ class InstallStoppedPage extends StatelessWidget {
           const SizedBox(height: Space.s2),
           Notice(tone: Tone.fault, lead: "That didn't work.", text: failed),
         ],
-        if (stop.detail.isNotEmpty && !listening) ...[
+        for (final String detail in [
+          if (stop.detail.isNotEmpty && !listening) stop.detail,
+          // A listener's words, where the body says what to do instead.
+          if (state.listening case Listening.ledgerDamaged || Listening.serverFailed)
+            if (state.listenerDetail case final String detail?) detail,
+        ]) ...[
           const SizedBox(height: Space.s4),
           Text(
-            stop.detail,
+            detail,
             style: TextStyle(fontFamily: Fonts.mono, fontSize: Sizes.xs, height: 1.4, color: c.textMuted),
           ),
         ],

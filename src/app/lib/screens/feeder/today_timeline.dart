@@ -7,7 +7,6 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/history.dart';
 import 'package:wellfed/screens/feeder/meal_skip.dart';
-import 'package:wellfed/screens/feeder/portion.dart' show gramsText;
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
@@ -328,14 +327,14 @@ class _Row extends StatelessWidget {
     String join(List<String> parts) => parts.where((part) => part.isNotEmpty).join(' · ');
 
     return switch ((moment.standing, moment.fed)) {
-      (_, final FeedResult fed?) when fed.uncertain => (
+      (_, final FeedResult fed?) when fedKind(fed) == FedKind.unsure => (
         Glyph.warning,
         c.warning,
         'Fed between ${fed.confirmed} and ${fed.atMost}',
         join([_who(fed), 'not repeated']),
         true,
       ),
-      (_, final FeedResult fed?) when fed.confirmed != fed.requested => (
+      (_, final FeedResult fed?) when fedKind(fed) == FedKind.short => (
         Glyph.warning,
         c.warning,
         'Fed ${fedAmountText(fed)}',

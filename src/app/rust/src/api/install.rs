@@ -339,6 +339,11 @@ pub enum StopCase {
     FellBack,
     /// The stock server could not start: its port is taken, say.
     ServerFailed,
+    /// This build will not install the image it carries: the check the
+    /// first screen made no longer passes. Nothing was sent.
+    ImageRefused {
+        check: ImageCheck,
+    },
     /// The owner stopped the run, with nothing unsettled.
     Cancelled,
     Other,
@@ -450,9 +455,19 @@ pub enum ListenUpdate {
     /// Nothing came, for the whole wait: still not known.
     Silent,
     /// The listener could not run.
-    Failed { detail: String },
+    Failed { why: ListenFailure, detail: String },
     /// The owner, or the replacement advertising setup, stopped it.
     Stopped,
+}
+
+/// Why the listener could not run, as far as the screen can act on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListenFailure {
+    /// A stock ledger does not parse: the install's own action sets it aside.
+    LedgerDamaged,
+    /// Stock's server could not start: its port is taken, say.
+    ServerFailed,
+    Other,
 }
 
 /// The listener after an uncertain request: stock's server with no trial

@@ -95,6 +95,12 @@ enum Listening {
 
   /// The listener could not run.
   failed,
+
+  /// A stock ledger does not parse: setting it aside lets it listen.
+  ledgerDamaged,
+
+  /// Stock's server could not start: another app may hold its port.
+  serverFailed,
 }
 
 /// What holds across an install's stages.
@@ -341,10 +347,15 @@ final class InstallStopped extends InstallState {
     required this.stockSeen,
     required this.setupSeen,
     required this.listenerDetail,
+    this.promotionMayHaveGone = false,
   });
 
   /// How it ended.
-  final InstallEnd_Stopped? stop;
+  final InstallEnd_Stopped stop;
+
+  /// An earlier run of this install stopped unsure whether its promotion
+  /// went in, so the feeder may no longer hold its original firmware.
+  final bool promotionMayHaveGone;
 
   /// What the listener after an uncertain request has heard.
   final Listening listening;

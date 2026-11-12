@@ -8,9 +8,11 @@ import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/fleet/fleet.dart';
 
 import '../support/fakes.dart';
 import '../support/harness.dart';
+import 'feeder_support.dart';
 
 /// Whether the time source named `name` is the ticked one.
 bool? _chosen(WidgetTester tester, String name) => tester
@@ -138,7 +140,7 @@ void main() {
       await tapIn(tester, find.text('Phones only'));
       final put = session.requests.first as FeederRequest_PutTime;
       expect(put.base, 8);
-      expect(put.ntp, 'off');
+      expect(put.ntp, const NtpChoice.off());
       expect(put.zone, isNull);
     });
 
@@ -166,6 +168,28 @@ void main() {
       expect(next.base, 9);
     });
 
+    testWidgets('the choices wait for the time read back, so a quick second tap goes nowhere', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      final read = Completer<void>();
+      session.answering = (request) async {
+        if (request is FeederRequest_GetTime) await read.future;
+        return const FeederReply.done();
+      };
+      session.status(fakeCard(time: time));
+      await showTab(tester, ClockScreen(feeder: feeder));
+      session.requests.clear();
+
+      await tapIn(tester, find.text('Phones only'));
+      await tapIn(tester, find.text('Your router'));
+      expect(session.requests.whereType<FeederRequest_PutTime>(), hasLength(1), reason: 'the read is still out');
+
+      read.complete();
+      session.status(fakeCard(time: const TimeInfo(generation: 9, writable: true, ntp: NtpView.off(), syncs: 1)));
+      await settle(tester);
+      await tapIn(tester, find.text('Your router'));
+      expect(session.requests.whereType<FeederRequest_PutTime>().last.base, 9);
+    });
+
     testWidgets('a public server picked from the list goes as its address', (tester) async {
       final FakeSession session = await show(tester);
 
@@ -173,7 +197,7 @@ void main() {
       await tapIn(tester, find.widgetWithText(ListTile, 'Cloudflare'));
 
       final put = session.requests.first as FeederRequest_PutTime;
-      expect(put.ntp, '162.159.200.1');
+      expect(put.ntp, const NtpChoice.address(address: '162.159.200.1'));
     });
 
     testWidgets('a bad address and an unanswered change say so', (tester) async {
@@ -195,6 +219,23 @@ void main() {
   });
 
   group('Portion size', () {
+    testWidgets('the sheet says grams as Today and the Portion screen do', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      session.answering = (request) async => switch (request) {
+        FeederRequest_GetCalibration() => const FeederReply.calibration(
+          calibration: CalibrationInfo(generation: 1, writable: true, portionMg: 12200, bowl: Bowl.single),
+        ),
+        _ => const FeederReply.done(),
+      };
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard());
+      await settle(tester);
+      await feederTap(tester, find.widgetWithText(FilledButton, 'Feed now'));
+      await feederTap(tester, find.byTooltip('One more portion'));
+
+      expect(find.text('Feed 2 portions · 24.4 g'), findsOneWidget, reason: 'a tenth kept, not rounded to 24');
+    });
+
     Future<FakeSession> show(WidgetTester tester, {CalibrationInfo held = calibration}) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(time: time));

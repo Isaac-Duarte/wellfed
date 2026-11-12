@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide Card;
 import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
+import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
@@ -53,8 +54,6 @@ class ScheduleTab extends StatefulWidget {
 }
 
 class _ScheduleTabState extends State<ScheduleTab> {
-  static const _thisTab = 1;
-
   TabController? _tabs;
   bool _opened = false;
 
@@ -67,7 +66,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
     _opened = true;
     _tabs?.removeListener(_tabChanged);
     _tabs = DefaultTabController.maybeOf(context)?..addListener(_tabChanged);
-    if (first && (_tabs?.index ?? _thisTab) == _thisTab) _read();
+    if (first && (_tabs?.index ?? scheduleTab) == scheduleTab) _read();
   }
 
   @override
@@ -78,7 +77,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
 
   void _tabChanged() {
     final TabController? tabs = _tabs;
-    if (tabs != null && tabs.index == _thisTab && !tabs.indexIsChanging) {
+    if (tabs != null && tabs.index == scheduleTab && !tabs.indexIsChanging) {
       _read();
     }
   }
@@ -125,7 +124,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
             Expanded(
               child: ListView(
                 children: [
-                  if (online && !(card?.clockSet ?? true)) ...[
+                  if (feeder.state.cardIsCurrent && !(card?.clockSet ?? true)) ...[
                     NoTimeNotice(feeder: feeder),
                     const SizedBox(height: Space.s3),
                   ],

@@ -8,6 +8,9 @@ import 'model.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+
+import 'router.dart';
+import 'server_error.dart';
 part 'feeder.freezed.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
@@ -117,8 +120,9 @@ sealed class FeederRefusal with _$FeederRefusal {
   const factory FeederRefusal.forbidden() = FeederRefusal_Forbidden;
 
   /// The store moved past the base: read it again and decide again.
-  const factory FeederRefusal.stale({required int current}) =
-      FeederRefusal_Stale;
+  /// `current` is the store's generation now, unknown when the owner's
+  /// server refused it, since its refusal does not carry one.
+  const factory FeederRefusal.stale({int? current}) = FeederRefusal_Stale;
   const factory FeederRefusal.busy() = FeederRefusal_Busy;
   const factory FeederRefusal.unavailable() = FeederRefusal_Unavailable;
   const factory FeederRefusal.invalid() = FeederRefusal_Invalid;
@@ -131,8 +135,10 @@ sealed class FeederRefusal with _$FeederRefusal {
   const factory FeederRefusal.update({required UpdateRefusal reason}) =
       FeederRefusal_Update;
   const factory FeederRefusal.unverified() = FeederRefusal_Unverified;
-  const factory FeederRefusal.portions({required int asked}) =
-      FeederRefusal_Portions;
+
+  /// A feed outside the portions a feeder takes; `asked` is unknown when
+  /// the owner's server refused it, since its refusal does not carry it.
+  const factory FeederRefusal.portions({int? asked}) = FeederRefusal_Portions;
   const factory FeederRefusal.noClock() = FeederRefusal_NoClock;
 
   /// A refusal a newer feeder build added, which this app cannot name.
@@ -173,8 +179,13 @@ sealed class FeederReply with _$FeederReply {
   /// No answer came: a write may have run. It is never sent again.
   const factory FeederReply.unanswered() = FeederReply_Unanswered;
 
-  /// The session ended before the request went out: nothing happened.
-  const factory FeederReply.notSent() = FeederReply_NotSent;
+  /// It never went out, or the server did not pass it on: nothing
+  /// happened. `reason` says why, and `server` what the server said when
+  /// it refused it or could not be reached.
+  const factory FeederReply.notSent({
+    required NotSentReason reason,
+    ServerError? server,
+  }) = FeederReply_NotSent;
 
   /// The feeder answered something else.
   const factory FeederReply.unexpected() = FeederReply_Unexpected;
@@ -213,9 +224,7 @@ sealed class FeederRequest with _$FeederRequest {
   const factory FeederRequest.putTime({
     required int base,
     ZoneChange? zone,
-
-    /// As `wellfed time --ntp` takes it: `off`, `gateway`, or an address.
-    String? ntp,
+    NtpChoice? ntp,
   }) = FeederRequest_PutTime;
   const factory FeederRequest.createInvite({required ClientRole role}) =
       FeederRequest_CreateInvite;
@@ -339,6 +348,22 @@ enum NotAsked {
   /// one out did not land, so the generation it would go on is not known,
   /// or it was read from another generation than the one out went on.
   held,
+}
+
+@freezed
+sealed class NtpChoice with _$NtpChoice {
+  const NtpChoice._();
+
+  /// The router that gave it its address.
+  const factory NtpChoice.gateway() = NtpChoice_Gateway;
+
+  /// Nowhere: it keeps the time phones give it.
+  const factory NtpChoice.off() = NtpChoice_Off;
+
+  /// The server at `address`, an IPv4 address with an optional port. A
+  /// word is not an address: `off` and `gateway` are refused here.
+  const factory NtpChoice.address({required String address}) =
+      NtpChoice_Address;
 }
 
 @freezed
@@ -685,7 +710,8 @@ class UpdateInfo {
   /// The bank it answers from.
   final int bank;
 
-  /// The lowest version it will install.
+  /// The highest confirmed version: an offer at or below it needs a
+  /// downgrade statement.
   final int minVersion;
 
   /// The version being installed.

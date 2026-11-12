@@ -19,7 +19,7 @@ use wellfed_app_bridge::api::alerts::{
 };
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::{FeedOutcome, FeedReason, NoticeKind};
-use wellfed_app_bridge::api::store::{AppStore, KnownFeeder, save_store};
+use wellfed_app_bridge::api::store::{AppStore, KnownFeeder, load_store, swap_store};
 use wellfed_connect::Connection;
 use wellfed_feeder_sim::feeding;
 use wellfed_feeder_sim::flash::Flash;
@@ -45,8 +45,6 @@ fn home() -> PhoneNetwork {
     PhoneNetwork::Wifi {
         gateway: "192.168.1.1".into(),
         subnet: "192.168.1.0/24".into(),
-        dns: vec!["192.168.1.1".into()],
-        domains: None,
     }
 }
 
@@ -65,7 +63,8 @@ fn know(dir: &str, identities: &[&str]) {
             .collect(),
         ..AppStore::default()
     };
-    save_store(&format!("{dir}/wellfed.json"), &store).unwrap();
+    let path = format!("{dir}/wellfed.json");
+    assert!(swap_store(&path, &load_store(&path).unwrap(), &store).unwrap());
 }
 
 fn hex(identity: &[u8; 32]) -> String {
@@ -171,19 +170,28 @@ fn a_failed_meal_posts_once_and_a_dismissal_stays_on_the_phone() {
         assert_eq!(again.end, CatchUpEnd::Unchanged);
         assert_eq!(posts(&again), [NoticeKind::MealFailed]);
 
-        confirm_notices(
+        // Dart may spell the feeder in either case; the file keys it once.
+        let shouted = identity.to_uppercase();
+        let taken_off = confirm_notices(
             dir.clone(),
-            identity.clone(),
+            shouted.clone(),
             vec![PostedNotice::from(notice)],
             vec![],
         )
         .await
         .unwrap();
+        assert_eq!(
+            taken_off,
+            Vec::<i32>::new(),
+            "confirmed, and left on the phone"
+        );
+        let listed = feeder_alerts(dir.clone(), shouted.clone()).await.unwrap();
+        assert_eq!(listed.notices.len(), 1);
         let quiet = catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
         assert_eq!(quiet.end, CatchUpEnd::Unchanged);
         assert_eq!(quiet.changes, [], "posted once");
 
-        let dismissed = dismiss_notice(dir.clone(), identity.clone(), notice.id)
+        let dismissed = dismiss_notice(dir.clone(), shouted.clone(), notice.id)
             .await
             .unwrap();
         assert_eq!(dismissed, [NoticeChange::Remove { id: notice.id }]);
@@ -262,8 +270,6 @@ fn only_the_home_networks_last_try_counts_towards_unreachable() {
         let cafe = PhoneNetwork::Wifi {
             gateway: "10.0.0.1".into(),
             subnet: "10.0.0.0/24".into(),
-            dns: vec![],
-            domains: None,
         };
         for _ in 0..5 {
             let away = try_at(Attempt::Last { located: None }, cafe.clone()).await;

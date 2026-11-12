@@ -26,6 +26,15 @@ enum PairingFailure {
   /// Paired, but the feeder never showed up on this network.
   notOnLan,
 
+  /// The feeder had the code and the last step, and then the link went:
+  /// it most likely added this phone, but never said, and no session has
+  /// settled it yet. The feeder is saved on this phone, and Home tells.
+  unsettled,
+
+  /// The feeder had the last step, and a session since says it never added
+  /// this phone.
+  notTaken,
+
   /// The phone's name or the Wi-Fi fails the feeder's rules.
   input,
 
@@ -82,13 +91,21 @@ final class PairingJoining extends PairingState {
   final WifiSaved wifiSaved;
 }
 
+/// The link went after the feeder had the last step: the phone looks for it
+/// on the LAN, where a session settles whether it took.
+final class PairingSettling extends PairingState {
+  /// A pairing whose end is being read.
+  const PairingSettling({required super.feederName, super.network});
+}
+
 /// Paired, and the feeder answers on the LAN.
 final class PairingDone extends PairingState {
   /// A finished pairing.
   const PairingDone({required this.enrolled, required this.feeder, required super.feederName, super.network});
 
-  /// How the feeder took this phone.
-  final Enrolled enrolled;
+  /// How the feeder took this phone; `null` when a session settled it,
+  /// which does not say whether it was new.
+  final Enrolled? enrolled;
 
   /// What this phone saved.
   final KnownFeeder feeder;

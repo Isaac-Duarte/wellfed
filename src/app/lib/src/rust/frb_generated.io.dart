@@ -458,6 +458,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
+  ImageCheck dco_decode_box_autoadd_image_check(dynamic raw);
+
+  @protected
   InstallAnswer dco_decode_box_autoadd_install_answer(dynamic raw);
 
   @protected
@@ -500,10 +503,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NextMealView dco_decode_box_autoadd_next_meal_view(dynamic raw);
 
   @protected
-  NotSentReason dco_decode_box_autoadd_not_sent_reason(dynamic raw);
+  NoticeView dco_decode_box_autoadd_notice_view(dynamic raw);
 
   @protected
-  NoticeView dco_decode_box_autoadd_notice_view(dynamic raw);
+  NtpChoice dco_decode_box_autoadd_ntp_choice(dynamic raw);
 
   @protected
   NtpResult dco_decode_box_autoadd_ntp_result(dynamic raw);
@@ -954,6 +957,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ListedFeeder dco_decode_listed_feeder(dynamic raw);
 
   @protected
+  ListenFailure dco_decode_listen_failure(dynamic raw);
+
+  @protected
   ListenUpdate dco_decode_listen_update(dynamic raw);
 
   @protected
@@ -1000,6 +1006,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NoticeView dco_decode_notice_view(dynamic raw);
+
+  @protected
+  NtpChoice dco_decode_ntp_choice(dynamic raw);
 
   @protected
   NtpResult dco_decode_ntp_result(dynamic raw);
@@ -1071,7 +1080,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NextMealView? dco_decode_opt_box_autoadd_next_meal_view(dynamic raw);
 
   @protected
-  NotSentReason? dco_decode_opt_box_autoadd_not_sent_reason(dynamic raw);
+  NtpChoice? dco_decode_opt_box_autoadd_ntp_choice(dynamic raw);
 
   @protected
   NtpResult? dco_decode_opt_box_autoadd_ntp_result(dynamic raw);
@@ -1130,9 +1139,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsView? dco_decode_opt_box_autoadd_settings_view(dynamic raw);
-
-  @protected
-  Settlement? dco_decode_opt_box_autoadd_settlement(dynamic raw);
 
   @protected
   SetupRefusal? dco_decode_opt_box_autoadd_setup_refusal(dynamic raw);
@@ -1382,6 +1388,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SetupRefusal dco_decode_setup_refusal(dynamic raw);
+
+  @protected
+  SetupSettled dco_decode_setup_settled(dynamic raw);
 
   @protected
   SetupStep dco_decode_setup_step(dynamic raw);
@@ -1890,6 +1899,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  ImageCheck sse_decode_box_autoadd_image_check(SseDeserializer deserializer);
+
+  @protected
   InstallAnswer sse_decode_box_autoadd_install_answer(
     SseDeserializer deserializer,
   );
@@ -1942,12 +1954,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  NotSentReason sse_decode_box_autoadd_not_sent_reason(
-    SseDeserializer deserializer,
-  );
+  NoticeView sse_decode_box_autoadd_notice_view(SseDeserializer deserializer);
 
   @protected
-  NoticeView sse_decode_box_autoadd_notice_view(SseDeserializer deserializer);
+  NtpChoice sse_decode_box_autoadd_ntp_choice(SseDeserializer deserializer);
 
   @protected
   NtpResult sse_decode_box_autoadd_ntp_result(SseDeserializer deserializer);
@@ -2466,6 +2476,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ListedFeeder sse_decode_listed_feeder(SseDeserializer deserializer);
 
   @protected
+  ListenFailure sse_decode_listen_failure(SseDeserializer deserializer);
+
+  @protected
   ListenUpdate sse_decode_listen_update(SseDeserializer deserializer);
 
   @protected
@@ -2512,6 +2525,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NoticeView sse_decode_notice_view(SseDeserializer deserializer);
+
+  @protected
+  NtpChoice sse_decode_ntp_choice(SseDeserializer deserializer);
 
   @protected
   NtpResult sse_decode_ntp_result(SseDeserializer deserializer);
@@ -2607,7 +2623,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  NotSentReason? sse_decode_opt_box_autoadd_not_sent_reason(
+  NtpChoice? sse_decode_opt_box_autoadd_ntp_choice(
     SseDeserializer deserializer,
   );
 
@@ -2690,11 +2706,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsView? sse_decode_opt_box_autoadd_settings_view(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  Settlement? sse_decode_opt_box_autoadd_settlement(
     SseDeserializer deserializer,
   );
 
@@ -2970,6 +2981,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SetupRefusal sse_decode_setup_refusal(SseDeserializer deserializer);
+
+  @protected
+  SetupSettled sse_decode_setup_settled(SseDeserializer deserializer);
 
   @protected
   SetupStep sse_decode_setup_step(SseDeserializer deserializer);
@@ -3564,6 +3578,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_image_check(
+    ImageCheck self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_install_answer(
     InstallAnswer self,
     SseSerializer serializer,
@@ -3645,14 +3665,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_box_autoadd_not_sent_reason(
-    NotSentReason self,
+  void sse_encode_box_autoadd_notice_view(
+    NoticeView self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_box_autoadd_notice_view(
-    NoticeView self,
+  void sse_encode_box_autoadd_ntp_choice(
+    NtpChoice self,
     SseSerializer serializer,
   );
 
@@ -4338,6 +4358,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_listed_feeder(ListedFeeder self, SseSerializer serializer);
 
   @protected
+  void sse_encode_listen_failure(ListenFailure self, SseSerializer serializer);
+
+  @protected
   void sse_encode_listen_update(ListenUpdate self, SseSerializer serializer);
 
   @protected
@@ -4384,6 +4407,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_notice_view(NoticeView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ntp_choice(NtpChoice self, SseSerializer serializer);
 
   @protected
   void sse_encode_ntp_result(NtpResult self, SseSerializer serializer);
@@ -4506,8 +4532,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_opt_box_autoadd_not_sent_reason(
-    NotSentReason? self,
+  void sse_encode_opt_box_autoadd_ntp_choice(
+    NtpChoice? self,
     SseSerializer serializer,
   );
 
@@ -4613,12 +4639,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_settings_view(
     SettingsView? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_settlement(
-    Settlement? self,
     SseSerializer serializer,
   );
 
@@ -4966,6 +4986,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_setup_refusal(SetupRefusal self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_setup_settled(SetupSettled self, SseSerializer serializer);
 
   @protected
   void sse_encode_setup_step(SetupStep self, SseSerializer serializer);

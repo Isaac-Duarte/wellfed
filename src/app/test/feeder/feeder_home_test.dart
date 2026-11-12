@@ -12,6 +12,7 @@ import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
@@ -484,7 +485,7 @@ void main() {
     // Not opened yet in the first microtask: no session, nothing sent.
     final controller = FeederController(book, ports, feederKitchen);
     final FeederReply reply = await controller.ask(const FeederRequest.reboot());
-    expect(reply, const FeederReply.notSent());
+    expect(reply, const FeederReply.notSent(reason: NotSentReason.noPath));
     controller.dispose();
   });
 }

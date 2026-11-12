@@ -15,7 +15,7 @@ import 'server_views.dart';
 import 'store.dart';
 part 'alerts.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `detail`, `fingerprint`, `identity_of`, `posts`, `server_route`, `toggle`, `view`, `views`
+// These functions are ignored because they are not marked as `pub`: `current_form`, `detail`, `fingerprint`, `identity_of`, `posts`, `server_route`, `toggle`, `view`, `views`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `partial_cmp`
 
 /// Keep catch-ups off while `run` goes (`held`), or let go. A hold lapses by
@@ -288,8 +288,10 @@ enum CatchUpEnd {
   /// Nothing answered the first try: look for the feeder and try again.
   unanswered,
 
-  /// Nothing answered the last try. On the feeder's home network that
-  /// counts towards unreachable; anywhere else it counts for nothing.
+  /// Nothing answered the last try, and no owner's server answered for
+  /// the feeder: none holds it, or it was down or turned this phone away.
+  /// On the feeder's home network that counts towards unreachable;
+  /// anywhere else it counts for nothing.
   failed,
 
   /// Away from home: it read what the owner's server last read of the
@@ -299,6 +301,12 @@ enum CatchUpEnd {
   /// Away from home, and the owner's server did not answer: nothing is
   /// judged.
   serverUnanswered,
+
+  /// Away from home, and the owner's server turned this phone away: its
+  /// token no longer holds, its account may not read the feeder, or the
+  /// server no longer has it. Nothing is judged, and nothing comes through
+  /// that server until the owner logs in again or adds the feeder back.
+  serverRefused,
 }
 
 /// A feeder's alerts as this phone lists them.
@@ -491,14 +499,15 @@ class NoticeView {
 sealed class PhoneNetwork with _$PhoneNetwork {
   const PhoneNetwork._();
 
-  /// On a Wi-Fi network this app may use now, by its addresses: what tells
-  /// one network from another with no location permission, which its name
-  /// would need.
+  /// On a Wi-Fi network this app may use now, by its IPv4 gateway and
+  /// subnet: what tells one network from another with no location
+  /// permission, which its name would need. Its DNS servers and search
+  /// domains are left out: an ISP rotating its IPv6 prefix, or a router
+  /// handing out another resolver, would otherwise make home look like
+  /// another network, where a failed catch-up counts for nothing.
   const factory PhoneNetwork.wifi({
     required String gateway,
     required String subnet,
-    required List<String> dns,
-    String? domains,
   }) = PhoneNetwork_Wifi;
 
   /// Off Wi-Fi, or Android keeps this app off the network for now: a

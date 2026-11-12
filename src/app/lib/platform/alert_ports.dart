@@ -63,14 +63,9 @@ abstract interface class AlertPorts {
 
 /// The Wi-Fi network as Kotlin described it, or none.
 PhoneNetwork phoneNetwork(Map<Object?, Object?>? found) => switch (found) {
-  {'gateway': final String gateway, 'subnet': final String subnet, 'dns': final List<Object?> dns} => PhoneNetwork.wifi(
+  {'gateway': final String gateway, 'subnet': final String subnet} => PhoneNetwork.wifi(
     gateway: gateway,
     subnet: subnet,
-    dns: dns.whereType<String>().toList(),
-    domains: switch (found['domains']) {
-      final String domains => domains,
-      _ => null,
-    },
   ),
   _ => const PhoneNetwork.elsewhere(),
 };
@@ -141,7 +136,20 @@ Future<void> catchUpRound({
       done = await attempt(Attempt.last(located: located));
     }
     await Notices.deliver(dir: dir, identity: feeder.identity, name: feeder.name, changes: done.changes);
+    // Every round goes the same way until the owner acts, so the one who
+    // asked for the check hears it; a background round logs it.
+    if (done.end == CatchUpEnd.serverRefused) throw const ServerTurnedAway();
   });
+}
+
+/// The owner's server turned this phone away from a feeder's alerts: its
+/// login no longer holds, or the server no longer has the feeder.
+final class ServerTurnedAway implements Exception {
+  /// The one there is.
+  const ServerTurnedAway();
+
+  @override
+  String toString() => 'the server turned this phone away';
 }
 
 /// Run `one` for each of `feeders` in turn. One that throws (the bridge's

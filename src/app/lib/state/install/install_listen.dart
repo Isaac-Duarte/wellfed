@@ -59,9 +59,13 @@ extension InstallListening on InstallFlow {
         _listenEnded(Listening.stockStayed);
       case ListenUpdate_Silent():
         _listenEnded(Listening.silent);
-      case ListenUpdate_Failed(:final detail):
+      case ListenUpdate_Failed(:final why, :final detail):
         _listenerDetail = detail;
-        _listenEnded(Listening.failed);
+        _listenEnded(switch (why) {
+          ListenFailure.ledgerDamaged => Listening.ledgerDamaged,
+          ListenFailure.serverFailed => Listening.serverFailed,
+          ListenFailure.other => Listening.failed,
+        });
       case ListenUpdate_Stopped():
         break;
     }
@@ -135,6 +139,7 @@ extension InstallListening on InstallFlow {
   /// Back to the first screen, knowing nothing of any run.
   void _startClean() {
     _stop = null;
+    _promotionMayHaveGone = false;
     _frameTaken = false;
     _frameAddress = null;
     _feederReset = false;

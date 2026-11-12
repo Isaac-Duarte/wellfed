@@ -42,7 +42,7 @@ class _HouseholdScreenState extends State<HouseholdScreen> {
     if (flow == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => PetScreen(flow: flow, household: widget.flow, feeders: widget.feeders),
+        builder: (_) => PetScreen(flow: flow, feeders: widget.feeders),
       ),
     );
     await widget.flow.load();
@@ -51,7 +51,7 @@ class _HouseholdScreenState extends State<HouseholdScreen> {
   Future<void> _addPet() async {
     final PetFields? fields = await askPet(context, null);
     if (fields == null) return;
-    await widget.flow.savePet(
+    await widget.flow.addPet(
       name: fields.name,
       species: fields.species,
       birthDate: fields.birthDate,
@@ -84,8 +84,8 @@ class _HouseholdScreenState extends State<HouseholdScreen> {
       return ServerPage(
         title: 'Pets and foods',
         children: [
-          if (state.error case final error?) ...[
-            Notice(tone: Tone.fault, text: serverErrorWords(error)),
+          if (state.problem case final problem?) ...[
+            Notice(tone: Tone.fault, text: recordProblemWords(problem)),
             const SizedBox(height: Space.s3),
           ],
           const SectionLabel('Pets'),

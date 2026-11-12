@@ -162,11 +162,10 @@ void main() {
 
   testWidgets('leaving stops the run, and lets the process go', (tester) async {
     final ports = FakeRestorePorts();
-    final RestoreFlow flow = await restoreOpen(tester, ports);
+    await restoreOpen(tester, ports);
     final FakeRestoreRun run = await restoreStarted(tester, ports);
 
     await tester.pumpWidget(const SizedBox.shrink());
-    flow.dispose();
     expect(run.stops, 1);
     expect(ports.forgotten, 0, reason: 'the run may still be using it');
 

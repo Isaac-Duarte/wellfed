@@ -66,11 +66,15 @@ extension FeederServerSide on FeederController {
     _setState(_state);
   }
 
-  /// The feeder's status and link, as the server read them.
+  /// The feeder's status and link, as the server read them. Reads run side
+  /// by side, so one that lands after a newer status is older news, and is
+  /// dropped.
   void serverDetail(ServerFeederDetail detail) {
     final _ServerSide? server = _server;
     if (server == null || server.id != detail.feeder.id) return;
     final ServerSnapshot? status = detail.status;
+    final DateTime? shown = server.at;
+    if (status != null && shown != null && status.atMs < shown.millisecondsSinceEpoch) return;
     final bool online = detail.feeder.connection == ServerConnection.online;
     _server = server.copyWith(
       link: detail.feeder.connection,

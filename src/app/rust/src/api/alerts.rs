@@ -30,41 +30,42 @@ use crate::catch_up::{self, ServerRoute, Target};
 /// How the phone is connected, as Android says.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PhoneNetwork {
-    /// On a Wi-Fi network this app may use now, by its addresses: what tells
-    /// one network from another with no location permission, which its name
-    /// would need.
-    Wifi {
-        gateway: String,
-        subnet: String,
-        dns: Vec<String>,
-        domains: Option<String>,
-    },
+    /// On a Wi-Fi network this app may use now, by its IPv4 gateway and
+    /// subnet: what tells one network from another with no location
+    /// permission, which its name would need. Its DNS servers and search
+    /// domains are left out: an ISP rotating its IPv6 prefix, or a router
+    /// handing out another resolver, would otherwise make home look like
+    /// another network, where a failed catch-up counts for nothing.
+    Wifi { gateway: String, subnet: String },
     /// Off Wi-Fi, or Android keeps this app off the network for now: a
     /// catch-up that fails here says nothing about the feeder.
     Elsewhere,
 }
 
+/// What every fingerprint of the current form starts with. A home learned
+/// under another form names no home at all, so the phone learns it again
+/// from the feeder, as it does a home it never had, rather than taking
+/// itself to be away from it for good.
+const FINGERPRINT_FORM: &str = "gateway-subnet:";
+
 impl PhoneNetwork {
     /// A digest of the network's addresses, so the file keeps none of them. A
-    /// lookalike with all the same addresses still passes.
+    /// lookalike with the same gateway and subnet still passes, which is why
+    /// a catch-up at home asks the owner's server before it counts silence.
     fn fingerprint(&self) -> Result<Option<String>, BridgeError> {
         match self {
-            Self::Wifi {
-                gateway,
-                subnet,
-                dns,
-                domains,
-            } => {
-                // Android promises no order of the servers.
-                let mut dns = dns.clone();
-                dns.sort_unstable();
-                Ok(Some(sha256(&canonical_of(&(
-                    gateway, subnet, dns, domains,
-                ))?)))
-            }
+            Self::Wifi { gateway, subnet } => Ok(Some(format!(
+                "{FINGERPRINT_FORM}{}",
+                sha256(&canonical_of(&(gateway, subnet))?)
+            ))),
             Self::Elsewhere => Ok(None),
         }
     }
+}
+
+/// Whether `home` is a fingerprint of the current form.
+pub(crate) fn current_form(home: &str) -> bool {
+    home.starts_with(FINGERPRINT_FORM)
 }
 
 /// Which try of a round this is.
@@ -92,8 +93,10 @@ pub enum CatchUpEnd {
     Away,
     /// Nothing answered the first try: look for the feeder and try again.
     Unanswered,
-    /// Nothing answered the last try. On the feeder's home network that
-    /// counts towards unreachable; anywhere else it counts for nothing.
+    /// Nothing answered the last try, and no owner's server answered for
+    /// the feeder: none holds it, or it was down or turned this phone away.
+    /// On the feeder's home network that counts towards unreachable;
+    /// anywhere else it counts for nothing.
     Failed,
     /// Away from home: it read what the owner's server last read of the
     /// feeder, and applied it.
@@ -101,6 +104,11 @@ pub enum CatchUpEnd {
     /// Away from home, and the owner's server did not answer: nothing is
     /// judged.
     ServerUnanswered,
+    /// Away from home, and the owner's server turned this phone away: its
+    /// token no longer holds, its account may not read the feeder, or the
+    /// server no longer has it. Nothing is judged, and nothing comes through
+    /// that server until the owner logs in again or adds the feeder back.
+    ServerRefused,
 }
 
 /// The owner's server this phone is logged in to, for a catch-up away from
@@ -299,7 +307,7 @@ pub async fn catch_up_with(
     network: PhoneNetwork,
     server: Option<AlertServer>,
 ) -> Result<CatchUp, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     let target = Target {
         keys: key.keypair(),
         identity: feeder,
@@ -326,7 +334,7 @@ pub async fn confirm_notices(
     posted: Vec<PostedNotice>,
     removed: Vec<i32>,
 ) -> Result<Vec<i32>, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     alerts::change(Path::new(&dir), |state| {
         state.confirm(&identity, &feeder, (&posted, &removed), Timestamp::now())
     })
@@ -335,7 +343,7 @@ pub async fn confirm_notices(
 
 /// The feeder's alerts as this phone lists them.
 pub async fn feeder_alerts(dir: String, identity: String) -> Result<FeederAlerts, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     let state = alerts::read(Path::new(&dir)).await?;
     let Some(watched) = state.watched(&identity) else {
         return Ok(FeederAlerts {
@@ -362,7 +370,7 @@ pub async fn dismiss_notice(
     identity: String,
     id: i32,
 ) -> Result<Vec<NoticeChange>, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     let changes = alerts::change(Path::new(&dir), |state| {
         let Some(watched) = state.watched_mut(&identity) else {
             return Vec::new();
@@ -430,7 +438,7 @@ pub async fn pending_notices(dir: String) -> Result<Vec<FeederNotices>, BridgeEr
         .feeders
         .iter()
         .map(|watched| {
-            let feeder = identity_of(&watched.identity)?;
+            let (feeder, _) = identity_of(&watched.identity)?;
             Ok(FeederNotices {
                 identity: watched.identity.clone(),
                 changes: views(&feeder, &watched.watch.changes()),
@@ -472,7 +480,7 @@ pub async fn set_mute(
     changed
         .into_iter()
         .map(|(identity, changes)| {
-            let feeder = identity_of(&identity)?;
+            let (feeder, identity) = identity_of(&identity)?;
             Ok(FeederNotices {
                 changes: views(&feeder, &changes),
                 identity,
@@ -500,7 +508,7 @@ fn toggle<T: PartialEq>(list: &mut Vec<T>, item: T, on: bool) {
 /// Forget the feeder `identity`'s alerts, as the phone forgets the feeder:
 /// the ids of every notification it may have on the phone, to take off.
 pub async fn forget_alerts(dir: String, identity: String) -> Result<Vec<i32>, BridgeError> {
-    let feeder = identity_of(&identity)?;
+    let (feeder, identity) = identity_of(&identity)?;
     alerts::change(Path::new(&dir), |state| {
         state
             .forget(&identity)
@@ -535,7 +543,7 @@ pub async fn alerts_to_sweep(dir: String, showing: Vec<i32>) -> Result<Vec<i32>,
         }
         let mut known = Vec::new();
         for watched in &state.feeders {
-            let feeder = identity_of(&watched.identity)?;
+            let (feeder, _) = identity_of(&watched.identity)?;
             known.extend(
                 watched
                     .watch
@@ -581,9 +589,12 @@ fn server_route(server: &AlertServer, identity: &str) -> Option<ServerRoute> {
     Some(ServerRoute { client, feeder })
 }
 
-fn identity_of(identity: &str) -> Result<[u8; 32], BridgeError> {
-    wellfed_session::hex::decode_array_either_case::<32>(identity.as_bytes())
-        .ok_or_else(|| BridgeError::new(ErrorKind::Key, "a feeder identity is 64 hex digits"))
+/// The feeder `identity` names, and its spelling in lowercase, the one the
+/// alerts file keys feeders by whichever case Dart passed.
+fn identity_of(identity: &str) -> Result<([u8; 32], String), BridgeError> {
+    let feeder = wellfed_session::hex::decode_array_either_case::<32>(identity.as_bytes())
+        .ok_or_else(|| BridgeError::new(ErrorKind::Key, "a feeder identity is 64 hex digits"))?;
+    Ok((feeder, wellfed_session::hex::Lower(&feeder).to_string()))
 }
 
 fn views(feeder: &[u8; 32], changes: &[Change]) -> Vec<NoticeChange> {

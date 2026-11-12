@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice;
 import 'package:go_router/go_router.dart';
+import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -39,6 +40,12 @@ class PairingView extends StatelessWidget {
         ble
             ? _Joining(state: joining)
             : _Waiting(title: 'Code accepted', body: 'Saving the feeder on this $deviceName.'),
+      PairingSettling() => _Waiting(
+        title: 'Checking whether it took',
+        body:
+            'The link went after the feeder had the code and your Wi-Fi. Looking for it on your '
+            'network to see whether it added this $deviceName.',
+      ),
       final PairingDone done => _Ready(state: done),
       final PairingFailed failed => _Failed(state: failed, ble: ble, onRetry: onRetry),
     },
@@ -367,6 +374,17 @@ class _Failed extends StatelessWidget {
       'On an unlocked panel, hold Lock, then also Dispense, for 5 seconds. '
           'It takes a new owner for 2 minutes. Then try again.',
     ),
+    PairingFailure.unsettled => (
+      'Setup may or may not have finished',
+      'The link went after the feeder had the code. It most likely added this $deviceName and '
+          "restarted onto its Wi-Fi, but it didn't say. It's saved here: if Home reaches it, "
+          'it worked. If Home never does, hold Lock and Mic for 5 seconds and set it up again.',
+    ),
+    PairingFailure.notTaken => (
+      "Setup didn't finish",
+      'The feeder is on your network but never added this $deviceName. Hold Lock and Mic for '
+          '5 seconds to start setup again, then try again.',
+    ),
     PairingFailure.notOnLan => (
       'Paired, but not on this network',
       'The feeder is saved on this $deviceName, but it did not show up here. '
@@ -375,7 +393,7 @@ class _Failed extends StatelessWidget {
     ),
     PairingFailure.input => (
       'Check the names and Wi-Fi',
-      'The $deviceName name is 1 to 16 characters. A Wi-Fi password is 8 to 63 '
+      'The $deviceName name is 1 to ${Limits.labelBytesMost} bytes. A Wi-Fi password is 8 to 63 '
           'characters.',
     ),
     PairingFailure.other => ("Setup didn't finish", state.message ?? 'Try again.'),
@@ -408,7 +426,7 @@ class _Failed extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final (String title, String body) = _words();
-    final saved = state.failure == PairingFailure.notOnLan;
+    final bool saved = state.failure == PairingFailure.notOnLan || state.failure == PairingFailure.unsettled;
     return StepScaffold(
       leading: Leading.close,
       onLeading: () => context.go('/'),

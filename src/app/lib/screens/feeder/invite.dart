@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -27,12 +29,21 @@ Future<void> inviteSomeone(BuildContext context, FeederController feeder) async 
 
   final FeederReply reply = await feeder.ask(FeederRequest.createInvite(role: role));
   if (!context.mounted) return;
-  if (reply is FeederReply_Invite) {
-    await openModalPage<void>(context, (_) => InviteScreen(share: feeder.share, invite: reply.invite));
-    // Whoever scanned it joined while it was on screen.
-    await feeder.loadClients();
-  } else {
-    showProblem(context, reply);
+  switch (reply) {
+    case FeederReply_Invite(:final invite):
+      await openModalPage<void>(context, (_) => InviteScreen(share: feeder.share, invite: invite));
+      // Whoever scanned it joined while it was on screen.
+      await feeder.loadClients();
+    // The server's stream settled the create as made after its answer was
+    // lost, and the code only that answer carried is gone with it.
+    case FeederReply_Done():
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text("The invite was made, but its code didn't come back. Make another.")),
+        );
+    default:
+      showProblem(context, reply);
   }
 }
 
@@ -113,17 +124,22 @@ class InviteScreen extends StatefulWidget {
 }
 
 class _InviteScreenState extends State<InviteScreen> {
+  /// When the feeder lets the invite lapse. Counted from the clock, not
+  /// from ticks: a frozen app misses ticks, and the invite runs out anyway.
+  late final DateTime _until;
   late int _left = widget.invite.seconds;
   final _tick = SecondTicker();
 
   @override
   void initState() {
     super.initState();
+    _until = clock.now().add(Duration(seconds: widget.invite.seconds));
     _tick.addListener(_ticked);
   }
 
   void _ticked() {
-    if (_left > 0) setState(() => _left -= 1);
+    final int left = math.max(0, (_until.difference(clock.now()).inMilliseconds / 1000).ceil());
+    if (left != _left) setState(() => _left = left);
   }
 
   /// The link went to the clipboard, so the button says so.
@@ -144,7 +160,7 @@ class _InviteScreenState extends State<InviteScreen> {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final InviteView invite = widget.invite;
-    final clock = '${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}';
+    final countdown = '${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}';
     final bool expired = _left <= 0;
     return Scaffold(
       appBar: AppBar(
@@ -187,7 +203,7 @@ class _InviteScreenState extends State<InviteScreen> {
           Text(
             expired
                 ? 'This invite has expired. Close this and create a new one.'
-                : '$clock until it expires · works once',
+                : '$countdown until it expires · works once',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
           ),

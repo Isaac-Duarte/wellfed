@@ -85,21 +85,44 @@ class FakeRouter with FakeOpaque implements PathRouter {
     try {
       session?.cancelFeed(feed: feed);
     } on Object {
-      return const RoutedReply(path: RoutePath.direct, reply: FeederReply.notSent(), notSent: NotSentReason.session);
+      return const RoutedReply(
+        path: RoutePath.direct,
+        reply: FeederReply.notSent(reason: NotSentReason.session),
+      );
     }
     return session == null
-        ? const RoutedReply(reply: FeederReply.notSent(), notSent: NotSentReason.noPath)
+        ? const RoutedReply(reply: FeederReply.notSent(reason: NotSentReason.noPath))
         : const RoutedReply(path: RoutePath.direct, reply: FeederReply.done());
   }
 
+  /// While set, what the router answers a request instead of the session:
+  /// one the server refused, say, or one the stream settled.
+  RoutedReply? Function(FeederRequest request)? routed;
+
+  int _keys = 0;
+
+  /// As the real router: a write the session leaves unanswered is pinned
+  /// pending under a fresh key, and the reply names it.
   @override
   Future<RoutedReply> ask({required String feeder, required FeederRequest request}) async {
+    final RoutedReply? given = routed?.call(request);
+    if (given != null) return given;
     final FakeSession? session = _attached[feeder];
-    if (session == null) return const RoutedReply(reply: FeederReply.notSent(), notSent: NotSentReason.noPath);
-    return RoutedReply(
+    if (session == null) return const RoutedReply(reply: FeederReply.notSent(reason: NotSentReason.noPath));
+    final FeederReply reply = await session.ask(request: request);
+    final WriteKind? kind = writeKind(request);
+    if (kind == null || reply is! FeederReply_Unanswered) return RoutedReply(path: RoutePath.direct, reply: reply);
+
+    final pending = PendingWrite(
+      key: 'w${++_keys}',
+      feeder: feeder,
       path: RoutePath.direct,
-      reply: await session.ask(request: request),
+      kind: kind,
+      sentMs: 1000,
+      acknowledged: false,
     );
+    held.add(pending);
+    return RoutedReply(path: RoutePath.direct, reply: reply, pending: pending);
   }
 
   @override
@@ -208,3 +231,32 @@ class FakeRouter with FakeOpaque implements PathRouter {
   @override
   void close() {}
 }
+
+/// The pending kind a request is written down as, as the router's own shape
+/// says; `null` for a read.
+WriteKind? writeKind(FeederRequest request) => switch (request) {
+  FeederRequest_GetSettings() ||
+  FeederRequest_GetTime() ||
+  FeederRequest_ListClients() ||
+  FeederRequest_Stats() ||
+  FeederRequest_ReadTrace() ||
+  FeederRequest_GetCalibration() ||
+  FeederRequest_GetPlans() ||
+  FeederRequest_GetCall() ||
+  FeederRequest_UpdateState() ||
+  FeederRequest_TailLog() => null,
+  FeederRequest_PutSettings() => WriteKind.settings,
+  FeederRequest_SetLock() => WriteKind.lock,
+  FeederRequest_ResetDesiccant() => WriteKind.desiccant,
+  FeederRequest_SkipMeal() || FeederRequest_UnskipMeal() => WriteKind.skip,
+  FeederRequest_EditPlans() => WriteKind.plans,
+  FeederRequest_PutCalibration() => WriteKind.calibration,
+  FeederRequest_UploadCall() || FeederRequest_DeleteCall() || FeederRequest_PlayCall() => WriteKind.call,
+  FeederRequest_PutWifi() || FeederRequest_ForgetWifi() => WriteKind.wifi,
+  FeederRequest_Play() => WriteKind.play,
+  FeederRequest_SyncClock() || FeederRequest_PutTime() => WriteKind.clock,
+  FeederRequest_CreateInvite() => WriteKind.invite,
+  FeederRequest_RevokeClient() => WriteKind.revoke,
+  FeederRequest_Reboot() => WriteKind.reboot,
+  FeederRequest_CancelUpdate() => WriteKind.update,
+};

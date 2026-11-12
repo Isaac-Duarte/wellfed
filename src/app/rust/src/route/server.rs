@@ -107,18 +107,17 @@ pub(crate) fn refusal(error: &Error) -> Option<FeederRefusal> {
     use wellfed_api::FeederRefusal as Api;
     match error {
         Error::Stale(settings) => Some(FeederRefusal::Stale {
-            current: settings.generation().map_or(0, |generation| generation.0),
+            current: settings.generation().map(|generation| generation.0),
         }),
         Error::StalePlans(plans) => Some(FeederRefusal::Stale {
-            current: plans.generation.0,
+            current: Some(plans.generation.0),
         }),
         Error::StaleCalibration(calibration) => Some(FeederRefusal::Stale {
-            current: calibration.generation.0,
+            current: Some(calibration.generation.0),
         }),
         Error::Problem { problem, .. } => problem.refusal.map(|refusal| match refusal {
             Api::Forbidden => FeederRefusal::Forbidden,
-            // The server's refusal does not carry the generation.
-            Api::Stale => FeederRefusal::Stale { current: 0 },
+            Api::Stale => FeederRefusal::Stale { current: None },
             Api::Busy => FeederRefusal::Busy,
             Api::Unavailable => FeederRefusal::Unavailable,
             Api::Invalid => FeederRefusal::Invalid,
@@ -128,7 +127,7 @@ pub(crate) fn refusal(error: &Error) -> Option<FeederRefusal> {
             Api::Muted => FeederRefusal::Muted,
             Api::Time => FeederRefusal::Time,
             Api::Fault => FeederRefusal::Fault,
-            Api::Portions => FeederRefusal::Portions { asked: 0 },
+            Api::Portions => FeederRefusal::Portions { asked: None },
             Api::NoClock => FeederRefusal::NoClock,
             Api::Unverified => FeederRefusal::Unverified,
             Api::Unknown => FeederRefusal::Unknown,

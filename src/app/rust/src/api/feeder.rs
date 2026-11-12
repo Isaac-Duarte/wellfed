@@ -4,13 +4,16 @@
 //!
 //! Every write goes out once, under a fresh id: an answer that never came is
 //! [`FeederReply::Unanswered`], which says the write may have run, and nothing
-//! sends it again. [`FeederReply::NotSent`] means it never left this phone.
+//! sends it again. [`FeederReply::NotSent`] means it never reached the
+//! feeder, and says why.
 
 pub use crate::api::model::{
     Bank0Blocked, Bank0Check, Blocked, Bowl, CallClip, ClientRole, Desiccant, FeedOutcome,
     FeedReason, FoodLevel, MealReminder, NtpResult, Phase, Stats, StatsSection, TimeSource,
     TraceEntry, TraceSummary, Tune, UpdatePhase, UpdateRefusal, Weekday, Window,
 };
+use crate::api::router::NotSentReason;
+use crate::api::server_error::ServerError;
 
 /// What the owner asks of a feeder.
 pub enum FeederRequest {
@@ -40,8 +43,7 @@ pub enum FeederRequest {
     PutTime {
         base: u32,
         zone: Option<ZoneChange>,
-        /// As `wellfed time --ntp` takes it: `off`, `gateway`, or an address.
-        ntp: Option<String>,
+        ntp: Option<NtpChoice>,
     },
     CreateInvite {
         role: ClientRole,
@@ -112,6 +114,17 @@ pub struct SettingsChanges {
     pub sound_window: Option<Window>,
     pub desiccant_days: Option<u8>,
     pub meal_reminder: Option<MealReminder>,
+}
+
+/// Where the feeder asks the time.
+pub enum NtpChoice {
+    /// The router that gave it its address.
+    Gateway,
+    /// Nowhere: it keeps the time phones give it.
+    Off,
+    /// The server at `address`, an IPv4 address with an optional port. A
+    /// word is not an address: `off` and `gateway` are refused here.
+    Address { address: String },
 }
 
 pub enum ZoneChange {
@@ -292,7 +305,8 @@ pub struct UpdateInfo {
     pub phase: UpdatePhase,
     /// The bank it answers from.
     pub bank: u8,
-    /// The lowest version it will install.
+    /// The highest confirmed version: an offer at or below it needs a
+    /// downgrade statement.
     pub min_version: u32,
     /// The version being installed.
     pub version: u32,
@@ -308,8 +322,10 @@ pub struct UpdateInfo {
 pub enum FeederRefusal {
     Forbidden,
     /// The store moved past the base: read it again and decide again.
+    /// `current` is the store's generation now, unknown when the owner's
+    /// server refused it, since its refusal does not carry one.
     Stale {
-        current: u32,
+        current: Option<u32>,
     },
     Busy,
     Unavailable,
@@ -324,8 +340,10 @@ pub enum FeederRefusal {
         reason: UpdateRefusal,
     },
     Unverified,
+    /// A feed outside the portions a feeder takes; `asked` is unknown when
+    /// the owner's server refused it, since its refusal does not carry it.
     Portions {
-        asked: u8,
+        asked: Option<u8>,
     },
     NoClock,
     /// A refusal a newer feeder build added, which this app cannot name.
@@ -407,8 +425,13 @@ pub enum FeederReply {
     },
     /// No answer came: a write may have run. It is never sent again.
     Unanswered,
-    /// The session ended before the request went out: nothing happened.
-    NotSent,
+    /// It never went out, or the server did not pass it on: nothing
+    /// happened. `reason` says why, and `server` what the server said when
+    /// it refused it or could not be reached.
+    NotSent {
+        reason: NotSentReason,
+        server: Option<ServerError>,
+    },
     /// The feeder answered something else.
     Unexpected,
     /// A newer feeder build answered in a way this app cannot read. The

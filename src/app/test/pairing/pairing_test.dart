@@ -172,6 +172,56 @@ void main() {
       expect(find.textContaining('the disk is full', findRichText: true), findsOneWidget);
     });
 
+    testWidgets('a second tap while the names are saved starts nothing more', (tester) async {
+      var done = 0;
+      final saved = Completer<String?>();
+      await tester.pumpWidget(
+        themed(
+          NameStep(
+            initial: 'Pixel',
+            action: 'Continue',
+            suggest: () async => null,
+            onDone: (_, _) {
+              done++;
+              return saved.future;
+            },
+          ),
+        ),
+      );
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      expect(done, 1);
+
+      saved.complete(null);
+      await settle(tester);
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      expect(done, 2, reason: 'once it is back, the button is too');
+    });
+
+    test('recovery runs one browse, which a pick ends, so no sighting pulls it off the code', () async {
+      final book = FakeBook()
+        ..label = ''
+        ..labelGate = Completer<void>();
+      final ports = FakePairingPorts();
+      final flow = RecoverFlow(book, ports, FakePhonePorts());
+      addTearDown(flow.dispose);
+
+      final List<Future<String?>> named = [flow.named('Pixel'), flow.named('Pixel')];
+      book.labelGate?.complete();
+      await Future.wait(named);
+      expect(ports.browsing, 1);
+
+      unawaited(flow.pair('192.168.1.40:4747', 'Kitchen'));
+      await Future<void>.delayed(Duration.zero);
+      expect(ports.browsing, 0);
+      ports.announced.add(const FoundFeeder(identity: 'bb', name: 'Hall', address: '192.168.1.41:4747'));
+      await Future<void>.delayed(Duration.zero);
+      expect(flow.state, isA<RecoverPairing>());
+    });
+
     testWidgets('an unnamed phone is offered its own model, cut to fit', (tester) async {
       await tester.pumpWidget(
         themed(
@@ -220,7 +270,8 @@ void main() {
       await settle(tester);
 
       expect(book.feeders.single.name, 'Kitchen');
-      expect(book.remembered.single.$2, isTrue, reason: 'its clock is due');
+      expect(book.remembered.map((saved) => saved.$2), everyElement(isTrue), reason: 'its clock is due');
+      expect(book.remembered.first.$1.address, isNull, reason: 'saved before it looks on the LAN');
       expect(find.text('Kitchen is ready.'), findsOneWidget);
       expect(find.textContaining('on Maple St'), findsOneWidget);
 
