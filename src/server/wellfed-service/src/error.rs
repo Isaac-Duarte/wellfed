@@ -118,6 +118,8 @@ pub enum InternalError {
     SessionExpiry,
     #[error("the mDNS lookup stopped before it answered")]
     Lookup,
+    #[error("the task running the request stopped before it finished")]
+    Task,
     #[error("stored event {0} does not decode")]
     Undecodable(u64),
     #[error("a stored sample does not decode")]
