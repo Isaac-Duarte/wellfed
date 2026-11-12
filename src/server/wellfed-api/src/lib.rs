@@ -90,7 +90,7 @@ pub use stock::{
     StockSource, StockState,
 };
 pub use stream::{FeederSample, StreamEvent, StreamQuery};
-pub use tokens::{BEARER, CreatedToken, LOGOUT_KEYS_MAX, LogOut, NewToken, Token, TokenId};
+pub use tokens::{BEARER, CreatedToken, LOGOUT_KEYS_MAX, LogOut, NewToken, Token};
 pub use users::{NewUser, UserPatch};
 pub use views::{
     FOOD_VIEW_DAYS, FeedAnomaly, FeedRate, FeederPortions, FoodLeft, INTAKE_DAYS, INTAKE_DAYS_MAX,
@@ -125,19 +125,6 @@ pub const REVISION: u32 = 7;
 /// `SameSite=Strict`. A non-browser client sends it back as it came.
 pub const SESSION_COOKIE: &str = "wellfed_session";
 
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
-)]
-#[serde(transparent)]
-#[schema(value_type = String, format = Uuid)]
-pub struct FeederId(pub Uuid);
-
-impl fmt::Display for FeederId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 /// Ids the server gives: UUIDv7s that serialize as their strings.
 macro_rules! ids {
     ($($(#[$doc:meta])* $name:ident),* $(,)?) => {$(
@@ -159,6 +146,7 @@ macro_rules! ids {
 }
 
 ids!(
+    FeederId,
     /// The home the server serves, which its devices belong to.
     HomeId,
     UserId,
@@ -168,6 +156,7 @@ ids!(
     FoodId,
     RefillId,
     InstallId,
+    TokenId,
 );
 
 /// A page of a list that grows: the previous page's `next`, and a size.
