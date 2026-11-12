@@ -50,6 +50,39 @@ void main() {
       expect(find.text("It's probably on the original firmware"), findsOneWidget);
     });
 
+    testWidgets("an earlier run's look that answers late decides nothing for the next run", (tester) async {
+      final ports = FakeRestorePorts()
+        ..located = '10.0.0.9:7700'
+        ..reading = Completer<RestoreSeen>();
+      final RestoreFlow flow = restoreFlow(ports);
+      addTearDown(flow.dispose);
+      await flow.load();
+      flow.setUnderstood(true);
+      await flow.start();
+      ports.runs.last.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
+      await tester.pump();
+
+      // The first look's read is out when setup is heard, and the owner
+      // starts again; the second look finds nothing on the network.
+      ports.heard.add(null);
+      await tester.pump();
+      flow.again();
+      flow.setUnderstood(true);
+      ports.located = null;
+      await flow.start();
+      ports.runs.last.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
+      await tester.pump();
+
+      final Completer<RestoreSeen>? first = ports.reading;
+      ports.reading = null;
+      first?.complete(RestoreSeen.idle);
+      await tester.pump();
+      expect(flow.state, isA<RestoreUncertain>().having((state) => state.look, 'look', RestoreLook.looking));
+
+      await tester.pump(RestoreFlow.lookFor);
+      expect(flow.state, isA<RestoreUncertain>().having((state) => state.look, 'look', RestoreLook.nothing));
+    });
+
     testWidgets('a sighting that never reads idle says only that', (tester) async {
       final ports = FakeRestorePorts()
         ..located = '10.0.0.9:7700'

@@ -54,6 +54,9 @@ class RestoreFlow extends ChangeNotifier {
   RestoreLook _look = RestoreLook.looking;
   Timer? _lookEnd;
   Timer? _lookAgain;
+
+  /// How many looks have started; a round keeps the count of its own.
+  int _looks = 0;
   StreamSubscription<void>? _setup;
   bool _sighted = false;
 
@@ -261,26 +264,32 @@ class RestoreFlow extends ChangeNotifier {
   /// neither. This reads and listens, and offers the feeder nothing.
   void _startLook() {
     _stopLook();
+    _looks++;
     _look = RestoreLook.looking;
     _sighted = false;
     _lookEnd = Timer(lookFor, () => _looked(_sighted ? RestoreLook.sighted : RestoreLook.nothing));
     _setup = _ports.setupHeard().listen((_) => _looked(RestoreLook.setup), onError: (Object _) {});
-    unawaited(_locate());
+    unawaited(_locate(_looks));
   }
 
-  Future<void> _locate() async {
+  /// One round of look `look`, which a later look's start leaves to lapse:
+  /// a search or read still out from an earlier run decides nothing for
+  /// this one, and starts no second chain of rounds.
+  Future<void> _locate(int look) async {
+    bool current() => look == _looks && _look == RestoreLook.looking && _lookEnd != null;
+
     final String? found = await _ports.locate(_ports.hexOf(identity));
-    if (_look != RestoreLook.looking || _lookEnd == null) return;
+    if (!current()) return;
     if (found != null) {
       _sighted = true;
       final RestoreSeen seen = await _ports.readFeeder(identity, found);
-      if (_look != RestoreLook.looking || _lookEnd == null) return;
+      if (!current()) return;
       if (seen == RestoreSeen.idle) {
         _looked(RestoreLook.wellfed);
         return;
       }
     }
-    _lookAgain = Timer(_lookEvery, () => unawaited(_locate()));
+    _lookAgain = Timer(_lookEvery, () => unawaited(_locate(look)));
   }
 
   void _looked(RestoreLook found) {

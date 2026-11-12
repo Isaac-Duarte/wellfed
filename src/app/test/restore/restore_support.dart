@@ -86,8 +86,11 @@ class FakeRestorePorts implements RestorePorts {
   /// What a read over a session says.
   RestoreSeen seen = RestoreSeen.idle;
 
+  /// Holds a read open until the test completes it.
+  Completer<RestoreSeen>? reading;
+
   @override
-  Future<RestoreSeen> readFeeder(List<int> identity, String address) async => seen;
+  Future<RestoreSeen> readFeeder(List<int> identity, String address) => reading?.future ?? Future.value(seen);
 
   /// Where the feeder shows up on the network, if it does.
   String? located;
