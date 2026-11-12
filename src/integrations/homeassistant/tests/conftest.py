@@ -71,6 +71,16 @@ class Simulator:
         return self.owner("invite", "--role", role).strip()
 
 
+def _names_a_feeder(keys: Path) -> bool:
+    """Whether the key file at `keys` records a feeder; a file being written
+    reads as not yet."""
+    try:
+        feeders = json.loads(keys.read_text()).get("feeders")
+    except (OSError, ValueError):
+        return False
+    return bool(feeders)
+
+
 @pytest.fixture
 def simulator(tmp_path: Path, socket_enabled: None) -> Iterator[Simulator]:
     cli = _binary("wellfed")
@@ -91,16 +101,21 @@ def simulator(tmp_path: Path, socket_enabled: None) -> Iterator[Simulator]:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    # Ready once the key file names the feeder: the simulator binds its port
+    # before it starts and records its identity there, so a connection can
+    # succeed while the owner's `wellfed` still finds no feeder to talk to.
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        try:
-            socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
-            break
-        except OSError:
-            time.sleep(0.1)
+        if _names_a_feeder(keys):
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+                break
+            except OSError:
+                pass
+        time.sleep(0.1)
     else:
         process.kill()
-        pytest.fail("the simulator did not start listening")
+        pytest.fail("the simulator did not start, or did not record its identity")
 
     yield Simulator(address=f"127.0.0.1:{port}", keys=keys, cli=cli, process=process)
 
