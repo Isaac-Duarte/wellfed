@@ -32,7 +32,7 @@ The controller preloaded the indicator latches LOW, selected the stock-derived G
 
 ## Supervision probe
 
-Policy `fw05-probe-v1`, retired. It proved the stop timer and the watchdog with motion disabled. After the indicator probe, a cold boot opened the stopped board (motor STOP, emitters OFF, no sensor inputs, efuse or ADC) and TIM2, requesting no drive or emitter, then:
+Policy `fw05-probe-v1`, retired, and its source deleted: the runtime's supervision owns the watchdog, so the probe could no longer open it. It proved the stop timer and the watchdog with motion disabled. After the indicator probe, a cold boot opened the stopped board (motor STOP, emitters OFF, no sensor inputs, efuse or ADC) and TIM2, requesting no drive or emitter, then:
 
 1. logged 13 `PLTMR1 sample` snapshots: SYSTIMER raw, supervision ms, accepted TIM2 interrupts, and ready, healthy and stopped;
 2. ran a 2 s busy stall;

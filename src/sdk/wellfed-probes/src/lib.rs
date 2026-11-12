@@ -7,8 +7,7 @@
 //! own sources). Each probe reads back stopped motor outputs; only the motor
 //! pulse probe ever drives the motor, and only the bring-up firmware's `pulse`
 //! variant runs it.
-//! The supervision probe is retained for its host tests; no firmware links
-//! it. The settings store's stress probe lives with the store it stresses
+//! The settings store's stress probe lives with the store it stresses
 //! (`wellfed-feeder-runtime`).
 //!
 //! Host builds test the probes against the SDK fake.
@@ -19,7 +18,6 @@ pub mod buttons;
 pub mod optics;
 pub mod pulse;
 pub mod speaker;
-pub mod supervision;
 
 use wellfed_hal::sdk;
 use wellfed_hal::supervision::config::SYSTIMER_HZ;
