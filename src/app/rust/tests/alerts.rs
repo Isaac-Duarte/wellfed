@@ -19,7 +19,7 @@ use wellfed_app_bridge::api::alerts::{
 };
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::{FeedOutcome, FeedReason, NoticeKind};
-use wellfed_app_bridge::api::store::{AppStore, KnownFeeder, save_store};
+use wellfed_app_bridge::api::store::{AppStore, KnownFeeder, load_store, swap_store};
 use wellfed_connect::Connection;
 use wellfed_feeder_sim::feeding;
 use wellfed_feeder_sim::flash::Flash;
@@ -63,7 +63,8 @@ fn know(dir: &str, identities: &[&str]) {
             .collect(),
         ..AppStore::default()
     };
-    save_store(&format!("{dir}/wellfed.json"), &store).unwrap();
+    let path = format!("{dir}/wellfed.json");
+    assert!(swap_store(&path, &load_store(&path).unwrap(), &store).unwrap());
 }
 
 fn hex(identity: &[u8; 32]) -> String {

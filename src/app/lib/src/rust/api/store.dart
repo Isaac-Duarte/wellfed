@@ -42,10 +42,6 @@ void storeNoticeRead({required String path}) =>
 Future<AppStore> loadStore({required String path}) =>
     RustLib.instance.api.crateApiStoreLoadStore(path: path);
 
-/// Replace the store at `path`, keeping a notice the owner has not read.
-Future<void> saveStore({required String path, required AppStore store}) =>
-    RustLib.instance.api.crateApiStoreSaveStore(path: path, store: store);
-
 /// Replace the store at `path` with `store`, a change of `read`, if the file
 /// still holds `read`; whether it did. A file changed since it was read (an
 /// install's run remembers the feeder it enrolled there) is left as it is,

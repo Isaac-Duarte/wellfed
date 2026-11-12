@@ -28,7 +28,7 @@ use wellfed_app_bridge::api::setup::{
 };
 use wellfed_app_bridge::api::store::{
     AppStore, KnownFeeder, OpenedStore, StoreKind, feeder_address, load_store, open_store,
-    save_store, store_notice_read,
+    store_notice_read, swap_store,
 };
 use wellfed_app_bridge::requests;
 use wellfed_app_bridge::session::{self, Command};
@@ -775,7 +775,7 @@ fn the_store_round_trips_and_starts_empty() {
         }],
         server: None,
     };
-    save_store(path, &store).unwrap();
+    assert!(swap_store(path, &AppStore::default(), &store).unwrap());
     assert_eq!(load_store(path).unwrap(), store);
     assert_eq!(
         open_store(path).unwrap(),
@@ -811,7 +811,7 @@ fn a_store_that_does_not_read_is_set_aside_at_the_start() {
         label: "Pixel 8".into(),
         ..AppStore::default()
     };
-    save_store(path, &named).unwrap();
+    assert!(swap_store(path, &AppStore::default(), &named).unwrap());
     let again = open_store(path).unwrap();
     assert_eq!(again.store, named);
     assert_eq!(again.set_aside, Some(set_aside));

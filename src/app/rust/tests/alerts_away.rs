@@ -20,7 +20,7 @@ use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::NoticeKind;
 use wellfed_app_bridge::api::server::ServerSession;
 use wellfed_app_bridge::api::store::{
-    AppStore, KnownFeeder, KnownServer, ListedFeeder, save_store,
+    AppStore, KnownFeeder, KnownServer, ListedFeeder, load_store, swap_store,
 };
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::{TestServer, ada_login, ada_setup, config, local, until};
@@ -127,7 +127,8 @@ fn an_alert_heard_away_and_then_at_home_posts_once() {
             }],
             ..AppStore::default()
         };
-        save_store(&format!("{dir}/wellfed.json"), &store).unwrap();
+        let path = format!("{dir}/wellfed.json");
+        assert!(swap_store(&path, &load_store(&path).unwrap(), &store).unwrap());
         let phone = feeder::invite(&sim, ClientRole::Member).await;
         feeder::join_phone(&sim, &phone, PHONE).await;
         let visitor = feeder::invite(&sim, ClientRole::Member).await;

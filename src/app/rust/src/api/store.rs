@@ -217,17 +217,6 @@ pub fn load_store(path: &str) -> Result<AppStore, BridgeError> {
     Ok(file(Path::new(path))?.store)
 }
 
-/// Replace the store at `path`, keeping a notice the owner has not read.
-pub fn save_store(path: &str, store: &AppStore) -> Result<(), BridgeError> {
-    let _writing = writing();
-    let path = Path::new(path);
-    let file = AppFile {
-        store: store.clone(),
-        set_aside: file(path)?.set_aside,
-    };
-    stored::write(path, &file)
-}
-
 /// Replace the store at `path` with `store`, a change of `read`, if the file
 /// still holds `read`; whether it did. A file changed since it was read (an
 /// install's run remembers the feeder it enrolled there) is left as it is,
@@ -375,9 +364,10 @@ mod tests {
         std::fs::write(&path, grown.to_string()).unwrap();
         let path = path.to_str().unwrap();
 
-        let mut store = open_store(path).unwrap().store;
+        let read = open_store(path).unwrap().store;
+        let mut store = read.clone();
         store.label = "renamed".into();
-        save_store(path, &store).unwrap();
+        assert!(swap_store(path, &read, &store).unwrap());
 
         let saved: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();

@@ -428,7 +428,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::api::store::{AppStore, KnownFeeder, save_store};
+    use crate::api::store::{AppStore, KnownFeeder, swap_store};
 
     const KITCHEN: &str = "abababababababababababababababababababababababababababababababab";
 
@@ -452,7 +452,9 @@ mod tests {
                 .collect(),
             ..AppStore::default()
         };
-        save_store(&dir.join(store::FILE_NAME).to_string_lossy(), &store).unwrap();
+        let path = dir.join(store::FILE_NAME);
+        let path = path.to_string_lossy();
+        assert!(swap_store(&path, &AppStore::default(), &store).unwrap());
     }
 
     fn at(second: i64) -> Timestamp {
