@@ -46,9 +46,9 @@ fn seed_records() {
     // SAFETY: the fake flash outlives the store.
     unsafe { s.open(f.io()) };
     let seed: [u8; 32] = core::array::from_fn(|i| (i as u8).wrapping_mul(7) ^ 0xa5);
-    assert!(s.save(&seed));
+    assert!(s.save(&seed, 0x5eed_0001));
     pinned("first seed", &f, 0, 128, FIRST_SEED);
-    assert!(s.save(&[0xff; 32]));
+    assert!(s.save(&[0xff; 32], 0x5eed_0002));
     pinned("second seed", &f, 1, 128, SECOND_SEED);
 }
 
@@ -136,6 +136,13 @@ fn seed_reads_the_pinned_records() {
     // SAFETY: as above.
     unsafe { s.open(f.io()) };
     assert_eq!((s.generation, s.slot, s.seed()), (2, 1, Some(&[0xff; 32])));
+    assert_eq!(s.epoch(), 0x5eed_0002);
+
+    // Minor 0, before the ring's epoch: read with none.
+    let mut f = flash(512, &[(0, FIRST_SEED_MINOR_0)]);
+    // SAFETY: as above.
+    assert_eq!(unsafe { s.open(f.io()) }, SeedStatus::Loaded);
+    assert_eq!((s.generation, s.seed(), s.epoch()), (1, Some(&seed), 0));
 }
 
 fn open_update(record: &[&str]) -> UpdateStore<FlashIo> {
@@ -208,7 +215,7 @@ fn update_store_reads_the_pinned_records() {
 // The pinned records, as deployed feeders hold them.
 
 /// First seed.
-const FIRST_SEED: &[&str] = &[
+const FIRST_SEED_MINOR_0: &[&str] = &[
     "504c465345454431010080000100000000000000a5a2abb0b9868f949d9ae3e8",
     "f1fec7ccd5d2db2029363f040d0a1318616e777c000000000000000000000000",
     "0000000000000000000000000000000000000000000000000000000000000000",
@@ -216,11 +223,18 @@ const FIRST_SEED: &[&str] = &[
 ];
 
 /// Second seed.
-const SECOND_SEED: &[&str] = &[
-    "504c465345454431010080000200000000000000ffffffffffffffffffffffff",
-    "ffffffffffffffffffffffffffffffffffffffff000000000000000000000000",
+const FIRST_SEED: &[&str] = &[
+    "504c465345454431010180000100000000000000a5a2abb0b9868f949d9ae3e8",
+    "f1fec7ccd5d2db2029363f040d0a1318616e777c0100ed5e0000000000000000",
     "0000000000000000000000000000000000000000000000000000000000000000",
-    "0000000000000000000000000000000000000000000000005625eaf5434d4954",
+    "00000000000000000000000000000000000000000000000078859b72434d4954",
+];
+
+const SECOND_SEED: &[&str] = &[
+    "504c465345454431010180000200000000000000ffffffffffffffffffffffff",
+    "ffffffffffffffffffffffffffffffffffffffff0200ed5e0000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000001b672366434d4954",
 ];
 
 /// Bank 0 without a key.

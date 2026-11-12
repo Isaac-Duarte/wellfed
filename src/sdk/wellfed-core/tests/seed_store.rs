@@ -49,21 +49,21 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
         let saved = |f: &mut FakeJournalFlash| {
             let mut s = open(f);
             for n in 0..history {
-                assert!(s.save(&[n; 32]));
+                assert!(s.save(&[n; 32], 0));
             }
             s
         };
         let mut probe = FakeJournalFlash::with_unit(UNIT).ordered(order);
         let mut s = saved(&mut probe);
         let start = probe.mutations;
-        assert!(s.save(&[9; 32]));
+        assert!(s.save(&[9; 32], 0));
         let span = i64::from(probe.mutations - start);
 
         for cut in 0..=span {
             let mut f = FakeJournalFlash::with_unit(UNIT).ordered(order);
             let mut s = saved(&mut f);
             f.budget = cut;
-            let _ = s.save(&[9; 32]);
+            let _ = s.save(&[9; 32], 0);
             f.budget = -1;
 
             let mut r = open(&mut f);
@@ -77,7 +77,7 @@ fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
                 "{order:?} history {history} cut {cut}: {:?}",
                 r.status
             );
-            assert!(r.save(&[5; 32]));
+            assert!(r.save(&[5; 32], 0));
             assert_eq!(open(&mut f).seed(), Some(&[5; 32]));
         }
     }
@@ -97,7 +97,7 @@ fn a_failed_save_still_starts_the_generator() {
 fn a_newer_schema_is_read_only() {
     let mut f = FakeJournalFlash::with_unit(UNIT);
     let mut s = open(&mut f);
-    assert!(s.save(&[1; 32]));
+    assert!(s.save(&[1; 32], 0));
 
     let mut record = f.bytes[0][..RECORD_BYTES].to_vec();
     record[8] = 2;
@@ -107,5 +107,20 @@ fn a_newer_schema_is_read_only() {
 
     let mut r = open(&mut f);
     assert_eq!((r.status, r.seed()), (SeedStatus::ReadOnly, None));
-    assert!(!r.save(&[2; 32]));
+    assert!(!r.save(&[2; 32], 0));
+}
+
+/// The event ring's epoch rides with the seed: kept by every save that
+/// names it, and by the boot's own seed save.
+#[test]
+fn the_ring_epoch_is_kept_with_the_seed() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert_eq!(s.epoch(), 0, "none yet");
+    assert!(s.save(&[1; 32], 0x5eed_0001));
+
+    let mut r = open(&mut f);
+    assert_eq!(r.epoch(), 0x5eed_0001);
+    seed::start(&mut r, &[3; 32]).unwrap();
+    assert_eq!(open(&mut f).epoch(), 0x5eed_0001);
 }

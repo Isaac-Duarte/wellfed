@@ -279,3 +279,45 @@ fn a_reset_by_hand_over_a_corrupt_update_store_reopens_the_update_stage_empty() 
 
     assert_eq!(opened(stage.step(&mut flash, 2)), Some(UpdateStatus::Empty));
 }
+
+/// Each ring the device creates takes an epoch no earlier ring had, with a
+/// generator or without one: the epoch moves on with each boot's seed,
+/// which the factory reset keeps as it erases the ring.
+#[test]
+fn every_new_ring_takes_an_epoch_past_the_last() {
+    use wellfed_hal::board::storage::EVENTS;
+    use wellfed_hal::rng;
+
+    let mut epochs: Vec<u32> = Vec::new();
+    let mut kept = None;
+    for generator in [true, true, false, true, false, false] {
+        let (mut writer, mut provider) = boot();
+        if let Some(storage) = kept.take() {
+            fake::with(|h| h.storage = storage);
+        }
+        for sector in EVENTS.first..EVENTS.first + EVENTS.count {
+            // SAFETY: the fake's storage, which this test owns.
+            assert!(unsafe { sdk::storage_erase(sector) });
+        }
+        rng::reset();
+        if generator {
+            fake::with(|h| h.adc_noise = 0x1357_9bdf);
+            assert_eq!(rng::start().result, Ok(()));
+        }
+
+        let opened = (0..20).any(|_| {
+            matches!(
+                step(&mut writer, &mut provider),
+                Some(Record::Events { open: true, .. })
+            )
+        });
+        assert!(opened, "the ring opens");
+        let epoch = events::epoch().expect("an epoch");
+        assert!(
+            epoch != 0 && !epochs.contains(&epoch),
+            "{epoch:#x} in {epochs:x?}"
+        );
+        epochs.push(epoch);
+        kept = Some(fake::with(|h| h.storage.clone()));
+    }
+}
