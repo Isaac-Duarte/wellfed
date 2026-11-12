@@ -53,6 +53,12 @@ pub struct Handoff<T> {
     value: TaskCell<T>,
 }
 
+// No `T: Send` bound on the methods: sharing a slot between tasks (a
+// static, or any reference another task holds) needs `Handoff<T>: Sync`,
+// which `TaskCell<T>` grants only for `T: Send`. A slot whose value is not `Send`
+// stays within one task, where the states still keep each step exclusive.
+// A bound here would add nothing, and a generic owner (the settings
+// mailbox, over any kind's settings) would have to repeat it.
 impl<T> Handoff<T> {
     /// An empty slot; `empty` is a placeholder no consumer ever reads.
     pub const fn new(empty: T) -> Self {
@@ -195,6 +201,7 @@ pub struct Published<V> {
     loaded: AtomicBool,
 }
 
+// No `V: Send` bound either, for the same reason as the hand-off's.
 #[cfg(any(not(target_os = "none"), feature = "km4"))]
 impl<V: Copy> Published<V> {
     /// Nothing published; `empty` is what [`Self::clear`] leaves behind and
