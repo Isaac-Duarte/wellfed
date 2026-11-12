@@ -22,12 +22,12 @@
               },
               {
                 "outcome": {
-                  "TYPENAME": "FeedOutcome"
+                  "TYPENAME": "LenientFeedOutcome"
                 }
               },
               {
                 "reason": {
-                  "TYPENAME": "FeedReason"
+                  "TYPENAME": "LenientFeedReason"
                 }
               }
             ]
@@ -52,7 +52,7 @@
               },
               {
                 "reason": {
-                  "TYPENAME": "FeedReason"
+                  "TYPENAME": "LenientFeedReason"
                 }
               }
             ]
@@ -95,7 +95,7 @@
             "STRUCT": [
               {
                 "stop": {
-                  "TYPENAME": "UpdateStop"
+                  "TYPENAME": "LenientUpdateStop"
                 }
               }
             ]
@@ -117,12 +117,12 @@
               },
               {
                 "role": {
-                  "TYPENAME": "Role"
+                  "TYPENAME": "LenientRole"
                 }
               },
               {
                 "path": {
-                  "TYPENAME": "Path"
+                  "TYPENAME": "LenientPath"
                 }
               }
             ]
@@ -158,7 +158,7 @@
             "STRUCT": [
               {
                 "reason": {
-                  "TYPENAME": "Blocked"
+                  "TYPENAME": "LenientBlocked"
                 }
               }
             ]
@@ -870,12 +870,12 @@
               },
               {
                 "role": {
-                  "TYPENAME": "Role"
+                  "TYPENAME": "LenientRole"
                 }
               },
               {
                 "path": {
-                  "TYPENAME": "Path"
+                  "TYPENAME": "LenientPath"
                 }
               }
             ]
@@ -939,17 +939,17 @@
               },
               {
                 "outcome": {
-                  "TYPENAME": "FeedOutcome"
+                  "TYPENAME": "LenientFeedOutcome"
                 }
               },
               {
                 "reason": {
-                  "TYPENAME": "FeedReason"
+                  "TYPENAME": "LenientFeedReason"
                 }
               },
               {
                 "hopper": {
-                  "TYPENAME": "FoodLevel"
+                  "TYPENAME": "LenientFoodLevel"
                 }
               },
               {
@@ -966,7 +966,7 @@
               {
                 "reason": {
                   "OPTION": {
-                    "TYPENAME": "Blocked"
+                    "TYPENAME": "LenientBlocked"
                   }
                 }
               }
@@ -1016,7 +1016,7 @@
             "STRUCT": [
               {
                 "reason": {
-                  "TYPENAME": "Blocked"
+                  "TYPENAME": "LenientBlocked"
                 }
               }
             ]
@@ -1045,7 +1045,7 @@
             "STRUCT": [
               {
                 "level": {
-                  "TYPENAME": "FoodLevel"
+                  "TYPENAME": "LenientFoodLevel"
                 }
               }
             ]
@@ -1090,7 +1090,7 @@
             "STRUCT": [
               {
                 "stop": {
-                  "TYPENAME": "UpdateStop"
+                  "TYPENAME": "LenientUpdateStop"
                 }
               }
             ]
@@ -1101,7 +1101,7 @@
             "STRUCT": [
               {
                 "candidate": {
-                  "TYPENAME": "UpdateCandidate"
+                  "TYPENAME": "LenientUpdateCandidate"
                 }
               }
             ]
@@ -1675,13 +1675,25 @@
     "LenientNtpResult": {
       "NEWTYPESTRUCT": "U32"
     },
+    "LenientPath": {
+      "NEWTYPESTRUCT": "U32"
+    },
     "LenientPhase": {
       "NEWTYPESTRUCT": "U32"
     },
     "LenientResetCause": {
       "NEWTYPESTRUCT": "U32"
     },
+    "LenientRole": {
+      "NEWTYPESTRUCT": "U32"
+    },
     "LenientTimeSource": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientUpdateCandidate": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientUpdateStop": {
       "NEWTYPESTRUCT": "U32"
     },
     "LenientWifiSource": {

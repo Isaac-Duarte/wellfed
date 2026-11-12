@@ -151,14 +151,16 @@ pub enum OpenRefusal {
     Full,
 }
 
-/// Frozen, since the welcome carries it. A client's role, as the client
-/// store keeps it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Role {
-    Owner,
-    Member,
-    Server,
-    UpdateSigner,
+unit_enum! {
+    /// Frozen, since the welcome carries it. A client's role, as the client
+    /// store keeps it.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Role {
+        Owner,
+        Member,
+        Server,
+        UpdateSigner,
+    }
 }
 
 /// Frozen. An invite redemption's third-message payload.
@@ -1479,37 +1481,41 @@ pub enum UpdatePhase {
     Activated,
 }
 
-/// What the update store held about a candidate as a boot came up. Not part
-/// of the frozen update path: only [`EventBody::UpdateAtBoot`] carries it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum UpdateCandidate {
-    /// None, or a store that could not be read.
-    None,
-    /// Bank 1 gave way for one, or bank 0 accepted it.
-    Pending,
-    /// Bank 0 activated one, and no build has confirmed it.
-    Activated,
+unit_enum! {
+    /// What the update store held about a candidate as a boot came up. Not part
+    /// of the frozen update path: only [`EventBody::UpdateAtBoot`] carries it.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum UpdateCandidate {
+        /// None, or a store that could not be read.
+        None,
+        /// Bank 1 gave way for one, or bank 0 accepted it.
+        Pending,
+        /// Bank 0 activated one, and no build has confirmed it.
+        Activated,
+    }
 }
 
-/// Frozen. Why an install stopped. Bank 1's marker was never written, so
-/// the feeder keeps running bank 0.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum UpdateStop {
-    /// No chunk came for a minute.
-    Timeout,
-    Cancelled,
-    /// A chunk at an offset that was not wanted, or of the wrong length.
-    Order,
-    /// The image's first bytes are not the loader's marker.
-    Marker,
-    /// A sector did not read back as written.
-    Write,
-    /// The whole image's SHA-256 differs from the manifest's.
-    Hash,
-    /// The marker was never programmed.
-    Activate,
-    /// The update store could not be written.
-    Store,
+unit_enum! {
+    /// Frozen. Why an install stopped. Bank 1's marker was never written, so
+    /// the feeder keeps running bank 0.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum UpdateStop {
+        /// No chunk came for a minute.
+        Timeout,
+        Cancelled,
+        /// A chunk at an offset that was not wanted, or of the wrong length.
+        Order,
+        /// The image's first bytes are not the loader's marker.
+        Marker,
+        /// A sector did not read back as written.
+        Write,
+        /// The whole image's SHA-256 differs from the manifest's.
+        Hash,
+        /// The marker was never programmed.
+        Activate,
+        /// The update store could not be written.
+        Store,
+    }
 }
 
 /// Frozen. Why an update op was refused.
@@ -1783,8 +1789,8 @@ pub enum EventBody {
     },
     Enrolled {
         client: Fingerprint,
-        role: Role,
-        path: Path,
+        role: Lenient<Role>,
+        path: Lenient<Path>,
     },
     Revoked {
         client: Fingerprint,
@@ -1807,15 +1813,15 @@ pub enum EventBody {
         feed: u32,
         requested: u8,
         completed: u8,
-        outcome: FeedOutcome,
-        reason: FeedReason,
-        hopper: FoodLevel,
+        outcome: Lenient<FeedOutcome>,
+        reason: Lenient<FeedReason>,
+        hopper: Lenient<FoodLevel>,
         by: Source,
     },
     /// The lasting reason the feeder cannot feed changed ([`Blocked::lasting`]):
     /// `Some` names the new one, `None` says it can feed again.
     FeedingBlocked {
-        reason: Option<Blocked>,
+        reason: Option<Lenient<Blocked>>,
     },
     /// The adapter came or went, or the pack crossed its floor. At most
     /// one a minute: changes inside that minute are recorded together,
@@ -1837,7 +1843,7 @@ pub enum EventBody {
     /// start (`reason`), during a feed among them: it started nothing and
     /// is not queued.
     DispenseRefused {
-        reason: Blocked,
+        reason: Lenient<Blocked>,
     },
     /// The occurrence of plan `plan` due at `due` (Unix seconds), at
     /// minute `minute` of the local day, is expected to feed `portions`:
@@ -1856,7 +1862,7 @@ pub enum EventBody {
     /// rest, however it flickers. A boot's first reading counts as a change
     /// only if a feed took it.
     Food {
-        level: FoodLevel,
+        level: Lenient<FoodLevel>,
     },
     /// `by` skipped the occurrence of plan `plan` due at `due` (Unix
     /// seconds): it will not feed unless the skip is undone before it is
@@ -1876,7 +1882,7 @@ pub enum EventBody {
     /// An install stopped before activation: what the update's state says
     /// only until the next offer, kept past a restart.
     UpdateStop {
-        stop: UpdateStop,
+        stop: Lenient<UpdateStop>,
     },
     /// What the update store held as this boot came up, recorded once in
     /// every boot. With the bank of the boots around it, this tells how a
@@ -1884,7 +1890,7 @@ pub enum EventBody {
     /// Recorded after the restart, as an install holds the write turn up to
     /// the reset and nothing queued before it could land.
     UpdateAtBoot {
-        candidate: UpdateCandidate,
+        candidate: Lenient<UpdateCandidate>,
     },
     /// A restart someone asked for is on its way. The writer appends what is
     /// queued in the restart's grace, so this normally lands; if it doesn't,
@@ -2127,8 +2133,8 @@ pub enum Alert {
         plan: Option<u8>,
         requested: u8,
         completed: u8,
-        outcome: FeedOutcome,
-        reason: FeedReason,
+        outcome: Lenient<FeedOutcome>,
+        reason: Lenient<FeedReason>,
     },
     /// A feed ended `Uncertain`, and may have dispensed up to `requested`.
     MealUncertain {
@@ -2136,7 +2142,7 @@ pub enum Alert {
         plan: Option<u8>,
         requested: u8,
         completed: u8,
-        reason: FeedReason,
+        reason: Lenient<FeedReason>,
     },
     /// The occurrence did not run, and never will.
     MealMissed {
@@ -2152,14 +2158,14 @@ pub enum Alert {
     },
     PowerWasOut,
     UpdateFailed {
-        stop: UpdateStop,
+        stop: Lenient<UpdateStop>,
     },
     /// Bank 0 kept running after bank 1.
     RolledBack,
     ClientJoined {
         client: Fingerprint,
-        role: Role,
-        path: Path,
+        role: Lenient<Role>,
+        path: Lenient<Path>,
     },
     ClientRevoked {
         client: Fingerprint,
@@ -2168,7 +2174,7 @@ pub enum Alert {
     RepeatedRestarts,
     NoClock,
     CannotFeed {
-        reason: Blocked,
+        reason: Lenient<Blocked>,
     },
     FoodLow,
     /// There is no empty reading: `confirmed` portions have gone since the
@@ -2379,14 +2385,16 @@ pub enum MissedReason {
     Interrupted,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Path {
-    Setup,
-    Invite,
-    Recovery,
-    /// An owner's session asked and a press on the panel confirmed: how an
-    /// update signer's key joins.
-    Press,
+unit_enum! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Path {
+        Setup,
+        Invite,
+        Recovery,
+        /// An owner's session asked and a press on the panel confirmed: how an
+        /// update signer's key joins.
+        Press,
+    }
 }
 
 /// A live measurement, sent only to subscribers and never stored.
@@ -2773,8 +2781,8 @@ mod tests {
                             plan: Some(u8::MAX),
                             requested: u8::MAX,
                             completed: u8::MAX,
-                            outcome: FeedOutcome::Failed,
-                            reason: FeedReason::Interrupted,
+                            outcome: FeedOutcome::Failed.into(),
+                            reason: FeedReason::Interrupted.into(),
                         },
                     }); ALERTS_MAX],
                     skipped: 0,
@@ -2952,15 +2960,15 @@ mod tests {
                 plan: Some(u8::MAX),
                 requested: u8::MAX,
                 completed: u8::MAX,
-                outcome: FeedOutcome::Uncertain,
-                reason: FeedReason::Interrupted,
+                outcome: FeedOutcome::Uncertain.into(),
+                reason: FeedReason::Interrupted.into(),
             },
             Alert::MealUncertain {
                 feed: u32::MAX,
                 plan: Some(u8::MAX),
                 requested: u8::MAX,
                 completed: u8::MAX,
-                reason: FeedReason::Interrupted,
+                reason: FeedReason::Interrupted.into(),
             },
             Alert::MealMissed {
                 plan: u8::MAX,
@@ -2969,8 +2977,8 @@ mod tests {
             },
             Alert::ClientJoined {
                 client,
-                role: Role::UpdateSigner,
-                path: Path::Press,
+                role: Role::UpdateSigner.into(),
+                path: Path::Press.into(),
             },
             Alert::ClientRevoked {
                 client,
@@ -3380,8 +3388,8 @@ mod tests {
             },
             EventBody::Enrolled {
                 client,
-                role: Role::UpdateSigner,
-                path: Path::Recovery,
+                role: Role::UpdateSigner.into(),
+                path: Path::Recovery.into(),
             },
             EventBody::Revoked {
                 client,
@@ -3396,13 +3404,13 @@ mod tests {
                 feed: u32::MAX,
                 requested: u8::MAX,
                 completed: u8::MAX,
-                outcome: FeedOutcome::Uncertain,
-                reason: FeedReason::Output,
-                hopper: FoodLevel::Unread,
+                outcome: FeedOutcome::Uncertain.into(),
+                reason: FeedReason::Output.into(),
+                hopper: FoodLevel::Unread.into(),
                 by: Source::Client(client),
             },
             EventBody::FeedingBlocked {
-                reason: Some(Blocked::Unserved),
+                reason: Some(Blocked::Unserved.into()),
             },
             EventBody::Supply(Supply {
                 adapter: Some(false),
@@ -3426,9 +3434,9 @@ mod tests {
                 feed: u32::MAX,
                 requested: u8::MAX,
                 completed: u8::MAX,
-                outcome: FeedOutcome::Uncertain,
-                reason: FeedReason::Output,
-                hopper: FoodLevel::Low,
+                outcome: FeedOutcome::Uncertain.into(),
+                reason: FeedReason::Output.into(),
+                hopper: FoodLevel::Low.into(),
                 by: Source::Schedule(u8::MAX),
             },
             EventBody::Plans {
@@ -3441,7 +3449,7 @@ mod tests {
                 reason: MissedReason::Blocked(Blocked::Unserved),
             },
             EventBody::DispenseRefused {
-                reason: Blocked::Battery,
+                reason: Blocked::Battery.into(),
             },
             EventBody::MealSoon {
                 plan: u8::MAX,
@@ -3450,7 +3458,7 @@ mod tests {
                 portions: u8::MAX,
             },
             EventBody::Food {
-                level: FoodLevel::Low,
+                level: FoodLevel::Low.into(),
             },
             EventBody::Skipped {
                 plan: u8::MAX,
@@ -3463,10 +3471,10 @@ mod tests {
                 by: Source::Client(client),
             },
             EventBody::UpdateStop {
-                stop: UpdateStop::Store,
+                stop: UpdateStop::Store.into(),
             },
             EventBody::UpdateAtBoot {
-                candidate: UpdateCandidate::Activated,
+                candidate: UpdateCandidate::Activated.into(),
             },
             EventBody::Restarting,
             EventBody::UpdateConfirmed,

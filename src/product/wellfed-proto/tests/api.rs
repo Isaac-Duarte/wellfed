@@ -514,6 +514,10 @@ fn lenient() -> Vec<(&'static str, &'static [&'static str])> {
         of::<CurrentUnit>(),
         of::<Bowl>(),
         of::<Phase>(),
+        of::<Role>(),
+        of::<Path>(),
+        of::<UpdateStop>(),
+        of::<UpdateCandidate>(),
     ]
 }
 

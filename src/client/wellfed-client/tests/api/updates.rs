@@ -9,7 +9,7 @@ use wellfed_device_api::pairing::{Config, Event as PairingEvent};
 use wellfed_device_api::{Reason, Record, UpdateKeyChange};
 use wellfed_model as model;
 use wellfed_model::{Answer, FeederSettingsPatch, Generation, Op};
-use wellfed_proto::api::{self as proto, EventBody};
+use wellfed_proto::api::{self as proto, EventBody, Lenient};
 
 use crate::support::{
     Client_, MEMBER, OWNER, Rig, STRANGER, ask, open, poll_answer, public, receiving, view,
@@ -431,8 +431,8 @@ fn an_update_key_enrolls_only_once_dispense_is_pressed() {
                 matches!(
                     e.body,
                     EventBody::Enrolled {
-                        role: proto::Role::UpdateSigner,
-                        path: proto::Path::Press,
+                        role: Lenient::Known(proto::Role::UpdateSigner),
+                        path: Lenient::Known(proto::Path::Press),
                         ..
                     }
                 )
@@ -477,7 +477,7 @@ fn a_pressed_key_whose_session_left_is_still_in_the_history() {
                 matches!(
                     e.body,
                     EventBody::Enrolled {
-                        path: proto::Path::Press,
+                        path: Lenient::Known(proto::Path::Press),
                         ..
                     }
                 )

@@ -266,8 +266,8 @@ fn an_invite_enrolls_a_new_client_once() {
     };
     let joined = EventBody::Enrolled {
         client: fingerprint(STRANGER),
-        role: proto::Role::Member,
-        path: proto::Path::Invite,
+        role: proto::Role::Member.into(),
+        path: proto::Path::Invite.into(),
     };
     assert!(
         bodies.windows(2).any(|pair| pair == [invited, joined]),
@@ -312,7 +312,9 @@ fn enrollments(rig: &Rig) -> Vec<(proto::Fingerprint, proto::Role, proto::Path)>
         .events
         .iter()
         .filter_map(|e| match e.body {
-            EventBody::Enrolled { client, role, path } => Some((client, role, path)),
+            EventBody::Enrolled { client, role, path } => {
+                Some((client, role.known()?, path.known()?))
+            }
             _ => None,
         })
         .collect()

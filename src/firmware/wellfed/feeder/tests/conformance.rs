@@ -341,9 +341,9 @@ fn a_feed_trace_is_stored_on_the_writer_turn_and_read_back_after_a_restart() {
         feed: 9,
         requested: 1,
         completed: 0,
-        outcome: FeedOutcome::Failed,
-        reason: FeedReason::NoFeedback,
-        hopper: FoodLevel::Present,
+        outcome: FeedOutcome::Failed.into(),
+        reason: FeedReason::NoFeedback.into(),
+        hopper: FoodLevel::Present.into(),
         by: Source::Panel,
     };
     let figures = DriveFigures {

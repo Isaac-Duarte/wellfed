@@ -116,9 +116,9 @@ fn the_largest_events_fill_a_frame_and_the_rest_follow() {
                 feed: u32::MAX,
                 requested: u8::MAX,
                 completed: u8::MAX,
-                outcome: proto::FeedOutcome::Uncertain,
-                reason: proto::FeedReason::Output,
-                hopper: FoodLevel::Unread,
+                outcome: proto::FeedOutcome::Uncertain.into(),
+                reason: proto::FeedReason::Output.into(),
+                hopper: FoodLevel::Unread.into(),
                 by: proto::Source::Client([0xff; 4]),
             },
         });

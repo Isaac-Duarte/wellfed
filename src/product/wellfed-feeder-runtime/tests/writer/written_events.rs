@@ -28,8 +28,8 @@ use crate::support::{
 fn phone_joined() -> EventBody {
     EventBody::Enrolled {
         client: [7; 4],
-        role: wellfed_proto::api::Role::Owner,
-        path: Path::Invite,
+        role: wellfed_proto::api::Role::Owner.into(),
+        path: Path::Invite.into(),
     }
 }
 

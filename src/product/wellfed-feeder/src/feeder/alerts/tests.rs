@@ -2,7 +2,7 @@ extern crate std;
 
 use std::vec::Vec;
 
-use wellfed_proto::api::{FeedReason, MissedReason, Path, Role};
+use wellfed_proto::api::{FeedReason, Lenient, MissedReason, Path, Role};
 
 use super::*;
 
@@ -47,9 +47,9 @@ fn fed(feed: u32, outcome: FeedOutcome, reason: FeedReason, by: Source) -> Event
         feed,
         requested: 2,
         completed: 1,
-        outcome,
-        reason,
-        hopper: FoodLevel::Present,
+        outcome: outcome.into(),
+        reason: reason.into(),
+        hopper: FoodLevel::Present.into(),
         by,
     }
 }
@@ -59,9 +59,9 @@ fn done(feed: u32, completed: u8, hopper: FoodLevel) -> EventBody {
         feed,
         requested: completed,
         completed,
-        outcome: FeedOutcome::Done,
-        reason: FeedReason::Done,
-        hopper,
+        outcome: FeedOutcome::Done.into(),
+        reason: FeedReason::Done.into(),
+        hopper: hopper.into(),
         by: Source::Schedule(0),
     }
 }
@@ -80,11 +80,15 @@ fn boot(bank: u8, reset_flags: u32) -> EventBody {
 }
 
 const fn held(candidate: UpdateCandidate) -> EventBody {
-    EventBody::UpdateAtBoot { candidate }
+    EventBody::UpdateAtBoot {
+        candidate: Lenient::Known(candidate),
+    }
 }
 
 const fn stopped(stop: UpdateStop) -> EventBody {
-    EventBody::UpdateStop { stop }
+    EventBody::UpdateStop {
+        stop: Lenient::Known(stop),
+    }
 }
 
 fn adapter(on: bool) -> EventBody {
@@ -103,17 +107,19 @@ fn joined(at: u32) -> (Option<u32>, EventBody) {
         Some(at),
         EventBody::Enrolled {
             client: CLIENT,
-            role: Role::Member,
-            path: Path::Invite,
+            role: Role::Member.into(),
+            path: Path::Invite.into(),
         },
     )
 }
 
 #[test]
 fn an_entry_and_the_whole_state_stay_small() {
-    assert_eq!(size_of::<OpenAlert>(), 16);
-    assert_eq!(size_of::<[Option<OpenAlert>; CAPACITY]>(), 16 * CAPACITY);
-    assert_eq!(size_of::<Alerts>(), 344);
+    // A lenient field takes a byte more than its enum (an unknown variant
+    // keeps its index), which takes an entry from 16 bytes to 20.
+    assert_eq!(size_of::<OpenAlert>(), 20);
+    assert_eq!(size_of::<[Option<OpenAlert>; CAPACITY]>(), 20 * CAPACITY);
+    assert_eq!(size_of::<Alerts>(), 392);
 }
 
 #[test]
@@ -171,8 +177,8 @@ fn a_feed_that_failed_or_expired_opens_with_its_reason_and_portions() {
             plan: Some(0),
             requested: 2,
             completed: 1,
-            outcome: FeedOutcome::Failed,
-            reason: FeedReason::Jammed,
+            outcome: FeedOutcome::Failed.into(),
+            reason: FeedReason::Jammed.into(),
         }
     );
     assert_eq!(open[0].at.map(NonZeroU32::get), Some(WALL));
@@ -183,8 +189,8 @@ fn a_feed_that_failed_or_expired_opens_with_its_reason_and_portions() {
             plan: None,
             requested: 2,
             completed: 1,
-            outcome: FeedOutcome::Expired,
-            reason: FeedReason::Output,
+            outcome: FeedOutcome::Expired.into(),
+            reason: FeedReason::Output.into(),
         }
     );
 }
@@ -227,7 +233,7 @@ fn an_uncertain_feeds_second_fed_replaces_the_first_alert() {
     assert!(matches!(
         entry.alert,
         Alert::MealUncertain {
-            reason: FeedReason::Interrupted,
+            reason: Lenient::Known(FeedReason::Interrupted),
             ..
         }
     ));
@@ -453,7 +459,7 @@ fn an_update_stop_opens_unless_the_owner_cancelled() {
     assert_eq!(
         alerts.open().next().unwrap().alert,
         Alert::UpdateFailed {
-            stop: UpdateStop::Hash
+            stop: UpdateStop::Hash.into()
         }
     );
 }
@@ -1444,7 +1450,7 @@ fn cannot_feed_opens_past_its_threshold_with_the_reason_and_ends_on_ready() {
     assert_eq!(
         alerts.open().next().unwrap().alert,
         Alert::CannotFeed {
-            reason: Blocked::Joining
+            reason: Blocked::Joining.into()
         }
     );
 
@@ -1455,7 +1461,7 @@ fn cannot_feed_opens_past_its_threshold_with_the_reason_and_ends_on_ready() {
     assert_eq!(
         entry.alert,
         Alert::CannotFeed {
-            reason: Blocked::Fault
+            reason: Blocked::Fault.into()
         }
     );
     assert_eq!(entry.at, at);
@@ -1486,7 +1492,7 @@ fn a_stuck_claim_says_why_it_blocks_past_its_wait_and_ends_with_the_claim() {
     assert_eq!(
         alerts.open().next().unwrap().alert,
         Alert::CannotFeed {
-            reason: Blocked::Feeding
+            reason: Blocked::Feeding.into()
         }
     );
 
@@ -1632,7 +1638,7 @@ fn the_food_count_comes_back_from_the_events_the_boot_read_finds() {
         0,
         Some(WALL),
         &EventBody::Food {
-            level: FoodLevel::Low,
+            level: FoodLevel::Low.into(),
         },
     );
     alerts.event(0, Some(WALL), &done(1, 3, FoodLevel::Low));
@@ -1661,7 +1667,7 @@ fn a_refill_between_feeds_starts_the_count_over() {
         1,
         Some(WALL),
         &EventBody::Food {
-            level: FoodLevel::Low,
+            level: FoodLevel::Low.into(),
         },
     );
     alerts.event(2, Some(WALL), &done(1, 4, FoodLevel::Low));
@@ -1669,7 +1675,7 @@ fn a_refill_between_feeds_starts_the_count_over() {
         3,
         Some(WALL),
         &EventBody::Food {
-            level: FoodLevel::Present,
+            level: FoodLevel::Present.into(),
         },
     );
     alerts.step(4, &low);
@@ -1815,7 +1821,7 @@ fn a_condition_always_finds_room_and_is_never_pushed_out() {
         1,
         Some(WALL),
         &EventBody::Food {
-            level: FoodLevel::Low,
+            level: FoodLevel::Low.into(),
         },
     );
     alerts.event(1, Some(WALL), &done(99, 5, FoodLevel::Low));

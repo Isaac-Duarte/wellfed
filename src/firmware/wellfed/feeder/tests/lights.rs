@@ -425,7 +425,7 @@ fn a_reading_at_rest_lights_low_food_and_a_refill_clears_it() {
         while let Some(queued) = events::pending() {
             let body: EventBody = wellfed_proto::decode_padded(&queued.body).unwrap();
             if let EventBody::Food { level } = body {
-                levels.push(level);
+                levels.extend(level.known());
             }
             events::finish_pending(None);
         }

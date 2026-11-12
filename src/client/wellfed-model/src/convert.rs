@@ -71,6 +71,38 @@ fn lenient<P: Copy, M: From<P>>(value: proto::Lenient<P>, unknown: M) -> M {
     value.known().map_or(unknown, M::from)
 }
 
+/// Each unit enum that alerts and event bodies carry leniently, read from
+/// the wire with `Unknown` for a variant a newer build added, and written
+/// back as the variant it names.
+macro_rules! lenient_both_ways {
+    ($($model:ty => $wire:ty),* $(,)?) => {$(
+        impl From<proto::Lenient<$wire>> for $model {
+            fn from(value: proto::Lenient<$wire>) -> Self {
+                lenient(value, Self::Unknown)
+            }
+        }
+
+        impl TryFrom<$model> for proto::Lenient<$wire> {
+            type Error = NoWireForm;
+
+            fn try_from(value: $model) -> Result<Self, NoWireForm> {
+                <$wire>::try_from(value).map(proto::Lenient::Known)
+            }
+        }
+    )*};
+}
+
+lenient_both_ways! {
+    FeedOutcome => proto::FeedOutcome,
+    FeedReason => proto::FeedReason,
+    FoodLevel => proto::FoodLevel,
+    Blocked => proto::Blocked,
+    ClientRole => proto::Role,
+    EnrollPath => proto::Path,
+    UpdateStop => proto::UpdateStop,
+    UpdateCandidate => proto::UpdateCandidate,
+}
+
 /// A host value with no wire form: one holding a variant a newer feeder
 /// build added, which this build only names `Unknown`. Never so for one
 /// decoded from the wire, where a body this build cannot read stays raw.
@@ -564,7 +596,7 @@ impl TryFrom<EventBody> for proto::EventBody {
                 by: by.try_into()?,
             },
             EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => Self::FeedingBlocked {
-                reason: reason.map(proto::Blocked::try_from).transpose()?,
+                reason: reason.map(TryInto::try_into).transpose()?,
             },
             EventBody::Feeder(FeederEvent::Supply {
                 adapter,
@@ -2090,6 +2122,91 @@ pub fn setup_reply(reply: proto_setup::Reply) -> Option<setup::Reply> {
 
 #[cfg(test)]
 mod tests {
+    use super::proto;
+
+    /// An enum value a newer build added, inside an alert or an event,
+    /// reads as unknown there, and the rest of the entry reads on: a failed
+    /// meal with an outcome and reason this build can't name is still a
+    /// failed meal, urgent, and its event still a feed's.
+    #[test]
+    fn a_newer_value_inside_an_alert_or_event_reads_as_unknown() {
+        use crate::{
+            Alert, AlertLevel, AlertsView, EventBody, FeedOutcome, FeedReason, FeederEvent,
+        };
+
+        let mut entries = [None; proto::ALERTS_MAX];
+        entries[0] = Some(proto::OpenAlert {
+            at: core::num::NonZeroU32::new(1_800_000_000),
+            alert: proto::Alert::MealFailed {
+                feed: 7,
+                plan: Some(2),
+                requested: 3,
+                completed: 1,
+                outcome: proto::Lenient::Unknown(99),
+                reason: proto::Lenient::Unknown(98),
+            },
+        });
+        let sent = proto::AlertsView {
+            epoch: 1,
+            generation: 2,
+            more: false,
+            settling: false,
+            alerts: proto::AlertTable {
+                entries,
+                skipped: 0,
+            },
+        };
+        let mut bytes = [0; 512];
+        let len = wellfed_proto::encode(&sent, &mut bytes).unwrap();
+        let view =
+            AlertsView::from(wellfed_proto::decode::<proto::AlertsView>(&bytes[..len]).unwrap());
+
+        assert_eq!(view.unread, 0);
+        let [open] = view.alerts.as_slice() else {
+            panic!("one alert: {view:?}");
+        };
+        assert_eq!(
+            open.alert,
+            Alert::MealFailed {
+                feed: 7,
+                plan: Some(2),
+                requested: 3,
+                completed: 1,
+                outcome: FeedOutcome::Unknown,
+                reason: FeedReason::Unknown,
+            }
+        );
+        assert_eq!(open.alert.level(), AlertLevel::Urgent);
+
+        let fed = proto::Event {
+            seq: 4,
+            at: None,
+            body: proto::EventBody::Fed {
+                feed: 7,
+                requested: 3,
+                completed: 1,
+                outcome: proto::Lenient::Unknown(99),
+                reason: proto::Lenient::Unknown(98),
+                hopper: proto::Lenient::Unknown(97),
+                by: proto::Source::Schedule(2),
+            },
+        };
+        let raw = proto::RawEvent::encode(&fed).unwrap();
+        let crate::Pushed::Event(event) = super::raw_event(1, raw) else {
+            panic!("an event this build reads");
+        };
+        let EventBody::Feeder(FeederEvent::Fed {
+            outcome, reason, ..
+        }) = event.body
+        else {
+            panic!("a feed's event: {event:?}");
+        };
+        assert_eq!(
+            (outcome, reason),
+            (FeedOutcome::Unknown, FeedReason::Unknown)
+        );
+    }
+
     /// Every op names the module its wire form goes to, and one that has
     /// no wire form (a value only a newer build names) still names its own.
     #[test]
@@ -2265,15 +2382,15 @@ mod tests {
                 plan: Some(1),
                 requested: 2,
                 completed: 1,
-                outcome: proto::FeedOutcome::Failed,
-                reason: proto::FeedReason::Jammed,
+                outcome: proto::FeedOutcome::Failed.into(),
+                reason: proto::FeedReason::Jammed.into(),
             },
             proto::Alert::MealUncertain {
                 feed: 8,
                 plan: None,
                 requested: 2,
                 completed: 0,
-                reason: proto::FeedReason::Interrupted,
+                reason: proto::FeedReason::Interrupted.into(),
             },
             proto::Alert::MealMissed {
                 plan: 2,
@@ -2286,13 +2403,13 @@ mod tests {
             },
             proto::Alert::PowerWasOut,
             proto::Alert::UpdateFailed {
-                stop: proto::UpdateStop::Hash,
+                stop: proto::UpdateStop::Hash.into(),
             },
             proto::Alert::RolledBack,
             proto::Alert::ClientJoined {
                 client: CLIENT,
-                role: proto::Role::Member,
-                path: proto::Path::Invite,
+                role: proto::Role::Member.into(),
+                path: proto::Path::Invite.into(),
             },
             proto::Alert::ClientRevoked {
                 client: CLIENT,
@@ -2301,7 +2418,7 @@ mod tests {
             proto::Alert::RepeatedRestarts,
             proto::Alert::NoClock,
             proto::Alert::CannotFeed {
-                reason: proto::Blocked::Fault,
+                reason: proto::Blocked::Fault.into(),
             },
             proto::Alert::FoodLow,
             proto::Alert::FoodLikelyOut { confirmed: 5 },
@@ -2413,8 +2530,8 @@ mod tests {
             },
             proto::EventBody::Enrolled {
                 client: CLIENT,
-                role: proto::Role::UpdateSigner,
-                path: proto::Path::Recovery,
+                role: proto::Role::UpdateSigner.into(),
+                path: proto::Path::Recovery.into(),
             },
             proto::EventBody::Revoked { client: CLIENT, by },
             proto::EventBody::ClockSync {
@@ -2426,13 +2543,13 @@ mod tests {
                 feed: 9,
                 requested: 2,
                 completed: 1,
-                outcome: proto::FeedOutcome::Uncertain,
-                reason: proto::FeedReason::FeedbackStream,
-                hopper: proto::FoodLevel::Low,
+                outcome: proto::FeedOutcome::Uncertain.into(),
+                reason: proto::FeedReason::FeedbackStream.into(),
+                hopper: proto::FoodLevel::Low.into(),
                 by,
             },
             proto::EventBody::FeedingBlocked {
-                reason: Some(proto::Blocked::Fault),
+                reason: Some(proto::Blocked::Fault.into()),
             },
             proto::EventBody::FeedingBlocked { reason: None },
             proto::EventBody::MealSoon {
@@ -2442,13 +2559,13 @@ mod tests {
                 portions: 2,
             },
             proto::EventBody::Food {
-                level: proto::FoodLevel::Present,
+                level: proto::FoodLevel::Present.into(),
             },
             proto::EventBody::UpdateStop {
-                stop: proto::UpdateStop::Hash,
+                stop: proto::UpdateStop::Hash.into(),
             },
             proto::EventBody::UpdateAtBoot {
-                candidate: proto::UpdateCandidate::Pending,
+                candidate: proto::UpdateCandidate::Pending.into(),
             },
             proto::EventBody::Restarting,
             proto::EventBody::UpdateConfirmed,
@@ -2525,8 +2642,8 @@ mod tests {
     fn a_body_reads_as_the_http_api_spells_it() {
         let body = EventBody::from(proto::EventBody::Enrolled {
             client: CLIENT,
-            role: proto::Role::Owner,
-            path: proto::Path::Invite,
+            role: proto::Role::Owner.into(),
+            path: proto::Path::Invite.into(),
         });
         assert_eq!(
             serde_json::to_value(body).unwrap(),

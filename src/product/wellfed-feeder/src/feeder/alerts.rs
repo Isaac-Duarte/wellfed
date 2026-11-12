@@ -58,7 +58,8 @@ use wellfed_core::clock::wall::MAX_UNIX_MS;
 use wellfed_device_api::mailbox::PLANS;
 use wellfed_proto::api::{
     ALERTS_MAX, Alert, AlertKind, AlertLevel, AlertTable, AlertsView, Battery, Blocked, Desiccant,
-    EventBody, FeedOutcome, FoodLevel, OpenAlert, Source, Supply, UpdateCandidate, UpdateStop,
+    EventBody, FeedOutcome, FoodLevel, Lenient, OpenAlert, Source, Supply, UpdateCandidate,
+    UpdateStop,
 };
 
 /// Slots in the table. A read and the frame carry at most this many.
@@ -414,7 +415,7 @@ impl Alerts {
             }
             EventBody::UpdateAtBoot { candidate } if !self.restored => {
                 self.note_time(at);
-                self.this_candidate = Some(candidate);
+                self.this_candidate = Some(candidate_of(candidate));
             }
             EventBody::Restarting if !self.restored => {
                 self.note_time(at);
@@ -454,7 +455,7 @@ impl Alerts {
             EventBody::Fed {
                 completed, hopper, ..
             } => {
-                self.portions(completed, hopper);
+                self.portions(completed, level_of(hopper));
                 if let Some(alert) = meal_problem(body) {
                     self.report(now_ms, OpenAlert { at, alert });
                 }
@@ -463,7 +464,7 @@ impl Alerts {
                 let alert = Alert::MealMissed { plan, due, reason };
                 self.report(now_ms, OpenAlert { at, alert });
             }
-            EventBody::Food { level } => self.food(level),
+            EventBody::Food { level } => self.food(level_of(level)),
             EventBody::Supply(supply) => match supply.adapter {
                 Some(false) if !self.power_out => {
                     self.power_out = true;
@@ -474,12 +475,14 @@ impl Alerts {
                 Some(false) | None => {}
             },
             EventBody::Boot { bank, reset_flags } => self.booted(now_ms, at, bank, reset_flags),
-            EventBody::UpdateAtBoot { candidate } => self.judge_boot(now_ms, at, candidate),
+            EventBody::UpdateAtBoot { candidate } => {
+                self.judge_boot(now_ms, at, candidate_of(candidate));
+            }
             EventBody::Restarting => self.restart_asked = true,
             EventBody::UpdateConfirmed => self.confirmed(),
             EventBody::UpdateStop { stop } => {
                 // A cancel is the owner's doing, not a failure.
-                if stop != UpdateStop::Cancelled {
+                if stop != UpdateStop::Cancelled.into() {
                     let alert = Alert::UpdateFailed { stop };
                     self.report(now_ms, OpenAlert { at, alert });
                 }
@@ -588,7 +591,13 @@ impl Alerts {
             .past(readings.blocked.is_some(), now_ms, CANNOT_FEED_MS);
         let claim_stuck = self.claim.past(readings.claim, now_ms, CLAIM_WAIT_MS);
         match readings.blocked.filter(|_| cannot_feed || claim_stuck) {
-            Some(reason) => self.condition(now_ms, at, Alert::CannotFeed { reason }),
+            Some(reason) => self.condition(
+                now_ms,
+                at,
+                Alert::CannotFeed {
+                    reason: reason.into(),
+                },
+            ),
             None => self.close(AlertKind::CannotFeed),
         }
 
@@ -993,8 +1002,10 @@ const fn meal_problem(body: &EventBody) -> Option<Alert> {
         Source::Panel | Source::Client(_) | Source::Feeder => None,
     };
 
-    match outcome {
-        FeedOutcome::Failed | FeedOutcome::Expired => Some(Alert::MealFailed {
+    // An outcome a later build added (in a ring an update left behind)
+    // counts as uncertain, never as done.
+    match outcome.known() {
+        Some(FeedOutcome::Failed | FeedOutcome::Expired) => Some(Alert::MealFailed {
             feed,
             plan,
             requested,
@@ -1002,14 +1013,31 @@ const fn meal_problem(body: &EventBody) -> Option<Alert> {
             outcome,
             reason,
         }),
-        FeedOutcome::Uncertain => Some(Alert::MealUncertain {
+        Some(FeedOutcome::Uncertain) | None => Some(Alert::MealUncertain {
             feed,
             plan,
             requested,
             completed,
             reason,
         }),
-        FeedOutcome::Done | FeedOutcome::Cancelled => None,
+        Some(FeedOutcome::Done | FeedOutcome::Cancelled) => None,
+    }
+}
+
+/// A food reading a later build added reads as none.
+const fn level_of(level: Lenient<FoodLevel>) -> FoodLevel {
+    match level.known() {
+        Some(level) => level,
+        None => FoodLevel::Unread,
+    }
+}
+
+/// An update record a later build added reads as one this build could
+/// not read, which is [`UpdateCandidate::None`].
+const fn candidate_of(candidate: Lenient<UpdateCandidate>) -> UpdateCandidate {
+    match candidate.known() {
+        Some(candidate) => candidate,
+        None => UpdateCandidate::None,
     }
 }
 

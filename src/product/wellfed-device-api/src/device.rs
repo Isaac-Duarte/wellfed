@@ -386,8 +386,8 @@ impl KeyChange {
                 key, role, path, ..
             } => EventBody::Enrolled {
                 client: crate::fingerprint(&key),
-                role: crate::proto_role(role),
-                path,
+                role: crate::proto_role(role).into(),
+                path: path.into(),
             },
             Self::Revoke { key, by } => EventBody::Revoked {
                 client: crate::fingerprint(&key),
