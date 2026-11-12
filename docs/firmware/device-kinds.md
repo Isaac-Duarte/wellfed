@@ -26,7 +26,7 @@ Each layer names what it serves with a Rust enum or a build-time choice, never a
 | Kind drivers | — | `wellfed-hal-feeder`: the motor, beams and feedback, and the feeding owner | Its pump and scale drivers |
 | Device policy | `wellfed-device`: the settings, Wi-Fi, client, time, event and trace stores, and the update view | `wellfed-feeder`: plans, calibration, the meal call, statistics, the panel and the loop | Its own policy crate |
 | Stores on the SDK | `wellfed-device-runtime`: the settings writer over a kind's stores, and its mailboxes | `wellfed-feeder-runtime`: the feeder's stores in that writer, and the writer's settings stage | Its own runtime crate |
-| Device API | The shared core in `wellfed-proto` and `wellfed-device-api` | The feeder module: `Op::Feeder` and `FeederDevice` | A module of its own beside the feeder's. The shared core still names the feeder's settings and plans, so it links `wellfed-core-feeder` |
+| Device API | The shared core in `wellfed-proto` and `wellfed-device-api`. `wellfed-device-api` still names the feeder's settings and plans, so it links `wellfed-core-feeder` | The feeder module: `Op::Feeder` and `FeederDevice` | A module of its own beside the feeder's |
 | Firmware | — | `src/firmware/wellfed/feeder`, one crate per model | Its own firmware crate |
 | Simulator | `wellfed-device-sim`: storage, the shared stores, sockets, setup's link and updates | `wellfed-feeder-sim` | Its own simulator on the same harness |
 | Server | One home, every device in it stored with its model and kind | The feeder's tables and routes | Its own routes, refused for other kinds |
