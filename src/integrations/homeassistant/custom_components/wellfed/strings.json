@@ -475,6 +475,10 @@
         }
       }
     },
+    "store_read_only": {
+      "title": "Feeding from Home Assistant is stopped on feeder {feeder}",
+      "description": "Home Assistant cannot save what it keeps about feeder {feeder}: its store, {path}, was written by a newer version of this integration, or is not in the shape this version writes and could not be moved aside. It is left as it is, and since no feed could be kept across a restart, Home Assistant sends no feed. Checking the bowl does not change that.\n\nUpdate the integration to the version that wrote the store. Or, to start this feeder's store afresh, stop Home Assistant, remove that file, and start it again; check the bowl before feeding, since a feed it held may have run."
+    },
     "hold_dropped": {
       "title": "Check the bowl of feeder {feeder} before feeding",
       "description": "A Wellfed entry for feeder {feeder} was deleted while Home Assistant held its feeds back after a feed that may have run, or after its records could not be read. The hold went with the entry, so a new entry for the feeder feeds at once. Check the bowl before feeding, then ignore this."

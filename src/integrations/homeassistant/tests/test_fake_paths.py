@@ -398,6 +398,36 @@ async def test_a_store_in_another_shape_is_set_aside_and_setup_goes_on(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_a_newer_integrations_store_stops_feeding_and_asks_for_no_bowl_check(
+    hass: HomeAssistant,
+    feeder: fake.FakeFeeder,
+    hass_storage: dict[str, Any],
+) -> None:
+    entry = _entry(hass)
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
+        "version": 2,
+        "minor_version": 1,
+        "key": f"{DOMAIN}.{entry.entry_id}",
+        "data": {"of": "a newer shape"},
+    }
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    session = entry.runtime_data
+    assert session.kept.read_only
+    assert cast(_Make, bridge.Feeder).unread == [True], "the bridge holds every feed"
+
+    # Nothing can be kept, so checking the bowls would let no feed go: the
+    # repair says to update the integration or remove the store, and offers
+    # no release.
+    assert _issue(hass, "store_unread") is None
+    stopped = _issue(hass, "store_read_only")
+    assert stopped is not None and not stopped.is_fixable
+    assert stopped.translation_placeholders is not None
+    assert stopped.translation_placeholders["path"].endswith(f"{DOMAIN}.{entry.entry_id}")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_a_lost_feed_with_no_record_is_reported_unknown(
     hass: HomeAssistant, feeder: fake.FakeFeeder
 ) -> None:
