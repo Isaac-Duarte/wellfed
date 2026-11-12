@@ -885,15 +885,24 @@ impl Install {
             confirmed: confirmed_version,
             ready: readiness == Some(Readiness::Ready),
         };
-        // A run that never chose a version cannot tell its build confirmed:
-        // once the build is the one it activated, it fails.
-        let version = self.version.unwrap_or(u32::MAX);
+        let wrong = || InstallError::WrongPromotion {
+            reported: status.build.to_ascii_lowercase(),
+        };
+        // A run that never chose a version cannot tell its build confirmed,
+        // so it fails; the bank and the build, which need no version, say
+        // whether it fell back or another build runs.
+        let Some(version) = self.version else {
+            self.stage = Stage::Failed(match confirmation(&self.build, 0, restarted) {
+                Confirmation::FellBack => InstallError::FellBack,
+                Confirmation::WrongBuild => wrong(),
+                Confirmation::Confirmed | Confirmation::Pending => InstallError::PromotionUnknown,
+            });
+            return;
+        };
+
         self.stage = match confirmation(&self.build, version, restarted) {
             Confirmation::FellBack => Stage::Failed(InstallError::FellBack),
-            Confirmation::WrongBuild => Stage::Failed(InstallError::WrongPromotion {
-                reported: status.build.to_ascii_lowercase(),
-            }),
-            _ if self.version.is_none() => Stage::Failed(InstallError::PromotionUnknown),
+            Confirmation::WrongBuild => Stage::Failed(wrong()),
             Confirmation::Confirmed => Stage::Done,
             Confirmation::Pending => return,
         };
