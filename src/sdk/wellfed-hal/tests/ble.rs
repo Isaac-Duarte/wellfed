@@ -45,7 +45,7 @@ fn connect(setup: &mut BleSetup) {
         setup.step(false).record,
         Some(Record::Connect { interval: 12 })
     );
-    ble_record(BleEvent::NOTIFY, 0, 1);
+    fake::ble_subscribe(true);
     assert_eq!(link(setup), Link::Opened);
 }
 
@@ -220,13 +220,33 @@ fn an_unsubscribed_host_gets_no_replies() {
     let mut setup = start();
     connect(&mut setup);
 
-    ble_record(BleEvent::NOTIFY, 0, 0);
+    write(b"half");
+    fake::ble_subscribe(false);
     step(&mut setup, false);
     assert_eq!(setup.send(b"reply"), Err(DropReason::Notify));
 
-    ble_record(BleEvent::NOTIFY, 0, 1);
+    fake::ble_subscribe(true);
     assert_eq!(link(&mut setup), Link::Opened);
     assert_eq!(setup.send(b"reply"), Ok(()));
+    assert_eq!(step(&mut setup, false).link, None, "the old bytes went");
+}
+
+/// A host may write its first message before its subscription lands: the
+/// message waits and is read once the link opens.
+#[test]
+fn a_message_written_before_the_subscription_is_read_after_it() {
+    let mut setup = start();
+    ble_record(BleEvent::CONNECT, 0, 12);
+    step(&mut setup, false);
+
+    write(b"first");
+    for _ in 0..5 {
+        assert_eq!(step(&mut setup, false).link, None, "not read before");
+    }
+    fake::ble_subscribe(true);
+    assert_eq!(link(&mut setup), Link::Opened);
+    assert_eq!(link(&mut setup), Link::Message);
+    assert_eq!(setup.message(), Some(&b"first"[..]));
 }
 
 /// A disconnect lost among overwritten events closes the session once the

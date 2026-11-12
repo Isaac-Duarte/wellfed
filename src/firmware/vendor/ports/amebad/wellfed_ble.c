@@ -289,10 +289,12 @@ static void wellfed_ble_cccd(uint8_t conn_id, T_SERVER_ID service_id, uint16_t i
     (void)service_id;
     if (index == WELLFED_BLE_CONTROL_CCCD_INDEX) {
         int on = (bits & GATT_CLIENT_CHAR_CONFIG_NOTIFY) != 0;
-        /* A subscription starts the host's messages afresh: bytes it wrote
-         * before are not the start of the next one. Writes and this
-         * callback both come on the stack's task, so later bytes stay. */
-        if (on) {
+        /* An unsubscribe ends the host's messages: bytes it wrote are not
+         * the start of its next ones. A subscription clears nothing, since
+         * a host may write its first message before its subscription lands
+         * and the ring holds it until the link opens. Writes and this
+         * callback both come on the stack's task, so their order holds. */
+        if (!on) {
             wellfed_ring_clear(&wellfed_control);
         }
         wellfed_ble_event(WELLFED_BLE_EV_NOTIFY, 0, on);

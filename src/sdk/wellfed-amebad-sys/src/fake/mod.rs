@@ -531,6 +531,16 @@ pub fn play_audio(pages: usize) {
     });
 }
 
+/// A host's subscription change, as `wellfed_ble.c`'s CCCD callback makes
+/// it: an unsubscribe drops the control bytes the host wrote, and either
+/// is recorded as a NOTIFY event.
+pub fn ble_subscribe(on: bool) {
+    if !on {
+        with(|h| h.ble_control.clear());
+    }
+    ble_record(crate::BleEvent::NOTIFY, 0, u32::from(on));
+}
+
 /// Record a BLE event as `wellfed_ble.c` would, numbered in order.
 pub fn ble_record(kind: u32, result: i32, value: u32) {
     with(|h| {
