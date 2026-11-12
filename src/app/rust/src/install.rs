@@ -83,16 +83,35 @@ pub struct Pin {
 /// signed with the offline release key, which no checkout holds.
 const RELEASE_PIN: Option<Pin> = None;
 
+/// The profile the bridge was compiled in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Build {
+    Debug,
+    /// Cargokit builds the bridge `--release` for every Flutter build but a
+    /// debug one, so a release or profile APK is this.
+    Release,
+}
+
+impl Build {
+    pub const THIS: Self = if cfg!(debug_assertions) {
+        Self::Debug
+    } else {
+        Self::Release
+    };
+}
+
 /// This build's pin: the release's, or (for a bench build, whose image is a
 /// build-time input) `WELLFED_INSTALLER_PIN` as `make app-installer-input`
 /// prints it. Compiled in, so an image swapped in the APK afterwards fails
 /// the check; a committed release pin is never overridden.
 pub fn pin() -> Option<Pin> {
-    RELEASE_PIN.or_else(|| parse_pin(option_env!("WELLFED_INSTALLER_PIN")?))
+    RELEASE_PIN.or_else(|| parse_pin(option_env!("WELLFED_INSTALLER_PIN")?, Build::THIS))
 }
 
-/// `review_sha256:manifest_sha256:version`.
-pub fn parse_pin(text: &'static str) -> Option<Pin> {
+/// `review_sha256:manifest_sha256:version`. A release build's pin takes a
+/// consumer image alone whatever pin it was given, so a release APK built
+/// around a bench image refuses to install it.
+pub fn parse_pin(text: &'static str, build: Build) -> Option<Pin> {
     let mut parts = text.split(':');
     let (review_sha256, manifest_sha256, version) = (parts.next()?, parts.next()?, parts.next()?);
     let hashes = [review_sha256, manifest_sha256];
@@ -107,7 +126,7 @@ pub fn parse_pin(text: &'static str) -> Option<Pin> {
         review_sha256,
         manifest_sha256,
         version: version.parse().ok()?,
-        release: false,
+        release: build == Build::Release,
     })
 }
 
@@ -1336,16 +1355,26 @@ mod tests {
     fn a_pin_is_two_digests_and_a_version() {
         let hash = "ab".repeat(32);
         let text: &'static str = Box::leak(format!("{hash}:{hash}:7").into_boxed_str());
-        let pin = parse_pin(text).unwrap();
+        let pin = parse_pin(text, Build::Debug).unwrap();
         assert_eq!(pin.version, 7);
+        assert!(!pin.release);
 
         for bad in ["", "ab:cd:7", "x"] {
-            assert_eq!(parse_pin(bad), None, "{bad}");
+            assert_eq!(parse_pin(bad, Build::Debug), None, "{bad}");
         }
         let short: &'static str = Box::leak(format!("{hash}:{hash}").into_boxed_str());
-        assert_eq!(parse_pin(short), None);
+        assert_eq!(parse_pin(short, Build::Debug), None);
         let long: &'static str = Box::leak(format!("{hash}:{hash}:7:8").into_boxed_str());
-        assert_eq!(parse_pin(long), None);
+        assert_eq!(parse_pin(long, Build::Debug), None);
+    }
+
+    /// A release or profile build's pin takes a consumer image alone, so a
+    /// release APK built around a bench image installs nothing.
+    #[test]
+    fn a_release_build_s_pin_is_a_release_pin() {
+        let hash = "ab".repeat(32);
+        let text: &'static str = Box::leak(format!("{hash}:{hash}:7").into_boxed_str());
+        assert!(parse_pin(text, Build::Release).unwrap().release);
     }
 
     #[test]

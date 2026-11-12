@@ -19,7 +19,7 @@ use wellfed_core::record::Tag;
 use wellfed_emu::BANKS;
 use wellfed_emu::factory::{self, Entry};
 use wellfed_formats::canonical::{canonical_of, sha256};
-use wellfed_formats::manifest::BuildManifest;
+use wellfed_formats::manifest::{BuildManifest, Provisioning};
 use wellfed_formats::private::{sync_directory, write_new};
 use wellfed_formats::require;
 use wellfed_formats::review::{
@@ -121,6 +121,54 @@ pub enum ReviewError {
     /// check, so the case would not show bank 1 winning over valid stock.
     #[error("Bank 0 fails the loader's check beside the installed image")]
     InstalledStock { stop: Stop, result: u32 },
+    /// An installer folder holds an image's file without the review that
+    /// binds it.
+    #[error("{} holds {name} but no review.json", folder.display())]
+    InstallerUnreviewed { folder: PathBuf, name: &'static str },
+    #[error("The installer's build-manifest.json is not the one its review froze")]
+    InstallerManifest,
+    /// A release APK carries the build's Wi-Fi and trusts its key only in a
+    /// bench image.
+    #[error("A release installs a consumer image; {} holds a bench one", folder.display())]
+    InstallerBench { folder: PathBuf },
+}
+
+/// The files `make app-installer-input` copies into the app's installer
+/// folder beside `review.json`.
+const INSTALLER_FILES: [&str; 3] = ["build-manifest.json", "image.bin", "update.manifest"];
+
+/// Refuse an installer folder a release APK must not carry: anything but
+/// no image at all, or a consumer image whose build manifest is the one its
+/// review froze. A bench image carries the build's Wi-Fi passphrase and
+/// trusts the bench key, and the release bridge refuses to install it, so
+/// it never goes into a release APK either.
+pub fn require_release_installer(folder: &Path) -> Result<()> {
+    let review = folder.join("review.json");
+    if !review.exists() {
+        for name in INSTALLER_FILES {
+            require(!folder.join(name).exists(), || {
+                ReviewError::InstallerUnreviewed {
+                    folder: folder.to_path_buf(),
+                    name,
+                }
+            })?;
+        }
+        return Ok(());
+    }
+
+    let review: ImageReview = serde_json::from_slice(&fs::read(review)?)?;
+    let raw = fs::read(folder.join("build-manifest.json"))?;
+    require(
+        review.manifest_sha256.as_deref() == Some(&sha256(&raw)),
+        || ReviewError::InstallerManifest,
+    )?;
+    let manifest: BuildManifest = serde_json::from_slice(&raw)?;
+    require(manifest.provisioning == Provisioning::Consumer, || {
+        ReviewError::InstallerBench {
+            folder: folder.to_path_buf(),
+        }
+    })?;
+    Ok(())
 }
 
 const ARTIFACTS: [&str; 4] = [
@@ -536,6 +584,78 @@ fn maps(
 mod tests {
     use super::*;
     use crate::Error;
+
+    /// A release APK carries no image or a consumer one. A bench image, a
+    /// build manifest the review did not freeze, or an image's file without
+    /// its review is refused before Flutter builds anything.
+    #[test]
+    fn a_release_installer_holds_a_consumer_image_or_none() {
+        let folder = tempfile::tempdir().unwrap();
+        let folder = folder.path();
+        let refusal = |folder: &Path| match require_release_installer(folder) {
+            Ok(()) => None,
+            Err(Error::Review(refusal)) => Some(refusal),
+            Err(other) => panic!("{other}"),
+        };
+        assert!(
+            refusal(folder).is_none(),
+            "an empty folder builds an APK with no image"
+        );
+
+        fs::write(folder.join("image.bin"), b"image").unwrap();
+        assert!(matches!(
+            refusal(folder),
+            Some(ReviewError::InstallerUnreviewed {
+                name: "image.bin",
+                ..
+            })
+        ));
+
+        let freeze = |provisioning: Provisioning| {
+            let manifest = BuildManifest {
+                device: "plaf103".into(),
+                profile: "firstboot".into(),
+                provisioning,
+                ..BuildManifest::default()
+            };
+            let raw = serde_json::to_vec(&manifest).unwrap();
+            fs::write(folder.join("build-manifest.json"), &raw).unwrap();
+            let review = serde_json::json!({
+                "schema_version": 1, "kind": "plaf103_development_image_review",
+                "image_kind": "build", "ota_sha256": sha256(b"image"),
+                "payload_sha256": sha256(b"payload"), "payload_bytes": 7,
+                "manifest_sha256": sha256(&raw),
+                "review": {"stock_sha256": sha256(b"stock")},
+                "reviewer_sha256": "0".repeat(64), "application_boot_verified": false,
+            });
+            fs::write(folder.join("review.json"), review.to_string()).unwrap();
+        };
+        freeze(Provisioning::Consumer);
+        assert!(refusal(folder).is_none());
+
+        freeze(Provisioning::Bench);
+        assert!(matches!(
+            refusal(folder),
+            Some(ReviewError::InstallerBench { .. })
+        ));
+
+        // A consumer manifest swapped in beside a bench review.
+        let consumer = BuildManifest {
+            device: "plaf103".into(),
+            profile: "firstboot".into(),
+            provisioning: Provisioning::Consumer,
+            ..BuildManifest::default()
+        };
+        fs::write(
+            folder.join("build-manifest.json"),
+            serde_json::to_vec(&consumer).unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            refusal(folder),
+            Some(ReviewError::InstallerManifest)
+        ));
+    }
 
     #[test]
     fn payload_must_be_a_valid_container_that_fits_the_aligned_bank() {

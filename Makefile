@@ -184,6 +184,7 @@ app-release-apk:
 		{ echo "set WELLFED_ANDROID_KEY_PROPERTIES to the absolute path of the release key.properties"; exit 1; }
 	@test -x "$(APKSIGNER)" || \
 		{ echo "no apksigner at '$(APKSIGNER)': install build-tools 36.0.0, and set ANDROID_HOME or flutter config --android-sdk"; exit 1; }
+	cargo run --quiet --locked --release -p wellfed-build -- release-installer --folder $(APP_INSTALLER)
 	cd $(APP) && flutter build apk --release --target-platform android-arm64
 	$(APKSIGNER) verify --print-certs $(APP_RELEASE_APK)
 
