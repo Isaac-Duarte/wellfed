@@ -17,8 +17,8 @@ use std::process::Command as Process;
 use serde_json::{Value, json};
 
 use wellfed_sim::protocol::{Adc, Command, Journal, Profile};
-use wellfed_sim::scenario::Scenario;
-use wellfed_sim::{Worker, run_scenario};
+use wellfed_sim::scenario::{Scenario, ScenarioError};
+use wellfed_sim::{HarnessError, Worker, run_scenario};
 
 /// When the tests submit their first feed, and when one portion is done.
 const SUBMIT: u64 = 100;
@@ -1365,6 +1365,60 @@ fn invalid_scenarios_rejected_before_worker_launch() {
     for item in bad {
         assert!(Scenario::from_value(&item).is_err(), "{item}");
     }
+
+    // A scenario that reads but breaks a rule names the rule.
+    let refused = |key: &str, value: Value| {
+        let mut item = base.clone();
+        item[key] = value;
+        Scenario::from_value(&item).err()
+    };
+    assert!(matches!(
+        refused("version", json!(1)),
+        Some(ScenarioError::Version { found: 1 })
+    ));
+    assert!(matches!(
+        refused("end_ms", json!(900_001)),
+        Some(ScenarioError::End { end_ms: 900_001 })
+    ));
+    assert!(matches!(
+        refused("name", json!("")),
+        Some(ScenarioError::Name)
+    ));
+    assert!(matches!(
+        refused("actions", json!([])),
+        Some(ScenarioError::NoExpectation)
+    ));
+    assert!(matches!(
+        refused("actions", json!([expect(1, json!({}))])),
+        Some(ScenarioError::EmptyExpectation { at_ms: 1 })
+    ));
+    assert!(matches!(
+        refused(
+            "actions",
+            json!([act(2, "status", &[]), expect(1, json!({"online": true}))])
+        ),
+        Some(ScenarioError::Order { at_ms: 1 })
+    ));
+    assert!(matches!(
+        refused("actions", json!([expect(81, json!({"online": true}))])),
+        Some(ScenarioError::Order { at_ms: 81 })
+    ));
+    for op in ["tick", "poll"] {
+        assert!(
+            matches!(
+                refused(
+                    "actions",
+                    json!([act(1, op, &[]), expect(2, json!({"online": true}))])
+                ),
+                Some(ScenarioError::Reserved { at_ms: 1 })
+            ),
+            "{op}"
+        );
+    }
+    assert!(matches!(
+        refused("profile", json!("stock")),
+        Some(ScenarioError::Parse(_))
+    ));
 }
 
 #[test]
@@ -1392,7 +1446,10 @@ fn invalid_worker_commands_and_unexpected_exit() {
         "single",
     );
 
-    assert!(run(&unpowered).is_err());
+    assert!(matches!(
+        run(&unpowered),
+        Err(HarnessError::Unpowered(Command::Submit { .. }))
+    ));
 }
 
 #[test]

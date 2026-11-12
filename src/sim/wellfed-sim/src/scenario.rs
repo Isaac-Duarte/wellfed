@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::plant::PlantConfig;
 use crate::protocol::{Command, Fault, Outcome, Plant, Profile, Reason, State, Submission};
-use crate::{HarnessError, Result, require};
+use wellfed_formats::require;
 
 pub const VERSION: u64 = 2;
 const MAX_ACTIONS: usize = 10_000;
@@ -142,28 +142,55 @@ impl Expectation {
     }
 }
 
-impl Scenario {
-    pub fn from_value(raw: &Value) -> Result<Self> {
-        let fields = Fields::deserialize(raw).map_err(HarnessError::Scenario)?;
+/// A scenario refused before any worker starts.
+#[derive(Debug, thiserror::Error)]
+pub enum ScenarioError {
+    #[error("invalid scenario")]
+    Parse(#[source] serde_json::Error),
+    #[error("scenario version {found} is not {VERSION}")]
+    Version { found: u64 },
+    #[error("a scenario needs a name of 1..100 characters")]
+    Name,
+    #[error("end_ms {end_ms} is past {MAX_END_MS}")]
+    End { end_ms: u64 },
+    #[error("{count} actions is more than {MAX_ACTIONS}")]
+    Actions { count: usize },
+    #[error("the action at {at_ms} ms comes before the one before it or after end_ms")]
+    Order { at_ms: u64 },
+    #[error("the action at {at_ms} ms is one the harness sends itself")]
+    Reserved { at_ms: u64 },
+    #[error("the expectation at {at_ms} ms names no known status value")]
+    EmptyExpectation { at_ms: u64 },
+    #[error("a scenario needs at least one expectation")]
+    NoExpectation,
+}
 
-        require(fields.version == VERSION, "Scenario version must be 2")?;
-        require(
-            (1..=100).contains(&fields.name.chars().count()),
-            "Scenario needs a name of 1..100 characters",
-        )?;
-        require(fields.end_ms <= MAX_END_MS, "end_ms must be 0..900000")?;
-        require(
-            fields.actions.len() <= MAX_ACTIONS,
-            "actions must be a list with at most 10000 entries",
-        )?;
+impl Scenario {
+    pub fn from_value(raw: &Value) -> Result<Self, ScenarioError> {
+        let fields = Fields::deserialize(raw).map_err(ScenarioError::Parse)?;
+
+        require(fields.version == VERSION, || ScenarioError::Version {
+            found: fields.version,
+        })?;
+        require((1..=100).contains(&fields.name.chars().count()), || {
+            ScenarioError::Name
+        })?;
+        require(fields.end_ms <= MAX_END_MS, || ScenarioError::End {
+            end_ms: fields.end_ms,
+        })?;
+        require(fields.actions.len() <= MAX_ACTIONS, || {
+            ScenarioError::Actions {
+                count: fields.actions.len(),
+            }
+        })?;
 
         let mut previous = 0;
         for step in &fields.actions {
-            require(
-                (previous..=fields.end_ms).contains(&step.at_ms),
-                "Actions must have nondecreasing timestamps within end_ms",
-            )?;
-            previous = step.at_ms;
+            let at_ms = step.at_ms;
+            require((previous..=fields.end_ms).contains(&at_ms), || {
+                ScenarioError::Order { at_ms }
+            })?;
+            previous = at_ms;
 
             // The harness steps the worker and places its rotor itself.
             require(
@@ -176,13 +203,12 @@ impl Scenario {
                             | Command::Plant { .. }
                     )
                 ),
-                "Unknown action",
+                || ScenarioError::Reserved { at_ms },
             )?;
             if let Action::Expect { values } = step.action {
-                require(
-                    values != Expectation::default(),
-                    "expect requires known, nonempty status values",
-                )?;
+                require(values != Expectation::default(), || {
+                    ScenarioError::EmptyExpectation { at_ms }
+                })?;
             }
         }
 
@@ -191,7 +217,7 @@ impl Scenario {
                 .actions
                 .iter()
                 .any(|step| matches!(step.action, Action::Expect { .. })),
-            "Scenario needs at least one expectation",
+            || ScenarioError::NoExpectation,
         )?;
 
         Ok(Self {
