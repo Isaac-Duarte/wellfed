@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
@@ -147,6 +148,25 @@ void main() {
 
       await tester.pump(const Duration(seconds: 3));
       expect(find.textContaining('has expired'), findsOneWidget);
+    });
+
+    testWidgets('an invite runs out by the clock, though the app missed its ticks', (tester) async {
+      var now = DateTime(2026, 11, 12, 9);
+      await withClock(Clock(() => now), () async {
+        await showTab(
+          tester,
+          InviteScreen(
+            invite: const InviteView(text: 'wellfed-invite:1:x', seconds: 300, role: ClientRole.member),
+            share: (text) async {},
+          ),
+        );
+        expect(find.textContaining('5:00 until it expires'), findsOneWidget);
+
+        // Frozen for five minutes: one tick comes back, not three hundred.
+        now = now.add(const Duration(minutes: 5));
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.textContaining('has expired'), findsOneWidget);
+      });
     });
   });
 
