@@ -99,7 +99,7 @@ impl Service {
     /// so a retry never sends it again: the error for the caller. Should
     /// the store fail, the entry is left plainly unknown at best, which a
     /// retry may resend under the same id, as after any lost answer.
-    async fn unsettled(&self, key: &IdempotencyKey, now: jiff::Timestamp) -> Error {
+    pub(crate) async fn unsettled(&self, key: &IdempotencyKey, now: jiff::Timestamp) -> Error {
         match self.shared.store.command_unsettled(key, now).await {
             Ok(true) => self.published(key).await,
             Ok(false) => {
