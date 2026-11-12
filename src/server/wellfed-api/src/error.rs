@@ -231,10 +231,11 @@ impl From<Refusal> for FeederRefusal {
             Refusal::NoClock => Self::NoClock,
             Refusal::Unverified => Self::Unverified,
             Refusal::Unknown => Self::Unknown,
-            // An install reads its own refusals from the update driver;
-            // through a journalled write one could only be a session
-            // without the owner role, refused before these could arrive.
-            Refusal::Update(_) => Self::Forbidden,
+            // An install reads its own refusals from the update driver,
+            // and a journalled write is refused for its role before one
+            // could arrive. Any other path that meets one has no name for
+            // it here, and a role it does not lack would mislead.
+            Refusal::Update(_) => Self::Unknown,
         }
     }
 }
@@ -253,4 +254,19 @@ pub struct Problem {
     pub refusal: Option<FeederRefusal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<ReleaseRefusal>,
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_model::{Refusal, UpdateRefusal};
+
+    use super::FeederRefusal;
+
+    /// An update refusal that reaches a generic conversion is one this
+    /// server cannot name, never a role the server's key lacks.
+    #[test]
+    fn an_update_refusal_met_elsewhere_reads_as_unknown() {
+        let refusal = Refusal::Update(UpdateRefusal::Installing);
+        assert_eq!(FeederRefusal::from(refusal), FeederRefusal::Unknown);
+    }
 }
