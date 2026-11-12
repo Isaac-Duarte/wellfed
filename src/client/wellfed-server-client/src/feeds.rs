@@ -4,7 +4,6 @@ use reqwest::{Method, StatusCode};
 use uuid::Uuid;
 use wellfed_api::{Command, FeedRequest, FeederId};
 
-use crate::feeders::IDEMPOTENCY_KEY;
 use crate::{Client, Error, decode, expect_status};
 
 impl Client {
@@ -15,8 +14,7 @@ impl Client {
     /// the entry is read until the feeder's history settles it.
     pub async fn feed(&self, id: FeederId, portions: u8, key: Uuid) -> Result<Command, Error> {
         let response = self
-            .api(Method::POST, &format!("/feeders/{id}/feed"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::POST, &format!("/feeders/{id}/feed"), key)
             .json(&FeedRequest { portions })
             .send()
             .await?;
@@ -27,8 +25,11 @@ impl Client {
     /// same `key`.
     pub async fn cancel_feed(&self, id: FeederId, feed: u32, key: Uuid) -> Result<(), Error> {
         let response = self
-            .api(Method::POST, &format!("/feeders/{id}/feeds/{feed}/cancel"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(
+                Method::POST,
+                &format!("/feeders/{id}/feeds/{feed}/cancel"),
+                key,
+            )
             .send()
             .await?;
         expect_status(response, StatusCode::NO_CONTENT).await?;
