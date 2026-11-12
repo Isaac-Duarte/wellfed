@@ -224,6 +224,7 @@ impl Feeder {
 
     /// Send `op` under `id` and wait for what came of it.
     pub(crate) async fn ask(&self, id: [u8; 16], op: Op) -> Result<Asked, Unavailable> {
+        let write = !read_only(&op);
         let (reply, answer) = oneshot::channel();
         let request = Request {
             id,
@@ -234,7 +235,7 @@ impl Feeder {
         self.requests
             .send(request)
             .map_err(|_| Unavailable::Ended)?;
-        answer.await.unwrap_or(Err(Unavailable::Ended))
+        replied(answer, write).await
     }
 
     pub(crate) fn info(&self) -> Option<SessionInfo> {
@@ -453,6 +454,21 @@ enum Closed {
 
 /// Whether `op` only reads: one of these sent twice changes nothing, so a
 /// read lost with its session goes once more.
+/// What came of a queued request, from its reply. A reply the session task
+/// dropped once the request was queued (a shutdown's abort, or a panic)
+/// says nothing of whether a write went out first, so it is uncertain; a
+/// read is answered as the session ending.
+async fn replied(
+    answer: oneshot::Receiver<Result<Asked, Unavailable>>,
+    write: bool,
+) -> Result<Asked, Unavailable> {
+    match answer.await {
+        Ok(answered) => answered,
+        Err(_) if write => Ok(Asked::Uncertain),
+        Err(_) => Err(Unavailable::Ended),
+    }
+}
+
 fn read_only(op: &Op) -> bool {
     matches!(
         op,
@@ -1132,6 +1148,27 @@ mod tests {
     use wellfed_model::{CoreEvent, Event, EventBody};
 
     use super::*;
+
+    /// A reply dropped after its request was queued leaves a write
+    /// uncertain, never a session that ended before it went; a read is the
+    /// session ending.
+    #[test]
+    fn a_dropped_reply_leaves_a_write_uncertain() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let dropped = |write| {
+            let (reply, answer) = oneshot::channel();
+            drop(reply);
+            runtime.block_on(replied(answer, write))
+        };
+
+        let feed = Op::Feed { portions: 1 };
+        assert!(!read_only(&feed));
+        assert_eq!(dropped(true), Ok(Asked::Uncertain));
+        assert!(read_only(&Op::Status));
+        assert_eq!(dropped(false), Err(Unavailable::Ended));
+    }
 
     fn event(seq: u64) -> Pushed {
         Pushed::Event(Event {
