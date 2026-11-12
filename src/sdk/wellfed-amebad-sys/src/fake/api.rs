@@ -825,7 +825,7 @@ pub fn current_task() -> usize {
     TASK.with(|task| *task)
 }
 
-pub fn audio_open(rate_hz: u32) -> bool {
+pub(crate) fn audio_open(rate_hz: u32) -> bool {
     with(|h| {
         if h.audio_open || h.audio_open_fails || ![8000, 16000, 32000, 48000].contains(&rate_hz) {
             return false;
@@ -876,7 +876,7 @@ pub fn audio_underruns() -> u32 {
     with(|h| h.audio_underruns)
 }
 
-pub fn audio_close() {
+pub(crate) fn audio_close() {
     with(|h| {
         h.audio_open = false;
         h.audio_queue.clear();

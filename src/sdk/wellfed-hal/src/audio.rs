@@ -93,7 +93,7 @@ pub fn call_write_end() {
 
 /// Open the codec at `rate_hz`, then enable the amplifier; false (amplifier
 /// off) when the codec would not open.
-pub fn open_output(rate_hz: u32) -> bool {
+fn open_output(audio: &mut sdk::Audio, rate_hz: u32) -> bool {
     if !AMP_READY.swap(true, Ordering::AcqRel) {
         // Configure the enable as an output, LOW, before its first use.
         amp(false);
@@ -102,7 +102,7 @@ pub fn open_output(rate_hz: u32) -> bool {
         unsafe { sdk::gpio_init(AMP_PIN, true) };
         amp(false);
     }
-    if !sdk::audio_open(rate_hz) {
+    if !audio.open(rate_hz) {
         return false;
     }
     amp(true);
@@ -110,9 +110,9 @@ pub fn open_output(rate_hz: u32) -> bool {
 }
 
 /// Amplifier off first, then the codec.
-pub fn close_output() {
+fn close_output(audio: &mut sdk::Audio) {
     amp(false);
-    sdk::audio_close();
+    audio.close();
 }
 
 /// The device API's half: queue `tune` unless muted or busy.
@@ -316,9 +316,12 @@ enum Stage {
     },
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Speaker {
     stage: Stage,
+    /// The codec ring's one handle, held from the open to the close, so no
+    /// page is filled against a ring another open reset.
+    audio: Option<sdk::Audio>,
     started: u32,
     /// The DMA's underrun count when streaming began, then the tune's own.
     underruns: u32,
@@ -341,6 +344,7 @@ impl Speaker {
     pub const fn quiet() -> Self {
         Self {
             stage: Stage::Idle,
+            audio: None,
             started: 0,
             underruns: 0,
             length_ms: 0,
@@ -367,7 +371,11 @@ impl Speaker {
     }
 
     fn finish(&mut self, sound: Sound, drained: bool) -> Record {
-        close_output();
+        match self.audio.as_mut() {
+            Some(audio) => close_output(audio),
+            None => amp(false),
+        }
+        self.audio = None;
         if matches!(sound, Sound::Call { .. }) {
             CALL_HELD.store(HELD_FREE, Ordering::Release);
         }
@@ -455,7 +463,11 @@ impl Speaker {
                     let stage = ErrorStage::Clip;
                     return next(POLL_MS, Some(Record::Error { stage }));
                 };
-                if !open_output(SAMPLE_RATE) {
+                // The speaker is the ring's one user: no handle is out
+                // while it idles.
+                let audio = sdk::Audio::take()
+                    .and_then(|mut audio| open_output(&mut audio, SAMPLE_RATE).then_some(audio));
+                let Some(audio) = audio else {
                     if matches!(sound, Sound::Call { .. }) {
                         CALL_HELD.store(HELD_FREE, Ordering::Release);
                     }
@@ -466,7 +478,8 @@ impl Speaker {
                             stage: ErrorStage::Open,
                         }),
                     );
-                }
+                };
+                self.audio = Some(audio);
                 self.started = now;
                 self.length_ms = length_ms;
                 self.stage = Stage::Warm {
@@ -502,9 +515,7 @@ impl Speaker {
                     self.underruns = sdk::audio_underruns().wrapping_sub(self.underruns);
                     return next(POLL_MS, Some(self.finish(sound, false)));
                 }
-                // The slot makes this the only filler; a handle out elsewhere
-                // reads as a full ring.
-                if let Some(mut audio) = sdk::Audio::take() {
+                if let Some(audio) = self.audio.as_mut() {
                     while let Some(mut page) = audio.page() {
                         source.fill(&mut page[..]);
                         page.submit();

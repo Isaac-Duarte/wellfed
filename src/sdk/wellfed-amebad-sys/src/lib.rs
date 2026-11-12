@@ -468,6 +468,9 @@ mod audio {
     /// The codec's DMA ring, as one handle. A [`Page`] borrows it mutably, so
     /// one page is out at a time and none outlives the handle; [`Audio::take`]
     /// hands out at most one handle, so two callers never fill the same page.
+    /// Opening and closing the codec borrow it too, so neither can reset the
+    /// ring under a page that is out: a page submitted after a reopen would
+    /// mark a different ring slot ready than the one it filled.
     #[derive(Debug)]
     pub struct Audio {
         /// Not `Send`: the fake keeps the take flag and the page per thread,
@@ -483,6 +486,18 @@ mod audio {
             })
         }
 
+        /// Start the codec's line output and its DMA ring at `rate_hz` (8, 16,
+        /// 32 or 48 kHz); false for another rate, when already open or when
+        /// no DMA channel was free.
+        pub fn open(&mut self, rate_hz: u32) -> bool {
+            backend::audio_open(rate_hz)
+        }
+
+        /// Stop the DMA and power the codec down.
+        pub fn close(&mut self) {
+            backend::audio_close();
+        }
+
         /// The next free ring page, while the codec is open and the DMA does
         /// not own every page. Fill it, then [`Page::submit`].
         pub fn page(&mut self) -> Option<Page<'_>> {
@@ -491,7 +506,10 @@ mod audio {
             // `AUDIO_PAGE_SAMPLES` samples that the DMA does not own until it is
             // submitted; borrowing `self` keeps it the only reference to it.
             let samples = unsafe { page.as_mut() }?;
-            Some(Page { samples })
+            Some(Page {
+                samples,
+                _audio: PhantomData,
+            })
         }
     }
 
@@ -504,9 +522,12 @@ mod audio {
     /// One free ring page, borrowed from the [`Audio`] handle. Dropping it
     /// unsubmitted leaves the page free, so the next [`Audio::page`] returns it
     /// again.
+    /// Not `Send`, as its [`Audio`] is not: submitting hands the ring of the
+    /// task (on the host, the thread) that took the handle its page.
     #[derive(Debug)]
     pub struct Page<'a> {
         samples: &'a mut [i16; AUDIO_PAGE_SAMPLES],
+        _audio: PhantomData<&'a mut Audio>,
     }
 
     impl Page<'_> {

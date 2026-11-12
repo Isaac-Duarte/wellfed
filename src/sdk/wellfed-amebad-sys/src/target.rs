@@ -1400,8 +1400,8 @@ unsafe extern "C" {
 
 /// Start the codec's line output and its DMA ring (`example_entry.c`)
 /// at `rate_hz` (8, 16, 32 or 48 kHz); false for another rate, when already
-/// open or when no DMA channel was free.
-pub fn audio_open(rate_hz: u32) -> bool {
+/// open or when no DMA channel was free. Through [`crate::Audio::open`].
+pub(crate) fn audio_open(rate_hz: u32) -> bool {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_audio_open(rate_hz) != 0 }
 }
@@ -1441,7 +1441,8 @@ pub fn audio_underruns() -> u32 {
     unsafe { wellfed_audio_underruns_seen() }
 }
 
-pub fn audio_close() {
+/// Through [`crate::Audio::close`].
+pub(crate) fn audio_close() {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_audio_close() }
 }
