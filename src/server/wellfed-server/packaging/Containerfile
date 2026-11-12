@@ -18,7 +18,10 @@
 
 # The image's Rust is rust-toolchain.toml's channel (`cargo xtask
 # check-repository` holds the two together), and the linkers are pinned to
-# the Alpine release's packages, so a release rebuilds the same way.
+# the Alpine release's packages. The base image is named by its tag, which
+# upstream rebuilds for Alpine point releases, and ca-certificates is
+# whatever that release carries: two builds of one commit share the
+# toolchain and the linkers, not necessarily every byte of the image.
 ARG RUST_IMAGE=docker.io/library/rust:1.99.1-alpine3.24
 
 FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS build

@@ -9,7 +9,7 @@ use wellfed_api::{
     Generation, LockRequest, MealRequest, Plans, PlansChange, SamplePage, SampleQuery, Settings,
 };
 
-use crate::{Client, Error, decode, decode_page, expect_status, is_problem};
+use crate::{Client, Error, decode, decode_page, expect_status, stale_or};
 
 /// What a lock request asks of the feeder's panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,9 +18,6 @@ pub enum Lock {
     Locked,
     Unlocked,
 }
-
-/// The header a write's key travels in.
-pub(crate) const IDEMPOTENCY_KEY: &str = "Idempotency-Key";
 
 impl Client {
     /// The adopted feeders, with the server's connection to each.
@@ -68,19 +65,12 @@ impl Client {
         key: Uuid,
     ) -> Result<Settings, Error> {
         let response = self
-            .api(Method::PATCH, &format!("/feeders/{id}/settings"))
+            .keyed(Method::PATCH, &format!("/feeders/{id}/settings"), key)
             .header(header::IF_MATCH, format!("\"{base}\""))
-            .header(IDEMPOTENCY_KEY, key.to_string())
             .json(patch)
             .send()
             .await?;
-
-        // A stale edit is answered with the current settings, not a problem.
-        if response.status() == StatusCode::PRECONDITION_FAILED && !is_problem(&response) {
-            let current = decode(response, StatusCode::PRECONDITION_FAILED).await?;
-            return Err(Error::Stale(Box::new(current)));
-        }
-        decode(response, StatusCode::OK).await
+        stale_or(response, Error::Stale).await
     }
 
     /// The feeder's plans, read from it. Their `generation` is the base a
@@ -104,19 +94,12 @@ impl Client {
         key: Uuid,
     ) -> Result<Plans, Error> {
         let response = self
-            .api(Method::PUT, &format!("/feeders/{id}/plans"))
+            .keyed(Method::PUT, &format!("/feeders/{id}/plans"), key)
             .header(header::IF_MATCH, format!("\"{base}\""))
-            .header(IDEMPOTENCY_KEY, key.to_string())
             .json(change)
             .send()
             .await?;
-
-        // A stale change is answered with the current plans, not a problem.
-        if response.status() == StatusCode::PRECONDITION_FAILED && !is_problem(&response) {
-            let current = decode(response, StatusCode::PRECONDITION_FAILED).await?;
-            return Err(Error::StalePlans(Box::new(current)));
-        }
-        decode(response, StatusCode::OK).await
+        stale_or(response, Error::StalePlans).await
     }
 
     /// Skip one of today's meals, named by its plan's slot and its instant.
@@ -144,8 +127,7 @@ impl Client {
         key: Uuid,
     ) -> Result<(), Error> {
         let response = self
-            .api(Method::POST, &format!("/feeders/{id}/meals/{verb}"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::POST, &format!("/feeders/{id}/meals/{verb}"), key)
             .json(&meal)
             .send()
             .await?;
@@ -156,8 +138,7 @@ impl Client {
     /// Lock or unlock the feeder's panel. A retry carries the same `key`.
     pub async fn set_lock(&self, id: FeederId, lock: Lock, key: Uuid) -> Result<(), Error> {
         let response = self
-            .api(Method::POST, &format!("/feeders/{id}/lock"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::POST, &format!("/feeders/{id}/lock"), key)
             .json(&LockRequest {
                 locked: lock == Lock::Locked,
             })
@@ -171,8 +152,7 @@ impl Client {
     /// carries the same `key`.
     pub async fn reset_desiccant(&self, id: FeederId, key: Uuid) -> Result<(), Error> {
         let response = self
-            .api(Method::POST, &format!("/feeders/{id}/desiccant/reset"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::POST, &format!("/feeders/{id}/desiccant/reset"), key)
             .send()
             .await?;
         expect_status(response, StatusCode::NO_CONTENT).await?;

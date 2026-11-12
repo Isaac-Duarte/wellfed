@@ -26,7 +26,14 @@ impl From<Error> for ApiError {
 
 impl From<JsonRejection> for ApiError {
     fn from(rejection: JsonRejection) -> Self {
-        Self::Code(ErrorCode::Invalid, Some(rejection.body_text()))
+        // A body past the route's limit fails to buffer, framed with its
+        // length or in chunks alike.
+        let code = if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            ErrorCode::TooLarge
+        } else {
+            ErrorCode::Invalid
+        };
+        Self::Code(code, Some(rejection.body_text()))
     }
 }
 
@@ -187,7 +194,9 @@ fn status(code: ErrorCode) -> StatusCode {
         ErrorCode::FeederLegacy => StatusCode::CONFLICT,
         ErrorCode::OutcomeUnknown => StatusCode::GATEWAY_TIMEOUT,
         ErrorCode::KeyReused => StatusCode::UNPROCESSABLE_ENTITY,
-        ErrorCode::Superseded => StatusCode::CONFLICT,
+        ErrorCode::Superseded | ErrorCode::KeyRetired | ErrorCode::FeederBusy => {
+            StatusCode::CONFLICT
+        }
         // Every refusal is final for its key, `busy` included: the feeder
         // replays a refused write's answer while it remembers the id, so a
         // later attempt is a new request under a new key.

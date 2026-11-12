@@ -7,9 +7,8 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum_extra::extract::WithRejection;
 use wellfed_api::{Problem, Release, ReleaseCheck, ReleasePage, ReleaseQuery};
-use wellfed_service::ReleaseAdded;
 
-use super::{ApiResult, TAG_RELEASES};
+use super::{ApiResult, TAG_RELEASES, added_status};
 use crate::AppState;
 use crate::auth::{Allowed, need};
 use crate::error::ApiError;
@@ -65,11 +64,7 @@ pub(crate) async fn upload_release(
     WithRejection(file, _): WithRejection<Bytes, ApiError>,
 ) -> ApiResult<(StatusCode, Json<Release>)> {
     let (release, added) = state.service.upload_release(file.into()).await?;
-    let status = match added {
-        ReleaseAdded::New => StatusCode::CREATED,
-        ReleaseAdded::Known => StatusCode::OK,
-    };
-    Ok((status, Json(release)))
+    Ok((added_status(added), Json(release)))
 }
 
 /// Check the project's GitHub releases now, keeping each new one that

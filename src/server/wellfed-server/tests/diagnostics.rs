@@ -8,7 +8,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use wellfed_api::{
     AdoptFeeder, ClientRole, Connection, Credentials, ErrorCode, FeederId, FeederRefusal, LogEvent,
-    NewUser, Role, StatsSection, TraceQuery, TraceRecord,
+    NewUser, Role, StatsSection, TraceQuery, TraceRecord, UserPatch,
 };
 use wellfed_server_client::{Client, StatusCode};
 use wellfed_server_testkit::feeder::{self, Flash, Running};
@@ -162,6 +162,34 @@ fn an_owner_follows_the_debug_log_and_nobody_else_does() {
         );
 
         drop(log);
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// An owner following the debug log is made a member: the log ends, since
+/// a member may not follow it.
+#[test]
+fn a_demoted_owners_debug_log_ends() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = server().await;
+        let mut http = server.client();
+        http.setup(&ada_setup()).await.unwrap();
+        let kitchen = adopt(&http, &sim, ClientRole::Owner).await;
+        let grace = account(&server, &http, "grace", Role::Owner).await;
+        let users = http.users().await.unwrap();
+        let grace_id = users.iter().find(|user| user.name == "grace").unwrap().id;
+
+        let mut log = grace.follow_log(kitchen).await.unwrap();
+        let demote = UserPatch {
+            role: Some(Role::Member),
+            ..UserPatch::default()
+        };
+        http.update_user(grace_id, &demote).await.unwrap();
+        let ended = tokio::time::timeout(WAIT, async { while log.next().await.is_some() {} });
+        assert!(ended.await.is_ok(), "the log ended in time");
+
         server.stop().await;
         sim.stop().await;
     });

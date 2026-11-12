@@ -6,8 +6,7 @@ use reqwest::{Method, StatusCode};
 use uuid::Uuid;
 use wellfed_api::{Calibration, CalibrationView, CallView, FeederId, Generation};
 
-use crate::feeders::IDEMPOTENCY_KEY;
-use crate::{Client, Error, decode, expect_status, is_problem};
+use crate::{Client, Error, decode, expect_status, stale_or};
 
 impl Client {
     /// The feeder's portion calibration, read from it. Its `generation`
@@ -31,19 +30,12 @@ impl Client {
         key: Uuid,
     ) -> Result<CalibrationView, Error> {
         let response = self
-            .api(Method::PUT, &format!("/feeders/{id}/calibration"))
+            .keyed(Method::PUT, &format!("/feeders/{id}/calibration"), key)
             .header(header::IF_MATCH, format!("\"{base}\""))
-            .header(IDEMPOTENCY_KEY, key.to_string())
             .json(calibration)
             .send()
             .await?;
-
-        // A stale change is answered with the current calibration.
-        if response.status() == StatusCode::PRECONDITION_FAILED && !is_problem(&response) {
-            let current = decode(response, StatusCode::PRECONDITION_FAILED).await?;
-            return Err(Error::StaleCalibration(Box::new(current)));
-        }
-        decode(response, StatusCode::OK).await
+        stale_or(response, Error::StaleCalibration).await
     }
 
     /// The feeder's meal call: the stored clip, or an upload under way.
@@ -67,8 +59,7 @@ impl Client {
         key: Uuid,
     ) -> Result<CallView, Error> {
         let response = self
-            .api(Method::PUT, &format!("/feeders/{id}/call"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::PUT, &format!("/feeders/{id}/call"), key)
             .header(
                 header::CONTENT_TYPE,
                 HeaderValue::from_static("application/octet-stream"),
@@ -82,8 +73,7 @@ impl Client {
     /// Erase the meal call. A retry carries the same `key`.
     pub async fn delete_call(&self, id: FeederId, key: Uuid) -> Result<(), Error> {
         let response = self
-            .api(Method::DELETE, &format!("/feeders/{id}/call"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::DELETE, &format!("/feeders/{id}/call"), key)
             .send()
             .await?;
         expect_status(response, StatusCode::NO_CONTENT).await?;
@@ -94,8 +84,7 @@ impl Client {
     /// same `key`.
     pub async fn play_call(&self, id: FeederId, key: Uuid) -> Result<(), Error> {
         let response = self
-            .api(Method::POST, &format!("/feeders/{id}/call/play"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::POST, &format!("/feeders/{id}/call/play"), key)
             .send()
             .await?;
         expect_status(response, StatusCode::NO_CONTENT).await?;

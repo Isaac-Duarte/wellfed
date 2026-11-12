@@ -24,6 +24,7 @@ fn stream(bytes: usize) -> Vec<u8> {
 /// unknown without waiting out the default.
 fn quick() -> Config {
     let mut config = config();
+    config.timing.queue = Duration::from_secs(2);
     config.timing.answer = Duration::from_secs(2);
     config
 }

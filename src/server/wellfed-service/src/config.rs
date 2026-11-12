@@ -52,18 +52,22 @@ impl Config {
     /// What the mirror needs of it: no key, no label, no logins.
     pub(crate) fn mirror(&self) -> wellfed_mirror::Config {
         let timing = self.timing;
+        let mut mirror = wellfed_mirror::Timing {
+            retry_min: timing.retry_min,
+            retry_max: timing.retry_max,
+            time_sync: timing.time_sync,
+            queue: timing.queue,
+            sample_wait: timing.sample_wait,
+            pace: timing.pace,
+            join_settle: timing.join_settle,
+            // The rest of the feeder's own session clocks; nothing the
+            // owner sets.
+            ..wellfed_mirror::Timing::default()
+        };
+        mirror.session.answer = timing.answer;
         wellfed_mirror::Config {
             discovery: self.discovery,
-            timing: wellfed_mirror::Timing {
-                retry_min: timing.retry_min,
-                retry_max: timing.retry_max,
-                time_sync: timing.time_sync,
-                answer: timing.answer,
-                sample_wait: timing.sample_wait,
-                pace: timing.pace,
-                // The feeder's own session clocks; nothing the owner sets.
-                ..wellfed_mirror::Timing::default()
-            },
+            timing: mirror,
             diagnostics: self.diagnostics,
             alerts: self.alerts,
         }
@@ -77,8 +81,12 @@ pub struct Timing {
     pub retry_max: Duration,
     /// How often a connected feeder's clock is set again.
     pub time_sync: Duration,
-    /// How long a caller waits for a command's answer: the connection's
-    /// own answer timeout, and some room to queue behind another command.
+    /// How long a command waits for its turn on a feeder's session before
+    /// it is turned away unsent, and how long a step that needs the session
+    /// waits for one coming up.
+    pub queue: Duration,
+    /// How long the feeder has to answer a request sent to it, after which
+    /// whether it ran is unknown.
     pub answer: Duration,
     /// The longest a received sample waits to be written with others.
     pub sample_wait: Duration,
@@ -91,6 +99,9 @@ pub struct Timing {
     pub transfer_idle: Duration,
     /// How an install or a stock restore waits between its steps.
     pub pace: wellfed_mirror::Pace,
+    /// How long an adoption whose join answer was lost looks for its key
+    /// enrolled, as a running feed holds the enrollment.
+    pub join_settle: Duration,
 }
 
 impl Default for Timing {
@@ -100,11 +111,13 @@ impl Default for Timing {
             retry_min: mirror.retry_min,
             retry_max: mirror.retry_max,
             time_sync: mirror.time_sync,
-            answer: mirror.answer,
+            queue: mirror.queue,
+            answer: mirror.session.answer,
             sample_wait: mirror.sample_wait,
             session: Duration::from_secs(30 * 24 * 3600),
             transfer_idle: Duration::from_secs(30),
             pace: mirror.pace,
+            join_settle: mirror.join_settle,
         }
     }
 }

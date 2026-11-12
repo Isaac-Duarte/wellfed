@@ -29,10 +29,13 @@ pub(crate) mod users;
 
 use axum::Json;
 use axum::extract::Path;
-use axum::http::{HeaderValue, header};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
+use axum::response::sse::Event;
 use axum_extra::extract::WithRejection;
 use wellfed_api::FeederId;
+
+use wellfed_service::ReleaseAdded;
 
 use crate::error::ApiError;
 
@@ -59,4 +62,20 @@ fn insert(response: &mut Response, name: header::HeaderName, value: &str) {
     if let Ok(value) = HeaderValue::from_str(value) {
         response.headers_mut().insert(name, value);
     }
+}
+
+/// `201 Created` for something new, `200 OK` for something kept already.
+fn added_status(added: ReleaseAdded) -> StatusCode {
+    match added {
+        ReleaseAdded::New => StatusCode::CREATED,
+        ReleaseAdded::Known => StatusCode::OK,
+    }
+}
+
+/// One Server-Sent Event carrying `value`. These types serialize without
+/// fail; a comment keeps the stream going if one ever did not.
+fn json_event(value: &impl serde::Serialize) -> Event {
+    Event::default()
+        .json_data(value)
+        .unwrap_or_else(|_| Event::default().comment("unencodable"))
 }

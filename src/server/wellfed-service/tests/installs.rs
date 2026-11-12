@@ -1,7 +1,8 @@
 //! An install across a server restart: the one running when the server
-//! stopped is failed (`interrupted`) and readable after it starts again,
-//! the slot is free, and the next install takes up the transfer the feeder
-//! kept receiving.
+//! stopped is failed and readable after it starts again, `interrupted` if
+//! the feeder never took its offer and uncertain once it did; the slot is
+//! free, and the next install takes up the transfer the feeder kept
+//! receiving.
 
 use std::time::Duration;
 
@@ -9,8 +10,11 @@ use wellfed_api::{
     ClientRole, Connection as Link, InstallFailure, InstallRequest, InstallState, MaybeKnown,
     Model, ReleaseQuery,
 };
+use wellfed_model::{Answer, Op, UpdatePhase};
 use wellfed_server_testkit::feeder::{self, Banks, Relay};
-use wellfed_server_testkit::release::{self, SECTOR, project, signed};
+use wellfed_server_testkit::release::{
+    self, MANIFEST_LEN, SECTOR, UPDATE_CHUNK_MAX, project, signed,
+};
 use wellfed_server_testkit::{TestService, WAIT, ada, config, local, until};
 use wellfed_service::{Error, InstallError, ReleaseAdded, Service};
 
@@ -31,7 +35,7 @@ async fn ended(service: &Service, id: wellfed_api::FeederId) -> wellfed_api::Ins
 }
 
 #[test]
-fn a_restart_mid_install_fails_it_frees_the_slot_and_the_next_activates() {
+fn a_restart_mid_transfer_ends_it_uncertain_and_the_next_activates() {
     local(async {
         let banks = Banks::new();
         let sim = feeder::start_updatable(&banks).await;
@@ -64,10 +68,13 @@ fn a_restart_mid_install_fails_it_frees_the_slot_and_the_next_activates() {
         relay.resume();
 
         let server = TestService::open(store, release::trusting(config())).await;
+        // Half of bank 1 is written over: the feeder no longer has the
+        // build it had to keep running, so the end is not `interrupted`.
         let interrupted = server.service().install_state(id).await.unwrap();
         assert_eq!(interrupted.id, first.id);
         assert_eq!(interrupted.state, InstallState::Failed);
-        assert_eq!(interrupted.failure, Some(InstallFailure::Interrupted));
+        let uncertain = InstallFailure::Unreachable { offered: true };
+        assert_eq!(interrupted.failure, Some(uncertain));
         assert!(interrupted.finished.is_some());
 
         // The feeder keeps a quiet transfer for a minute: offered again, the
@@ -83,6 +90,208 @@ fn a_restart_mid_install_fails_it_frees_the_slot_and_the_next_activates() {
         assert_eq!(
             (ended.id, ended.state),
             (second.id, InstallState::Activated)
+        );
+        until("the feeder restarts into the release", || async {
+            banks.borrow().bank1_build == BUILD
+        })
+        .await;
+
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A server stopped before its offer reached the feeder changed nothing
+/// there: that install is `interrupted`, and the feeder keeps its build.
+#[test]
+fn a_restart_before_the_offer_took_is_interrupted() {
+    local(async {
+        let banks = Banks::new();
+        let sim = feeder::start_updatable(&banks).await;
+        let server = TestService::start_with(release::trusting(config())).await;
+        let relay = Relay::start(sim.address).await;
+        let address = relay.address.to_string();
+        let id = server.adopt_as(&sim, &address, ClientRole::Owner).await;
+        server.link(id, Link::Online).await;
+        let had = banks.borrow().bank1_build;
+        let file = signed(&project(), 7, BUILD, LEN);
+        let (release, _) = server.service().upload_release(file).await.unwrap();
+        let request = InstallRequest {
+            release: release.id,
+        };
+
+        // The install reads the feeder's update state before it starts,
+        // and the push reads it again before any offer. One read's size
+        // lets the first through whole and holds the second's answer, so
+        // the push stands before its offer however fast the host is.
+        let before = relay.passed();
+        server.service().stock(&ada().into(), id).await.unwrap();
+        let read = relay.passed() - before;
+        relay.hold_answers_after(read + 1);
+        let first = server
+            .service()
+            .install(&ada().into(), id, request)
+            .await
+            .unwrap();
+        until("the push's first read is held", || async {
+            relay.holding_answers()
+        })
+        .await;
+        let store = server.stop().await;
+        relay.cut();
+        relay.resume();
+
+        let server = TestService::open(store, release::trusting(config())).await;
+        let interrupted = server.service().install_state(id).await.unwrap();
+        assert_eq!(interrupted.id, first.id);
+        assert_eq!(interrupted.state, InstallState::Failed);
+        assert_eq!(interrupted.failure, Some(InstallFailure::Interrupted));
+        assert_eq!(banks.borrow().bank1_build, had);
+
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// An owner's own session with the feeder, once it answers: a restart
+/// into bank 0 takes a moment.
+async fn session(sim: &feeder::Running) -> feeder::Connection {
+    let opened = tokio::time::timeout(WAIT, async {
+        loop {
+            let ephemeral = [0x5a; 32];
+            match feeder::Connection::open(&feeder::owner(), sim.identity, sim.address, ephemeral)
+                .await
+            {
+                Ok(session) => return session,
+                Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+            }
+        }
+    });
+    opened.await.expect("the owner's session opens")
+}
+
+/// Offer `file` from the owner's own session, write a sector, then send
+/// one at an offset the feeder never asked for: the install stops on bank
+/// 0 with its candidate left pending, as a quiet minute or a server
+/// restart leaves it.
+async fn leave_a_stopped_candidate(sim: &feeder::Running, file: &[u8]) {
+    let (manifest, payload) = file.split_at(MANIFEST_LEN);
+    let offer = Op::OfferUpdate {
+        manifest: manifest.to_vec(),
+        downgrade: None,
+    };
+    let mut ids = 0u128;
+    let mut next = || {
+        ids += 1;
+        ids.to_be_bytes()
+    };
+
+    let mut owner = session(sim).await;
+    let mut view = match owner.ask(next(), &offer).await.unwrap() {
+        Answer::Update(view) => view,
+        other => panic!("the offer was answered {other:?}"),
+    };
+    if view.phase == UpdatePhase::GivingWay {
+        // Bank 1 answers for a moment yet as it gives way.
+        owner = tokio::time::timeout(WAIT, async {
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let mut owner = session(sim).await;
+                if let Ok(Answer::Update(view)) = owner.ask(next(), &Op::UpdateState).await
+                    && view.bank == 0
+                {
+                    return owner;
+                }
+            }
+        })
+        .await
+        .expect("the feeder restarts into bank 0");
+        view = match owner.ask(next(), &offer).await.unwrap() {
+            Answer::Update(view) => view,
+            other => panic!("bank 0 answered the offer {other:?}"),
+        };
+    }
+    assert_eq!((view.bank, view.phase), (0, UpdatePhase::Receiving));
+
+    // A sector written back, so the stop has overwritten some of bank 1
+    // and the server's install is not held as one over stock.
+    while view.written == 0 {
+        let answer = match view.wanted.first() {
+            Some(&offset) => {
+                let at = usize::try_from(offset).unwrap();
+                let data = payload[at..at + UPDATE_CHUNK_MAX].to_vec();
+                owner.ask(next(), &Op::UpdateChunk { offset, data }).await
+            }
+            None => owner.ask(next(), &Op::UpdateState).await,
+        };
+        view = match answer.unwrap() {
+            Answer::Update(view) => view,
+            other => panic!("a chunk was answered {other:?}"),
+        };
+    }
+    // A short chunk where a whole one is wanted stops the install.
+    let wanted = loop {
+        if let Some(&offset) = view.wanted.first() {
+            break offset;
+        }
+        view = match owner.ask(next(), &Op::UpdateState).await.unwrap() {
+            Answer::Update(view) => view,
+            other => panic!("the state was answered {other:?}"),
+        };
+    };
+    let stray = Op::UpdateChunk {
+        offset: wanted,
+        data: vec![0; 16],
+    };
+    let _stopped = owner.ask(next(), &stray).await;
+    let Answer::Update(view) = owner.ask(next(), &Op::UpdateState).await.unwrap() else {
+        panic!("the state was not read");
+    };
+    assert_eq!(view.phase, UpdatePhase::Idle);
+    assert!(view.stopped.is_some() && view.digest.is_some(), "{view:?}");
+}
+
+/// A stopped install's candidate refuses every other manifest until it is
+/// cancelled. The server's next install of another release cancels it
+/// first, as the owner's CLI does, and activates.
+#[test]
+fn an_install_over_a_stopped_candidate_cancels_it_and_activates() {
+    local(async {
+        let banks = Banks::new();
+        let sim = feeder::start_updatable(&banks).await;
+        let config = release::keeping_stock(release::trusting(config()), &banks);
+        let server = TestService::start_with(config).await;
+        let address = sim.address.to_string();
+        let id = server.adopt_as(&sim, &address, ClientRole::Owner).await;
+        server.link(id, Link::Online).await;
+
+        // Stock gave way to the replacement on bank 0, and the server keeps
+        // bank 1's stock: an install from bank 0 may go ahead.
+        feeder::stock_gave_way(&sim, &banks);
+        until("the feeder serves bank 1 from bank 0", || async {
+            let stock = server.service().stock(&ada().into(), id).await.unwrap();
+            stock.feeder_state.is_some_and(|feeder| feeder.readable)
+        })
+        .await;
+        server.service().read_stock(id).await.unwrap();
+
+        let stale = signed(&project(), 6, [0x66; 32], LEN);
+        leave_a_stopped_candidate(&sim, &stale).await;
+
+        let file = signed(&project(), 7, BUILD, LEN);
+        let (release, _) = server.service().upload_release(file).await.unwrap();
+        let request = InstallRequest {
+            release: release.id,
+        };
+        server
+            .service()
+            .install(&ada().into(), id, request)
+            .await
+            .unwrap();
+        let ended = ended(server.service(), id).await;
+        assert_eq!(
+            (ended.state, ended.failure),
+            (InstallState::Activated, None)
         );
         until("the feeder restarts into the release", || async {
             banks.borrow().bank1_build == BUILD

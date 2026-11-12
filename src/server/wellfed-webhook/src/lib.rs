@@ -88,7 +88,8 @@ pub enum Error {
 struct Pending {
     tries: u32,
     next: Instant,
-    /// When the server first saw the change.
+    /// When the server first saw the change; a clear's, when it was first
+    /// tried, since its watch keeps no time of the end.
     time: Timestamp,
 }
 

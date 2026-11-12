@@ -74,7 +74,8 @@ const SKIPPED: &[&str] = &[
 ];
 
 /// The values an enum's catch-all goes by: `unknown`, or `newer` where
-/// `unknown` already names a state of its own.
+/// `unknown` already names a state of its own. The document's name is a
+/// claim; `catch_alls.rs` holds each plain enum's to serde.
 const CATCH_ALLS: &[&str] = &["unknown", "newer"];
 
 fn fixture_path() -> PathBuf {

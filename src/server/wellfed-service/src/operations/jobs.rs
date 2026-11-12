@@ -92,7 +92,14 @@ impl Service {
         let idle = now
             .checked_sub(self.session_lifetime())
             .unwrap_or(Timestamp::MIN);
-        Ok(self.shared.store.delete_ended_sessions(idle, now).await?)
+        let ended = self.shared.store.delete_ended_sessions(idle, now).await?;
+        // A request stalled in front of the journal is long given up by a
+        // week on: its key need not be refused any longer.
+        let week = now
+            .checked_sub(jiff::SignedDuration::from_hours(7 * 24))
+            .unwrap_or(Timestamp::MIN);
+        self.shared.store.forget_retired_keys(week).await?;
+        Ok(ended)
     }
 
     /// Copy the database into the data directory's backups.

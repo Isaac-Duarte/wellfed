@@ -1,7 +1,7 @@
 //! The background jobs' supervisor on a manual clock: each job runs at
 //! its time, one at a time, catching up once after downtime, and stops
-//! when the server does. Then the real jobs on the service: expiry ends
-//! sessions, and readiness shows each job's last run.
+//! when the server does. Then the real jobs beside the server, as it runs
+//! them: expiry ends sessions, and readiness shows each job's last run.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -245,6 +245,51 @@ async fn jobs_never_overlap_and_catch_up_once() {
     task.await.expect("the supervisor ends cleanly");
 }
 
+/// The host's clock ran a year ahead while every job ran, then was set
+/// back. The recorded starts count from now, so each job runs a period on
+/// rather than a year later.
+#[tokio::test]
+async fn a_run_recorded_ahead_of_the_clock_counts_from_now() {
+    let clock = ManualClock::new();
+    clock.advance_to(at("2026-10-27T12:00:00Z"));
+    let last = Job::ALL
+        .into_iter()
+        .map(|job| JobRun {
+            job,
+            started: at("2027-10-27T12:00:00Z"),
+            finished: at("2027-10-27T12:00:01Z"),
+            outcome: JobOutcome::Succeeded,
+        })
+        .collect();
+    let (fake, mut watch) = runner(&clock, "UTC", last, false);
+    let cancel = CancellationToken::new();
+    let task = jobs::spawn(fake, Arc::new(clock.clone()), cancel.clone());
+
+    watch.quiet().await;
+    clock.advance(HOUR);
+    let one = at("2026-10-27T13:00:00Z");
+    assert_eq!(
+        watch.starts(2).await,
+        [(Job::Rollups, one), (Job::Expiry, one)]
+    );
+    // By 04:00 the next day each daily job has had its time, once.
+    clock.advance(HOUR * 15);
+    let mut ran: Vec<Job> = watch
+        .starts(5)
+        .await
+        .into_iter()
+        .map(|(job, _)| job)
+        .collect();
+    ran.sort_by_key(|job| job.code());
+    let mut all = Job::ALL.to_vec();
+    all.sort_by_key(|job| job.code());
+    assert_eq!(ran, all);
+    watch.quiet().await;
+
+    cancel.cancel();
+    task.await.expect("the supervisor ends cleanly");
+}
+
 #[tokio::test]
 async fn shutdown_ends_a_running_job_and_a_waiting_supervisor() {
     let clock = ManualClock::new();
@@ -329,10 +374,10 @@ fn bob() -> Credentials {
 #[tokio::test]
 async fn expiry_ends_an_expired_accounts_sessions_and_readiness_shows_the_runs() {
     let clock = ManualClock::new();
-    let server = TestServer::start_with_clock(Arc::new(clock.clone())).await;
+    let start = wellfed_service::Clock::now(&clock);
+    let server = TestServer::start_with_jobs(Arc::new(clock.clone())).await;
     let mut owner = server.client();
     owner.setup(&ada_setup()).await.unwrap();
-    let start = wellfed_service::Clock::now(&clock);
     let expires = start
         .checked_add(jiff::SignedDuration::from_mins(59))
         .unwrap();
@@ -352,8 +397,6 @@ async fn expiry_ends_an_expired_accounts_sessions_and_readiness_shows_the_runs()
     let service = server.service().clone();
     assert!(!service.job_scheduled(Job::ReleaseCheck), "fetching is off");
     assert!(service.job_scheduled(Job::Backup));
-    let cancel = CancellationToken::new();
-    let task = jobs::spawn(service.clone(), service.clock(), cancel.clone());
     until("the hourly jobs run at start", || async {
         service.job_runs().await.unwrap().len() == 2
     })
@@ -402,7 +445,6 @@ async fn expiry_ends_an_expired_accounts_sessions_and_readiness_shows_the_runs()
     };
     assert_eq!(status.jobs, [ran(Job::Rollups), ran(Job::Expiry)]);
 
-    cancel.cancel();
-    task.await.expect("the supervisor ends cleanly");
+    // The jobs stop with the server, before its service.
     server.stop().await;
 }

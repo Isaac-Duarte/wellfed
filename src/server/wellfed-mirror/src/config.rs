@@ -47,9 +47,11 @@ pub struct Timing {
     pub retry_max: Duration,
     /// How often a connected feeder's clock is set again.
     pub time_sync: Duration,
-    /// How long a caller waits for a command's answer: the connection's
-    /// own answer timeout, and some room to queue behind another command.
-    pub answer: Duration,
+    /// How long a command waits for its turn on the session before it is
+    /// turned away unsent: room to queue behind a step or another command,
+    /// each answered within the session's own window. Once sent, it waits
+    /// for that window.
+    pub queue: Duration,
     /// The longest a sample waits in its batch before the batch is
     /// written.
     pub sample_wait: Duration,
@@ -59,6 +61,11 @@ pub struct Timing {
     /// How an install waits between its steps: while bank 0 writes a
     /// sector, and after bank 1 gives way.
     pub pace: Pace,
+    /// How long an adoption whose join answer was lost looks for its key
+    /// enrolled. The feeder holds a join's enrollment, a key-store write,
+    /// until a running feed ends, and makes it whether or not the
+    /// connection that asked is still there.
+    pub join_settle: Duration,
 }
 
 impl Default for Timing {
@@ -67,10 +74,12 @@ impl Default for Timing {
             retry_min: Duration::from_secs(1),
             retry_max: Duration::from_secs(60),
             time_sync: Duration::from_secs(6 * 3600),
-            answer: wellfed_connect::ANSWER + Duration::from_secs(5),
+            queue: wellfed_connect::ANSWER + Duration::from_secs(5),
             sample_wait: Duration::from_secs(10),
             session: wellfed_connect::Timing::DEFAULT,
             pace: Pace::DEFAULT,
+            // The longest feed (48 portions at up to 12 s each), and margin.
+            join_settle: Duration::from_secs(12 * 60),
         }
     }
 }

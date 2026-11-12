@@ -5,12 +5,13 @@
 //! it missed or a `resync`. A subscriber that falls behind the hub also
 //! gets a `resync` rather than a silent hole. Every stream ends when the
 //! server shuts down, so shutdown never waits on an open browser tab, and
-//! within [`SESSION_CHECK`] of its session or token ending (logout,
-//! revocation or expiry).
+//! within a check's interval (a minute, by default) of its caller losing
+//! it: its session or token ending (logout, revocation or expiry), or its
+//! role changing, since the stream filters by the role it opened with.
+//! A client that reconnects is checked, and filtered, afresh.
 
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::time::Duration;
 
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
@@ -19,16 +20,13 @@ use axum_extra::extract::WithRejection;
 use futures_util::{Stream, StreamExt, stream};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
-use wellfed_api::{ErrorCode, MetricKind, Problem, StreamEvent, StreamQuery, User};
+use wellfed_api::{ErrorCode, MetricKind, Problem, Role, StreamEvent, StreamQuery, User};
 use wellfed_service::{Permission, Resume, Stamped, StreamId, can};
 
-use super::TAG_FEEDERS;
+use super::{TAG_FEEDERS, json_event};
 use crate::AppState;
 use crate::auth::{self, Allowed, Credential, need};
 use crate::error::ApiError;
-
-/// How often an open stream checks that its session or token still holds.
-const SESSION_CHECK: Duration = Duration::from_secs(60);
 
 /// Live updates for every feeder: events, gaps, connection changes, the
 /// sample metrics asked for, and changes to the caller's journal entries
@@ -65,6 +63,7 @@ pub(crate) async fn stream(
     };
     let subscription = state.service.hub().subscribe(last);
 
+    let role = caller.user.role;
     let wanted = move |event: &StreamEvent| shown(&caller.user, &metrics, event);
     let first: Vec<_> = match subscription.resume {
         Resume::Replay(missed) => missed
@@ -83,7 +82,7 @@ pub(crate) async fn stream(
     });
 
     let shutdown = state.shutdown.clone();
-    let session = session_ended(state, auth::credential(&headers));
+    let session = caller_changed(state, auth::credential(&headers), role);
     let events = stream::iter(first).chain(live).take_until(async move {
         tokio::select! {
             () = shutdown.cancelled() => {}
@@ -93,16 +92,20 @@ pub(crate) async fn stream(
     Ok(Sse::new(events).keep_alive(KeepAlive::default()))
 }
 
-/// Resolves once the stream's credential no longer authenticates. A store
-/// failure ends the stream too; the client reconnects and is checked again.
-pub(crate) async fn session_ended(state: AppState, credential: Option<Credential>) {
+/// Resolves once the stream's credential no longer authenticates, or its
+/// user's role is no longer `role`, the one the stream opened with: a
+/// demoted user's stream must not go on showing what the old role saw. A
+/// store failure ends the stream too; the client reconnects and is
+/// checked again.
+pub(crate) async fn caller_changed(state: AppState, credential: Option<Credential>, role: Role) {
     let Some(credential) = credential else {
         return;
     };
     loop {
-        tokio::time::sleep(SESSION_CHECK).await;
-        if !matches!(credential.caller(&state).await, Ok(Some(_))) {
-            return;
+        tokio::time::sleep(state.stream_check).await;
+        match credential.caller(&state).await {
+            Ok(Some(caller)) if caller.user.role == role => {}
+            _ => return,
         }
     }
 }
@@ -153,11 +156,7 @@ fn resync() -> Event {
 }
 
 fn encode(event: &StreamEvent) -> Event {
-    // These types serialize without fail; a comment keeps the stream going
-    // if one ever did not.
-    Event::default()
-        .json_data(event)
-        .unwrap_or_else(|_| Event::default().comment("unencodable update"))
+    json_event(event)
 }
 
 #[cfg(test)]

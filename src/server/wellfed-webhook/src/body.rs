@@ -19,7 +19,9 @@ pub struct Delivery {
     /// whose answer was lost can tell the next one is no new change.
     pub id: String,
     pub event: Transition,
-    /// When the server saw the change.
+    /// When the server saw the change: an opening's when it first judged
+    /// the alert open, a clear's when it first tried to send it, which a
+    /// change ahead of it in the queue can delay.
     pub time: Timestamp,
     pub feeder: FeederRef,
     pub alert: AlertRef,
@@ -117,12 +119,85 @@ fn words(notice: &Notice) -> String {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_model::OpenAlert;
+    use wellfed_model::{
+        AlertKind, Blocked, ClientRole, EnrollPath, FeedOutcome, FeedReason, Hex, MissedReason,
+        OpenAlert, Source, UpdateStop,
+    };
 
     use super::*;
 
+    /// An alert of `kind`. The match has no wildcard, so a new kind does
+    /// not build until it has a sample, and so its words are checked.
+    fn sample(kind: AlertKind) -> Alert {
+        let due = Timestamp::UNIX_EPOCH;
+        match kind {
+            AlertKind::MealFailed => Alert::MealFailed {
+                feed: 1,
+                plan: Some(0),
+                requested: 2,
+                completed: 1,
+                outcome: FeedOutcome::Done,
+                reason: FeedReason::Done,
+            },
+            AlertKind::MealUncertain => Alert::MealUncertain {
+                feed: 1,
+                plan: None,
+                requested: 2,
+                completed: 0,
+                reason: FeedReason::Done,
+            },
+            AlertKind::MealMissed => Alert::MealMissed {
+                plan: 0,
+                due,
+                reason: MissedReason::Late,
+            },
+            AlertKind::MealNoRecord => Alert::MealNoRecord { plan: 0, due },
+            AlertKind::PowerWasOut => Alert::PowerWasOut,
+            AlertKind::UpdateFailed => Alert::UpdateFailed {
+                stop: UpdateStop::Timeout,
+            },
+            AlertKind::RolledBack => Alert::RolledBack,
+            AlertKind::ClientJoined => Alert::ClientJoined {
+                client: Hex([1, 2, 3, 4]),
+                role: ClientRole::Member,
+                path: EnrollPath::Invite,
+            },
+            AlertKind::ClientRevoked => Alert::ClientRevoked {
+                client: Hex([1, 2, 3, 4]),
+                by: Source::Panel,
+            },
+            AlertKind::RepeatedRestarts => Alert::RepeatedRestarts,
+            AlertKind::NoClock => Alert::NoClock,
+            AlertKind::CannotFeed => Alert::CannotFeed {
+                reason: Blocked::Starting,
+            },
+            AlertKind::FoodLow => Alert::FoodLow,
+            AlertKind::FoodLikelyOut => Alert::FoodLikelyOut { confirmed: 2 },
+            AlertKind::DesiccantDue => Alert::DesiccantDue { days: 30 },
+            AlertKind::BatteryBelowFloor => Alert::BatteryBelowFloor,
+            AlertKind::PlansStuck => Alert::PlansStuck,
+        }
+    }
+
+    /// Every kind of alert reads as a plain sentence: never empty, never
+    /// a type's name.
     #[test]
-    fn every_alert_has_words() {
+    fn every_alert_reads_as_a_sentence() {
+        for kind in AlertKind::ALL {
+            let alert = sample(kind);
+            assert_eq!(alert.kind(), kind);
+            let open = OpenAlert { at: None, alert };
+            let said = words(&Notice::Alert { open });
+            let plain = said.ends_with('.')
+                && said.starts_with(char::is_uppercase)
+                && !said.contains(['{', '_'])
+                && !said.contains("::");
+            assert!(plain, "{kind:?} reads {said:?}");
+        }
+    }
+
+    #[test]
+    fn food_low_reads_plainly() {
         let open = OpenAlert {
             at: None,
             alert: Alert::FoodLow,

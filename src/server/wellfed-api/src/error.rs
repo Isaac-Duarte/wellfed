@@ -112,6 +112,10 @@ pub enum ErrorCode {
     /// retry found the feeder offline or refused the resend. Retry with the
     /// same `Idempotency-Key`, which it answers once; a write whose answer
     /// settled nothing stays unknown, and is never sent again.
+    ///
+    /// An adoption takes no `Idempotency-Key`: it settles by reading
+    /// `GET /feeders`, which lists the feeder once the server finds the
+    /// key it joined with, and another try needs a new invite.
     OutcomeUnknown,
     /// The `Idempotency-Key` already names another request (another
     /// body, feeder, kind of write or user). Nothing was sent.
@@ -164,6 +168,17 @@ pub enum ErrorCode {
     /// unknown, used, expired, another token's, or a MAC the key's secret
     /// did not make. Ask for a new challenge.
     PhoneKeyProofRefused,
+    /// A read of the journal (`GET /commands/{key}`) found no write under
+    /// this `Idempotency-Key`, which a client takes as never sent, so the
+    /// server takes no write under it now: one that reaches the journal
+    /// late never runs behind its client's back. Nothing was sent; send it
+    /// under a new key.
+    KeyRetired,
+    /// Another adoption or a removal of the feeder is running: nothing was
+    /// done. An adoption whose join answer was lost holds the feeder while
+    /// the server looks for its key, up to twelve minutes; `GET /feeders`
+    /// lists the feeder once it is found.
+    FeederBusy,
     Internal,
     /// A code a newer server added, which this client cannot name. The
     /// server never sends it; a client reads the request as refused by a
@@ -225,10 +240,11 @@ impl From<Refusal> for FeederRefusal {
             Refusal::NoClock => Self::NoClock,
             Refusal::Unverified => Self::Unverified,
             Refusal::Unknown => Self::Unknown,
-            // An install reads its own refusals from the update driver;
-            // through a journalled write one could only be a session
-            // without the owner role, refused before these could arrive.
-            Refusal::Update(_) => Self::Forbidden,
+            // An install reads its own refusals from the update driver,
+            // and a journalled write is refused for its role before one
+            // could arrive. Any other path that meets one has no name for
+            // it here, and a role it does not lack would mislead.
+            Refusal::Update(_) => Self::Unknown,
         }
     }
 }
@@ -247,4 +263,19 @@ pub struct Problem {
     pub refusal: Option<FeederRefusal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<ReleaseRefusal>,
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_model::{Refusal, UpdateRefusal};
+
+    use super::FeederRefusal;
+
+    /// An update refusal that reaches a generic conversion is one this
+    /// server cannot name, never a role the server's key lacks.
+    #[test]
+    fn an_update_refusal_met_elsewhere_reads_as_unknown() {
+        let refusal = Refusal::Update(UpdateRefusal::Installing);
+        assert_eq!(FeederRefusal::from(refusal), FeederRefusal::Unknown);
+    }
 }

@@ -11,8 +11,9 @@ use wellfed_api::{
     CommandKind, Connection as Link, FeederId, Generation, KeyRemoval, PlayRequest, Removal,
     RevokeAttempt, TuneName, WifiChange,
 };
-use wellfed_mirror::{AlertHold, Mirror, MirrorEvent, hmac_sha256};
+use wellfed_mirror::{AlertHold, Mirror, MirrorEvent};
 use wellfed_model::{Op, Tune, Wifi};
+use wellfed_session::mac::hmac_sha256;
 
 use crate::feeders::commands::done;
 use crate::feeders::journal::Write;
@@ -151,8 +152,9 @@ impl Service {
     /// the session of a key it revokes before answering, so the server's
     /// own revoke is confirmed by the feeder refusing the reconnect. Its
     /// history, samples and journal stay readable, and adopting it again
-    /// un-archives it and resumes the owed revokes. Runs beside no
-    /// adoption, so a re-adoption cannot interleave with it.
+    /// un-archives it and resumes the owed revokes. Holds the feeder's
+    /// turn, so neither another removal nor a re-adoption of it
+    /// interleaves; other feeders' adoptions and removals go on beside it.
     ///
     /// The removal runs to its end on the service's own task, whatever
     /// becomes of the caller: a client that hangs up part way neither
@@ -168,7 +170,12 @@ impl Service {
     }
 
     async fn remove(&self, caller: &Caller, id: FeederId) -> Result<Removal> {
-        let _one_at_a_time = self.feeders.adopting.lock().await;
+        // Only an adoption of a feeder not yet stored holds its turn long
+        // (a search for a lost join's key), so a live feeder's is never
+        // waited on for long. Read again once held: a removal just before
+        // may have archived it.
+        let identity = self.live_row(id).await?.identity;
+        let _turn = self.feeders.adopting.take(identity).await;
         let row = self.live_row(id).await?;
         let own = self.own_key(&row)?;
         // Nothing more is judged of a feeder being removed: the revokes
@@ -241,7 +248,7 @@ impl Service {
                 }
             }
         };
-        let wait = self.shared.config.timing.answer;
+        let wait = self.shared.config.timing.queue;
         tokio::time::timeout(wait, refused).await.unwrap_or(false)
     }
 }

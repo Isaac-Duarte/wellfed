@@ -3,8 +3,10 @@
 //! event stream and error mapping; it never sees SQL or the device
 //! protocol.
 //!
-//! [`app`] is the whole API as an axum router, so tests drive it in
-//! process; [`openapi`] is its document, committed as `openapi.json`.
+//! [`app`] is the whole API as an axum router, and [`serve`] the process
+//! around it (the jobs, the announcement, the order they stop in), which
+//! `main` and the test kit's server share; [`openapi`] is the API's
+//! document, committed as `openapi.json`.
 //! [`config`] and [`key`] read what the server starts with from its data
 //! directory: the settings file and the sealing key.
 //!
@@ -12,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod advertise;
+mod answers;
 mod auth;
 pub mod config;
 mod error;
@@ -21,17 +24,19 @@ pub mod key;
 mod proxy;
 mod request_id;
 mod routes;
+mod serve;
 pub mod server_id;
 mod staged;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 pub use auth::Hosts;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 pub use proxy::{ProxyRange, TrustedProxies};
+pub use serve::{Announce, Beside, Jobs, Serving, serve};
 use tokio_util::sync::CancellationToken;
-use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
@@ -54,6 +59,8 @@ pub(crate) struct AppState {
     hosts: Hosts,
     /// Whose forwarded headers name the client and its scheme.
     proxies: Arc<TrustedProxies>,
+    /// How often an open stream checks its caller.
+    stream_check: Duration,
 }
 
 #[derive(OpenApi)]
@@ -169,7 +176,9 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(foods::delete_refill))
         .routes(routes!(backups::backups, backups::create_backup))
         .routes(routes!(export::export))
-        .layer(RequestBodyLimitLayer::new(BODY_LIMIT));
+        // Every small route reads its body through `Json`, which refuses one
+        // past this `too_large`, however it is framed.
+        .layer(DefaultBodyLimit::max(BODY_LIMIT));
     // A clip is read only up to the feeder's length: a longer one is
     // refused `too_large` while it arrives, never held whole.
     let calls = OpenApiRouter::new()
@@ -188,25 +197,22 @@ fn router() -> OpenApiRouter<AppState> {
         .nest(wellfed_api::PREFIX, api)
 }
 
-/// The API, serving `service` under any IP address, `localhost` and
-/// `hosts`, and believing the forwarded headers of `proxies` alone.
-/// Cancelling `shutdown` ends the open event streams, exports and imports,
-/// so a graceful shutdown can finish.
+/// The API, serving `service` under any IP address, `localhost` and the
+/// names `serving` gives, and believing the forwarded headers of its
+/// proxies alone. Cancelling `shutdown` ends the open event streams,
+/// exports and imports, so a graceful shutdown can finish.
 ///
 /// Serve it with its connections' addresses
 /// (`into_make_service_with_connect_info::<SocketAddr>`): a login is
-/// limited by its client's address, and refused without one.
-pub fn app(
-    service: Service,
-    shutdown: CancellationToken,
-    hosts: Hosts,
-    proxies: TrustedProxies,
-) -> Router {
+/// limited by its client's address, and refused without one. [`serve`]
+/// does, with the jobs beside it.
+pub fn app(service: Service, shutdown: CancellationToken, serving: Serving) -> Router {
     let state = AppState {
         service,
         shutdown,
-        hosts,
-        proxies: Arc::new(proxies),
+        hosts: serving.hosts,
+        proxies: Arc::new(serving.proxies),
+        stream_check: serving.stream_check,
     };
     let (router, _) = router().split_for_parts();
 
@@ -227,7 +233,9 @@ pub fn app(
         .with_state(state)
 }
 
-/// The API's OpenAPI document.
+/// The API's OpenAPI document, with the answers every route shares.
 pub fn openapi() -> utoipa::openapi::OpenApi {
-    router().split_for_parts().1
+    let mut doc = router().split_for_parts().1;
+    answers::add(&mut doc);
+    doc
 }

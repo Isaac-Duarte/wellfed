@@ -243,6 +243,7 @@ fn a_feed_whose_answer_is_lost_is_unknown_never_resent_and_settled_from_its_fed_
         let sim = feeder::start_on(&flash).await;
         let relay = Relay::start(sim.address).await;
         let mut config = config();
+        config.timing.queue = Duration::from_secs(2);
         config.timing.answer = Duration::from_secs(2);
         let server = TestServer::start_with(config).await;
         let mut http = server.client();

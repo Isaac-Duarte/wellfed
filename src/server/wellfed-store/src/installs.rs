@@ -95,19 +95,38 @@ impl Store {
         row.map(Install::try_from).transpose()
     }
 
-    /// Mark every install still running as failed at `at`, interrupted:
-    /// only the server that started one can run it, so at a start none is.
-    /// How many there were.
+    /// Note that the feeder took `id`'s offer. Kept beside the row, not
+    /// in it: only a start reads it, to tell an install that changed
+    /// nothing from one that may have.
+    pub async fn install_offered(&self, id: InstallId) -> Result<()> {
+        let id = id.0;
+        sqlx::query!("UPDATE installs SET offered = 1 WHERE id = ?", id)
+            .execute(&self.writer)
+            .await?;
+        Ok(())
+    }
+
+    /// Mark every install still running as failed at `at`: only the server
+    /// that started one can run it, so at a start none is. One whose offer
+    /// the feeder took ends uncertain (`unreachable`, `offered`), since
+    /// bank 1 may be partly written or activated; any other `interrupted`,
+    /// having changed nothing. How many there were.
     pub async fn interrupt_installs(&self, at: Timestamp) -> Result<u64> {
         let running = InstallState::Running.code();
         let failed = InstallState::Failed.code();
-        let failure = serde_json::to_string(&InstallFailure::Interrupted)
-            .map_err(|e| Error::Json("install failure", e))?;
+        let json = |failure: InstallFailure| {
+            serde_json::to_string(&failure).map_err(|e| Error::Json("install failure", e))
+        };
+        let interrupted = json(InstallFailure::Interrupted)?;
+        let uncertain = json(InstallFailure::Unreachable { offered: true })?;
         let at = millis(at);
         let done = sqlx::query!(
-            "UPDATE installs SET state = ?, failure = ?, finished_ms = ? WHERE state = ?",
+            "UPDATE installs
+             SET state = ?, failure = CASE WHEN offered THEN ? ELSE ? END, finished_ms = ?
+             WHERE state = ?",
             failed,
-            failure,
+            uncertain,
+            interrupted,
             at,
             running,
         )

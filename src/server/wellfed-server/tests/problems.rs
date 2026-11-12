@@ -1,10 +1,13 @@
 //! How a malformed request comes back: as a typed problem, never a bare
 //! status. Most of these requests are ones the typed client cannot make,
-//! so they go through its escape hatch with the same session and origin.
+//! so they go through its escape hatch with the same session and origin. A
+//! body past the limit is `too_large`, however it is framed.
 
 use serde_json::json;
 use uuid::Uuid;
 use wellfed_api::{ErrorCode, EventQuery, FeederId, StreamQuery};
+use wellfed_server_client::reqwest::Body;
+use wellfed_server_client::reqwest::header::{CONTENT_TYPE, HeaderValue};
 use wellfed_server_client::{Method, StatusCode, expect_status};
 use wellfed_server_testkit::{TestServer, ada_setup, refused, refused_for};
 
@@ -133,6 +136,53 @@ async fn bad_requests_come_back_as_typed_problems() {
         expect_status(response, StatusCode::NO_CONTENT).await,
         StatusCode::BAD_REQUEST,
         ErrorCode::Invalid,
+    );
+    server.stop().await;
+}
+
+/// A body past the limit is refused `too_large` as a problem, whether it
+/// gives its length up front or comes in chunks without one.
+#[tokio::test]
+async fn an_oversized_body_is_too_large_however_it_comes() {
+    let server = TestServer::start().await;
+    let mut client = server.client();
+    client.setup(&ada_setup()).await.unwrap();
+    let big = format!("{{\"name\": \"{}\"}}", "a".repeat(70 * 1024));
+    let json = HeaderValue::from_static("application/json");
+
+    let sized = client
+        .request(Method::POST, "/api/v1/users")
+        .header(CONTENT_TYPE, json.clone())
+        .body(big.clone())
+        .send()
+        .await
+        .unwrap();
+    let sized = expect_status(sized, StatusCode::CREATED).await;
+    refused_for(
+        "a sized body",
+        sized,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        ErrorCode::TooLarge,
+    );
+
+    let chunks: Vec<Result<Vec<u8>, std::io::Error>> = big
+        .as_bytes()
+        .chunks(8 * 1024)
+        .map(|chunk| Ok(chunk.to_vec()))
+        .collect();
+    let chunked = client
+        .request(Method::POST, "/api/v1/users")
+        .header(CONTENT_TYPE, json)
+        .body(Body::wrap_stream(futures_util::stream::iter(chunks)))
+        .send()
+        .await
+        .unwrap();
+    let chunked = expect_status(chunked, StatusCode::CREATED).await;
+    refused_for(
+        "a chunked body",
+        chunked,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        ErrorCode::TooLarge,
     );
     server.stop().await;
 }

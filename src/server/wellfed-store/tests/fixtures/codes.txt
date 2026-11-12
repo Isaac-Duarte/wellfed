@@ -41,3 +41,39 @@
 18 install_failure_json activate attempt battery busy cancelled changed downgrade extent failed fallback fault forbidden full hash held_as_session_key installing interrupted invalid key lost manifest marker muted no_clock not_found not_installing not_writable offered order pending portions read reason refusal refused revoked same server signature stale statement stop stopped store target time timeout unavailable unconfirmed unexpected unknown unreachable unrecorded unverified update_refused write
 18 revoke_attempt_json busy fault forbidden full invalid invite_live muted no_clock not_found not_writable offline portions refusal refused result stale time unavailable unknown until unverified
 18 call_before_json clip none
+19 model plaf103 plwf106
+19 client_role member owner server unknown update_signer
+19 role member owner unknown viewer
+19 units grams ounces unknown
+19 time_format 12h 24h
+19 species cat dog other
+19 job backup expiry release_check retention rollups unknown
+19 job_outcome failed succeeded unknown
+19 command_kind calibration call_delete call_play call_upload cancel desiccant feed invite lock plans play reboot remove revoke settings skip unknown unskip wifi
+19 command_state answered resolved sent unknown
+19 install_state activated already_running failed running unknown
+19 revoke_reason deleted demoted expiring inviter_revoked replaced token_revoked unknown
+19 install_target kind release sha256 stock unknown
+19 command_outcome_json always at_mark before between bowl busy bytes calibration call cancelled clip clock completed crc days desiccant_days desiccant_replaced done double enabled end expired failed fault fed feed feedback_stream feeder feeding forbidden fri full generation interrupted invalid invite invited jammed kind lights lights_window mark_stuck meal_reminder minute minutes mode mon muted newer no_clock no_feedback none not_found not_writable observation_gap off outcome outlet_blocked output overcurrent phase plans portion_mg portions power reason received receiving refusal refused requested result sat seconds sensor settings single skipped sound sound_window stale start state stored sun superseded thu time timeout tue unavailable uncertain unknown unrecorded unverified volume wed writable
+19 audit_action_json 12h 24h account always answered at_mark bad_password before between boot_count bowl busy bytes calibration call call_delete call_play call_upload cancel cancelled clip clock command completed crc days desiccant desiccant_days desiccant_replaced disabled done double enabled end expired expires failed fault fed feed feedback_stream feeder feeding forbidden fri from full generation grams home home_changed id interrupted invalid invite invited jammed key kind lights lights_window lock logged_out login login_failed mark_stuck meal_reminder member minute minutes mode mon muted name newer no_clock no_feedback none not_found not_writable observation_gap off ounces outcome outlet_blocked output overcurrent owner password_set phase plans play portion_mg portions power reason reboot received receiving refusal refused remove requested resolved result revoke role sat seconds sensor sent settings setup single skip skipped sound sound_window stale start state stored sun superseded thu time time_format timeout token token_created token_name token_revoked tue unavailable uncertain units unknown unrecorded unskip unverified updated user user_changed user_created user_deleted viewer volume wed wifi writable zone
+19 install_failure_json activate attempt battery busy cancelled changed downgrade extent failed fallback fault forbidden full hash held_as_session_key installing interrupted invalid key lost manifest marker muted no_clock not_found not_installing not_writable offered order pending portions read reason refusal refused revoked same server signature stale statement stop stopped store target time timeout unavailable unconfirmed unexpected unknown unreachable unrecorded unverified update_refused write
+19 revoke_attempt_json busy fault forbidden full invalid invite_live muted no_clock not_found not_writable offline portions refusal refused result stale time unavailable unknown until unverified
+19 call_before_json clip none
+20 model plaf103 plwf106
+20 client_role member owner server unknown update_signer
+20 role member owner unknown viewer
+20 units grams ounces unknown
+20 time_format 12h 24h
+20 species cat dog other
+20 job backup expiry release_check retention rollups unknown
+20 job_outcome failed succeeded unknown
+20 command_kind calibration call_delete call_play call_upload cancel desiccant feed invite lock plans play reboot remove revoke settings skip unknown unskip wifi
+20 command_state answered resolved sent unknown
+20 install_state activated already_running failed running unknown
+20 revoke_reason deleted demoted expiring inviter_revoked replaced token_revoked unknown
+20 install_target kind release sha256 stock unknown
+20 command_outcome_json always at_mark before between bowl busy bytes calibration call cancelled clip clock completed crc days desiccant_days desiccant_replaced done double enabled end expired failed fault fed feed feedback_stream feeder feeding forbidden fri full generation interrupted invalid invite invited jammed kind lights lights_window mark_stuck meal_reminder minute minutes mode mon muted newer no_clock no_feedback none not_found not_writable observation_gap off outcome outlet_blocked output overcurrent phase plans portion_mg portions power reason received receiving refusal refused requested result sat seconds sensor settings single skipped sound sound_window stale start state stored sun superseded thu time timeout tue unavailable uncertain unknown unrecorded unverified volume wed writable
+20 audit_action_json 12h 24h account always answered at_mark bad_password before between boot_count bowl busy bytes calibration call call_delete call_play call_upload cancel cancelled clip clock command completed crc days desiccant desiccant_days desiccant_replaced disabled done double enabled end expired expires failed fault fed feed feedback_stream feeder feeding forbidden fri from full generation grams home home_changed id interrupted invalid invite invited jammed key kind lights lights_window lock logged_out login login_failed mark_stuck meal_reminder member minute minutes mode mon muted name newer no_clock no_feedback none not_found not_writable observation_gap off ounces outcome outlet_blocked output overcurrent owner password_set phase plans play portion_mg portions power reason reboot received receiving refusal refused remove requested resolved result revoke role sat seconds sensor sent settings setup single skip skipped sound sound_window stale start state stored sun superseded thu time time_format timeout token token_created token_name token_revoked tue unavailable uncertain units unknown unrecorded unskip unverified updated user user_changed user_created user_deleted viewer volume wed wifi writable zone
+20 install_failure_json activate attempt battery busy cancelled changed downgrade extent failed fallback fault forbidden full hash held_as_session_key installing interrupted invalid key lost manifest marker muted no_clock not_found not_installing not_writable offered order pending portions read reason refusal refused revoked same server signature stale statement stop stopped store target time timeout unavailable unconfirmed unexpected unknown unreachable unrecorded unverified update_refused write
+20 revoke_attempt_json busy fault forbidden full invalid invite_live muted no_clock not_found not_writable offline portions refusal refused result stale time unavailable unknown until unverified
+20 call_before_json clip none

@@ -7,7 +7,6 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum_extra::extract::WithRejection;
-use uuid::Uuid;
 use wellfed_api::{
     FeederClient, FeederId, Hex, NewPhoneInvite, PhoneChallenge, PhoneClaim, PhoneInvite, PhoneKey,
     Problem,
@@ -19,7 +18,7 @@ use crate::auth::{Allowed, need};
 use crate::error::ApiError;
 use crate::extract::OptionalIdempotencyKey;
 
-type ClientPath = WithRejection<Path<(Uuid, Hex<32>)>, ApiError>;
+type ClientPath = WithRejection<Path<(FeederId, Hex<32>)>, ApiError>;
 
 /// The feeder's clients, read from it, each with whose it is to the
 /// server: its own key, a phone it invited, one an owner kept, or unowned.
@@ -71,7 +70,7 @@ pub(crate) async fn revoke_client(
 ) -> ApiResult<StatusCode> {
     state
         .service
-        .revoke_client(&caller, FeederId(id), key.0, idempotency)
+        .revoke_client(&caller, id, key.0, idempotency)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -95,10 +94,7 @@ pub(crate) async fn keep_client(
     Allowed(caller, _): Allowed<need::FeederAdmin>,
     WithRejection(Path((id, key)), _): ClientPath,
 ) -> ApiResult<StatusCode> {
-    state
-        .service
-        .keep_client(&caller, FeederId(id), key.0)
-        .await?;
+    state.service.keep_client(&caller, id, key.0).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

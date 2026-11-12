@@ -120,6 +120,7 @@ impl Operation {
             }
             Err(
                 error @ (AskError::Offline
+                | AskError::Expired
                 | AskError::NotRunning
                 | AskError::Legacy
                 | AskError::Unsendable),

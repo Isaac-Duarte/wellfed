@@ -98,10 +98,10 @@ INSERT INTO commands (seq, key, user_id, token_id, feeder_id, kind, body_hash, r
         x'34343434343434343434343434343434', NULL, 'unknown', NULL, NULL, 22, 23, NULL, NULL);
 INSERT INTO installs VALUES (x'0192c5d0000070008000000000000005', x'0192c5d0000070008000000000000003',
     x'4444444444444444444444444444444444444444444444444444444444444444', 7,
-    x'0192c5d0000070008000000000000001', 24, 'failed', 10, 20, '{\"kind\":\"lost\"}', 25, 'release');
+    x'0192c5d0000070008000000000000001', 24, 'failed', 10, 20, '{\"kind\":\"lost\"}', 25, 'release', 1);
 INSERT INTO installs VALUES (x'0192c5d0000070008000000000000006', x'0192c5d0000070008000000000000003',
     x'4545454545454545454545454545454545454545454545454545454545454545', 8,
-    x'0192c5d0000070008000000000000001', 26, 'activated', 20, 20, NULL, NULL, 'stock');
+    x'0192c5d0000070008000000000000001', 26, 'activated', 20, 20, NULL, NULL, 'stock', 0);
 INSERT INTO pets VALUES (x'0192c5d0000070008000000000000007', 'Tom', 'cat', '2020-01-02', 250, 27);
 INSERT INTO pets VALUES (x'0192c5d0000070008000000000000008', 'Rex', 'dog', NULL, NULL, 28);
 INSERT INTO pet_weights VALUES (x'0192c5d000007000800000000000000a', x'0192c5d0000070008000000000000007', 29, 4200);
@@ -437,6 +437,10 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
     ("sessions", "a credential's hash"),
     ("tokens", "a credential's hash"),
     ("job_runs", "this server's schedule"),
+    (
+        "retired_keys",
+        "keys read unfound, which only requests in flight to this server need",
+    ),
     (
         "feeder_alerts",
         "a copy of the feeder's RAM, read again from it",

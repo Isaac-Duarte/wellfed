@@ -14,6 +14,7 @@ use wellfed_api::{
     ClientRole, CommandOutcome, CommandState, Connection as Link, FeedOutcome, FeedReason,
     FeederRefusal, Hex, NewPhoneInvite, NewToken, StreamEvent,
 };
+use wellfed_model::{Answer, Op};
 use wellfed_server_testkit::feeder::{self, Control, Flash, Relay};
 use wellfed_server_testkit::fixed::ManualClock;
 use wellfed_server_testkit::{TestService, ada, ada_setup, local, until};
@@ -393,9 +394,10 @@ fn a_reused_key_and_a_refused_feed_send_nothing_more() {
     });
 }
 
-/// Two feeds lose their answers, and one `Fed` event comes back: either
-/// could be its feed, so neither is settled by a guess. Both stay unknown,
-/// and neither is resent.
+/// Two feeds lose their answers, and one `Fed` event comes back: the
+/// second reached the feeder while the first still fed, and was refused
+/// busy, but either could be the `Fed` event's feed, so neither is settled
+/// by a guess. Both stay unknown, and neither is resent.
 #[test]
 fn two_lost_answers_and_one_fed_event_stay_unknown() {
     local(async {
@@ -407,10 +409,12 @@ fn two_lost_answers_and_one_fed_event_stay_unknown() {
         server.link(id, Link::Online).await;
         let service = server.service();
 
+        sim.control(Control::StallFeeds(true));
         relay.hold_answers();
         let (first, second): (IdempotencyKey, IdempotencyKey) = ([0xda; 16], [0xdb; 16]);
         assert!(unknown(&service.feed(&ada().into(), id, 1, first).await));
         assert!(unknown(&service.feed(&ada().into(), id, 1, second).await));
+        sim.control(Control::StallFeeds(false));
         relay.cut();
         relay.resume();
 
@@ -427,6 +431,67 @@ fn two_lost_answers_and_one_fed_event_stay_unknown() {
             assert!(unknown(&retried), "never resent: {retried:?}");
         }
         one_feed(service, id, &flash).await;
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A feeder's event names a client by the first 4 bytes of its key. With
+/// another key enrolled that shares the server's, a `Fed` event by them may
+/// be that client's feed, so it never settles the server's lost one: the
+/// feed stays unknown, though the feeder ran it.
+#[test]
+fn a_fingerprint_another_key_shares_settles_no_lost_feed() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let relay = Relay::start(sim.address).await;
+        let server = TestService::start_with(quick()).await;
+        let id = server.adopt_at(&sim, &relay.address.to_string()).await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+
+        // The feeder restarts with a key enrolled that differs from the
+        // server's only past its fingerprint, as a client that ground one
+        // would hold.
+        let mut owner = feeder::open_owner(&sim).await;
+        let Answer::Clients(clients) = owner.ask([1; 16], &Op::ListClients).await.unwrap() else {
+            panic!("the clients were not listed");
+        };
+        let ours = clients
+            .iter()
+            .find(|client| client.role == ClientRole::Server)
+            .expect("the server's key is listed")
+            .key
+            .0;
+        let mut twin = ours;
+        twin[31] ^= 1;
+        drop(owner);
+        let address = sim.address;
+        sim.stop().await;
+        until("the server's session drops", || async {
+            let feeders = service.feeders().await.unwrap();
+            feeders
+                .iter()
+                .any(|f| f.id == id && f.connection != Link::Online)
+        })
+        .await;
+        let sim = feeder::Running::start_at(&flash, Some(twin), address).await;
+        server.link(id, Link::Online).await;
+
+        relay.hold_answers();
+        let key: IdempotencyKey = [0xd9; 16];
+        let lost = service.feed(&ada().into(), id, 1, key).await;
+        assert!(unknown(&lost), "{lost:?}");
+        relay.cut();
+        relay.resume();
+        until("the feeder's Fed event is held", || async {
+            !fed_events(service, id).await.is_empty()
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let entry = service.command(&ada(), key).await.unwrap();
+        assert_eq!((entry.state, entry.feed), (CommandState::Unknown, None));
         server.shutdown().await;
         sim.stop().await;
     });

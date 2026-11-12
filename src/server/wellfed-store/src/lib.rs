@@ -47,6 +47,7 @@ mod pets;
 mod phones;
 mod projections;
 mod refills;
+mod retired;
 mod samples;
 mod tokens;
 mod users;
@@ -113,6 +114,18 @@ pub enum Error {
         "the database was migrated by a newer server (migration {applied}; this build's newest is {embedded}), so it was opened read-only and left as it is"
     )]
     Newer { applied: i64, embedded: i64 },
+}
+
+impl Error {
+    /// Whether the store refused a write for the values it carries, so the
+    /// same write is refused again however often it is tried, rather than
+    /// failing in the database.
+    pub fn refuses_value(&self) -> bool {
+        matches!(
+            self,
+            Self::Unknown(_) | Self::Unreadable(_) | Self::TooLarge(_) | Self::Json(..)
+        )
+    }
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

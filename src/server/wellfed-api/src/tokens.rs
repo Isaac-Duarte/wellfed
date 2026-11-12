@@ -11,26 +11,12 @@ use std::fmt;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use uuid::Uuid;
 
-use crate::{Hex, UserId};
+use crate::{Hex, TokenId, UserId};
 
 /// The `Authorization` scheme a token travels under:
 /// `Authorization: Bearer <secret>`.
 pub const BEARER: &str = "Bearer";
-
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
-)]
-#[serde(transparent)]
-#[schema(value_type = String, format = Uuid)]
-pub struct TokenId(pub Uuid);
-
-impl fmt::Display for TokenId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
 
 /// The most keys a logout names. The app names its one key; the cap keeps
 /// a request's work bounded.
@@ -95,6 +81,8 @@ impl fmt::Debug for CreatedToken {
 
 #[cfg(test)]
 mod tests {
+    use uuid::Uuid;
+
     use super::*;
 
     #[test]

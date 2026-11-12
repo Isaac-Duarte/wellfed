@@ -112,8 +112,13 @@ pub enum InstallState {
     /// Bank 1 already ran the release's build when the install began, so
     /// nothing was offered and nothing written.
     AlreadyRunning,
-    /// It ended before activation; `failure` says why. The feeder keeps
-    /// running the build it had.
+    /// It ended without the server seeing activation; `failure` says why.
+    /// Before the feeder took the offer, it keeps running the build it had.
+    /// After, it may run its recovery copy from bank 0 with bank 1 partly
+    /// written, and when the end is uncertain (`unreachable` with
+    /// `offered`) bank 1 may be activated: the feeder's update state tells.
+    /// The server does not follow a new build's trial; a fallback reaches
+    /// it as the feeder's `rolled_back` alert.
     Failed,
     /// A value a newer server added, which this client cannot name. The
     /// server never sends it.
@@ -165,15 +170,16 @@ pub enum InstallFailure {
     Lost,
     /// The feeder answered something that does not fit an update.
     Unexpected,
-    /// The feeder stopped answering. With `offered`, the offer went out,
-    /// so bank 1 may be partly written, or activated with its answer lost:
-    /// the feeder's status tells.
+    /// The feeder stopped answering, or the server stopped once the feeder
+    /// took the offer. With `offered`, the offer went out, so bank 1 may be
+    /// partly written, or activated with its answer lost: the feeder's
+    /// status tells.
     Unreachable { offered: bool },
     /// The server failed (its random source); its log says why.
     Server,
-    /// The server stopped while it ran. The feeder stops a transfer that
-    /// gets no chunk for a minute, and another install resumes one still
-    /// receiving this release.
+    /// The server stopped while it ran, before the feeder took the offer,
+    /// so the feeder keeps running the build it had. (One stopped after is
+    /// `unreachable` with `offered`.)
     Interrupted,
     /// A value a newer server added, which this client cannot name. The
     /// server never sends it.

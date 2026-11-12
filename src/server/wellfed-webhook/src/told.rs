@@ -55,7 +55,11 @@ pub(crate) fn refused(status: StatusCode) -> Failure {
     }
 }
 
-/// A request error's words without its URL, whose path may be a secret.
+/// A request error's words without its URL, whose path may be a secret,
+/// and with its causes: reqwest's own words are only "error sending
+/// request", and the reason (a refused connection, a name that does not
+/// resolve, a certificate the receiver's TLS fails) is in its sources,
+/// none of which carries the URL.
 pub(crate) fn without_url(error: reqwest::Error) -> String {
     let kind = if error.is_timeout() {
         "timed out"
@@ -64,7 +68,14 @@ pub(crate) fn without_url(error: reqwest::Error) -> String {
     } else {
         "request failed"
     };
-    format!("{kind}: {}", error.without_url())
+    let error = error.without_url();
+    let mut words = format!("{kind}: {error}");
+    let mut cause = std::error::Error::source(&error);
+    while let Some(source) = cause {
+        words.push_str(&format!(": {source}"));
+        cause = source.source();
+    }
+    words
 }
 
 /// The same for every try of one change: the feeder, the transition and

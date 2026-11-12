@@ -254,6 +254,11 @@ impl Collector {
             let Ok(request) = self.request() else {
                 return;
             };
+            // The boot the answer counts in: the session's when the step
+            // goes out and when its answer is in. One that changed between
+            // them, or since the round began, is the one read, so a new
+            // boot's counters are never stored under the last boot's number.
+            let boot = self.boot();
             let stats = match operation.step(request, Op::Stats { section }).await {
                 Ok(Answer::Stats(stats)) => stats,
                 Ok(Answer::Refused(refusal)) => {
@@ -270,17 +275,30 @@ impl Collector {
                 }
             };
 
+            let Some(boot) = boot.filter(|boot| Some(*boot) == self.boot()) else {
+                debug!(
+                    ?section,
+                    "the session changed during the read; read at the next round"
+                );
+                return;
+            };
             let now = self.shared.clock.now();
             if let Err(error) = self
                 .shared
                 .store
-                .record_stats(self.id, now, opened.boot_count, &stats)
+                .record_stats(self.id, now, boot, &stats)
                 .await
             {
                 warn!(?section, "store the statistics: {error}");
                 return;
             }
         }
+    }
+
+    /// The boot count the open session's welcome named; `None` with no
+    /// session.
+    fn boot(&self) -> Option<Option<u32>> {
+        self.opened.borrow().map(|opened| opened.boot_count)
     }
 
     /// A fresh request id. Without randomness the read cannot go out, and

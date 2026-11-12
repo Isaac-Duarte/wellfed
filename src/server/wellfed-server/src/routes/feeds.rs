@@ -6,7 +6,6 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum_extra::extract::WithRejection;
-use uuid::Uuid;
 use wellfed_api::{Command, FeedRequest, FeederId, Problem};
 
 use super::{ApiResult, IdPath, JsonBody, TAG_FEEDERS};
@@ -73,12 +72,9 @@ pub(crate) async fn feed(
 pub(crate) async fn cancel(
     State(state): State<AppState>,
     Allowed(caller, _): Allowed<need::Feed>,
-    WithRejection(Path((id, feed)), _): WithRejection<Path<(Uuid, u32)>, ApiError>,
+    WithRejection(Path((id, feed)), _): WithRejection<Path<(FeederId, u32)>, ApiError>,
     OptionalIdempotencyKey(key): OptionalIdempotencyKey,
 ) -> ApiResult<StatusCode> {
-    state
-        .service
-        .cancel_feed(&caller, FeederId(id), feed, key)
-        .await?;
+    state.service.cancel_feed(&caller, id, feed, key).await?;
     Ok(StatusCode::NO_CONTENT)
 }

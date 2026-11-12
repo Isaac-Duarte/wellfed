@@ -33,7 +33,8 @@ pub fn config() -> Config {
             retry_min: Duration::from_millis(50),
             retry_max: Duration::from_millis(400),
             time_sync: Duration::from_secs(3600),
-            answer: Duration::from_secs(12),
+            queue: Duration::from_secs(12),
+            answer: Duration::from_secs(10),
             sample_wait: Duration::from_millis(100),
             session: Duration::from_secs(3600),
             transfer_idle: Duration::from_secs(30),
@@ -44,6 +45,7 @@ pub fn config() -> Config {
                 settle: Duration::from_millis(20),
                 restart: Duration::from_millis(1_500),
             },
+            join_settle: Duration::from_secs(5),
         },
         // The diagnostics' own tests turn them on: elsewhere their reads
         // would share the lanes and the seeded ids with what is tested.

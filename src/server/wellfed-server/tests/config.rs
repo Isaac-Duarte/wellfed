@@ -104,6 +104,31 @@ fn a_webhook_takes_plain_http_only_at_home_unless_allowed() {
         let words = format!("{:#}", anyhow::Error::from(error));
         assert!(!words.contains("secret"), "{words}");
     }
+    // Nor does a file the TOML reader refuses around it, though the
+    // reader's own error quotes the line.
+    for (text, line) in [
+        ("[webhook]\nurl = https://hooks.example.com/secret\n", 2),
+        ("[webhook]\nurl = \"https://hooks.example.com/secret\n", 2),
+        ("[webhook]\nulr = \"https://hooks.example.com/secret\"\n", 2),
+        ("webhook = \"https://hooks.example.com/secret\"\n", 1),
+        (
+            "listen = \"0.0.0.0:80\"\n\n[webhook]\n  url = https://hooks.example.com/secret\n",
+            4,
+        ),
+    ] {
+        let error = at(text).unwrap_err();
+        let source = match &error {
+            ConfigError::Syntax { source, .. } | ConfigError::Invalid { source, .. } => source,
+            other => panic!("expected the file refused, got {other:?}"),
+        };
+        assert_eq!(
+            (source.line, source.reason.as_deref()),
+            (line, None),
+            "{text}"
+        );
+        let words = format!("{:#}", anyhow::Error::from(error));
+        assert!(!words.contains("secret"), "{words}");
+    }
     let flagged = ServerConfig::load(
         tempfile::tempdir().unwrap().path(),
         flags(&["--webhook-url", "not a url/secret"]),
@@ -351,15 +376,28 @@ fn an_unknown_key_is_refused() {
         panic!("expected an invalid field, got {error:?}");
     };
     assert_eq!(field, "releases.channel");
-    assert_eq!(source.span().map(|span| span.start), Some(24), "{source}");
+    assert_eq!((source.line, source.column), (3, 1), "{source}");
+    assert!(
+        source
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("channel"))
+    );
     assert_eq!(invalid_field("lisen = \"0.0.0.0:80\""), "lisen");
 }
 
 #[test]
 fn a_file_that_is_not_toml_is_refused() {
-    let error = ServerConfig::parse(Path::new(FILE), "listen = ").unwrap_err();
+    let error = ServerConfig::parse(Path::new(FILE), "label = \"a\"\nlisten = ").unwrap_err();
 
-    assert!(matches!(error, ConfigError::Syntax { .. }), "{error:?}");
+    let ConfigError::Syntax { source, .. } = &error else {
+        panic!("expected a syntax error, got {error:?}");
+    };
+    assert_eq!((source.line, source.column), (2, 10), "{source}");
+    assert!(
+        source.reason.is_some(),
+        "away from the webhook, the reason shows"
+    );
 }
 
 #[test]

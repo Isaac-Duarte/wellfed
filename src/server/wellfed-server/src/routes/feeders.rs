@@ -48,9 +48,10 @@ pub(crate) async fn feeders(
         (status = 201, body = Feeder),
         (status = 400, body = Problem, description = "invalid: not an invite, or no address"),
         (status = 403, body = Problem, description = "forbidden: owners only; token_required or direct_key_refused for a phone key, checked first"),
-        (status = 409, body = Problem, description = "already_adopted, feeder_refused, or, with the feeder adopted, a phone_key_* refusal or client_key_taken"),
+        (status = 409, body = Problem, description = "already_adopted, feeder_busy (another adoption or a removal of the feeder is running), feeder_refused, or, with the feeder adopted, a phone_key_* refusal or client_key_taken"),
         (status = 410, body = Problem, description = "invite_expired"),
         (status = 502, body = Problem, description = "unreachable"),
+        (status = 504, body = Problem, description = "outcome_unknown: the feeder took the join and its answer was lost. The server goes on looking for its key for up to twelve minutes, the longest a running feed holds a join, and the feeder appears in `GET /feeders` if it joined; the invite may be spent"),
     ),
 )]
 pub(crate) async fn adopt(

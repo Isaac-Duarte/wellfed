@@ -320,7 +320,8 @@ impl From<AskError> for Error {
     fn from(error: AskError) -> Self {
         match error {
             AskError::NotRunning => Self::NotFound(Resource::Feeder),
-            AskError::Offline => CommandError::Offline.into(),
+            // Nothing was sent either way: the session was busy too long.
+            AskError::Offline | AskError::Expired => CommandError::Offline.into(),
             AskError::Legacy => CommandError::Legacy.into(),
             AskError::Unknown => CommandError::Unknown.into(),
             AskError::Unsendable => InternalError::Unexpected.into(),

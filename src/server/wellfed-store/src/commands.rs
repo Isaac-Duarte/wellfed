@@ -59,6 +59,9 @@ pub enum Journaled {
     New,
     /// The key's entry, as it stands: a retry, or a key reused.
     Existing(Box<CommandRow>),
+    /// A journal read found no write under the key ([`Store::retire_key`]),
+    /// so none is taken under it now: nothing was recorded.
+    Retired,
 }
 
 /// Which entries [`Store::commands`] lists.
@@ -75,7 +78,8 @@ pub struct CommandFilter {
 impl Store {
     /// Record `command` as sent, unless its key is already in the
     /// journal: then the entry it names, read in the same transaction, so
-    /// two requests racing with one key see one entry.
+    /// two requests racing with one key see one entry. A retired key
+    /// records nothing.
     pub async fn journal(&self, command: &NewCommand) -> Result<Journaled> {
         let key = command.key.as_slice();
         let kind = command.kind.code();
@@ -95,7 +99,9 @@ impl Store {
             "INSERT INTO commands
                  (key, user_id, token_id, feeder_id, kind, body_hash, request_id, boot_count,
                   history_epoch, history_seq, state, sent_ms, updated_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12) ON CONFLICT (key) DO NOTHING",
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12
+             WHERE NOT EXISTS (SELECT 1 FROM retired_keys WHERE key = ?1)
+             ON CONFLICT (key) DO NOTHING",
             key,
             command.user.0,
             token,
@@ -116,6 +122,7 @@ impl Store {
             return Ok(Journaled::New);
         }
 
+        // Nothing inserted and no entry: the key is retired.
         let found = sqlx::query_as!(
             Raw,
             r#"SELECT seq, key, user_id AS "user_id: Uuid", token_id AS "token_id: Uuid",
@@ -124,10 +131,13 @@ impl Store {
                FROM commands WHERE key = ?"#,
             key
         )
-        .fetch_one(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await?;
         tx.commit().await?;
-        Ok(Journaled::Existing(Box::new(found.try_into()?)))
+        match found {
+            Some(found) => Ok(Journaled::Existing(Box::new(found.try_into()?))),
+            None => Ok(Journaled::Retired),
+        }
     }
 
     /// Record the feeder's answer, and a feed's number from it. An entry

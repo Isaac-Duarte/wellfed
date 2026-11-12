@@ -12,7 +12,8 @@ use wellfed_api::{
     ClientRole, Connection as Link, FeederId, Home, HomeId, Model, TimeFormat, Units,
 };
 use wellfed_mirror::{
-    AlertReads, Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Pace, Timing,
+    AlertReads, Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Pace,
+    Redeemed, Timing,
 };
 use wellfed_server_testkit::WAIT;
 use wellfed_server_testkit::feeder::{self, Running};
@@ -23,22 +24,23 @@ pub const ID: FeederId = FeederId(Uuid::from_u128(7));
 /// The mirror's key on the feeder.
 pub const SECRET: [u8; 32] = [0x33; 32];
 
-/// The tests' clocks, with callers waiting `answer` for a command. The
+/// The tests' clocks, with a command waiting `queue` for its turn. The
 /// simulator writes a sector within a pass or two, and restarts a second
 /// after it answers a give-way, as the update stage does, where the board
 /// takes seconds more.
-pub fn timing(answer: Duration) -> Timing {
+pub fn timing(queue: Duration) -> Timing {
     Timing {
         retry_min: Duration::from_millis(50),
         retry_max: Duration::from_millis(400),
         time_sync: Duration::from_secs(3600),
-        answer,
+        queue,
         sample_wait: Duration::from_millis(100),
         session: wellfed_connect::Timing::DEFAULT,
         pace: Pace {
             settle: Duration::from_millis(20),
             restart: Duration::from_millis(1_500),
         },
+        join_settle: Duration::from_secs(5),
     }
 }
 
@@ -136,7 +138,10 @@ async fn start(
     let identity = invite.feeder;
     let at = mirror.locate(identity, Some(address)).await.unwrap();
     let secret = SECRET;
-    let enrolled = mirror.enroll(invite, "test", at, secret).await.unwrap();
+    let Redeemed::Enrolled(enrolled) = mirror.enroll(invite, "test", at, secret).await.unwrap()
+    else {
+        panic!("the join's answer came");
+    };
     assert_eq!(enrolled.role, role);
 
     // The mirror reads the cursor from the feeder's row; the key it uses

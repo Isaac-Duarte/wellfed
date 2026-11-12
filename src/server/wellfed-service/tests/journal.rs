@@ -149,13 +149,16 @@ fn a_restart_between_send_and_answer_leaves_the_write_unknown() {
     });
 }
 
-/// Wait until `key`'s entry is in `state`.
+/// Wait until `key`'s entry is in `state`. Read from the journal's pages:
+/// a read by key that found nothing would retire the key before its write
+/// is journaled.
 async fn entry_in(service: &Service, key: IdempotencyKey, state: CommandState) {
     until(&format!("the entry is {state:?}"), || async {
-        service
-            .command(&ada(), key)
-            .await
-            .is_ok_and(|entry| entry.state == state)
+        service.commands(&ada(), all()).await.is_ok_and(|page| {
+            page.items
+                .iter()
+                .any(|entry| entry.key == Uuid::from_bytes(key) && entry.state == state)
+        })
     })
     .await;
 }

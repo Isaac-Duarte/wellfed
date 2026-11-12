@@ -9,7 +9,6 @@ use wellfed_api::{
     PhoneInvite, PhoneKey, PlayRequest, Removal, TuneName, WifiChange,
 };
 
-use crate::feeders::IDEMPOTENCY_KEY;
 use crate::{Client, Error, decode, expect_status};
 
 impl Client {
@@ -30,8 +29,11 @@ impl Client {
         key: Uuid,
     ) -> Result<(), Error> {
         let response = self
-            .api(Method::DELETE, &format!("/feeders/{id}/clients/{client}"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(
+                Method::DELETE,
+                &format!("/feeders/{id}/clients/{client}"),
+                key,
+            )
             .send()
             .await?;
         expect_status(response, StatusCode::NO_CONTENT).await?;
@@ -101,9 +103,8 @@ impl Client {
         key: Uuid,
     ) -> Result<(), Error> {
         let response = self
-            .api(Method::PUT, &format!("/feeders/{id}/wifi"))
+            .keyed(Method::PUT, &format!("/feeders/{id}/wifi"), key)
             .header(header::IF_MATCH, format!("\"{base}\""))
-            .header(IDEMPOTENCY_KEY, key.to_string())
             .json(change)
             .send()
             .await?;
@@ -115,8 +116,7 @@ impl Client {
     /// the boot count says whether it ran.
     pub async fn reboot(&self, id: FeederId, key: Uuid) -> Result<(), Error> {
         let response = self
-            .api(Method::POST, &format!("/feeders/{id}/reboot"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::POST, &format!("/feeders/{id}/reboot"), key)
             .send()
             .await?;
         expect_status(response, StatusCode::NO_CONTENT).await?;
@@ -126,8 +126,7 @@ impl Client {
     /// Play a tune now. A retry carries the same `key`.
     pub async fn play(&self, id: FeederId, tune: TuneName, key: Uuid) -> Result<(), Error> {
         let response = self
-            .api(Method::POST, &format!("/feeders/{id}/play"))
-            .header(IDEMPOTENCY_KEY, key.to_string())
+            .keyed(Method::POST, &format!("/feeders/{id}/play"), key)
             .json(&PlayRequest { tune })
             .send()
             .await?;

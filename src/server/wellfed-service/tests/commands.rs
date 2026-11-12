@@ -236,6 +236,7 @@ fn an_unanswered_write_is_unknown_and_its_retry_applies_once() {
         let sim = feeder::start().await;
         let relay = Relay::start(sim.address).await;
         let mut config = config();
+        config.timing.queue = Duration::from_millis(500);
         config.timing.answer = Duration::from_millis(500);
         let server = TestService::start_with(config).await;
         let id = server.adopt_at(&sim, &relay.address.to_string()).await;

@@ -10,8 +10,6 @@
 use std::str::FromStr;
 
 use serde::Deserialize;
-use serde::de::IntoDeserializer as _;
-use serde::de::value::StrDeserializer;
 use wellfed_api::Hex;
 
 use super::{InvalidValue, given};
@@ -92,8 +90,7 @@ impl TryFrom<String> for UpdateKey {
     type Error = InvalidValue;
 
     fn try_from(text: String) -> Result<Self, InvalidValue> {
-        let hex: StrDeserializer<'_, serde::de::value::Error> = text.as_str().into_deserializer();
-        match Hex::<32>::deserialize(hex) {
+        match text.parse::<Hex<32>>() {
             Ok(Hex(key)) => Ok(Self(key)),
             Err(_) => Err(InvalidValue::UpdateKey { text }),
         }

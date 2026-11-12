@@ -36,7 +36,7 @@ use wellfed_api::{Connection as Link, FeederId};
 use wellfed_client::alerts::{Context, Cursor, FeederClock, Mutes};
 use wellfed_model::{Answer, Hex, Op, Skew};
 
-use crate::command::{Command, send};
+use crate::command::{Command, Wait, send};
 use crate::kept::{self, Kept, ReadTable};
 use crate::task::Opened;
 use crate::{ConnectError, MirrorEvent, Shared, Unreachable};
@@ -322,8 +322,8 @@ impl Reader {
     async fn ask(&self, read: Read) -> Option<Answer> {
         let request = self.shared.random().ok()?;
         let link = *self.link.borrow();
-        let answer = self.shared.config.timing.answer;
-        match send(&self.commands, link, answer, request, read.op()).await {
+        let wait = Wait::of(&self.shared.config.timing);
+        match send(&self.commands, link, wait, request, read.op()).await {
             Ok(Answer::Refused(refusal)) => {
                 debug!(?read, "the feeder refused the read: {refusal:?}");
                 None

@@ -165,6 +165,25 @@ fn a_loose_key_directory_is_tightened() {
     assert_eq!(mode(&key_path(data.path())), 0o600);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_loose_key_read_at_start_is_tightened() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let data = tempfile::tempdir().unwrap();
+    let (made, _) = sealing_key(data.path(), &SeededRandom::new(1)).unwrap();
+    let dir = data.path().join(KEY_DIR);
+    let path = key_path(data.path());
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let (read, source) = sealing_key(data.path(), &SeededRandom::new(2)).unwrap();
+
+    assert_eq!((read, source), (made, KeySource::Read));
+    assert_eq!(mode(&dir), 0o700);
+    assert_eq!(mode(&path), 0o600);
+}
+
 #[test]
 fn a_short_key_file_is_refused() {
     let data = tempfile::tempdir().unwrap();

@@ -13,12 +13,14 @@
 //! waits at most one chunk.
 
 use tokio::time::{Duration, Instant, sleep, timeout_at};
+use tracing::warn;
 use wellfed_api::Connection as Link;
 use wellfed_client::install::Bank1Reader;
 use wellfed_client::release::MANIFEST_LEN;
+use wellfed_client::release::manifest_digest;
 use wellfed_client::update::Image;
 use wellfed_connect::update::{Opened, Steps};
-use wellfed_model::{Answer, Op, UpdateView};
+use wellfed_model::{Answer, Op, UpdatePhase, UpdateView};
 use wellfed_session::hex::Lower;
 
 use crate::{AskError, Operation, RandomFailed};
@@ -94,6 +96,9 @@ impl Operation {
             payload,
         };
 
+        if let Some(ended) = self.clear_stale(manifest).await? {
+            return Ok(ended);
+        }
         let pace = self.pace;
         let mut steps = Lane {
             operation: self,
@@ -118,6 +123,9 @@ impl Operation {
             downgrade: Some(restore.downgrade),
             payload: restore.payload,
         };
+        if let Some(ended) = self.clear_stale(restore.manifest).await? {
+            return Ok(ended);
+        }
         let pace = self.pace;
         let mut steps = Lane {
             operation: self,
@@ -125,6 +133,40 @@ impl Operation {
             progress,
         };
         wellfed_connect::update::push(image, &mut steps, pace).await
+    }
+
+    /// Clear the way for an offer of `manifest`. An install that stopped
+    /// before activation (a quiet minute, a server restart, a write fault)
+    /// leaves its candidate pending, and bank 0 refuses every other
+    /// manifest until a client cancels it; the same manifest is offered
+    /// again as it is. So a candidate naming another, with no install under
+    /// way, is cancelled once, and any doubt about the cancel ends the push
+    /// before the offer: `Gone` without `offered`, or the feeder's refusal.
+    /// A state that cannot be read leaves it to the push, which reads it
+    /// again and is refused as before.
+    async fn clear_stale(&mut self, manifest: &[u8]) -> Result<Option<Pushed>, RandomFailed> {
+        let id = self.request_id()?;
+        let Ok(Answer::Update(view)) = self.step(id, Op::UpdateState).await else {
+            return Ok(None);
+        };
+        let ours = manifest_digest(manifest);
+        let stale = view.digest.is_some_and(|digest| digest.0 != ours);
+        if view.phase != UpdatePhase::Idle || !stale {
+            return Ok(None);
+        }
+
+        warn!("cancelling the candidate a stopped install left pending");
+        let id = self.request_id()?;
+        let ended = match self.step(id, Op::CancelUpdate).await {
+            Ok(Answer::Update(view))
+                if view.phase == UpdatePhase::Idle && view.digest.is_none() =>
+            {
+                return Ok(None);
+            }
+            Ok(Answer::Refused(refusal)) => Pushed::Failed(UpdateError::Refused(refusal)),
+            _ => Pushed::Gone { offered: false },
+        };
+        Ok(Some(ended))
     }
 
     /// Read bank 1 whole from the bank-0 role, a page per step, calling

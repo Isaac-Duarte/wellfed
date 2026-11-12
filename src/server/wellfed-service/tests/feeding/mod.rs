@@ -16,6 +16,7 @@ use wellfed_service::{CommandError, Config, Error, IdempotencyKey, Service};
 /// lost answer is unknown without waiting out the default.
 pub fn quick() -> Config {
     let mut config = config();
+    config.timing.queue = Duration::from_secs(2);
     config.timing.answer = Duration::from_secs(2);
     config
 }

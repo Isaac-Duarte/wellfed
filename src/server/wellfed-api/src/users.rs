@@ -32,7 +32,8 @@ impl fmt::Debug for NewUser {
     }
 }
 
-/// A change to an account; an absent field is left as it is.
+/// A change to an account; an absent field is left as it is, and so is
+/// `role` or `password` sent as `null`.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct UserPatch {
     /// Demoting the last owner is refused `last_owner`.

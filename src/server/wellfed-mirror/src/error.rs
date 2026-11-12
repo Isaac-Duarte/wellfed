@@ -19,6 +19,10 @@ pub enum AskError {
          nothing was sent: update the feeder"
     )]
     Legacy,
+    /// The command waited for its turn on the session longer than a
+    /// caller waits, behind other requests: nothing was sent.
+    #[error("the feeder's session stayed busy; nothing was sent")]
+    Expired,
     #[error("no answer in time: retry with the same key")]
     Unknown,
     /// Refused before anything was sent (a reserved id, or an op that does

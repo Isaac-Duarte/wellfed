@@ -57,6 +57,7 @@ use std::time::Duration;
 use reqwest::header::{self, HeaderValue};
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
+use uuid::Uuid;
 use wellfed_api::{PREFIX, Problem, SESSION_COOKIE, at_home};
 
 pub use commands::{Settled, settled};
@@ -232,6 +233,32 @@ impl Client {
     fn api_stream(&self, method: Method, path: &str) -> RequestBuilder {
         self.open_request(method, &format!("{PREFIX}{path}"))
     }
+
+    /// A keyed write under the API's prefix. The key is part of building
+    /// it, so no write goes without one: a retry under the same key is
+    /// answered from the server's journal rather than run again.
+    fn keyed(&self, method: Method, path: &str, key: Uuid) -> RequestBuilder {
+        self.api(method, path)
+            .header(IDEMPOTENCY_KEY, key.to_string())
+    }
+}
+
+/// The header a write's key travels in.
+const IDEMPOTENCY_KEY: &str = "Idempotency-Key";
+
+/// A conditional write's answer: its value at `200`, or the current value
+/// it was stale against, which a `412` carries as a body rather than a
+/// problem, wrapped by `stale`.
+async fn stale_or<T, C>(response: Response, stale: fn(Box<C>) -> Error) -> Result<T, Error>
+where
+    T: DeserializeOwned,
+    C: DeserializeOwned,
+{
+    if response.status() == StatusCode::PRECONDITION_FAILED && !is_problem(&response) {
+        let current = decode(response, StatusCode::PRECONDITION_FAILED).await?;
+        return Err(stale(Box::new(current)));
+    }
+    decode(response, StatusCode::OK).await
 }
 
 /// `response` if its status is `expected`. Any other status is the

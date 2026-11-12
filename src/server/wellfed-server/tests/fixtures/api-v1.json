@@ -1,5 +1,5 @@
 {
-  "revision": 6,
+  "revision": 7,
   "document": {
     "components": {
       "schemas": {
@@ -2131,6 +2131,8 @@
             "export_running",
             "phone_key_proof_required",
             "phone_key_proof_refused",
+            "key_retired",
+            "feeder_busy",
             "internal",
             "unknown"
           ],
@@ -8049,6 +8051,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -8066,7 +8077,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8089,7 +8118,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8168,6 +8215,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -8213,6 +8269,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -8249,6 +8314,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -8259,6 +8333,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8287,6 +8370,15 @@
               }
             },
             "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8328,6 +8420,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -8355,7 +8456,34 @@
                 }
               }
             },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "502": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "504": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8390,6 +8518,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -8409,6 +8546,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8441,7 +8587,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8476,7 +8640,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8518,6 +8700,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
               "content": {
                 "application/json": {
@@ -8528,6 +8719,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8613,6 +8813,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -8645,6 +8854,24 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/CalibrationView"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
                   }
                 }
               }
@@ -8703,6 +8930,24 @@
           ],
           "responses": {
             "204": {},
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -8722,6 +8967,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8772,6 +9026,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
               "content": {
                 "application/json": {
@@ -8782,6 +9045,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8851,6 +9123,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -8879,6 +9160,15 @@
               }
             },
             "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -8941,6 +9231,24 @@
           ],
           "responses": {
             "204": {},
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -8960,6 +9268,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9015,6 +9332,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -9034,6 +9360,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9104,6 +9439,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -9123,6 +9467,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9175,6 +9528,15 @@
           ],
           "responses": {
             "204": {},
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -9194,6 +9556,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9238,7 +9609,34 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9329,7 +9727,34 @@
                 }
               }
             },
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9392,6 +9817,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -9411,6 +9845,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9492,6 +9944,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -9511,6 +9972,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9583,7 +10053,34 @@
                 }
               }
             },
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9635,6 +10132,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         },
@@ -9670,6 +10176,24 @@
                 }
               }
             },
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -9680,6 +10204,24 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9758,6 +10300,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -9785,7 +10336,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9837,6 +10406,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -9856,6 +10434,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -9918,6 +10514,24 @@
                 }
               }
             },
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -9937,6 +10551,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10009,7 +10641,43 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10062,6 +10730,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
               "content": {
                 "application/json": {
@@ -10072,6 +10749,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10135,7 +10821,43 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10208,7 +10930,43 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10280,6 +11038,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -10299,6 +11066,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10340,7 +11125,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10426,6 +11229,24 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
               "content": {
                 "application/json": {
@@ -10440,6 +11261,24 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/Plans"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
                   }
                 }
               }
@@ -10508,6 +11347,24 @@
           },
           "responses": {
             "204": {},
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -10527,6 +11384,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10580,6 +11455,24 @@
           ],
           "responses": {
             "204": {},
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -10599,6 +11492,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10695,6 +11597,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         },
@@ -10739,6 +11650,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -10758,6 +11678,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10792,6 +11730,15 @@
           ],
           "responses": {
             "204": {},
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -10802,6 +11749,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10897,7 +11853,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -10939,7 +11913,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11025,6 +12017,24 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
               "content": {
                 "application/json": {
@@ -11039,6 +12049,24 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/Settings"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
                   }
                 }
               }
@@ -11096,7 +12124,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11131,7 +12177,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11166,6 +12230,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -11176,6 +12249,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11219,6 +12301,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -11238,6 +12329,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11318,6 +12418,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -11337,6 +12446,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11408,6 +12535,24 @@
                 }
               }
             },
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -11436,6 +12581,15 @@
               }
             },
             "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11508,6 +12662,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -11527,6 +12690,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11589,6 +12770,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         },
@@ -11623,7 +12813,34 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11650,6 +12867,15 @@
           ],
           "responses": {
             "204": {},
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -11669,6 +12895,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11711,6 +12946,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11762,6 +13006,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -11772,6 +13025,24 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11797,6 +13068,15 @@
               }
             },
             "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11838,7 +13118,34 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11882,7 +13189,43 @@
                 }
               }
             },
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11927,6 +13270,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         },
@@ -11961,7 +13313,34 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -11988,6 +13367,15 @@
           ],
           "responses": {
             "204": {},
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -11998,6 +13386,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12040,6 +13437,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12091,6 +13497,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -12101,6 +13516,24 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12143,6 +13576,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -12153,6 +13595,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12193,6 +13644,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -12203,6 +13663,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12266,6 +13735,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12344,6 +13822,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         },
@@ -12388,6 +13875,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -12398,6 +13894,24 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12432,6 +13946,15 @@
           ],
           "responses": {
             "204": {},
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -12442,6 +13965,15 @@
               }
             },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12477,6 +14009,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -12504,6 +14045,15 @@
               }
             },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12569,7 +14119,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12611,6 +14179,24 @@
                 }
               }
             },
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -12621,6 +14207,15 @@
               }
             },
             "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12654,6 +14249,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -12664,6 +14268,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12688,7 +14301,25 @@
         "delete": {
           "operationId": "logout",
           "responses": {
-            "204": {}
+            "204": {},
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            }
           }
         },
         "get": {
@@ -12713,6 +14344,15 @@
               }
             },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12764,6 +14404,24 @@
                 }
               }
             },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "429": {
               "content": {
                 "application/json": {
@@ -12806,6 +14464,15 @@
                 }
               }
             },
+            "400": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "401": {
               "content": {
                 "application/json": {
@@ -12816,6 +14483,24 @@
               }
             },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12857,6 +14542,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         },
@@ -12891,7 +14585,34 @@
                 }
               }
             },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12935,6 +14656,15 @@
               }
             },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -12997,6 +14727,15 @@
                   }
                 }
               }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -13018,6 +14757,15 @@
               }
             },
             "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -13083,6 +14831,24 @@
                   }
                 }
               }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -13111,7 +14877,25 @@
                 }
               }
             },
+            "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "404": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -13183,6 +14967,24 @@
                   }
                 }
               }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -13203,7 +15005,25 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -13245,6 +15065,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -13255,6 +15084,24 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -13281,6 +15128,15 @@
           ],
           "responses": {
             "204": {},
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -13300,6 +15156,15 @@
               }
             },
             "409": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
               "content": {
                 "application/json": {
                   "schema": {
@@ -13351,6 +15216,15 @@
                 }
               }
             },
+            "401": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
             "403": {
               "content": {
                 "application/json": {
@@ -13377,6 +15251,24 @@
                   }
                 }
               }
+            },
+            "413": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
+                  }
+                }
+              }
             }
           }
         }
@@ -13390,6 +15282,15 @@
                 "application/json": {
                   "schema": {
                     "$ref": "#/components/schemas/Health"
+                  }
+                }
+              }
+            },
+            "421": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Problem"
                   }
                 }
               }

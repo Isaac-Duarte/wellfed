@@ -16,9 +16,10 @@
 //!   [`Mirror::ask`]; a long operation holds an [`Operation`] and sends its
 //!   steps one at a time. The task pipelines the lanes over one session, so
 //!   a short command is answered after at most one step. One that is
-//!   not answered in time is [`AskError::Unknown`], never a failure: the
-//!   feeder may have run it, and a retry under the same request id gets its
-//!   first answer. One whose caller stopped waiting is dropped unsent.
+//!   sent and not answered in time is [`AskError::Unknown`], never a
+//!   failure: the feeder may have run it, and a retry under the same
+//!   request id gets its first answer. One that waits too long for its turn
+//!   is [`AskError::Expired`], never sent.
 //!   An install is a long operation: [`Operation::install`] runs the
 //!   update driver the owner's CLI runs, a step at a time on the long lane,
 //!   and so are "Restore stock" ([`Operation::restore`]) and reading the
@@ -85,7 +86,7 @@ pub use alerts::AlertReads;
 pub use call::{CallError, CallStart, Clip, StreamError, UploadError, UploadFailed};
 pub use command::Operation;
 pub use config::{Config, Diagnostics, Discovery, Timing};
-pub use connect::Enrolled;
+pub use connect::{Enrolled, LostJoin, Redeemed};
 pub use desk::AlertHold;
 pub use error::{AskError, ConnectError, LogError, Unreachable};
 pub use ingest::{stored_body, stored_event, stored_sample};
@@ -97,9 +98,6 @@ pub use kept::{
 pub use time::{Clock, Random, RandomFailed, SystemClock, SystemRandom};
 pub use wellfed_client::api::{Invite, InviteText};
 pub use wellfed_connect::update::Pace;
-/// HMAC-SHA256, for the service's keyed digests: the workspace's one
-/// implementation, which the service reaches through the mirror.
-pub use wellfed_session::mac::hmac_sha256;
 pub use zone::{Zone, ZoneError};
 
 /// A device request id: the feeder answers a repeated one from memory.
@@ -186,6 +184,9 @@ impl Shared {
 pub struct Mirror {
     shared: Arc<Shared>,
     feeders: Arc<Mutex<HashMap<FeederId, task::Handle>>>,
+    /// Each feeder's turn, held by a start or a stop across the wait for
+    /// its task to end. One entry per feeder ever started, a few bytes.
+    turns: Arc<Mutex<HashMap<FeederId, Arc<tokio::sync::Mutex<()>>>>>,
     cancel: CancellationToken,
     tasks: TaskTracker,
 }
@@ -217,6 +218,7 @@ impl Mirror {
                 desk: desk::Desk::default(),
             }),
             feeders: Arc::new(Mutex::new(HashMap::new())),
+            turns: Arc::new(Mutex::new(HashMap::new())),
             cancel,
             tasks: TaskTracker::new(),
         }
@@ -224,12 +226,17 @@ impl Mirror {
 
     /// Start mirroring `feeder`, and subscribe to its updates from the
     /// first. A feeder already running is stopped first, and its task has
-    /// ended before the new one starts, so two sessions never overlap.
+    /// ended before the new one starts, so two sessions never overlap:
+    /// starts and stops take turns, so none runs while another waits for
+    /// a task to end.
     pub async fn start(&self, feeder: Feeder) -> broadcast::Receiver<MirrorEvent> {
         let id = feeder.id;
+        let turn = self.turn(id);
+        let _turn = turn.lock().await;
         let running = self.handles().remove(&id);
         if let Some(old) = running {
             old.stop().await;
+            self.shared.desk.forget(id);
         }
 
         let (updates, first) = broadcast::channel(UPDATES);
@@ -240,11 +247,7 @@ impl Mirror {
             self.cancel.child_token(),
             &self.tasks,
         );
-        // Two starts racing for one id: the loser's task is stopped too.
-        let raced = self.handles().insert(id, handle);
-        if let Some(other) = raced {
-            other.stop().await;
-        }
+        self.handles().insert(id, handle);
         first
     }
 
@@ -252,12 +255,22 @@ impl Mirror {
     /// it was running. Its last update is `Link::Offline`, then its
     /// broadcast closes.
     pub async fn stop(&self, id: FeederId) -> bool {
+        let turn = self.turn(id);
+        let _turn = turn.lock().await;
         let handle = self.handles().remove(&id);
         let Some(handle) = handle else {
             return false;
         };
         handle.stop().await;
+        self.shared.desk.forget(id);
         true
+    }
+
+    /// `id`'s turn to start or stop: one feeder's waits for its own task
+    /// to end, never another's.
+    fn turn(&self, id: FeederId) -> Arc<tokio::sync::Mutex<()>> {
+        let mut turns = self.turns.lock().unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(turns.entry(id).or_default())
     }
 
     /// Set every feeder's clock in `zone` from now on, and give each the

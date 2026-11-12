@@ -76,6 +76,7 @@ impl Service {
             Err(
                 unsent @ (AskError::NotRunning
                 | AskError::Offline
+                | AskError::Expired
                 | AskError::Legacy
                 | AskError::Unsendable),
             ) => {

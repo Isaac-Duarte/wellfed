@@ -14,7 +14,7 @@
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 
 use serde::Deserialize;
@@ -23,11 +23,13 @@ pub use crate::proxy::ProxyRange;
 
 mod advertise;
 mod discovery;
+mod error;
 mod releases;
 mod webhook;
 
 pub use advertise::{Advertise, AdvertiseOverrides};
 pub use discovery::Discovery;
+pub use error::{ConfigError, InvalidValue, Refused};
 pub use releases::{RELEASES, ReleaseOverrides, Releases, UpdateKey};
 pub use webhook::{Webhook, WebhookError, WebhookOverrides, WebhookUrl};
 
@@ -52,53 +54,6 @@ const LABEL: &str = "wellfed-server";
 
 /// How many backups are kept, unless set.
 const BACKUPS_KEPT: NonZeroU32 = NonZeroU32::MIN.saturating_add(6);
-
-#[derive(Debug, thiserror::Error)]
-pub enum ConfigError {
-    #[error("read {}", path.display())]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    /// The file is not TOML.
-    #[error("{} is not valid TOML", path.display())]
-    Syntax {
-        path: PathBuf,
-        #[source]
-        source: Box<toml::de::Error>,
-    },
-    /// A key is unknown, or its value is the wrong type or out of range.
-    /// `field` is the key's dotted path (`retention.raw_sample_days`,
-    /// `hosts[1]`), an unknown key's included; `source` has its line.
-    #[error("{}: `{field}` is invalid", path.display())]
-    Invalid {
-        path: PathBuf,
-        field: String,
-        #[source]
-        source: Box<toml::de::Error>,
-    },
-    /// The webhook's URL is no URL, or breaks its rule ([`Webhook::target`]).
-    #[error("{}: `webhook.url`", path.display())]
-    Webhook {
-        path: PathBuf,
-        #[source]
-        source: WebhookError,
-    },
-}
-
-/// A value refused by its own type, whether it came from the file or a flag.
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub enum InvalidValue {
-    #[error("a label is 1-16 bytes with no NUL; {len} bytes were given")]
-    Label { len: usize },
-    #[error(
-        "`{name}` is not a host name (dot-separated labels of 1-63 letters, digits and inner `-`, up to 253 in all)"
-    )]
-    HostName { name: String },
-    #[error("`{text}` is not an update key (64 lowercase hex digits)")]
-    UpdateKey { text: String },
-}
 
 /// The settings the server runs with.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -383,14 +338,25 @@ fn given<T>(values: Vec<T>) -> Option<Vec<T>> {
 }
 
 fn parse(path: &Path, text: &str) -> Result<File, ConfigError> {
-    let deserializer = toml::Deserializer::parse(text).map_err(|source| ConfigError::Syntax {
-        path: path.to_owned(),
-        source: Box::new(source),
+    let deserializer = toml::Deserializer::parse(text).map_err(|error| {
+        let mut source = Refused::new(text, &error, false);
+        if source.in_webhook(text) {
+            source.reason = None;
+        }
+        ConfigError::Syntax {
+            path: path.to_owned(),
+            source,
+        }
     })?;
 
-    serde_path_to_error::deserialize(deserializer).map_err(|error| ConfigError::Invalid {
-        path: path.to_owned(),
-        field: error.path().to_string(),
-        source: Box::new(error.into_inner()),
+    serde_path_to_error::deserialize(deserializer).map_err(|error| {
+        let field = error.path().to_string();
+        let secret = field == "webhook" || field.starts_with("webhook.");
+        let source = Refused::new(text, error.inner(), secret);
+        ConfigError::Invalid {
+            path: path.to_owned(),
+            field,
+            source,
+        }
     })
 }

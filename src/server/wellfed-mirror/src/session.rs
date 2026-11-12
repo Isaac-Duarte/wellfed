@@ -38,9 +38,9 @@ use wellfed_api::Connection as Link;
 use wellfed_connect::{Connection, Cursor, Received, Resume};
 use wellfed_model::{Answer, Model, Op, Refusal, Skew, TimeChanges};
 
-use crate::RandomFailed;
 use crate::lanes::{Lane, Lanes};
 use crate::task::{Opened, Task};
+use crate::{RandomFailed, Zone};
 
 /// How long the task waits on a quiet feeder before looking again; the
 /// connection keeps the session alive meanwhile.
@@ -235,14 +235,18 @@ impl Task {
         Ok(true)
     }
 
-    /// Set the feeder's clock and its zone's rule.
+    /// Set the feeder's clock and its zone's rule, both from one reading
+    /// of the household's zone. It is marked seen here, so a change made
+    /// while the feeder answers is not taken as handled: it fires again,
+    /// and the next pass syncs it.
     async fn keep_time(
         &mut self,
         connection: &mut Connection,
         lanes: &mut Lanes,
     ) -> Result<(), End> {
-        self.sync_time(connection, lanes).await?;
-        self.push_zone(connection, lanes).await
+        let zone = self.zone.borrow_and_update().clone();
+        self.sync_time(connection, lanes, zone.as_deref()).await?;
+        self.push_zone(connection, lanes, zone.as_deref()).await
     }
 
     /// Set the feeder's clock to this server's, in the household's zone.
@@ -250,13 +254,10 @@ impl Task {
         &mut self,
         connection: &mut Connection,
         lanes: &mut Lanes,
+        zone: Option<&Zone>,
     ) -> Result<(), End> {
         let now = self.shared.clock.now();
-        // Seen here, so a change already applied does not fire again.
-        let zone = self.zone.borrow_and_update().clone();
-        let zone = zone
-            .as_deref()
-            .map_or(TimeZone::UTC, |zone| zone.tz().clone());
+        let zone = zone.map_or(TimeZone::UTC, |zone| zone.tz().clone());
         let sync = wellfed_client::time::sync(now, &zone);
         match self.ask(connection, lanes, &Op::TimeSync(sync)).await? {
             None => {
@@ -279,9 +280,9 @@ impl Task {
         &mut self,
         connection: &mut Connection,
         lanes: &mut Lanes,
+        zone: Option<&Zone>,
     ) -> Result<(), End> {
-        let zone = self.zone.borrow_and_update().clone();
-        let Some((zone, rule)) = zone.as_deref().and_then(|z| Some((z, z.rule()?))) else {
+        let Some((zone, rule)) = zone.and_then(|z| Some((z, z.rule()?))) else {
             return Ok(());
         };
 

@@ -32,6 +32,7 @@ mod invitees;
 mod proof;
 mod revoke;
 
+pub(in crate::feeders) use claim::Holder;
 pub(crate) use proof::Challenges;
 pub(in crate::feeders) use proof::Possession;
 pub(crate) use revoke::{Revocations, own_revoke, rank, revocation};

@@ -19,9 +19,10 @@
 
 use std::sync::Arc;
 
+use jiff::Timestamp;
 use tokio::time::Instant;
-use tracing::{info, warn};
-use wellfed_api::{FeederSample, Gap, HistoryEvent, SampleValue};
+use tracing::{error, info, warn};
+use wellfed_api::{FeederId, FeederSample, Gap, HistoryEvent, SampleValue};
 use wellfed_model::{Event, EventBody, Pushed};
 use wellfed_proto::api as proto;
 use wellfed_store::{EventRow, NewEvent, NewSample, Refresh, SampleRefresh};
@@ -133,6 +134,72 @@ impl Mirror {
     }
 }
 
+/// Store `event` with its projections and the cursor; whether it is new
+/// and stored readable, so it is broadcast.
+///
+/// A store error ends the session, so the reconnect replays what was not
+/// stored. An event refused for what it carries would be refused again at
+/// every reconnect, which subscribes after the same cursor, and nothing
+/// after it would ever be stored: so one that does not encode, or whose
+/// body the store refuses, is kept unread, as a newer build's event is,
+/// and the cursor moves past it. One refused even so is left out, and the
+/// session goes on.
+async fn record_event(
+    store: &wellfed_store::Store,
+    id: FeederId,
+    event: &Event,
+    received: Timestamp,
+) -> Result<bool, End> {
+    let unread = |raw| NewEvent {
+        epoch: event.epoch,
+        seq: event.seq,
+        at: event.at,
+        received,
+        body: None,
+        raw,
+    };
+    let mut raw = [0u8; RAW];
+    let encoded = proto::EventBody::try_from(event.body)
+        .ok()
+        .and_then(|body| wellfed_proto::encode(&body, &mut raw).ok());
+    let refused = match encoded {
+        Some(len) => {
+            let readable = NewEvent {
+                body: Some(event.body),
+                ..unread(&raw[..len])
+            };
+            match store.record_event(id, readable).await {
+                Ok(new) => return Ok(new),
+                Err(error) if error.refuses_value() => error,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        None => {
+            error!(seq = event.seq, body = ?event.body, "an event with no wire form is kept unread");
+            match store.record_event(id, unread(&[])).await {
+                Ok(_) => return Ok(false),
+                Err(error) if error.refuses_value() => error,
+                Err(error) => return Err(error.into()),
+            }
+        }
+    };
+    error!(
+        seq = event.seq,
+        "the store refused an event ({refused}); it is kept unread"
+    );
+    match store.record_event(id, unread(&raw[..0])).await {
+        Ok(_) => Ok(false),
+        Err(error) if error.refuses_value() => {
+            error!(
+                seq = event.seq,
+                "the store refused an event even unread ({error}); it is left out"
+            );
+            Ok(false)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
 impl Task {
     /// Store what the feeder pushed, or batch it if a sample, then
     /// broadcast it.
@@ -143,25 +210,7 @@ impl Task {
         let mut raw = [0u8; RAW];
         let update = match pushed {
             Pushed::Event(event) => {
-                let body = proto::EventBody::try_from(event.body)
-                    .map_err(|_| End::Failed(Failure::Encode))?;
-                let len = wellfed_proto::encode(&body, &mut raw)
-                    .map_err(|_| Failure::Encode)
-                    .map_err(End::Failed)?;
-                let new = store
-                    .record_event(
-                        self.id,
-                        NewEvent {
-                            epoch: event.epoch,
-                            seq: event.seq,
-                            at: event.at,
-                            received,
-                            body: Some(event.body),
-                            raw: &raw[..len],
-                        },
-                    )
-                    .await?;
-                if !new {
+                if !record_event(store, self.id, &event, received).await? {
                     return Ok(());
                 }
                 // The session loop reads them again after this step: an
@@ -257,7 +306,82 @@ impl Task {
 
 #[cfg(test)]
 mod tests {
+    use uuid::Uuid;
+    use wellfed_api::{EventKind, Model};
+    use wellfed_model::{ClientRole, CoreEvent, EnrollPath, Hex};
+    use wellfed_server_testkit::fixed::FixedClock;
+    use wellfed_server_testkit::{TempStore, home, local};
+    use wellfed_store::{NewFeeder, SealedKey, Store, Synced};
+
     use super::*;
+
+    const FEEDER: FeederId = FeederId(Uuid::from_u128(7));
+
+    async fn adopted(store: &Store) {
+        store.create_home(&home(), FixedClock.now()).await.unwrap();
+        store
+            .insert_feeder(NewFeeder {
+                id: FEEDER,
+                home: home().id,
+                model: Model::Plaf103,
+                identity: [1; 32],
+                name: "kitchen",
+                role: wellfed_api::ClientRole::Server,
+                address: None,
+                key: SealedKey {
+                    nonce: [0; 12],
+                    sealed: Vec::new(),
+                },
+                created: FixedClock.now(),
+            })
+            .await
+            .unwrap();
+    }
+
+    fn event(seq: u64, body: EventBody) -> Event {
+        Event {
+            epoch: 3,
+            seq,
+            at: None,
+            body,
+        }
+    }
+
+    /// An event that would be refused at every reconnect never ends the
+    /// session: one with no wire form (a role this build cannot name) is
+    /// kept unread and the cursor moves past it, so the next event is
+    /// stored readable; one whose number the database cannot hold is left
+    /// out.
+    #[test]
+    fn an_event_the_store_would_always_refuse_is_kept_unread_or_left_out() {
+        local(async {
+            let temp = TempStore::new();
+            let store = temp.open().await;
+            adopted(&store).await;
+            let received = FixedClock.now();
+            let unnamed = EventBody::Core(CoreEvent::Enrolled {
+                client: Hex([9; 4]),
+                role: ClientRole::Unknown,
+                path: EnrollPath::Invite,
+            });
+
+            let kept = record_event(&store, FEEDER, &event(1, unnamed), received).await;
+            assert!(matches!(kept, Ok(false)), "kept, but not broadcast");
+            let next = EventBody::Core(CoreEvent::Restarting);
+            let stored = record_event(&store, FEEDER, &event(2, next), received).await;
+            assert!(matches!(stored, Ok(true)));
+            let rows = store.events(FEEDER, 3, None, 10, None).await.unwrap();
+            let kinds: Vec<_> = rows.iter().map(|row| (row.seq, row.kind)).collect();
+            assert_eq!(kinds, [(1, None), (2, Some(EventKind::Restarting))]);
+
+            let past = event(u64::MAX, EventBody::Core(CoreEvent::Restarting));
+            let left = record_event(&store, FEEDER, &past, received).await;
+            assert!(matches!(left, Ok(false)), "left out, not a failure");
+            let row = store.feeder(FEEDER).await.unwrap().unwrap();
+            assert_eq!(row.synced, Some(Synced { epoch: 3, seq: 2 }));
+            store.close().await;
+        });
+    }
 
     /// A stored body longer than the ring's 16 bytes is no body the feeder
     /// sent: it reads as undecodable rather than panicking or truncating.

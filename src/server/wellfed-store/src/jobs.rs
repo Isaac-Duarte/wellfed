@@ -3,7 +3,7 @@
 use wellfed_api::{Job, JobOutcome, JobRun};
 
 use crate::convert::{millis, timestamp};
-use crate::{Error, Result, Store};
+use crate::{Result, Store};
 
 impl Store {
     /// Keep `run` as its job's last run.
@@ -29,24 +29,29 @@ impl Store {
     }
 
     /// Every job's last run, in [`Job::ALL`]'s order; a job that has never
-    /// run has none.
+    /// run has none. A row a newer server wrote, for a job or an outcome
+    /// this build cannot name, is left out: this build does not run that
+    /// job, and failing the read would hide every other job's last run.
     pub async fn job_runs(&self) -> Result<Vec<JobRun>> {
         let rows = sqlx::query!("SELECT job, started_ms, finished_ms, outcome FROM job_runs")
             .fetch_all(&self.reader)
             .await?;
 
-        let mut runs = rows
-            .into_iter()
-            .map(|row| {
-                Ok(JobRun {
-                    job: Job::from_code(&row.job).ok_or(Error::Corrupt("job"))?,
-                    started: timestamp(row.started_ms)?,
-                    finished: timestamp(row.finished_ms)?,
-                    outcome: JobOutcome::from_code(&row.outcome)
-                        .ok_or(Error::Corrupt("job outcome"))?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let mut runs = Vec::new();
+        for row in rows {
+            let (Some(job), Some(outcome)) = (
+                Job::from_code(&row.job),
+                JobOutcome::from_code(&row.outcome),
+            ) else {
+                continue;
+            };
+            runs.push(JobRun {
+                job,
+                started: timestamp(row.started_ms)?,
+                finished: timestamp(row.finished_ms)?,
+                outcome,
+            });
+        }
         runs.sort_by_key(|run| Job::ALL.iter().position(|job| *job == run.job));
         Ok(runs)
     }
