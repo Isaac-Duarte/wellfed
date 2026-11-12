@@ -352,6 +352,21 @@ fn a_radio_that_never_comes_up_ends_the_task() {
     }
 }
 
+/// A radio something else brought up first answers "already running", which
+/// boot takes as up, as battery mode does: the task goes on to join.
+#[test]
+fn a_radio_already_running_at_boot_still_joins() {
+    let mut task = Task::new(Net {
+        boot_on: 1,
+        ..Net::default()
+    });
+
+    let boot = task.take_until(|a| *a == Action::Select);
+    assert!(boot.contains(&Action::PowerSaveOff));
+    assert!(!boot.contains(&Action::Stop));
+    assert_eq!(task.events(Kind::On)[0].result, 1);
+}
+
 /// A network that is there and refuses the feeder backs off to the longest
 /// wait.
 #[test]

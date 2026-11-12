@@ -66,9 +66,9 @@ fn answer(action: Action, value: u32, wrong: bool) -> Done {
         | Action::RadioOff
         | Action::Disconnect
         | Action::Scan
-        | Action::Connect { .. } => Done::Status(if value % 4 == 0 { -1 } else { 0 }),
+        | Action::Connect { .. } => Done::Status(if value.is_multiple_of(4) { -1 } else { 0 }),
         Action::Associated => Done::Associated(bit(0)),
-        Action::Select => Done::Selected((value % 5 != 0).then_some(value % 3)),
+        Action::Select => Done::Selected((!value.is_multiple_of(5)).then_some(value % 3)),
         Action::Sighting => Done::Sighting(Sighting {
             done: bit(0),
             found: bit(1),
