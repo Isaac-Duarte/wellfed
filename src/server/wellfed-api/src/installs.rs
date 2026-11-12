@@ -113,9 +113,12 @@ pub enum InstallState {
     /// nothing was offered and nothing written.
     AlreadyRunning,
     /// It ended without the server seeing activation; `failure` says why.
-    /// The feeder keeps running the build it had, unless the end is
-    /// uncertain (`unreachable` with `offered`): then bank 1 may be partly
-    /// written, or activated, and only the feeder's status tells.
+    /// Before the feeder took the offer, it keeps running the build it had.
+    /// After, it may run its recovery copy from bank 0 with bank 1 partly
+    /// written, and when the end is uncertain (`unreachable` with
+    /// `offered`) bank 1 may be activated: the feeder's update state tells.
+    /// The server does not follow a new build's trial; a fallback reaches
+    /// it as the feeder's `rolled_back` alert.
     Failed,
     /// A value a newer server added, which this client cannot name. The
     /// server never sends it.
