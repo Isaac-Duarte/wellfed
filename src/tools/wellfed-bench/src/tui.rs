@@ -398,9 +398,11 @@ fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
 
     drop(terminal);
     drop(screen);
+    // Off the screen, which drops control characters itself, the lines
+    // go to the terminal as plain text.
     let tail = log.len().saturating_sub(TAIL_AFTER);
     for line in log.range(tail..) {
-        writeln!(after, "{line}")?;
+        writeln!(after, "{}", wellfed_bench::server::printable(line))?;
     }
     Ok(())
 }

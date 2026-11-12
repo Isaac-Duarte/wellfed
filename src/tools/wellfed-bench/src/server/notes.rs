@@ -191,6 +191,9 @@ fn open_file(path: &Path) -> std::io::Result<File> {
 /// window ends before it is due, an expectation that matches everything,
 /// an event kind the device API does not have, or evidence outside
 /// `private/`.
+/// The furthest ahead a timer may fall due or end: ten years, in seconds.
+const TIMER_HORIZON: f64 = 10.0 * 365.25 * 24.0 * 3600.0;
+
 fn check(body: &Body) -> Result<(), NoteError> {
     match body {
         Body::Seen { .. } => Err(NoteError::ServerOnly {
@@ -211,6 +214,11 @@ fn check(body: &Body) -> Result<(), NoteError> {
                 NoteError::Window {
                     label: label.clone(),
                 }
+            })?;
+            // Every reader turns these into wall-clock times, which end at
+            // the year 9999; no bench timer runs for years.
+            wellfed_formats::require(*until <= now() + TIMER_HORIZON, || NoteError::TooFar {
+                label: label.clone(),
             })?;
             match expect {
                 Some(Expect::Line { text }) if text.is_empty() => Err(NoteError::EmptyExpect {
@@ -287,6 +295,27 @@ mod tests {
             until: due + WINDOW,
             expect: Some(expect),
         }
+    }
+
+    /// A timer only an absurd length reaches is refused: every reader
+    /// turns its times into dates, and the server would keep it.
+    #[test]
+    fn a_timer_years_away_is_refused() {
+        let due = now() + 60.0;
+        let far = Body::Timer {
+            label: "t".into(),
+            due,
+            until: 9.2e18,
+            expect: None,
+        };
+        assert_eq!(check(&far), Err(NoteError::TooFar { label: "t".into() }));
+        let near = Body::Timer {
+            label: "t".into(),
+            due,
+            until: due + WINDOW,
+            expect: None,
+        };
+        assert_eq!(check(&near), Ok(()));
     }
 
     fn operator(store: &Store) -> Operator {

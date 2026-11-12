@@ -323,6 +323,11 @@ fn an_idle_bench_has_no_banner_and_a_scrolled_log_holds_its_place() {
     );
     assert!(screen.contains("job line 400"), "{screen}");
     assert!(!screen.contains("job line 401"), "{screen}");
+
+    // Home scrolls the whole log up: the oldest page fills the box.
+    let top = render(&state, &log(100), 100);
+    assert!(top.contains("job line 1 "), "{top}");
+    assert!(!top.contains("Log (100 lines up"), "{top}");
 }
 
 #[test]

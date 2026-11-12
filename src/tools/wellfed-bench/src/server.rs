@@ -50,7 +50,7 @@ mod watching;
 pub use client::{Client, ClientError, Followed, Interrupt, StateEvents};
 pub use feeder::{ClockSync, DeviceOptions};
 pub use jobs::{JobCommand, JobOptions, ToolPaths};
-pub use output::{CONSOLE_QUEUE, Console};
+pub use output::{CONSOLE_QUEUE, Console, printable};
 pub use serve::{Options, ServeError, Server, restore_output};
 pub use state::Store;
 pub use tool_jobs::RestoreStockArgs;

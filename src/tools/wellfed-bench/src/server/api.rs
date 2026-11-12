@@ -165,6 +165,8 @@ pub enum NoteError {
     NoLabel,
     #[error("Timer {label:?}: its window must end at or after its due time")]
     Window { label: String },
+    #[error("Timer {label:?}: it must fall due, and its window end, within ten years")]
+    TooFar { label: String },
     #[error("Timer {label:?}: an empty expectation would match every line")]
     EmptyExpect { label: String },
     #[error("{kind:?} is no device event kind; the device API has {known}")]
