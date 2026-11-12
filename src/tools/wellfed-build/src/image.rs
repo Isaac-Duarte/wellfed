@@ -14,7 +14,7 @@ use wellfed_formats::manifest::{BuildChecks, BuildManifest};
 use wellfed_formats::require;
 
 use crate::environment::{Rust, rust_compiler};
-use crate::identity::{Subject, current_inputs, ota_public_key, source_identity};
+use crate::identity::{Subject, current_inputs, image_key, source_identity};
 use crate::platform::{Job, Linked};
 use crate::{Device, Firmware, Profile, Provisioning, Repo, Result, Stage, Variant};
 
@@ -142,8 +142,9 @@ pub fn build(repo: &Repo, request: &Request, toolchain: &Path) -> Result<PathBuf
         provisioning,
     } = *request;
     // A consumer build without the release key is refused before it touches
-    // its output.
-    let ota_key = ota_public_key(repo, profile, provisioning)?;
+    // its output. A bare firmware's image trusts no key (the build refuses
+    // one that links the updater anyway).
+    let ota_key = image_key(repo, profile, provisioning, firmware)?;
     let output = device.output(repo, profile, provisioning);
     fs::create_dir_all(&output)?;
     let _held = hold_output(&output)?;

@@ -17,6 +17,7 @@ use wellfed_formats::manifest::IdentitySnapshot;
 use wellfed_formats::require;
 use wellfed_session::hex;
 
+use crate::firmware::Runtime;
 use crate::{
     Device, Firmware, Profile, Provisioning, Repo, Result, Stage, Variant, digest, relative,
 };
@@ -273,6 +274,20 @@ pub fn current_inputs(
 ///
 /// Only a key's public half reaches the build, the identity and the
 /// manifest.
+/// The update key `firmware`'s image builds in, as [`ota_public_key`]
+/// reads it (refusing a consumer build without the release key). Only the
+/// SDK runtime links the updater, so a bare firmware's image trusts none,
+/// and its manifest names neither a key nor an update policy.
+pub(crate) fn image_key(
+    repo: &Repo,
+    profile: Profile,
+    provisioning: Provisioning,
+    firmware: &Firmware,
+) -> Result<Option<String>> {
+    let key = ota_public_key(repo, profile, provisioning)?;
+    Ok(key.filter(|_| firmware.runtime() == Runtime::Sdk))
+}
+
 pub(crate) fn ota_public_key(
     repo: &Repo,
     profile: Profile,
@@ -381,7 +396,7 @@ pub fn source_id(
     };
     match which {
         SourceId::Image => {
-            let key = ota_public_key(repo, profile, provisioning)?;
+            let key = image_key(repo, profile, provisioning, firmware)?;
             source_identity(&subject, &inputs, key.as_deref())
         }
         SourceId::Bare => {

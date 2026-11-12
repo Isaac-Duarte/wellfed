@@ -59,6 +59,11 @@ pub enum AmebadError {
     /// something other than the build chose the key it compiled in.
     #[error("Linked image does not carry the update key {key} the build set")]
     OtaKey { key: String },
+    /// A bare firmware's manifest names no update key or policy, so an
+    /// image that links the updater anyway would install updates nothing
+    /// declared.
+    #[error("A bare firmware's image links the updater ({symbol})")]
+    BareUpdater { symbol: String },
     #[error("Linked image is missing required application/core symbols")]
     ImageSymbols,
     #[error("Rust archive is missing expected symbols: {}", missing.join(", "))]
@@ -584,7 +589,7 @@ impl Build<'_> {
                 ),
             || AmebadError::NoIdentity,
         )?;
-        carries_key(combined, self.job.ota_key, self.job.firmware.runtime())?;
+        carries_key(combined, self.job.ota_key)?;
         Ok(banner)
     }
 
@@ -605,6 +610,7 @@ impl Build<'_> {
             required.iter().all(|s| names.iter().any(|n| n == s)),
             || AmebadError::ImageSymbols,
         )?;
+        links_no_updater(&names, self.job.firmware.runtime())?;
 
         let mut compiled = Vec::new();
         for (core, archive) in archives {
@@ -806,13 +812,13 @@ impl Amebad {
     }
 }
 
-/// Refuse an image on the SDK runtime that lacks the update key the build
-/// set. `wellfed-hal` keeps the key as the 64 hex characters it was given,
-/// so the packaged updater holds them; anything that compiled in another
-/// key (a cargo `[env]` entry the environment check missed) leaves them
-/// out. A bare firmware links no updater, so its image holds no key at all.
-fn carries_key(combined: &[u8], key: Option<&str>, runtime: Runtime) -> Result<()> {
-    let Some(key) = key.filter(|_| runtime == Runtime::Sdk) else {
+/// Refuse an image that lacks the update key the build set. `wellfed-hal`
+/// keeps the key as the 64 hex characters it was given, so the packaged
+/// updater holds them; anything that compiled in another key (a cargo
+/// `[env]` entry the environment check missed) leaves them out. A bare
+/// firmware links no updater, so the build sets it no key.
+fn carries_key(combined: &[u8], key: Option<&str>) -> Result<()> {
+    let Some(key) = key else {
         return Ok(());
     };
     require(contains(combined, key.as_bytes()), || AmebadError::OtaKey {
@@ -821,21 +827,53 @@ fn carries_key(combined: &[u8], key: Option<&str>, runtime: Runtime) -> Result<(
     Ok(())
 }
 
+/// The mangled path of `wellfed_hal::ota::update`, the same in the v0 and
+/// legacy schemes: every function the updater links carries it.
+const UPDATER: &str = "11wellfed_hal3ota6update";
+
+/// Refuse a bare firmware's image that links the updater: only the SDK
+/// runtime starts it, and a bare image's manifest names no update key.
+fn links_no_updater(names: &[String], runtime: Runtime) -> Result<()> {
+    if runtime == Runtime::Sdk {
+        return Ok(());
+    }
+    match names.iter().find(|name| name.contains(UPDATER)) {
+        Some(symbol) => Err(AmebadError::BareUpdater {
+            symbol: symbol.clone(),
+        }
+        .into()),
+        None => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn a_bare_image_that_links_the_updater_is_refused() {
+        let updater =
+            "_RNvMNtNtCsduCGiX4Semn_11wellfed_hal3ota6updateNtB2_6Update4step".to_string();
+        let names = vec!["wellfed_app_start".to_string(), updater.clone()];
+        links_no_updater(&names, Runtime::Sdk).unwrap();
+        links_no_updater(&names[..1], Runtime::Bare).unwrap();
+
+        let error = links_no_updater(&names, Runtime::Bare).unwrap_err();
+        assert!(
+            matches!(&error, Error::Amebad(AmebadError::BareUpdater { symbol }) if symbol == &updater),
+            "{error:?}"
+        );
+    }
+
+    #[test]
     fn an_image_without_the_key_the_build_set_is_refused() {
         let key = "ab".repeat(32);
         let image = format!("code{key}data").into_bytes();
-        carries_key(&image, Some(&key), Runtime::Sdk).unwrap();
-        carries_key(&image, None, Runtime::Sdk).unwrap();
+        carries_key(&image, Some(&key)).unwrap();
+        carries_key(&image, None).unwrap();
 
         let other = "cd".repeat(32);
-        // A bare firmware's image links no updater to hold a key.
-        carries_key(&image, Some(&other), Runtime::Bare).unwrap();
-        let error = carries_key(&image, Some(&other), Runtime::Sdk).unwrap_err();
+        let error = carries_key(&image, Some(&other)).unwrap_err();
         assert!(
             matches!(&error, Error::Amebad(AmebadError::OtaKey { key }) if key == &other),
             "{error:?}"

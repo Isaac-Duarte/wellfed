@@ -112,6 +112,9 @@ fn the_factory_loader_chooses_the_fountain_boot_test_in_bank_1() {
     let repo = repo();
     let build = repo.root.join("private/firmware-build/plwf106/firstboot");
     let manifest: BuildManifest = wellfed_formats::load(&build.join("manifest.json")).unwrap();
+    // The fountain is bare: it links no updater, so it trusts no key.
+    assert_eq!(manifest.ota_public_key, None);
+    assert_eq!(manifest.startup_update_policy, None);
     let ota = manifest.artifact("OTA_All.bin").unwrap();
     let image = fs::read(build.join(&ota.path)).unwrap();
     let backup = fs::read(
