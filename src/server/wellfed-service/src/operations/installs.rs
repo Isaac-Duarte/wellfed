@@ -17,8 +17,6 @@
 //! an offer the feeder refuses, an install it stops, or a feeder that never
 //! comes back ends the install; another is another request.
 
-use std::sync::{Arc, Mutex};
-
 use tokio::sync::oneshot;
 use tracing::{Instrument, info, info_span, warn};
 use wellfed_api::{
@@ -31,9 +29,13 @@ use wellfed_releases::{STOCK_VERSION, StockBackup};
 
 use crate::{Caller, CommandError, Error, InternalError, Resource, Result, Service, lock};
 
+mod claim;
 mod error;
 
+pub(crate) use claim::Slot;
 pub use error::InstallError;
+
+use claim::Claim;
 
 /// Progress reaches the stream each time this many more bytes are written.
 const PROGRESS_STEP: u32 = 32 * 1024;
@@ -49,19 +51,6 @@ pub(crate) enum Offer {
         downgrade: Vec<u8>,
         backup: StockBackup,
     },
-}
-
-/// The server's one install slot, with the ends the store did not take.
-pub(crate) type Slot = Arc<Mutex<Installs>>;
-
-/// What the service keeps of installs in memory.
-#[derive(Debug, Default)]
-pub(crate) struct Installs {
-    /// The running install, as it stands.
-    running: Option<Install>,
-    /// Installs that ended while the store's row still says `running`:
-    /// their end was not stored.
-    unsaved: Vec<Install>,
 }
 
 impl Service {
@@ -370,43 +359,5 @@ fn failure(error: UpdateError) -> InstallFailure {
         // The driver ends a push it cannot settle `Gone`, never with this;
         // read the same way here, it stays uncertain whoever carries it.
         UpdateError::Uncertain(_) => InstallFailure::Unreachable { offered: true },
-    }
-}
-
-/// The slot, held by the one running install; dropping it frees the slot.
-pub(crate) struct Claim {
-    slot: Slot,
-    install: Install,
-}
-
-impl Claim {
-    fn take(slot: &Slot, install: Install) -> Result<Self> {
-        let mut held = lock(slot);
-        if held.running.is_some() {
-            return Err(InstallError::Running.into());
-        }
-        held.running = Some(install);
-        Ok(Self {
-            slot: Arc::clone(slot),
-            install,
-        })
-    }
-
-    /// Change the running install and return it as it now stands.
-    fn update(&mut self, change: impl FnOnce(&mut Install)) -> Install {
-        change(&mut self.install);
-        lock(&self.slot).running = Some(self.install);
-        self.install
-    }
-
-    /// Keep the ended `install`, whose end the store did not take.
-    fn unsaved(&self, install: Install) {
-        lock(&self.slot).unsaved.push(install);
-    }
-}
-
-impl Drop for Claim {
-    fn drop(&mut self) {
-        lock(&self.slot).running = None;
     }
 }

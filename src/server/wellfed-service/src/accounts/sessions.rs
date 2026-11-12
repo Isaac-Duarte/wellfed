@@ -29,7 +29,7 @@ use wellfed_session::hex;
 use wellfed_store::NewUser;
 
 use crate::accounts::tokens::session_only;
-use crate::error::bounded;
+use crate::names::bounded;
 use crate::{AccountError, Caller, Error, InternalError, Invalid, Resource, Result, Service};
 
 /// Password hashes computed at once.

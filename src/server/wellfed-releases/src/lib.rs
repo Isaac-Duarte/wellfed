@@ -30,6 +30,7 @@ mod cache;
 mod error;
 mod github;
 mod stock;
+mod write;
 
 use std::collections::HashSet;
 use std::path::PathBuf;

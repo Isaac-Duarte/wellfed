@@ -14,7 +14,7 @@ use wellfed_api::{
 };
 use wellfed_store::FoodSet;
 
-use crate::error::bounded;
+use crate::names::bounded;
 use crate::page::{self, after_seq};
 use crate::{Error, Invalid, OwnerDataError, Resource, Result, Service};
 

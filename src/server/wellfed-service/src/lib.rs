@@ -73,6 +73,7 @@ mod config;
 mod error;
 mod feeders;
 mod hub;
+mod names;
 mod operations;
 mod owner_data;
 mod page;

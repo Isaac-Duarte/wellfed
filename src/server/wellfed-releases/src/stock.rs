@@ -22,7 +22,7 @@ use wellfed_api::{StockBackup as StockView, StockBackupState, StockSource};
 use wellfed_client::install::{STOCK_VERSION, StockBackup, StockPins};
 use wellfed_model::Hex;
 
-use crate::cache::{Writer, blocking, cache, sync_dir, write_whole};
+use crate::write::{Writer, blocking, cache, sync_dir, write_whole};
 use crate::{Added, Error};
 
 /// Where the backups are kept, and what a copy must match.

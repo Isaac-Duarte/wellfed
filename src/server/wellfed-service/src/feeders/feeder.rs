@@ -7,9 +7,9 @@ use wellfed_mirror::Invite;
 use wellfed_session::hex;
 use wellfed_store::{FeederRow, NewFeeder};
 
-use crate::error::bounded;
 use crate::feeders::keys;
 use crate::feeders::phones::Possession;
+use crate::names::bounded;
 use crate::{Caller, Error, FeederError, InternalError, Invalid, Resource, Result, Service};
 
 const PAGE: u32 = 100;

@@ -10,7 +10,7 @@ use tracing::error;
 use wellfed_api::{AuditAction, Home, HomePatch, Units};
 use wellfed_mirror::Zone;
 
-use crate::error::bounded;
+use crate::names::bounded;
 use crate::{Caller, Error, Invalid, Resource, Result, Service};
 
 impl Service {

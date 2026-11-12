@@ -83,7 +83,7 @@ const MINUTE_MS: i64 = 60_000;
 
 /// The longest name a bucket keeps: no shorter than any account's, so it
 /// limits the names that exist exactly, and bounds what a key holds.
-const NAME_CHARS: usize = crate::error::NAME_MAX;
+const NAME_CHARS: usize = crate::names::NAME_MAX;
 
 /// Whose bucket. A name is trimmed and lowercased, so its spellings share
 /// one; an address is an IPv4 address, or an IPv6 address's /64.

@@ -11,7 +11,7 @@ use wellfed_api::{
     WeightPage,
 };
 
-use crate::error::bounded;
+use crate::names::bounded;
 use crate::page::{self, after_weight, weight_cursor};
 use crate::{Error, Invalid, OwnerDataError, Resource, Result, Service};
 

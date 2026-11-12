@@ -39,7 +39,7 @@ use wellfed_session::hex;
 use wellfed_store::Whose;
 
 use crate::accounts::sessions::{TOUCH, disabled};
-use crate::error::bounded;
+use crate::names::bounded;
 use crate::{AccountError, Error, Invalid, Permission, Resource, Result, Service, can};
 
 /// What every secret starts with, so it is recognisable in a config file

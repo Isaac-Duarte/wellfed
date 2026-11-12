@@ -217,19 +217,6 @@ impl Error {
     }
 }
 
-/// The most characters a name or label holds, once trimmed.
-pub(crate) const NAME_MAX: usize = 64;
-
-/// `text` trimmed, when it holds 1 to [`NAME_MAX`] characters; else
-/// `invalid`.
-pub(crate) fn bounded(text: &str, invalid: Invalid) -> Result<&str, Invalid> {
-    let text = text.trim();
-    if text.is_empty() || text.chars().count() > NAME_MAX {
-        return Err(invalid);
-    }
-    Ok(text)
-}
-
 /// A field that failed the server's checks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Invalid {
