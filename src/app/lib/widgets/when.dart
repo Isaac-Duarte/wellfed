@@ -48,6 +48,11 @@ String portionsText(int n) => '$n ${portionWord(n)}';
 /// `portion` or `portions`, for a count said elsewhere in the sentence.
 String portionWord(int n) => n == 1 ? 'portion' : 'portions';
 
+/// A weight in grams, without its unit: `9.8`, or `11` when it is whole.
+/// Every screen says a weight this one way, so a feed reads the same before
+/// and after it runs.
+String gramsText(int mg) => mg % 1000 == 0 ? '${mg ~/ 1000}' : (mg / 1000).toStringAsFixed(1);
+
 String _text(BuildContext context, TimeOfDay time) =>
     MaterialLocalizations.of(context)
         .formatTimeOfDay(time, alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context));

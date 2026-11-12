@@ -20,6 +20,7 @@ import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/settings_list.dart';
+import 'package:wellfed/widgets/when.dart';
 
 class SettingsOwnerSection extends StatefulWidget {
   const SettingsOwnerSection({super.key, required this.feeder});

@@ -7,7 +7,6 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/history.dart';
 import 'package:wellfed/screens/feeder/meal_skip.dart';
-import 'package:wellfed/screens/feeder/portion.dart' show gramsText;
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;

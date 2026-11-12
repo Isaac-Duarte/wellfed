@@ -8,9 +8,11 @@ import 'package:wellfed/src/limits.g.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/fleet/fleet.dart';
 
 import '../support/fakes.dart';
 import '../support/harness.dart';
+import 'feeder_support.dart';
 
 /// Whether the time source named `name` is the ticked one.
 bool? _chosen(WidgetTester tester, String name) => tester
@@ -195,6 +197,23 @@ void main() {
   });
 
   group('Portion size', () {
+    testWidgets('the sheet says grams as Today and the Portion screen do', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      session.answering = (request) async => switch (request) {
+        FeederRequest_GetCalibration() => const FeederReply.calibration(
+          calibration: CalibrationInfo(generation: 1, writable: true, portionMg: 12200, bowl: Bowl.single),
+        ),
+        _ => const FeederReply.done(),
+      };
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard());
+      await settle(tester);
+      await feederTap(tester, find.widgetWithText(FilledButton, 'Feed now'));
+      await feederTap(tester, find.byTooltip('One more portion'));
+
+      expect(find.text('Feed 2 portions · 24.4 g'), findsOneWidget, reason: 'a tenth kept, not rounded to 24');
+    });
+
     Future<FakeSession> show(WidgetTester tester, {CalibrationInfo held = calibration}) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(time: time));

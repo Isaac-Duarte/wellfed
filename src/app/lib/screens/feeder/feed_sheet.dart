@@ -55,15 +55,6 @@ Future<void> showFeedSheet(BuildContext context, FeederController feeder) => sho
 TextStyle _title(BuildContext context, {double size = 24}) =>
     TextStyle(fontSize: size, fontWeight: Fonts.semibold, height: 1.25, color: context.colors.text);
 
-String _portions(int n) => n == 1 ? 'portion' : 'portions';
-
-/// A weight in grams as the sheet says it: whole grams, or a tenth under 10.
-String _grams(int mg) {
-  if (mg >= 9950) return '${(mg / 1000).round()} g';
-  final String tenths = (mg / 1000).toStringAsFixed(1);
-  return '${tenths.endsWith('.0') ? tenths.substring(0, tenths.length - 2) : tenths} g';
-}
-
 String _time(BuildContext context, DateTime? at) => at == null ? '' : clockText(context, at);
 
 class _Confirm extends StatefulWidget {
@@ -99,10 +90,10 @@ class _ConfirmState extends State<_Confirm> {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final int? portionMg = _calibration?.portionMg;
-    final String? grams = portionMg == null ? null : _grams(portionMg * _portions);
+    final String? grams = portionMg == null ? null : '${gramsText(portionMg * _portions)} g';
     final String portion = portionMg == null
         ? "One portion is one turn of the feeder's wheel."
-        : 'Each portion is about ${_grams(portionMg)}.';
+        : 'Each portion is about ${gramsText(portionMg)} g.';
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -134,7 +125,7 @@ class _ConfirmState extends State<_Confirm> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _portionsWord,
+                    portionWord(_portions),
                     style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                   ),
                   if (grams != null)
@@ -171,7 +162,7 @@ class _ConfirmState extends State<_Confirm> {
               flex: 2,
               child: FilledButton(
                 onPressed: widget.feeder.state.canFeed ? () => widget.feeder.feedNow(_portions) : null,
-                child: Text('Feed $_portions $_portionsWord${grams == null ? '' : ' · $grams'}'),
+                child: Text('Feed $_portions ${portionWord(_portions)}${grams == null ? '' : ' · $grams'}'),
               ),
             ),
           ],
@@ -179,8 +170,6 @@ class _ConfirmState extends State<_Confirm> {
       ],
     );
   }
-
-  String get _portionsWord => _portions == 1 ? 'portion' : 'portions';
 }
 
 class _Progress extends StatelessWidget {
@@ -207,7 +196,7 @@ class _Progress extends StatelessWidget {
                     child: LinearProgressIndicator(minHeight: 10, backgroundColor: c.sunken, color: c.food),
                   ),
                   const SizedBox(height: Space.s2),
-                  _Muted('${feed.portions} ${_portions(feed.portions)}'),
+                  _Muted('${feed.portions} ${portionWord(feed.portions)}'),
                 ],
               ),
               _Muted(
@@ -244,7 +233,7 @@ class _Progress extends StatelessWidget {
             color: c.warning,
             title:
                 'Fed between ${result.confirmed} and ${result.atMost} '
-                '${_portions(result.atMost)}',
+                '${portionWord(result.atMost)}',
             children: [
               _Lead(_uncertainWhy(result.reason)),
               Container(
@@ -288,7 +277,7 @@ class _Progress extends StatelessWidget {
             color: all ? c.ok : c.warning,
             title:
                 'Fed ${result.confirmed} of ${result.requested} '
-                '${_portions(result.requested)}',
+                '${portionWord(result.requested)}',
             children: [
               if (!all) _Lead(_upper(result.words)),
               FactList(sunken: true, [
