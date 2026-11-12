@@ -13,8 +13,9 @@ String serverErrorWords(ServerError error) => switch (error.kind) {
   ServerErrorKind.redirected => 'The server sent the $deviceName elsewhere. Use this address instead: ${error.message}',
   ServerErrorKind.unreachable => 'Nothing answered at that address. Check the $deviceName is on the home network.',
   ServerErrorKind.interrupted => 'The connection broke before the server answered.',
-  ServerErrorKind.serverFailed =>
-    'The server failed partway, so it may or may not have taken. Check before you try again.',
+  // A read or a login; a change that may have run gets its own words from
+  // the screen that made it.
+  ServerErrorKind.serverFailed => 'The server failed partway through. Try again in a while.',
   ServerErrorKind.badCredentials => 'The name or the password is wrong.',
   ServerErrorKind.rateLimited => switch (error.retryAfterSeconds) {
     final int seconds? => 'Too many tries. Try again in $seconds seconds.',

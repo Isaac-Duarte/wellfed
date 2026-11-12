@@ -123,23 +123,30 @@ void main() {
     expect(ports.kept, isNull);
   });
 
-  testWidgets('a refused login says why, and keeps nothing', (tester) async {
-    _phone(tester);
-    final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
-    ports.loginFails = serverError(ServerErrorKind.badCredentials);
-    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
-    // The address last: a plain one adds a notice that moves the others.
-    await tester.enterText(find.byType(TextField).at(1), 'ada');
-    await tester.enterText(find.byType(TextField).at(2), 'wrong');
-    await tester.enterText(find.byType(TextField).at(0), 'http://home.lan:8080');
-    await tester.pump();
-    await tester.ensureVisible(find.text('Log in'));
-    await tester.tap(find.text('Log in'));
-    await settle(tester);
+  // A login changes nothing a retry could repeat, so a server that failed
+  // partway asks for another try, not a check.
+  for (final (ServerErrorKind kind, String words) in [
+    (ServerErrorKind.badCredentials, 'The name or the password is wrong.'),
+    (ServerErrorKind.serverFailed, 'The server failed partway through. Try again in a while.'),
+  ]) {
+    testWidgets('a login refused as ${kind.name} says why, and keeps nothing', (tester) async {
+      _phone(tester);
+      final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
+      ports.loginFails = serverError(kind);
+      await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+      // The address last: a plain one adds a notice that moves the others.
+      await tester.enterText(find.byType(TextField).at(1), 'ada');
+      await tester.enterText(find.byType(TextField).at(2), 'wrong');
+      await tester.enterText(find.byType(TextField).at(0), 'http://home.lan:8080');
+      await tester.pump();
+      await tester.ensureVisible(find.text('Log in'));
+      await tester.tap(find.text('Log in'));
+      await settle(tester);
 
-    expect(find.text('The name or the password is wrong.'), findsOneWidget);
-    expect(book.server, isNull);
-  });
+      expect(find.text(words), findsOneWidget);
+      expect(book.server, isNull);
+    });
+  }
 
   testWidgets('the account says the phone keeps its keys, and logging out asks the password for it', (tester) async {
     _phone(tester);
