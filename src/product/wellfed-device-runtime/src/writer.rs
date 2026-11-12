@@ -885,16 +885,20 @@ impl<F: FlashOps> Core<F> {
         let mixed = self.seed.seed().is_some_and(|seed| rng::mix(seed));
         // The ring's epoch moves on with every boot's seed, stored before
         // any ring could take it. Without a generator the stored seed stays
-        // (no boot has used it yet) and only the epoch moves.
+        // (no boot has used it yet) and only the epoch moves. With neither,
+        // nothing is stored: such a boot opens no session (every handshake
+        // needs the generator), and no earlier boot did either, so no client
+        // has heard a ring an epoch of 1 could repeat.
         let epoch = ring_epoch(self.seed.epoch(), random_word());
         let next = rng::bytes();
-        let seed = next.or(self.seed.seed().copied()).unwrap_or([0; 32]);
-        let stored = writable && {
-            arming::set_attempt();
-            let stored = self.seed.save(&seed, epoch);
-            arming::clear_attempt();
-            stored
-        };
+        let seed = next.or(self.seed.seed().copied());
+        let stored = writable
+            && seed.is_some_and(|seed| {
+                arming::set_attempt();
+                let stored = self.seed.save(&seed, epoch);
+                arming::clear_attempt();
+                stored
+            });
         let saved = stored && next.is_some();
         self.ring_epoch = stored.then_some(epoch);
 
