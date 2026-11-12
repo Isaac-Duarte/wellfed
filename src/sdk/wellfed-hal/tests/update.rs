@@ -10,7 +10,7 @@
 //! The updater keeps its records in the board's store.
 #![cfg(wellfed_board_store)]
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::sync::{Mutex, MutexGuard};
 
 use ed25519_dalek::{Signer, SigningKey};
@@ -25,7 +25,8 @@ use wellfed_core::store::slot::SlotIo;
 use wellfed_core::store::update::{
     Bank0, Candidate, State, UpdateError, UpdateStatus, UpdateStore,
 };
-use wellfed_hal::flash::park::{self, Mmio};
+use wellfed_hal::flash::park;
+use wellfed_hal::flash::park::fake::{self as ipc, Ipc};
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::{self, Arming, Event, Hooks, Poll, UPDATE_BIT};
 use wellfed_hal::flash_lock::provider::{ATTEMPT_BIT, LeaseFault, LeaseStage, Provider};
@@ -969,37 +970,6 @@ fn a_reset_mid_install_refuses_offers_but_still_arms_the_flash() {
     );
 }
 
-thread_local! {
-    static REGS: RefCell<[[u32; 12]; 2]> = const { RefCell::new([[0; 12]; 2]) };
-}
-
-struct Core<const KM0: bool>;
-
-impl<const KM0: bool> Mmio for Core<KM0> {
-    const KM0: bool = KM0;
-    fn load(address: u32) -> u32 {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow()[c][i])
-    }
-    fn store(address: u32, value: u32) {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow_mut()[c][i] = value);
-    }
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
-}
-
-/// USR words per core: index 0 KM0 (0x4800_6000), 1 KM4 (0x4000_6000).
-fn locate(address: u32) -> (usize, usize) {
-    let core = usize::from(address & 0xffff_f000 != 0x4800_6000);
-    (core, (((address & 0xfff) - 0x20) / 4) as usize)
-}
-
 #[test]
 fn a_lease_fault_report_is_not_an_attempt_to_the_skip_rule() {
     let _guard = start(0);
@@ -1031,15 +1001,15 @@ fn a_lease_fault_report_is_not_an_attempt_to_the_skip_rule() {
 /// Arm the hooks with the KM0 peer answering through the real
 /// `park::answer`; the final poll.
 fn arm() -> Poll {
-    REGS.with(|r| *r.borrow_mut() = [[0; 12]; 2]);
+    ipc::reset();
     ARMED.with(|a| a.set(false));
     let mut provider = Provider::default();
     let mut arming = Arming::default();
     let mut answered = 0;
     for _ in 0..100 {
-        park::answer::<Core<true>>(0x0000_0001_4b30_abcd, &mut answered);
+        park::answer::<Ipc<true>>(0x0000_0001_4b30_abcd, &mut answered);
         // SAFETY: `provider` outlives the arming.
-        let poll = unsafe { arming.step::<Core<false>, FakeHooks>(&mut provider) };
+        let poll = unsafe { arming.step::<Ipc<false>, FakeHooks>(&mut provider) };
         if !matches!(poll, Poll::Pending(_)) {
             return poll;
         }

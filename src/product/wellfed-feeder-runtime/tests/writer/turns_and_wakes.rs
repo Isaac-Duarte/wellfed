@@ -13,7 +13,7 @@ use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::rng;
 use wellfed_hal::sdk::fake;
 
-use crate::support::{A, Armed, NoMmio, changed, open_all, phone, start, step};
+use crate::support::{A, Armed, Unreached, changed, open_all, phone, start, step};
 
 /// Every store the writer keeps defers its write while a feed holds the
 /// outputs, and completes it after the release, in order, with nothing lost.
@@ -122,7 +122,7 @@ fn every_store_write_waits_for_a_feed_and_completes_after_it() {
 /// One step, whole.
 fn whole_step(writer: &mut Writer<Armed>, provider: &mut Provider) -> Step {
     // SAFETY: the provider outlives the run.
-    unsafe { writer.step::<NoMmio, Armed>(provider) }
+    unsafe { writer.step::<Unreached, Armed>(provider) }
 }
 
 fn notifies() -> u32 {

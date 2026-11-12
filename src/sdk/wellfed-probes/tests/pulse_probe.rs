@@ -1,48 +1,13 @@
 //! Pulse probe against the fake SDK, with the KM0 peer's handshake
 //! answered through a shared IPC register model.
 
-use std::cell::RefCell;
-
-use wellfed_hal::flash::park::{self, Mmio};
+use wellfed_hal::flash::park;
+use wellfed_hal::flash::park::fake::{self as ipc, Ipc};
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::stopped;
 use wellfed_hal_feeder::board::MOTOR_MASK;
 use wellfed_hal_feeder::events::EventsFault;
 use wellfed_probes::pulse::{self, DELAY_MS, LEASE_MS, MARKER, PULSE_MS, Probe, Record};
-
-thread_local! {
-    static REGS: RefCell<[[u32; 12]; 2]> = const { RefCell::new([[0; 12]; 2]) };
-}
-
-fn locate(address: u32) -> (usize, usize) {
-    let core = match address & 0xffff_f000 {
-        0x4800_6000 => 0,
-        0x4000_6000 => 1,
-        _ => panic!("unexpected address {address:#x}"),
-    };
-    (core, ((address & 0xfff) - 0x20) as usize / 4)
-}
-
-struct Core<const KM0: bool>;
-
-impl<const KM0: bool> Mmio for Core<KM0> {
-    const KM0: bool = KM0;
-    fn load(address: u32) -> u32 {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow()[c][i])
-    }
-    fn store(address: u32, value: u32) {
-        let (c, i) = locate(address);
-        REGS.with(|r| r.borrow_mut()[c][i] = value);
-    }
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
-}
 
 const MS_TICKS: u32 = 33;
 
@@ -60,7 +25,7 @@ struct Bench {
 
 fn bench() -> Bench {
     fake::reset_hardware();
-    REGS.with(|r| *r.borrow_mut() = [[0; 12]; 2]);
+    ipc::reset();
     assert!(stopped::initialize().verified());
     Bench {
         probe: Box::default(),
@@ -72,8 +37,8 @@ fn bench() -> Bench {
 
 impl Bench {
     fn step(&mut self, during: &mut impl FnMut(u32)) -> u32 {
-        park::answer::<Core<true>>(0x0000_0001_4b30_abcd, &mut self.answered);
-        let step = self.probe.step::<Core<false>>();
+        park::answer::<Ipc<true>>(0x0000_0001_4b30_abcd, &mut self.answered);
+        let step = self.probe.step::<Ipc<false>>();
         if let Some(record) = step.record {
             self.records.push(record);
         }
@@ -243,7 +208,7 @@ fn no_peer_never_drives() {
 
     for _ in 0..1000 {
         // No KM0 answer.
-        let step = b.probe.step::<Core<false>>();
+        let step = b.probe.step::<Ipc<false>>();
         if let Some(r) = step.record {
             b.records.push(r);
         }

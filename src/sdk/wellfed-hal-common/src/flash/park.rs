@@ -621,5 +621,7 @@ pub fn reannounce<M: Mmio>(peer: u64, answered: u64) -> bool {
 
 #[cfg(target_os = "none")]
 mod exported;
+#[cfg(not(target_os = "none"))]
+pub mod fake;
 #[cfg(target_os = "none")]
 pub use exported::*;

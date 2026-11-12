@@ -14,7 +14,7 @@ use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::stats;
 use wellfed_feeder_runtime::writer::{FeederRecord, Record, Writer};
 use wellfed_hal::board::storage::Sectors;
-use wellfed_hal::flash::park::Mmio;
+pub(crate) use wellfed_hal::flash::park::fake::Unreached;
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::Hooks;
 use wellfed_hal::flash_lock::provider::Provider;
@@ -39,25 +39,6 @@ thread_local! {
     /// Programs of these sectors fail, as a store whose writes stopped
     /// working (or one a power cut stopped before) would.
     pub(crate) static PROGRAMS_FAIL_IN: Cell<Option<Sectors>> = const { Cell::new(None) };
-}
-
-pub(crate) struct NoMmio;
-
-impl Mmio for NoMmio {
-    const KM0: bool = false;
-    fn load(_: u32) -> u32 {
-        unreachable!("no arming with the hooks armed")
-    }
-    fn store(_: u32, _: u32) {
-        unreachable!("no arming with the hooks armed")
-    }
-    fn barrier() {}
-    fn mask() -> u32 {
-        0
-    }
-    fn halt() -> ! {
-        panic!("halt")
-    }
 }
 
 pub(crate) struct Armed;
@@ -145,7 +126,7 @@ pub(crate) fn start() -> (MutexGuard<'static, ()>, Writer<Armed>, Provider) {
 
 pub(crate) fn step(writer: &mut Writer<Armed>, provider: &mut Provider) -> Option<Record> {
     // SAFETY: the provider outlives the run.
-    unsafe { writer.step::<NoMmio, Armed>(provider) }.record
+    unsafe { writer.step::<Unreached, Armed>(provider) }.record
 }
 
 pub(crate) fn current() -> (bool, bool, u8, u32, bool) {
