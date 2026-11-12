@@ -4,30 +4,39 @@
 //!   lists the feeders and refuses a viewer;
 //! - the session announces the feeder through the server, its state, and
 //!   a feed answered with its number;
-//! - a feed whose answer is lost is uncertain, sent once, and settled from
-//!   the server's journal; one kept across a restart is settled by the
-//!   next session;
+//! - a feed is kept in the store before its call and for all of it, and
+//!   goes only once the store says it saved the record;
+//! - a feed whose answer is lost is uncertain, sent once, holds the next
+//!   feed until the server's journal settles it; one kept across a restart
+//!   is settled by the next session; one the direct route lost holds feeds
+//!   here until the owner releases it;
 //! - a revoked token stops the session, and every write after it is
 //!   refused unsent;
 //! - the alerts the server read before the session are shown and fire
 //!   nothing, and one that opens after fires once.
 
+mod support;
+
 use std::sync::Arc;
 use std::time::Duration;
 
 use wellfed_homeassistant::api::{
-    AlertKind, NotSent, Pending, ServerProblem, Skew, Update, UpdateKind, WriteResult, Written,
+    AlertKind, EventKind, NotSent, Pending, ServerProblem, Skew, Update, UpdateKind, WriteResult,
+    Written,
 };
-use wellfed_homeassistant::feeder::Feeder;
+use wellfed_homeassistant::feeder::{Carried, Feeder};
 use wellfed_homeassistant::server::{self, Clocks, Refused, Target};
+use wellfed_model::{FeederSettingsPatch, Plan, Weekdays};
 use wellfed_server_client::Client;
 use wellfed_server_client::api::{
-    AdoptFeeder, ClientRole, Connection, FeederId, NewUser, Role, TokenId,
+    AdoptFeeder, ClientRole, Connection, FeederId, NewUser, PlansChange, Role, TokenId,
 };
 use wellfed_server_testkit::feeder::{self, Flash, Relay, Running};
 use wellfed_server_testkit::{
     AlertReads, TestServer, WAIT, ada_login, ada_setup, config, local, until,
 };
+
+use support::{Saving, Store};
 
 /// Short enough that a test that loses a session waits a second.
 const SHORT: Clocks = Clocks {
@@ -87,7 +96,7 @@ fn session(
     server: &TestServer,
     login: &server::Login,
     feeder: (FeederId, [u8; 32]),
-) -> Arc<Feeder> {
+) -> Arc<Saving> {
     resumed(server, login, feeder, Vec::new())
 }
 
@@ -97,14 +106,21 @@ fn resumed(
     login: &server::Login,
     feeder: (FeederId, [u8; 32]),
     pending: Vec<Pending>,
-) -> Arc<Feeder> {
+) -> Arc<Saving> {
     let target = Target {
         url: server::address(&url(server)).unwrap(),
         token: login.token.clone(),
+        token_id: login.token_id.clone(),
         feeder: feeder.0,
         identity: feeder.1,
     };
-    Arc::new(Feeder::start_server(target, SHORT, pending).unwrap())
+    let carried = Carried {
+        pending,
+        ..Carried::default()
+    };
+    Arc::new(Saving::new(
+        Feeder::start_server(target, SHORT, carried).unwrap(),
+    ))
 }
 
 /// Run a blocking call off the test's runtime, which serves the server.
@@ -120,7 +136,7 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 /// The next update of `kind`, skipping the others.
-async fn next(feeder: &Arc<Feeder>, kind: UpdateKind) -> Update {
+async fn next(feeder: &Arc<Saving>, kind: UpdateKind) -> Update {
     let feeder = Arc::clone(feeder);
     blocking(move || {
         let deadline = std::time::Instant::now() + WAIT;
@@ -138,7 +154,7 @@ async fn next(feeder: &Arc<Feeder>, kind: UpdateKind) -> Update {
 
 /// Wait for a state with the settings read: the session's reads at connect
 /// are answered.
-async fn settled_reads(feeder: &Arc<Feeder>) {
+async fn settled_reads(feeder: &Arc<Saving>) {
     loop {
         let update = next(feeder, UpdateKind::State).await;
         if update.state.is_some_and(|state| state.settings.is_some()) {
@@ -147,7 +163,45 @@ async fn settled_reads(feeder: &Arc<Feeder>) {
     }
 }
 
-async fn feed(feeder: &Arc<Feeder>, portions: u8) -> Written {
+/// Every update within `wait`.
+async fn updates_within(feeder: &Arc<Saving>, wait: Duration) -> Vec<Update> {
+    let feeder = Arc::clone(feeder);
+    blocking(move || {
+        let deadline = std::time::Instant::now() + wait;
+        let mut heard = Vec::new();
+        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+            heard.extend(feeder.next_update(left));
+        }
+        heard
+    })
+    .await
+}
+
+/// The next event update of `kind`, skipping the other updates.
+async fn next_event(feeder: &Arc<Saving>, kind: EventKind) {
+    loop {
+        let update = next(feeder, UpdateKind::Event).await;
+        if update.event.is_some_and(|event| event.kind == kind) {
+            return;
+        }
+    }
+}
+
+async fn volume(feeder: &Arc<Saving>, volume: u8) -> Written {
+    let feeder = Arc::clone(feeder);
+    let changes = FeederSettingsPatch {
+        volume: Some(volume),
+        ..FeederSettingsPatch::default()
+    };
+    blocking(move || feeder.put_settings(changes)).await
+}
+
+async fn plan_enabled(feeder: &Arc<Saving>, enabled: bool) -> Written {
+    let feeder = Arc::clone(feeder);
+    blocking(move || feeder.set_plan_enabled(0, enabled)).await
+}
+
+async fn feed(feeder: &Arc<Saving>, portions: u8) -> Written {
     let feeder = Arc::clone(feeder);
     blocking(move || feeder.feed(portions)).await
 }
@@ -261,6 +315,8 @@ fn a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_settled_by_the_journal
         let written = feed(&session, 1).await;
         assert_eq!(written.result, WriteResult::Uncertain);
         let pending = written.pending.expect("an uncertain feed is kept pending");
+        // A new feed under a new key would not be the journal's retry.
+        assert_eq!(feed(&session, 1).await, Written::not_sent(NotSent::Held));
 
         relay.cut();
         relay.resume();
@@ -271,6 +327,93 @@ fn a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_settled_by_the_journal
         assert_eq!(settled.pending, Some(pending));
         let fed = settled.feed.expect("the feed the journal settled");
         assert_eq!((fed.feed, fed.requested, fed.completed), (1, 1, 1));
+        assert_eq!(feeder::feeds(&flash), 1, "fed once, never resent");
+        assert_eq!(feed(&session, 1).await.result, WriteResult::Feeding);
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// A feed through the server goes only once the store says it saved its
+/// record: one the store could not save never reaches the server, and one
+/// answered is kept no longer.
+#[test]
+fn a_feed_goes_through_the_server_only_once_the_store_saved_its_record() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let (server, owner) = started(TestServer::start().await).await;
+        let kitchen = adopt(&owner, &sim, sim.address.to_string()).await;
+        let login = ada(&server).await;
+        let session = session(&server, &login, kitchen);
+        next(&session, UpdateKind::Connected).await;
+        settled_reads(&session).await;
+
+        session.store(Store::Refuses);
+        let written = feed(&session, 1).await;
+        assert_eq!(written, Written::not_sent(NotSent::NotSaved));
+        let refused = next(&session, UpdateKind::Sending).await.pending;
+        let dropped = next(&session, UpdateKind::Cleared).await.pending;
+        assert!(refused.is_some());
+        assert_eq!(dropped, refused);
+        assert_eq!(feeder::feeds(&flash), 0, "never sent");
+
+        session.store(Store::Saves);
+        let written = feed(&session, 1).await;
+        assert_eq!(written.result, WriteResult::Feeding, "{written:?}");
+        let kept = next(&session, UpdateKind::Sending).await.pending;
+        let answered = next(&session, UpdateKind::Cleared).await.pending;
+        assert_eq!(answered, kept, "answered, so kept no longer");
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// A feed through the server is in the store for the whole call, which
+/// lasts as long as the server waits on the feeder: Home Assistant
+/// stopping in it leaves the record, under the key the journal settles it
+/// by at the next start.
+#[test]
+fn a_feed_is_kept_for_the_whole_server_call() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let relay = Relay::start(sim.address).await;
+        let mut config = config();
+        config.timing.answer = Duration::from_secs(2);
+        let (server, owner) = started(TestServer::start_with(config).await).await;
+        let kitchen = adopt(&owner, &sim, relay.address.to_string()).await;
+        let login = ada(&server).await;
+        let session = session(&server, &login, kitchen);
+        next(&session, UpdateKind::Connected).await;
+        settled_reads(&session).await;
+
+        relay.hold_answers();
+        let out = {
+            let session = Arc::clone(&session);
+            tokio::task::spawn_blocking(move || session.feed(1))
+        };
+        let kept = next(&session, UpdateKind::Sending)
+            .await
+            .pending
+            .expect("its record");
+        assert!(!out.is_finished(), "kept before the call ends");
+        assert_eq!(kept.token_id.as_deref(), Some(login.token_id.as_str()));
+        let written = out.await.unwrap();
+        assert_eq!(written.result, WriteResult::Uncertain);
+        assert_eq!(
+            written.pending.as_ref(),
+            Some(&kept),
+            "the record is the lost feed's"
+        );
+
+        // The next start has only the record kept before the call.
+        drop(session);
+        relay.cut();
+        relay.resume();
+        let restarted = resumed(&server, &login, kitchen, vec![kept.clone()]);
+        let settled = next(&restarted, UpdateKind::Settled).await;
+        assert_eq!(settled.pending, Some(kept));
         assert_eq!(feeder::feeds(&flash), 1, "fed once, never resent");
         server.stop().await;
         sim.stop().await;
@@ -305,6 +448,41 @@ fn a_lost_feed_carried_across_a_restart_is_settled_from_the_journal() {
         assert_eq!(settled.pending, Some(pending));
         assert_eq!(settled.feed.map(|fed| fed.completed), Some(1));
         assert_eq!(feeder::feeds(&flash), 1, "fed once, never resent");
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// An entry moved from the direct route while a feed's answer was lost:
+/// the server route cannot settle that feed, so it holds every feed until
+/// the owner releases it through its repair, which it asks for at once.
+#[test]
+fn a_feed_the_direct_route_lost_holds_the_server_route_until_released() {
+    local(async {
+        let sim = feeder::start().await;
+        let (server, owner) = started(TestServer::start().await).await;
+        let kitchen = adopt(&owner, &sim, sim.address.to_string()).await;
+        let login = ada(&server).await;
+        let lost = Pending {
+            id: "a-direct-feed".into(),
+            portions: 1,
+            sent_ms: 1_000,
+            after: Some(1),
+            reported: false,
+            released_ms: None,
+            token_id: None,
+        };
+        let session = resumed(&server, &login, kitchen, vec![lost.clone()]);
+        let asked = next(&session, UpdateKind::StillUnknown).await;
+        assert_eq!(asked.pending.as_ref().map(|p| p.reported), Some(true));
+        next(&session, UpdateKind::Connected).await;
+        settled_reads(&session).await;
+
+        assert_eq!(feed(&session, 1).await, Written::not_sent(NotSent::Held));
+        session.release(lost.id.clone());
+        let released = next(&session, UpdateKind::Released).await;
+        assert!(released.pending.is_some_and(|p| p.released_ms.is_some()));
+        assert_eq!(feed(&session, 1).await.result, WriteResult::Feeding);
         server.stop().await;
         sim.stop().await;
     });
@@ -380,6 +558,54 @@ fn alerts_open_before_the_session_are_shown_and_one_after_fires_once() {
                 .iter()
                 .all(|alert| alert.key != news.opened[0].key)
         );
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+/// Home Assistant's own settings and plans writes through the server, each
+/// followed by the feeder's event of it: the state never shows either
+/// store unread (so no plan switch is removed), and the next write, once
+/// the event is in, goes on the generation the last one made rather than
+/// being refused for want of a read.
+#[test]
+fn a_store_event_after_an_own_write_keeps_the_store_shown_and_writable() {
+    local(async {
+        let sim = feeder::start().await;
+        let (server, owner) = started(TestServer::start().await).await;
+        let kitchen = adopt(&owner, &sim, sim.address.to_string()).await;
+        let held = owner.plans(kitchen.0).await.unwrap();
+        let mut plans = held.plans;
+        plans[0] = Some(Plan {
+            minute: 7 * 60,
+            portions: 1,
+            days: Weekdays::DAILY,
+            enabled: true,
+            call: 0,
+        });
+        let change = PlansChange { plans };
+        let key = uuid::Uuid::new_v4();
+        owner
+            .put_plans(kitchen.0, held.generation, &change, key)
+            .await
+            .unwrap();
+        let login = ada(&server).await;
+        let session = session(&server, &login, kitchen);
+        settled_reads(&session).await;
+
+        assert_eq!(volume(&session, 40).await, Written::done());
+        next_event(&session, EventKind::Settings).await;
+        assert_eq!(volume(&session, 41).await, Written::done());
+        assert_eq!(plan_enabled(&session, false).await, Written::done());
+        next_event(&session, EventKind::Plans).await;
+        assert_eq!(plan_enabled(&session, true).await, Written::done());
+
+        for update in updates_within(&session, Duration::from_secs(2)).await {
+            if let Some(state) = update.state {
+                assert!(state.settings.is_some(), "the settings blanked");
+                assert!(state.plans.is_some(), "the plans blanked");
+            }
+        }
         server.stop().await;
         sim.stop().await;
     });

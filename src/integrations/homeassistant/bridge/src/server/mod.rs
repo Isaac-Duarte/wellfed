@@ -9,8 +9,8 @@
 //!   and the feeder, and opens the event stream before reading the facts
 //!   and the history, so nothing that happens meanwhile is missed; what the
 //!   stream repeats of the history is dropped by the event cursor. A first
-//!   connect replays the newest events only ([`BACKLOG`]); a later one
-//!   replays from its cursor, and a history that started over is a gap.
+//!   connect replays the newest 2,000 events only; a later one replays from
+//!   its cursor, and a history that started over is a gap.
 //! - **The feeder's connection** is the server's: while the server cannot
 //!   reach it the session reads as disconnected and every write is refused
 //!   unsent, as the direct session's are between sessions.
@@ -18,14 +18,26 @@
 //!   sent again here. A feed whose answer never came is tracked by its key
 //!   and settled from the server's journal: by its `Fed` event once the
 //!   journal names its number, as refused, or as unknown when the journal
-//!   says the feeder restarted with no record of it. One unsettled after
-//!   [`SETTLE`] is reported still unknown, never resent, and the journal
-//!   may still settle it until [`KEEP_MS`](crate::feeder::KEEP_MS) has passed, as it may one it
-//!   says has no record. A write that waited longer
-//!   than [`FRESH`](crate::feeder::FRESH) for the session, or arrived while it connects, is
-//!   refused unsent.
+//!   says the feeder restarted with no record of it. A journal that holds
+//!   no entry under its key, asked under the token it went under and
+//!   10 minutes after it went by both clocks, settles it as never
+//!   sent: the server records a write before it sends it, and retires a key
+//!   a read found no write under, so it can never run after. One unsettled
+//!   after 15 minutes is reported still unknown and never resent. While one
+//!   is unsettled and not released by the owner, no feed goes out
+//!   ([`NotSent::Held`]), as the app holds on every path: the server's
+//!   journal dedupes a retry under one key, not a new feed under a new
+//!   one. Lost feeds the direct route left hold here too, unsettled, until
+//!   the owner releases them; a released feed stays open
+//!   to the journal for a week from its release. A write that waited
+//!   longer than 5 seconds for the session, or arrived while it connects,
+//!   is refused unsent.
 //! - **The event stream** is read by a task of its own, so a slow write or
-//!   a long connect never leaves it unread past its read timeout.
+//!   a long connect never leaves it unread past its read timeout. An event
+//!   that changes the settings or the plans has them read again at once.
+//!   When the stream falls behind and says to resync, the session reads
+//!   the feeder anew, replays the history it missed and asks the journal
+//!   about each unsettled feed, as a new session would.
 //! - **Ends.** A token the server no longer takes stops the session until a
 //!   new login. A feeder the server no longer holds (removed, another
 //!   feeder under its id, or its key dropped by the feeder) is reported
@@ -61,7 +73,10 @@ use crate::alerts::Tracker;
 use crate::api::{
     self, Capabilities, NotSent, Pending, RefusalKind, Role, Skew, State, Update, Written,
 };
-use crate::feeder::{self as direct, Command, SETTLE, TURN, now_ms, refusing, sent_at, stale};
+use crate::feeder::{
+    self as direct, Carried, Command, SETTLE, TURN, now_ms, refusing, sent_at, stale,
+};
+use crate::hold::{Holds, Saved, Shared};
 use crate::writes::{self, Kind, Write};
 
 /// The newest events a first connect replays, of a history the server may
@@ -76,6 +91,9 @@ const PAGE: u32 = 500;
 pub struct Target {
     pub url: Url,
     pub token: String,
+    /// The token's id: a feed sent under it records it, so only this
+    /// token's journal is trusted to lack it.
+    pub token_id: String,
     pub feeder: FeederId,
     /// The feeder's identity: a feeder under the same id with another one
     /// is another feeder, and is never served as this one.
@@ -125,6 +143,13 @@ pub(crate) fn client(target: &Target, clocks: Clocks) -> Result<Client, Error> {
     Ok(client.with_auth(Some(Auth::Token(target.token.clone()))))
 }
 
+/// How long after it went out a feed the journal does not hold is taken as
+/// never sent, by both the wall clock and the monotonic one: the server
+/// records a write before it sends it, and the wait covers a request still
+/// on its way to a server slow to take it, well past the 30 s this client
+/// waits on an answer. The app waits as long.
+pub(crate) const UNFOUND_GRACE_MS: i64 = 10 * 60_000;
+
 /// A feed that went out and was never answered, by the key it went under.
 #[derive(Clone, Debug)]
 struct Uncertain {
@@ -132,10 +157,38 @@ struct Uncertain {
     pending: Pending,
     /// Its number, once the server's journal names it.
     feed: Option<u32>,
-    /// When it went out. Once reported still unknown
-    /// (`pending.reported`), the journal still settles it until
-    /// [`KEEP_MS`](crate::feeder::KEEP_MS).
+    /// When it went out, for the report: reported still unknown
+    /// [`SETTLE`] after. It holds feeds back until settled or released.
     sent: Instant,
+    /// When this run first knew of it: the monotonic half of the grace a
+    /// journal's lack of it waits out, which never counts from before.
+    known: Instant,
+    /// The journal held no entry under its key before the grace passed:
+    /// asked again at each turn until the grace has.
+    unfound: bool,
+}
+
+impl Uncertain {
+    fn new(key: Uuid, pending: Pending, feed: Option<u32>) -> Self {
+        Self {
+            key,
+            sent: sent_at(pending.sent_ms),
+            known: Instant::now(),
+            unfound: false,
+            pending,
+            feed,
+        }
+    }
+
+    /// Whether the journal's lack of it, asked now under `token_id`, says
+    /// it was never sent: the same token it went under, and the grace past
+    /// by both clocks.
+    fn never_sent(&self, token_id: &str) -> bool {
+        let grace = Duration::from_millis(UNFOUND_GRACE_MS.unsigned_abs());
+        self.pending.token_id.as_deref() == Some(token_id)
+            && now_ms().saturating_sub(self.pending.sent_ms) >= UNFOUND_GRACE_MS
+            && self.known.elapsed() >= grace
+    }
 }
 
 /// Where a history was read to.
@@ -155,6 +208,39 @@ struct Memory {
     uncertain: Vec<Uncertain>,
     /// The alerts the server served so far.
     alerts: Tracker,
+    /// What holds feeds back besides this route's own lost feeds.
+    holds: Holds,
+}
+
+impl Memory {
+    /// Whether a new feed waits: on a lost feed of this route's that is
+    /// neither settled nor released, or on what the holds keep.
+    fn holds_feeds(&self) -> bool {
+        self.holds.holding()
+            || self
+                .uncertain
+                .iter()
+                .any(|uncertain| uncertain.pending.released_ms.is_none())
+    }
+
+    /// Apply what the owner released since the last call: the updates that
+    /// confirm it.
+    fn take_releases(&mut self) -> Vec<Update> {
+        let (ids, mut updates) = self.holds.take();
+        if ids.is_empty() {
+            return updates;
+        }
+
+        let at = now_ms();
+        for uncertain in &mut self.uncertain {
+            let pending = &mut uncertain.pending;
+            if pending.released_ms.is_none() && ids.contains(&pending.id) {
+                pending.released_ms = Some(at);
+                updates.push(Update::released(pending.clone()));
+            }
+        }
+        updates
+    }
 }
 
 enum Ended {
@@ -213,40 +299,49 @@ pub(crate) async fn run(
     client: Client,
     target: Target,
     clocks: Clocks,
-    pending: Vec<Pending>,
+    carried: Carried,
+    shared: Shared,
     mut commands: mpsc::UnboundedReceiver<Command>,
     updates: std_mpsc::Sender<Update>,
 ) {
     let mut memory = Memory::default();
-    for pending in pending {
-        // Only a key this integration drew names a command on the server.
-        match Uuid::parse_str(&pending.id) {
-            Ok(key) => {
-                // One that has not been reported is announced again, so the
-                // integration's repair says it is still waited on.
-                if !pending.reported && updates.send(Update::pending(pending.clone())).is_err() {
-                    return;
-                }
-                memory.uncertain.push(Uncertain {
-                    key,
-                    sent: sent_at(pending.sent_ms),
-                    pending,
-                    feed: None,
-                });
-            }
-            // Nothing on the server answers for it: still unknown, and
-            // nothing will settle it.
-            Err(_) => {
-                let unknown = updates.send(Update::still_unknown(pending.clone()));
-                if unknown.is_err() || updates.send(Update::forgotten(pending)).is_err() {
-                    return;
-                }
-            }
+    let mut elsewhere = Vec::new();
+    for pending in carried.pending {
+        // A feed sent through a server names its command by its key; one
+        // the direct route sent names nothing here, and only holds.
+        let key = Uuid::parse_str(&pending.id)
+            .ok()
+            .filter(|_| pending.token_id.is_some());
+        match key {
+            Some(key) => memory.uncertain.push(Uncertain::new(key, pending, None)),
+            None => elsewhere.push(pending),
+        }
+    }
+    memory.holds = Holds::new(shared, elsewhere, carried.unread);
+
+    // Each lost feed that still holds feeds back is announced again, so the
+    // integration's repairs say so.
+    let mut again: Vec<Update> = memory
+        .uncertain
+        .iter()
+        .filter_map(|uncertain| direct::announced(&uncertain.pending))
+        .collect();
+    again.extend(memory.holds.announce());
+    for update in again {
+        if updates.send(update).is_err() {
+            return;
         }
     }
     let mut lost_feeder = false;
 
     loop {
+        // Releases made while no session was open.
+        for update in memory.take_releases() {
+            if updates.send(update).is_err() {
+                return;
+            }
+        }
+
         let session = Session::new(&client, &target, &mut memory, &updates);
         let (update, wait) = match session.serve(&mut commands).await {
             Ended::Dropped => return,
@@ -380,6 +475,10 @@ impl<'a> Session<'a> {
         commands: &mut mpsc::UnboundedReceiver<Command>,
     ) -> Ended {
         let mut turn = tokio::time::interval_at(tokio::time::Instant::now() + TURN, TURN);
+        // Releases made while this session connected.
+        if let Err(ended) = self.release() {
+            return ended;
+        }
         loop {
             let step = tokio::select! {
                 command = commands.recv() => match command {
@@ -389,6 +488,7 @@ impl<'a> Session<'a> {
                         None => Ok(()),
                     },
                     Some(Command::Refresh) => self.refresh().await,
+                    Some(Command::Release) => self.release(),
                 },
                 update = stream.next() => match update {
                     None => Err(Ended::Lost("the server ended the event stream".into())),
@@ -405,6 +505,15 @@ impl<'a> Session<'a> {
 
     fn send(&self, update: Update) -> Step {
         self.updates.send(update).map_err(|_| Ended::Dropped)
+    }
+
+    /// Apply what the owner released: new feeds go again once nothing
+    /// holds them back.
+    fn release(&mut self) -> Step {
+        for update in self.memory.take_releases() {
+            self.send(update)?;
+        }
+        Ok(())
     }
 
     /// The state as it now stands.
@@ -483,21 +592,36 @@ impl<'a> Session<'a> {
     /// meanwhile, or a member reading the calibration) is read again at the
     /// next turn.
     async fn read_facts(&mut self) -> Step {
+        self.read_settings().await?;
+        self.read_plans().await?;
+        let (client, id) = (self.client, self.target.feeder);
+        if self.serves(&Op::GetCalibration)
+            && let Some(view) = read(client.calibration(id).await)?
+        {
+            self.memory.calibration = Some(view);
+        }
+        Ok(())
+    }
+
+    /// Read the settings, if the feeder's kind serves them; ones the
+    /// server could not read stay as they were.
+    async fn read_settings(&mut self) -> Step {
         let (client, id) = (self.client, self.target.feeder);
         if self.serves(&Op::GetSettings)
             && let Some(Settings::Feeder(settings)) = read(client.settings(id).await)?
         {
             self.memory.facts.settings = Some(settings);
         }
+        Ok(())
+    }
+
+    /// Read the plans, as [`Self::read_settings`] reads the settings.
+    async fn read_plans(&mut self) -> Step {
+        let (client, id) = (self.client, self.target.feeder);
         if self.serves(&Op::GetPlans)
             && let Some(plans) = read(client.plans(id).await)?
         {
             self.memory.facts.plans = Some(plans);
-        }
-        if self.serves(&Op::GetCalibration)
-            && let Some(view) = read(client.calibration(id).await)?
-        {
-            self.memory.calibration = Some(view);
         }
         Ok(())
     }
@@ -556,12 +680,30 @@ impl<'a> Session<'a> {
     /// tells only of changes while it is open.
     async fn recheck(&mut self) -> Step {
         let keys: Vec<Uuid> = self.memory.uncertain.iter().map(|feed| feed.key).collect();
+        self.ask_journal(keys).await
+    }
+
+    /// Ask the journal again about each feed it lacked before the grace
+    /// passed, once the grace has.
+    async fn recheck_unfound(&mut self) -> Step {
+        let token_id = &self.target.token_id;
+        let keys: Vec<Uuid> = self
+            .memory
+            .uncertain
+            .iter()
+            .filter(|feed| feed.unfound && feed.never_sent(token_id))
+            .map(|feed| feed.key)
+            .collect();
+        self.ask_journal(keys).await
+    }
+
+    async fn ask_journal(&mut self, keys: Vec<Uuid>) -> Step {
         for key in keys {
             match self.client.command(key).await {
                 Ok(command) => self.journalled(&command)?,
-                // Not journalled yet: the request may still be on its way
-                // to the server, so it may still run. Unauthorized ends
-                // the session; anything else is asked at the next connect.
+                Err(error) if error.code() == Some(ErrorCode::NotFound) => self.unfound(key)?,
+                // Unauthorized ends the session; anything else is asked
+                // again at the next connect or resync.
                 Err(error) if error.failure() == Failure::Unauthorized => {
                     return Err(Ended::TokenRefused);
                 }
@@ -571,11 +713,37 @@ impl<'a> Session<'a> {
         Ok(())
     }
 
+    /// The journal holds no entry under `key`. The server records a write
+    /// before it sends it and retires a key a read found no write under, so
+    /// past the grace, under the token the feed went under, it was never
+    /// sent and never will be. Sooner, or under another token, the read
+    /// says nothing: a request may still be on its way, and another
+    /// token's account may not see the entry.
+    fn unfound(&mut self, key: Uuid) -> Step {
+        let token_id = &self.target.token_id;
+        let Some(index) = self
+            .memory
+            .uncertain
+            .iter()
+            .position(|uncertain| uncertain.key == key)
+        else {
+            return Ok(());
+        };
+        if !self.memory.uncertain[index].never_sent(token_id) {
+            self.memory.uncertain[index].unfound = true;
+            return Ok(());
+        }
+        let uncertain = self.memory.uncertain.remove(index);
+        self.send(Update::settled_unfed(uncertain.pending))
+    }
+
     async fn streamed(&mut self, event: StreamEvent) -> Step {
         let ours = self.target.feeder;
         match event {
             StreamEvent::Event { feeder, event } if feeder == ours => {
-                self.event(&event, false)?;
+                if self.event(&event, false)? {
+                    self.news(&event.body).await?;
+                }
                 self.state()
             }
             StreamEvent::Gap { feeder, gap } if feeder == ours => self.gap(&gap),
@@ -587,8 +755,9 @@ impl<'a> Session<'a> {
                 self.state()
             }
             StreamEvent::Alerts { feeder } if feeder == ours => self.read_alerts().await,
-            // The stream could not resume: read what it would have said.
-            StreamEvent::Resync => self.refresh().await,
+            // The stream fell behind and dropped what it held: read what it
+            // would have said.
+            StreamEvent::Resync => self.resync().await,
             _ => Ok(()),
         }
     }
@@ -607,12 +776,13 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// One event of the history: `replayed` when read from the history at
-    /// connect rather than as it happened.
-    fn event(&mut self, event: &HistoryEvent, replayed: bool) -> Step {
+    /// One event of the history: `replayed` when read from the history
+    /// rather than as it happened. Whether it was new: the stream repeats
+    /// what a backlog read.
+    fn event(&mut self, event: &HistoryEvent, replayed: bool) -> Result<bool, Ended> {
         match self.memory.cursor {
             // The stream repeats what the backlog read.
-            Some(held) if held.epoch == event.epoch && event.seq <= held.seq => return Ok(()),
+            Some(held) if held.epoch == event.epoch && event.seq <= held.seq => return Ok(false),
             // A history that started over while the stream was open.
             Some(held) if held.epoch != event.epoch => {
                 self.memory.facts.feeds.clear();
@@ -636,21 +806,34 @@ impl<'a> Session<'a> {
             self.settle(&feed)?;
         }
         self.send(Update::event(&event, replayed))?;
-        if !replayed {
-            self.news(&event.body);
-        }
-        Ok(())
+        Ok(true)
     }
 
-    /// An event as it happened: some change what the facts hold, which the
-    /// next turn reads again.
-    fn news(&mut self, body: &model::EventBody) {
+    /// An event as it happened: one that changes the settings or the plans
+    /// has them read again now, so the state never shows them unread and a
+    /// write is never refused for want of them. A store this session already
+    /// holds at the event's generation (its own write, answered with the
+    /// store) is not read again.
+    async fn news(&mut self, body: &model::EventBody) -> Step {
         use model::{EventBody, FeederEvent};
+        let facts = &self.memory.facts;
         match body {
-            EventBody::Feeder(FeederEvent::Settings { .. }) => self.memory.facts.settings = None,
-            EventBody::Feeder(FeederEvent::Plans { .. }) => self.memory.facts.plans = None,
+            EventBody::Feeder(FeederEvent::Settings { generation, .. }) => {
+                let held = facts.settings.as_ref().and_then(|held| held.generation);
+                if held != Some(*generation) {
+                    self.read_settings().await?;
+                }
+            }
+            EventBody::Feeder(FeederEvent::Plans { generation, .. }) => {
+                let held = facts.plans.as_ref().map(|held| held.generation);
+                if held != Some(*generation) {
+                    self.read_plans().await?;
+                }
+            }
+            body if body.moves_plans() => self.read_plans().await?,
             _ => {}
         }
+        Ok(())
     }
 
     fn gap(&mut self, gap: &server::Gap) -> Step {
@@ -690,9 +873,9 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// Read the feeder anew: at each turn, on the integration's asking,
-    /// and when the stream could not resume.
+    /// Read the feeder anew: at each turn, and on the integration's asking.
     async fn refresh(&mut self) -> Step {
+        self.recheck_unfound().await?;
         let detail = self.detail().await?;
         self.took(&detail);
         let online = detail.feeder.connection == Connection::Online;
@@ -710,6 +893,28 @@ impl<'a> Session<'a> {
                 self.read_facts().await?;
             }
         }
+        self.state()?;
+        self.read_alerts().await
+    }
+
+    /// The stream fell behind the feeder and dropped what it held: read the
+    /// feeder and its facts anew, replay the history from the cursor, flagged
+    /// as replayed so nothing fires for it, and ask the journal about each
+    /// feed still unsettled, as a new session would, without ending this one.
+    async fn resync(&mut self) -> Step {
+        let detail = self.detail().await?;
+        self.took(&detail);
+        let online = detail.feeder.connection == Connection::Online;
+        if online && !self.online {
+            self.reached(&detail).await?;
+        } else if online {
+            self.read_facts().await?;
+        } else if self.online {
+            self.online = false;
+            self.send(Update::disconnected(OFFLINE))?;
+        }
+        self.backlog(&detail).await?;
+        self.recheck().await?;
         self.state()?;
         self.read_alerts().await
     }
@@ -740,6 +945,8 @@ impl<'a> Session<'a> {
             calibration: self.memory.calibration.as_ref(),
         };
         let (op, kind) = writes::build(write, &read)?;
+        let held = matches!(kind, Kind::Feed { .. }) && self.memory.holds_feeds();
+        wellfed_formats::require(!held, || NotSent::Held)?;
         writes::gate(self.role, &op)?;
         writes::served(&op, self.kind.ok_or(NotSent::Unsupported)?)?;
         Ok((op, kind))
@@ -751,11 +958,65 @@ impl<'a> Session<'a> {
         let (client, id) = (self.client, self.target.feeder);
         let key = Uuid::new_v4();
 
-        let called = match op {
-            Op::Feed { portions } => match client.feed(id, portions, key).await {
-                Ok(command) => Ok(self.feeding(&command, portions)),
-                Err(error) => Err(error),
-            },
+        // A feed is in the integration's store before it leaves, and stays
+        // there through the call, which may take as long as the server
+        // waits on the feeder: a restart meanwhile finds it lost, and the
+        // journal settles it then.
+        let sending = match kind {
+            Kind::Feed { portions } => {
+                let pending = self.pending(key, portions);
+                if self.memory.holds.kept_first(self.updates, &pending).await == Saved::Failed {
+                    // The store may have it in memory, and save it later:
+                    // it is dropped there too, since it never went.
+                    let _ = self.updates.send(Update::cleared(pending));
+                    return (Written::not_sent(NotSent::NotSaved), Ok(()));
+                }
+                Some(pending)
+            }
+            Kind::Once | Kind::Store { .. } => None,
+        };
+
+        let called = match (op, &sending) {
+            (Op::Feed { .. }, Some(pending)) => {
+                match client.feed(id, pending.portions, key).await {
+                    Ok(command) => Ok(self.feeding(&command, pending)),
+                    Err(error) => Err(error),
+                }
+            }
+            // A feed's kind always comes with its op.
+            (Op::Feed { .. }, None) => {
+                return (Written::not_sent(NotSent::Unsupported), Ok(()));
+            }
+            (op, _) => self.other(op, id, key).await,
+        };
+
+        let ended = match called {
+            Ok(written) => (written, self.state()),
+            Err(error) => self.failed(&error, key, sending.as_ref()),
+        };
+        // A feed answered, refused or never taken is kept no longer; one
+        // that may have run stays kept until the journal settles it.
+        if let Some(pending) = sending
+            && !self
+                .memory
+                .uncertain
+                .iter()
+                .any(|uncertain| uncertain.key == key)
+        {
+            let _ = self.updates.send(Update::cleared(pending));
+        }
+        ended
+    }
+
+    /// Send a write other than a feed, under `key`: its answer.
+    async fn other(
+        &mut self,
+        op: Op,
+        id: FeederId,
+        key: Uuid,
+    ) -> Result<Written, wellfed_server_client::Error> {
+        let client = self.client;
+        match op {
             Op::CancelFeed { feed } => client.cancel_feed(id, feed, key).await.map(done),
             Op::SetLock { locked } => {
                 let lock = if locked { Lock::Locked } else { Lock::Unlocked };
@@ -795,56 +1056,56 @@ impl<'a> Session<'a> {
             }
             // Every write Home Assistant builds has its route; another
             // never leaves.
-            _ => return (Written::not_sent(NotSent::Unsupported), Ok(())),
-        };
-
-        match called {
-            Ok(written) => (written, self.state()),
-            Err(error) => self.failed(&error, kind, key),
+            _ => Ok(Written::not_sent(NotSent::Unsupported)),
         }
     }
 
     /// How a feed the server answered ended.
-    fn feeding(&mut self, command: &server::Command, portions: u8) -> Written {
+    fn feeding(&mut self, command: &server::Command, pending: &Pending) -> Written {
         match command.outcome {
             Some(CommandOutcome::Feeding { feed } | CommandOutcome::Fed { feed, .. }) => {
                 Written::feeding(feed)
             }
             Some(CommandOutcome::Refused { refusal }) => Written::refused_for(refusal.into()),
             // Taken, with no answer yet: the journal settles it.
-            _ => self.unanswered(command.key, portions, command.feed),
+            _ => self.unanswered(command.key, pending.clone(), command.feed),
         }
     }
 
-    /// A feed under `key` went out and its answer never came: uncertain,
-    /// and kept until the journal settles it.
-    fn unanswered(&mut self, key: Uuid, portions: u8, feed: Option<u32>) -> Written {
-        let pending = Pending {
+    /// The record of a feed of `portions` about to go out under `key`,
+    /// kept until it settles.
+    fn pending(&self, key: Uuid, portions: u8) -> Pending {
+        Pending {
             id: key.to_string(),
             portions,
             sent_ms: now_ms(),
             after: None,
             reported: false,
-        };
-        // Announced on the updates before anything can settle it, so the
-        // integration keeps it first; a handle gone has no one to tell.
+            released_ms: None,
+            token_id: Some(self.target.token_id.clone()),
+        }
+    }
+
+    /// A feed under `key`, kept as `pending` since before it went out, had
+    /// no answer: uncertain, and kept until the journal settles it.
+    fn unanswered(&mut self, key: Uuid, pending: Pending, feed: Option<u32>) -> Written {
+        // Announced as lost before anything can settle it, so the
+        // integration's repair says so; a handle gone has no one to tell.
         let _ = self.updates.send(Update::pending(pending.clone()));
-        self.memory.uncertain.push(Uncertain {
-            key,
-            pending: pending.clone(),
-            feed,
-            sent: Instant::now(),
-        });
+        self.memory
+            .uncertain
+            .push(Uncertain::new(key, pending.clone(), feed));
         Written::uncertain_feed(pending)
     }
 
-    /// How a write of `kind` under `key` that failed with `error` ended,
-    /// and whether the session goes on.
+    /// How a write under `key` that failed with `error` ended, and whether
+    /// the session goes on; `sending` is a feed's record, kept since before
+    /// it went out.
     fn failed(
         &mut self,
         error: &wellfed_server_client::Error,
-        kind: Kind,
         key: Uuid,
+        sending: Option<&Pending>,
     ) -> (Written, Step) {
         match error.failure() {
             // Nothing left this host: the server is gone for now.
@@ -856,9 +1117,9 @@ impl<'a> Session<'a> {
             Failure::FeederOffline => (Written::not_sent(NotSent::Disconnected), Ok(())),
             // It may have run: never sent again.
             Failure::Interrupted | Failure::OutcomeUnknown => {
-                let written = match kind {
-                    Kind::Feed { portions } => self.unanswered(key, portions, None),
-                    _ => Written::uncertain(),
+                let written = match sending {
+                    Some(pending) => self.unanswered(key, pending.clone(), None),
+                    None => Written::uncertain(),
                 };
                 (written, Ok(()))
             }
@@ -976,17 +1237,18 @@ impl<'a> Session<'a> {
     }
 
     /// Uncertain feeds past [`SETTLE`] the journal has not settled are
-    /// still unknown; those past [`KEEP_MS`](crate::feeder::KEEP_MS) are forgotten.
+    /// still unknown, and still held; those released a week ago are
+    /// forgotten. One still holding is never forgotten.
     fn expire(&mut self) -> Step {
         let (gone, open) = std::mem::take(&mut self.memory.uncertain)
             .into_iter()
-            .partition(|uncertain| direct::forgotten(uncertain.pending.sent_ms));
+            .partition(|uncertain| uncertain.pending.released_ms.is_some_and(direct::forgotten));
         self.memory.uncertain = open;
         for uncertain in gone {
-            if !uncertain.pending.reported {
-                self.send(Update::still_unknown(uncertain.pending.clone()))?;
-            }
             self.send(Update::forgotten(uncertain.pending))?;
+        }
+        for update in self.memory.holds.past_keep() {
+            self.send(update)?;
         }
 
         let now = Instant::now();
@@ -1098,6 +1360,7 @@ mod tests {
         let target = Target {
             url: Url::parse("http://127.0.0.1:9").unwrap(),
             token: "token".into(),
+            token_id: TOKEN_ID.into(),
             feeder: FeederId(Uuid::from_u128(1)),
             identity: [0; 32],
         };
@@ -1112,19 +1375,19 @@ mod tests {
         heard.into_iter().collect()
     }
 
+    const TOKEN_ID: &str = "the-token";
+
     fn lost(key: Uuid, sent_ms: i64) -> Uncertain {
-        Uncertain {
-            key,
-            pending: Pending {
-                id: key.to_string(),
-                portions: 2,
-                sent_ms,
-                after: None,
-                reported: false,
-            },
-            feed: None,
-            sent: sent_at(sent_ms),
-        }
+        let pending = Pending {
+            id: key.to_string(),
+            portions: 2,
+            sent_ms,
+            after: None,
+            reported: false,
+            released_ms: None,
+            token_id: Some(TOKEN_ID.into()),
+        };
+        Uncertain::new(key, pending, None)
     }
 
     fn journal(key: Uuid, state: CommandState, outcome: CommandOutcome) -> server::Command {
@@ -1181,15 +1444,16 @@ mod tests {
     }
 
     /// A feed the journal has not settled is reported still unknown once
-    /// its settle window has passed, and forgotten after the keep window,
-    /// by the time it went out.
+    /// its settle window has passed, and holds feeds back however old it
+    /// is; only one the owner released a week ago is forgotten.
     #[test]
-    fn a_lost_feed_is_reported_and_then_forgotten() {
+    fn a_lost_feed_is_reported_and_forgotten_only_a_week_after_its_release() {
         let mut memory = Memory::default();
         let fresh = Uuid::from_u128(1);
         let settle = i64::try_from(SETTLE.as_millis()).unwrap();
         let reported = Uuid::from_u128(2);
         let old = Uuid::from_u128(3);
+        let released = Uuid::from_u128(4);
         memory.uncertain.push(lost(fresh, now_ms()));
         memory
             .uncertain
@@ -1197,6 +1461,10 @@ mod tests {
         memory
             .uncertain
             .push(lost(old, now_ms() - direct::KEEP_MS - 1000));
+        let mut gone = lost(released, now_ms() - direct::KEEP_MS * 2);
+        gone.pending.reported = true;
+        gone.pending.released_ms = Some(now_ms() - direct::KEEP_MS - 1000);
+        memory.uncertain.push(gone);
 
         let heard = offline(&mut memory, |session| assert!(session.expire().is_ok()));
         let what: Vec<(UpdateKind, String)> = heard
@@ -1206,9 +1474,9 @@ mod tests {
         assert_eq!(
             what,
             [
-                (UpdateKind::StillUnknown, old.to_string()),
-                (UpdateKind::Forgotten, old.to_string()),
+                (UpdateKind::Forgotten, released.to_string()),
                 (UpdateKind::StillUnknown, reported.to_string()),
+                (UpdateKind::StillUnknown, old.to_string()),
             ]
         );
         let open: Vec<Uuid> = memory
@@ -1216,7 +1484,178 @@ mod tests {
             .iter()
             .map(|uncertain| uncertain.key)
             .collect();
-        assert_eq!(open, [fresh, reported]);
+        assert_eq!(open, [fresh, reported, old]);
+        assert!(memory.holds_feeds());
+    }
+
+    /// A journal that lacks a feed's key says it was never sent only under
+    /// the token it went under, and only once the grace has passed by both
+    /// clocks; sooner it is asked again later.
+    #[test]
+    fn a_feed_the_journal_lacks_is_never_sent_only_past_the_grace_under_its_token() {
+        let grace = Duration::from_millis(UNFOUND_GRACE_MS.unsigned_abs());
+        let long_ago = now_ms() - UNFOUND_GRACE_MS - 1000;
+        let (recent, unknown_since, other, past) = (
+            Uuid::from_u128(1),
+            Uuid::from_u128(2),
+            Uuid::from_u128(3),
+            Uuid::from_u128(4),
+        );
+        let mut memory = Memory::default();
+        memory.uncertain.push(lost(recent, now_ms()));
+        // Old by the wall clock, but this run has known it only now.
+        memory.uncertain.push(lost(unknown_since, long_ago));
+        let mut another = lost(other, long_ago);
+        another.pending.token_id = Some("another-token".into());
+        another.known = Instant::now() - grace;
+        memory.uncertain.push(another);
+        let mut settled = lost(past, long_ago);
+        settled.known = Instant::now() - grace;
+        memory.uncertain.push(settled);
+
+        let heard = offline(&mut memory, |session| {
+            for key in [recent, unknown_since, other, past] {
+                assert!(session.unfound(key).is_ok());
+            }
+        });
+        assert_eq!(kinds(&heard), [UpdateKind::SettledUnfed]);
+        assert_eq!(heard[0].pending.as_ref().unwrap().id, past.to_string());
+        let open: Vec<(Uuid, bool)> = memory
+            .uncertain
+            .iter()
+            .map(|uncertain| (uncertain.key, uncertain.unfound))
+            .collect();
+        assert_eq!(
+            open,
+            [(recent, true), (unknown_since, true), (other, true)],
+            "asked again later"
+        );
+    }
+
+    /// Lost feeds hold the next feed back until each settles or the owner
+    /// releases it, the direct route's ones carried here among them.
+    #[test]
+    fn a_lost_feed_from_either_route_holds_until_released() {
+        let shared = Shared::default();
+        let direct = Pending {
+            token_id: None,
+            ..lost(Uuid::from_u128(2), now_ms()).pending
+        };
+        let mut memory = Memory {
+            holds: Holds::new(std::sync::Arc::clone(&shared), vec![direct], false),
+            ..Memory::default()
+        };
+        memory.uncertain.push(lost(Uuid::from_u128(1), now_ms()));
+        assert!(memory.holds_feeds());
+
+        crate::hold::releases(&shared)
+            .push(crate::hold::Release::Feed(Uuid::from_u128(1).to_string()));
+        assert_eq!(memory.take_releases().len(), 1);
+        assert!(memory.holds_feeds(), "the direct route's still holds");
+
+        crate::hold::releases(&shared)
+            .push(crate::hold::Release::Feed(Uuid::from_u128(2).to_string()));
+        assert_eq!(memory.take_releases().len(), 1);
+        assert!(!memory.holds_feeds());
+        assert_eq!(memory.uncertain.len(), 1, "still open to the journal");
+    }
+
+    /// The stream fell behind and dropped what it held: a feed and a
+    /// settings change made meanwhile are read again without a reconnect,
+    /// the feed replayed, so nothing fires for it.
+    #[test]
+    fn a_resync_reads_what_the_stream_dropped() {
+        use wellfed_server_testkit::feeder;
+        use wellfed_server_testkit::{TestServer, ada_login, ada_setup, local, until};
+
+        local(async {
+            let sim = feeder::start().await;
+            let server = TestServer::start().await;
+            let mut owner = server.client();
+            owner.setup(&ada_setup()).await.unwrap();
+            let adopted = owner
+                .adopt(&server::AdoptFeeder {
+                    invite: feeder::invite(&sim, server::ClientRole::Server).await,
+                    name: "kitchen".into(),
+                    address: Some(sim.address.to_string()),
+                    phone_key: None,
+                })
+                .await
+                .unwrap();
+            until("the server reaches the feeder", || async {
+                owner.feeders().await.unwrap()[0].connection == Connection::Online
+            })
+            .await;
+            let url = format!("http://{}", server.address());
+            let ada = ada_login();
+            let login = account::login(&url, &ada.name, &ada.password, "home-assistant")
+                .await
+                .unwrap();
+            let target = Target {
+                url: address(&url).unwrap(),
+                token: login.token,
+                token_id: login.token_id,
+                feeder: adopted.id,
+                identity: adopted.identity.0,
+            };
+            let client = client(&target, Clocks::DEFAULT).unwrap();
+            let (updates, heard) = std_mpsc::channel();
+            let mut memory = Memory::default();
+            let mut session = Session::new(&client, &target, &mut memory, &updates);
+            let Ok(_unread) = session.open().await else {
+                panic!("the session opens");
+            };
+            while heard.try_recv().is_ok() {}
+
+            // Meanwhile, with the stream unread: a feed and a settings
+            // change.
+            let fed = owner.feed(adopted.id, 1, Uuid::new_v4()).await.unwrap();
+            let fed = fed.feed.expect("the feed's number");
+            let Settings::Feeder(held) = owner.settings(adopted.id).await.unwrap() else {
+                panic!("a feeder's settings");
+            };
+            let quieter = model::FeederSettingsPatch {
+                volume: Some(held.volume / 2),
+                ..model::FeederSettingsPatch::default()
+            };
+            let base = held.generation.unwrap();
+            owner
+                .put_settings(adopted.id, base, &quieter, Uuid::new_v4())
+                .await
+                .unwrap();
+            until("the server has the feed's end", || async {
+                let page = owner
+                    .events(adopted.id, &EventQuery::default())
+                    .await
+                    .unwrap();
+                page.events.iter().any(|event| {
+                    Feed::from_event(&model::Event {
+                        epoch: event.epoch,
+                        seq: event.seq,
+                        at: event.at,
+                        body: event.body,
+                    })
+                    .is_some_and(|feed| feed.feed == fed)
+                })
+            })
+            .await;
+
+            assert!(session.streamed(StreamEvent::Resync).await.is_ok());
+            drop(session);
+            let settings = memory.facts.settings.expect("the settings");
+            assert_eq!(settings.volume, held.volume / 2);
+            assert!(memory.facts.feeds.iter().any(|feed| feed.feed == fed));
+            let replayed = heard.try_iter().any(|update| {
+                update.replayed
+                    && update
+                        .event
+                        .and_then(|event| event.fed)
+                        .is_some_and(|event| event.feed == fed)
+            });
+            assert!(replayed, "the feed is replayed, not news");
+            server.stop().await;
+            sim.stop().await;
+        });
     }
 
     #[test]

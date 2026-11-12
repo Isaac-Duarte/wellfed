@@ -12,7 +12,7 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::FeederSettingsPatch;
 
-use crate::api::{Pending, Role, ServerProblem, Tune, Update, Written};
+use crate::api::{JoinProblem, Pending, Role, ServerProblem, Tune, Update, Written};
 use crate::feeder::{self, Carried, Clocks, Target};
 use crate::key::{self, ClientKey, Joined, bytes32};
 use crate::server::{self, Login, ServerFeeder};
@@ -62,6 +62,94 @@ impl From<server::Refused> for PyErr {
     }
 }
 
+/// Redeeming an invite did not enroll Home Assistant's key; `problem` says
+/// how, as the setup flow words it, and `held` is the key the next `redeem`
+/// must be handed, if any.
+#[pyclass(extends = WellfedError, frozen, module = "wellfed_homeassistant")]
+struct JoinFailed {
+    #[pyo3(get)]
+    problem: JoinProblem,
+    #[pyo3(get)]
+    held: Option<HeldKey>,
+}
+
+#[pymethods]
+impl JoinFailed {
+    #[new]
+    #[pyo3(signature = (problem, held, *_args))]
+    fn new(
+        problem: &JoinProblem,
+        held: Option<HeldKey>,
+        _args: &Bound<'_, PyTuple>,
+    ) -> PyClassInitializer<Self> {
+        PyClassInitializer::from(WellfedError).add_subclass(Self {
+            problem: *problem,
+            held,
+        })
+    }
+}
+
+impl From<Box<key::Unredeemed>> for PyErr {
+    fn from(unredeemed: Box<key::Unredeemed>) -> Self {
+        let problem = key::join_problem(&unredeemed.error);
+        let held = unredeemed.held.map(HeldKey::from);
+        PyErr::new::<JoinFailed, _>((problem, held, unredeemed.error.to_string()))
+    }
+}
+
+/// A key an unchecked join may have enrolled on `feeder`: the setup flow
+/// holds it and hands it to the next `redeem`, which checks it before it
+/// spends another invite for that feeder.
+#[pyclass(frozen, get_all, from_py_object, module = "wellfed_homeassistant")]
+#[derive(Clone)]
+struct HeldKey {
+    secret: Vec<u8>,
+    feeder: Vec<u8>,
+}
+
+#[pymethods]
+impl HeldKey {
+    #[new]
+    fn new(secret: Vec<u8>, feeder: Vec<u8>) -> Self {
+        Self { secret, feeder }
+    }
+
+    /// The public key, as the feeder would list it.
+    fn public_key(&self) -> PyResult<Vec<u8>> {
+        Ok(ClientKey::restore(&self.secret)?.public().to_vec())
+    }
+}
+
+impl From<key::Unsettled> for HeldKey {
+    fn from(held: key::Unsettled) -> Self {
+        Self {
+            secret: held.secret.to_vec(),
+            feeder: held.feeder.to_vec(),
+        }
+    }
+}
+
+impl TryFrom<&HeldKey> for key::Unsettled {
+    type Error = Error;
+
+    fn try_from(held: &HeldKey) -> Result<Self, Error> {
+        Ok(Self {
+            secret: bytes32(&held.secret, Error::SecretLength)?,
+            feeder: bytes32(&held.feeder, Error::IdentityLength)?,
+        })
+    }
+}
+
+/// A key an invite enrolled: its secret and its feeder, how it joined, and
+/// the key still held for the next `redeem`, if any.
+#[pyclass(frozen, get_all, module = "wellfed_homeassistant")]
+struct Redeemed {
+    secret: Vec<u8>,
+    feeder: Vec<u8>,
+    joined: Joined,
+    held: Option<HeldKey>,
+}
+
 /// Run `future` to its end on a runtime of its own.
 fn block_on<T, E>(future: impl Future<Output = Result<T, E>>) -> PyResult<T>
 where
@@ -72,12 +160,6 @@ where
         .build()
         .map_err(Error::Thread)?;
     Ok(runtime.block_on(future)?)
-}
-
-/// A new client key's secret, for the config entry.
-#[pyfunction]
-fn generate_secret() -> PyResult<Vec<u8>> {
-    Ok(ClientKey::generate()?.secret().to_vec())
 }
 
 /// Whether `role` may make every write the integration offers, by the
@@ -99,20 +181,54 @@ fn invite_feeder(text: &str) -> PyResult<Vec<u8>> {
     Ok(key::invite_feeder(text)?.to_vec())
 }
 
-/// Redeem `invite` as the key `secret`, listed as `label`, keeping the key
-/// only as a member: any other role is revoked at once. Runs once: an invite
-/// is single-use.
+/// Join with `invite`, listed as `label`, keeping the key only as a member:
+/// any other role is revoked at once. `held` is the key an earlier unchecked
+/// join left: for this invite's feeder it is checked first, and the invite,
+/// which works once, is spent only when the feeder does not know it. A join
+/// that did not enroll a key raises `JoinFailed`, whose `held` is the key
+/// to hand the next call.
 #[pyfunction]
-#[pyo3(signature = (secret, invite, label, address=None))]
-fn join(
+#[pyo3(signature = (invite, label, address=None, held=None))]
+fn redeem(
     py: Python<'_>,
-    secret: &[u8],
     invite: &str,
     label: &str,
     address: Option<&str>,
-) -> PyResult<Joined> {
-    let key = ClientKey::restore(secret)?;
-    py.detach(|| block_on(key::join_member(&key, invite, label, address)))
+    held: Option<&Bound<'_, HeldKey>>,
+) -> PyResult<Redeemed> {
+    let held = held
+        .map(|held| key::Unsettled::try_from(held.get()))
+        .transpose()?;
+    let redeemed = py.detach(|| block_on(key::redeem(invite, label, address, held)))?;
+    Ok(Redeemed {
+        secret: redeemed.key.secret().to_vec(),
+        feeder: redeemed.feeder.to_vec(),
+        joined: redeemed.joined,
+        held: redeemed.held.map(HeldKey::from),
+    })
+}
+
+/// Whether the feeder `identity` still lists the client key `key`, as the
+/// key `secret` reads its clients now; `None` when no session could ask.
+#[pyfunction]
+#[pyo3(signature = (secret, identity, key, address=None))]
+fn client_listed(
+    py: Python<'_>,
+    secret: &[u8],
+    identity: &[u8],
+    key: &[u8],
+    address: Option<&str>,
+) -> PyResult<Option<bool>> {
+    let client = ClientKey::restore(secret)?;
+    let identity = bytes32(identity, Error::IdentityLength)?;
+    let listed = bytes32(key, Error::KeyLength)?;
+    Ok(py.detach(|| {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()?;
+        runtime.block_on(key::client_listed(&client, &identity, address, listed))
+    }))
 }
 
 /// Sign in to the owner's server at `url` as `name`, and create a token
@@ -176,14 +292,24 @@ impl Pending {
     /// A pending feed as the integration kept it, to hand back to a new
     /// session.
     #[new]
-    #[pyo3(signature = (id, portions, sent_ms, after, reported))]
-    fn new(id: String, portions: u8, sent_ms: i64, after: Option<u64>, reported: bool) -> Self {
+    #[pyo3(signature = (id, portions, sent_ms, after, reported, released_ms, token_id))]
+    fn new(
+        id: String,
+        portions: u8,
+        sent_ms: i64,
+        after: Option<u64>,
+        reported: bool,
+        released_ms: Option<i64>,
+        token_id: Option<String>,
+    ) -> Self {
         Self {
             id,
             portions,
             sent_ms,
             after,
             reported,
+            released_ms,
+            token_id,
         }
     }
 }
@@ -195,50 +321,70 @@ struct Feeder(feeder::Feeder);
 #[pymethods]
 impl Feeder {
     /// `pending` and `answered` are what the last run left: the feeds
-    /// still unsettled, and the feed numbers the last `Answered` update
-    /// listed.
+    /// still unsettled, on either route, and the feed numbers the last
+    /// `Answered` update listed. `unread` says the integration's store did
+    /// not read, and the owner has not yet checked the bowls: every feed
+    /// waits until `bowls_checked`.
     #[new]
-    #[pyo3(signature = (secret, identity, address=None, pending=Vec::new(), answered=Vec::new()))]
+    #[pyo3(signature = (
+        secret, identity, address=None, pending=Vec::new(), answered=Vec::new(), unread=false
+    ))]
     fn new(
         secret: &[u8],
         identity: &[u8],
         address: Option<String>,
         pending: Vec<Pending>,
         answered: Vec<u32>,
+        unread: bool,
     ) -> PyResult<Self> {
         let key = ClientKey::restore(secret)?;
         let identity = bytes32(identity, Error::IdentityLength)?;
+        let carried = Carried {
+            pending,
+            answered,
+            unread,
+        };
         Ok(Self(feeder::Feeder::start(
             key,
             Target { identity, address },
             Clocks::DEFAULT,
-            Carried { pending, answered },
+            carried,
         )?))
     }
 
     /// The session to the feeder `feeder_id` on the owner's server at
     /// `url`, signed in with `token`; `identity` is the feeder's, and a
     /// feeder under that id with another one is never served as this one.
-    /// `pending` is what the last run left unsettled.
+    /// `token_id` is the token's id, which each feed sent under it records.
+    /// `pending` is what the last run left unsettled, on either route, and
+    /// `unread` as for a direct session.
     #[staticmethod]
-    #[pyo3(signature = (url, token, feeder_id, identity, pending=Vec::new()))]
+    #[pyo3(signature = (url, token, token_id, feeder_id, identity, pending=Vec::new(), unread=false))]
     fn server(
         url: &str,
         token: String,
+        token_id: String,
         feeder_id: &str,
         identity: &[u8],
         pending: Vec<Pending>,
+        unread: bool,
     ) -> PyResult<Self> {
         let target = server::Target {
             url: server::address(url)?,
             token,
+            token_id,
             feeder: server::feeder(feeder_id)?,
             identity: bytes32(identity, Error::IdentityLength)?,
+        };
+        let carried = Carried {
+            pending,
+            unread,
+            ..Carried::default()
         };
         Ok(Self(feeder::Feeder::start_server(
             target,
             server::Clocks::DEFAULT,
-            pending,
+            carried,
         )?))
     }
 
@@ -248,7 +394,9 @@ impl Feeder {
         py.detach(|| self.0.next_update(wait))
     }
 
-    /// Start a feed; how it ended. Never retry an uncertain one.
+    /// Start a feed; how it ended. Never retry an uncertain one. It goes
+    /// out only once `saved` confirms the `Sending` update's record is in
+    /// the store.
     fn feed(&self, py: Python<'_>, portions: u8) -> Written {
         py.detach(|| self.0.feed(portions))
     }
@@ -309,22 +457,49 @@ impl Feeder {
     fn refresh(&self) {
         self.0.refresh();
     }
+
+    /// The owner releases the lost feed `id` names, through its repair: new
+    /// feeds go again though it may have run. A `Released` update confirms
+    /// it.
+    fn release(&self, id: String) {
+        self.0.release(id);
+    }
+
+    /// The owner checked the bowls after the integration's store did not
+    /// read, through its repair: feeds go again. A `BowlsChecked` update
+    /// confirms it.
+    fn bowls_checked(&self) {
+        self.0.bowls_checked();
+    }
+
+    /// The integration's store saved the record of the feed `id` names, as
+    /// a `Sending` update asked: the feed goes out. Called from the event
+    /// loop while `feed` blocks an executor thread.
+    fn saved(&self, id: &str) {
+        self.0.saved(id);
+    }
+
+    /// The integration's store could not save the record of the feed `id`
+    /// names: it never goes out, and `feed` answers it not sent.
+    fn unsaved(&self, id: &str) {
+        self.0.unsaved(id);
+    }
 }
 
 #[pymodule]
 mod wellfed_homeassistant {
     #[pymodule_export]
     use super::{
-        Feeder, ServerRefused, WellfedError, generate_secret, invite_feeder, join, public_key,
-        role_writes, server_client_listed, server_feeders, server_login, server_revoke_client,
-        server_revoke_token,
+        Feeder, HeldKey, JoinFailed, Redeemed, ServerRefused, WellfedError, client_listed,
+        invite_feeder, public_key, redeem, role_writes, server_client_listed, server_feeders,
+        server_login, server_revoke_client, server_revoke_token,
     };
     #[pymodule_export]
     use crate::api::{
         AccountRole, Alert, AlertKind, AlertLevel, Alerts, By, Capabilities, Event, EventKind,
-        Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel, NextMeal, NotSent, Pending, Plan,
-        PortionsToday, Readiness, RefusalKind, Role, ServerProblem, Settings, Skew, State, Status,
-        Tune, Update, UpdateKind, WriteResult, Written,
+        Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel, JoinProblem, NextMeal, NotSent,
+        Pending, Plan, PortionsToday, Readiness, RefusalKind, Role, ServerProblem, Settings, Skew,
+        State, Status, Tune, Update, UpdateKind, WriteResult, Written,
     };
     #[pymodule_export]
     use crate::key::Joined;

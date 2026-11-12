@@ -429,6 +429,25 @@ impl EventBody {
     pub const fn device(&self) -> Option<DeviceKind> {
         self.kind().device()
     }
+
+    /// Whether it may mean the plans moved, so a client holding them reads
+    /// them again. A one-off plan disables itself when it is claimed or
+    /// passed, which moves the generation with no `Plans` event: the feed
+    /// or the missed meal is the only news of it. A skip and its undo move
+    /// a meal's skip (and a one-off plan's switch) with no `Plans` event
+    /// either, and a skipped plan's next meal ends its skip.
+    pub const fn moves_plans(&self) -> bool {
+        matches!(
+            self,
+            Self::Feeder(
+                FeederEvent::Plans { .. }
+                    | FeederEvent::Fed { .. }
+                    | FeederEvent::Missed { .. }
+                    | FeederEvent::Skipped { .. }
+                    | FeederEvent::Unskipped { .. }
+            )
+        )
+    }
 }
 
 impl From<CoreEvent> for EventBody {
@@ -754,5 +773,53 @@ impl MetricKind {
 
     pub fn from_code(code: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|metric| metric.code() == code)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jiff::Timestamp;
+
+    use super::{EventBody, FeederEvent, MissedReason, Source};
+    use crate::{FeedOutcome, FeedReason, FoodLevel, Generation};
+
+    #[test]
+    fn a_feed_a_missed_meal_or_a_skip_may_move_the_plans() {
+        let fed = EventBody::Feeder(FeederEvent::Fed {
+            feed: 1,
+            requested: 1,
+            completed: 1,
+            outcome: FeedOutcome::Done,
+            reason: FeedReason::Done,
+            hopper: FoodLevel::Present,
+            by: Source::Schedule { plan: 0 },
+        });
+        let missed = EventBody::Feeder(FeederEvent::Missed {
+            plan: 0,
+            due: Timestamp::UNIX_EPOCH,
+            reason: MissedReason::Late,
+        });
+
+        assert!(fed.moves_plans());
+        assert!(missed.moves_plans());
+        for skip in [
+            FeederEvent::Skipped {
+                plan: 0,
+                due: Timestamp::UNIX_EPOCH,
+                by: Source::Feeder,
+            },
+            FeederEvent::Unskipped {
+                plan: 0,
+                due: Timestamp::UNIX_EPOCH,
+                by: Source::Feeder,
+            },
+        ] {
+            assert!(EventBody::Feeder(skip).moves_plans(), "a skip or its undo");
+        }
+        let settings = EventBody::Feeder(FeederEvent::Settings {
+            generation: Generation(1),
+            by: Source::Feeder,
+        });
+        assert!(!settings.moves_plans());
     }
 }

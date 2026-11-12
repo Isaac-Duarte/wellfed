@@ -41,8 +41,13 @@ EVENT_FEEDER: Final = "wellfed_event"
 
 # Repairs that outlive an entry or a route: a client key a move to the
 # server route could not remove, and a token a deleted entry could not
-# revoke.
+# revoke. A leftover key's repair keeps its id once its entry is deleted,
+# and is worded for that (`LEFTOVER_KEY_LEFT`): nothing checks it then.
 LEFTOVER_KEY_ISSUE: Final = "leftover_key"
+LEFTOVER_KEY_LEFT: Final = "leftover_key_left"
+# A key a setup flow's join may have enrolled when its answer was lost, left
+# when the flow ended: nothing checks it either.
+LEFTOVER_KEY_UNJOINED: Final = "leftover_key_unjoined"
 TOKEN_LEFT_ISSUE: Final = "token_left"
 
 SERVICE_FEED: Final = "feed"

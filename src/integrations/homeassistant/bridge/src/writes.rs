@@ -15,11 +15,15 @@ use std::ops::RangeInclusive;
 
 use wellfed_client::plans::{self, Edit};
 use wellfed_model::{
-    Answer, Bowl, Calibration, CalibrationView, ClientRole, DeviceKind, FeederSettingsPatch,
-    Generation, Op, PLANS, Refusal,
+    Answer, Calibration, CalibrationView, ClientRole, DeviceKind, FeederSettingsPatch, Generation,
+    Op, Refusal,
 };
+#[cfg(any(feature = "python", test))]
+use wellfed_model::{Bowl, PLANS};
 
-use crate::api::{NotSent, Role, Tune};
+#[cfg(any(feature = "python", test))]
+use crate::api::Role;
+use crate::api::{NotSent, Tune};
 
 /// The feeder's limits on a portion's weight, in milligrams.
 const PORTION_MG: RangeInclusive<u32> =
@@ -34,7 +38,7 @@ const PORTIONS: RangeInclusive<u8> = wellfed_model::PORTIONS_MIN..=wellfed_model
 
 /// One write Home Assistant asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Write {
+pub(crate) enum Write {
     Feed { portions: u8 },
     CancelFeed { feed: u32 },
     SetLock { locked: bool },
@@ -45,6 +49,8 @@ pub enum Write {
     PortionWeight { mg: u32 },
 }
 
+// Only the Python module asks whether a role writes everything.
+#[cfg(any(feature = "python", test))]
 impl Write {
     /// One write of each kind, to ask the feeder's matrix about a role as a
     /// whole.
@@ -94,7 +100,8 @@ impl Write {
 /// feeder's own matrix: its write entities show only then. A viewer's
 /// account and a role a newer build added write nothing, and the server's
 /// key, which may not set the portion weight, is not one it joins with.
-pub fn writes_all(role: Role) -> bool {
+#[cfg(any(feature = "python", test))]
+pub(crate) fn writes_all(role: Role) -> bool {
     let role = match role {
         Role::Owner => ClientRole::Owner,
         Role::Member => ClientRole::Member,
@@ -109,7 +116,7 @@ pub fn writes_all(role: Role) -> bool {
 
 /// A store whose writes name the generation they were made on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Store {
+pub(crate) enum Store {
     Settings,
     Plans,
     Calibration,
@@ -117,7 +124,7 @@ pub enum Store {
 
 /// What an outstanding write was, for reading its answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
+pub(crate) enum Kind {
     /// A write whose answer is the whole result.
     Once,
     /// A feed: an answer that never came leaves it to be settled by its
@@ -133,10 +140,10 @@ pub enum Kind {
 
 /// What the session has read that a write is based on.
 #[derive(Clone, Copy, Debug)]
-pub struct Read<'a> {
-    pub settings: Option<Generation>,
-    pub plans: Option<&'a wellfed_model::Plans>,
-    pub calibration: Option<&'a CalibrationView>,
+pub(crate) struct Read<'a> {
+    pub(crate) settings: Option<Generation>,
+    pub(crate) plans: Option<&'a wellfed_model::Plans>,
+    pub(crate) calibration: Option<&'a CalibrationView>,
 }
 
 /// Whether this client's role may send `op`, by the feeder's own matrix
@@ -150,20 +157,20 @@ pub struct Read<'a> {
 /// the server sends with its own key, whose role the feeder checks. So a
 /// write the gate lets through, such as the portion weight, which the
 /// server's key may not set, can still come back refused.
-pub fn gate(role: ClientRole, op: &Op) -> Result<(), NotSent> {
+pub(crate) fn gate(role: ClientRole, op: &Op) -> Result<(), NotSent> {
     let unsendable = op.to_proto().is_err();
     wellfed_formats::require(unsendable || op.allowed(role), || NotSent::Forbidden)
 }
 
 /// Whether a device of `kind` serves `op`: the shared core, or its own
 /// module's ([`Op::kind`]). Another kind's op is never sent.
-pub fn served(op: &Op, kind: DeviceKind) -> Result<(), NotSent> {
+pub(crate) fn served(op: &Op, kind: DeviceKind) -> Result<(), NotSent> {
     let served = op.kind().is_none_or(|of| of == kind);
     wellfed_formats::require(served, || NotSent::Unsupported)
 }
 
 /// The op `write` becomes on what was `read`, and how to read its answer.
-pub fn build(write: &Write, read: &Read<'_>) -> Result<(Op, Kind), NotSent> {
+pub(crate) fn build(write: &Write, read: &Read<'_>) -> Result<(Op, Kind), NotSent> {
     let built = match *write {
         Write::Feed { portions } => {
             let valid = PORTIONS.contains(&portions);
@@ -217,7 +224,7 @@ const fn store(store: Store, base: Generation) -> Kind {
 
 /// What a store write's answer means.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Landed {
+pub(crate) enum Landed {
     /// The store moved to the next generation: this change is in it.
     Done,
     /// The store moved on before this change; it was not made.
@@ -229,11 +236,11 @@ pub enum Landed {
 }
 
 /// What `answer` means for a change made on `base`.
-pub fn landed(answer: Option<&Answer>, base: Generation) -> Landed {
+pub(crate) fn landed(answer: Option<&Answer>, base: Generation) -> Landed {
     match answer {
         Some(Answer::Done {
             generation: Some(generation),
-        }) if generation.0 == base.0.wrapping_add(1) => Landed::Done,
+        }) if *generation == base.next() => Landed::Done,
         Some(Answer::Refused(Refusal::Stale { .. })) => Landed::Stale,
         Some(Answer::Refused(refusal)) => Landed::Refused(*refusal),
         _ => Landed::Unknown,

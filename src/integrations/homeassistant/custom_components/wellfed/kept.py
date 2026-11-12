@@ -1,11 +1,15 @@
 """What an entry keeps across restarts and reloads, in a store of its own.
 
-- **Pending feeds:** each direct feed from just before it goes out, and
+- **Pending feeds:** each feed from just before it goes out (saved at
+  once, since the bridge sends it only once the record landed), and
   each feed whose answer was lost, until its answer clears it, an update
   settles it, or the bridge stops waiting on it; with whether it was
-  reported still unknown. The next session is handed them, so a feed lost
-  before a restart, or out when Home Assistant stopped, is still settled
-  rather than forgotten, and one already reported is not reported again.
+  reported still unknown, when the owner released it, and through the
+  server the token it went under. The next session is handed them, on
+  either route, so a feed lost before a restart, or out when Home Assistant
+  stopped, is still settled rather than forgotten, one already reported is
+  not reported again, and one not released still holds new feeds back,
+  whichever route the entry is on now.
 - **Answered feeds:** the feed numbers this Home Assistant has the end of,
   as the bridge last listed them: each feed it was answered for, and each
   lost feed a `Fed` event settled, as many as the bridge needs kept.
@@ -13,8 +17,11 @@
   session must know them too: a feed answered just before a lost one went
   out may end after it, and the replay of a `Fed` that settled one lost
   feed must not settle another.
-- **A leftover key:** the client key an entry held directly before it moved
+- **Leftover keys:** each client key an entry held directly before it moved
   to the server route, while the feeder may still list it.
+- **Unread:** the store before this one did not read, so a lost feed it
+  kept is lost with it; every feed waits until the owner says the bowls
+  are checked.
 
 One instance per entry, so a reload and a config flow write the same one.
 The store is kept by the beta upgrade rule:
@@ -24,10 +31,11 @@ The store is kept by the beta upgrade rule:
   saves it at the newer of the two minors, so a newer build never takes its
   own data for an older minor's.
 - A newer integration's major (after a downgrade) is read as nothing and
-  never written: the store is made read-only, and the entry starts empty.
+  never written: the store is made read-only, and the entry starts empty
+  and unread.
 - A file that does not read as this shape is copied aside under a numbered
-  name, never deleted, and the entry starts empty. When the copy fails, the
-  store is made read-only rather than saved over the file.
+  name, never deleted, and the entry starts empty and unread. When the copy
+  fails, the store is made read-only rather than saved over the file.
 """
 
 from __future__ import annotations
@@ -37,8 +45,8 @@ import os
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import UnsupportedStorageVersionError
+from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, UnsupportedStorageVersionError
 from homeassistant.helpers.storage import Store
 from homeassistant.util.hass_dict import HassKey
 
@@ -64,42 +72,73 @@ class PendingData(TypedDict):
     sent_ms: int
     after: int | None
     reported: bool
+    released_ms: int | None
+    token_id: str | None
 
 
 class KeptData(TypedDict):
     pending: list[PendingData]
     answered: list[int]
-    leftover_key: str | None
+    leftover_keys: list[str]
+    unread: bool
 
 
-def _empty() -> KeptData:
-    return {"pending": [], "answered": [], "leftover_key": None}
+def _empty(unread: bool = False) -> KeptData:
+    return {"pending": [], "answered": [], "leftover_keys": [], "unread": unread}
 
 
-def _int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
+def _int(value: Any, low: int, high: int) -> bool:
+    """Whether `value` is an integer from `low` to `high`, as the bridge takes it."""
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def _key(value: Any) -> bool:
+    """Whether `value` is a client key in hex, 32 bytes."""
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    try:
+        bytes.fromhex(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _pending(item: Any) -> bool:
     return (
         isinstance(item, dict)
         and isinstance(item.get("id"), str)
-        and _int(item.get("portions"))
-        and _int(item.get("sent_ms"))
-        and (item.get("after") is None or _int(item.get("after")))
+        and _int(item.get("portions"), bridge.PORTIONS_MIN, bridge.PORTIONS_MAX)
+        and _int(item.get("sent_ms"), -(2**63), 2**63 - 1)
+        and _optional(item, "after", 0, 2**64 - 1)
         and isinstance(item.get("reported"), bool)
+        and _optional(item, "released_ms", -(2**63), 2**63 - 1)
+        and "token_id" in item
+        and (item["token_id"] is None or isinstance(item["token_id"], str))
     )
 
 
+def _optional(item: dict[str, Any], name: str, low: int, high: int) -> bool:
+    """Whether `item` has `name`, null or an integer from `low` to `high`: a
+    missing one would fail setup when the bridge is handed it."""
+    if name not in item:
+        return False
+    value = item[name]
+    return value is None or _int(value, low, high)
+
+
 def _valid(data: Any) -> bool:
-    """Whether `data` is the store's shape, every field typed."""
+    """Whether `data` is the store's shape, every field typed and within what
+    the bridge takes: a value past it would fail setup on every try rather
+    than set the file aside."""
     return (
         isinstance(data, dict)
         and isinstance(data.get("pending"), list)
         and all(_pending(item) for item in data["pending"])
         and isinstance(data.get("answered"), list)
-        and all(_int(feed) for feed in data["answered"])
-        and (data.get("leftover_key") is None or isinstance(data["leftover_key"], str))
+        and all(_int(feed, 0, 2**32 - 1) for feed in data["answered"])
+        and isinstance(data.get("leftover_keys"), list)
+        and all(_key(key) for key in data["leftover_keys"])
+        and isinstance(data.get("unread"), bool)
     )
 
 
@@ -122,7 +161,17 @@ def set_aside(path: str) -> str:
 
 
 class _Store(Store[KeptData]):
-    """The entry's store, reading any minor of its major as it is."""
+    """The entry's store, reading any minor of its major as it is, and
+    telling whether its last write landed: Home Assistant's store logs a
+    failed write and goes on, and a feed must not go out on a record that
+    did not land."""
+
+    wrote = False
+
+    async def _async_write_data(self, data: dict[str, Any]) -> None:
+        self.wrote = False
+        await super()._async_write_data(data)
+        self.wrote = True
 
     async def _async_migrate_func(
         self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
@@ -144,11 +193,13 @@ class Kept:
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         self._hass = hass
-        self._store: Store[KeptData] = _Store(
+        self._store = _Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}", minor_version=STORAGE_MINOR_VERSION
         )
         self._data: KeptData = _empty()
         self._loaded = False
+        # Left as it is on disk: nothing this entry keeps is saved.
+        self._read_only = False
 
     async def load(self) -> None:
         """Read the store once; later calls keep what is in memory."""
@@ -157,14 +208,17 @@ class Kept:
         try:
             data: Any = await self._store.async_load()
         except UnsupportedStorageVersionError as error:
+            self._read_only = True
             self._store.make_read_only()
             _LOGGER.warning(
                 "Wellfed's store for this entry is from a newer version of the integration "
-                "and is left as it is (%s); until the integration is updated, the entry keeps "
-                "no lost feeds across restarts",
+                "and is left as it is (%s); until the integration is updated, no feed is "
+                "sent, since none could be kept across a restart",
                 error,
             )
-            data = None
+            self._data = _empty(unread=True)
+            self._loaded = True
+            return
         if data is None:
             self._data = _empty()
         elif _valid(data):
@@ -173,27 +227,37 @@ class Kept:
             try:
                 aside = await self._hass.async_add_executor_job(set_aside, self._store.path)
             except OSError as error:
+                self._read_only = True
                 self._store.make_read_only()
                 _LOGGER.warning(
                     "Wellfed's store for this entry is not in the shape it writes and could "
                     "not be set aside (%s); it is left as it is, nothing is saved over it, "
-                    "and the entry starts with no lost feeds on record",
+                    "and no feed is sent, since none could be kept across a restart",
                     error,
                 )
+                self._data = _empty(unread=True)
             else:
                 _LOGGER.warning(
                     "Wellfed's store for this entry is not in the shape it writes; kept as "
-                    "%s, and the entry starts with no lost feeds on record",
+                    "%s, and feeds wait until the bowls are checked",
                     aside,
                 )
-            self._data = _empty()
+                # Saved at once, so a restart finds the hold, not the file.
+                self._data = _empty(unread=True)
+                self._save()
         self._loaded = True
 
     @property
     def pending(self) -> list[bridge.Pending]:
         return [
             bridge.Pending(
-                item["id"], item["portions"], item["sent_ms"], item["after"], item["reported"]
+                item["id"],
+                item["portions"],
+                item["sent_ms"],
+                item["after"],
+                item["reported"],
+                item["released_ms"],
+                item["token_id"],
             )
             for item in self._data["pending"]
         ]
@@ -203,9 +267,14 @@ class Kept:
         return list(self._data["answered"])
 
     @property
-    def leftover_key(self) -> bytes | None:
-        key = self._data["leftover_key"]
-        return bytes.fromhex(key) if key is not None else None
+    def leftover_keys(self) -> list[bytes]:
+        return [bytes.fromhex(key) for key in self._data["leftover_keys"]]
+
+    @property
+    def unread(self) -> bool:
+        """The store before this one did not read, and the bowls are not yet
+        checked: every feed waits."""
+        return self._data["unread"]
 
     def add_pending(self, pending: bridge.Pending) -> None:
         if any(item["id"] == pending.id for item in self._data["pending"]):
@@ -217,6 +286,8 @@ class Kept:
                 "sent_ms": pending.sent_ms,
                 "after": pending.after,
                 "reported": pending.reported,
+                "released_ms": pending.released_ms,
+                "token_id": pending.token_id,
             }
         )
         self._save()
@@ -226,6 +297,13 @@ class Kept:
         for item in self._data["pending"]:
             if item["id"] == pending.id:
                 item["reported"] = True
+        self._save()
+
+    def mark_released(self, pending: bridge.Pending) -> None:
+        """The owner released `pending`, as the bridge confirmed."""
+        for item in self._data["pending"]:
+            if item["id"] == pending.id:
+                item["released_ms"] = pending.released_ms
         self._save()
 
     def settle(self, pending: bridge.Pending) -> None:
@@ -238,9 +316,36 @@ class Kept:
         self._data["answered"] = list(feeds)
         self._save()
 
-    def set_leftover_key(self, key: bytes | None) -> None:
-        self._data["leftover_key"] = key.hex() if key is not None else None
+    def add_leftover_key(self, key: bytes) -> None:
+        """`key` may still be listed on the feeder: kept until it is not."""
+        if key.hex() not in self._data["leftover_keys"]:
+            self._data["leftover_keys"].append(key.hex())
+            self._save()
+
+    def remove_leftover_key(self, key: bytes) -> None:
+        self._data["leftover_keys"] = [k for k in self._data["leftover_keys"] if k != key.hex()]
         self._save()
+
+    def bowls_checked(self) -> None:
+        """The owner checked the bowls, as the bridge confirmed: feeds go again."""
+        self._data["unread"] = False
+        self._save()
+
+    async def save_now(self) -> bool:
+        """Write the store at once: whether it landed. A feed goes out only
+        once its record has, so a restart before its answer still finds it
+        and holds the next feed on it. A store left read-only, or Home
+        Assistant stopping, which writes only at its final write, keeps
+        nothing now."""
+        if self._read_only or self._hass.state is CoreState.stopping:
+            return False
+        try:
+            await self._store.async_save(self._data)
+        except (OSError, HomeAssistantError):
+            # Home Assistant's store catches only its own write errors; the
+            # folder it makes first can fail too.
+            return False
+        return self._store.wrote
 
     def _save(self) -> None:
         self._store.async_delay_save(lambda: self._data, 0)

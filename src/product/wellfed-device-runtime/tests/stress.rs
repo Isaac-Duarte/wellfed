@@ -20,9 +20,10 @@ use wellfed_hal::flash::park::{
     self, ACK, Mmio, RELEASE, RELEASED, REQUEST, SYSTICK_CTRL, TICKS, TIMEOUT,
 };
 use wellfed_hal::flash::peer::{BACKUP_BASE, MARKER_REGISTER, PARK_CHANNEL, PARK_TICK_LIMIT, Peer};
+use wellfed_hal::flash_lock::handshake::Handshake;
 use wellfed_hal::flash_lock::provider::{ATTEMPT_BIT, LeaseFault, LeaseStage, Provider};
 use wellfed_hal::sdk::{self, Irq, fake};
-use wellfed_hal::stopped;
+use wellfed_hal::{stopped, supervision};
 
 #[derive(Default)]
 struct Km0 {
@@ -327,6 +328,8 @@ impl FlashOps for Hooks {
 
 struct Boot {
     records: Vec<Record>,
+    /// What the probe had recorded as the writes' hold lifted.
+    said_while_held: Option<usize>,
     faulted: bool,
     backup: [u32; 8],
     rings: u32,
@@ -350,21 +353,60 @@ fn platform_boot_cut(
     id: [u8; 3],
     cut: Option<u32>,
 ) -> Boot {
-    platform_boot_with(backup, storage, deaf, id, cut, None, None)
+    platform_boot_with(backup, storage, deaf, id, cut, Meets::default())
 }
 
 /// A boot whose lease number `lease` (0 first) is preempted for `ms`
 /// inside its acquire.
 fn platform_boot_preempted(lease: u32, ms: u32) -> Boot {
     let preempt = Some((lease, ms * 32_768 / 1000));
-    platform_boot_with([0; 8], blank(), false, EXPECTED_ID, None, preempt, None)
+    let meets = Meets {
+        preempt,
+        ..Meets::default()
+    };
+    platform_boot_with([0; 8], blank(), false, EXPECTED_ID, None, meets)
 }
 
 /// A boot whose lease number `lease` comes after `idle_ticks` with no
 /// lease and holds the flash for `op_ms`.
 fn platform_boot_after_idle(lease: u32, idle_ticks: u32, op_ms: u32) -> Boot {
     let gap = Some((lease, idle_ticks, op_ms * 32_768 / 1000));
-    platform_boot_with([0; 8], blank(), false, EXPECTED_ID, None, None, gap)
+    let meets = Meets {
+        gap,
+        ..Meets::default()
+    };
+    platform_boot_with([0; 8], blank(), false, EXPECTED_ID, None, meets)
+}
+
+/// How the board stands when the probe first polls.
+#[derive(Clone, Copy, Debug, Default)]
+struct Before {
+    /// Polls during which the runtime holds writes for a reset it may take.
+    held_polls: u32,
+    /// KM0 answered an earlier session's hello, and takes this many
+    /// milliseconds to answer the probe's.
+    answered_earlier: Option<u32>,
+}
+
+/// A clean boot whose board stands as `before` says.
+fn platform_boot_before(before: Before) -> Boot {
+    let meets = Meets {
+        before,
+        ..Meets::default()
+    };
+    platform_boot_with([0; 8], blank(), false, EXPECTED_ID, None, meets)
+}
+
+/// What a boot meets besides its storage and power.
+#[derive(Clone, Copy, Debug, Default)]
+struct Meets {
+    /// The lease number preempted inside its acquire, and for how many
+    /// ticks.
+    preempt: Option<(u32, u32)>,
+    /// The lease number that comes after an idle gap: the gap's ticks, and
+    /// how many ticks it holds the flash.
+    gap: Option<(u32, u32, u32)>,
+    before: Before,
 }
 
 fn platform_boot_with(
@@ -373,9 +415,13 @@ fn platform_boot_with(
     deaf: bool,
     id: [u8; 3],
     cut: Option<u32>,
-    preempt: Option<(u32, u32)>,
-    gap: Option<(u32, u32, u32)>,
+    meets: Meets,
 ) -> Boot {
+    let Meets {
+        preempt,
+        gap,
+        before,
+    } = meets;
     std::thread::spawn(move || {
         fake::reset_hardware();
         fake::with(|h| {
@@ -402,14 +448,30 @@ fn platform_boot_with(
         let mut probe = Box::<Probe<Hooks>>::default();
         let mut provider = Box::<Provider>::default();
         let mut peer = Peer::default();
-        let mut records = Vec::new();
+
+        supervision::reset();
+        if before.held_polls > 0 {
+            supervision::supervised(false, 0);
+        }
+        if before.answered_earlier.is_some() {
+            Handshake::start::<Core<false>>(sdk::systimer_ticks()).expect("the earlier hello");
+            peer.step::<Core<true>>(1, sdk::systimer_ticks());
+        }
+        let mut peer_quiet_ms = before.answered_earlier.unwrap_or(0);
+        let mut said_while_held = None;
+
+        let mut records: Vec<Record> = Vec::new();
         let mut faulted = false;
         let mut power_cut = false;
         let mut reset = false;
         // Stop after 40 quiet iterations: idle (fed) or holding for a reset.
         let mut quiet = 0;
 
-        'boot: for _ in 0..100_000 {
+        'boot: for poll in 0..100_000 {
+            if poll == before.held_polls {
+                said_while_held = Some(records.len());
+                supervision::supervised(true, 0);
+            }
             let raw: *mut Provider = &mut *provider;
             // SAFETY: the probe's pointers are the fixture's live locals.
             let step = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
@@ -439,14 +501,21 @@ fn platform_boot_with(
                     reset = true;
                     break 'boot;
                 }
-                if !km0(|m| m.halted || m.parked_lease.is_some()) {
+                if km0(|m| m.halted || m.parked_lease.is_some()) {
+                    continue;
+                }
+                if peer_quiet_ms > 0 {
+                    peer_quiet_ms -= 1;
+                } else {
                     peer.step::<Core<true>>(1, sdk::systimer_ticks());
                 }
             }
         }
 
+        supervision::reset();
         Boot {
             records,
+            said_while_held,
             faulted,
             backup: fake::with(|h| h.backup),
             rings: km0(|m| m.rings),
@@ -745,5 +814,68 @@ fn stale_ticket_is_refused() {
     assert_eq!(
         provider.failure,
         Some((LeaseStage::Ticket, FlashReply::Stale))
+    );
+}
+
+/// Writes held for a reset the runtime may take: the probe binds nothing
+/// into it and says nothing while they are, then says hello once they are
+/// not, under the boot's own count, and runs as any boot.
+#[test]
+fn a_probe_held_for_a_reset_says_hello_once_the_hold_lifts() {
+    let boot = platform_boot_before(Before {
+        held_polls: 20,
+        ..Before::default()
+    });
+    assert!(!boot.faulted && !boot.reset, "{:?}", boot.records);
+    assert_eq!(boot.said_while_held, Some(0), "no hello went while held");
+    assert!(
+        matches!(boot.records.first(), Some(Record::Hello { count: 0, .. })),
+        "{:?}",
+        boot.records
+    );
+    assert_eq!(
+        boot.records.last(),
+        platform_boot([0; 8], blank(), false, EXPECTED_ID)
+            .records
+            .last()
+    );
+}
+
+/// A READY KM0 left for an earlier session is reported once, waited past
+/// and never bound; the probe binds its own session's once KM0 answers it.
+#[test]
+fn a_ready_for_an_earlier_session_is_reported_once_and_waited_past() {
+    let boot = platform_boot_before(Before {
+        answered_earlier: Some(40),
+        ..Before::default()
+    });
+    assert!(!boot.faulted && !boot.reset, "{:?}", boot.records);
+    let foreign = boot
+        .records
+        .iter()
+        .filter(|record| **record == Record::Foreign)
+        .count();
+    assert_eq!(foreign, 1, "{:?}", boot.records);
+    assert!(
+        matches!(
+            boot.records[..3],
+            [
+                Record::Hello { count: 0, .. },
+                Record::Foreign,
+                Record::Ready {
+                    reply: FlashReply::Accepted,
+                    inactive: true,
+                    ..
+                },
+            ]
+        ),
+        "{:?}",
+        boot.records
+    );
+    assert_eq!(
+        boot.records.last(),
+        platform_boot([0; 8], blank(), false, EXPECTED_ID)
+            .records
+            .last()
     );
 }

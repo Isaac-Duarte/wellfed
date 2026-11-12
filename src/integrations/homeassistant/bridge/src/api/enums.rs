@@ -389,10 +389,16 @@ view_enum! {
         /// server sends nothing but an update: update the feeder.
         Legacy => "legacy",
         /// Another feed of this client's is still being answered or
-        /// settled. A new feed waits for it (at most 15 minutes, the settle
-        /// window), so the next `Fed` this client is named in can settle only
-        /// that one, and a feed refused unseen is never taken for one that ran.
+        /// settled, a lost one is not yet released, or the integration's
+        /// store did not read. A new feed waits until that settles or the
+        /// owner releases it, so the next `Fed` this client is named in can
+        /// settle only that one, and a feed refused unseen is never taken
+        /// for one that ran.
         Held => "held",
+        /// The integration's store did not say it saved the feed's record,
+        /// so the feed could outlive its hold across a restart: it never
+        /// went.
+        NotSaved => "not_saved",
     }
 }
 
@@ -441,12 +447,15 @@ view_enum! {
         /// server's journal, says how.
         Settled => "settled",
         /// A feed whose answer never came did not run: the feeder refused
-        /// it, as the server's journal learned.
+        /// it, as the server's journal learned, or the journal it went to
+        /// never had it, so it was never sent.
         SettledUnfed => "settled_unfed",
-        /// A feed whose answer never came has no `Fed` event this session
-        /// could find yet: whether it ran is not known. It no longer holds
-        /// new feeds back, and stays pending: a later update may still
-        /// settle it, until [`UpdateKind::Forgotten`].
+        /// A feed whose answer never came has no `Fed` event, or journal
+        /// entry, this session could find yet: whether it ran is not known.
+        /// It stays pending, and holds new feeds back until a later update
+        /// settles it or the owner releases it ([`UpdateKind::Released`]).
+        /// A lost feed from the other route comes so at each start: only
+        /// the owner's release ends it there.
         StillUnknown => "still_unknown",
         /// The feeder no longer knows this client's key; the session will
         /// not reconnect.
@@ -472,12 +481,22 @@ view_enum! {
         /// as long as one is kept with no end found: no longer pending, and
         /// nothing settles it now.
         Forgotten => "forgotten",
-        /// A direct feed about to go out, in `pending`: keep it as pending,
-        /// with no repair yet. A restart before its answer finds it lost.
+        /// A feed about to go out, in `pending`: keep it as pending, with no
+        /// repair yet, and say whether the store saved it (`Feeder.saved` or
+        /// `Feeder.unsaved`): it goes only once saved. A restart before its
+        /// answer finds it lost.
         Sending => "sending",
-        /// A direct feed kept while it went out has its answer: no longer
-        /// kept. A feed it ran comes as [`UpdateKind::Answered`] first.
+        /// A feed kept while it went out has its answer, or never went: no
+        /// longer kept. A feed it ran comes as [`UpdateKind::Answered`]
+        /// first.
         Cleared => "cleared",
+        /// The owner released a lost feed, in `pending` with when: it holds
+        /// new feeds back no longer, and stays pending, so a later update
+        /// may still settle it, until [`UpdateKind::Forgotten`].
+        Released => "released",
+        /// The owner checked the bowls after the integration's store did
+        /// not read: feeds go again.
+        BowlsChecked => "bowls_checked",
     }
 }
 
@@ -576,6 +595,23 @@ impl From<wellfed_server_client::api::Role> for AccountRole {
             R::Viewer => Self::Viewer,
             R::Unknown => Self::NewerBuild,
         }
+    }
+}
+
+view_enum! {
+    /// Why redeeming an invite did not enroll Home Assistant's key, as the
+    /// setup flow words it.
+    JoinProblem {
+        /// The feeder was not found, did not answer, or failed before the
+        /// join went: nothing was enrolled.
+        Unreachable => "unreachable",
+        /// The feeder did not take the invite (unknown, expired or spent):
+        /// the key is not enrolled.
+        NotAccepted => "not_accepted",
+        /// The join went, its answer was lost, and no session could check
+        /// it: the key may be enrolled, so the flow keeps it and asks again
+        /// before it spends another invite.
+        Uncertain => "uncertain",
     }
 }
 

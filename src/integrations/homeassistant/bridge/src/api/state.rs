@@ -116,9 +116,6 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
-    /// What a device of `kind` serves: the shared core (time, updates) for
-    /// any kind, and the feeder's module (feeds, plans, the desiccant and
-    /// the calibration) for a feeder.
     /// What a device of a kind this build does not know serves here:
     /// nothing.
     pub(crate) const NONE: Self = Self {
@@ -130,6 +127,9 @@ impl Capabilities {
         update: false,
     };
 
+    /// What a device of `kind` serves: the shared core (time, updates) for
+    /// any kind, and the feeder's module (feeds, plans, the desiccant and
+    /// the calibration) for a feeder.
     pub(crate) const fn of(kind: model::DeviceKind) -> Self {
         let feeder = matches!(kind, model::DeviceKind::Feeder);
         Self {

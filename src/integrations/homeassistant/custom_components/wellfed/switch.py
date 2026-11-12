@@ -2,7 +2,9 @@
 
 Every state is the feeder's, never assumed after a command: a switch moves
 when the feeder's state does. Plan switches follow the plan table: a plan
-added on the feeder adds its switch, and a deleted one removes it.
+added on the feeder adds its switch, and a deleted one removes it. A table
+not read (yet, or again) removes nothing: its switches are unavailable
+until it is, and keep the owner's names, areas and automations.
 """
 
 from __future__ import annotations
@@ -62,10 +64,11 @@ SWITCHES = (
 )
 
 
-def _plans(session: FeederSession) -> dict[int, bridge.Plan]:
+def _plans(session: FeederSession) -> dict[int, bridge.Plan] | None:
+    """The plan table by slot, or `None` while it is not read."""
     state = session.state
     if state is None or state.plans is None:
-        return {}
+        return None
     return {plan.slot: plan for plan in state.plans}
 
 
@@ -85,7 +88,10 @@ async def async_setup_entry(
     @callback
     def follow_plans() -> None:
         """Add a switch for each new plan; remove the switch of each gone."""
-        slots = set(_plans(session))
+        plans = _plans(session)
+        if plans is None:
+            return
+        slots = set(plans)
         added = slots - shown
         if added:
             async_add_entities(PlanSwitch(session, slot) for slot in sorted(added))
@@ -138,7 +144,7 @@ class PlanSwitch(WellfedEntity, SwitchEntity):
 
     @property
     def _plan(self) -> bridge.Plan | None:
-        return _plans(self.session).get(self.slot)
+        return (_plans(self.session) or {}).get(self.slot)
 
     def _placeholders(self) -> dict[str, str]:
         plan = self._plan

@@ -1,6 +1,8 @@
 //! The bridge against the simulated feeder, which runs the real feeder's
 //! pairing, stores and feeding owner, in real time on a thread of its own:
 //! - an owner's member invite enrolls the integration's new key;
+//! - a feed goes only once the store says it saved its record, which the
+//!   handle here gives as Home Assistant does;
 //! - the session reads the backlog into its state, runs a feed to its
 //!   `Fed` event, cancels one, and changes the lock;
 //! - a store change goes on the generation read, one at a time: a second
@@ -12,6 +14,8 @@
 //! - a write refused before it went leaves the session, and a feed still
 //!   out on it, as they were.
 
+mod support;
+
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
@@ -19,17 +23,22 @@ use wellfed_client::api::Invite;
 use wellfed_connect::{Connection, Timing};
 use wellfed_feeder_sim::harness::{Relay, Threaded};
 use wellfed_feeder_sim::serve::Control;
+use wellfed_homeassistant::api::JoinProblem;
 use wellfed_homeassistant::api::{
     EventKind, FeedOutcome, NotSent, Pending, RefusalKind, Role, State, Update, UpdateKind,
     WriteResult, Written,
 };
 use wellfed_homeassistant::feeder::{Carried, Clocks, Feeder, Target};
-use wellfed_homeassistant::key::{ClientKey, invite_feeder, join, join_member};
+use wellfed_homeassistant::key::{
+    ClientKey, Unsettled, check_join, invite_feeder, join, join_member, join_problem, redeem,
+};
 use wellfed_model::{
     Answer, ClientRole, FeederSettingsPatch, Generation, MealReminder, Op, PLANS, Plan, Pushed,
     Weekdays,
 };
 use wellfed_session::noise::Keypair;
+
+use support::{Saving, Store};
 
 const OWNER: [u8; 32] = [0x21; 32];
 const WAIT: Duration = Duration::from_secs(60);
@@ -111,16 +120,16 @@ fn session(
     key: ClientKey,
     address: std::net::SocketAddr,
     clocks: Clocks,
-) -> Feeder {
+) -> Saving {
     let target = Target {
         identity: sim.identity,
         address: Some(address.to_string()),
     };
-    Feeder::start(key, target, clocks, Carried::default()).unwrap()
+    Saving::new(Feeder::start(key, target, clocks, Carried::default()).unwrap())
 }
 
 /// Updates until one `want` accepts, failing past [`WAIT`].
-fn until<T>(feeder: &Feeder, mut want: impl FnMut(&Update) -> Option<T>) -> T {
+fn until<T>(feeder: &Saving, mut want: impl FnMut(&Update) -> Option<T>) -> T {
     let deadline = Instant::now() + WAIT;
     while Instant::now() < deadline {
         if let Some(update) = feeder.next_update(Duration::from_secs(1))
@@ -133,7 +142,20 @@ fn until<T>(feeder: &Feeder, mut want: impl FnMut(&Update) -> Option<T>) -> T {
 }
 
 /// The first state that `want` accepts.
-fn state_where(feeder: &Feeder, want: impl Fn(&State) -> bool) -> State {
+/// The owner releases the lost feed `pending` names, through its repair:
+/// it as the session confirms it.
+fn release(feeder: &Saving, pending: &Pending) -> Pending {
+    feeder.release(pending.id.clone());
+    let released = until(feeder, |update| {
+        (update.kind == UpdateKind::Released).then(|| update.pending.clone())
+    })
+    .expect("the released feed");
+    assert_eq!(released.id, pending.id);
+    assert!(released.released_ms.is_some());
+    released
+}
+
+fn state_where(feeder: &Saving, want: impl Fn(&State) -> bool) -> State {
     until(feeder, |update| {
         update.state.clone().filter(|state| want(state))
     })
@@ -146,6 +168,20 @@ fn relays() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .unwrap()
+}
+
+/// What `relay` passed, once nothing more has gone through it for a
+/// while: a request queued as a write is answered has gone by then.
+fn quiet(relay: &Relay) -> usize {
+    let mut passed = relay.passed();
+    loop {
+        std::thread::sleep(Duration::from_millis(300));
+        let now = relay.passed();
+        if now == passed {
+            return now;
+        }
+        passed = now;
+    }
 }
 
 /// Wait until `done` holds, failing past [`WAIT`].
@@ -191,6 +227,35 @@ fn the_session_feeds_to_its_fed_event_and_sets_the_lock() {
 
     assert_eq!(feeder.set_lock(true), Written::done());
     state_where(&feeder, |state| state.status.locked == Some(true));
+}
+
+/// A feed goes out only once the store says it saved its record: one the
+/// store could not save, or gave no word on, never reaches the feeder,
+/// holds nothing back, and its record is dropped.
+#[test]
+fn a_feed_goes_only_once_the_store_saved_its_record() {
+    let (sim, key) = joined();
+    let feeder = session(&sim, key, sim.address, Clocks::DEFAULT);
+    state_where(&feeder, |state| state.settings.is_some());
+
+    for store in [Store::Refuses, Store::Silent] {
+        feeder.store(store);
+        let written = feeder.feed(1);
+        assert_eq!(written, Written::not_sent(NotSent::NotSaved), "{store:?}");
+        let kept = until(&feeder, |update| {
+            (update.kind == UpdateKind::Sending).then(|| update.pending.clone())
+        });
+        let dropped = until(&feeder, |update| {
+            (update.kind == UpdateKind::Cleared).then(|| update.pending.clone())
+        });
+        assert!(kept.is_some());
+        assert_eq!(dropped, kept, "{store:?}");
+    }
+
+    feeder.store(Store::Saves);
+    let written = feeder.feed(1);
+    assert_eq!(written.result, WriteResult::Feeding, "{written:?}");
+    assert_eq!(written.feed, Some(1), "the first feed the feeder ran");
 }
 
 #[test]
@@ -537,9 +602,10 @@ fn a_feed_that_never_reached_the_feeder_is_still_unknown_after_the_backlog() {
     assert_eq!((portions, which), (Some(1), Some(reported)));
 }
 
-/// A lost feed reported still unknown no longer holds feeds back, and stays
-/// open to its own `Fed`. A later lost feed of other portions that runs is
-/// settled by its own `Fed`, never the older one, which never ran.
+/// A lost feed reported still unknown and released by the owner holds
+/// feeds back no longer, and stays open to its own `Fed`. A later lost
+/// feed of other portions that runs is settled by its own `Fed`, never the
+/// older one, which never ran.
 #[test]
 fn a_fed_settles_the_lost_feed_of_its_portions_not_an_older_one() {
     let (sim, key) = joined();
@@ -567,6 +633,7 @@ fn a_fed_settles_the_lost_feed_of_its_portions_not_an_older_one() {
         ..older
     };
     assert_eq!(reported, Some(older.clone()));
+    release(&feeder, &older);
 
     // B, of one portion, goes out though A is still open; its answer is
     // lost, and it runs.
@@ -592,8 +659,9 @@ fn a_fed_settles_the_lost_feed_of_its_portions_not_an_older_one() {
     }
 }
 
-/// A feed reported still unknown stays open: its `Fed`, held back past the
-/// report, still settles it.
+/// A feed reported still unknown stays open, and holds new feeds back:
+/// its `Fed`, held back past the report, still settles it, and only then
+/// does a feed go again.
 #[test]
 fn a_feed_reported_unknown_is_settled_by_its_late_fed() {
     let (sim, key) = joined();
@@ -611,6 +679,7 @@ fn a_feed_reported_unknown_is_settled_by_its_late_fed() {
         (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
     });
     assert_eq!(reported.as_ref().map(|lost| &lost.id), Some(&pending.id));
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
 
     relay.resume();
     let (which, fed) = until(&feeder, |update| {
@@ -618,6 +687,7 @@ fn a_feed_reported_unknown_is_settled_by_its_late_fed() {
     });
     assert_eq!(which.map(|lost| lost.id), Some(pending.id));
     assert_eq!(fed.map(|fed| fed.requested), Some(1));
+    assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
 }
 
 /// Home Assistant stops while a feed is out, after a feed of the same
@@ -633,8 +703,8 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     let feeder = std::sync::Arc::new(session(&sim, key, relay.address, SHORT));
     state_where(&feeder, |_| true);
 
-    // U, of two portions, never reaches the feeder, and is reported
-    // still unknown at the next session's backlog.
+    // U, of two portions, never reaches the feeder, is reported still
+    // unknown at the next session's backlog, and the owner releases it.
     relay.pause();
     let fed = {
         let feeder = std::sync::Arc::clone(&feeder);
@@ -649,6 +719,7 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     })
     .expect("U");
     assert!(older.reported);
+    let older = release(&feeder, &older);
 
     // F, of two portions, goes out and runs; Home Assistant stops before
     // its answer, with what the store had by then: F as it went out.
@@ -670,9 +741,11 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     let carried = Carried {
         pending: vec![older, sending],
         answered: Vec::new(),
+        unread: false,
     };
-    let restarted =
-        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let restarted = Saving::new(
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap(),
+    );
     let (mut fed, mut lost) = (false, Vec::new());
     let quiet = Instant::now() + Duration::from_secs(5);
     while Instant::now() < quiet {
@@ -700,8 +773,8 @@ fn a_feed_sending_when_home_assistant_stops_is_never_taken_for_an_older_one() {
     );
 }
 
-/// A lost feed carried from the last run that has waited a week is
-/// forgotten, still unknown.
+/// A lost feed carried from the last run, released by the owner a week
+/// ago, is forgotten, still unknown.
 #[test]
 fn a_lost_feed_a_week_old_is_forgotten() {
     let (sim, key) = joined();
@@ -717,15 +790,18 @@ fn a_lost_feed_a_week_old_is_forgotten() {
     let old = Pending {
         id: "old".into(),
         portions: 1,
-        sent_ms: i64::try_from(now_ms).unwrap() - week - 1000,
+        sent_ms: i64::try_from(now_ms).unwrap() - week - 60_000,
         after: Some(1),
         reported: true,
+        released_ms: Some(i64::try_from(now_ms).unwrap() - week - 1000),
+        token_id: None,
     };
     let carried = Carried {
         pending: vec![old.clone()],
         answered: Vec::new(),
+        unread: false,
     };
-    let feeder = Feeder::start(key, target, SHORT, carried).unwrap();
+    let feeder = Saving::new(Feeder::start(key, target, SHORT, carried).unwrap());
     let which = until(&feeder, |update| {
         assert_ne!(update.kind, UpdateKind::StillUnknown, "reported before");
         (update.kind == UpdateKind::Forgotten).then(|| update.pending.clone())
@@ -757,9 +833,11 @@ fn a_lost_feed_carried_across_a_restart_settles_in_the_next_session() {
     let carried = Carried {
         pending: vec![pending.clone()],
         answered: Vec::new(),
+        unread: false,
     };
-    let restarted =
-        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let restarted = Saving::new(
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap(),
+    );
     let (fed, which) = until(&restarted, |update| {
         assert_ne!(
             update.kind,
@@ -803,9 +881,11 @@ fn an_answered_feeds_fed_does_not_settle_a_lost_one_after_a_restart() {
     let carried = Carried {
         pending: vec![pending.clone()],
         answered: vec![b],
+        unread: false,
     };
-    let restarted =
-        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let restarted = Saving::new(
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap(),
+    );
     let mut b_after = false;
     let which = until(&restarted, |update| {
         if let Some(event) = &update.event
@@ -836,7 +916,9 @@ fn a_feed_is_held_while_another_is_uncertain() {
     relay.hold_answers();
     let lost = feeder.feed(1);
     assert_eq!(lost.result, WriteResult::Uncertain);
-    let passed = relay.passed();
+    // The status read the loss asks for follows the write's answer: counted
+    // once it has gone.
+    let passed = quiet(&relay);
     assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
     assert_eq!(relay.passed(), passed, "nothing went out");
 
@@ -895,9 +977,11 @@ fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
     let carried = Carried {
         pending: vec![pending.clone()],
         answered,
+        unread: false,
     };
-    let restarted =
-        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap();
+    let restarted = Saving::new(
+        Feeder::start(ClientKey::restore(&secret).unwrap(), target, SHORT, carried).unwrap(),
+    );
     let which = until(&restarted, |update| {
         assert_ne!(
             update.kind,
@@ -907,4 +991,256 @@ fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
         (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
     });
     assert_eq!(which.map(|lost| lost.id), Some(pending.id));
+}
+
+/// A feed whose answer is lost mid-session is reported still unknown once
+/// a status asked after it reads the feeder idle with no `Fed` for it, not
+/// at the end of the whole settle window: the feeder refused it while
+/// busy. The report lets the owner release it; until then it holds.
+#[test]
+fn a_lost_feed_the_feeder_never_ran_is_reported_once_it_reads_idle() {
+    let (sim, key) = joined();
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let feeder = session(&sim, key, relay.address, SHORT);
+    state_where(&feeder, |_| true);
+
+    // B runs for two seconds; A goes out while it does, and its answer is
+    // lost on the way back.
+    let b = feeder.feed(10).feed.expect("the feeder numbered B");
+    relay.hold_answers();
+    let lost = feeder.feed(1);
+    assert_eq!(lost.result, WriteResult::Uncertain, "{lost:?}");
+    let pending = lost.pending.expect("A is kept pending");
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
+    relay.resume();
+
+    // Far sooner than the 15 minutes `SHORT` settles by.
+    let started = Instant::now();
+    let mut b_ended = false;
+    let reported = until(&feeder, |update| {
+        b_ended |= update
+            .event
+            .as_ref()
+            .and_then(|event| event.fed.as_ref())
+            .is_some_and(|fed| fed.feed == b);
+        assert_ne!(update.kind, UpdateKind::Settled, "B's `Fed` settled A");
+        (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
+    });
+    assert!(b_ended, "reported only once B, which A met, had ended");
+    assert!(started.elapsed() < Duration::from_secs(30));
+    let reported = reported.expect("A");
+    assert_eq!(reported.id, pending.id);
+    assert!(reported.reported);
+
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
+    release(&feeder, &reported);
+    assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
+}
+
+/// A lost feed holds new feeds back however long ago it went: past the
+/// 15 minutes it is reported still unknown by, across a restart, until the
+/// owner releases it. Its repair is raised again after the restart.
+#[test]
+fn a_lost_feed_holds_feeds_past_the_report_window_until_released() {
+    let (sim, key) = joined();
+    let target = Target {
+        identity: sim.identity,
+        address: Some(sim.address.to_string()),
+    };
+    let now_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+    let lost = Pending {
+        id: "lost".into(),
+        portions: 1,
+        sent_ms: now_ms - 20 * 60_000,
+        after: Some(1),
+        reported: true,
+        released_ms: None,
+        token_id: None,
+    };
+    let carried = Carried {
+        pending: vec![lost.clone()],
+        answered: Vec::new(),
+        unread: false,
+    };
+    let feeder = Saving::new(Feeder::start(key, target, Clocks::DEFAULT, carried).unwrap());
+    let again = until(&feeder, |update| {
+        (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
+    });
+    assert_eq!(again, Some(lost.clone()), "its repair comes back");
+    state_where(&feeder, |_| true);
+
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
+    release(&feeder, &lost);
+    assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
+}
+
+/// Whether the simulated feeder lists `key`, as its owner reads it.
+fn listed(sim: &Threaded, key: [u8; 32]) -> bool {
+    let Answer::Clients(clients) = owner(sim, &Op::ListClients) else {
+        panic!("the owner lists the clients");
+    };
+    clients.iter().any(|client| client.key.0 == key)
+}
+
+/// A key an unchecked join left is checked before the next invite for its
+/// feeder is spent: enrolled, it is the key, and the invite stays unspent.
+/// One held for another feeder says nothing of this one and stays held.
+#[test]
+fn redeem_checks_a_held_key_before_it_spends_the_invite() {
+    let (sim, key) = joined();
+    let address = sim.address.to_string();
+    let held = Unsettled {
+        secret: key.secret(),
+        feeder: sim.identity,
+    };
+    let unspent = invite(&sim);
+    let redeemed = runtime()
+        .block_on(redeem(
+            &unspent,
+            "home-assistant",
+            Some(&address),
+            Some(held),
+        ))
+        .unwrap();
+    assert_eq!(redeemed.key.public(), key.public());
+    assert!(redeemed.held.is_none());
+
+    let elsewhere = Unsettled {
+        secret: [7; 32],
+        feeder: [9; 32],
+    };
+    let again = runtime()
+        .block_on(redeem(
+            &unspent,
+            "home-assistant",
+            Some(&address),
+            Some(elsewhere),
+        ))
+        .unwrap();
+    assert_ne!(
+        again.key.public(),
+        key.public(),
+        "the invite enrolled a new key"
+    );
+    assert!(listed(&sim, again.key.public()));
+    assert_eq!(again.held.map(|held| held.feeder), Some([9; 32]));
+}
+
+/// How many bytes a join sends the feeder, from one that went through the
+/// relay: the same for every key and invite with a label of this length.
+fn join_size(sim: &Threaded, relay: &Relay) -> usize {
+    let before = relay.passed();
+    let other = ClientKey::generate().unwrap();
+    let address = relay.address.to_string();
+    let joined = runtime().block_on(join(&other, &invite(sim), "home-assistant", Some(&address)));
+    assert_eq!(joined.unwrap(), ClientRole::Member);
+    relay.passed() - before
+}
+
+/// A join whose answer is lost on its way back is settled by a session
+/// with the key, never sent again: the feeder enrolled it, so the join
+/// ends as a member's.
+#[test]
+fn a_join_whose_answer_is_lost_is_settled_by_a_session_with_the_key() {
+    let sim = Threaded::start(*Keypair::from_secret(OWNER).public());
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let size = join_size(&sim, &relay);
+
+    let text = invite(&sim);
+    let key = ClientKey::generate().unwrap();
+    let public = key.public();
+    let address = relay.address.to_string();
+    relay.hold_answers_after(size);
+    let joining = std::thread::spawn(move || {
+        runtime().block_on(join_member(&key, &text, "home-assistant", Some(&address)))
+    });
+    wait_for("the feeder to enroll the key", || listed(&sim, public));
+    relay.cut();
+    relay.resume();
+
+    let joined = joining
+        .join()
+        .unwrap()
+        .expect("the session found the key enrolled");
+    assert_eq!(joined.role, Role::Member);
+    assert!(!joined.removed);
+}
+
+/// A join whose answer is lost, with no session to check it, may have
+/// enrolled the key: it ends uncertain, and a later check with the same
+/// key finds it enrolled, with no second invite.
+#[test]
+fn a_join_no_session_could_check_is_checked_again_later() {
+    let sim = Threaded::start(*Keypair::from_secret(OWNER).public());
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let size = join_size(&sim, &relay);
+
+    let text = invite(&sim);
+    let secret = ClientKey::generate().unwrap().secret();
+    let public = ClientKey::from_secret(secret).public();
+    let address = relay.address.to_string();
+    relay.hold_answers_after(size);
+    let joining = {
+        let (text, address) = (text.clone(), address.clone());
+        std::thread::spawn(move || {
+            let key = ClientKey::from_secret(secret);
+            runtime().block_on(join_member(&key, &text, "home-assistant", Some(&address)))
+        })
+    };
+    wait_for("the feeder to enroll the key", || listed(&sim, public));
+    // The connection drops with the answer held, and the session that
+    // checks it gets no answer either.
+    relay.cut();
+    let error = joining
+        .join()
+        .unwrap()
+        .expect_err("no session could check it");
+    assert_eq!(join_problem(&error), JoinProblem::Uncertain, "{error}");
+
+    relay.resume();
+    let key = ClientKey::from_secret(secret);
+    let checked = runtime().block_on(check_join(&key, &sim.identity, Some(&address)));
+    let joined = checked.unwrap().expect("the key was enrolled");
+    assert_eq!(joined.role, Role::Member);
+}
+
+/// An invite whose secret is wrong ends the join as a lost answer does;
+/// the session that checks it finds the key unknown, so the invite was not
+/// taken.
+#[test]
+fn a_join_the_feeder_did_not_take_is_not_accepted() {
+    let sim = Threaded::start(*Keypair::from_secret(OWNER).public());
+    let Answer::Invite(invite) = owner(
+        &sim,
+        &Op::CreateInvite {
+            role: ClientRole::Member,
+        },
+    ) else {
+        panic!("no invite");
+    };
+    let wrong = Invite {
+        feeder: sim.identity,
+        id: invite.id,
+        secret: invite.secret.0.map(|byte| !byte),
+    }
+    .text();
+
+    let key = ClientKey::generate().unwrap();
+    let address = sim.address.to_string();
+    let error = runtime()
+        .block_on(join_member(&key, &wrong, "home-assistant", Some(&address)))
+        .expect_err("a wrong secret enrolls nothing");
+    assert_eq!(join_problem(&error), JoinProblem::NotAccepted, "{error}");
+    assert!(!listed(&sim, key.public()));
+    let checked = runtime().block_on(check_join(&key, &sim.identity, Some(&address)));
+    assert!(checked.unwrap().is_none());
 }

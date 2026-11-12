@@ -2,7 +2,7 @@ from _typeshed import SupportsGetItem
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key", "role_writes", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
+__all__ = ["PORTIONS_MAX", "PORTIONS_MIN", "PORTION_MG_MAX", "PORTION_MG_MIN", "AccountRole", "Alert", "AlertKind", "AlertLevel", "Alerts", "By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "HeldKey", "JoinFailed", "JoinProblem", "Joined", "Login", "NextMeal", "NotSent", "Pending", "Plan", "PortionsToday", "Readiness", "Redeemed", "RefusalKind", "Role", "ServerFeeder", "ServerProblem", "ServerRefused", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "client_listed", "invite_feeder", "public_key", "redeem", "role_writes", "server_client_listed", "server_feeders", "server_login", "server_revoke_client", "server_revoke_token"]
 
 PORTIONS_MAX: Final[int]
 """
@@ -430,11 +430,19 @@ class Feeder:
     """
     One feeder's session, on a thread of its own until this is dropped.
     """
-    def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None, pending: SupportsGetItem[int, Pending] = ..., answered: SupportsGetItem[int, SupportsIndex] = ...) -> Feeder:
+    def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None, pending: SupportsGetItem[int, Pending] = ..., answered: SupportsGetItem[int, SupportsIndex] = ..., unread: bool = False) -> Feeder:
         """
         `pending` and `answered` are what the last run left: the feeds
-        still unsettled, and the feed numbers the last `Answered` update
-        listed.
+        still unsettled, on either route, and the feed numbers the last
+        `Answered` update listed. `unread` says the integration's store did
+        not read, and the owner has not yet checked the bowls: every feed
+        waits until `bowls_checked`.
+        """
+    def bowls_checked(self, /) -> None:
+        """
+        The owner checked the bowls after the integration's store did not
+        read, through its repair: feeds go again. A `BowlsChecked` update
+        confirms it.
         """
     def cancel_feed(self, /, feed: SupportsIndex) -> Written:
         """
@@ -442,7 +450,9 @@ class Feeder:
         """
     def feed(self, /, portions: SupportsIndex) -> Written:
         """
-        Start a feed; how it ended. Never retry an uncertain one.
+        Start a feed; how it ended. Never retry an uncertain one. It goes
+        out only once `saved` confirms the `Sending` update's record is in
+        the store.
         """
     def next_update(self, /, timeout: SupportsFloat | SupportsIndex) -> Update | None:
         """
@@ -459,17 +469,31 @@ class Feeder:
         """
         Read the status now.
         """
+    def release(self, /, id: str) -> None:
+        """
+        The owner releases the lost feed `id` names, through its repair: new
+        feeds go again though it may have run. A `Released` update confirms
+        it.
+        """
     def reset_desiccant(self, /) -> Written:
         """
         Record a fresh desiccant pack today.
         """
+    def saved(self, /, id: str) -> None:
+        """
+        The integration's store saved the record of the feed `id` names, as
+        a `Sending` update asked: the feed goes out. Called from the event
+        loop while `feed` blocks an executor thread.
+        """
     @staticmethod
-    def server(url: str, token: str, feeder_id: str, identity: bytes, pending: SupportsGetItem[int, Pending] = ...) -> Feeder:
+    def server(url: str, token: str, token_id: str, feeder_id: str, identity: bytes, pending: SupportsGetItem[int, Pending] = ..., unread: bool = False) -> Feeder:
         """
         The session to the feeder `feeder_id` on the owner's server at
         `url`, signed in with `token`; `identity` is the feeder's, and a
         feeder under that id with another one is never served as this one.
-        `pending` is what the last run left unsettled.
+        `token_id` is the token's id, which each feed sent under it records.
+        `pending` is what the last run left unsettled, on either route, and
+        `unread` as for a direct session.
         """
     def set_lock(self, /, locked: bool) -> Written:
         """
@@ -482,6 +506,11 @@ class Feeder:
     def set_portion_weight(self, /, mg: SupportsIndex) -> Written:
         """
         Store the weight of one portion in milligrams, 1,000-50,000.
+        """
+    def unsaved(self, /, id: str) -> None:
+        """
+        The integration's store could not save the record of the feed `id`
+        names: it never goes out, and `feed` answers it not sent.
         """
 
 @final
@@ -500,6 +529,69 @@ class FoodLevel:
     """
     Present: Final[FoodLevel]
     Unread: Final[FoodLevel]
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
+        """
+
+@final
+class HeldKey:
+    """
+    A key an unchecked join may have enrolled on `feeder`: the setup flow
+    holds it and hands it to the next `redeem`, which checks it before it
+    spends another invite for that feeder.
+    """
+    def __new__(cls, /, secret: SupportsGetItem[int, SupportsIndex], feeder: SupportsGetItem[int, SupportsIndex]) -> HeldKey: ...
+    @property
+    def feeder(self, /) -> bytes: ...
+    def public_key(self, /) -> bytes:
+        """
+        The public key, as the feeder would list it.
+        """
+    @property
+    def secret(self, /) -> bytes: ...
+
+@final
+class JoinFailed(WellfedError):
+    """
+    Redeeming an invite did not enroll Home Assistant's key; `problem` says
+    how, as the setup flow words it, and `held` is the key the next `redeem`
+    must be handed, if any.
+    """
+    def __new__(cls, /, problem: JoinProblem, held: HeldKey | None, *_args) -> JoinFailed: ...
+    @property
+    def held(self, /) -> HeldKey | None: ...
+    @property
+    def problem(self, /) -> JoinProblem: ...
+
+@final
+class JoinProblem:
+    """
+    Why redeeming an invite did not enroll Home Assistant's key, as the
+    setup flow words it.
+    """
+    NotAccepted: Final[JoinProblem]
+    """
+    The feeder did not take the invite (unknown, expired or spent):
+    the key is not enrolled.
+    """
+    Uncertain: Final[JoinProblem]
+    """
+    The join went, its answer was lost, and no session could check
+    it: the key may be enrolled, so the flow keeps it and asks again
+    before it spends another invite.
+    """
+    Unreachable: Final[JoinProblem]
+    """
+    The feeder was not found, did not answer, or failed before the
+    join went: nothing was enrolled.
+    """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
     def __int__(self, /) -> int: ...
@@ -592,9 +684,11 @@ class NotSent:
     Held: Final[NotSent]
     """
     Another feed of this client's is still being answered or
-    settled. A new feed waits for it (at most 15 minutes, the settle
-    window), so the next `Fed` this client is named in can settle only
-    that one, and a feed refused unseen is never taken for one that ran.
+    settled, a lost one is not yet released, or the integration's
+    store did not read. A new feed waits until that settles or the
+    owner releases it, so the next `Fed` this client is named in can
+    settle only that one, and a feed refused unseen is never taken
+    for one that ran.
     """
     Invalid: Final[NotSent]
     """
@@ -608,6 +702,12 @@ class NotSent:
     NotRead: Final[NotSent]
     """
     What the change is based on has not been read yet.
+    """
+    NotSaved: Final[NotSent]
+    """
+    The integration's store did not say it saved the feed's record,
+    so the feed could outlive its hold across a restart: it never
+    went.
     """
     Stopped: Final[NotSent]
     """
@@ -634,13 +734,13 @@ class Pending:
     """
     A feed whose end is not known, until it is settled: what the
     integration keeps across a restart, and hands back to the next session
-    so it is settled then. A direct feed is kept from just before it goes
-    out ([`UpdateKind::Sending`]), so a restart before its answer finds it
-    lost rather than forgotten.
+    so it is settled then. A feed is kept from just before it goes out
+    ([`UpdateKind::Sending`]), and goes only once the store says it saved
+    it, so a restart before its answer finds it lost rather than forgotten.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
-    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None, reported: bool) -> Pending:
+    def __new__(cls, /, id: str, portions: SupportsIndex, sent_ms: SupportsIndex, after: SupportsIndex | None, reported: bool, released_ms: SupportsIndex | None, token_id: str | None) -> Pending:
         """
         A pending feed as the integration kept it, to hand back to a new
         session.
@@ -660,16 +760,34 @@ class Pending:
     @property
     def portions(self, /) -> int: ...
     @property
+    def released_ms(self, /) -> int | None:
+        """
+        When the owner released it ([`UpdateKind::Released`]), in Unix
+        milliseconds. Directly, a lost feed holds new feeds back until it
+        settles or is released, however long that takes; once released it
+        is kept open to a late end for a week from then.
+        """
+    @property
     def reported(self, /) -> bool:
         """
-        Reported still unknown ([`UpdateKind::StillUnknown`]): it no longer
-        holds new feeds back, and is not reported again.
+        Reported still unknown ([`UpdateKind::StillUnknown`]): it is not
+        reported again.
         """
     @property
     def sent_ms(self, /) -> int:
         """
-        When it went out, in Unix milliseconds: it is still unknown once
-        the settle window has passed since.
+        When it went out, in Unix milliseconds: it is reported still
+        unknown once the settle window has passed since, if nothing showed
+        sooner that it never ran.
+        """
+    @property
+    def token_id(self, /) -> str | None:
+        """
+        Through the owner's server, the id of the token it went under, which
+        names the journal that answers for it: a token belongs to one server
+        and one account, and only that journal's lack of it says it was
+        never sent. `None` for a direct feed. A route holds on the other
+        route's lost feeds without settling them.
         """
 
 @final
@@ -745,6 +863,21 @@ class Readiness:
         """
         The snake_case name: an entity's state and its translation key.
         """
+
+@final
+class Redeemed:
+    """
+    A key an invite enrolled: its secret and its feeder, how it joined, and
+    the key still held for the next `redeem`, if any.
+    """
+    @property
+    def feeder(self, /) -> bytes: ...
+    @property
+    def held(self, /) -> HeldKey | None: ...
+    @property
+    def joined(self, /) -> Joined: ...
+    @property
+    def secret(self, /) -> bytes: ...
 
 @final
 class RefusalKind:
@@ -1165,9 +1298,9 @@ class Update:
         """
         For [`UpdateKind::Pending`]: the feed to keep. For
         [`UpdateKind::Settled`], [`UpdateKind::SettledUnfed`],
-        [`UpdateKind::StillUnknown`], [`UpdateKind::Forgotten`],
-        [`UpdateKind::Sending`] and [`UpdateKind::Cleared`]: the pending
-        feed it accounts for.
+        [`UpdateKind::StillUnknown`], [`UpdateKind::Released`],
+        [`UpdateKind::Forgotten`], [`UpdateKind::Sending`] and
+        [`UpdateKind::Cleared`]: the pending feed it accounts for.
         """
     @property
     def portions(self, /) -> int | None:
@@ -1213,10 +1346,16 @@ class UpdateKind:
     every number to keep for the next session, where a `Fed` for one
     of them settles nothing, in place of those kept before.
     """
+    BowlsChecked: Final[UpdateKind]
+    """
+    The owner checked the bowls after the integration's store did
+    not read: feeds go again.
+    """
     Cleared: Final[UpdateKind]
     """
-    A direct feed kept while it went out has its answer: no longer
-    kept. A feed it ran comes as [`UpdateKind::Answered`] first.
+    A feed kept while it went out has its answer, or never went: no
+    longer kept. A feed it ran comes as [`UpdateKind::Answered`]
+    first.
     """
     Connected: Final[UpdateKind]
     """
@@ -1244,6 +1383,12 @@ class UpdateKind:
     A feed's answer never came: it is pending until a later update
     settles it, and comes before any update that does.
     """
+    Released: Final[UpdateKind]
+    """
+    The owner released a lost feed, in `pending` with when: it holds
+    new feeds back no longer, and stays pending, so a later update
+    may still settle it, until [`UpdateKind::Forgotten`].
+    """
     Revoked: Final[UpdateKind]
     """
     The feeder no longer knows this client's key; the session will
@@ -1251,8 +1396,10 @@ class UpdateKind:
     """
     Sending: Final[UpdateKind]
     """
-    A direct feed about to go out, in `pending`: keep it as pending,
-    with no repair yet. A restart before its answer finds it lost.
+    A feed about to go out, in `pending`: keep it as pending, with no
+    repair yet, and say whether the store saved it (`Feeder.saved` or
+    `Feeder.unsaved`): it goes only once saved. A restart before its
+    answer finds it lost.
     """
     ServerLostFeeder: Final[UpdateKind]
     """
@@ -1268,7 +1415,8 @@ class UpdateKind:
     SettledUnfed: Final[UpdateKind]
     """
     A feed whose answer never came did not run: the feeder refused
-    it, as the server's journal learned.
+    it, as the server's journal learned, or the journal it went to
+    never had it, so it was never sent.
     """
     State: Final[UpdateKind]
     """
@@ -1276,10 +1424,12 @@ class UpdateKind:
     """
     StillUnknown: Final[UpdateKind]
     """
-    A feed whose answer never came has no `Fed` event this session
-    could find yet: whether it ran is not known. It no longer holds
-    new feeds back, and stays pending: a later update may still
-    settle it, until [`UpdateKind::Forgotten`].
+    A feed whose answer never came has no `Fed` event, or journal
+    entry, this session could find yet: whether it ran is not known.
+    It stays pending, and holds new feeds back until a later update
+    settles it or the owner releases it ([`UpdateKind::Released`]).
+    A lost feed from the other route comes so at each start: only
+    the owner's release ends it there.
     """
     TokenRefused: Final[UpdateKind]
     """
@@ -1370,9 +1520,10 @@ class Written:
     @property
     def result(self, /) -> WriteResult: ...
 
-def generate_secret() -> bytes:
+def client_listed(secret: bytes, identity: bytes, key: bytes, address: str | None = None) -> bool | None:
     """
-    A new client key's secret, for the config entry.
+    Whether the feeder `identity` still lists the client key `key`, as the
+    key `secret` reads its clients now; `None` when no session could ask.
     """
 
 def invite_feeder(text: str) -> bytes:
@@ -1380,16 +1531,19 @@ def invite_feeder(text: str) -> bytes:
     The identity key of the feeder `text` invites to.
     """
 
-def join(secret: bytes, invite: str, label: str, address: str | None = None) -> Joined:
-    """
-    Redeem `invite` as the key `secret`, listed as `label`, keeping the key
-    only as a member: any other role is revoked at once. Runs once: an invite
-    is single-use.
-    """
-
 def public_key(secret: bytes) -> bytes:
     """
     The public key of `secret`, as the feeder lists this client.
+    """
+
+def redeem(invite: str, label: str, address: str | None = None, held: HeldKey | None = None) -> Redeemed:
+    """
+    Join with `invite`, listed as `label`, keeping the key only as a member:
+    any other role is revoked at once. `held` is the key an earlier unchecked
+    join left: for this invite's feeder it is checked first, and the invite,
+    which works once, is spent only when the feeder does not know it. A join
+    that did not enroll a key raises `JoinFailed`, whose `held` is the key
+    to hand the next call.
     """
 
 def role_writes(role: Role) -> bool:

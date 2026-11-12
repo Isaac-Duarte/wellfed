@@ -11,10 +11,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import queue
 import threading
+import time
 from types import SimpleNamespace
 from typing import Any
 
 import wellfed_homeassistant as bridge
+
+# How long a pump held for a stop waits for it.
+STOP_WAIT = 30.0
 
 IDENTITY = bytes(range(32))
 SECRET = bytes([7] * 32)
@@ -134,7 +138,7 @@ def written(result: bridge.WriteResult, **fields: Any) -> SimpleNamespace:
 
 def pending(id: str = "a-lost-feed", portions: int = 1) -> bridge.Pending:
     """A feed whose answer was lost, as the bridge hands it out."""
-    return bridge.Pending(id, portions, 1_793_793_600_000, None, False)
+    return bridge.Pending(id, portions, 1_793_793_600_000, None, False, None, None)
 
 
 def uncertain(lost: bridge.Pending) -> SimpleNamespace:
@@ -172,15 +176,50 @@ class FakeFeeder:
     # The feed numbers it was answered for, as the bridge lists them.
     answered: list[int] = field(default_factory=list)
 
+    # Updates held for a stop (`at_stop`): the pump gets the first only once
+    # `stopping` is set, and the stop's drain the rest.
+    held: list[SimpleNamespace] = field(default_factory=list)
+    stopping: threading.Event | None = None
+
+    # The store's word on each feed's record, by its id, as the session gave
+    # it: whether it saved it.
+    words: dict[str, bool] = field(default_factory=dict)
+    said: threading.Condition = field(default_factory=threading.Condition)
+
     def push(self, *updates: SimpleNamespace) -> None:
         for item in updates:
             self.updates.put(item)
 
+    def at_stop(self, stopping: threading.Event, *updates: SimpleNamespace) -> None:
+        """Hold `updates` until the session stops: the pump hands the event
+        loop the first of them only once `stopping` is set, so it is still
+        to run when the stop begins, and leaves the rest to the drain."""
+        self.held = list(updates)
+        self.stopping = stopping
+
     def next_update(self, timeout: float) -> SimpleNamespace | None:
-        try:
-            return self.updates.get(timeout=timeout)
-        except queue.Empty:
-            return None
+        if timeout == 0:
+            # The stop's drain, once the pump has ended.
+            if self.held:
+                return self.held.pop(0)
+            try:
+                return self.updates.get_nowait()
+            except queue.Empty:
+                return None
+        deadline = time.monotonic() + timeout
+        while True:
+            if (stopping := self.stopping) is not None:
+                # The pump returns nothing until the stop, so it cannot
+                # miss it between two waits.
+                if not stopping.wait(STOP_WAIT):
+                    raise AssertionError(f"the session did not stop within {STOP_WAIT} s")
+                self.stopping = None
+                return self.held.pop(0)
+            try:
+                return self.updates.get(timeout=min(0.01, max(0.0, deadline - time.monotonic())))
+            except queue.Empty:
+                if time.monotonic() >= deadline:
+                    return None
 
     def _done(self, name: str, *args: Any) -> SimpleNamespace:
         self.calls.append((name, args))
@@ -190,10 +229,24 @@ class FakeFeeder:
         self.calls.append(("feed", (portions,)))
         if self.gate is not None:
             self.gate.wait()
-        # As the bridge does: a lost feed, or an answered feed's number, is
-        # announced before its answer.
+        # As the bridge does: the feed's record first, and the feed only once
+        # the store says it landed; dropped again if it did not.
+        out = self.feed_result.pending or bridge.Pending(
+            f"sending-{len(self.calls)}", portions, 0, None, False, None, None
+        )
+        self.push(update(bridge.UpdateKind.Sending, pending=out))
+        with self.said:
+            self.said.wait_for(lambda: out.id in self.words, timeout=STOP_WAIT)
+            kept = self.words.get(out.id, False)
+        if not kept:
+            self.push(update(bridge.UpdateKind.Cleared, pending=out))
+            return written(bridge.WriteResult.NotSent, not_sent=bridge.NotSent.NotSaved)
+        # A lost feed, or an answered feed's number, is announced before its
+        # answer; an answered feed's record goes.
         if self.feed_result.pending is not None:
             self.push(update(bridge.UpdateKind.Pending, pending=self.feed_result.pending))
+        else:
+            self.push(update(bridge.UpdateKind.Cleared, pending=out))
         if self.feed_result.feed is not None:
             self.answered.append(self.feed_result.feed)
             self.push(update(bridge.UpdateKind.Answered, answered=list(self.answered)))
@@ -204,3 +257,23 @@ class FakeFeeder:
 
     def set_lock(self, locked: bool) -> SimpleNamespace:
         return self._done("set_lock", locked)
+
+    def release(self, pending_id: str) -> None:
+        """The owner released a lost feed: the test confirms it, as the
+        bridge does, with a `Released` update."""
+        self.calls.append(("release", (pending_id,)))
+
+    def saved(self, pending_id: str) -> None:
+        with self.said:
+            self.words[pending_id] = True
+            self.said.notify_all()
+
+    def unsaved(self, pending_id: str) -> None:
+        with self.said:
+            self.words[pending_id] = False
+            self.said.notify_all()
+
+    def bowls_checked(self) -> None:
+        """The owner checked the bowls: the test confirms it, as the bridge
+        does, with a `BowlsChecked` update."""
+        self.calls.append(("bowls_checked", ()))

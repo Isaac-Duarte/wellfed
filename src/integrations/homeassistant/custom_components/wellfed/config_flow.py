@@ -2,11 +2,15 @@
 
 - **Directly:** pair by a member invite from a paired client. A feeder is
   found by hand (an invite, and an address or mDNS) or by zeroconf, which
-  fills in the address. An invite is single-use, so each join runs once: a
-  failure asks for a new invite rather than retrying. Home Assistant is a
-  member and nothing more. An invite does not say its role until it is
-  redeemed, so the bridge redeems it, and a key enrolled as anything but a
-  member removes itself at once; the flow then asks for a member invite.
+  fills in the address. An invite is single-use, so each join runs once and
+  is never sent again: a failure asks for a new invite rather than
+  retrying. A join whose answer was lost, and which the bridge could not
+  check, may have enrolled the key, so the flow keeps that key and asks the
+  feeder about it first when the owner tries again, before it spends
+  another invite. Home Assistant is a member and nothing more. An invite
+  does not say its role until it is redeemed, so the bridge redeems it, and
+  a key enrolled as anything but a member removes itself at once; the flow
+  then asks for a member invite.
 - **Through the owner's server:** sign in with an account's name and
   password, which the bridge trades for a token of Home Assistant's own and
   then forgets, and pick one of the server's feeders. An account that may
@@ -40,7 +44,6 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
@@ -69,12 +72,12 @@ from .const import (
     DOMAIN,
     ENTRY_MINOR_VERSION,
     ENTRY_VERSION,
-    LEFTOVER_KEY_ISSUE,
+    LEFTOVER_KEY_UNJOINED,
     ROUTE_DIRECT,
     ROUTE_SERVER,
 )
 from .kept import kept
-from .session import forget_token, token_left
+from .session import forget_token, key_left, token_left
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,14 +100,11 @@ class NotMember(Exception):
         self.removed = removed
 
 
-def _join(invite: str, address: str | None) -> tuple[bytes, bytes]:
-    """A new key joined as a member with `invite`: its secret and the feeder."""
-    identity = bridge.invite_feeder(invite)
-    secret = bridge.generate_secret()
-    joined = bridge.join(secret, invite, CLIENT_LABEL, address)
-    if joined.role != bridge.Role.Member:
-        raise NotMember(joined.removed)
-    return secret, identity
+def _member(redeemed: bridge.Redeemed) -> tuple[bytes, bytes]:
+    """The key an invite enrolled, and its feeder, kept only as a member."""
+    if redeemed.joined.role != bridge.Role.Member:
+        raise NotMember(redeemed.joined.removed)
+    return redeemed.secret, redeemed.feeder
 
 
 def _invite_feeder(invite: str) -> bytes | None:
@@ -173,11 +173,19 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         self._held: dict[str, Any] = {}
         self._held_step = ""
         self._confirmed = ""
+        # A key an unchecked join may have enrolled, and its feeder: the
+        # bridge checks it before the next invite for that feeder is spent.
+        self._joining: bridge.HeldKey | None = None
 
     def async_remove(self) -> None:
-        """The flow ended: a token it made and no entry kept is revoked."""
+        """The flow ended: a token it made and no entry kept is revoked, and a key
+        an unchecked join may have enrolled is named in a repair, since nothing
+        will check it now."""
         if self._login is not None:
             self.hass.async_create_task(self._drop_login(), eager_start=False)
+        if (held := self._joining) is not None:
+            self._joining = None
+            key_left(self.hass, held.feeder, held.public_key(), LEFTOVER_KEY_UNJOINED)
 
     # Setup.
 
@@ -425,11 +433,10 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
                 # refusal starts no reauth.
                 await self._stop_session(entry)
                 await self._forget(dict(entry.data))
-                # Back on the direct route: no key is left over.
-                store = kept(self.hass, entry.entry_id)
-                await store.load()
-                store.set_leftover_key(None)
-                ir.async_delete_issue(self.hass, DOMAIN, f"{LEFTOVER_KEY_ISSUE}_{identity.hex()}")
+                # A key an earlier move left on the feeder stays in the
+                # store and its repair: the new key is another, and the
+                # direct session clears it once the feeder no longer lists
+                # it.
                 return self.async_update_reload_and_abort(
                     entry, data=_direct_data(secret, identity, address)
                 )
@@ -460,23 +467,12 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             removed = await self.hass.async_add_executor_job(
                 bridge.server_revoke_client, self._url, login.token, feeder.id, public
             )
-            store = kept(self.hass, entry.entry_id)
-            await store.load()
-            store.set_leftover_key(None if removed else public)
+            # Kept beside any key an earlier move left, each with its repair.
             if not removed:
-                ir.async_create_issue(
-                    self.hass,
-                    DOMAIN,
-                    f"{LEFTOVER_KEY_ISSUE}_{feeder.identity.hex()}",
-                    is_fixable=False,
-                    is_persistent=True,
-                    severity=ir.IssueSeverity.WARNING,
-                    translation_key=LEFTOVER_KEY_ISSUE,
-                    translation_placeholders={
-                        "feeder": feeder.identity.hex()[:8],
-                        "key": public.hex()[:8],
-                    },
-                )
+                store = kept(self.hass, entry.entry_id)
+                await store.load()
+                store.add_leftover_key(public)
+                key_left(self.hass, feeder.identity, public)
         return self.async_update_reload_and_abort(
             entry, data=_server_data(self._url, self._keep_login(), feeder)
         )
@@ -497,12 +493,23 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         """Join once with `invite`; on failure, the error to show and `None`."""
         try:
             # An invite is single-use: this runs once, and a failure asks the
-            # owner for a new invite rather than retrying.
-            return await self.hass.async_add_executor_job(_join, invite, address)
-        except NotMember as refused:
-            errors["base"] = "owner_invite" if refused.removed else "owner_invite_kept"
+            # owner for a new invite rather than retrying. The bridge checks a
+            # key held from an unchecked join first, and says which is held.
+            redeemed = await self.hass.async_add_executor_job(
+                bridge.redeem, invite, CLIENT_LABEL, address, self._joining
+            )
+        except bridge.JoinFailed as failed:
+            self._joining = failed.held
+            errors["base"] = f"join_{failed.problem.key}"
+            return None
         except bridge.WellfedError:
             errors["base"] = "join_failed"
+            return None
+        self._joining = redeemed.held
+        try:
+            return _member(redeemed)
+        except NotMember as refused:
+            errors["base"] = "not_member_invite" if refused.removed else "not_member_invite_kept"
         return None
 
     async def _rejoin(

@@ -27,15 +27,17 @@ import wellfed_homeassistant as bridge
 from .const import (
     ATTR_FEED,
     ATTR_PORTIONS,
+    CONF_ADDRESS,
     CONF_FEEDER_ID,
     CONF_IDENTITY,
     CONF_ROUTE,
+    CONF_SECRET,
     CONF_TOKEN,
     CONF_TOKEN_ID,
     CONF_URL,
     DOMAIN,
     ENTRY_VERSION,
-    LEFTOVER_KEY_ISSUE,
+    LEFTOVER_KEY_LEFT,
     PORTIONS_MAX,
     PORTIONS_MIN,
     ROUTE_SERVER,
@@ -43,7 +45,18 @@ from .const import (
     SERVICE_FEED,
 )
 from .kept import kept, remove as remove_kept
-from .session import FeederSession, forget_token, open_feeder, token_left
+from .session import (
+    STORE_UNREAD_ISSUE,
+    UNCERTAIN_ISSUE,
+    UNKNOWN_ISSUE,
+    FeederSession,
+    forget_token,
+    hold_dropped,
+    key_left,
+    leftover_issue,
+    open_feeder,
+    token_left,
+)
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
@@ -134,20 +147,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> b
     await store.load()
     try:
         feeder = await hass.async_add_executor_job(
-            open_feeder, entry.data, store.pending, store.answered
+            open_feeder, entry.data, store.pending, store.answered, store.unread
         )
     except bridge.WellfedError as error:
         raise ConfigEntryError(translation_domain=DOMAIN, translation_key="bad_entry") from error
     session = FeederSession(hass, feeder, bytes.fromhex(entry.data[CONF_IDENTITY]), store)
     session.on_revoked = lambda: entry.async_start_reauth(hass)
-    if entry.data[CONF_ROUTE] == ROUTE_SERVER:
 
-        def connected() -> None:
-            entry.async_create_background_task(
-                hass, _confirm_key_gone(hass, entry), "wellfed leftover key"
-            )
+    def connected() -> None:
+        entry.async_create_background_task(
+            hass, _confirm_key_gone(hass, entry), "wellfed leftover key"
+        )
 
-        session.on_connected = connected
+    session.on_connected = connected
     session.start()
 
     # The first state names the role and what the feeder serves, which
@@ -175,30 +187,54 @@ async def async_unload_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> 
 async def async_remove_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> None:
     """A server entry's token goes with it; a direct key stays until the owner removes it,
     since a member may not remove its own. One the server could not revoke now is named
-    in a repair, by its id, for the owner to revoke."""
+    in a repair, by its id, for the owner to revoke. A key an earlier route left on the
+    feeder may still be listed: its repair outlives the entry, which can no longer check
+    it, and the owner dismisses it once the key is removed. A hold on feeds goes with
+    the entry, and a repair says so: a new entry for the feeder starts without it."""
     if entry.data.get(CONF_ROUTE) == ROUTE_SERVER:
         data = dict(entry.data)
         if not await hass.async_add_executor_job(forget_token, data):
             token_left(hass, data[CONF_URL], data[CONF_TOKEN_ID])
     if identity := entry.data.get(CONF_IDENTITY):
-        ir.async_delete_issue(hass, DOMAIN, f"{LEFTOVER_KEY_ISSUE}_{identity}")
+        feeder = bytes.fromhex(identity)
+        store = kept(hass, entry.entry_id)
+        await store.load()
+        for key in store.leftover_keys:
+            key_left(hass, feeder, key, LEFTOVER_KEY_LEFT)
+        for issue in (UNCERTAIN_ISSUE, UNKNOWN_ISSUE, STORE_UNREAD_ISSUE):
+            ir.async_delete_issue(hass, DOMAIN, f"{issue}_{identity}")
+        if store.unread or any(p.released_ms is None for p in store.pending):
+            hold_dropped(hass, feeder)
     await remove_kept(hass, entry.entry_id)
 
 
 async def _confirm_key_gone(hass: HomeAssistant, entry: WellfedConfigEntry) -> None:
-    """Clear the leftover key's repair once the server says the feeder no longer
-    lists the key; one the server cannot say about stays as it is."""
+    """Clear each leftover key's repair once the feeder no longer lists the key, as the
+    server reads it or, directly, as this Home Assistant's own key does; one no one
+    can say about now stays as it is."""
     store = kept(hass, entry.entry_id)
-    key = store.leftover_key
-    if key is None:
-        return
     data = entry.data
-    listed = await hass.async_add_executor_job(
-        bridge.server_client_listed, data[CONF_URL], data[CONF_TOKEN], data[CONF_FEEDER_ID], key
-    )
-    if listed is False:
-        store.set_leftover_key(None)
-        ir.async_delete_issue(hass, DOMAIN, f"{LEFTOVER_KEY_ISSUE}_{data[CONF_IDENTITY]}")
+    feeder = bytes.fromhex(data[CONF_IDENTITY])
+    for key in store.leftover_keys:
+        if data[CONF_ROUTE] == ROUTE_SERVER:
+            listed = await hass.async_add_executor_job(
+                bridge.server_client_listed,
+                data[CONF_URL],
+                data[CONF_TOKEN],
+                data[CONF_FEEDER_ID],
+                key,
+            )
+        else:
+            listed = await hass.async_add_executor_job(
+                bridge.client_listed,
+                bytes.fromhex(data[CONF_SECRET]),
+                feeder,
+                key,
+                data.get(CONF_ADDRESS),
+            )
+        if listed is False:
+            store.remove_leftover_key(key)
+            ir.async_delete_issue(hass, DOMAIN, leftover_issue(feeder, key))
 
 
 async def async_remove_config_entry_device(

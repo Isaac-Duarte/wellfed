@@ -37,6 +37,7 @@ from .const import (
     CONF_URL,
     DOMAIN,
     EVENT_FEEDER,
+    LEFTOVER_KEY_ISSUE,
     ROUTE_SERVER,
     TOKEN_LEFT_ISSUE,
 )
@@ -57,8 +58,14 @@ RECENT_EVENTS = 20
 
 # A feed whose answer was lost, until its `Fed` event settles it.
 UNCERTAIN_ISSUE = "uncertain_feed"
-# A lost feed the feeder's history holds no record of.
+# A lost feed with no record of it yet, on either route, which holds new
+# feeds back until it settles or the owner releases it through this repair.
 UNKNOWN_ISSUE = "unknown_feed"
+# The entry's store did not read: every feed waits until the owner says,
+# through this repair, that the bowls are checked.
+STORE_UNREAD_ISSUE = "store_unread"
+# An entry was deleted while it held feeds: the hold went with it.
+HOLD_DROPPED_ISSUE = "hold_dropped"
 # A feeder of an older API revision: what it lacks needs it updated.
 UPDATE_FEEDER_ISSUE = "update_feeder"
 # A feeder of a newer API revision: what it added needs this integration updated.
@@ -115,17 +122,29 @@ def event_data(identity: bytes, event: bridge.Event) -> dict[str, object]:
 
 
 def open_feeder(
-    data: Mapping[str, Any], pending: list[bridge.Pending], answered: list[int]
+    data: Mapping[str, Any], pending: list[bridge.Pending], answered: list[int], unread: bool
 ) -> bridge.Feeder:
     """The bridge's session for an entry's data, on the route it names, handed
-    the feeds the last run left unsettled."""
+    the feeds the last run left unsettled on either route, and whether the
+    store did not read."""
     identity = bytes.fromhex(data[CONF_IDENTITY])
     if data[CONF_ROUTE] == ROUTE_SERVER:
         return bridge.Feeder.server(
-            data[CONF_URL], data[CONF_TOKEN], data[CONF_FEEDER_ID], identity, pending
+            data[CONF_URL],
+            data[CONF_TOKEN],
+            data[CONF_TOKEN_ID],
+            data[CONF_FEEDER_ID],
+            identity,
+            pending,
+            unread,
         )
     return bridge.Feeder(
-        bytes.fromhex(data[CONF_SECRET]), identity, data.get(CONF_ADDRESS), pending, answered
+        bytes.fromhex(data[CONF_SECRET]),
+        identity,
+        data.get(CONF_ADDRESS),
+        pending,
+        answered,
+        unread,
     )
 
 
@@ -156,6 +175,45 @@ def token_left(hass: HomeAssistant, url: str, token_id: str) -> None:
         severity=ir.IssueSeverity.WARNING,
         translation_key=TOKEN_LEFT_ISSUE,
         translation_placeholders={"url": url, "token_id": token_id},
+    )
+
+
+def hold_dropped(hass: HomeAssistant, identity: bytes) -> None:
+    """An entry was deleted while it held feeds after a feed that may have run, or
+    after its store did not read: a new entry for the feeder starts without that
+    hold, so the owner checks the bowl first. Outlives the entry; the owner
+    dismisses it."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{HOLD_DROPPED_ISSUE}_{identity.hex()}",
+        is_fixable=False,
+        is_persistent=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=HOLD_DROPPED_ISSUE,
+        translation_placeholders={"feeder": identity.hex()[:8]},
+    )
+
+
+def leftover_issue(identity: bytes, key: bytes) -> str:
+    """The id of the repair for `key` left on the feeder `identity`: one per key."""
+    return f"{LEFTOVER_KEY_ISSUE}_{identity.hex()}_{key.hex()[:16]}"
+
+
+def key_left(
+    hass: HomeAssistant, identity: bytes, key: bytes, translation_key: str = LEFTOVER_KEY_ISSUE
+) -> None:
+    """A client key Home Assistant held on the feeder `identity` and could not remove:
+    the owner removes it, by the start of the key."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        leftover_issue(identity, key),
+        is_fixable=False,
+        is_persistent=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=translation_key,
+        translation_placeholders={"feeder": identity.hex()[:8], "key": key.hex()[:8]},
     )
 
 
@@ -198,9 +256,12 @@ class FeederSession:
         self._event_listeners: list[Callable[[bridge.Event], None]] = []
         # The feeder's open alerts, and who hears each that opens or clears.
         self.alerts: bridge.Alerts | None = None
-        # The lost feeds that hold new feeds back, by id: announced pending
-        # and not yet reported still unknown, settled or forgotten.
+        # The lost feeds not yet judged, by id: announced pending and not yet
+        # reported still unknown, settled or forgotten.
         self._holding: set[str] = set()
+        # The lost feeds reported still unknown that still hold new feeds
+        # back, by id: until they settle or the owner releases them.
+        self._unknown: set[str] = set()
         self._alert_listeners: list[Callable[[bridge.Alerts], None]] = []
         self._ready = asyncio.Event()
         # The last events as they happened, for diagnostics.
@@ -227,8 +288,13 @@ class FeederSession:
     def start(self) -> None:
         """Start pumping updates into the event loop."""
         # The bridge announces again each lost feed a run before this one
-        # left that still holds feeds back, and the repair follows those.
+        # left that still holds feeds back, and the repairs follow those.
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
+        ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
+        if self.kept.unread:
+            self._issue(STORE_UNREAD_ISSUE, ir.IssueSeverity.WARNING, {}, fixable=True)
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(STORE_UNREAD_ISSUE))
         self._pump = threading.Thread(target=self._run, name="wellfed-pump", daemon=True)
         self._pump.start()
 
@@ -437,7 +503,13 @@ class FeederSession:
             self._uncertain_issue()
         elif kind == bridge.UpdateKind.Sending and update.pending is not None:
             # Kept with no repair: only a lost answer says it may have run.
+            # The bridge sends the feed only once the store says this record
+            # landed, so a restart before its answer still holds on it.
             self.kept.add_pending(update.pending)
+            if (feeder := self._feeder) is not None:
+                self.hass.async_create_task(
+                    self._confirm_kept(feeder, update.pending.id), eager_start=True
+                )
         elif kind == bridge.UpdateKind.Cleared:
             self._cleared(update.pending)
         elif kind == bridge.UpdateKind.Answered:
@@ -452,7 +524,9 @@ class FeederSession:
                 )
             self._settled(update.pending)
         elif kind == bridge.UpdateKind.SettledUnfed:
-            _LOGGER.info("The feed whose answer was lost was refused after all: nothing ran")
+            _LOGGER.info(
+                "The feed whose answer was lost was refused, or never sent, after all: nothing ran"
+            )
             self._settled(update.pending)
         elif kind == bridge.UpdateKind.StillUnknown:
             _LOGGER.warning(
@@ -460,11 +534,29 @@ class FeederSession:
                 "ran is not known",
                 update.portions,
             )
-            if update.pending is not None:
-                self.kept.mark_reported(update.pending)
-                self._holding.discard(update.pending.id)
+            pending = update.pending
+            if pending is not None:
+                self.kept.mark_reported(pending)
+                self._holding.discard(pending.id)
             self._uncertain_issue()
-            self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
+            if pending is not None and pending.released_ms is None:
+                self._unknown.add(pending.id)
+                placeholders = {"portions": str(update.portions)}
+                self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, placeholders, fixable=True)
+        elif kind == bridge.UpdateKind.BowlsChecked:
+            _LOGGER.info("The bowls are checked after the store did not read: feeds go again")
+            self.kept.bowls_checked()
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(STORE_UNREAD_ISSUE))
+        elif kind == bridge.UpdateKind.Released and update.pending is not None:
+            _LOGGER.info(
+                "A feed of %s portions whose answer was lost was released: feeds go again",
+                update.portions,
+            )
+            self.kept.mark_released(update.pending)
+            self._unknown.discard(update.pending.id)
+            self._holding.discard(update.pending.id)
+            self._uncertain_issue()
+            self._unknown_issue()
         elif kind == bridge.UpdateKind.Forgotten:
             _LOGGER.info(
                 "A feed of %s portions whose answer was lost is no longer watched for",
@@ -475,15 +567,27 @@ class FeederSession:
             return False
         return True
 
+    async def _confirm_kept(self, feeder: bridge.Feeder, pending_id: str) -> None:
+        """Tell the bridge whether the store saved the record of the feed
+        `pending_id` names: the feed goes out only if it did."""
+        if await self.kept.save_now():
+            feeder.saved(pending_id)
+            return
+        _LOGGER.error(
+            "Home Assistant could not save a feed's record before sending it, so the feed "
+            "was not sent: it would not be held on if Home Assistant stopped before its answer"
+        )
+        feeder.unsaved(pending_id)
+
     @callback
     def _settled(self, pending: bridge.Pending | None) -> None:
         """One lost feed is accounted for: the issues clear with the last."""
         if pending is not None:
             self.kept.settle(pending)
             self._holding.discard(pending.id)
+            self._unknown.discard(pending.id)
         self._uncertain_issue()
-        if not self.kept.pending:
-            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
+        self._unknown_issue()
 
     @callback
     def _cleared(self, pending: bridge.Pending | None) -> None:
@@ -491,7 +595,36 @@ class FeederSession:
         if pending is not None:
             self.kept.settle(pending)
             self._holding.discard(pending.id)
+            self._unknown.discard(pending.id)
         self._uncertain_issue()
+        self._unknown_issue()
+
+    @callback
+    def _unknown_issue(self) -> None:
+        """The repair that releases lost feeds goes once none holds new feeds
+        back."""
+        if not self._unknown:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
+
+    @callback
+    def release_unknown(self) -> None:
+        """The owner releases every lost feed reported still unknown that
+        holds new feeds back: feeds go again, though those may have run. The
+        bridge confirms each with a `Released` update; until then, and
+        across a restart before it does, they still hold."""
+        if self._feeder is None:
+            return
+        for pending_id in self._unknown:
+            self._feeder.release(pending_id)
+
+    @callback
+    def check_bowls(self) -> None:
+        """The owner checked the bowls after the store did not read: feeds go
+        again once the bridge confirms it with a `BowlsChecked` update, which
+        clears the store's flag; until then, and across a restart before it
+        does, they still wait."""
+        if self._feeder is not None:
+            self._feeder.bowls_checked()
 
     @callback
     def _uncertain_issue(self) -> None:
@@ -536,12 +669,20 @@ class FeederSession:
         return f"{issue}_{self.identity.hex()}"
 
     @callback
-    def _issue(self, issue: str, severity: ir.IssueSeverity, placeholders: dict[str, str]) -> None:
+    def _issue(
+        self,
+        issue: str,
+        severity: ir.IssueSeverity,
+        placeholders: dict[str, str],
+        *,
+        fixable: bool = False,
+    ) -> None:
         ir.async_create_issue(
             self.hass,
             DOMAIN,
             self._issue_id(issue),
-            is_fixable=False,
+            is_fixable=fixable,
+            data={"identity": self.identity.hex(), "repair": issue} if fixable else None,
             is_persistent=False,
             severity=severity,
             translation_key=issue,
