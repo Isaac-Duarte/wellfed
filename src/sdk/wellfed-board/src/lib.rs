@@ -43,7 +43,7 @@
 pub use wellfed_board_plaf103::{MODEL_CODE, STORAGE_OFFSET, STORAGE_SECTORS, pins, safe, storage};
 
 #[cfg(wellfed_board = "plwf106")]
-pub use wellfed_board_plwf106::{MODEL_CODE, STORAGE_OFFSET, STORAGE_SECTORS, pins, safe, stock};
+pub use wellfed_board_plwf106::{MODEL_CODE, STORAGE_OFFSET, STORAGE_SECTORS, pins, safe};
 
 /// The storage sector of the boot confirmation record, which the OTA trial
 /// on both cores reads and KM4 writes once a build proves itself. `None` on
