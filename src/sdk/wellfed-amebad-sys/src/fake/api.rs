@@ -626,14 +626,20 @@ pub fn tim2_init(period: u32) {
     });
 }
 
+/// The update interrupt's enable. The request is the flag and the enable
+/// together, so enabling it over a flag still set raises the line.
 pub fn tim2_int_config(enabled: bool) {
-    with(|h| {
+    let raise = with(|h| {
         if enabled {
             h.timer.dier |= TIM_IT_UPDATE;
         } else {
             h.timer.dier &= !TIM_IT_UPDATE;
         }
+        enabled && h.timer.sr & TIM_IT_UPDATE != 0
     });
+    if raise {
+        super::irq(super::TIMER2_IRQ);
+    }
 }
 
 pub fn tim2_cmd(enabled: bool) {

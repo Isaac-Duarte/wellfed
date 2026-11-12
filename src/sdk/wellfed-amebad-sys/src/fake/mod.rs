@@ -650,8 +650,10 @@ pub fn advance(ticks: u32, run_timer: bool) {
         h.timer_phase = u32::try_from(u64::from(h.timer_phase) % period)
             .expect("a remainder of a period at most 2^32");
         h.timer.sr |= api::TIM_IT_UPDATE;
-        // Model a coalesced pending IRQ, not one callback per lost period.
-        run_timer
+        // The update flag always sets; it reaches the NVIC only through its
+        // enable. Model a coalesced pending IRQ, not one callback per lost
+        // period.
+        run_timer && h.timer.dier & api::TIM_IT_UPDATE != 0
     });
 
     if fire {
