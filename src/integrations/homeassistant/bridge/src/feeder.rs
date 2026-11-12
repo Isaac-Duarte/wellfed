@@ -15,12 +15,11 @@
 //!   reconnect, so a later session replays only what it missed; a history
 //!   that started over is a gap, and its backlog is read from the start.
 //! - **Writes** go out once, under a fresh request id, and are never sent
-//!   again here or by the integration. One the role does not allow
-//!   ([`writes::gate`]), or whose op the device's kind does not serve
-//!   ([`writes::served`]), is never sent; one while
-//!   no session is open is not sent either, so the owner may simply press
-//!   again. A change to a store goes on the generation last read, one at a
-//!   time per store ([`writes`]).
+//!   again here or by the integration. One the role does not allow (by the
+//!   feeder's own matrix), or whose op the device's kind does not serve, is
+//!   never sent; one while no session is open is not sent either, so the
+//!   owner may simply press again. A change to a store goes on the
+//!   generation last read, one at a time per store.
 //! - **Uncertain feeds.** A direct feed is kept from just before it goes
 //!   out, in the integration's store too, so a feed out when Home Assistant
 //!   stops is lost after the restart rather than forgotten. A feed whose
@@ -30,9 +29,12 @@
 //!   portions, after the feed went out, not a feed it has the end of, and
 //!   no other feed's it could be. It reports
 //!   [`UpdateKind::StillUnknown`](crate::api::UpdateKind) when the history
-//!   holds no such feed, never a guessed count. A `Fed` names the client,
-//!   not the request, so while one feed is uncertain (or a feed's answer is
-//!   still awaited) a new feed is not sent ([`NotSent::Held`]). Every
+//!   holds no such feed, never a guessed count: once the feeder reads idle
+//!   with no `Fed` for it, at the next backlog or at a status asked after
+//!   its answer was lost, or after 15 minutes at most. A `Fed` names the
+//!   client, not the request, so while one feed is uncertain and not yet
+//!   reported (or a feed's answer is still awaited) a new feed is not sent
+//!   ([`NotSent::Held`]). Every
 //!   number this client has the end of goes to the integration
 //!   ([`UpdateKind::Answered`](crate::api::UpdateKind)), which hands them
 //!   to the next session, so a replayed `Fed` of a feed settled before a
@@ -68,7 +70,7 @@ use wellfed_client::today::Facts;
 use wellfed_connect::{Connection, Cursor, Received, Timing};
 use wellfed_model::{
     AlertsView, Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
-    FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Skew, Status,
+    FeederSettingsPatch, Op, Pushed, Readiness, Settings, Skew, Status,
 };
 
 use crate::Error;
@@ -193,8 +195,9 @@ pub struct Clocks {
     pub session: Timing,
     /// How long a lost session waits before opening another.
     pub retry: Duration,
-    /// How long a lost feed holds new feeds back before it is reported
-    /// still unknown: [`SETTLE`].
+    /// How long a lost feed holds new feeds back at most before it is
+    /// reported still unknown: 15 minutes in Home Assistant, longer than the
+    /// longest feed the feeder runs.
     pub settle: Duration,
 }
 
@@ -370,6 +373,12 @@ struct Uncertain {
     /// How many feed numbers had been kept when it went out: every one
     /// from here on stays while it is open.
     answered_at: usize,
+    /// When its answer was lost in the open session, by the session's
+    /// count of requests asked so far: a status read asked after it that
+    /// finds the feeder idle, with every event it names read, reports it
+    /// ([`Session::idle`]). `None` for one lost another way, which the next
+    /// backlog judges.
+    lost_at: Option<u64>,
 }
 
 /// Whether a feed sent at `sent_ms` has waited as long as one is kept.
@@ -407,6 +416,7 @@ impl Memory {
                 sent: sent_at(pending.sent_ms),
                 stage: Stage::Lost,
                 answered_at: 0,
+                lost_at: None,
                 pending,
             })
             .collect();
@@ -512,6 +522,17 @@ impl Memory {
 
     fn fed(&mut self, feed: Feed) {
         fed(&mut self.facts, feed);
+    }
+
+    /// Whether no read of the fact `read` asks for is held.
+    const fn unread(&self, read: Read) -> bool {
+        match read {
+            Read::Settings => self.facts.settings.is_none(),
+            Read::Plans => self.facts.plans.is_none(),
+            Read::Time => self.facts.time.is_none(),
+            Read::Calibration => self.calibration.is_none(),
+            Read::Status | Read::Alerts => false,
+        }
     }
 
     /// Whether a feed of this client's has no end yet and is not reported
@@ -648,6 +669,7 @@ async fn open(key: &ClientKey, target: &Target, timing: Timing) -> Result<Connec
     Ok(Connection::open_with(key.keypair(), target.identity, address, ephemeral, timing).await?)
 }
 
+#[derive(Debug)]
 enum Ended {
     /// The handle is gone.
     Dropped,
@@ -690,7 +712,8 @@ enum Outstanding {
         /// For a feed, its pending's id among the uncertain feeds.
         feed: Option<String>,
     },
-    Read(Read),
+    /// A read, and how many requests the session had asked when it went.
+    Read(Read, u64),
 }
 
 struct Session<'a> {
@@ -705,6 +728,8 @@ struct Session<'a> {
     /// The replay at connect, until its newest event has come.
     backlog: Option<Backlog>,
     pending: HashMap<RequestId, Outstanding>,
+    /// Requests asked in this session so far.
+    asked: u64,
 }
 
 /// The session's own failure, or the handle gone.
@@ -718,6 +743,10 @@ impl<'a> Session<'a> {
         updates: &'a std_mpsc::Sender<Update>,
         settle: Duration,
     ) -> Self {
+        // A count from a session before means nothing in this one.
+        for uncertain in &mut memory.uncertain {
+            uncertain.lost_at = None;
+        }
         Self {
             role: connection.role(),
             capabilities: Capabilities::of(connection.kind()),
@@ -728,6 +757,7 @@ impl<'a> Session<'a> {
             settle,
             backlog: None,
             pending: HashMap::new(),
+            asked: 0,
         }
     }
 
@@ -822,12 +852,12 @@ impl<'a> Session<'a> {
                         Some(reply) => self.write(write, reply),
                         None => Ok(()),
                     },
-                    Some(Command::Refresh) => self.read(Read::Status),
+                    Some(Command::Refresh) => self.turn(),
                 },
                 received = self.connection.receive(TURN) => match received {
                     Ok(Received::Answer { id, answer }) => self.answered(id, answer),
                     Ok(Received::Pushed(pushed)) => self.pushed(&pushed),
-                    Err(wellfed_connect::Error::Timeout) => self.read(Read::Status),
+                    Err(wellfed_connect::Error::Timeout) => self.turn(),
                     Err(wellfed_connect::Error::UnknownKey) => Err(Ended::Revoked),
                     Err(error) => Err(lost(error)),
                 },
@@ -869,23 +899,41 @@ impl<'a> Session<'a> {
         if self
             .pending
             .values()
-            .any(|pending| matches!(pending, Outstanding::Read(out) if *out == read))
+            .any(|pending| matches!(pending, Outstanding::Read(out, _) if *out == read))
         {
             return Ok(());
         }
+        self.ask(read)
+    }
+
+    /// Ask for `read`, whether or not the same read is already out.
+    fn ask(&mut self, read: Read) -> Step {
         let op = read.op();
         let id = random().map_err(lost)?;
         self.connection.request(id, &op).map_err(lost)?;
-        self.pending.insert(id, Outstanding::Read(read));
+        self.asked += 1;
+        self.pending.insert(id, Outstanding::Read(read, self.asked));
         Ok(())
+    }
+
+    /// A quiet session's turn, or the integration's asking: the status, and
+    /// each fact this session serves but holds no read of (one whose read
+    /// failed, at connect or since), so none is left unread for the
+    /// session's life.
+    fn turn(&mut self) -> Step {
+        for read in [Read::Settings, Read::Plans, Read::Time, Read::Calibration] {
+            if self.serves(read) && self.memory.unread(read) {
+                self.read(read)?;
+            }
+        }
+        self.read(Read::Status)
     }
 
     /// Whether the device's kind serves `read`, by its op's own kind
     /// ([`Op::kind`]): one source of truth with the writes.
     fn serves(&self, read: Read) -> bool {
-        read.op()
-            .kind()
-            .is_none_or(|kind| kind == self.connection.kind())
+        let op = read.op();
+        op.kind().is_none_or(|kind| kind == self.connection.kind()) && op.allowed(self.role)
     }
 
     fn write(&mut self, write: Write, reply: oneshot::Sender<Written>) -> Step {
@@ -979,6 +1027,7 @@ impl<'a> Session<'a> {
             sent: Instant::now(),
             stage: Stage::Sending,
             answered_at: self.memory.answered_total,
+            lost_at: None,
         });
         id
     }
@@ -1013,36 +1062,58 @@ impl<'a> Session<'a> {
                 op,
                 feed,
             }) => {
-                let written = self.written(kind, &op, feed.as_deref(), answer.as_ref())?;
+                let answer = readable(answer.as_ref());
+                let written = self.written(kind, &op, feed.as_deref(), answer);
+                let landed = written == Written::done();
+                let lost = written.pending.is_some();
                 let _ = reply.send(written);
+
+                // A feed whose answer was lost is reported once a status
+                // asked after it finds the feeder idle ([`Self::idle`]);
+                // asked now, whatever status read is already out, since
+                // that one may have gone before the feed.
+                if lost {
+                    self.ask(Read::Status)?;
+                }
+
+                // A store that answered is read again whatever the answer,
+                // so the state shows what it now holds. Only once the
+                // write has its end: a read that cannot be queued ends the
+                // session, never turns a known end into an uncertain one.
+                if let (Kind::Store { store, .. }, Some(_)) = (kind, answer) {
+                    self.read(store_read(store))?;
+                    if landed {
+                        self.state()?;
+                    }
+                }
                 // A feed that ends here no longer keeps a lost one from a
                 // `Fed` it could have claimed.
                 self.settle()
             }
-            Some(Outstanding::Read(read)) => self.fact(read, answer),
+            Some(Outstanding::Read(read, asked)) => self.fact(read, asked, answer),
             None => Ok(()),
         }
     }
 
-    /// How the write of `kind` ended, by its answer; `feed` names a feed's
-    /// pending.
+    /// How the write of `kind` ended, by its readable answer; `feed` names
+    /// a feed's pending.
     fn written(
         &mut self,
         kind: Kind,
         op: &Op,
         feed: Option<&str>,
         answer: Option<&Answer>,
-    ) -> Result<Written, Ended> {
-        let Some(answer) = readable(answer) else {
-            return Ok(self.unanswered(kind, feed));
+    ) -> Written {
+        let Some(answer) = answer else {
+            return self.unanswered(kind, feed);
         };
         match kind {
-            Kind::Once => Ok(once(answer)),
+            Kind::Once => once(answer),
             Kind::Feed { .. } => {
                 let written = once(answer);
                 // An answer that names no end may follow a feed that ran.
                 if written.result == WriteResult::Uncertain {
-                    return Ok(self.unanswered(kind, feed));
+                    return self.unanswered(kind, feed);
                 }
                 // Its number is kept before the feed is let go, so a
                 // restart in between leaves it lost, never its `Fed` free.
@@ -1050,22 +1121,16 @@ impl<'a> Session<'a> {
                     self.answer(*feed);
                 }
                 self.clear(feed);
-                Ok(written)
+                written
             }
-            Kind::Store { store, base } => {
-                // The store is read again whatever the answer, so the
-                // state shows what it now holds.
-                self.read(store_read(store))?;
-                Ok(match writes::landed(Some(answer), base) {
-                    Landed::Done => {
-                        self.landed(op);
-                        self.state()?;
-                        Written::done()
-                    }
-                    Landed::Stale | Landed::Refused(_) => once(answer),
-                    Landed::Unknown => self.unanswered(kind, None),
-                })
-            }
+            Kind::Store { base, .. } => match writes::landed(Some(answer), base) {
+                Landed::Done => {
+                    self.landed(op);
+                    Written::done()
+                }
+                Landed::Stale | Landed::Refused(_) => once(answer),
+                Landed::Unknown => self.unanswered(kind, None),
+            },
         }
     }
 
@@ -1076,29 +1141,24 @@ impl<'a> Session<'a> {
         let facts = &mut self.memory.facts;
         match op {
             Op::PutSettings { base, changes } => {
-                if let Some(settings) = facts
-                    .settings
-                    .as_mut()
-                    .filter(|held| held.generation == Some(*base))
+                if let Some(settings) = facts.settings.as_mut()
+                    && settings.landed(*base, *changes)
+                    && let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut)
                 {
-                    settings.apply(*changes);
-                    settings.generation = Some(next(*base));
-                    if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
-                        status.settings_generation = settings.generation;
-                    }
+                    status.settings_generation = settings.generation;
                 }
             }
             Op::PutPlans { base, plans } => {
                 if let Some(held) = facts.plans.as_mut().filter(|held| held.generation == *base) {
                     held.plans = *plans;
-                    held.generation = next(*base);
+                    held.generation = base.next();
                 }
             }
             Op::PutCalibration { base, calibration } => {
                 let view = self.memory.calibration.as_mut();
                 if let Some(view) = view.filter(|view| view.generation == *base) {
                     view.calibration = *calibration;
-                    view.generation = next(*base);
+                    view.generation = base.next();
                 }
             }
             _ => {}
@@ -1131,6 +1191,7 @@ impl<'a> Session<'a> {
         };
         let uncertain = &mut self.memory.uncertain[index];
         uncertain.stage = Stage::Lost;
+        uncertain.lost_at = Some(self.asked);
         let pending = uncertain.pending.clone();
         // Announced on the updates before anything can settle it, so the
         // integration's repair says it may have run; a handle gone has no
@@ -1139,12 +1200,14 @@ impl<'a> Session<'a> {
         Written::uncertain_feed(pending)
     }
 
-    fn fact(&mut self, read: Read, answer: Option<Answer>) -> Step {
+    /// The answer to `read`, asked as the session's request number `asked`.
+    fn fact(&mut self, read: Read, asked: u64, answer: Option<Answer>) -> Step {
         let facts = &mut self.memory.facts;
         match (read, answer) {
             (Read::Status, Some(Answer::Status(status))) => {
                 facts.status = Some(status);
                 self.alerts_due()?;
+                self.idle(asked)?;
             }
             (Read::Alerts, Some(Answer::Alerts(view))) => return self.alerts_read(&view),
             (Read::Settings, Some(Answer::Settings(Settings::Feeder(settings)))) => {
@@ -1252,13 +1315,7 @@ impl<'a> Session<'a> {
     /// settings, the plans or the time, so those are read again.
     fn news(&mut self, body: &EventBody) -> Step {
         match body {
-            EventBody::Feeder(FeederEvent::Plans { .. })
-            | EventBody::Feeder(FeederEvent::Fed { .. })
-            | EventBody::Feeder(FeederEvent::Missed { .. })
-                if self.serves(Read::Plans) =>
-            {
-                self.read(Read::Plans)?;
-            }
+            body if body.moves_plans() && self.serves(Read::Plans) => self.read(Read::Plans)?,
             EventBody::Feeder(FeederEvent::Settings { .. }) => self.read(Read::Settings)?,
             EventBody::Core(CoreEvent::ClockSync { .. }) if self.serves(Read::Time) => {
                 self.read(Read::Time)?
@@ -1279,6 +1336,31 @@ impl<'a> Session<'a> {
             self.report(|_| true)?;
         }
         self.state()
+    }
+
+    /// A status asked as request `asked` came. Once it shows the feeder idle
+    /// with every event it names read, a feed whose answer was lost before
+    /// that read went, and whose `Fed` has not settled it, never ran by
+    /// then: the feeder takes one session's requests in order, so the feed
+    /// reached it first, and one that started would read as feeding or have
+    /// ended in an event already read. It is reported still unknown, so it
+    /// holds new feeds back no longer, and stays open to a late `Fed` as
+    /// any reported feed does. One the feeder is still feeding waits for a
+    /// later status (each event read asks one), or for [`Clocks::settle`].
+    fn idle(&mut self, asked: u64) -> Step {
+        let Some(status) = self.memory.facts.status.as_ref() else {
+            return Ok(());
+        };
+        let epoch = self.connection.epoch();
+        let read = status.last_event.is_none_or(|newest| {
+            self.memory
+                .cursor
+                .is_some_and(|cursor| cursor.epoch == epoch && cursor.seq >= newest)
+        });
+        if feeding_now(status) || !read {
+            return Ok(());
+        }
+        self.report(|uncertain| uncertain.lost_at.is_some_and(|lost| lost < asked))
     }
 
     /// Report each lost feed `due` picks, not yet reported, as still
@@ -1359,11 +1441,6 @@ pub(crate) fn feeding_now(status: &Status) -> bool {
     status
         .feeder()
         .is_some_and(|feeder| feeder.readiness == Readiness::Blocked(Blocked::Feeding))
-}
-
-/// The generation a store moves to from `base`.
-pub(crate) const fn next(base: Generation) -> Generation {
-    Generation(base.0.wrapping_add(1))
 }
 
 const fn store_read(store: Store) -> Read {
@@ -1531,6 +1608,7 @@ mod tests {
             sent: Instant::now(),
             stage,
             answered_at: 0,
+            lost_at: None,
         }
     }
 
@@ -1669,6 +1747,113 @@ mod tests {
         assert_eq!(gone[0].pending.id, "lost");
         assert_eq!(memory.uncertain.len(), 1);
         assert_eq!(memory.uncertain[0].pending.id, "sending");
+    }
+
+    /// The simulator's owner, whose key the simulated feeder enrolls.
+    const OWNER: [u8; 32] = [0x21; 32];
+
+    /// A session as the owner of a simulated feeder, over a real connection,
+    /// with `memory` and the updates it sends.
+    async fn owner_session<'a>(
+        sim: &wellfed_feeder_sim::harness::Threaded,
+        memory: &'a mut Memory,
+        updates: &'a std_mpsc::Sender<Update>,
+    ) -> Session<'a> {
+        let keys = wellfed_session::noise::Keypair::from_secret(OWNER);
+        let connection = Connection::open(&keys, sim.identity, sim.address, random().unwrap())
+            .await
+            .unwrap();
+        Session::new(connection, [0; 4], memory, updates, SETTLE)
+    }
+
+    /// The reads the session has out.
+    fn reads(session: &Session<'_>) -> Vec<Read> {
+        let mut reads: Vec<(u64, Read)> = session
+            .pending
+            .values()
+            .filter_map(|pending| match pending {
+                Outstanding::Read(read, asked) => Some((*asked, *read)),
+                Outstanding::Write { .. } => None,
+            })
+            .collect();
+        reads.sort_by_key(|(asked, _)| *asked);
+        reads.into_iter().map(|(_, read)| read).collect()
+    }
+
+    /// A fact whose read failed at connect is asked again at the next
+    /// turn, not left unread for the session's life; one held is not.
+    #[test]
+    fn a_turn_asks_again_for_each_fact_never_read() {
+        let sim = wellfed_feeder_sim::harness::Threaded::start(
+            *wellfed_session::noise::Keypair::from_secret(OWNER).public(),
+        );
+        runtime().block_on(async {
+            let (updates, _heard) = std_mpsc::channel();
+            let mut memory = Memory::default();
+            let mut session = owner_session(&sim, &mut memory, &updates).await;
+
+            // Nothing read yet, as after a connect whose reads all failed.
+            session.turn().unwrap();
+            assert_eq!(
+                reads(&session),
+                [
+                    Read::Settings,
+                    Read::Plans,
+                    Read::Time,
+                    Read::Calibration,
+                    Read::Status
+                ]
+            );
+
+            while !session.pending.is_empty() {
+                let received = session.connection.receive(Duration::from_secs(10));
+                match received.await.unwrap() {
+                    Received::Answer { id, answer } => session.answered(id, answer).unwrap(),
+                    Received::Pushed(_) => {}
+                }
+            }
+            session.turn().unwrap();
+            assert_eq!(reads(&session), [Read::Status]);
+        });
+    }
+
+    /// Only a status asked after a feed's answer was lost says it never
+    /// ran: one asked before may have gone ahead of the feed.
+    #[test]
+    fn only_a_status_asked_after_a_feed_was_lost_reports_it() {
+        let sim = wellfed_feeder_sim::harness::Threaded::start(
+            *wellfed_session::noise::Keypair::from_secret(OWNER).public(),
+        );
+        runtime().block_on(async {
+            let (updates, heard) = std_mpsc::channel();
+            let mut memory = Memory::default();
+            let mut session = owner_session(&sim, &mut memory, &updates).await;
+            let id = random().unwrap();
+            let Ok(Answer::Status(status)) = session.connection.ask(id, &Op::Status).await else {
+                panic!("the feeder's status");
+            };
+            assert!(!feeding_now(&status), "the feeder is idle");
+            let epoch = session.connection.epoch();
+            session.memory.cursor = status.last_event.map(|seq| Cursor { epoch, seq });
+            session.memory.facts.status = Some(status);
+            session.memory.uncertain.push(Uncertain {
+                lost_at: Some(3),
+                ..kept(lost("lost", now_ms()), Stage::Lost)
+            });
+
+            session.idle(3).unwrap();
+            assert!(heard.try_recv().is_err(), "a status asked before it");
+            assert!(session.memory.holds_feeds());
+
+            session.idle(4).unwrap();
+            let update = heard.try_recv().unwrap();
+            assert_eq!(update.kind, crate::api::UpdateKind::StillUnknown);
+            assert_eq!(
+                update.pending.map(|pending| pending.id),
+                Some("lost".into())
+            );
+            assert!(!session.memory.holds_feeds());
+        });
     }
 
     /// A lost feed is forgotten after the keep window, by the time it

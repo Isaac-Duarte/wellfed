@@ -908,3 +908,47 @@ fn a_settled_feed_s_number_is_carried_so_its_replay_settles_nothing() {
     });
     assert_eq!(which.map(|lost| lost.id), Some(pending.id));
 }
+
+/// A feed whose answer is lost mid-session holds new feeds back only until
+/// a status asked after it reads the feeder idle with no `Fed` for it, not
+/// for the whole settle window: the feeder refused it while busy, so it is
+/// reported still unknown once the feed it was busy with has ended.
+#[test]
+fn a_lost_feed_the_feeder_never_ran_holds_feeds_only_until_it_reads_idle() {
+    let (sim, key) = joined();
+    let relays = relays();
+    let relay = relays.block_on(Relay::start(sim.address));
+    let feeder = session(&sim, key, relay.address, SHORT);
+    state_where(&feeder, |_| true);
+
+    // B runs for two seconds; A goes out while it does, and its answer is
+    // lost on the way back.
+    let b = feeder.feed(10).feed.expect("the feeder numbered B");
+    relay.hold_answers();
+    let lost = feeder.feed(1);
+    assert_eq!(lost.result, WriteResult::Uncertain, "{lost:?}");
+    let pending = lost.pending.expect("A is kept pending");
+    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Held));
+    relay.resume();
+
+    // Far sooner than the 15 minutes `SHORT` settles by.
+    let started = Instant::now();
+    let mut b_ended = false;
+    let reported = until(&feeder, |update| {
+        b_ended |= update
+            .event
+            .as_ref()
+            .and_then(|event| event.fed.as_ref())
+            .is_some_and(|fed| fed.feed == b);
+        assert_ne!(update.kind, UpdateKind::Settled, "B's `Fed` settled A");
+        (update.kind == UpdateKind::StillUnknown).then(|| update.pending.clone())
+    });
+    assert!(b_ended, "reported only once B, which A met, had ended");
+    assert!(started.elapsed() < Duration::from_secs(30));
+    let reported = reported.expect("A");
+    assert_eq!(reported.id, pending.id);
+    assert!(reported.reported);
+
+    // It holds no feed back now.
+    assert_eq!(feeder.feed(1).result, WriteResult::Feeding);
+}
