@@ -132,3 +132,19 @@ async fn a_stream_ends_when_its_account_expires() {
     ends(&mut updates).await;
     server.stop().await;
 }
+
+/// A stream resumed with the empty id a resync leaves starts from now, as
+/// a browser's does, rather than being answered with another resync.
+#[tokio::test]
+async fn a_stream_resumed_with_the_id_a_resync_leaves_is_not_resynced() {
+    let server = TestServer::start().await;
+    let mut owner = server.client();
+    owner.setup(&ada_setup()).await.unwrap();
+
+    let mut updates = owner
+        .stream(&StreamQuery::default(), Some(""))
+        .await
+        .unwrap();
+    stays(&mut updates).await;
+    server.stop().await;
+}

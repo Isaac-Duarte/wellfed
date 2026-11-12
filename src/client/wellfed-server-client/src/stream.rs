@@ -33,12 +33,16 @@ pub struct Update {
 
 impl Client {
     /// Follow the event stream, with the sample metrics `query` names,
-    /// resuming after `last_event_id` when given.
+    /// resuming after `last_event_id` when given. An empty id, the one a
+    /// `resync` leaves, resumes from nothing, as a browser's does: no
+    /// `Last-Event-ID` goes, so the server does not answer with another
+    /// resync.
     pub async fn stream(
         &self,
         query: &StreamQuery,
         last_event_id: Option<&str>,
     ) -> Result<Updates, Error> {
+        let last_event_id = last_event_id.filter(|id| !id.is_empty());
         let mut request = self.api_stream(Method::GET, "/stream").query(query).header(
             header::ACCEPT,
             HeaderValue::from_static("text/event-stream"),
