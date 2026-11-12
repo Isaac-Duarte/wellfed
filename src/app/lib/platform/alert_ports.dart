@@ -109,7 +109,7 @@ Future<void> catchUpRound({
 }) async {
   await Notices.sweep(dir);
   final PhoneNetwork here = await network();
-  for (final KnownFeeder feeder in feeders) {
+  await eachFeeder(feeders, (feeder) async {
     Future<CatchUp> attempt(Attempt attempt) => catchUpWith(
       dir: dir,
       key: key,
@@ -129,6 +129,21 @@ Future<void> catchUpRound({
       done = await attempt(Attempt.last(located: located));
     }
     await Notices.deliver(dir: dir, identity: feeder.identity, name: feeder.name, changes: done.changes);
+  });
+}
+
+/// Run `one` for each of `feeders` in turn. One that throws (the bridge's
+/// error, or its panic) is logged and the round goes on: another feeder's
+/// alerts must not wait on it. Its changes stay unconfirmed, so the next
+/// round hands them over again.
+@visibleForTesting
+Future<void> eachFeeder(List<KnownFeeder> feeders, Future<void> Function(KnownFeeder feeder) one) async {
+  for (final KnownFeeder feeder in feeders) {
+    try {
+      await one(feeder);
+    } on Object catch (error) {
+      debugPrint('the catch-up with ${feeder.name} failed this round: $error');
+    }
   }
 }
 
