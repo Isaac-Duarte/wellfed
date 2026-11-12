@@ -7,7 +7,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/clock/clock.dart';
 import 'package:wellfed/state/feeder/call_recording.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
-import 'package:wellfed/state/feeder/feeder_state.dart';
+import 'package:wellfed/state/feeder/meal_call.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/desktop.dart';
@@ -24,11 +24,8 @@ part 'meal_call_view.dart';
 class MealCallScreen extends StatefulWidget {
   const MealCallScreen({super.key, required this.feeder, required this.pick});
 
-  /// How long this screen waits for the session to come back, in all: the picker
-  /// can sit open long enough for it to end behind it. A reconnect can take
-  /// about 38 s: the longest retry (15 s), a look on the network (8 s), a connect
-  /// (5 s) and the feeder's welcome (10 s).
-  static const reachWait = Duration(seconds: 60);
+  /// How long a send waits for the session to come back ([MealCallFlow]).
+  static const Duration reachWait = MealCallFlow.reachWait;
 
   final FeederController feeder;
   final PickRecording pick;
@@ -38,10 +35,6 @@ class MealCallScreen extends StatefulWidget {
 }
 
 class _MealCallScreenState extends State<MealCallScreen> {
-  /// A feeder's upload on its way: it runs on after this screen is left, and a
-  /// screen opened meanwhile must not start another.
-  static final _sending = Expando<Future<FeederReply>>('meal call upload');
-
   CallInfo? _call;
   bool _reading = true;
   bool _busy = false;
@@ -76,7 +69,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
   @override
   void initState() {
     super.initState();
-    final Future<FeederReply>? sending = _sending[widget.feeder];
+    final Future<FeederReply>? sending = widget.feeder.mealCall.uploading;
     if (sending == null) {
       unawaited(_read());
     } else {
@@ -118,7 +111,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
       _reading = true;
     });
     final deadline = Deadline(MealCallScreen.reachWait);
-    final FeederReply? read = await _answeredRead(deadline);
+    final FeederReply? read = await widget.feeder.mealCall.answeredRead(deadline, () => mounted);
     deadline.cancel();
     if (!mounted) return;
 
@@ -211,9 +204,17 @@ class _MealCallScreenState extends State<MealCallScreen> {
   }
 
   /// Send `wav` once, and say what the feeder holds after; `unreached` if
-  /// the session never answered.
+  /// the session never answered. The rule is the feeder's [MealCallFlow].
   Future<void> _send(Uint8List wav, String unreached) async {
-    final FeederReply? reply = await _sendOnce(wav);
+    final FeederReply? reply = await widget.feeder.mealCall.send(
+      wav,
+      wanted: () => mounted,
+      read: (read) => setState(() {
+        _reaching = false;
+        if (read is FeederReply_Call) _call = read.call;
+      }),
+      reaching: () => setState(() => _reaching = true),
+    );
     if (!mounted) return;
     if (reply == null) {
       setState(() {
@@ -224,60 +225,6 @@ class _MealCallScreenState extends State<MealCallScreen> {
     } else {
       await _settle(reply);
     }
-  }
-
-  /// Send `wav` once the session answers; `null` if it does not in time. A
-  /// session that died behind the picker can still look open, so a read goes
-  /// first: it is free to get lost, and the upload then goes on a session seen
-  /// alive. The deadline covers the wait and never the upload. This wait
-  /// belongs to this screen only. A feed's path never waits, and an upload that
-  /// may have started is never sent again.
-  Future<FeederReply?> _sendOnce(Uint8List wav) async {
-    final FeederController feeder = widget.feeder;
-    final deadline = Deadline(MealCallScreen.reachWait);
-    try {
-      while (true) {
-        final FeederReply? read = await _answeredRead(deadline);
-        if (read == null || !mounted) return null;
-        setState(() {
-          _reaching = false;
-          if (read is FeederReply_Call) _call = read.call;
-        });
-
-        final Future<FeederReply> sending = feeder.ask(FeederRequest.uploadCall(wav: wav));
-        _sending[feeder] = sending;
-        final FeederReply reply = await sending;
-        _sending[feeder] = null;
-
-        // Only "not sent" means none of it went out, so only that waits.
-        if (reply is! FeederReply_NotSent) return reply;
-        if (!mounted) return null;
-        setState(() => _reaching = true);
-      }
-    } finally {
-      deadline.cancel();
-    }
-  }
-
-  /// The first read the feeder answers, waiting out a lost session; `null` once
-  /// `deadline` passes or the screen goes.
-  Future<FeederReply?> _answeredRead(Deadline deadline) async {
-    final FeederController feeder = widget.feeder;
-    while (!deadline.over) {
-      if (feeder.state.connection == Connection.online) {
-        final FeederReply? read = await Future.any<FeederReply?>([
-          feeder.ask(const FeederRequest.getCall()),
-          deadline.done.then((_) => null),
-        ]);
-        if (read == null || !mounted) return null;
-        if (read is! FeederReply_NotSent && read is! FeederReply_Unanswered) {
-          return read;
-        }
-      }
-      await deadline.beat();
-      if (!mounted) return null;
-    }
-    return null;
   }
 
   @override

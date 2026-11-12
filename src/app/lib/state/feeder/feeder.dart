@@ -15,6 +15,7 @@ import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
+import 'package:wellfed/state/feeder/meal_call.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/form_factor.dart';
 import 'package:wellfed/state/restore/restore.dart';
@@ -70,6 +71,10 @@ class FeederController extends ChangeNotifier {
   /// the run as it stands and can never start a second one.
   UpdateFlow get update => _update ??= UpdateFlow(this, _ports);
   UpdateFlow? _update;
+
+  /// This feeder's meal-call upload: it outlives the screen that starts it, so
+  /// a screen opened meanwhile waits for it and never starts a second one.
+  late final MealCallFlow mealCall = MealCallFlow(this);
 
   /// The phone holds a key of its own on this feeder, and keeps a session
   /// with it; without one the owner's server is its only way there.
