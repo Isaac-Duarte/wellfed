@@ -244,10 +244,32 @@ impl Provider {
         }
     }
 
-    fn now(&mut self) -> u32 {
-        self.clock
-            .read(sdk::systimer_ticks())
-            .unwrap_or(self.clock.millis)
+    /// The lease clock inside a lease. A clock that failed is a lease
+    /// fault: frozen time would never expire a phase.
+    fn now(&mut self) -> Option<u32> {
+        let now = self.clock.read(sdk::systimer_ticks());
+        if now.is_none() {
+            self.coord.trip(FlashFault::Clock);
+        }
+        now
+    }
+
+    /// The lease clock at a request. The clock is read only inside leases,
+    /// so a feeder that wrote nothing for half the counter's range (about
+    /// 18 hours) finds it latched invalid. With no lease running no phase
+    /// deadline is open, so the clock restarts from its last reading; time
+    /// spent idle is no lease's.
+    fn request_time(&mut self) -> Option<u32> {
+        let raw = sdk::systimer_ticks();
+        if let Some(now) = self.clock.read(raw) {
+            return Some(now);
+        }
+        if self.coord.phase() == FlashPhase::Idle && self.coord.fault() == FlashFault::Ok {
+            self.clock = TickClock::new(self.clock.ticks_per_second, raw, self.clock.millis)?;
+            return Some(self.clock.millis);
+        }
+        self.coord.trip(FlashFault::Clock);
+        None
     }
 
     fn fail(&mut self, stage: LeaseStage, reply: FlashReply) -> bool {
@@ -255,7 +277,13 @@ impl Provider {
             self.failure = Some((stage, reply));
             let elapsed_ms = match stage {
                 LeaseStage::Request => 0,
-                _ => self.now().wrapping_sub(self.coord.requested_at()),
+                _ => {
+                    let now = self
+                        .clock
+                        .read(sdk::systimer_ticks())
+                        .unwrap_or(self.clock.millis);
+                    now.wrapping_sub(self.coord.requested_at())
+                }
             };
             LeaseFault {
                 stage,
@@ -286,7 +314,9 @@ impl Provider {
     pub fn acquire<M: Mmio>(&mut self, ticket: &mut HookTicket) -> bool {
         sdk::disable_irq();
         self.masked_at = sdk::systimer_ticks();
-        let now = self.now();
+        let Some(now) = self.request_time() else {
+            return self.fail(LeaseStage::Request, FlashReply::Failed);
+        };
         let id = self.coord.token().lease + 1;
         let reply = self
             .coord
@@ -316,7 +346,9 @@ impl Provider {
             return self.fail(LeaseStage::Begin, FlashReply::Failed);
         }
 
-        let now = self.now();
+        let Some(now) = self.now() else {
+            return self.fail(LeaseStage::Parked, FlashReply::Failed);
+        };
         let reply = self.coord.parked(&token, FlashParty::Peer, now);
         if reply != FlashReply::Accepted {
             return self.fail(LeaseStage::Parked, reply);
@@ -345,7 +377,9 @@ impl Provider {
         // A parked KM0 runs nothing, so its heartbeat should not have moved
         // since the park; count the leases where it held still.
         self.frozen += u64::from(beat() == self.parked_beat);
-        let now = self.now();
+        let Some(now) = self.now() else {
+            return self.fail(LeaseStage::Complete, FlashReply::Failed);
+        };
         let reply = self.coord.complete(&token, FlashParty::Local, now);
         if reply != FlashReply::Accepted {
             return self.fail(LeaseStage::Complete, reply);
@@ -362,7 +396,9 @@ impl Provider {
             return self.fail(LeaseStage::End, FlashReply::Failed);
         }
 
-        let now = self.now();
+        let Some(now) = self.now() else {
+            return self.fail(LeaseStage::Released, FlashReply::Failed);
+        };
         let reply =
             self.coord
                 .released(&token, FlashParty::Peer, stopped::observe().verified(), now);
