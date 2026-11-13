@@ -164,6 +164,20 @@ fn state_on(device: &mut Device, bank: u8) -> wellfed_model::UpdateView {
     panic!("the feeder never answered from bank {bank}");
 }
 
+/// The floor once bank 1's trial build has confirmed and raised it to
+/// `version`: bank 1 answers before then, as the feeder's does during its
+/// trial's healthy window.
+fn confirmed_at(device: &mut Device, version: u32) -> u32 {
+    for _ in 0..600 {
+        let view = state_on(device, 1);
+        if view.min_version >= version {
+            return view.min_version;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("bank 1 never confirmed version {version}");
+}
+
 fn stopped(result: Result<(), DeviceError>) -> Option<UpdateStop> {
     match result {
         Err(DeviceError::Install(InstallError::Stopped(stop))) => Some(stop),
@@ -177,10 +191,10 @@ fn a_clean_push_and_a_dropped_one_both_activate() {
     let mut device = sim.device();
 
     push(&mut device, &Offer::new(2, 0x22), Fault::None).unwrap();
-    assert_eq!(state_on(&mut device, 1).min_version, 2);
+    assert_eq!(confirmed_at(&mut device, 2), 2);
 
     push(&mut device, &Offer::new(3, 0x33), Fault::Drop { at: 4100 }).unwrap();
-    assert_eq!(state_on(&mut device, 1).min_version, 3);
+    assert_eq!(confirmed_at(&mut device, 3), 3);
 }
 
 #[test]
@@ -246,7 +260,7 @@ fn a_cancel_after_a_give_way_lets_bank_0_take_another_manifest() {
         Ok(Answer::Update(_))
     ));
     push(&mut device, &Offer::new(3, 0x33), Fault::None).unwrap();
-    assert_eq!(state_on(&mut device, 1).min_version, 3);
+    assert_eq!(confirmed_at(&mut device, 3), 3);
 }
 
 mod garbled;
