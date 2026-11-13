@@ -55,10 +55,6 @@ fn inputs_change_the_stream() {
     assert_ne!(plain, first(Drbg::new(&[1; 32], &[3; 16], b"wellfed")));
     assert_ne!(plain, first(Drbg::new(&[1; 32], &[2; 16], b"other")));
 
-    let mut reseeded = base();
-    reseeded.reseed(&[9; 32], &[]);
-    assert_ne!(plain, reseeded.bytes().unwrap());
-
     let mut extra = base();
     let mut out = [0; 32];
     extra.generate(&mut out, b"additional").unwrap();

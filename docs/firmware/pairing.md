@@ -15,7 +15,7 @@ The pinned SDK exposes no hardware random generator (static analysis). `rtw_get_
 1. **Raw noise** (`wellfed-hal::entropy`): the low byte of a raw ADC conversion of the chip's internal supply, and SysTick's cycle count between 32 kHz timer edges ([measured](#measured-noise)).
 2. **Health tests** (SP 800-90B 4.4): a Repetition Count Test and an Adaptive Proportion Test (window 512) on every sample, with cutoffs from the claimed min-entropy at a false-alarm rate of 2^-20, as the standard's table gives. No output until 1,024 samples have passed; a failure latches until reboot.
 3. **Conditioning:** SHA-256 over tested samples. An input is ready once twice its 256 bits have been claimed.
-4. **HMAC-DRBG** (SP 800-90A, SHA-256), checked against NIST's CAVP vector, demanding a reseed after 65,536 requests.
+4. **HMAC-DRBG** (SP 800-90A, SHA-256), checked against NIST's CAVP vector. It is seeded once per boot and never reseeded, and stops past SP 800-90A's bound of 2^48 requests, which no boot reaches.
 5. **A seed across boots** (`store::seed`, sectors 7–8). Each boot instantiates the DRBG from fresh pool input with the stored seed as its nonce, and stores the next seed before anything draws. So a boot whose source repeats an earlier input never repeats an earlier stream.
 
 ## Measured noise
@@ -35,7 +35,7 @@ A million one-byte samples per source, streamed over the UART from a cold boot, 
 ## The generator in the firmware
 
 - **At boot,** `wellfed-hal::rng` starts in the runtime's startup task, before anything else uses the ADC. It fills the pool from 1,024 ADC samples (the start-up test, which also covers the claim), closes the ADC, and records `PLRNG1 boot result=ready samples=1024 first=<16 raw samples> check=<hash of one discarded block>`.
-- **After boot** the power monitor owns the ADC, so the generator never reseeds. Its reseed interval is SP 800-90A's 2^48 requests, which no boot reaches: a shorter one would stop every key, nonce and session once any client, or a stranger opening connections, had drawn past it. Every boot starts fresh. An open naming no live invite ends before the generator is drawn on.
+- **After boot** the power monitor owns the ADC, so there is no fresh input and the generator is never reseeded. Its request bound is SP 800-90A's 2^48, which no boot reaches: a shorter one would stop every key, nonce and session once any client, or a stranger opening connections, had drawn past it. Every boot starts fresh. An open naming no live invite ends before the generator is drawn on.
 - **Drawing.** Every task draws from the one DRBG with the scheduler paused. BLE setup's Noise ephemeral keys come from it alone; no session starts without it.
 - **The settings writer,** once armed, mixes the stored seed in and stores the next, opens the client store, and creates the identity secret on the first boot with a generator: `PLCFG1 keys seed=… mixed=… saved=… clients=… enrolled=… identity=…`. Its task's stack bound is 2,948 of 4,096 bytes, since the client store decodes only the winning slot's table and saves a table by reference.
 
