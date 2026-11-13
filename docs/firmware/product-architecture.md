@@ -185,7 +185,7 @@ A custom integration reaches each feeder one of two ways, chosen at setup. Direc
 
 - **Design:** the decisions above are the owner's, recorded on October 23, 2026, with the app-and-server path decided on October 26, the "not automatic" setup rule on October 24, the frontends, the dropped web UI, notifications and the Home Assistant route on October 30, that the server is not an installer on October 31, and Home Assistant's direct pairing on November 3.
 - **Observed:** a Wi-Fi association held every task, a priority-4 one included, for 0.45–0.72 s on October 25 ([resource budget](resource-budget.md#scheduling-gaps-across-wi-fi-rejoins)).
-- **Observed:** PA18 rests HIGH and reads LOW for about 1.17 s at each rotor mark, one mark per portion. During a 3 s empty drive, channel 4 read a scaled maximum of 166 and a mean of 64 ([motor pulse](motor-pulse.md)).
+- **Observed:** PA18 rests HIGH and reads LOW for about 1.17 s at each rotor mark, one mark per portion. During a 3 s empty drive, channel 4 read a scaled maximum of 166 and a mean of 64 ([motor and feeds](motor-and-feeds.md)).
 - **Observed:** the task-slot limit was found in another session's captures (`fw44-simon-01`).
 - **Modeled** (October 29): setup mode at an unprovisioned boot, starting only when it should and pairing over a simulated link (`wellfed-fw-feeder/tests/setup.rs`, `wellfed-feeder-sim/tests/setup.rs`). Not yet on hardware.
 - **Observed** (October 30): a consumer image on the research unit started setup mode by itself at boot, from bank 0, and both the app and the CLI paired through it and gave it Wi-Fi ([consumer installation](consumer-installation.md#evidence)). Setup mode's heap has been measured from bank 1 only.

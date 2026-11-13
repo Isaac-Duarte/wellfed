@@ -81,7 +81,7 @@ pub fn log_tail(after: Option<u32>, out: &mut [u8]) -> Option<wellfed_core::log_
 pub use wellfed_sdk_macros::{Record, start, task};
 
 /// What the start hook returns: whether the firmware's startup work
-/// still holds the KM0 flash handshake (an optics or pulse probe). The
+/// still holds the KM0 flash handshake (an optics probe). The
 /// runtime does not confirm the build, sample power or join Wi-Fi before
 /// that work ends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

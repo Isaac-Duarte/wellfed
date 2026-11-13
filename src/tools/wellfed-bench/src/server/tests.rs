@@ -178,7 +178,6 @@ esac
                 wellfed_bin: root.join("wellfed"),
             },
             root,
-            console: crate::server::Console::Terminal,
         }
     }
 
@@ -409,7 +408,7 @@ async fn the_server_parses_every_job_and_refuses_what_clap_refuses() {
         &["itest", "i1", "--rebuild"],
         &["itest", "i1", "--build", "--review", "r"],
         &["flash-prepare", "f1", "--target", "t", "--bank", "2"],
-        &["ota", "o1", "--build", "--variant", "pulse"],
+        &["ota", "o1", "--build", "--firmware", "motor"],
         &["serve"],
     ] {
         let refused = refusal(server.submit(words).await);
@@ -558,7 +557,7 @@ async fn with_every_asker_gone_the_server_keeps_serving() {
     let (asks, asked) = mpsc::unbounded_channel();
     let server = Running::start_asked(checkout.open(), Some(asked));
 
-    // As when the full-screen console's thread ends and its sender drops.
+    // As when the signal task ends and its sender drops.
     drop(asks);
     tokio::time::sleep(Duration::from_millis(300)).await;
 

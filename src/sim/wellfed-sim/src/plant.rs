@@ -1,5 +1,5 @@
 //! The feed mechanism as the bench measured it (physical, October 25, the
-//! first feeds through the owner; `docs/firmware/motor-pulse.md`): a
+//! first feeds through the owner; `docs/firmware/motor-and-feeds.md`): a
 //! three-compartment rotor whose feedback input, PA18, rests HIGH and reads
 //! LOW for about 1.2 s at each compartment's mark. A portion is one
 //! compartment, credited on the mark's rise, about 9.07 s of drive empty and

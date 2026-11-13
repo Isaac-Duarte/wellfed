@@ -4,20 +4,12 @@
 //! its write terminally: the feeder then holds a half-written bank that
 //! only another UART write recovers. So while the flash client holds the
 //! UART, nothing stops the server by accident:
-//! - the operator's Ctrl+C in a line console (SIGINT) stops only when
-//!   pressed twice within [`CONFIRM_WINDOW`] during a write or a loader
-//!   session;
-//! - the full-screen console's `q` or Ctrl+C during one stops only once
-//!   `y` follows within [`CONFIRM_WINDOW`], so no run of `q`s (a paste, a
-//!   held key) can confirm itself. The console sends the presses, and this
-//!   decides them against the UART as it is when each is handled, never as
-//!   the console last drew it;
+//! - the operator's Ctrl+C (SIGINT) stops only when pressed twice within
+//!   [`CONFIRM_WINDOW`] during a write or a loader session, decided against
+//!   the UART as it is when each press is handled;
 //! - SIGTERM and SIGHUP during a write are deferred, however many come:
 //!   the job finishes and the server then stops as usual. SIGKILL remains
-//!   the operator's last resort; the lease and orphan checks handle it;
-//! - a full-screen console that ends on its own (a terminal error, a
-//!   panic) stops nothing: its lines go back to the terminal, and Ctrl+C
-//!   or SIGTERM stops the server from then on.
+//!   the operator's last resort; the lease and orphan checks handle it.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -31,31 +23,20 @@ use crate::server::state::Store;
 /// How long a first press during a write waits for the second.
 pub const CONFIRM_WINDOW: Duration = Duration::from_secs(5);
 
-/// What a first press during a write shows, in the full-screen console's
-/// footer.
-pub const CONFIRM_PROMPT: &str = "A UART write is under way; press y within 5 s to cancel it";
-
 /// What asks the server to stop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ask {
-    /// SIGINT: the operator's Ctrl+C in a line console.
+    /// SIGINT: the operator's Ctrl+C.
     Interrupt,
     /// SIGTERM, or the terminal hanging up.
     Terminate,
-    /// The full-screen console's `q` or Ctrl+C.
-    Quit,
-    /// The full-screen console's `y`: the confirmation a [`Self::Quit`]
-    /// during a write asked for.
-    ConfirmQuit,
-    /// The full-screen console ended without being asked to.
-    ConsoleEnded,
 }
 
-/// What came of one press of Ctrl+C or `q`.
+/// What came of one press of Ctrl+C.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Press {
     Stop,
-    /// The first during a write: shown [`CONFIRM_PROMPT`], it stops nothing.
+    /// The first during a write: it asks for the second, and stops nothing.
     Confirm,
 }
 
@@ -113,17 +94,11 @@ type Say = Arc<dyn Fn(String) + Send + Sync>;
 pub struct Stopper {
     store: Store,
     say: Say,
-    /// Puts the console's lines back on the terminal.
-    console_ended: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl Stopper {
-    pub(crate) fn new(store: Store, say: Say, console_ended: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self {
-            store,
-            say,
-            console_ended,
-        }
+    pub(crate) fn new(store: Store, say: Say) -> Self {
+        Self { store, say }
     }
 
     /// Complete once the server should stop; give it to [`crate::server::Server::run`].
@@ -131,8 +106,6 @@ impl Stopper {
     /// stops only once a deferred stop is due.
     pub async fn until_stop(self, mut asks: UnboundedReceiver<Ask>) {
         let mut confirm = Confirm::default();
-        // When the console's `q` during a write asked for its `y`.
-        let mut console: Option<Instant> = None;
         // The job a signal's stop waits for, once a write is under way.
         let mut deferred: Option<Option<JobId>> = None;
         let mut states = self.store.subscribe();
@@ -155,30 +128,6 @@ impl Stopper {
                     let state = self.store.read();
                     let held = Held::of(&state.uart);
                     match ask {
-                        Ask::Quit if held == Held::Free => return,
-                        Ask::Quit => {
-                            console = Some(Instant::now());
-                            (self.say)(CONFIRM_PROMPT.into());
-                        }
-                        Ask::ConfirmQuit => {
-                            // The window runs from the `q`, not from the
-                            // write it was pressed during: a `y` inside it
-                            // stops a write that started since, which still
-                            // takes that deliberate `y`.
-                            let asked = console
-                                .take()
-                                .is_some_and(|at| at.elapsed() <= CONFIRM_WINDOW);
-                            if asked {
-                                return;
-                            }
-                        }
-                        Ask::ConsoleEnded => {
-                            (self.console_ended)();
-                            (self.say)(
-                                "The full-screen console ended; Ctrl+C or SIGTERM now stops the server"
-                                    .into(),
-                            );
-                        }
                         Ask::Interrupt => match confirm.press(held, Instant::now()) {
                             Press::Stop => return,
                             Press::Confirm => (self.say)(format!(
@@ -190,7 +139,7 @@ impl Stopper {
                             let running = running(&state);
                             if deferred.is_none() {
                                 deferred = Some(running);
-                                // The console and MCP show it, and
+                                // Status and MCP show it, and
                                 // the server takes no new job meanwhile.
                                 self.store.update(|state| {
                                     state.server.stopping = Some(DeferredStop {
@@ -267,25 +216,20 @@ mod tests {
     struct Fixture {
         store: Store,
         said: Arc<Mutex<Vec<String>>>,
-        fell_back: Arc<Mutex<bool>>,
         stopper: Stopper,
     }
 
     fn fixture() -> Fixture {
         let store = Store::new(crate::server::tests::idle_state());
         let said = Arc::new(Mutex::new(Vec::new()));
-        let fell_back = Arc::new(Mutex::new(false));
         let lines = Arc::clone(&said);
-        let back = Arc::clone(&fell_back);
         let stopper = Stopper::new(
             store.clone(),
             Arc::new(move |line| lines.lock().unwrap().push(line)),
-            Arc::new(move || *back.lock().unwrap() = true),
         );
         Fixture {
             store,
             said,
-            fell_back,
             stopper,
         }
     }
@@ -313,29 +257,6 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(150), stopping)
             .await
             .is_err()
-    }
-
-    #[tokio::test]
-    async fn a_console_that_ends_stops_nothing_and_its_lines_go_back_to_the_terminal() {
-        let Fixture {
-            said,
-            fell_back,
-            stopper,
-            ..
-        } = fixture();
-        let (asks, asked) = unbounded_channel();
-        let mut stopping = tokio::spawn(stopper.until_stop(asked));
-
-        asks.send(Ask::ConsoleEnded).unwrap();
-        drop(asks);
-
-        assert!(still_serving(&mut stopping).await);
-        assert!(*fell_back.lock().unwrap());
-        assert!(
-            said.lock().unwrap()[0].contains("Ctrl+C or SIGTERM now stops the server"),
-            "{said:?}"
-        );
-        stopping.abort();
     }
 
     #[tokio::test]
@@ -409,45 +330,9 @@ mod tests {
             .unwrap();
     }
 
-    /// The console's `q` during a write is decided against the UART as it
-    /// is when handled: no number of them stops, and only `y` after one
-    /// does.
     #[tokio::test]
-    async fn q_during_a_write_stops_only_once_y_confirms_it() {
-        let Fixture {
-            store,
-            said,
-            stopper,
-            ..
-        } = fixture();
-        store.update(|state| writing(state, 3));
-        let (asks, asked) = unbounded_channel();
-        let mut stopping = tokio::spawn(stopper.until_stop(asked));
-
-        // A `y` before any `q` confirms nothing.
-        asks.send(Ask::ConfirmQuit).unwrap();
-        for _ in 0..3 {
-            asks.send(Ask::Quit).unwrap();
-        }
-        assert!(still_serving(&mut stopping).await);
-        assert!(
-            said.lock()
-                .unwrap()
-                .iter()
-                .all(|line| line == CONFIRM_PROMPT),
-            "{said:?}"
-        );
-
-        asks.send(Ask::ConfirmQuit).unwrap();
-        tokio::time::timeout(Duration::from_secs(2), stopping)
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn with_no_write_any_signal_or_quit_stops_at_once() {
-        for ask in [Ask::Interrupt, Ask::Terminate, Ask::Quit] {
+    async fn with_no_write_any_signal_stops_at_once() {
+        for ask in [Ask::Interrupt, Ask::Terminate] {
             let Fixture { stopper, .. } = fixture();
             let (asks, asked) = unbounded_channel();
             let stopping = tokio::spawn(stopper.until_stop(asked));

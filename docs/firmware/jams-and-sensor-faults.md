@@ -4,7 +4,7 @@ A feed can go wrong: kibble jams the rotor, the mark sensor stops reporting, the
 
 Every case has run on hardware through fault-injection variants, and a taped outlet beam has been tried by hand. A jam with real food and a current reference are still open ([left for the owner](#left-for-the-owner)). Status is on the [roadmap](../roadmap.md), and the bench procedure is in [motor bench checks](motor-bench-checks.md#2-jams-and-sensor-faults).
 
-The limits are in `feeding::CONFIG` (`src/firmware/wellfed/feeder/src/feeding.rs`). The behavior is the controller's (`wellfed_core_feeder::feed::controller`) and the owner's (`wellfed_hal_feeder::owner`). The drive, its marks and its current are in [motor and feeds](motor-pulse.md#how-a-feed-drives-the-motor).
+The limits are in `feeding::CONFIG` (`src/firmware/wellfed/feeder/src/feeding.rs`). The behavior is the controller's (`wellfed_core_feeder::feed::controller`) and the owner's (`wellfed_hal_feeder::owner`). The drive, its marks and its current are in [motor and feeds](motor-and-feeds.md#how-a-feed-drives-the-motor).
 
 ## Jams: bounded reversals
 
@@ -94,7 +94,7 @@ An ADC conversion that never completes trips the board. The owner then holds the
 - The first boot is told from the KM4 boot count in backup register 3, counted once as each boot starts its call trail and cleared by power loss. It is read and never written, since no backup register bit is free to count recovery restarts (1 is rewritten at every arming, 2 is the crumb, 3 and 4 the cores' boot counts and the trial, 5 KM0's heartbeat). So a power cycle that has already had any reset, such as an update or a watchdog reset, gives up its recovery restart.
 - While a reset storm holds the feeder (`wellfed_sdk::held`), the owner stays closed and the loop never reaches the recovery.
 
-Only lost sensors are held. A lost supervisor (the timer, its clock, the owner's lease with the emitters on) or a board faulted by an output failure still lapses the beat into a watchdog reset. The supervision itself is in doubt there, and the reset is the independent path ([motor and feeds](motor-pulse.md#a-stalled-loop-and-a-failed-stop-during-a-feed)).
+Only lost sensors are held. A lost supervisor (the timer, its clock, the owner's lease with the emitters on) or a board faulted by an output failure still lapses the beat into a watchdog reset. The supervision itself is in doubt there, and the reset is the independent path ([motor and feeds](motor-and-feeds.md#a-stalled-loop-and-a-failed-stop-during-a-feed)).
 
 **The watchdog clock's bounds stay 24–54 kHz.** No stop here depends on the watchdog, since the controller and the TIM2 lease end every drive, and the wide bounds only make the fault variants' ceilings more conservative. Narrowing them would change the audited supervision constants for no stop that needs it.
 
@@ -153,7 +153,7 @@ Host coverage: `wellfed-hal-feeder`'s `tests/feed_faults.rs` (built with `--feat
   - A lost ADC held owner fault 7 with readiness blocked `Fault` and no reset in 180 s, cleared by a reboot (53).
   - Every feed ended stopped and durable, with no reset.
 - **In a long run.** Observed (October 27, the first sustained bench run): the `feed-jam` cases repeated as above (Done after one reversal, Overcurrent after three, Sensor). The `sensor-fault` cases gave `FeedbackTimeout`, `Outlet` with no drive, and `Sensor` with the owner going to its fault. The owner logs that fault state as the supervisor stops the drive, before the feed's result.
-- **Current figures.** Observed: drive means and peaks, the 333 surge on v166 and the 447 surge on the first pulse ([motor and feeds](motor-pulse.md#evidence)).
+- **Current figures.** Observed: drive means and peaks, the 333 surge on v166 and the 447 surge on the first pulse ([motor and feeds](motor-and-feeds.md#evidence)).
 - **Stock.** Recovered: stock reverses over 300 and ends the feed after the third reversal; it counts a jam-ended feed as done (record 2031) and pauses on a blocked outlet (record 2008).
 - **Watchdog clock.** Observed: nine watchdog resets on October 25 and 26 came 3.97–4.05 s after the last refresh, about 32.4–32.8 kHz, the 32.768 kHz SDM clock. The supervision probe's 43 kHz was most likely its 1 s stall reporting (recovered).
 - **Host and simulation.** Modeled: the controller rules above, and every jam position swept, single and double bowl (45,360 + 490 simulated runs clean).

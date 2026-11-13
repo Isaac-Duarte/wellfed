@@ -722,9 +722,9 @@ mod tests {
             "{error:?}"
         );
 
-        let mut pulse = m.clone();
-        pulse.variant = Some("pulse".into());
-        let error = identity(&pulse, &image).unwrap_err();
+        let mut varied = m.clone();
+        varied.variant = Some("stall".into());
+        let error = identity(&varied, &image).unwrap_err();
         assert!(
             matches!(&error, Error::Review(ReviewError::Identity { recorded: Some(recorded), .. }) if *recorded == derived),
             "{error:?}"

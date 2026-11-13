@@ -74,7 +74,7 @@ Each feed ends with `PLOWN1 marks id=N homed_ms=… outlet_breaks=… phase=at_m
 
 ## Evidence
 
-- **Rotor and marks.** Observed (October 25): three compartments over one drop hole (owner photos), marks 9.1 s apart empty and 9.8 s with food, the stop about 20 ms after the rise ([motor and feeds](motor-pulse.md#evidence)). Three 1-portion feeds with food saw 0, 4 and 8 outlet changes. Every owner feed turned clockwise.
+- **Rotor and marks.** Observed (October 25): three compartments over one drop hole (owner photos), marks 9.1 s apart empty and 9.8 s with food, the stop about 20 ms after the rise ([motor and feeds](motor-and-feeds.md#evidence)). Three 1-portion feeds with food saw 0, 4 and 8 outlet changes. Every owner feed turned clockwise.
 - **Stock crediting.** Recovered: ISR `0x0e01a55c` credits the first PA18 rise at least 5 s after the drive starts or the last portion. The double-bowl branch is recovered too, never run.
 - **Phase across a cancel.** Observed (October 26, v236, hopper empty, `phd-*` captures): feed 54 credited 1 and ended `at_mark`; feed 55, cancelled at 6.28 s, left `unknown`; feed 56 homed at 2,848 ms, completed 1 and ended `at_mark`.
 - **Phase across a power cut.** Observed (same session): feed 57, cut by relay 1 mid-drive and never resent, logged an uncertain `Fed` (outcome 5) and phase `unknown` at the next boot. Feed 58 homed at 3,301 ms, completed 1 and ended `at_mark`, and the Portions statistics read `homed 1`.

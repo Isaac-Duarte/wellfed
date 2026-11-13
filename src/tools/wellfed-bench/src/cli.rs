@@ -11,8 +11,6 @@
 //!   job again.
 //! - `answer JOB SEQ done|yes|no` answers the question a job
 //!   (`restore-stock`) asks, once.
-//! - `console` draws the server's full-screen console in another terminal
-//!   or over `ssh -t`. It only reads: `q` leaves, and the server runs on.
 //! - With no server running, only `status` (and `status --break-lease`)
 //!   runs: it reports the lease and reads the relay board itself, which is
 //!   the way back after a killed server. Every other command refuses and
@@ -21,14 +19,14 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use crate::{mcp, note, orphans, tui};
+use crate::{mcp, note, orphans};
 use clap::{Args, Parser, Subcommand};
 use tokio::sync::mpsc;
 use wellfed_bench::server::api::{Seed, SeededFrom};
 use wellfed_bench::server::stopping::Ask;
 use wellfed_bench::server::{
-    CONSOLE_QUEUE, Client, ClientError, ClockSync, Console, DeviceOptions, Followed, Interrupt,
-    JobCommand, JobOptions, Options, Server, ToolPaths,
+    Client, ClientError, ClockSync, DeviceOptions, Followed, Interrupt, JobCommand, JobOptions,
+    Options, Server, ToolPaths,
 };
 use wellfed_bench_formats::banks::{Bank, Check, Content, Entry};
 use wellfed_bench_formats::catalog;
@@ -89,13 +87,8 @@ enum Command {
         /// The job's number, as its command printed it.
         id: JobId,
     },
-    /// Watch the running server on a full-screen console of your own, here
-    /// or through `ssh -t HOST wellfed-bench console --root ROOT`. It only
-    /// reads: `q` or Ctrl+C leaves, and the server and its job run on. It
-    /// shows job output, not the lines only the server's own console prints.
-    Console,
-    /// Answer the question a running job asks (`restore-stock`), as the console
-    /// shows it with its number.
+    /// Answer the question a running job asks (`restore-stock`), as the
+    /// job's output shows it with its number.
     Answer {
         /// The job's number.
         job: JobId,
@@ -108,7 +101,7 @@ enum Command {
     /// holds, and whether the feeder's own reports agree.
     Banks(BanksArgs),
     /// Record the operator's step, next steps, timers and evidence on the
-    /// running server, for the console.
+    /// running server, for `status` and the MCP tools.
     Note(note::NoteArgs),
     /// Serve the bench's tools to an agent over the Model Context Protocol
     /// on stdio, as a client of the running server: status, waits, notes,
@@ -162,10 +155,6 @@ struct ServeArgs {
     /// invalid or off by more than 2 s.
     #[arg(long)]
     no_clock_sync: bool,
-    /// Print the console as plain lines rather than the full-screen view,
-    /// which is also what happens without a terminal.
-    #[arg(long)]
-    plain: bool,
 }
 
 #[derive(Debug, Args)]
@@ -237,7 +226,6 @@ fn run(cli: Cli, argv: &[String]) -> anyhow::Result<u8> {
         }),
         Command::Note(args) => runtime.block_on(note::note(&Client::new(&root), &root, args)),
         Command::Mcp => runtime.block_on(mcp::serve(&root)),
-        Command::Console => tui::attached::run(&root, &runtime),
         Command::Attach { id } => runtime.block_on(async {
             let mut interrupts = interrupts()?;
             follow(&Client::new(&root), id, &mut interrupts).await
@@ -337,20 +325,10 @@ fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> an
         build_bin: args.build_bin.clone().unwrap_or_else(default_build_bin),
         wellfed_bin: args.wellfed_bin.clone().unwrap_or_else(default_wellfed_bin),
     };
-    // The full-screen console takes the console's lines from a channel;
-    // without a terminal, they go to stdout as they come.
-    let screen = tui::available(args.plain);
-    let (console, lines) = if screen {
-        let (send, lines) = std::sync::mpsc::sync_channel(CONSOLE_QUEUE);
-        (Console::Lines(send), Some(lines))
-    } else {
-        (Console::Terminal, None)
-    };
     let options = Options {
         root: root.to_path_buf(),
         device: args.device.into(),
         tools: tools.clone(),
-        console,
     };
     // The `wellfed` CLI finds the server through this, from any checkout or
     // key file; without it, it could open a session beside the server's.
@@ -382,16 +360,11 @@ fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> an
         .map(|(channel, relay)| format!("{channel} {}", on_off(relay.on)))
         .collect();
     server.say(format!(
-        "Bench server on {}, holding the bench lease; relays {} ({} stops it)",
+        "Bench server on {}, holding the bench lease; relays {} (Ctrl+C stops it)",
         server.socket().display(),
         relays.join(", "),
-        if screen { "q or Ctrl+C" } else { "Ctrl+C" }
     ));
     let (asks, asked) = tokio::sync::mpsc::unbounded_channel();
-    let console = match lines {
-        Some(lines) => Some(tui::Tui::start(server.store(), lines, asks.clone())?),
-        None => None,
-    };
     let stopper = server.stopper();
     let served = runtime.block_on(async {
         signals(asks)?;
@@ -401,9 +374,6 @@ fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> an
             .map_err(anyhow::Error::from)
     });
 
-    if let Some(console) = console {
-        console.finish()?;
-    }
     served?;
     Ok(0)
 }

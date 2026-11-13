@@ -4,7 +4,7 @@ name = "wellfed-probes"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Experimental PLAF103 bench probes (optics, buttons, power inputs, motor pulse, speaker records) shared by the Wellfed firmwares"
+description = "Experimental PLAF103 bench probes (optics, buttons, power inputs, speaker records) shared by the Wellfed firmwares"
 publish.workspace = true
 
 [features]

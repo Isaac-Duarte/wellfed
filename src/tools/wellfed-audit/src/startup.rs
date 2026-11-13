@@ -133,7 +133,7 @@ const TRIAL_RESET_MARK: &[u8] = b"PLTRL1 test=reset watchdog=";
 const OPTICS_MARK: &[u8] = b"PLOPT1 start created=";
 /// fw13-optics-v2: 5 s windows.
 const OPTICS_PLAN2_MARK: &[u8] = b" plan=2\r\n";
-/// Single supervised pulse follows the LED probe.
+/// The retired motor pulse probe's start record: no image may carry it.
 const MOTION_MARK: &[u8] = b"PLMOT1 start created=";
 /// The KM0 printf format of the before-KM4 (v3) shared-pad record, as linked.
 const POWER_V3_FORMAT: &[u8] = b"after_pad=%08x ext_a=%08x,%08x,%08x,%08x";
@@ -843,10 +843,6 @@ fn led_before_pass(rx: &[u8]) -> bool {
 fn probe_failed(rx: &[u8], probe: Probe) -> bool {
     pattern!(ADC_STATUS, r"PLADC1 (?:clock|open) [ -~]*status=fail\r\n");
     pattern!(
-        MOTION_UNOPENED,
-        r"PLMOT1 open board=[01] ready=[01] attached=[01] events=[01] capture=0 ms="
-    );
-    pattern!(
         OPTICS_UNOPENED,
         r"PLOPT1 open board=[01] ready=[01] attached=[01] events=[01] inputs=0 ms="
     );
@@ -857,10 +853,6 @@ fn probe_failed(rx: &[u8], probe: Probe) -> bool {
     };
 
     match probe {
-        Probe::Motion => {
-            any("PLMOT1", &["start created=0", "timeout ms=", "error "])
-                || MOTION_UNOPENED.is_match(rx)
-        }
         Probe::Optics => {
             any("PLOPT1", &["start created=0", "timeout ms=", "error "])
                 || OPTICS_UNOPENED.is_match(rx)

@@ -1,6 +1,6 @@
 # Motor and feeds
 
-One motor turns the feeder's rotor, and only the [feeding owner](../glossary.md) may drive it. Every feed, from the app, the CLI or the Dispense button, is a request to that owner. This page explains what bounds a drive, what a feed records, what a power cut mid-feed does, and the fault-injection variants that prove the motor stops when the loop or the stop path fails. It ends with the first-pulse probe that brought the motor up. The bench procedures are in [motor bench checks](motor-bench-checks.md).
+One motor turns the feeder's rotor, and only the [feeding owner](../glossary.md) may drive it. Every feed, from the app, the CLI or the Dispense button, is a request to that owner. This page explains what bounds a drive, what a feed records, what a power cut mid-feed does, and the fault-injection variants that prove the motor stops when the loop or the stop path fails. The bench procedures are in [motor bench checks](motor-bench-checks.md).
 
 Feeds through the owner, stopping on time, and surviving a power cut without feeding twice are observed on our unit.
 
@@ -102,40 +102,6 @@ Besides the usual `PLOWN1` lines, and the runtime's `PLSUP1 stop … owner_age= 
 | `PLINJ1 stall id= end ms=` | The loop came back from its spin. After a long stall it means the watchdog did not reset the board: a failure |
 | `PLINJ1 stop id= cancel=` | The hold is armed and the feed cancelled |
 | `PLINJ1 hold lifted= skipped=` | The hold ended by itself, having skipped that many STOP writes. After a long hold it is a failure too |
-
-## The first-pulse probe
-
-Before feeds existed, one supervised 100 ms pulse brought up the motor. `wellfed-build build --device plaf103 --profile firstboot --firmware bringup --variant pulse` builds it. The manifest records `startup_motion_policy: fw16-pulse-v1` (declared in `src/firmware/wellfed/bringup/Cargo.toml`) and `variant: pulse`, and the build gets its own build ID. The builder refuses a motion policy outside a variant, and the bring-up firmware's other images start no motor task, so nothing else can drive the motor. The bench never builds it.
-
-After startup, the pulse probe (`src/sdk/wellfed-probes/src/pulse.rs`):
-
-1. Skips everything unless this is a clean cold boot: reset reason 0 and its backup-register marker clear.
-2. Opens the board (motor STOP, emitters OFF, sensors), binds a fresh flash authority to the KM0 peer, and opens the supervisor: TIM2 at 10 ms, owner and motor lease 200 ms. It enables feedback capture.
-3. Logs `armed`, then waits 60 s, renewing its owner lease every 2 ms, so the operator can get ready.
-4. Sets the marker, then drives once: `DRIVE_0` (PA13 HIGH, PA14 LOW) for 100 ms, then STOP. It counts PA18 edges and samples motor current on ADC channel 4 every 10 ms.
-5. Watches 1 s more, then verifies STOP: the gate state, the motor pins, the supervisor closing and the stopped-output readback.
-
-The timer interrupt enforces the motor gate's 200 ms command lease and the owner lease, so both hold even if the task stalls. A host test stalls the task mid-pulse and requires STOP within the lease. A drive applies only through `Events::motor`, which needs a running timer, a live owner and enabled capture.
-
-> [!WARNING]
-> Every clean cold boot pulses once. The marker survives a watchdog reset but not power loss, so the image must not stay installed after the session.
-
-Records (`PLMOT1`), in order:
-
-- `start created=`
-- `open board= ready= attached= events= capture= ms=`
-- `armed delay_ms= pulse_ms= lease_ms=`
-- `pulse dir= applied_ms= on_ms= edges= first_edge_ms= current=min,max,mean samples=`
-- `after ms= edges= current=… stopped=`
-- `done`
-
-A `skip`, `timeout` or `error stage= fault= stopped=` ends the probe stopped.
-
-Guards:
-
-- `wellfed-bench flash-prepare` and `flash-execute` refuse a target whose manifest names a motion policy unless `--attended-motion` is given.
-- The startup audit binds `fw16-pulse-v1` to the `PLMOT1 start created=` format both ways, and refuses motion and optics policies together.
-- The electrical output checks and the current channel were prerequisites.
 
 ## Evidence
 

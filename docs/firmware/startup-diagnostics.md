@@ -92,14 +92,14 @@ Every record starts with a fixed prefix. The ones a current firmware prints, wit
 | `PLCFG1` | Settings writer | Settings, key and Wi-Fi changes ([device API](device-api.md)) |
 | `PLTIM1` | Clock | Syncs and the carry across restarts ([clock](clock.md)) |
 | `PLAPI1` | Device API | Sessions and resources ([device API](device-api.md)) |
-| `PLOWN1` | Feeding owner | Feeds, states and faults ([motor and feeds](motor-pulse.md)) |
+| `PLOWN1` | Feeding owner | Feeds, states and faults ([motor and feeds](motor-and-feeds.md)) |
 | `PLINJ1` | Fault-injection variants | What a variant injected ([jams and sensor faults](jams-and-sensor-faults.md#fault-injection-variants)) |
 | `PLBAT2` | The loop | Battery mode and the brownout hold ([power](power.md#battery-mode)) |
 | `PLBLE1`, `PLSET1` | Bluetooth setup mode | The BLE stack and setup mode ([Bluetooth](bluetooth.md)) |
 | `PLIND1` | Indicator service | Panel lights ([indicators](indicators.md)) |
 | `PLAUD1` | Speaker | Tunes and the meal call ([audio](audio.md)) |
 
-The bring-up probes' records (`PLADC1`, `PLOPT1`, `PLMOT1`, `PLGAP1` and the rest) are in [bring-up probes](bring-up-probes.md) and the guide pages that run them.
+The bring-up probes' records (`PLADC1`, `PLOPT1`, `PLGAP1` and the rest) are in [bring-up probes](bring-up-probes.md) and the guide pages that run them.
 
 - **`PLPWR1` policies.** `before-km4-v1` requires one intact record before any KM4 report; `v2` adds the LDO trim, and `v3` the raw Port A input after each supply step. An image linking the `v3` record format is refused unless its manifest declares `before-km4-v3`.
 - **`PLIO1`.** `read-only-v2` adds KM4's view of the shared-pad supply control and the raw Port A input word.

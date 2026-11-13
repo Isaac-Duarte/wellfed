@@ -10,8 +10,6 @@ mod adc;
 mod buttons;
 #[cfg(feature = "optics")]
 mod optics;
-#[cfg(feature = "pulse")]
-mod pulse;
 #[cfg(feature = "speaker")]
 mod speaker;
 #[cfg(feature = "stall")]
@@ -25,7 +23,6 @@ const _: () = {
         cfg!(feature = "buttons"),
         cfg!(feature = "adc"),
         cfg!(feature = "speaker"),
-        cfg!(feature = "pulse"),
         cfg!(feature = "stall"),
         cfg!(feature = "fail"),
     ];
@@ -46,7 +43,6 @@ const _: () = {
     feature = "buttons",
     feature = "adc",
     feature = "speaker",
-    feature = "pulse",
     feature = "stall"
 )))]
 #[wellfed_sdk::start(runtime = wellfed_feeder_runtime)]

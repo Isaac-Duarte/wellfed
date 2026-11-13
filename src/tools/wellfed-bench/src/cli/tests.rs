@@ -130,11 +130,11 @@ fn ota_build_takes_a_no_motion_image_and_config() {
 
 #[test]
 fn ota_refuses_motion_and_mixed_sources() {
-    for motion in [&["--variant", "pulse"], &["--firmware", "motor"]] {
-        let args = [&["--build"][..], motion].concat();
-        let error = ota(&args).err().unwrap().to_string();
-        assert!(error.contains("motion builds stay manual"), "{error}");
-    }
+    let error = ota(&["--build", "--firmware", "motor"])
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("motion builds stay manual"), "{error}");
 
     // --firmware and --variant without --build are refused by the
     // command.
@@ -349,14 +349,7 @@ fn a_left_install_is_listed_and_a_renamed_flash_client_is_refused() {
     let flash_bin = renamed.display().to_string();
     let error = run_in(
         root.path(),
-        &[
-            "serve",
-            "--device",
-            "plaf103",
-            "--plain",
-            "--flash-bin",
-            &flash_bin,
-        ],
+        &["serve", "--device", "plaf103", "--flash-bin", &flash_bin],
     )
     .unwrap_err();
     assert_matches!(

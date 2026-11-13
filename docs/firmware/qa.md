@@ -69,7 +69,7 @@ Buttons, indicators and the tune are graded by what you answered: a lit light an
 
 ## Next steps
 
-- One probe at a time, for as long as a session needs: the `bringup` firmware's variants (`optics`, `buttons`, `adc`, `speaker`, `pulse`, and the `stall` and `fail` trial images). QA steps the same probes from `src/sdk/wellfed-probes`, for a bounded time each.
+- One probe at a time, for as long as a session needs: the `bringup` firmware's variants (`optics`, `buttons`, `adc`, `speaker`, and the `stall` and `fail` trial images). QA steps the same probes from `src/sdk/wellfed-probes`, for a bounded time each.
 - What the startup records mean: [startup and diagnostics](startup-diagnostics.md).
 
 ## Evidence

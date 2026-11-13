@@ -212,7 +212,7 @@ fn reboot_and_time_sync_reach_the_device() {
     let mut rig = Rig::new();
     let mut owner = open(&mut rig, OWNER);
     let sync = model::TimeSync {
-        unix_ms: 1_700_000_000_000,
+        unix_ms: 1_792_674_000_000,
         offset_s: 0,
         next_change_s: 0,
         next_offset_s: 0,

@@ -13,7 +13,7 @@ These hold here and on the two companion pages.
 - **Relay 1 is feeder power and the kill switch.** All four relays are normally open, so a relay board that loses USB leaves the feeder off and the strap released ([wiring](#wiring)).
 - **One tool drives the bench at a time.** The server holds the [bench lease](bench-server.md#bench-lease) for its life and runs one job at a time; a second is refused, not queued. A killed server leaves a lease the next one refuses to override.
 - **Unattended motion follows the owner's rules:** hopper empty, the D cells out so relay 1 is the kill switch, nobody at the bench, the bench lease free, and at most 3 portions a feed. Only `feed-writes` and `sustained`, under `--feeds`, ask the feeder to feed ([sustained run](integration-suite.md#sustained-run)).
-- **Motion builds stay manual.** The bench never offers a startup-motion build, refuses the motor pulse under `--build`, and needs `--attended-motion` for any image whose manifest names a motion policy.
+- **Motion builds stay manual.** The bench never offers a startup-motion build, refuses the motor firmware under `--build`, and needs `--attended-motion` for any image whose manifest names a motion policy.
 - **A halt cuts relay 1 and leaves it off.** A person looks before power returns.
 - **The bench never changes routing or the firewall.** Stock reaches a broker only where a setup frame named it, and an install needs TCP 1883 and 8088 from the hotspot admitted by the owner's permanent rule ([the bench host's firewall](../../development/stock-server.md#the-bench-hosts-firewall)).
 - **Don't rebuild `wellfed-flash` between prepare and execute.** A plan binds the SHA-256 of the binary that prepared it.
@@ -65,7 +65,7 @@ The older relay bench added four switches to a bare FT232R adapter's [UART wirin
 
 3. Check the bench without a server: `target/release/wellfed-bench status`. You should see the lease (free), no server, the four relay states and both ports present.
 
-4. Start the server in a terminal of its own: `target/release/wellfed-bench serve --device plaf103`. You should see the socket, the lease and the four relays. It runs until `q` or Ctrl+C in its [console](bench-server.md#the-console). Run every other command from a second terminal.
+4. Start the server in a terminal of its own: `target/release/wellfed-bench serve --device plaf103`. You should see the socket, the lease and the four relays. It prints its [console](bench-server.md#the-console) there and runs until Ctrl+C. Run every other command from a second terminal.
 
 Run the bench from the repository root, or pass `--root`. A job resolves the paths you give it (`--target`, say) from the server's directory, so start the server at the root and give paths relative to it. The bench never links the flash client, so rebuilding the bench alone does not affect a plan.
 
@@ -85,10 +85,9 @@ Dependencies run down the table. Their shared shapes (the bench config, progress
 
 | Command | Effect |
 | --- | --- |
-| `serve` | The [bench server](bench-server.md), in the foreground until `q`, Ctrl+C, SIGTERM or a hangup, drawn as a full-screen console |
+| `serve` | The [bench server](bench-server.md), in the foreground until Ctrl+C, SIGTERM or a hangup, printing its console as lines |
 | `status` | The [bench lease](bench-server.md#bench-lease), then the server's job, children, UART, feeder session, bank ledger and relays; with no server, the relay board itself. A server silent for 5 s is reported so, after the lease. `--break-lease` first frees a lease a killed server left |
 | `attach ID` | Follow job `ID` again, from its first kept line |
-| `console` | A read-only [full-screen console](bench-server.md#watching-from-another-terminal) of the running server, here or over `ssh -t`; `q` leaves it, and the server runs on |
 | `answer JOB SEQ done\|yes\|no` | Answer question `SEQ` of job `JOB` ([restore as a job](#restore-as-a-job)), once |
 | `banks` | The [bank ledger](bench-server.md#the-bank-ledger). `--seed DUMP_SESSION` starts it, from that dump's inspection or, when it names no build, from `--bank N --build HASH` |
 | `note` | The [operator's notes](bench-server.md#the-operators-notes): the step under way, the next steps, timers and evidence by card |
@@ -204,9 +203,9 @@ target/release/wellfed-bench ota stock-01 --review private/verification/<stock r
 
 **Choosing a build.** `--firmware qa|optics|buttons|adc|speaker|blink|trial|feeder` picks the build (default `qa`), and `--variant` a variant of it: `stall|fail` with `--firmware trial`; `entropy|owner-stall|held-stall|gap-probe|feed-stall|stop-fail|owner-fail|feed-jam|sensor-fault|buzzer|twin|virtual-panel` with `--firmware feeder`.
 
-- `feed-stall`, `stop-fail`, `feed-jam` and `sensor-fault` move the motor only for a feed request, like the feeder, and inject a fault into it ([motor pulse](../../firmware/motor-pulse.md), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md)). `owner-fail` never opens its feeding owner, so its trial must fall back. `owner-stall` resets about 3 minutes into every boot once confirmed, a reset storm ([OTA design](../../firmware/ota-design.md)).
+- `feed-stall`, `stop-fail`, `feed-jam` and `sensor-fault` move the motor only for a feed request, like the feeder, and inject a fault into it ([motor and feeds](../../firmware/motor-and-feeds.md), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md)). `owner-fail` never opens its feeding owner, so its trial must fall back. `owner-stall` resets about 3 minutes into every boot once confirmed, a reset storm ([OTA design](../../firmware/ota-design.md)).
 - The bring-up areas and the trial images are variants of one `bringup` firmware: `--firmware optics` builds `wellfed-build build --device plaf103 --firmware bringup --variant optics` (likewise `buttons`, `adc` and `speaker`), `--firmware trial --variant stall` builds `--firmware bringup --variant stall`, and `--firmware trial` alone its normal image. `qa`, `blink` and `feeder` pass through unchanged.
-- The motor pulse (`--firmware motor`, `--variant pulse`) is refused: motion builds stay manual, and go through `--review` with `--attended-motion`.
+- The motor firmware (`--firmware motor`) is refused: motion builds stay manual, and go through `--review` with `--attended-motion`.
 
 **Refused before anything runs:** an existing `NAME-review`, `--firmware` or `--variant` without `--build`, `--variant` without the firmware that declares it, and `--build` with `--review`.
 
@@ -278,7 +277,7 @@ target/release/wellfed-bench restore-stock --key private/ota-key.json
 ```
 
 - The server closes its feeder session for the whole job, and starts the tool once its state shows that, since the tool opens its own sessions only then.
-- The tool writes each question as one stdout line (`--prompts lines`), and goes on without waiting for the Dispense answer, since the feeder times its own window. The question goes into the live state (`prompt`: the job, its number, its words and the answers it takes) and the console, and waits for `wellfed-bench answer JOB SEQ done|yes|no` or `job_answer`.
+- The tool writes each question as one stdout line (`--prompts lines`), and goes on without waiting for the Dispense answer, since the feeder times its own window. The question goes into the live state (`prompt`: the job, its number, its words and the answers it takes) and the job's output, and waits for `wellfed-bench answer JOB SEQ done|yes|no` or `job_answer`.
 - An answer is taken only for the current question, by its number, and only of its kind (done for an instruction, yes or no for a question). Anything else is refused, never held, since the tool reads answers in order with no number of their own. The job takes the question away before stopping the tool, so an answer the server took (202) reaches the tool unless it has exited.
 - With `--virtual-panel`, the job answers `press-dispense` itself on a running [virtual panel](#virtual-panel) build, from its own thread: one 150 ms Dispense press, as a `wellfed-flash read press` child under the server's lease, recorded in the job's output. Nothing unlocks the panel first, since a waiting enrollment takes Dispense on a locked panel too, and the server's capture stops for every job, so the press has the port. The job answers done only once the press echoed and released; otherwise it stops the tool and ends naming the press, pressing nothing again. Just before the press it looks again, and presses nothing once stopping or after the tool exits. The press adds no step row of its own. Without the flag the prompt waits for a person at the panel, who answers done after pressing.
 - The tool's stderr is the job's output. A stdout line that is no question stops the tool, and when it exits with an error, the last error it printed is the job's.

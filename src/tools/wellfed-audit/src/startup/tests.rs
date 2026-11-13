@@ -633,49 +633,82 @@ fn probes_bound_but_not_graded_are_listed_and_their_failures_fail() {
     let plain = serde_json::to_value(f.verify(60.0).unwrap()).unwrap();
     assert_eq!(plain["probes_not_classified"], json!([]));
 
-    f.set("startup_motion_policy", json!("fw16-pulse-v1"));
+    f.set("startup_optics_policy", json!("fw13-optics-v1"));
     f.image(
         &[
             &b"container "[..],
             format!("PLFW1 start build={id} ").as_bytes(),
-            b"PLLED1 begin PLMOT1 start created=",
+            b"PLLED1 begin PLOPT1 start created=",
         ]
         .concat(),
     );
-    let motion = |records: &str| [&led[..], records.as_bytes()].concat();
+    let optics = |records: &str| [&led[..], records.as_bytes()].concat();
 
     f.capture(
-        &[(0.0, motion("PLMOT1 start created=1\r\nPLMOT1 done\r\n"))],
+        &[(
+            0.0,
+            optics("PLOPT1 start created=1\r\nPLOPT1 done windows=4\r\n"),
+        )],
         120.0,
     );
     let passed = serde_json::to_value(f.verify(60.0).unwrap()).unwrap();
     assert_eq!(passed["outcome"], "pass");
-    assert_eq!(passed["probes_not_classified"], json!(["Motion"]));
+    assert_eq!(passed["probes_not_classified"], json!(["Optics"]));
     assert!(passed.get("probe_failed").is_none());
 
     for failure in [
-        "PLMOT1 start created=0\r\n",
-        "PLMOT1 start created=1\r\nPLMOT1 timeout ms=1000\r\n",
-        "PLMOT1 start created=1\r\nPLMOT1 error stage=drive fault=current stopped=1\r\n",
+        "PLOPT1 start created=0\r\n",
+        "PLOPT1 start created=1\r\nPLOPT1 timeout ms=1000\r\n",
+        "PLOPT1 start created=1\r\nPLOPT1 error kind=stall n=1 fault=0 stall=-\r\n",
     ] {
-        f.capture(&[(0.0, motion(failure))], 120.0);
+        f.capture(&[(0.0, optics(failure))], 120.0);
         let failed = serde_json::to_value(f.verify(60.0).unwrap()).unwrap();
         assert_eq!(
             (&failed["outcome"], &failed["probe_failed"]),
-            (&json!("probe_failed"), &json!("Motion")),
+            (&json!("probe_failed"), &json!("Optics")),
             "{failure}"
         );
     }
 }
 
+/// The motor pulse probe is retired: a manifest declaring its motion policy,
+/// or an image carrying its records, is refused before any record is read.
+#[test]
+fn the_retired_motion_policy_and_its_records_are_refused() {
+    let mut f = Fixture::new(json!({"source": "f".repeat(64)}));
+    let id = f.identity.clone();
+    f.set("startup_led_policy", json!("bounded-probe-v1"));
+    let image = [
+        &b"container "[..],
+        format!("PLFW1 start build={id} ").as_bytes(),
+        b"PLLED1 begin",
+    ]
+    .concat();
+    f.image(&image);
+    let led = [&boot(&id)[..], &led_full(1).concat()].concat();
+    f.capture(&[(0.0, led)], 120.0);
+    assert_eq!(outcome(&f.verify(60.0).unwrap()), "pass");
+
+    f.image(&[&image[..], b" PLMOT1 start created="].concat());
+    assert_eq!(
+        policy_refusal(f.verify(60.0)),
+        mismatch(Declaration::Motion)
+    );
+
+    f.image(&image);
+    f.set("startup_motion_policy", json!("fw16-pulse-v1"));
+    assert_eq!(
+        policy_refusal(f.verify(60.0)),
+        PolicyError::Unknown {
+            policy: Policy::Motion,
+            declared: "fw16-pulse-v1".into(),
+        }
+    );
+}
+
 #[test]
 fn each_graded_probe_knows_its_failure_records() {
     for (probe, failed, fine) in [
-        (
-            Probe::Motion,
-            "PLMOT1 open board=1 ready=0 attached=0 events=0 capture=0 ms=0\r\n",
-            "PLMOT1 open board=1 ready=1 attached=1 events=1 capture=1 ms=12\r\n",
-        ),
         (
             Probe::Optics,
             "PLOPT1 open board=1 ready=1 attached=1 events=1 inputs=0 ms=12\r\n",

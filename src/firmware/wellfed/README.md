@@ -40,7 +40,6 @@ Its two tasks are its loop task and the button service. Its test variants (`entr
 | `buttons` | The panel buttons: raw lines and the SDK button service's gestures (press, holds, chords), logged for as long as the build runs |
 | `adc` | The power inputs, read-only, sampled once a second |
 | `speaker` | The startup chime and the tune player |
-| `pulse` | The first supervised motor pulse |
 | `stall`, `fail` | Trial images that KM0 must roll back |
 
 A bring-up area is a variant, so it builds only with the `firstboot` profile:
@@ -128,12 +127,12 @@ Not yet guaranteed: the runtime does not watch a firmware task's liveness in gen
 
 The startup audit checks each policy against the image's markers, so declare only the policies the image really carries.
 
-A variant whose policies name a `motion` policy drives the motor, and `list` marks it `"motion": true`. Motion builds stay a manual, attended step. Only a variant may name one: the builder refuses a motion policy on the normal image. That is because only first-boot builds record policies, and a motion image must always show its policy to the bench's attended-motion gate.
+A variant whose policies name a `motion` policy drives the motor, and `list` marks it `"motion": true`. Motion builds stay a manual, attended step. Only a variant may name one: the builder refuses a motion policy on the normal image. That is because only first-boot builds record policies, and a motion image must always show its policy to the bench's attended-motion gate. No image declares one now: the startup audit knows no motion policy, and refuses one (and the retired pulse probe's `PLMOT1` records) until a new motion probe adds its version.
 
 ### The start hook and tasks
 
 - `#[start]` runs once in the normal role, after the startup checks passed. It must create tasks and return, never block. `runtime` names the crate whose record stores the runtime calls, which links it.
-- It returns `Startup::Done`, or `Startup::Pending` while startup work holds the KM0 flash handshake (an optics or pulse probe). The task holding it then reports through `wellfed_sdk::startup_done`, as `bringup`'s optics task does with `startup_done(step.delay_ms == 0)` on each step. Until then the runtime does not confirm the build, sample power or join Wi-Fi.
+- It returns `Startup::Done`, or `Startup::Pending` while startup work holds the KM0 flash handshake (an optics probe). The task holding it then reports through `wellfed_sdk::startup_done`, as `bringup`'s optics task does with `startup_done(step.delay_ms == 0)` on each step. Until then the runtime does not confirm the build, sample power or join Wi-Fi.
 - `#[task]` turns a step function into a `wellfed_sdk::Task` of the same name, for `spawn`. The step returns the milliseconds to sleep before the next step, or zero to end the task. Keep each task's state in a `wellfed_sdk::Slot` static owned by that task.
 
 ### Hardware

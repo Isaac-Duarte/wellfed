@@ -27,7 +27,7 @@ use crate::server::lock;
 use crate::server::state::JobLog;
 
 /// Lines the console may fall behind by before it loses some.
-pub const CONSOLE_QUEUE: usize = 4096;
+const CONSOLE_QUEUE: usize = 4096;
 /// The longest [`Output::sync`] waits for the pump to catch up.
 const SYNC_WAIT: Duration = Duration::from_secs(2);
 /// What the pump consumes rather than forwards: [`Output::sync`]'s mark,
@@ -59,24 +59,12 @@ pub(crate) struct Output {
 /// What [`Output::tap`] calls with each job line.
 pub(crate) type Tap = Box<dyn Fn(&str) + Send + Sync>;
 
-/// Where the server's console lines go: its own messages and every job's
-/// output.
-#[derive(Debug, Clone)]
-pub enum Console {
-    /// The terminal `serve` started on, a line at a time.
-    Terminal,
-    /// A channel the caller draws from, such as a full-screen console. A
-    /// full channel loses lines, as a terminal that falls behind does: the
-    /// job's stream still has them.
-    Lines(SyncSender<String>),
-}
-
 /// Installed once per process: descriptors 1 and 2 are process-wide.
 static INSTALLED: Mutex<Option<Arc<Output>>> = Mutex::new(None);
 
 /// Point descriptors 1 and 2 at the pump, once; later calls get the same
 /// pipe.
-pub(crate) fn install(console: Console) -> io::Result<Arc<Output>> {
+pub(crate) fn install() -> io::Result<Arc<Output>> {
     let mut installed = lock(&INSTALLED);
     if let Some(output) = &*installed
         && !output.closed.load(Ordering::SeqCst)
@@ -84,26 +72,20 @@ pub(crate) fn install(console: Console) -> io::Result<Arc<Output>> {
         return Ok(Arc::clone(output));
     }
 
-    let output = attach(console)?;
+    let output = attach()?;
     *installed = Some(Arc::clone(&output));
     Ok(output)
 }
 
 /// Point descriptors 1 and 2 at a new pipe and start its pump.
-fn attach(console: Console) -> io::Result<Arc<Output>> {
+fn attach() -> io::Result<Arc<Output>> {
     // Duplicates are close-on-exec, so no child holds the terminal.
     let terminal = io::stdout().as_fd().try_clone_to_owned()?;
-    let (send, console_thread) = match console {
-        Console::Terminal => {
-            let console = File::from(terminal.try_clone()?);
-            let (send, queue) = mpsc::sync_channel(CONSOLE_QUEUE);
-            let thread = std::thread::Builder::new()
-                .name("console".into())
-                .spawn(move || write_console(console, &queue))?;
-            (send, Some(thread))
-        }
-        Console::Lines(send) => (send, None),
-    };
+    let console = File::from(terminal.try_clone()?);
+    let (send, queue) = mpsc::sync_channel(CONSOLE_QUEUE);
+    let console_thread = std::thread::Builder::new()
+        .name("console".into())
+        .spawn(move || write_console(console, &queue))?;
     let (reader, writer) = io::pipe()?;
     io::stdout().flush()?;
     rustix::stdio::dup2_stdout(&writer)?;
@@ -111,7 +93,7 @@ fn attach(console: Console) -> io::Result<Arc<Output>> {
 
     let output = Arc::new(Output {
         console: Mutex::new(Some(send)),
-        console_thread: Mutex::new(console_thread),
+        console_thread: Mutex::new(Some(console_thread)),
         terminal,
         route: Mutex::new(None),
         tap: Mutex::new(None),
@@ -218,29 +200,6 @@ impl Output {
         drop(lock(&self.console).take());
         if let Some(thread) = lock(&self.console_thread).take() {
             let _ = thread.join();
-        }
-    }
-
-    /// The console's lines on the terminal `serve` started on, a line at a
-    /// time, from here on: for a full-screen console that ended on its own.
-    /// Nothing changes once the output is closed or already on the
-    /// terminal.
-    pub(crate) fn console_to_terminal(&self) {
-        let mut thread = lock(&self.console_thread);
-        if thread.is_some() || self.closed.load(Ordering::SeqCst) {
-            return;
-        }
-        let Ok(terminal) = self.terminal.try_clone() else {
-            return;
-        };
-        let console = File::from(terminal);
-        let (send, queue) = mpsc::sync_channel(CONSOLE_QUEUE);
-        let spawned = std::thread::Builder::new()
-            .name("console".into())
-            .spawn(move || write_console(console, &queue));
-        if let Ok(spawned) = spawned {
-            *thread = Some(spawned);
-            *lock(&self.console) = Some(send);
         }
     }
 
@@ -386,7 +345,7 @@ mod tests {
             return;
         }
         let written = on_a_terminal(|| {
-            let output = attach(Console::Terminal).unwrap();
+            let output = attach().unwrap();
             print("a job's last line");
             output.say("the server's last line".into());
 
@@ -411,7 +370,7 @@ mod tests {
             return;
         }
         let written = on_a_terminal(|| {
-            let output = attach(Console::Terminal).unwrap();
+            let output = attach().unwrap();
 
             output.pump_stopped();
             print("straight to the terminal");
@@ -429,7 +388,7 @@ mod tests {
             return;
         }
         let written = on_a_terminal(|| {
-            let output = attach(Console::Terminal).unwrap();
+            let output = attach().unwrap();
             let started = Instant::now();
 
             write!(io::stdout(), "half a line").unwrap();

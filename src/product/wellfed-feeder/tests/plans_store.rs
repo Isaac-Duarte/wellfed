@@ -75,6 +75,32 @@ fn nothing_until_saved_then_alternate_and_reload() {
     assert_eq!(r.plans, second);
 }
 
+/// The newest valid record wins whichever unit holds it, and a newest that
+/// no longer reads falls back to the other, which the next save then
+/// replaces in the broken unit.
+#[test]
+fn the_newest_valid_record_wins_and_a_broken_one_falls_back() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    for at_s in [1_000, 2_000, 3_000] {
+        assert!(s.save(&breakfast(at_s)));
+    }
+    let r = open(&mut f);
+    assert_eq!((r.status, r.sequence, r.slot), (PlansStatus::Loaded, 3, 0));
+    assert_eq!(r.plans, breakfast(3_000));
+
+    // Unit 0's record, its checksum no longer matching.
+    f.bytes[0][20] ^= 1;
+    let mut r = open(&mut f);
+    assert_eq!((r.status, r.sequence, r.slot), (PlansStatus::Loaded, 2, 1));
+    assert_eq!(r.plans, breakfast(2_000));
+
+    assert!(r.save(&breakfast(4_000)));
+    let r = open(&mut f);
+    assert_eq!((r.sequence, r.slot), (3, 0));
+    assert_eq!(r.plans, breakfast(4_000));
+}
+
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
     let new = Plans::default()

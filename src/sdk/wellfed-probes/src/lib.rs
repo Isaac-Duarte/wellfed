@@ -4,9 +4,8 @@
 //!
 //! A probe is a step function over its own state; the firmware owns the task
 //! that steps it (the build's stack audit finds tasks only in the firmware's
-//! own sources). Each probe reads back stopped motor outputs; only the motor
-//! pulse probe ever drives the motor, and only the bring-up firmware's `pulse`
-//! variant runs it.
+//! own sources). Each probe reads back stopped motor outputs, and none
+//! drives the motor.
 //! The settings store's stress probe lives with the store it stresses
 //! (`wellfed-feeder-runtime`).
 //!
@@ -16,7 +15,6 @@
 pub mod adc;
 pub mod buttons;
 pub mod optics;
-pub mod pulse;
 pub mod speaker;
 
 use wellfed_hal::sdk;

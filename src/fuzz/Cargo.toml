@@ -20,7 +20,7 @@ libfuzzer-sys = "0.4.13"
 ed25519-dalek = { version = "2", default-features = false }
 wellfed-core = { path = "../sdk/wellfed-core" }
 wellfed-signed = { path = "../sdk/wellfed-signed" }
-wellfed-device-api = { path = "../product/wellfed-device-api" }
+wellfed-device-api = { path = "../product/wellfed-device-api", features = ["fake"] }
 wellfed-proto = { path = "../product/wellfed-proto" }
 wellfed-session = { path = "../sdk/wellfed-session" }
 

@@ -18,7 +18,6 @@ use rustix::process::{Pid, Signal, kill_process};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use tokio::runtime::Runtime;
 use wellfed_bench::server::Client;
-use wellfed_bench::server::stopping::CONFIRM_PROMPT;
 use wellfed_bench_formats::live::{BenchState, CancelState, Phase, Uart};
 use wellfed_relay::{FakeBoard, Link};
 
@@ -164,7 +163,7 @@ impl Serving {
             assert!(Instant::now() < deadline, "no server:\n{}", screen.text());
             std::thread::sleep(Duration::from_millis(20));
         };
-        screen.until_shown("q or Ctrl+C stops the server");
+        screen.until_shown("(Ctrl+C stops it)");
 
         let pid = Pid::from_raw(i32::try_from(state.server.pid).unwrap()).unwrap();
         Self {
@@ -182,22 +181,6 @@ impl Serving {
 
     fn state(&self) -> BenchState {
         self.runtime.block_on(self.client.state()).unwrap()
-    }
-
-    /// The server's threads called `console`: the screen's, then, once it
-    /// has gone, also the writer that puts the lines back on the terminal.
-    fn console_threads(&self) -> Vec<String> {
-        let tasks = format!("/proc/{}/task", self.pid.as_raw_nonzero());
-        fs::read_dir(tasks)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter(|task| {
-                fs::read_to_string(task.path().join("comm"))
-                    .is_ok_and(|comm| comm.trim_end() == "console")
-            })
-            .map(|task| task.file_name().display().to_string())
-            .collect()
     }
 
     /// Each thread's name, state, syscall and where it waits, for a failure.
@@ -263,32 +246,20 @@ impl Serving {
         }
     }
 
-    /// Hang up, with the screen's thread known first, and see that thread
-    /// end rather than spin on the dead terminal, and the process stay quiet.
-    fn hang_up_and_assert_console_gone_and_quiet(&mut self) {
-        let screen_threads = self.console_threads();
-        assert!(!screen_threads.is_empty(), "{}", self.threads());
-
+    /// Hang up, and see the process stay quiet rather than spin on the
+    /// dead terminal: its console's lines still come, and go nowhere.
+    fn hang_up_and_assert_quiet(&mut self) {
         self.screen.hang_up();
-
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while self
-            .console_threads()
-            .iter()
-            .any(|tid| screen_threads.contains(tid))
-        {
-            assert!(
-                Instant::now() < deadline,
-                "the console thread outlived its terminal: {}",
-                self.threads()
-            );
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        std::thread::sleep(Duration::from_millis(300));
 
         let before = self.cpu_ticks();
         std::thread::sleep(Duration::from_secs(2));
         let spent = self.cpu_ticks() - before;
-        assert!(spent < 50, "{spent} ticks of CPU in 2 s after the hangup");
+        assert!(
+            spent < 50,
+            "{spent} ticks of CPU in 2 s after the hangup: {}",
+            self.threads()
+        );
     }
 
     /// The write runs on, untouched, under a server that still answers.
@@ -348,11 +319,11 @@ fn with_no_write_under_way_sighup_stops_the_server_and_its_process_ends() {
 }
 
 #[test]
-fn sighup_during_a_write_ends_the_console_and_the_server_stops_only_after_the_write() {
+fn sighup_during_a_write_stops_the_server_only_after_the_write() {
     let mut serving = Serving::start(Under::Leading);
     serving.start_write();
 
-    serving.hang_up_and_assert_console_gone_and_quiet();
+    serving.hang_up_and_assert_quiet();
 
     let state = serving.assert_write_untouched();
     assert!(state.server.stopping.is_some(), "{:?}", state.server);
@@ -363,11 +334,11 @@ fn sighup_during_a_write_ends_the_console_and_the_server_stops_only_after_the_wr
 }
 
 #[test]
-fn a_hangup_with_no_signal_ends_the_console_and_the_server_serves_until_sigterm() {
+fn a_hangup_with_no_signal_leaves_the_server_serving_until_sigterm() {
     let mut serving = Serving::start(Under::Shell);
     serving.start_write();
 
-    serving.hang_up_and_assert_console_gone_and_quiet();
+    serving.hang_up_and_assert_quiet();
 
     let state = serving.assert_write_untouched();
     assert!(state.server.stopping.is_none(), "{:?}", state.server);
@@ -381,40 +352,8 @@ fn a_hangup_with_no_signal_ends_the_console_and_the_server_serves_until_sigterm(
     }
     assert_eq!(serving.state().server.phase, Phase::Serving);
 
-    // The screen's end left nothing of its own in the job's log.
-    let log = serving.root().join("private/bench-status/jobs/1-u1.log");
-    let log = fs::read_to_string(log).unwrap();
-    assert!(!log.contains("cursor"), "{log}");
-
     kill_process(serving.pid, Signal::TERM).unwrap();
 
     serving.assert_released(Duration::from_secs(15));
     assert_eq!(serving.exit_code(), "0");
-}
-
-#[test]
-fn a_first_q_during_a_write_shows_the_prompt_and_touches_nothing() {
-    let mut serving = Serving::start(Under::Leading);
-    serving.start_write();
-
-    serving.screen.press("q");
-
-    serving.screen.until_shown(CONFIRM_PROMPT);
-    // More `q`s, in one read as a held key or a paste sends them, confirm
-    // nothing.
-    serving.screen.press("qq");
-    std::thread::sleep(Duration::from_millis(300));
-    let state = serving.assert_write_untouched();
-    assert!(state.server.stopping.is_none(), "{:?}", state.server);
-
-    fs::write(serving.root().join("finish"), "").unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while serving.state().job.unwrap().end.is_none() {
-        assert!(Instant::now() < deadline, "the job did not end");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-
-    kill_process(serving.pid, Signal::TERM).unwrap();
-
-    serving.assert_released(Duration::from_secs(15));
 }

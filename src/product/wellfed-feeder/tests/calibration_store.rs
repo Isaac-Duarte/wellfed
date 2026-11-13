@@ -42,6 +42,38 @@ fn nothing_until_saved_then_alternate_and_reload() {
     assert_eq!(open(&mut f).calibration, Calibration::default());
 }
 
+/// The newest valid record wins whichever unit holds it, and a newest that
+/// no longer reads falls back to the other, which the next save then
+/// replaces in the broken unit.
+#[test]
+fn the_newest_valid_record_wins_and_a_broken_one_falls_back() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    for mg in [9_000, 9_500, 10_000] {
+        assert!(s.save(&weighed(mg)));
+    }
+    let r = open(&mut f);
+    assert_eq!(
+        (r.status, r.generation, r.slot),
+        (CalibrationStatus::Loaded, 3, 0)
+    );
+    assert_eq!(r.calibration, weighed(10_000));
+
+    // Unit 0's record, its checksum no longer matching.
+    f.bytes[0][20] ^= 1;
+    let mut r = open(&mut f);
+    assert_eq!(
+        (r.status, r.generation, r.slot),
+        (CalibrationStatus::Loaded, 2, 1)
+    );
+    assert_eq!(r.calibration, weighed(9_500));
+
+    assert!(r.save(&weighed(10_500)));
+    let r = open(&mut f);
+    assert_eq!((r.generation, r.slot), (3, 0));
+    assert_eq!(r.calibration, weighed(10_500));
+}
+
 #[test]
 fn a_weight_outside_the_limits_is_never_written() {
     let mut f = FakeJournalFlash::with_unit(UNIT);

@@ -148,6 +148,39 @@ fn zero_until_saved_then_alternate_and_reload() {
     assert_eq!(open(&mut f).totals, totals(3));
 }
 
+/// The newest valid record wins whichever unit holds it, and a newest that
+/// no longer reads falls back to the other, which the next save then
+/// replaces in the broken unit.
+#[test]
+fn the_newest_valid_record_wins_and_a_broken_one_falls_back() {
+    let mut f = FakeJournalFlash::with_unit(512);
+    let mut s = open(&mut f);
+    for n in 1..=3 {
+        assert!(s.save(&totals(n), Settled));
+    }
+    let r = open(&mut f);
+    assert_eq!(
+        (r.status, r.generation, r.slot),
+        (StatsStatus::Loaded, 3, 0)
+    );
+    assert_eq!(r.totals, totals(3));
+
+    // Unit 0's record, its checksum no longer matching.
+    f.bytes[0][20] ^= 1;
+    let mut r = open(&mut f);
+    assert_eq!(
+        (r.status, r.generation, r.slot),
+        (StatsStatus::Loaded, 2, 1)
+    );
+    assert_eq!(r.totals, totals(2));
+
+    assert_eq!(r.next_slot(), 0);
+    assert!(r.save(&totals(4), Settled));
+    let r = open(&mut f);
+    assert_eq!((r.generation, r.slot), (3, 0));
+    assert_eq!(r.totals, totals(4));
+}
+
 #[test]
 fn power_cut_at_every_mutation_keeps_old_or_new_and_stays_writable() {
     for (order, history) in ORDERS

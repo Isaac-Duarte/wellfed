@@ -135,7 +135,7 @@ The simulator runs the real Rust feeding owner, controller and ports against fak
 
 ### The modeled mechanism
 
-The plant (`wellfed_sim::plant`) is the mechanism measured on real feeds ([motor pulse](../firmware/motor-pulse.md)):
+The plant (`wellfed_sim::plant`) is the mechanism measured on real feeds ([motor and feeds](../firmware/motor-and-feeds.md)):
 
 - The mark input, PA18, rests HIGH and reads LOW for about 1.19 s at each mark.
 - The next portion's mark comes about 9.07 s of drive after the last; with food in the hopper, about 9.8 s.

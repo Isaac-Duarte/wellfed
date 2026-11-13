@@ -38,7 +38,7 @@ use crate::server::capture::CaptureService;
 use crate::server::feeder::{DeviceOptions, Feeder, Task};
 use crate::server::jobs::{self, Bed, JobError, Ran, Run, ToolPaths};
 use crate::server::notes::Notes;
-use crate::server::output::{self, Console, Output};
+use crate::server::output::{self, Output};
 use crate::server::routes;
 use crate::server::state::{JobLog, Logs, Store};
 use crate::server::stopping::Stopper;
@@ -103,7 +103,6 @@ pub struct Options {
     /// writer and build is told.
     pub device: wellfed_proto::device::Model,
     pub tools: ToolPaths,
-    pub console: Console,
 }
 
 /// An opened server: lease taken, board open and queried, socket bound.
@@ -197,7 +196,7 @@ impl Server {
         } else {
             Some(publish(&device.rendezvous, &options.root, &socket)?)
         };
-        let output = output::install(options.console.clone()).map_err(ServeError::Output)?;
+        let output = output::install().map_err(ServeError::Output)?;
         // A job's own output may carry what a timer waits for: during a
         // UART job the capture and the session are both stopped.
         let tapped = notes.clone();
@@ -237,7 +236,7 @@ impl Server {
         })
     }
 
-    /// The live state, for a reader in this process (the console).
+    /// The live state, for a reader in this process.
     pub fn store(&self) -> Store {
         self.shared.store.clone()
     }
@@ -258,15 +257,12 @@ impl Server {
     }
 
     /// What decides when [`Self::run`] stops, from the asks it is given:
-    /// signals and the full-screen console's keys, held back during a
-    /// write (`stopping`).
+    /// the operator's signals, held back during a write (`stopping`).
     pub fn stopper(&self) -> Stopper {
         let said = Arc::clone(&self.shared.output);
-        let ended = Arc::clone(&self.shared.output);
         Stopper::new(
             self.shared.store.clone(),
             Arc::new(move |line| said.say(line)),
-            Arc::new(move || ended.console_to_terminal()),
         )
     }
 

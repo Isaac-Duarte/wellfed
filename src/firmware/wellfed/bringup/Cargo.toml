@@ -20,7 +20,6 @@ optics = []
 buttons = []
 adc = []
 speaker = []
-pulse = []
 stall = []
 fail = ["wellfed-sdk/trial-fail"]
 
@@ -34,10 +33,9 @@ workspace = true
 
 # What wellfed-build reads. The normal image adds nothing; each variant
 # brings up one area. Variants apply to first-boot builds only, which always
-# record their policies in the manifest: the startup audit checks the optics,
-# ADC and motion policies against the image's markers and fails a startup on
-# their failure records, and the bench's attended-motion gate sees the pulse's
-# motion policy on every image that can drive the motor.
+# record their policies in the manifest: the startup audit checks the optics
+# and ADC policies against the image's markers and fails a startup on their
+# failure records. No variant drives the motor.
 [package.metadata.wellfed]
 devices = ["plaf103"]
 
@@ -54,10 +52,6 @@ policies = { adc = "fw14-adc-v2" }
 
 [package.metadata.wellfed.variants.speaker]
 summary = "The startup chime and the tune player"
-
-[package.metadata.wellfed.variants.pulse]
-summary = "The first supervised motor pulse, once per cold boot"
-policies = { motion = "fw16-pulse-v1" }
 
 [package.metadata.wellfed.variants.stall]
 summary = "Boot-trial test: stops feeding the watchdog right after startup, before it could confirm"
