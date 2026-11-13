@@ -14,7 +14,6 @@ use serde_json::Value;
 use wellfed_formats::kept;
 
 use crate::api::error::{BridgeError, ErrorKind};
-pub use crate::api::server_views::{KnownServer, ListedFeeder, ServerLink};
 use crate::stored::{self, Opened, Versioned};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,10 +22,6 @@ pub struct AppStore {
     pub label: String,
     pub feeders: Vec<KnownFeeder>,
     pub appearance: Appearance,
-    /// The owner's server this phone logged in to, if any, with the
-    /// feeders it last listed. Its token's secret is in secure storage, as
-    /// the client secret is.
-    pub server: Option<KnownServer>,
 }
 
 /// `wellfed.json` as it is on disk: the store, and the file it replaced when
@@ -44,31 +39,13 @@ impl Versioned for AppFile {
 
     /// The store's types cross the bridge as they are, so what a newer
     /// minor added to them is carried here: the store, each feeder by its
-    /// identity, the server while it is the same one (its link, its
-    /// account and each listed feeder by id), and the notice while it names
-    /// the same file.
+    /// identity, and the notice while it names the same file.
     fn carry(old: &Value, new: &mut Value) {
         kept::carry(old, new);
         if let Some((old, new)) = kept::both(old, new, "/store") {
             kept::carry(old, new);
             for (old, new) in kept::pairs(old, new, "/feeders", &["/identity"]) {
                 kept::carry(old, new);
-            }
-            if let Some((old, new)) = kept::both(old, new, "/server")
-                && kept::same(old, new, &["/link/url"])
-            {
-                kept::carry(old, new);
-                if let Some((old, new)) = kept::both(old, new, "/link") {
-                    kept::carry(old, new);
-                }
-                if let Some((old, new)) = kept::both(old, new, "/account")
-                    && kept::same(old, new, &["/id"])
-                {
-                    kept::carry(old, new);
-                }
-                for (old, new) in kept::pairs(old, new, "/feeders", &["/id"]) {
-                    kept::carry(old, new);
-                }
             }
         }
         carry_set_aside(old, new);
@@ -88,7 +65,7 @@ pub(crate) fn carry_set_aside(old: &Value, new: &mut Value) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StoreKind {
-    /// `wellfed.json`: the feeders this phone knows and its server.
+    /// `wellfed.json`: the feeders this phone knows.
     App,
     /// `pending.json`: the writes that may have run.
     Pending,
@@ -277,7 +254,6 @@ pub fn identity_bytes(hex: &str) -> Result<Vec<u8>, BridgeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::server_views::{ServerAccount, ServerRole};
     use crate::stored::Found;
 
     /// Every field of the file set, each once.
@@ -292,25 +268,6 @@ mod tests {
                     manual_address: Some("10.8.0.7:4747".into()),
                 }],
                 appearance: Appearance::Dark,
-                server: Some(KnownServer {
-                    link: ServerLink {
-                        url: "https://192.0.2.9:8443/".into(),
-                        key: "cd".repeat(32),
-                        user: "ada".into(),
-                        token_id: "01920000-0000-7000-8000-000000000001".into(),
-                    },
-                    feeders: vec![ListedFeeder {
-                        id: "01920000-0000-7000-8000-000000000002".into(),
-                        identity: "ab".repeat(32),
-                        name: "kitchen".into(),
-                    }],
-                    account: Some(ServerAccount {
-                        id: "01920000-0000-7000-8000-000000000003".into(),
-                        name: "ada".into(),
-                        role: ServerRole::Member,
-                        expires_ms: Some(6_000),
-                    }),
-                }),
             },
             set_aside: Some(SetAside {
                 kind: StoreKind::App,
@@ -353,10 +310,6 @@ mod tests {
             "/data",
             "/data/store",
             "/data/store/feeders/0",
-            "/data/store/server",
-            "/data/store/server/link",
-            "/data/store/server/feeders/0",
-            "/data/store/server/account",
             "/data/set_aside",
         ];
         for place in places {

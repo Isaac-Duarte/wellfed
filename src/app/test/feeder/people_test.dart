@@ -116,18 +116,6 @@ void main() {
       expect(session.requests.last, const FeederRequest.listClients());
     });
 
-    testWidgets('a create settled as made after its answer was lost asks for another', (tester) async {
-      final (_, FakeSession session) = await _people(tester);
-      session.replies.add(const FeederReply.done());
-
-      await tapIn(tester, find.text('Invite someone'));
-      await tapIn(tester, find.text('Create invite'));
-
-      expect(find.text("The invite was made, but its code didn't come back. Make another."), findsOneWidget);
-      expect(find.text('Owner invite'), findsNothing);
-      expect(find.text('Member invite'), findsNothing);
-    });
-
     testWidgets('a create refused or unanswered shows no invite', (tester) async {
       final (_, FakeSession session) = await _people(tester);
       session.replies

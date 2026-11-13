@@ -1,7 +1,7 @@
-//! The writes pinned to a path, kept in the app's private storage beside its
-//! own file (`pending.json` next to `wellfed.json`), so the pin outlives the
-//! app: a write that may have run is resolved on the path it went on after a
-//! restart too. It holds no secrets and no body: a feed keeps its portions,
+//! The writes that may have run, kept in the app's private storage beside
+//! its own file (`pending.json` next to `wellfed.json`), so the pin outlives
+//! the app: a write that may have run is still resolved, by reading the
+//! feeder's history, after a restart. It holds no secrets and no body: a feed keeps its portions,
 //! which its `Fed` event is matched by, and any other write only its kind.
 //! Nothing is ever sent again from a pin.
 //!
@@ -15,12 +15,10 @@
 //! dies. What the fenced router had pinned is on disk, and the new one
 //! reads it back as uncertain. What the fenced router learns after the
 //! fence (an answer it heard, a settlement) is lost with it, and its pins
-//! stay uncertain in the new one until their own path settles them. Only the
+//! stay uncertain in the new one until the history settles them. Only the
 //! app's UI isolate opens a router: one opened in a background isolate
 //! would fence the UI's.
 //!
-//! The file also keeps the adoptions whose answer was lost, so the grace
-//! before a second owner invite outlives a restart.
 //! Written atomically, so a crash keeps the old or the new file. Every write
 //! is written down before it is sent, so a phone that stops mid-send finds
 //! it pinned at its next start. The file is versioned ([`crate::stored`]).
@@ -43,47 +41,30 @@ use uuid::Uuid;
 use wellfed_formats::kept;
 
 use crate::api::error::{BridgeError, ErrorKind};
-use crate::api::router::{PendingWrite, RoutePath, WriteKind};
+use crate::api::router::{PendingWrite, WriteKind};
 use crate::api::store::{self, SetAside, StoreKind};
 use crate::route::core::Book;
 use crate::stored::{self, Opened, Versioned};
 
-/// A write pinned to the path it went on, from its confirmation to its
-/// result.
+/// A write, pinned from its confirmation to its result.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PinRecord {
     /// Its one idempotency key, from the owner's confirmation on.
     pub(crate) key: Uuid,
     /// The feeder's identity, lowercase hex.
     pub(crate) feeder: String,
-    /// The server's id for the feeder.
-    pub(crate) server_feeder: Option<Uuid>,
-    /// Whose journal a write pinned to the server is in.
-    pub(crate) server: Option<ServerMark>,
-    pub(crate) path: RoutePath,
     pub(crate) write: PinnedWrite,
     pub(crate) state: PinState,
     /// When the owner confirmed it, by the phone's clock (ms).
     pub(crate) sent_ms: i64,
-    /// When its attempt last ended (ms).
-    pub(crate) tried_ms: i64,
-    /// A direct feed: the newest event the session knew when it went, so
-    /// its `Fed` is one after it; `None` when the session knew none.
+    /// The newest event the session knew when it went, so a feed's `Fed`
+    /// is one after it; `None` when the session knew none.
     pub(crate) mark: Option<u64>,
-    /// Direct feeds this phone saw the feeder reserve, running when it went
-    /// or started since: none of their ends is this one's.
+    /// Feeds this phone saw the feeder reserve, running when it went or
+    /// started since: none of their ends is this one's.
     pub(crate) excluded: Vec<u32>,
     /// When the owner put it away: it no longer holds a new feed back.
     pub(crate) acknowledged_ms: Option<i64>,
-}
-
-/// The journal a server write went to: the phone token it went under (a
-/// token belongs to one server) and the account. A journal is trusted to
-/// lack a write only when it is the same one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ServerMark {
-    pub(crate) token: Uuid,
-    pub(crate) user: Uuid,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,7 +105,6 @@ impl PinRecord {
         PendingWrite {
             key: self.key.to_string(),
             feeder: self.feeder.clone(),
-            path: self.path,
             kind: self.write.kind(),
             portions: match self.write {
                 PinnedWrite::Feed { portions } => Some(portions),
@@ -136,7 +116,7 @@ impl PinRecord {
     }
 }
 
-/// A direct feed this phone saw the feeder reserve, until its `Fed` is read
+/// A feed this phone saw the feeder reserve, until its `Fed` is read
 /// or the week it is kept passes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RunningFeed {
@@ -145,21 +125,11 @@ pub(crate) struct RunningFeed {
     pub(crate) until_ms: i64,
 }
 
-/// An adoption of `feeder` whose answer was lost at `at_ms`: until the
-/// server lists it, or the router's grace passes, no second owner invite is
-/// made for it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct LostAdoption {
-    pub(crate) feeder: String,
-    pub(crate) at_ms: i64,
-}
-
 /// The file's shape.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct PinFile {
     pins: Vec<PinRecord>,
     running: Vec<RunningFeed>,
-    adoptions: Vec<LostAdoption>,
     /// The file before this one did not read and was set aside: until the
     /// owner says the bowls are checked, no feed goes.
     set_aside: Option<SetAside>,
@@ -168,27 +138,15 @@ pub(crate) struct PinFile {
 impl Versioned for PinFile {
     const VERSION: u32 = 1;
 
-    /// What a newer minor added: each pin (and its server mark) by its key,
-    /// each running feed by feeder and number, each lost adoption by
-    /// feeder, and the notice while it names the same file. A pin's write
-    /// is a tagged enum and is never carried into.
+    /// What a newer minor added: each pin by its key, each running feed by
+    /// feeder and number, and the notice while it names the same file. A
+    /// pin's write is a tagged enum and is never carried into.
     fn carry(old: &Value, new: &mut Value) {
         kept::carry(old, new);
         for (old, new) in kept::pairs(old, new, "/pins", &["/key"]) {
             kept::carry(old, new);
-            // A mark this build wrote names another journal when its token
-            // or account changed: what a newer minor added to the old one
-            // is that journal's, not this one's.
-            if let Some((old, new)) = kept::both(old, new, "/server")
-                && kept::same(old, new, &["/token", "/user"])
-            {
-                kept::carry(old, new);
-            }
         }
         for (old, new) in kept::pairs(old, new, "/running", &["/feeder", "/feed"]) {
-            kept::carry(old, new);
-        }
-        for (old, new) in kept::pairs(old, new, "/adoptions", &["/feeder"]) {
             kept::carry(old, new);
         }
         store::carry_set_aside(old, new);
@@ -328,7 +286,6 @@ impl PinStore {
         Ok(Book {
             pins,
             running: file.running,
-            adoptions: file.adoptions,
             set_aside: file.set_aside,
         })
     }
@@ -342,7 +299,6 @@ impl PinStore {
         let file = PinFile {
             pins: book.pins.clone(),
             running: book.running.clone(),
-            adoptions: book.adoptions.clone(),
             set_aside: book.set_aside.clone(),
         };
         stored::write(&self.path, &file)
@@ -396,16 +352,9 @@ mod tests {
         PinRecord {
             key: Uuid::from_u128(key),
             feeder: "ab".repeat(32),
-            server_feeder: Some(Uuid::from_u128(9)),
-            server: Some(ServerMark {
-                token: Uuid::from_u128(7),
-                user: Uuid::from_u128(8),
-            }),
-            path: RoutePath::Server,
             write: PinnedWrite::Feed { portions: 2 },
             state: PinState::Sending,
             sent_ms: 1_000,
-            tried_ms: 1_000,
             mark: None,
             excluded: Vec::new(),
             acknowledged_ms: None,
@@ -421,8 +370,6 @@ mod tests {
 
         let settings = PinRecord {
             key: Uuid::from_u128(2),
-            path: RoutePath::Direct,
-            server: None,
             write: PinnedWrite::Other {
                 kind: WriteKind::Settings,
             },
@@ -437,14 +384,9 @@ mod tests {
             feed: 4,
             until_ms: 9,
         };
-        let lost = LostAdoption {
-            feeder: "cd".repeat(32),
-            at_ms: 11,
-        };
         let saved = Book {
             pins: vec![feed(1), settings.clone()],
             running: vec![running.clone()],
-            adoptions: vec![lost.clone()],
             set_aside: None,
         };
         store.save(&saved).unwrap();
@@ -462,7 +404,6 @@ mod tests {
                     settings
                 ],
                 running: vec![running],
-                adoptions: vec![lost],
                 set_aside: None,
             }
         );
@@ -653,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn a_write_with_no_server_route_keeps_only_its_kind() {
+    fn a_write_other_than_a_feed_keeps_only_its_kind() {
         let wifi = PinRecord {
             write: PinnedWrite::Other {
                 kind: WriteKind::Wifi,
@@ -673,9 +614,6 @@ mod tests {
                 feed(1),
                 PinRecord {
                     key: Uuid::from_u128(2),
-                    server_feeder: None,
-                    server: None,
-                    path: RoutePath::Direct,
                     write: PinnedWrite::Other {
                         kind: WriteKind::Settings,
                     },
@@ -690,10 +628,6 @@ mod tests {
                 feeder: "cd".repeat(32),
                 feed: 5,
                 until_ms: 3_000,
-            }],
-            adoptions: vec![LostAdoption {
-                feeder: "ef".repeat(32),
-                at_ms: 4_000,
             }],
             set_aside: Some(SetAside {
                 kind: StoreKind::Pending,
@@ -713,7 +647,6 @@ mod tests {
         };
         assert_eq!(read.pins, every_field().pins);
         assert_eq!(read.running, every_field().running);
-        assert_eq!(read.adoptions, every_field().adoptions);
         assert_eq!(read.set_aside, every_field().set_aside);
 
         let dir = tempfile::tempdir().unwrap();
@@ -737,9 +670,7 @@ mod tests {
             "",
             "/data",
             "/data/pins/0",
-            "/data/pins/0/server",
             "/data/running/0",
-            "/data/adoptions/0",
             "/data/set_aside",
         ];
         for place in places {
@@ -754,26 +685,6 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         for place in places {
             assert_eq!(saved.pointer(place).unwrap()["added"], place, "{place}");
-        }
-    }
-
-    /// A pin's server mark names the journal the pin was written to: a
-    /// save under another token or account keeps nothing a newer minor
-    /// added to the old one.
-    #[test]
-    fn a_mark_for_another_journal_carries_nothing() {
-        let sample: serde_json::Value =
-            serde_json::from_str(include_str!("../../tests/fixtures/pending-v1.json")).unwrap();
-        let mut old = sample["data"].clone();
-        old["pins"][0]["server"]["added"] = serde_json::json!(true);
-
-        for changed in ["/token", "/user"] {
-            let mut new = sample["data"].clone();
-            let mark = new.pointer_mut("/pins/0/server").unwrap();
-            *mark.pointer_mut(changed).unwrap() = serde_json::json!(Uuid::from_u128(77));
-
-            <PinFile as stored::Versioned>::carry(&old, &mut new);
-            assert_eq!(new["pins"][0]["server"].get("added"), None, "{changed}");
         }
     }
 }

@@ -1,10 +1,6 @@
 //! `wellfed`, the owner's command line ([tools]).
 //!
-//! It speaks two paths, and a command takes exactly one of them, never a
-//! fallback between them: a write whose outcome is unknown on one path is
-//! never resent on the other ([two paths, one feed]).
-//!
-//! - **The device API.** `wellfed setup` pairs this computer with a
+//! It speaks the device API directly to each feeder. `wellfed setup` pairs this computer with a
 //!   feeder in BLE setup mode (`pairing`): it shows a one-time code for the
 //!   owner to key in on the feeder's buttons, and once the feeder has proven
 //!   the code it gives the feeder Wi-Fi, enrolls this computer's key as an
@@ -15,11 +11,8 @@
 //!   `history`, `feeding`, `access` and `update_key`. What a person reads prints as text
 //!   (`text`), with `--json` for scripts; the rest prints the feeder's
 //!   answers as JSON.
-//! - **The owner's server.** `wellfed server …` (the `server` module)
-//!   speaks the server's HTTP API through `wellfed-server-client`, with
-//!   the token `wellfed server login` keeps.
 //!
-//! Either path exits 0 on success, 1 on an error and 3 when a write's
+//! A command exits 0 on success, 1 on an error and 3 when a write's
 //! outcome is unknown: it went out, and nothing the command read says
 //! whether it ran. Such a write is never sent again.
 //!
@@ -28,7 +21,6 @@
 //! keeps stock's image and goes back to it.
 //!
 //! [tools]: ../../../../src/tools/README.md
-//! [two paths, one feed]: ../../../../docs/server/README.md#two-paths-one-feed
 
 #![forbid(unsafe_code)]
 
@@ -47,7 +39,6 @@ mod keys;
 mod pairing;
 mod plans;
 mod report;
-mod server;
 mod text;
 mod trace;
 mod update_key;
@@ -154,13 +145,10 @@ enum Command {
     /// Install the stock backup over the replacement: signed as stock,
     /// pushed as any update, then the feeder runs stock from bank 1.
     RestoreStock(Box<backup::RestoreArgs>),
-    /// The owner's server: log in, then the feeders, feeds and accounts it
-    /// holds, over its HTTP API rather than the device API.
-    Server(server::ServerArgs),
 }
 
 /// Exits 0 on success, 1 on an error and [`UNKNOWN`] when a write's
-/// outcome is unknown, on either path.
+/// outcome is unknown.
 fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
     // Every command is one session on one thread.
@@ -183,7 +171,6 @@ fn main() -> Result<ExitCode> {
     }
 
     let device = match cli.command {
-        Command::Server(args) => return runtime.block_on(server::run(args)),
         Command::Setup(args) => runtime.block_on(pairing::setup(args)),
         Command::Status(args) => runtime.block_on(history::status_command(args)),
         Command::Settings(args) => runtime.block_on(configure::settings_command(args)),
@@ -438,8 +425,7 @@ mod tests {
             Cli::try_parse_from(reset).map(|cli| cli.command),
             Ok(Command::Desiccant(_))
         ));
-        // The meal reminder takes `off` or 1-60 minutes, here and through
-        // the server.
+        // The meal reminder takes `off` or 1-60 minutes.
         for lead in ["off", "1", "60"] {
             let set = ["wellfed", "settings", "--meal-reminder", lead];
             assert!(matches!(
@@ -451,8 +437,6 @@ mod tests {
             let set = ["wellfed", "settings", "--meal-reminder", lead];
             assert!(Cli::try_parse_from(set).is_err(), "{lead:?}");
         }
-        let through = ["wellfed", "server", "settings", "--meal-reminder", "5"];
-        assert!(Cli::try_parse_from(through).is_ok());
 
         // What a person reads is text, and --json gives scripts the wire's
         // spelling.
@@ -474,12 +458,5 @@ mod tests {
         assert!(Cli::try_parse_from(long).is_err());
         let new = ["wellfed", "update-key", "new", "--output", "k.json"];
         assert!(Cli::try_parse_from(new).is_ok());
-
-        // A server command parses whole, its flags after the verb.
-        let feed = ["wellfed", "server", "feed", "--portions", "2", "--json"];
-        assert!(matches!(
-            Cli::try_parse_from(feed).map(|cli| cli.command),
-            Ok(Command::Server(_))
-        ));
     }
 }

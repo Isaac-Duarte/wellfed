@@ -20,8 +20,8 @@ mod views;
 
 pub use alerts::{Alert, AlertKind, AlertLevel, Alerts};
 pub use enums::{
-    AccountRole, By, EventKind, FeedOutcome, FeedReason, FoodLevel, JoinProblem, NotSent,
-    Readiness, RefusalKind, Role, ServerProblem, Skew, Tune, UpdateKind, WriteResult,
+    By, EventKind, FeedOutcome, FeedReason, FoodLevel, JoinProblem, NotSent, Readiness,
+    RefusalKind, Role, Skew, Tune, UpdateKind, WriteResult,
 };
 pub use session::{Pending, Update, Written};
 pub use state::{Capabilities, NextMeal, Plan, PortionsToday, Settings, State};

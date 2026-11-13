@@ -745,29 +745,148 @@ mod tests {
         }
     }
 
-    /// Every value `T`'s schema names, as written: the model derives the
-    /// schema from the enum itself, so a new variant is named here as soon
-    /// as it exists. `Unknown` stands for a newer build's value and is never
-    /// written.
-    fn every_name<T: utoipa::PartialSchema>() -> BTreeSet<String> {
-        fn walk(value: &serde_json::Value, names: &mut BTreeSet<String>) {
-            match value {
-                serde_json::Value::Object(map) => {
-                    if let Some(serde_json::Value::Array(values)) = map.get("enum") {
-                        names.extend(values.iter().filter_map(|v| v.as_str().map(str::to_owned)));
-                    }
-                    map.values().for_each(|value| walk(value, names));
-                }
-                serde_json::Value::Array(values) => {
-                    values.iter().for_each(|value| walk(value, names))
-                }
-                _ => {}
-            }
-        }
-        let mut names = BTreeSet::new();
-        walk(&serde_json::to_value(T::schema()).unwrap(), &mut names);
-        names.remove("unknown");
-        names
+    /// The names `values` are written under, checked to hold one value of
+    /// each of `count` variants: `index` is an exhaustive match, so a new
+    /// variant fails to compile until it has an index, and then this fails
+    /// until `values` holds it. `Unknown` stands for a newer build's value,
+    /// is never written, and has no index.
+    fn every_name<T: Serialize + Copy>(
+        values: &[T],
+        count: usize,
+        index: fn(T) -> usize,
+        name: fn(T) -> String,
+    ) -> BTreeSet<String> {
+        let indices: BTreeSet<usize> = values.iter().map(|value| index(*value)).collect();
+        assert_eq!(indices, (0..count).collect(), "one value of each variant");
+        values.iter().map(|value| name(*value)).collect()
+    }
+
+    fn every_key() -> BTreeSet<String> {
+        let kind = AlertKind::ALL[0];
+        let keys = [
+            AlertKey::Feed { feed: 1 },
+            AlertKey::Meal {
+                plan: 0,
+                due: Timestamp::UNIX_EPOCH,
+            },
+            AlertKey::Client {
+                kind,
+                client: Hex([0; 4]),
+                at: None,
+            },
+            AlertKey::Timed { kind, at: None },
+            AlertKey::Kind { kind },
+        ];
+        every_name(
+            &keys,
+            5,
+            |key| match key {
+                AlertKey::Feed { .. } => 0,
+                AlertKey::Meal { .. } => 1,
+                AlertKey::Client { .. } => 2,
+                AlertKey::Timed { .. } => 3,
+                AlertKey::Kind { .. } => 4,
+            },
+            |key| tag_of(key, "key"),
+        )
+    }
+
+    fn every_missed_reason() -> BTreeSet<String> {
+        let reasons = [
+            MissedReason::Late,
+            MissedReason::Blocked {
+                reason: Blocked::ALL[0],
+            },
+            MissedReason::Interrupted,
+        ];
+        every_name(
+            &reasons,
+            3,
+            |reason| match reason {
+                MissedReason::Late => 0,
+                MissedReason::Blocked { .. } => 1,
+                MissedReason::Interrupted => 2,
+                MissedReason::Unknown => usize::MAX,
+            },
+            name_of,
+        )
+    }
+
+    fn every_update_stop() -> BTreeSet<String> {
+        use UpdateStop::{Activate, Cancelled, Hash, Marker, Order, Store, Timeout, Write};
+        every_name(
+            &[
+                Timeout, Cancelled, Order, Marker, Write, Hash, Activate, Store,
+            ],
+            8,
+            |stop| match stop {
+                Timeout => 0,
+                Cancelled => 1,
+                Order => 2,
+                Marker => 3,
+                Write => 4,
+                Hash => 5,
+                Activate => 6,
+                Store => 7,
+                UpdateStop::Unknown => usize::MAX,
+            },
+            name_of,
+        )
+    }
+
+    fn every_role() -> BTreeSet<String> {
+        use ClientRole::{Member, Owner, Server, UpdateSigner};
+        every_name(
+            &[Owner, Member, Server, UpdateSigner],
+            4,
+            |role| match role {
+                Owner => 0,
+                Member => 1,
+                Server => 2,
+                UpdateSigner => 3,
+                ClientRole::Unknown => usize::MAX,
+            },
+            name_of,
+        )
+    }
+
+    fn every_path() -> BTreeSet<String> {
+        use EnrollPath::{Invite, Press, Recovery, Setup};
+        every_name(
+            &[Setup, Invite, Recovery, Press],
+            4,
+            |path| match path {
+                Setup => 0,
+                Invite => 1,
+                Recovery => 2,
+                Press => 3,
+                EnrollPath::Unknown => usize::MAX,
+            },
+            name_of,
+        )
+    }
+
+    fn every_source() -> BTreeSet<String> {
+        let sources = [
+            Source::Panel,
+            Source::Client {
+                client: Hex([0; 4]),
+            },
+            Source::Feeder,
+            Source::Schedule { plan: 0 },
+        ];
+        every_name(
+            &sources,
+            4,
+            |source| match source {
+                Source::Panel => 0,
+                Source::Client { .. } => 1,
+                Source::Feeder => 2,
+                Source::Schedule { .. } => 3,
+                Source::Unknown => usize::MAX,
+            },
+            name_of,
+        )
     }
 
     /// The name `value` is written under: a string, or a tagged object's
@@ -798,7 +917,7 @@ mod tests {
             .iter()
             .map(|open| tag_of(open.key(), "key"))
             .collect();
-        assert_eq!(keys, every_name::<AlertKey>());
+        assert_eq!(keys, every_key());
 
         let mut found: [BTreeSet<String>; 8] = Default::default();
         for open in &alerts {
@@ -835,14 +954,14 @@ mod tests {
             }
         }
         let every = [
-            every_name::<FeedOutcome>(),
-            every_name::<FeedReason>(),
-            every_name::<Blocked>(),
-            every_name::<MissedReason>(),
-            every_name::<UpdateStop>(),
-            every_name::<ClientRole>(),
-            every_name::<EnrollPath>(),
-            every_name::<Source>(),
+            FeedOutcome::ALL.map(name_of).into_iter().collect(),
+            FeedReason::ALL.map(name_of).into_iter().collect(),
+            Blocked::ALL.map(name_of).into_iter().collect(),
+            every_missed_reason(),
+            every_update_stop(),
+            every_role(),
+            every_path(),
+            every_source(),
         ];
         for (found, every) in found.iter().zip(&every) {
             assert!(!every.is_empty());

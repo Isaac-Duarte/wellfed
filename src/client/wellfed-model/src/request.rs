@@ -4,7 +4,6 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 use crate::{
     AlertsView, Bank1Page, CallView, ClientRole, FeederSettingsPatch, Generation, Hex, PLANS, Plan,
@@ -191,7 +190,7 @@ pub enum Op {
 }
 
 /// What the owner measured, as the feeder keeps it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Calibration {
     /// The mean weight of one portion in milligrams, `None` until measured.
     pub portion_mg: Option<u32>,
@@ -199,7 +198,7 @@ pub struct Calibration {
 }
 
 /// The bowl mode a feeder runs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Bowl {
     Single,
@@ -212,7 +211,7 @@ pub enum Bowl {
 }
 
 /// Where the rotor rests between feeds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
     /// Just past a mark, where a completed feed stops.
@@ -227,7 +226,7 @@ pub enum Phase {
 }
 
 /// The calibration as the feeder holds it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalibrationView {
     pub generation: Generation,
     pub writable: bool,

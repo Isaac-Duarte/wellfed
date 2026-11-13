@@ -1,5 +1,5 @@
 //! The files the app keeps in its private storage, each with a version:
-//! `wellfed.json` (the feeders and the server, [`crate::api::store`]),
+//! `wellfed.json` (the feeders, [`crate::api::store`]),
 //! `pending.json` (the pinned writes, [`crate::route::pins`]) and
 //! `alerts.json` ([`crate::alerts`]). Each is a JSON object
 //! `{"version": n, "data": …}`, kept by the beta upgrade rule

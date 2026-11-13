@@ -11,8 +11,8 @@ pub use wellfed_model::{
     MissedReason, Skew, UpdatePhase, UpdateStop,
 };
 
-/// How a feeder's API revision stands against this app's (or the server's):
-/// which side to update. Every op both know still goes, so neither side is
+/// How a feeder's API revision stands against this app's: which side to
+/// update. Every op both know still goes, so neither side is
 /// ever offered an older build for it.
 #[frb(mirror(Skew))]
 pub enum _Skew {

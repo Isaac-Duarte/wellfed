@@ -6,8 +6,8 @@
 //! [`api`] is what flutter_rust_bridge exposes to Dart. The session's
 //! driver loop ([`session`]) and the install's thread and platform adapters
 //! ([`install`]) are plain Rust, so their tests run them without the bridge.
-//! With a server configured, every feeder request goes through the path
-//! router (`route`, exposed as [`api::router`]).
+//! Every feeder request goes through the router (`route`, exposed as
+//! [`api::router`]), which pins each write before it goes.
 
 pub(crate) mod alerts;
 #[cfg(target_os = "android")]
@@ -32,11 +32,9 @@ pub mod install;
 #[cfg(test)]
 mod kept_enums;
 mod link;
-mod relay;
 pub mod requests;
 pub mod restore;
 mod route;
-mod server;
 pub mod session;
 mod stored;
 mod today;

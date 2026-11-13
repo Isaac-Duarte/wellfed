@@ -8,8 +8,7 @@ import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 
-/// How this phone reaches a feeder: its own session, or the owner's server
-/// while that session is down and the server holds the feeder.
+/// How this phone's session with a feeder stands.
 enum Connection {
   /// Looking for the feeder's address on the LAN.
   looking,
@@ -17,7 +16,7 @@ enum Connection {
   /// Opening a session to an address.
   connecting,
 
-  /// The session is open, or the server's link to the feeder is.
+  /// The session is open.
   online,
 
   /// Not reachable; [FeederState.error] says how the last try ended.
@@ -78,7 +77,6 @@ final class FeedRunning extends FeedState {
     this.cancelAsked = false,
     this.cancelUnconfirmed = false,
     this.key,
-    this.path,
   });
 
   /// The feeder's number for it.
@@ -86,11 +84,6 @@ final class FeedRunning extends FeedState {
 
   /// Its idempotency key, once the router has answered for it.
   final String? key;
-
-  /// The way it went, once the router has answered for it: through the
-  /// server, its end comes on the server's stream, and the phone's own
-  /// session closing says nothing of it.
-  final RoutePath? path;
 
   /// "Stop feeding" went out and nothing has come of it yet. Only the feed's
   /// end says it stopped.
@@ -135,8 +128,8 @@ final class FeedUnanswered extends FeedState {
   /// A feed that went out and heard nothing back.
   const FeedUnanswered({required super.portions, required super.sentAt, this.key});
 
-  /// Its idempotency key while the router keeps it pending: a check asks its
-  /// own path what became of it, and putting it away lets a new feed go.
+  /// Its idempotency key while the router keeps it pending: a check reads
+  /// the feeder's history for it, and putting it away lets a new feed go.
   final String? key;
 }
 
@@ -151,12 +144,6 @@ final class FeedNotSent extends FeedState {
 
 /// Why a feed never went out, as the feed sheet tells it.
 enum NotSentWhy {
-  /// The server refused this phone's token, or the account stopped: log in again.
-  signedOut,
-
-  /// This account may not feed.
-  forbidden,
-
   /// The phone could not write the pending feed down first, so it held it back.
   notPinned,
 
@@ -197,12 +184,8 @@ final class FeederState {
     this.clients = const [],
     this.call,
     this.calibration,
-    this.path,
-    this.serverId,
-    this.viewer = false,
     this.unconfirmed = const [],
     this.skew,
-    this.serverSkew,
   });
 
   /// What this phone keeps about the feeder.
@@ -244,29 +227,14 @@ final class FeederState {
   /// The portion size the feeder last said, for the feed sheet's grams.
   final CalibrationInfo? calibration;
 
-  /// The way a new request goes now, as the router last said: through the
-  /// owner's server or this phone's own session; `null` when it reaches the
-  /// feeder no way at all, or before the router has said.
-  final RoutePath? path;
-
-  /// The owner's server's id for it, while the server lists it.
-  final String? serverId;
-
-  /// The account the server knows this phone by may only look: it feeds
-  /// through neither the server nor the phone's own key, so Feed is hidden.
-  final bool viewer;
-
   /// Changes other than a feed that may or may not have reached the feeder,
-  /// held on the path they went until a check or the owner puts them away.
+  /// held until a check or the owner puts them away.
   final List<PendingWrite> unconfirmed;
 
   /// How the feeder's API revision stands against this app's, from the
   /// last session's welcome: which side to update, never a reason to offer
   /// the feeder an older build. `null` before a session has opened.
   final Skew? skew;
-
-  /// The same against the owner's server, as the server last said.
-  final Skew? serverSkew;
 
   /// The card is what this session read, not an earlier one.
   bool get cardIsCurrent => connection == Connection.online && cardFresh;
@@ -277,7 +245,6 @@ final class FeederState {
   bool get canFeed =>
       cardIsCurrent &&
       !feed.active &&
-      !viewer &&
       switch (role) {
         final ClientRole role => mayAsk(role, Ask.feed),
         null => true,
@@ -300,12 +267,8 @@ final class FeederState {
     List<ClientView>? clients,
     CallInfo? Function()? call,
     CalibrationInfo? Function()? calibration,
-    RoutePath? Function()? path,
-    String? Function()? serverId,
-    bool? viewer,
     List<PendingWrite>? unconfirmed,
     Skew? Function()? skew,
-    Skew? Function()? serverSkew,
   }) => FeederState(
     known: known ?? this.known,
     connection: connection ?? this.connection,
@@ -320,11 +283,7 @@ final class FeederState {
     clients: clients == null ? this.clients : List.unmodifiable(clients),
     call: call == null ? this.call : call(),
     calibration: calibration == null ? this.calibration : calibration(),
-    path: path == null ? this.path : path(),
-    serverId: serverId == null ? this.serverId : serverId(),
-    viewer: viewer ?? this.viewer,
     unconfirmed: unconfirmed == null ? this.unconfirmed : List.unmodifiable(unconfirmed),
     skew: skew == null ? this.skew : skew(),
-    serverSkew: serverSkew == null ? this.serverSkew : serverSkew(),
   );
 }

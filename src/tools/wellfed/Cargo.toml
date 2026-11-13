@@ -16,7 +16,7 @@ hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 clap.workspace = true
 # The platform's data directory (XDG, Application Support, AppData) for the
-# owner's key, backups and server token. Already in the lockfile, through
+# owner's key and backups. Already in the lockfile, through
 # sqlx-postgres on Windows.
 etcetera = "0.11.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
@@ -28,7 +28,6 @@ wellfed-formats = { workspace = true, features = ["clap"] }
 wellfed-install.workspace = true
 wellfed-model.workspace = true
 wellfed-proto.workspace = true
-wellfed-server-client.workspace = true
 wellfed-session.workspace = true
 wellfed-signing.workspace = true
 serde.workspace = true
@@ -47,7 +46,6 @@ bluer = { version = "0.17.4", features = ["bluetoothd"] }
 btleplug = "0.13.5"
 
 [dev-dependencies]
-wellfed-server-testkit.workspace = true
 # `wellfed status` through a stand-in for the bench server's device routes,
 # in front of a simulated feeder.
 axum.workspace = true

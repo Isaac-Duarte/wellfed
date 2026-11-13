@@ -15,7 +15,6 @@ use wellfed_client::history::Feed;
 use wellfed_model::{Answer, Event, FeedOutcome, Op, PORTIONS_MAX, Pushed, Refusal};
 
 use crate::device::Connection;
-use crate::server::Settled;
 use crate::{Target, ask_and_print, connect, print_json, text, uncertain};
 
 #[derive(Args)]
@@ -131,11 +130,20 @@ fn fed(event: &Event, feed: u32) -> Option<Feed> {
     Feed::from_event(event).filter(|ended| ended.feed == feed)
 }
 
-/// What a feed's recorded end says of the command that asked for it, on
-/// either path: done is success, and an uncertain end (or one a newer
+/// How a feed command ended, short of an error: the exit status's 0 or
+/// [`crate::UNKNOWN`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Settled {
+    Known,
+    /// The feed may or may not have dropped food, and nothing read says.
+    Unknown,
+}
+
+/// What a feed's recorded end says of the command that asked for it: done
+/// is success, and an uncertain end (or one a newer
 /// feeder build added) is unknown, since anything up to the portions asked
 /// for may have dropped. Any other end is the command's failure.
-pub(crate) fn settled(outcome: FeedOutcome) -> Result<Settled> {
+fn settled(outcome: FeedOutcome) -> Result<Settled> {
     match outcome {
         FeedOutcome::Done => Ok(Settled::Known),
         FeedOutcome::Uncertain | FeedOutcome::Unknown => Ok(Settled::Unknown),

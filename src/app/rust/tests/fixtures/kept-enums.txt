@@ -4,9 +4,7 @@
 # it, keep the old version's reader, and append the new version's lines.
 # From the public beta, a line here is never changed or removed.
 wellfed.json@1 Appearance dark light system
-wellfed.json@1 ServerRole member owner unknown viewer
 wellfed.json@1 StoreKind alerts app pending
-pending.json@1 RoutePath direct server
 pending.json@1 WriteKind calibration call cancel clock desiccant feed invite lock plans play reboot revoke settings skip update wifi
 pending.json@1 PinState sending uncertain
 pending.json@1 PinnedWrite feed other

@@ -1,106 +1,52 @@
-//! The path router against the server in process and the simulated feeder
-//! (simulation, not hardware). For each path a feed's answer is dropped,
-//! the caller retries, and the feeder's feed journal proves one feed:
-//! - through the server: unknown, pinned to the server across a restart of
-//!   the app, never sent direct, settled from its `Fed` event;
-//! - direct: unanswered, pinned direct, never sent through the server once
-//!   it is back, settled from the feeder's history;
-//! - the server stopping mid-feed leaves it pinned to the server, unsent
-//!   direct although the phone reaches the feeder, until the server returns;
-//! - a feeder the server reports offline is fed direct, and the server sends
-//!   nothing for that feed when the feeder returns to it;
-//! - a viewer goes through the server only.
-//!
-//! And a retry only reads. Each of these drops the server's answer to the
-//! phone, then the owner puts the write away, feeds again and retries the
-//! old key, and the feeder's journal proves the old key never fed again:
-//! - the answer lost after the feed ran, which the journal settles;
-//! - a `feeder_offline` answer lost, whose entry the server dropped;
-//! - a `500` before the journal held the write.
+//! The router against the simulated feeder (simulation, not hardware). A
+//! feed's answer is dropped, and the feeder's feed journal proves one feed:
+//! - the feed is pinned uncertain, stays pinned across a restart of the
+//!   app, holds the next feed back until the owner puts it away, and a
+//!   retry only reads: it settles from the feeder's history, never by a
+//!   second send;
+//! - a feed's pin never takes the end of a feed already running.
 //!
 //! A pins file that does not read is set aside, and no feed goes until the
-//! owner has checked the bowls. A direct feed's pin never takes the end of a
-//! feed already running, and
-//! one pins file has one router at a time: a newer one in the process takes
-//! it over, and the one it took it from sends no write again. A session offers Dart no request of its
-//! own, so nothing reaches a feeder around the router.
-//!
-//! A server that refuses the phone's token closes the direct path too. The
-//! phone adopts a feeder it paired before the server, its key becoming the
-//! account's phone key.
+//! owner has checked the bowls. One pins file has one router at a time: a
+//! newer one in the process takes it over, and the one it took it from
+//! sends no write again. A feed's own answer is told by its key, for a
+//! screen that holds only the pin.
 
 use std::cell::RefCell;
-use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::rc::Rc;
 use std::time::Duration;
 
 use tokio::sync::mpsc;
-use wellfed_api::{AdoptFeeder, ClientRole, Connection, ErrorCode, NewUser, Role, UserPatch};
 use wellfed_app_bridge::api::error::ErrorKind;
-use wellfed_app_bridge::api::feeder::{Bowl, FeederReply, FeederRequest, PortionChange};
+use wellfed_app_bridge::api::feeder::{FeederReply, FeederRequest};
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::router::{
-    Adoption, NotSentReason, PathRouter, PendingWrite, RetryOutcome, RoutePath, RoutedFeed,
-    RouterUpdate, Settlement, WriteKind,
-};
-use wellfed_app_bridge::api::server::{ServerSession, Timeouts};
-use wellfed_app_bridge::api::server_error::ServerErrorKind;
-use wellfed_app_bridge::api::server_views::{
-    KnownServer, ListedFeeder, ServerAccount, ServerLink, ServerRole,
+    FeederRouter, NotSentReason, PendingWrite, RetryOutcome, RoutedFeed, RouterUpdate, Settlement,
+    WriteKind,
 };
 use wellfed_app_bridge::api::session::{FeederSession, SessionUpdate};
-use wellfed_server_client::{Client, StatusCode};
-use wellfed_server_testkit::feeder::{self, Flash, Relay, Running};
-use wellfed_server_testkit::{TempStore, TestServer, ada_login, ada_setup, config, local, refused};
+use wellfed_feeder_sim::flash::Flash;
+use wellfed_feeder_sim::harness::{Relay, Running, local};
+use wellfed_session::noise::Keypair;
 
 const WAIT: Duration = Duration::from_secs(30);
 
-/// How long the test server waits for a feeder's answer.
-const ANSWER: Duration = Duration::from_secs(2);
+/// The owner's secret key, enrolled on every simulator here.
+const OWNER: [u8; 32] = [0x21; 32];
 
-/// The server with its answer wait cut to [`ANSWER`], its first owner, and
-/// the owner's own client.
-async fn started() -> (TestServer, Client) {
-    let mut config = config();
-    config.timing.answer = ANSWER;
-    let server = TestServer::start_with(config).await;
-    let mut owner = server.client();
-    owner.setup(&ada_setup()).await.unwrap();
-    (server, owner)
+/// A simulator on `flash`, with the owner enrolled.
+async fn start_on(flash: &Rc<Flash>) -> Running {
+    Running::start(flash, Some(*Keypair::from_secret(OWNER).public())).await
 }
 
-/// The server again on its stopped database, where the phone knew it.
-async fn reopen(store: TempStore, address: SocketAddr) -> TestServer {
-    let mut config = config();
-    config.timing.answer = ANSWER;
-    TestServer::reopen_at(store, config, address).await
-}
-
-/// Adopt `sim` at `address` (a relay in front of it) and wait until the
-/// server reaches it.
-async fn adopt(owner: &Client, sim: &Running, address: SocketAddr) -> String {
-    let id = owner
-        .adopt(&AdoptFeeder {
-            invite: feeder::invite(sim, ClientRole::Server).await,
-            name: "kitchen".into(),
-            address: Some(address.to_string()),
-            phone_key: None,
-        })
-        .await
-        .unwrap()
-        .id;
-    linked(owner, true).await;
-    id.to_string()
-}
-
-/// Wait until the server's link to its one feeder is (or is not) online.
-async fn linked(owner: &Client, online: bool) {
-    eventually("the server's link", async || {
-        let feeders = owner.feeders().await.unwrap();
-        ((feeders[0].connection == Connection::Online) == online).then_some(())
-    })
-    .await;
+/// How many feeds the simulator on `flash` has ever reserved in its feed
+/// journal: the count a test that retries a feed proves is one.
+fn feeds(flash: &Rc<Flash>) -> u64 {
+    match wellfed_feeder_sim::feeding::reserved(flash) {
+        Ok(reserved) => reserved,
+        Err(error) => panic!("the simulator's feed journal does not open: {error:?}"),
+    }
 }
 
 async fn eventually<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>) -> T {
@@ -120,23 +66,20 @@ async fn eventually<T>(what: &str, mut check: impl AsyncFnMut() -> Option<T>) ->
 struct Phone {
     key: ClientKey,
     pins: tempfile::TempDir,
-    router: Rc<PathRouter>,
+    router: Rc<FeederRouter>,
     /// What the router tells the screens.
     updates: RefCell<mpsc::UnboundedReceiver<RouterUpdate>>,
 }
 
 impl Phone {
     fn new() -> Self {
-        Self::trusting_after(UNFOUND)
+        Self::on(tempfile::tempdir().unwrap())
     }
 
-    /// A phone that takes a server write its journal lacks as never sent
-    /// `grace_ms` after its attempt.
-    fn trusting_after(grace_ms: i64) -> Self {
-        let pins = tempfile::tempdir().unwrap();
-        let (router, updates) = router(&pins, grace_ms);
+    fn on(pins: tempfile::TempDir) -> Self {
+        let (router, updates) = heard(FeederRouter::new(path(&pins)).unwrap());
         Self {
-            key: ClientKey::restore(feeder::OWNER.to_vec()).unwrap(),
+            key: ClientKey::restore(OWNER.to_vec()).unwrap(),
             pins,
             router,
             updates,
@@ -148,35 +91,16 @@ impl Phone {
     async fn restarted(self) -> Self {
         self.router.close();
         drop(self.router);
-        let router = reopened(&self.pins, UNFOUND).await;
+        let router = eventually(
+            "the last router lets its pins go",
+            async || match FeederRouter::new(path(&self.pins)) {
+                Ok(router) => Some(router),
+                Err(error) if error.kind == ErrorKind::InUse => None,
+                Err(error) => panic!("{error}"),
+            },
+        )
+        .await;
         let (router, updates) = heard(router);
-        Self {
-            router,
-            updates,
-            ..self
-        }
-    }
-
-    /// The app again with a grace of `grace_ms`, its wall clock `ms` past
-    /// every attempt the last run wrote down: as a restart a day later
-    /// leaves it, or a forward step of the phone's clock.
-    async fn restarted_later(self, ms: i64, grace_ms: i64) -> Self {
-        self.router.close();
-        drop(self.router);
-        // Once the last run has let go, so it writes nothing after.
-        drop(reopened(&self.pins, grace_ms).await);
-
-        let file = path(&self.pins);
-        let mut kept: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-        for pin in kept["data"]["pins"].as_array_mut().expect("the pins") {
-            let tried = pin["tried_ms"].as_i64().expect("an attempt's time");
-            pin["tried_ms"] = (tried - ms).into();
-        }
-        std::fs::write(&file, serde_json::to_vec(&kept).unwrap()).unwrap();
-
-        // The look above changed nothing: its router opens and lets go.
-        let (router, updates) = heard(reopened(&self.pins, grace_ms).await);
         Self {
             router,
             updates,
@@ -188,18 +112,17 @@ impl Phone {
     /// would, or the router settles it on its own and says so.
     async fn settled(&self, key: &str) -> Settlement {
         eventually("the pending write settles", async || {
-            match self.router.retry(key.to_owned()).await {
+            match self.router.retry(key.to_owned()) {
                 RetryOutcome::Settled { settlement, .. } => Some(settlement),
                 RetryOutcome::Uncertain { .. } => None,
                 RetryOutcome::Unknown => {
                     let mut updates = self.updates.borrow_mut();
                     while let Ok(update) = updates.try_recv() {
-                        if let RouterUpdate::Settled {
+                        let RouterUpdate {
                             pending,
                             settlement,
-                        } = update
-                            && pending.key == key
-                        {
+                        } = update;
+                        if pending.key == key {
                             return Some(settlement);
                         }
                     }
@@ -208,40 +131,6 @@ impl Phone {
             }
         })
         .await
-    }
-
-    /// Log in to `server` as `name` and route through it.
-    async fn log_in(&self, server: &TestServer, name: &str, password: &str) -> Rc<ServerSession> {
-        let url = format!("http://{}", server.address());
-        let session = ServerSession::login(url, name.into(), password.into(), "pixel".into(), None)
-            .await
-            .unwrap();
-        let account = session.account().await.unwrap();
-        self.router.connect_server(&session, account);
-        self.router.refresh().await.unwrap();
-        Rc::new(session)
-    }
-
-    async fn log_in_as_ada(&self, server: &TestServer) -> Rc<ServerSession> {
-        let login = ada_login();
-        self.log_in(server, &login.name, &login.password).await
-    }
-
-    /// Route through `session`'s token at `url` instead, giving up on a
-    /// request after [`GIVE_UP`].
-    async fn through(&self, session: &ServerSession, url: String) -> ServerSession {
-        let link = ServerLink {
-            url,
-            ..session.link()
-        };
-        let timeouts = Timeouts {
-            read: Some(GIVE_UP),
-            request: Some(GIVE_UP),
-        };
-        let fronted = ServerSession::restore_with(link, session.secret(), timeouts).unwrap();
-        let account = session.account().await.unwrap();
-        self.router.connect_server(&fronted, account);
-        fronted
     }
 
     /// Open this phone's own session with `sim` at `address`, through the
@@ -273,7 +162,7 @@ impl Phone {
     }
 }
 
-/// One direct session, and what it tells Dart.
+/// One session, and what it tells Dart.
 struct Direct {
     session: Rc<FeederSession>,
     updates: mpsc::UnboundedReceiver<SessionUpdate>,
@@ -309,45 +198,11 @@ fn uncertain(routed: RoutedFeed) -> PendingWrite {
     }
 }
 
-/// How long the phone's own wait for the server is cut to, where a test
-/// drops the server's answer to the phone: each dropped answer costs a
-/// test this long, and an answer that is not dropped comes over loopback
-/// in milliseconds.
-const GIVE_UP: Duration = Duration::from_secs(1);
-
-/// The phone's wait before a server write its journal lacks counts as
-/// never sent, in tests that do not drop one.
-const UNFOUND: i64 = 10 * 60_000;
-
-/// A router on `pins` once the last run's router has let them go.
-async fn reopened(pins: &tempfile::TempDir, grace_ms: i64) -> PathRouter {
-    eventually(
-        "the last router lets its pins go",
-        async || match PathRouter::open_with(path(pins), grace_ms) {
-            Ok(router) => Some(router),
-            Err(error) if error.kind == ErrorKind::InUse => None,
-            Err(error) => panic!("{error}"),
-        },
-    )
-    .await
-}
-
-/// A router on `pins`, its updates heard into a channel.
-fn router(
-    pins: &tempfile::TempDir,
-    grace_ms: i64,
-) -> (
-    Rc<PathRouter>,
-    RefCell<mpsc::UnboundedReceiver<RouterUpdate>>,
-) {
-    heard(PathRouter::open_with(path(pins), grace_ms).unwrap())
-}
-
 /// `router`, its updates heard into a channel.
 fn heard(
-    router: PathRouter,
+    router: FeederRouter,
 ) -> (
-    Rc<PathRouter>,
+    Rc<FeederRouter>,
     RefCell<mpsc::UnboundedReceiver<RouterUpdate>>,
 ) {
     let router = Rc::new(router);
@@ -376,614 +231,108 @@ fn fed_once(settlement: &Settlement) {
 }
 
 #[test]
-fn a_server_feed_whose_answer_is_lost_stays_on_the_server_across_a_restart_and_feeds_once() {
+fn a_feed_whose_answer_is_lost_stays_pinned_across_a_restart_and_feeds_once() {
     local(async {
         let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let relay = Relay::start(sim.address).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, relay.address).await;
-        let phone = Phone::new();
-        let _session = phone.log_in_as_ada(&server).await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Server));
-
-        relay.hold_answers();
-        let pending = uncertain(phone.router.feed(kitchen.clone(), 1).await);
-        assert_eq!(
-            (pending.path, pending.kind, pending.portions),
-            (RoutePath::Server, WriteKind::Feed, Some(1))
-        );
-        // A retry asks the server under the same key, which sends nothing.
-        let RetryOutcome::Uncertain { .. } = phone.router.retry(pending.key.clone()).await else {
-            panic!("the server still cannot say");
-        };
-        // While it is uncertain, no new feed goes on either path.
-        let RoutedFeed::Held { pending: holding } = phone.router.feed(kitchen.clone(), 1).await
-        else {
-            panic!("a second feed waits for the uncertain one");
-        };
-        assert_eq!(holding.key, pending.key);
-
-        // The app restarts: the pin comes back from disk.
-        let phone = phone.restarted().await;
-        let _session = phone.log_in_as_ada(&server).await;
-        let _direct = phone.open(&sim, sim.address).await;
-        assert_eq!(phone.router.pending(), std::slice::from_ref(&pending));
-        assert!(matches!(
-            phone.router.feed(kitchen.clone(), 1).await,
-            RoutedFeed::Held { .. }
-        ));
-
-        relay.cut();
-        relay.resume();
-        fed_once(&phone.settled(&pending.key).await);
-        assert!(phone.router.pending().is_empty());
-        assert_eq!(feeder::feeds(&flash), 1, "fed once, never sent direct");
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_direct_feed_whose_answer_is_lost_stays_direct_and_feeds_once() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
+        let sim = start_on(&flash).await;
         let relay = Relay::start(sim.address).await;
         let phone = Phone::new();
         let mut direct = phone.open(&sim, relay.address).await;
         let kitchen = identity(&sim);
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
 
         relay.hold_answers();
         let router = Rc::clone(&phone.router);
         let asked = kitchen.clone();
         let feeding = tokio::task::spawn_local(async move { router.feed(asked, 1).await });
         eventually("the feed is reserved", async || {
-            (feeder::feeds(&flash) == 1).then_some(())
+            (feeds(&flash) == 1).then_some(())
         })
         .await;
         relay.cut();
         let pending = uncertain(feeding.await.unwrap());
-        assert_eq!(pending.path, RoutePath::Direct);
+        assert_eq!(pending.kind, WriteKind::Feed);
+        assert_eq!(pending.portions, Some(1));
         direct.closed().await;
 
         // Its session is gone: a retry cannot say, and sends nothing.
-        let RetryOutcome::Uncertain { .. } = phone.router.retry(pending.key.clone()).await else {
+        let RetryOutcome::Uncertain { .. } = phone.router.retry(pending.key.clone()) else {
             panic!("nothing has said yet");
         };
+
+        // The app restarts: the pin is still there, and still holds the next
+        // feed back, so no feed can double it.
+        drop(direct.session);
+        let phone = phone.restarted().await;
+        assert_eq!(phone.router.pending(), std::slice::from_ref(&pending));
         relay.resume();
-        let _again = phone.open(&sim, relay.address).await;
+        let direct = phone.open(&sim, relay.address).await;
         fed_once(&phone.settled(&pending.key).await);
-        assert_eq!(feeder::feeds(&flash), 1);
+        assert!(phone.router.pending().is_empty());
+        assert_eq!(feeds(&flash), 1, "a retry only reads");
         drop(direct.session);
         sim.stop().await;
     });
 }
 
+/// An uncertain feed holds the next feed on its feeder back until the
+/// owner, having looked at the bowl, puts it away; put away, it is never
+/// sent again, and the history still settles it.
 #[test]
-fn a_server_that_stops_mid_feed_keeps_it_pinned_and_unsent_direct_until_it_returns() {
+fn an_uncertain_feed_holds_the_next_until_the_owner_puts_it_away() {
     local(async {
         let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
+        let sim = start_on(&flash).await;
         let relay = Relay::start(sim.address).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, relay.address).await;
         let phone = Phone::new();
-        let _session = phone.log_in_as_ada(&server).await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-
-        relay.hold_answers();
-        let router = Rc::clone(&phone.router);
-        let asked = kitchen.clone();
-        let feeding = tokio::task::spawn_local(async move { router.feed(asked, 1).await });
-        eventually("the feed is reserved", async || {
-            (feeder::feeds(&flash) == 1).then_some(())
-        })
-        .await;
-        let address = server.address();
-        let store = server.stop_keeping().await;
-        let pending = uncertain(feeding.await.unwrap());
-        assert_eq!(pending.path, RoutePath::Server);
-
-        // The server is gone and the phone reaches the feeder: new requests
-        // go direct, but the uncertain feed stays where it went.
-        let RetryOutcome::Uncertain { pending: still } =
-            phone.router.retry(pending.key.clone()).await
-        else {
-            panic!("an unreachable server cannot settle it");
-        };
-        assert_eq!(still.path, RoutePath::Server);
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
-        assert!(matches!(
-            phone.router.feed(kitchen.clone(), 1).await,
-            RoutedFeed::Held { .. }
-        ));
-        assert_eq!(feeder::feeds(&flash), 1, "nothing went direct");
-
-        let server = reopen(store, address).await;
-        relay.cut();
-        relay.resume();
-        fed_once(&phone.settled(&pending.key).await);
-        assert_eq!(feeder::feeds(&flash), 1);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_feeder_the_server_reports_offline_is_fed_direct_and_the_server_sends_nothing_later() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let relay = Relay::start(sim.address).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, relay.address).await;
-        let phone = Phone::new();
-        let _session = phone.log_in_as_ada(&server).await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-
-        // The server loses the feeder; the router still believes it
-        // online, so the feed goes to the server first, which answers
-        // `feeder_offline` without sending, and then direct.
-        relay.pause();
-        relay.cut();
-        linked(&owner, false).await;
-        let RoutedFeed::Started { key, path, .. } = phone.router.feed(kitchen.clone(), 1).await
-        else {
-            panic!("the feed goes direct");
-        };
-        assert_eq!(path, RoutePath::Direct);
-        eventually("the direct feed is reserved", async || {
-            (feeder::feeds(&flash) == 1).then_some(())
-        })
-        .await;
-
-        // Once the router has heard the server's word, a new request goes
-        // direct at once.
-        phone.router.refresh().await.unwrap();
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
-
-        // The feeder returns to the server, which holds no entry for the
-        // key and sends nothing for it.
-        relay.resume();
-        linked(&owner, true).await;
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        let key = key.parse().unwrap();
-        refused(
-            owner.command(key).await,
-            StatusCode::NOT_FOUND,
-            ErrorCode::NotFound,
-        );
-        // Nothing is pending, so the router has nothing to retry under it.
-        assert!(phone.router.pending().is_empty());
-        assert!(matches!(
-            phone.router.retry(key.to_string()).await,
-            RetryOutcome::Unknown
-        ));
-        assert_eq!(feeder::feeds(&flash), 1, "fed once, direct");
-        phone.router.refresh().await.unwrap();
-        assert_eq!(phone.router.path(kitchen), Some(RoutePath::Server));
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-/// The phone's own key is used by what the phone may use when the server's
-/// answer comes, not when the feed went: a token refused while the call
-/// was out closes the fallback, though the server never sent the feed.
-#[test]
-fn a_token_refused_while_the_server_call_is_out_never_falls_back_to_the_own_key() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let link = Relay::start(sim.address).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, link.address).await;
-        let front = Relay::start(server.address()).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let _fronted = phone
-            .through(&session, format!("http://{}", front.address))
-            .await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-
-        // The server has lost the feeder, so it answers `feeder_offline`
-        // without sending; the router still believes it online.
-        link.pause();
-        link.cut();
-        linked(&owner, false).await;
-        front.hold_answers();
-        let (fed, ()) = tokio::join!(phone.router.feed(kitchen.clone(), 1), async {
-            tokio::time::sleep(GIVE_UP / 4).await;
-            phone.router.refuse_server();
-            front.resume();
-        });
-
-        assert!(
-            matches!(fed, RoutedFeed::NotSent { .. }),
-            "nothing goes on the phone's own key: {fed:?}"
-        );
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        assert_eq!(feeder::feeds(&flash), 0);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_direct_feed_left_uncertain_is_never_resent_through_the_server_once_it_is_back() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let relay = Relay::start(sim.address).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let phone = Phone::new();
-        let _session = phone.log_in_as_ada(&server).await;
         let mut direct = phone.open(&sim, relay.address).await;
         let kitchen = identity(&sim);
 
-        // The server goes away: the feed finds it unreachable, goes direct,
-        // and its answer is lost there.
-        let address = server.address();
-        let store = server.stop_keeping().await;
         relay.hold_answers();
         let router = Rc::clone(&phone.router);
         let asked = kitchen.clone();
         let feeding = tokio::task::spawn_local(async move { router.feed(asked, 1).await });
         eventually("the feed is reserved", async || {
-            (feeder::feeds(&flash) == 1).then_some(())
+            (feeds(&flash) == 1).then_some(())
         })
         .await;
         relay.cut();
         let pending = uncertain(feeding.await.unwrap());
-        assert_eq!(pending.path, RoutePath::Direct);
         direct.closed().await;
 
-        // The server is back and the router routes new requests through it,
-        // but the uncertain feed is asked of its own path only.
-        let server = reopen(store, address).await;
-        phone.router.refresh().await.unwrap();
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Server));
-        let RetryOutcome::Uncertain { pending: still } =
-            phone.router.retry(pending.key.clone()).await
+        // Held before anything is sent.
+        let RoutedFeed::Held { pending: holding } = phone.router.feed(kitchen.clone(), 1).await
         else {
-            panic!("no session has read the history yet");
+            panic!("an uncertain feed holds the next");
         };
-        assert_eq!(still.path, RoutePath::Direct);
-        let journal = owner
-            .commands(&wellfed_api::CommandQuery::default())
-            .await
-            .unwrap();
-        assert!(journal.items.is_empty(), "nothing went through the server");
+        assert_eq!(holding.key, pending.key);
 
+        // Put away, the next feed is admitted (and goes nowhere: its
+        // session has ended), and the old one stays pinned.
+        phone.router.acknowledge(pending.key.clone()).unwrap();
+        let RoutedFeed::NotSent { reason } = phone.router.feed(kitchen.clone(), 1).await else {
+            panic!("put away, the next feed is no longer held");
+        };
+        assert_eq!(reason, NotSentReason::Session);
+        let [kept] = phone.router.pending().try_into().expect("one pin");
+        assert_eq!(kept.key, pending.key);
+        assert!(kept.acknowledged);
+
+        // The history still settles it, and it never fed again.
         relay.resume();
-        let _again = phone.open(&sim, relay.address).await;
+        let again = phone.open(&sim, relay.address).await;
         fed_once(&phone.settled(&pending.key).await);
-        assert_eq!(feeder::feeds(&flash), 1);
-        server.stop().await;
+        assert_eq!(feeds(&flash), 1);
+        drop(direct.session);
+        drop(again.session);
         sim.stop().await;
     });
 }
 
 #[test]
-fn a_viewer_goes_through_the_server_only() {
+fn a_feed_never_takes_the_end_of_one_already_running() {
     local(async {
         let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let password = "temporary pass".to_owned();
-        owner
-            .create_user(&NewUser {
-                name: "sitter".into(),
-                password: password.clone(),
-                role: Role::Viewer,
-                expires: None,
-            })
-            .await
-            .unwrap();
-        let phone = Phone::new();
-        let _session = phone.log_in(&server, "sitter", &password).await;
-        // Even with a session of the phone's own open, a viewer has no key
-        // to use.
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Server));
-
-        let RoutedFeed::NotSent {
-            error: Some(error), ..
-        } = phone.router.feed(kitchen.clone(), 1).await
-        else {
-            panic!("a viewer may not feed");
-        };
-        assert_eq!(error.kind, ServerErrorKind::Forbidden);
-
-        // The server down: still never direct.
-        server.stop().await;
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Server));
-        let RoutedFeed::NotSent {
-            error: Some(error), ..
-        } = phone.router.feed(kitchen.clone(), 1).await
-        else {
-            panic!("an unreachable server sends nothing");
-        };
-        assert_eq!(error.kind, ServerErrorKind::Unreachable);
-        assert_eq!(phone.router.path(kitchen), Some(RoutePath::Server));
-        assert_eq!(feeder::feeds(&flash), 0);
-        sim.stop().await;
-    });
-}
-
-/// A server that fails every request inside, `500` before anything is
-/// journaled, as one whose database write failed would.
-fn failing_server() -> SocketAddr {
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let address = listener.local_addr().unwrap();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { return };
-            let mut request = [0; 8192];
-            let _ = stream.read(&mut request);
-            let _ = stream.write_all(
-                b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-            );
-        }
-    });
-    address
-}
-
-/// The owner puts `first` away and feeds again, which feeds; then retries
-/// `first` until it settles. However its first send ended, the old key
-/// never feeds again: the feeder's journal counts one more feed than
-/// `fed_before`, the new one.
-async fn fed_again_then_retried(
-    phone: &Phone,
-    flash: &Rc<Flash>,
-    kitchen: &str,
-    first: &PendingWrite,
-    fed_before: u64,
-) -> Settlement {
-    phone.router.acknowledge(first.key.clone()).unwrap();
-    let RoutedFeed::Started { key, .. } = phone.router.feed(kitchen.to_owned(), 1).await else {
-        panic!("a feed after the owner put the first away goes");
-    };
-    assert_ne!(key, first.key);
-    eventually("the new feed runs", async || {
-        (feeder::feeds(flash) == fed_before + 1).then_some(())
-    })
-    .await;
-
-    let settlement = phone.settled(&first.key).await;
-    // Long enough for a resend to have reached the feeder.
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    assert_eq!(
-        feeder::feeds(flash),
-        fed_before + 1,
-        "the old key never fed again"
-    );
-    assert!(phone.router.pending().is_empty());
-    settlement
-}
-
-/// Wait until the server's journal says `key`'s feed ended.
-async fn journal_fed(owner: &Client, key: &str) {
-    let key = key.parse().unwrap();
-    eventually("the journal holds the feed's end", async || {
-        let command = owner.command(key).await.ok()?;
-        matches!(
-            command.outcome,
-            Some(wellfed_api::CommandOutcome::Fed { .. })
-        )
-        .then_some(())
-    })
-    .await;
-}
-
-#[test]
-fn a_server_feed_whose_answer_to_the_phone_is_lost_settles_from_the_journal_and_never_feeds_again()
-{
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let front = Relay::start(server.address()).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let _fronted = phone
-            .through(&session, format!("http://{}", front.address))
-            .await;
-        let kitchen = identity(&sim);
-
-        // The feed runs; the server's answer never reaches the phone.
-        front.hold_answers();
-        let first = uncertain(phone.router.feed(kitchen.clone(), 1).await);
-        assert_eq!(first.path, RoutePath::Server);
-        journal_fed(&owner, &first.key).await;
-        front.cut();
-        front.resume();
-
-        let settlement = fed_again_then_retried(&phone, &flash, &kitchen, &first, 1).await;
-        assert!(
-            matches!(
-                settlement,
-                Settlement::Started { .. } | Settlement::Fed { .. }
-            ),
-            "{settlement:?}"
-        );
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_lost_feeder_offline_answer_is_settled_unsent_and_its_key_never_feeds() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let link = Relay::start(sim.address).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, link.address).await;
-        let front = Relay::start(server.address()).await;
-        let phone = Phone::trusting_after(0);
-        let session = phone.log_in_as_ada(&server).await;
-        let _fronted = phone
-            .through(&session, format!("http://{}", front.address))
-            .await;
-        let kitchen = identity(&sim);
-
-        // The server has lost the feeder and answers `feeder_offline`,
-        // dropping its entry; that answer never reaches the phone.
-        link.pause();
-        link.cut();
-        linked(&owner, false).await;
-        front.hold_answers();
-        let first = uncertain(phone.router.feed(kitchen.clone(), 1).await);
-        assert_eq!(first.path, RoutePath::Server);
-        front.cut();
-        front.resume();
-        refused(
-            owner.command(first.key.parse().unwrap()).await,
-            StatusCode::NOT_FOUND,
-            ErrorCode::NotFound,
-        );
-
-        // The feeder returns. A resend of the old key now would be a new
-        // feed the server has no entry to stop.
-        link.resume();
-        linked(&owner, true).await;
-        let settlement = fed_again_then_retried(&phone, &flash, &kitchen, &first, 0).await;
-        assert_eq!(settlement, Settlement::NotSent);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_server_failing_before_its_journal_holds_the_write_never_feeds_its_key() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let phone = Phone::trusting_after(0);
-        let session = phone.log_in_as_ada(&server).await;
-        let kitchen = identity(&sim);
-
-        // The server fails inside before it records the feed.
-        let failing = phone
-            .through(&session, format!("http://{}", failing_server()))
-            .await;
-        let first = uncertain(phone.router.feed(kitchen.clone(), 1).await);
-        assert_eq!(first.path, RoutePath::Server);
-        drop(failing);
-        refused(
-            owner.command(first.key.parse().unwrap()).await,
-            StatusCode::NOT_FOUND,
-            ErrorCode::NotFound,
-        );
-
-        // The server works again, under the same token and account.
-        phone
-            .router
-            .connect_server(&session, session.account().await.unwrap());
-        let settlement = fed_again_then_retried(&phone, &flash, &kitchen, &first, 0).await;
-        assert_eq!(settlement, Settlement::NotSent);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-/// The wall clock alone never ends the grace: after a restart its record
-/// says the attempt was a day ago, as a forward step of the phone's clock
-/// would, and the write stays uncertain until this run's own monotonic
-/// clock has seen the grace pass too.
-#[test]
-fn a_restart_a_day_later_waits_out_the_grace_before_settling_unsent() {
-    const GRACE: i64 = 2_000;
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let phone = Phone::trusting_after(GRACE);
-        let session = phone.log_in_as_ada(&server).await;
-        let kitchen = identity(&sim);
-
-        let failing = phone
-            .through(&session, format!("http://{}", failing_server()))
-            .await;
-        let first = uncertain(phone.router.feed(kitchen.clone(), 1).await);
-        assert_eq!(first.path, RoutePath::Server);
-        drop(failing);
-
-        let phone = phone.restarted_later(86_400_000, GRACE).await;
-        phone
-            .router
-            .connect_server(&session, session.account().await.unwrap());
-        let RetryOutcome::Uncertain { .. } = phone.router.retry(first.key.clone()).await else {
-            panic!("a day by the wall clock, a moment by this run's");
-        };
-        let pending = phone.router.pending();
-        assert_eq!(
-            pending.len(),
-            1,
-            "still uncertain, so it holds the next feed back"
-        );
-        assert_eq!(pending[0].key, first.key);
-
-        tokio::time::sleep(Duration::from_millis(u64::try_from(GRACE).unwrap())).await;
-        assert_eq!(phone.settled(&first.key).await, Settlement::NotSent);
-        assert_eq!(feeder::feeds(&flash), 0);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_journal_that_is_not_the_write_s_own_never_settles_it_unsent() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let phone = Phone::trusting_after(0);
-        let session = phone.log_in_as_ada(&server).await;
-        let kitchen = identity(&sim);
-
-        let _failing = phone
-            .through(&session, format!("http://{}", failing_server()))
-            .await;
-        let first = uncertain(phone.router.feed(kitchen.clone(), 1).await);
-
-        // Another token on the same server: its journal is asked, and its
-        // not holding the key says nothing of this write.
-        let other = phone.log_in_as_ada(&server).await;
-        assert_ne!(other.link().token_id, session.link().token_id);
-        for _ in 0..3 {
-            let RetryOutcome::Uncertain { .. } = phone.router.retry(first.key.clone()).await else {
-                panic!("another journal cannot settle it");
-            };
-        }
-        assert_eq!(phone.router.pending().len(), 1);
-        assert_eq!(feeder::feeds(&flash), 0);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_direct_feed_never_takes_the_end_of_one_already_running() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
+        let sim = start_on(&flash).await;
         let relay = Relay::start(sim.address).await;
         let phone = Phone::new();
         let mut direct = phone.open(&sim, relay.address).await;
@@ -1005,7 +354,16 @@ fn a_direct_feed_never_takes_the_end_of_one_already_running() {
         })
         .await;
         relay.cut();
-        let second = uncertain(feeding.await.unwrap());
+        let second = match feeding.await.unwrap() {
+            RoutedFeed::Uncertain { pending } => pending,
+            // The first was still unanswered on the phone: it holds.
+            RoutedFeed::Held { .. } => {
+                drop(direct.session);
+                sim.stop().await;
+                return;
+            }
+            other => panic!("{other:?}"),
+        };
         direct.closed().await;
 
         // A new session reads the history, the first feed's end in it,
@@ -1013,16 +371,16 @@ fn a_direct_feed_never_takes_the_end_of_one_already_running() {
         relay.resume();
         let _again = phone.open(&sim, relay.address).await;
         tokio::time::sleep(Duration::from_secs(2)).await;
-        match phone.router.retry(second.key.clone()).await {
+        match phone.router.retry(second.key.clone()) {
             // The feeder refused the second while the first ran.
-            RetryOutcome::Uncertain { .. } => assert_eq!(feeder::feeds(&flash), 1),
+            RetryOutcome::Uncertain { .. } => assert_eq!(feeds(&flash), 1),
             // The first had ended and the second ran: its own end.
             RetryOutcome::Settled {
                 settlement: Settlement::Fed { feed, .. },
                 ..
             } => {
                 assert_ne!(feed, first, "the first feed's end");
-                assert_eq!(feeder::feeds(&flash), 2);
+                assert_eq!(feeds(&flash), 2);
             }
             other => panic!("{other:?}"),
         }
@@ -1032,364 +390,13 @@ fn a_direct_feed_never_takes_the_end_of_one_already_running() {
 }
 
 #[test]
-fn the_calibration_and_the_meal_call_go_through_the_server() {
-    local(async {
-        let sim = feeder::start().await;
-        let (server, owner) = started().await;
-        // A calibration is an owner's write: the server holds an owner's
-        // key on this feeder.
-        owner
-            .adopt(&AdoptFeeder {
-                invite: feeder::invite(&sim, ClientRole::Owner).await,
-                name: "kitchen".into(),
-                address: Some(sim.address.to_string()),
-                phone_key: None,
-            })
-            .await
-            .unwrap();
-        linked(&owner, true).await;
-        let phone = Phone::new();
-        let _session = phone.log_in_as_ada(&server).await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-
-        let read = phone
-            .router
-            .ask(kitchen.clone(), FeederRequest::GetCalibration)
-            .await;
-        assert_eq!(read.path, Some(RoutePath::Server));
-        let FeederReply::Calibration { calibration } = read.reply else {
-            panic!("{:?}", read.reply);
-        };
-
-        let wrote = phone
-            .router
-            .ask(
-                kitchen.clone(),
-                FeederRequest::PutCalibration {
-                    base: calibration.generation,
-                    portion: PortionChange::Milligrams { mg: 4_200 },
-                    bowl: Bowl::Single,
-                },
-            )
-            .await;
-        assert_eq!(wrote.path, Some(RoutePath::Server));
-        let FeederReply::Calibration { calibration: after } = wrote.reply else {
-            panic!("{:?}", wrote.reply);
-        };
-        assert_eq!(after.portion_mg, Some(4_200));
-        assert!(phone.router.pending().is_empty());
-
-        let call = phone
-            .router
-            .ask(kitchen.clone(), FeederRequest::GetCall)
-            .await;
-        assert_eq!(call.path, Some(RoutePath::Server));
-        assert!(
-            matches!(call.reply, FeederReply::Call { .. }),
-            "{:?}",
-            call.reply
-        );
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_server_that_refuses_the_phones_token_closes_the_direct_path_too() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Server));
-
-        // The owner revokes the phone's token, as deleting the account or
-        // disabling it would refuse it.
-        let token = wellfed_api::TokenId(session.link().token_id.parse().unwrap());
-        owner.revoke_token(token).await.unwrap();
-        let RoutedFeed::NotSent {
-            error: Some(error), ..
-        } = phone.router.feed(kitchen.clone(), 1).await
-        else {
-            panic!("a refused token sends nothing");
-        };
-        assert_eq!(error.kind, ServerErrorKind::TokenRevoked);
-
-        // The phone's own session is open, and nothing goes on it: not a
-        // feed, not a read, not a write the server has no route for.
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Server));
-        let RoutedFeed::NotSent { .. } = phone.router.feed(kitchen.clone(), 1).await else {
-            panic!("still nothing");
-        };
-        let read = phone
-            .router
-            .ask(kitchen.clone(), FeederRequest::GetCalibration)
-            .await;
-        assert_eq!(read.path, Some(RoutePath::Server));
-        let FeederReply::NotSent {
-            reason: NotSentReason::Server,
-            server: Some(error),
-        } = read.reply
-        else {
-            panic!("the refused token reads nothing: {read:?}");
-        };
-        assert_eq!(error.kind, ServerErrorKind::TokenRevoked);
-        let invite = phone
-            .router
-            .ask(
-                kitchen.clone(),
-                FeederRequest::CreateInvite {
-                    role: ClientRole::Member,
-                },
-            )
-            .await;
-        assert_ne!(invite.path, Some(RoutePath::Direct));
-        assert!(
-            !matches!(invite.reply, FeederReply::Invite { .. }),
-            "{:?}",
-            invite.reply
-        );
-        assert_eq!(feeder::feeds(&flash), 0);
-
-        // Removing the server gives the phone its own keys back.
-        phone.router.disconnect_server();
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
-        let RoutedFeed::Started { path, .. } = phone.router.feed(kitchen, 1).await else {
-            panic!("direct-only, the phone feeds with its own key");
-        };
-        assert_eq!(path, RoutePath::Direct);
-        eventually("the direct feed runs", async || {
-            (feeder::feeds(&flash) == 1).then_some(())
-        })
-        .await;
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn the_phone_adopts_a_feeder_it_paired_and_its_key_becomes_the_accounts() {
-    local(async {
-        let sim = feeder::start().await;
-        let (server, owner) = started().await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-        // Paired before the server: the server lists nothing.
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
-
-        let adoption = phone
-            .router
-            .adopt(
-                kitchen.clone(),
-                "kitchen".into(),
-                Some(sim.address.to_string()),
-                &phone.key,
-            )
-            .await;
-        let Adoption::Adopted { feeder: adopted } = adoption else {
-            panic!("{adoption:?}");
-        };
-        assert_eq!(
-            (adopted.identity.as_str(), adopted.name.as_str()),
-            (kitchen.as_str(), "kitchen")
-        );
-        assert_eq!(adopted.role, ClientRole::Owner, "an owner's invite");
-        linked(&owner, true).await;
-        phone.router.refresh().await.unwrap();
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Server));
-
-        // The phone's own key is the account's, under this phone's token.
-        let phones = owner.phones().await.unwrap();
-        let ours = phones
-            .iter()
-            .find(|recorded| recorded.key.0 == phone.key.public().as_slice())
-            .expect("the phone's key is recorded");
-        assert_eq!(
-            ours.token.map(|token| token.to_string()),
-            Some(session.link().token_id)
-        );
-
-        // Adopting again only claims, which the server answers the same.
-        let again = phone
-            .router
-            .adopt(kitchen.clone(), "kitchen".into(), None, &phone.key)
-            .await;
-        assert!(matches!(again, Adoption::Adopted { .. }), "{again:?}");
-        let claimed = phone.router.claim_phone(kitchen, &phone.key).await;
-        assert!(matches!(claimed, Adoption::Adopted { .. }), "{claimed:?}");
-        assert_eq!(owner.feeders().await.unwrap().len(), 1);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-/// A round claims on more feeders than the server holds challenges for one
-/// token (8), and every claim's proof still answers its own challenge: the
-/// round never has so many out at once that a new challenge drops one not
-/// yet answered.
-#[test]
-fn a_round_on_more_feeders_than_a_tokens_challenges_claims_on_every_one() {
-    const FEEDERS: usize = 12;
-    local(async {
-        let (server, owner) = started().await;
-        let mut sims = Vec::new();
-        for _ in 0..FEEDERS {
-            let sim = feeder::start().await;
-            owner
-                .adopt(&AdoptFeeder {
-                    invite: feeder::invite(&sim, ClientRole::Server).await,
-                    name: "feeder".into(),
-                    address: Some(sim.address.to_string()),
-                    phone_key: None,
-                })
-                .await
-                .unwrap();
-            sims.push(sim);
-        }
-        eventually("the server reaches every feeder", async || {
-            let feeders = owner.feeders().await.unwrap();
-            feeders
-                .iter()
-                .all(|feeder| feeder.connection == Connection::Online)
-                .then_some(())
-        })
-        .await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-
-        phone.router.claim_own(&phone.key).await;
-        let token = session.link().token_id;
-        let phones = owner.phones().await.unwrap();
-        let ours = phones.iter().filter(|recorded| {
-            recorded.key.0 == phone.key.public().as_slice()
-                && recorded.token.map(|token| token.to_string()) == Some(token.clone())
-        });
-        assert_eq!(
-            ours.count(),
-            FEEDERS,
-            "claimed on every feeder in one round"
-        );
-        server.stop().await;
-        for sim in sims {
-            sim.stop().await;
-        }
-    });
-}
-
-/// After a login the phone claims its own key on every feeder the server
-/// lists, once a session. A feeder whose clients the server cannot read
-/// (its answers held up) holds up neither the login nor the other feeder,
-/// and the next round claims it.
-#[test]
-fn a_login_claims_the_phones_key_on_each_feeder_and_tries_a_failed_one_again() {
-    local(async {
-        let kitchen_sim = feeder::start().await;
-        let hall_sim = feeder::start().await;
-        let relay = Relay::start(hall_sim.address).await;
-        let (server, owner) = started().await;
-        for (sim, address) in [
-            (&kitchen_sim, kitchen_sim.address),
-            (&hall_sim, relay.address),
-        ] {
-            owner
-                .adopt(&AdoptFeeder {
-                    invite: feeder::invite(sim, ClientRole::Server).await,
-                    name: "feeder".into(),
-                    address: Some(address.to_string()),
-                    phone_key: None,
-                })
-                .await
-                .unwrap();
-        }
-        let all_online = async || {
-            let feeders = owner.feeders().await.unwrap();
-            feeders
-                .iter()
-                .all(|feeder| feeder.connection == Connection::Online)
-                .then_some(())
-        };
-        eventually("the server reaches both feeders", all_online).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let token = session.link().token_id;
-        let claimed = async || {
-            let phones = owner.phones().await.unwrap();
-            let ours = phones.into_iter().filter(|recorded| {
-                recorded.key.0 == phone.key.public().as_slice()
-                    && recorded.token.map(|token| token.to_string()) == Some(token.clone())
-            });
-            ours.count()
-        };
-
-        relay.hold_answers();
-        phone.router.claim_own(&phone.key).await;
-        assert_eq!(claimed().await, 1, "the kitchen's, not the hall's");
-
-        // The hall answers again: this session's next round claims it, and
-        // the kitchen's, claimed already, is not sent again.
-        relay.resume();
-        eventually("the server reaches both feeders", all_online).await;
-        phone.router.claim_own(&phone.key).await;
-        assert_eq!(claimed().await, 2);
-        server.stop().await;
-        kitchen_sim.stop().await;
-        hall_sim.stop().await;
-    });
-}
-
-#[test]
-fn adopting_with_no_server_or_no_invite_adopts_nothing() {
-    local(async {
-        let sim = feeder::start().await;
-        let phone = Phone::new();
-        let kitchen = identity(&sim);
-        let adoption = phone
-            .router
-            .adopt(kitchen.clone(), "kitchen".into(), None, &phone.key)
-            .await;
-        let Adoption::Failed { error } = adoption else {
-            panic!("{adoption:?}");
-        };
-        assert_eq!(error.kind, ServerErrorKind::Closed);
-
-        // With a server and no session of the phone's own, no invite.
-        let (server, owner) = started().await;
-        let _session = phone.log_in_as_ada(&server).await;
-        let adoption = phone
-            .router
-            .adopt(kitchen, "kitchen".into(), None, &phone.key)
-            .await;
-        assert!(
-            matches!(adoption, Adoption::NoInvite { .. }),
-            "{adoption:?}"
-        );
-        assert!(owner.feeders().await.unwrap().is_empty());
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
 fn a_pins_file_that_does_not_read_is_set_aside_and_holds_feeds_until_the_bowls_are_checked() {
     local(async {
         let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
+        let sim = start_on(&flash).await;
         let pins = tempfile::tempdir().unwrap();
         std::fs::write(path(&pins), b"{ not json").unwrap();
-        let (router, updates) = router(&pins, UNFOUND);
-        let phone = Phone {
-            key: ClientKey::restore(feeder::OWNER.to_vec()).unwrap(),
-            pins,
-            router,
-            updates,
-        };
+        let phone = Phone::on(pins);
         let _direct = phone.open(&sim, sim.address).await;
         let kitchen = identity(&sim);
 
@@ -1402,11 +409,20 @@ fn a_pins_file_that_does_not_read_is_set_aside_and_holds_feeds_until_the_bowls_a
             b"{ not json",
             "kept, not deleted"
         );
-        let RoutedFeed::NotSent { reason, .. } = phone.router.feed(kitchen.clone(), 1).await else {
+        let RoutedFeed::NotSent { reason } = phone.router.feed(kitchen.clone(), 1).await else {
             panic!("a lost pin may have been a feed that ran");
         };
         assert_eq!(reason, NotSentReason::SetAside);
-        assert_eq!(feeder::feeds(&flash), 0);
+        assert_eq!(feeds(&flash), 0);
+
+        // The hold is on every feeder, and across a restart.
+        let phone = phone.restarted().await;
+        let _direct = phone.open(&sim, sim.address).await;
+        assert_eq!(phone.router.set_aside(), Some(set_aside));
+        let RoutedFeed::NotSent { reason } = phone.router.feed(kitchen.clone(), 1).await else {
+            panic!("still held after a restart");
+        };
+        assert_eq!(reason, NotSentReason::SetAside);
 
         phone.router.bowls_checked().unwrap();
         assert_eq!(phone.router.set_aside(), None);
@@ -1425,15 +441,15 @@ fn a_pins_file_that_does_not_read_is_set_aside_and_holds_feeds_until_the_bowls_a
 fn a_router_left_behind_is_fenced_by_the_next_and_sends_no_write() {
     local(async {
         let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
+        let sim = start_on(&flash).await;
         let phone = Phone::new();
         let _direct = phone.open(&sim, sim.address).await;
         let kitchen = identity(&sim);
 
         // The app's isolate restarts in the live process: its router is
         // never closed, and the new one opens the same pins.
-        let next = PathRouter::open_with(path(&phone.pins), UNFOUND).expect("taken over");
-        let RoutedFeed::NotSent { reason, .. } = phone.router.feed(kitchen.clone(), 1).await else {
+        let next = FeederRouter::new(path(&phone.pins)).expect("taken over");
+        let RoutedFeed::NotSent { reason } = phone.router.feed(kitchen.clone(), 1).await else {
             panic!("the old router writes nothing down, so it sends nothing");
         };
         assert_eq!(reason, NotSentReason::Store);
@@ -1446,12 +462,11 @@ fn a_router_left_behind_is_fenced_by_the_next_and_sends_no_write() {
                 reply.reply,
                 FeederReply::NotSent {
                     reason: NotSentReason::Store,
-                    server: None
                 }
             ),
             "{reply:?}"
         );
-        assert_eq!(feeder::feeds(&flash), 0);
+        assert_eq!(feeds(&flash), 0);
 
         // The new one, with its own session, feeds.
         let session = FeederSession::new(
@@ -1465,10 +480,6 @@ fn a_router_left_behind_is_fenced_by_the_next_and_sends_no_write() {
         let running = Rc::new(session);
         let ran = Rc::clone(&running);
         tokio::task::spawn_local(async move { ran.run_with(|_| true).await });
-        eventually("the new router's session opens", async || {
-            (next.path(kitchen.clone()) == Some(RoutePath::Direct)).then_some(())
-        })
-        .await;
         eventually("the new router feeds", async || {
             match next.feed(kitchen.clone(), 1).await {
                 RoutedFeed::Started { .. } => Some(()),
@@ -1482,592 +493,10 @@ fn a_router_left_behind_is_fenced_by_the_next_and_sends_no_write() {
 }
 
 #[test]
-fn a_refused_token_stays_refused_when_the_server_then_goes_down() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-
-        let token = wellfed_api::TokenId(session.link().token_id.parse().unwrap());
-        owner.revoke_token(token).await.unwrap();
-        let RoutedFeed::NotSent { .. } = phone.router.feed(kitchen.clone(), 1).await else {
-            panic!("a refused token sends nothing");
-        };
-
-        // The server then goes away (a restart, the phone off its route): a
-        // failed connection is a server down, which does not undo the refusal.
-        server.stop().await;
-        let read = phone
-            .router
-            .ask(kitchen.clone(), FeederRequest::GetCalibration)
-            .await;
-        assert_ne!(read.path, Some(RoutePath::Direct));
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Server));
-        assert!(!matches!(
-            phone.router.feed(kitchen.clone(), 1).await,
-            RoutedFeed::Started { .. }
-        ));
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        assert_eq!(feeder::feeds(&flash), 0, "nothing fed around the account");
-        sim.stop().await;
-    });
-}
-
-/// A server address nothing answers: a socket bound there and never
-/// listening, which refuses every connection for as long as the caller
-/// holds it. A port bound and let go is free again, and a call to it can
-/// then reach something: another test's listener, or the call itself, when
-/// the kernel picks that same port as the call's own source and the
-/// connection opens onto itself. Its own request then reads back as the
-/// answer, which fails as `Interrupted`, not `Unreachable`. A bound port is
-/// never handed out as a source.
-fn nobody() -> (String, tokio::net::TcpSocket) {
-    let socket = tokio::net::TcpSocket::new_v4().unwrap();
-    socket
-        .bind((std::net::Ipv4Addr::LOCALHOST, 0).into())
-        .unwrap();
-    let address = socket.local_addr().unwrap();
-    (format!("http://{address}"), socket)
-}
-
-#[test]
-fn a_cold_start_with_a_refused_token_keeps_the_phones_own_keys_closed() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let account = session.account().await.unwrap();
-        let token = wellfed_api::TokenId(session.link().token_id.parse().unwrap());
-        owner.revoke_token(token).await.unwrap();
-
-        // The app starts again on its kept link and secret.
-        let phone = phone.restarted().await;
-        let kept = ServerSession::restore(session.link(), session.secret()).unwrap();
-        let resumed = phone.router.resume_server(&kept, Some(account)).await;
-        assert_eq!(
-            resumed.map(|_| ()).map_err(|error| error.kind),
-            Err(ServerErrorKind::TokenRevoked)
-        );
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-        assert_ne!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
-        assert!(matches!(
-            phone.router.feed(kitchen.clone(), 1).await,
-            RoutedFeed::NotSent { .. }
-        ));
-
-        // A fresh login opens them again.
-        let _again = phone.log_in_as_ada(&server).await;
-        assert_eq!(phone.router.path(kitchen), Some(RoutePath::Server));
-        assert_eq!(feeder::feeds(&flash), 0);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_cold_start_with_the_server_down_goes_by_the_kept_account() {
-    local(async {
-        let sim = feeder::start().await;
-        let kitchen = identity(&sim);
-        let (nobody, _refusing) = nobody();
-        let down = ServerLink {
-            url: nobody,
-            key: "00".repeat(32),
-            user: "ada".into(),
-            token_id: "00000000-0000-0000-0000-000000000001".into(),
-        };
-        let account = |role, expires_ms| ServerAccount {
-            id: "00000000-0000-0000-0000-000000000002".into(),
-            name: "ada".into(),
-            role,
-            expires_ms,
-        };
-        let cases = [
-            (
-                Some(account(ServerRole::Owner, None)),
-                Some(RoutePath::Direct),
-            ),
-            (
-                Some(account(ServerRole::Viewer, None)),
-                Some(RoutePath::Server),
-            ),
-            (
-                Some(account(ServerRole::Member, Some(1_900_000_000_000))),
-                Some(RoutePath::Server),
-            ),
-            // Nothing kept: its standing is unknown, so no key of its own.
-            (None, Some(RoutePath::Server)),
-        ];
-        for (cached, expected) in cases {
-            let phone = Phone::new();
-            let kept = ServerSession::restore(down.clone(), "secret".into()).unwrap();
-            phone.router.configure_server(KnownServer {
-                link: down.clone(),
-                feeders: vec![ListedFeeder {
-                    id: "00000000-0000-0000-0000-000000000003".into(),
-                    identity: kitchen.clone(),
-                    name: "kitchen".into(),
-                }],
-                account: cached.clone(),
-            });
-            let resumed = phone.router.resume_server(&kept, cached.clone()).await;
-            assert_eq!(
-                resumed.map(|_| ()).map_err(|error| error.kind),
-                Err(ServerErrorKind::Unreachable)
-            );
-            let mut direct = phone.open(&sim, sim.address).await;
-            assert_eq!(phone.router.path(kitchen.clone()), expected, "{cached:?}");
-            // The feeder's session slots are few.
-            direct.session.close();
-            direct.closed().await;
-        }
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_server_whose_token_is_gone_closes_the_phones_own_keys_until_it_is_removed() {
-    local(async {
-        let sim = feeder::start().await;
-        let phone = Phone::new();
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
-
-        phone.router.refuse_server();
-        assert_eq!(phone.router.path(kitchen.clone()), None);
-        assert!(matches!(
-            phone.router.feed(kitchen.clone(), 1).await,
-            RoutedFeed::NotSent {
-                reason: NotSentReason::NoPath,
-                ..
-            }
-        ));
-
-        phone.router.disconnect_server();
-        assert_eq!(phone.router.path(kitchen), Some(RoutePath::Direct));
-        sim.stop().await;
-    });
-}
-
-/// What a server read begun under one session says is never applied to the
-/// session that replaced it: an owner's account, read just before the app
-/// switched to a viewer's, never sets the viewer's routing.
-#[test]
-fn a_server_read_begun_under_a_replaced_session_is_never_applied() {
-    local(async {
-        let (server, owner) = started().await;
-        let front = Relay::start(server.address()).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let viewer = NewUser {
-            name: "vic".into(),
-            password: "temporary pass".into(),
-            role: Role::Viewer,
-            expires: None,
-        };
-        owner.create_user(&viewer).await.unwrap();
-        let vic = ServerSession::login(
-            format!("http://{}", server.address()),
-            "vic".into(),
-            "temporary pass".into(),
-            "pixel".into(),
-            None,
-        )
-        .await
-        .unwrap();
-        let vic_account = vic.account().await.unwrap();
-        let _fronted = phone
-            .through(&session, format!("http://{}", front.address))
-            .await;
-        while phone.updates.borrow_mut().try_recv().is_ok() {}
-
-        front.hold_answers();
-        let (read, ()) = tokio::join!(phone.router.refresh(), async {
-            tokio::time::sleep(GIVE_UP / 4).await;
-            phone.router.connect_server(&vic, vic_account.clone());
-            front.resume();
-        });
-
-        assert!(read.is_err(), "{read:?}");
-        while let Ok(update) = phone.updates.borrow_mut().try_recv() {
-            if let RouterUpdate::Account { account } = update {
-                assert_eq!(account, vic_account, "only the viewer's own account");
-            }
-        }
-        server.stop().await;
-    });
-}
-
-/// A refusal of an old token, heard after a fresh login replaced it, says
-/// nothing of the new one: the phone's own keys stay open.
-#[test]
-fn a_late_refusal_of_a_replaced_token_never_closes_the_phones_own_keys() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let (server, owner) = started().await;
-        adopt(&owner, &sim, sim.address).await;
-        let front = Relay::start(server.address()).await;
-        let phone = Phone::new();
-        let old = phone.log_in_as_ada(&server).await;
-        let login = ada_login();
-        let fresh = ServerSession::login(
-            format!("http://{}", server.address()),
-            login.name.clone(),
-            login.password.clone(),
-            "pixel".into(),
-            None,
-        )
-        .await
-        .unwrap();
-        let account = fresh.account().await.unwrap();
-        let _fronted = phone
-            .through(&old, format!("http://{}", front.address))
-            .await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-
-        // The old token is revoked; a feed under it is refused, and that
-        // answer is held until the fresh login has replaced it.
-        let token = wellfed_api::TokenId(old.link().token_id.parse().unwrap());
-        owner.revoke_token(token).await.unwrap();
-        front.hold_answers();
-        let (fed, ()) = tokio::join!(phone.router.feed(kitchen.clone(), 1), async {
-            tokio::time::sleep(GIVE_UP / 4).await;
-            phone.router.connect_server(&fresh, account.clone());
-            front.resume();
-        });
-        let RoutedFeed::NotSent {
-            error: Some(error), ..
-        } = fed
-        else {
-            panic!("the old token sent nothing: {fed:?}");
-        };
-        assert_eq!(error.kind, ServerErrorKind::TokenRevoked);
-
-        // The fresh login's owner still uses the phone's own key where the
-        // server has no route.
-        let invite = phone
-            .router
-            .ask(
-                kitchen.clone(),
-                FeederRequest::CreateInvite {
-                    role: ClientRole::Member,
-                },
-            )
-            .await;
-        assert_eq!(invite.path, Some(RoutePath::Direct));
-        assert!(
-            matches!(invite.reply, FeederReply::Invite { .. }),
-            "{:?}",
-            invite.reply
-        );
-        assert_eq!(feeder::feeds(&flash), 0);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-/// An app that stops while its adoption is out finds it unsettled at its
-/// next start: written down before the invite went, so the next attempt
-/// only reads the server's list and makes no second owner invite.
-#[test]
-fn an_adoption_cut_off_by_the_app_stopping_is_only_read_for_at_the_next_start() {
-    local(async {
-        let sim = feeder::start().await;
-        let (server, owner) = started().await;
-        let front = Relay::start(server.address()).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let _fronted = phone
-            .through(&session, format!("http://{}", front.address))
-            .await;
-        let direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-
-        // The POST reaches the server; the app stops before its answer.
-        front.hold_answers();
-        let adopting = phone.router.adopt(
-            kitchen.clone(),
-            "kitchen".into(),
-            Some(sim.address.to_string()),
-            &phone.key,
-        );
-        let stopped = tokio::time::timeout(GIVE_UP / 2, adopting).await;
-        assert!(stopped.is_err(), "the app stopped with the POST out");
-        let pins = std::fs::read_to_string(path(&phone.pins)).unwrap();
-        assert!(
-            pins.contains("adoptions") && pins.contains(&kitchen),
-            "{pins}"
-        );
-        eventually("the server holds it", async || {
-            (owner.feeders().await.unwrap().len() == 1).then_some(())
-        })
-        .await;
-        drop(direct);
-
-        let phone = phone.restarted().await;
-        let _fronted = phone
-            .through(&session, format!("http://{}", front.address))
-            .await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let again = phone
-            .router
-            .adopt(kitchen.clone(), "kitchen".into(), None, &phone.key)
-            .await;
-        assert!(matches!(again, Adoption::Unsettled { .. }), "{again:?}");
-
-        front.cut();
-        front.resume();
-        let checked = phone
-            .router
-            .check_adoption(kitchen.clone(), &phone.key)
-            .await;
-        assert!(matches!(checked, Adoption::Adopted { .. }), "{checked:?}");
-        assert_eq!(owner.feeders().await.unwrap().len(), 1);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn an_adoption_whose_answer_is_lost_is_settled_by_reading_and_never_invited_twice() {
-    local(async {
-        let sim = feeder::start().await;
-        let (server, owner) = started().await;
-        let front = Relay::start(server.address()).await;
-        let phone = Phone::new();
-        let session = phone.log_in_as_ada(&server).await;
-        let _fronted = phone
-            .through(&session, format!("http://{}", front.address))
-            .await;
-        let _direct = phone.open(&sim, sim.address).await;
-        let kitchen = identity(&sim);
-
-        // The server adopts it; its answer, and the list read after, never
-        // reach the phone.
-        front.hold_answers();
-        let adoption = phone
-            .router
-            .adopt(
-                kitchen.clone(),
-                "kitchen".into(),
-                Some(sim.address.to_string()),
-                &phone.key,
-            )
-            .await;
-        assert!(
-            matches!(adoption, Adoption::Unsettled { .. }),
-            "{adoption:?}"
-        );
-        eventually("the server holds it", async || {
-            (owner.feeders().await.unwrap().len() == 1).then_some(())
-        })
-        .await;
-
-        // The record outlives the app: the grace holds through a restart.
-        let pins = std::fs::read_to_string(path(&phone.pins)).unwrap();
-        assert!(
-            pins.contains("adoptions") && pins.contains(&kitchen),
-            "{pins}"
-        );
-
-        // Adopting again only reads while it is unsettled: no second invite.
-        let again = phone
-            .router
-            .adopt(kitchen.clone(), "kitchen".into(), None, &phone.key)
-            .await;
-        assert!(matches!(again, Adoption::Unsettled { .. }), "{again:?}");
-
-        front.cut();
-        front.resume();
-        let checked = phone
-            .router
-            .check_adoption(kitchen.clone(), &phone.key)
-            .await;
-        assert!(matches!(checked, Adoption::Adopted { .. }), "{checked:?}");
-        let phones = owner.phones().await.unwrap();
-        assert!(
-            phones
-                .iter()
-                .any(|recorded| recorded.key.0 == phone.key.public().as_slice()),
-            "the phone's key is the account's"
-        );
-        assert_eq!(owner.feeders().await.unwrap().len(), 1);
-        server.stop().await;
-        sim.stop().await;
-    });
-}
-
-/// A server that takes the connection and never answers.
-fn silent() -> String {
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let address = listener.local_addr().unwrap();
-    std::thread::spawn(move || {
-        let mut held = Vec::new();
-        for stream in listener.incoming() {
-            held.push(stream);
-        }
-    });
-    format!("http://{address}")
-}
-
-#[test]
-fn a_viewer_never_feeds_direct_while_its_cold_start_waits_for_the_server() {
-    local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let kitchen = identity(&sim);
-        let phone = Rc::new(Phone::new());
-        let link = ServerLink {
-            url: silent(),
-            key: "00".repeat(32),
-            user: "ada".into(),
-            token_id: "00000000-0000-0000-0000-000000000001".into(),
-        };
-        let viewer = ServerAccount {
-            id: "00000000-0000-0000-0000-000000000002".into(),
-            name: "ada".into(),
-            role: ServerRole::Viewer,
-            expires_ms: None,
-        };
-        // The app hands the router what it keeps before anything else.
-        phone.router.configure_server(KnownServer {
-            link: link.clone(),
-            feeders: vec![ListedFeeder {
-                id: "00000000-0000-0000-0000-000000000003".into(),
-                identity: kitchen.clone(),
-                name: "kitchen".into(),
-            }],
-            account: Some(viewer.clone()),
-        });
-        // The silent server is given up on after GIVE_UP, so the test sees
-        // the moment its wait ends, when a direct fallback would tempt most.
-        let timeouts = Timeouts {
-            read: Some(GIVE_UP),
-            request: Some(GIVE_UP),
-        };
-        let kept = Rc::new(ServerSession::restore_with(link, "secret".into(), timeouts).unwrap());
-        // The app's sessions attach as the server is asked.
-        let _direct = phone.open(&sim, sim.address).await;
-        let resuming = {
-            let (phone, kept) = (Rc::clone(&phone), Rc::clone(&kept));
-            tokio::task::spawn_local(async move {
-                let _ = phone.router.resume_server(&kept, Some(viewer)).await;
-            })
-        };
-        let no_direct_feed = async |when: &str| {
-            assert_ne!(
-                phone.router.path(kitchen.clone()),
-                Some(RoutePath::Direct),
-                "{when}"
-            );
-            assert!(
-                !matches!(
-                    phone.router.feed(kitchen.clone(), 1).await,
-                    RoutedFeed::Started { .. }
-                ),
-                "a viewer feeds through the server or not at all: {when}"
-            );
-        };
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        no_direct_feed("while the server is asked").await;
-        tokio::time::timeout(GIVE_UP * 4, resuming)
-            .await
-            .expect("the cold start gives up on the silent server")
-            .unwrap();
-        no_direct_feed("once the server was given up on").await;
-        let feeds = feeder::feeds(&flash);
-        sim.stop().await;
-        assert_eq!(feeds, 0, "a viewer fed on the phone's own key");
-    });
-}
-
-#[test]
-fn a_kept_server_with_no_kept_account_uses_no_own_key_until_it_answers() {
-    local(async {
-        let sim = feeder::start().await;
-        let kitchen = identity(&sim);
-        let phone = Phone::new();
-        phone.router.configure_server(KnownServer {
-            link: ServerLink {
-                url: silent(),
-                key: "00".repeat(32),
-                user: "ada".into(),
-                token_id: "00000000-0000-0000-0000-000000000001".into(),
-            },
-            feeders: Vec::new(),
-            account: None,
-        });
-        let _direct = phone.open(&sim, sim.address).await;
-        assert_eq!(phone.router.path(kitchen.clone()), None);
-
-        // Removing the server gives the phone its own keys back.
-        phone.router.disconnect_server();
-        assert_eq!(phone.router.path(kitchen), Some(RoutePath::Direct));
-        sim.stop().await;
-    });
-}
-
-#[test]
-fn a_change_to_the_account_the_router_reads_is_told() {
-    local(async {
-        let (server, owner) = started().await;
-        let password = "temporary pass".to_owned();
-        let sam = owner
-            .create_user(&NewUser {
-                name: "sam".into(),
-                password: password.clone(),
-                role: Role::Member,
-                expires: None,
-            })
-            .await
-            .unwrap();
-        let phone = Phone::new();
-        let _session = phone.log_in(&server, "sam", &password).await;
-
-        owner
-            .update_user(
-                sam.id,
-                &UserPatch {
-                    role: Some(Role::Viewer),
-                    ..UserPatch::default()
-                },
-            )
-            .await
-            .unwrap();
-        phone.router.refresh().await.unwrap();
-        let account = eventually("the router tells the account", async || {
-            let mut updates = phone.updates.borrow_mut();
-            while let Ok(update) = updates.try_recv() {
-                if let RouterUpdate::Account { account } = update
-                    && account.role == ServerRole::Viewer
-                {
-                    return Some(account);
-                }
-            }
-            None
-        })
-        .await;
-        assert_eq!(account.name, "sam");
-        server.stop().await;
-    });
-}
-
-#[test]
 fn a_feed_s_answer_is_told_by_its_key_for_a_screen_that_holds_only_the_pin() {
     local(async {
-        let sim = feeder::start().await;
+        let flash = Flash::memory();
+        let sim = start_on(&flash).await;
         let phone = Phone::new();
         let _direct = phone.open(&sim, sim.address).await;
         let kitchen = identity(&sim);
@@ -2077,12 +506,12 @@ fn a_feed_s_answer_is_told_by_its_key_for_a_screen_that_holds_only_the_pin() {
         };
         let told = eventually("the feed's answer is told", async || {
             let mut updates = phone.updates.borrow_mut();
-            std::iter::from_fn(|| updates.try_recv().ok()).find_map(|update| match update {
-                RouterUpdate::Settled {
+            std::iter::from_fn(|| updates.try_recv().ok()).find_map(|update| {
+                let RouterUpdate {
                     pending,
                     settlement,
-                } if pending.key == key => Some(settlement),
-                _ => None,
+                } = update;
+                (pending.key == key).then_some(settlement)
             })
         })
         .await;
@@ -2091,51 +520,26 @@ fn a_feed_s_answer_is_told_by_its_key_for_a_screen_that_holds_only_the_pin() {
     });
 }
 
+/// A feeder the phone holds no session with is no write's: nothing is
+/// pinned, and nothing goes.
 #[test]
-fn a_login_uses_no_own_key_while_the_server_is_asked_who_the_account_is() {
+fn a_feeder_with_no_session_is_sent_nothing_and_pins_nothing() {
     local(async {
-        let flash = Flash::memory();
-        let sim = feeder::start_on(&flash).await;
-        let kitchen = identity(&sim);
-        let phone = Rc::new(Phone::new());
-        let _direct = phone.open(&sim, sim.address).await;
-        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
-
-        // The app's login: the last server let go, the new one told with no
-        // account, then handed over while its answer is out.
-        let link = ServerLink {
-            url: silent(),
-            key: "00".repeat(32),
-            user: "sam".into(),
-            token_id: "00000000-0000-0000-0000-000000000001".into(),
+        let phone = Phone::new();
+        let RoutedFeed::NotSent { reason } = phone.router.feed("ab".repeat(32), 1).await else {
+            panic!("no session, no feed");
         };
-        phone.router.disconnect_server();
-        phone.router.configure_server(KnownServer {
-            link: link.clone(),
-            feeders: Vec::new(),
-            account: None,
-        });
-        let session = Rc::new(ServerSession::restore(link, "secret".into()).unwrap());
-        let resuming = {
-            let (phone, session) = (Rc::clone(&phone), Rc::clone(&session));
-            tokio::task::spawn_local(async move {
-                let _ = phone.router.resume_server(&session, None).await;
-            })
-        };
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        assert_eq!(phone.router.path(kitchen.clone()), None);
-        assert!(!matches!(
-            phone.router.feed(kitchen, 1).await,
-            RoutedFeed::Started { .. }
-        ));
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        let feeds = feeder::feeds(&flash);
-        resuming.abort();
-        sim.stop().await;
+        assert_eq!(reason, NotSentReason::NoPath);
+        let reply = phone
+            .router
+            .ask("ab".repeat(32), FeederRequest::SetLock { locked: true })
+            .await;
         assert_eq!(
-            feeds, 0,
-            "a login fed on the phone's own key before the server said"
+            reply.reply,
+            FeederReply::NotSent {
+                reason: NotSentReason::NoPath
+            }
         );
+        assert!(phone.router.pending().is_empty());
     });
 }

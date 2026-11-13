@@ -1,7 +1,7 @@
 part of 'feeder.dart';
 
 /// The phone's own session with the feeder: one at a time, each attached to
-/// the path router before it runs, so the router hears its history from the
+/// the router before it runs, so the router hears its history from the
 /// start and nothing reaches the feeder around it.
 extension FeederSessionRun on FeederController {
   /// One session until it closes; whether it opened.
@@ -33,7 +33,7 @@ extension FeederSessionRun on FeederController {
               role: role,
               skew: () => skew,
               error: () => null,
-              // A new session reads the card again: until then, not the server's.
+              // A new session reads the card again.
               cardFresh: false,
               history: const [],
               historyRead: false,
@@ -98,10 +98,8 @@ extension FeederSessionRun on FeederController {
 
     _session = null;
     _setState(_state.copyWith(cardFresh: false));
-    // A direct feed running when the link went is adrift. One that went
-    // through the server is not: its end comes on the server's stream.
-    if (_feed case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt, :final RoutePath? path)
-        when path != RoutePath.server) {
+    // A feed running when the link went is adrift.
+    if (_feed case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt)) {
       _setFeed(FeedAdrift(feed: feed, by: FeedLoss.link, portions: portions, sentAt: sentAt));
     }
     // A feeder of another major refuses the session at the handshake: it
@@ -113,10 +111,10 @@ extension FeederSessionRun on FeederController {
   }
 
   /// The feeder reserved a feed of this phone's as `feed`: from the session's
-  /// stream for a direct feed, or the router's answer for either path. Both
-  /// may say it, in either order, and the second changes nothing. Past
-  /// `dueSeconds` a feeder that stayed on has ended it.
-  void _feedStarted(int feed, int portions, int dueSeconds, {String? key, RoutePath? path}) {
+  /// stream, or the router's answer. Both may say it, in either order, and
+  /// the second changes nothing. Past `dueSeconds` a feeder that stayed on
+  /// has ended it.
+  void _feedStarted(int feed, int portions, int dueSeconds, {String? key}) {
     final FeedState now = _feed;
     switch (now) {
       case FeedRunning(feed: final int running) when running == feed:
@@ -128,7 +126,6 @@ extension FeederSessionRun on FeederController {
             cancelAsked: now.cancelAsked,
             cancelUnconfirmed: now.cancelUnconfirmed,
             key: key ?? now.key,
-            path: path ?? now.path,
           ),
         );
       case FeedEnded(:final FeedResult result) when result.feed == feed:
@@ -137,7 +134,7 @@ extension FeederSessionRun on FeederController {
       case FeedSending() || FeedUnanswered() || FeedIdle():
         _feedDue?.cancel();
         _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);
-        _setFeed(FeedRunning(feed: feed, portions: portions, sentAt: now.sentAt, key: key, path: path));
+        _setFeed(FeedRunning(feed: feed, portions: portions, sentAt: now.sentAt, key: key));
       case _:
         break;
     }
@@ -189,6 +186,5 @@ extension on FeedRunning {
     cancelAsked: asked,
     cancelUnconfirmed: unconfirmed,
     key: key,
-    path: path,
   );
 }

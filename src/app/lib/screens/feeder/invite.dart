@@ -34,14 +34,6 @@ Future<void> inviteSomeone(BuildContext context, FeederController feeder) async 
       await openModalPage<void>(context, (_) => InviteScreen(share: feeder.share, invite: invite));
       // Whoever scanned it joined while it was on screen.
       await feeder.loadClients();
-    // The server's stream settled the create as made after its answer was
-    // lost, and the code only that answer carried is gone with it.
-    case FeederReply_Done():
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text("The invite was made, but its code didn't come back. Make another.")),
-        );
     default:
       showProblem(context, reply);
   }

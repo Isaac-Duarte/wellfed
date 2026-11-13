@@ -13,7 +13,6 @@ pub use crate::api::model::{
     TraceEntry, TraceSummary, Tune, UpdatePhase, UpdateRefusal, Weekday, Window,
 };
 use crate::api::router::NotSentReason;
-use crate::api::server_error::ServerError;
 
 /// What the owner asks of a feeder.
 pub enum FeederRequest {
@@ -322,10 +321,9 @@ pub struct UpdateInfo {
 pub enum FeederRefusal {
     Forbidden,
     /// The store moved past the base: read it again and decide again.
-    /// `current` is the store's generation now, unknown when the owner's
-    /// server refused it, since its refusal does not carry one.
+    /// `current` is the store's generation now.
     Stale {
-        current: Option<u32>,
+        current: u32,
     },
     Busy,
     Unavailable,
@@ -340,10 +338,9 @@ pub enum FeederRefusal {
         reason: UpdateRefusal,
     },
     Unverified,
-    /// A feed outside the portions a feeder takes; `asked` is unknown when
-    /// the owner's server refused it, since its refusal does not carry it.
+    /// A feed outside the portions a feeder takes, as `asked`.
     Portions {
-        asked: Option<u8>,
+        asked: u8,
     },
     NoClock,
     /// A refusal a newer feeder build added, which this app cannot name.
@@ -425,12 +422,9 @@ pub enum FeederReply {
     },
     /// No answer came: a write may have run. It is never sent again.
     Unanswered,
-    /// It never went out, or the server did not pass it on: nothing
-    /// happened. `reason` says why, and `server` what the server said when
-    /// it refused it or could not be reached.
+    /// It never went out: nothing happened. `reason` says why.
     NotSent {
         reason: NotSentReason,
-        server: Option<ServerError>,
     },
     /// The feeder answered something else.
     Unexpected,

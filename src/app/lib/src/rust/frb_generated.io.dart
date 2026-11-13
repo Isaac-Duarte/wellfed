@@ -13,9 +13,6 @@ import 'api/keys.dart';
 import 'api/model.dart';
 import 'api/restore.dart';
 import 'api/router.dart';
-import 'api/server.dart';
-import 'api/server_error.dart';
-import 'api/server_views.dart';
 import 'api/session.dart';
 import 'api/setup.dart';
 import 'api/store.dart';
@@ -46,6 +43,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederBrowsePtr;
 
   CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_FeederRouterPtr => wire
+      ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouterPtr;
+
+  CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_FeederSessionPtr => wire
       ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederSessionPtr;
 
@@ -62,20 +63,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerInstallRunPtr;
 
   CrossPlatformFinalizerArg
-  get rust_arc_decrement_strong_count_PathRouterPtr => wire
-      ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr;
-
-  CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_RecoveryPtr => wire
       ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecoveryPtr;
 
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_RestoreRunPtr => wire
       ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRunPtr;
-
-  CrossPlatformFinalizerArg
-  get rust_arc_decrement_strong_count_ServerSessionPtr => wire
-      ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSessionPtr;
 
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_SetupDriverPtr => wire
@@ -93,6 +86,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   FeederBrowse
   dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederBrowse(
+    dynamic raw,
+  );
+
+  @protected
+  FeederRouter
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
     dynamic raw,
   );
 
@@ -121,12 +120,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  PathRouter
-  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    dynamic raw,
-  );
-
-  @protected
   Recovery
   dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     dynamic raw,
@@ -135,12 +128,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RestoreRun
   dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
-    dynamic raw,
-  );
-
-  @protected
-  ServerSession
-  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
     dynamic raw,
   );
 
@@ -169,6 +156,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  FeederRouter
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+    dynamic raw,
+  );
+
+  @protected
   FeederSession
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederSession(
     dynamic raw,
@@ -193,12 +186,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  PathRouter
-  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    dynamic raw,
-  );
-
-  @protected
   Recovery
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     dynamic raw,
@@ -207,12 +194,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RestoreRun
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
-    dynamic raw,
-  );
-
-  @protected
-  ServerSession
-  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
     dynamic raw,
   );
 
@@ -231,6 +212,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   FeederBrowse
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederBrowse(
+    dynamic raw,
+  );
+
+  @protected
+  FeederRouter
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
     dynamic raw,
   );
 
@@ -259,12 +246,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  PathRouter
-  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    dynamic raw,
-  );
-
-  @protected
   Recovery
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     dynamic raw,
@@ -273,12 +254,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RestoreRun
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
-    dynamic raw,
-  );
-
-  @protected
-  ServerSession
-  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
     dynamic raw,
   );
 
@@ -314,11 +289,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  RustStreamSink<ServerUpdate> dco_decode_StreamSink_server_update_Sse(
-    dynamic raw,
-  );
-
-  @protected
   RustStreamSink<SessionUpdate> dco_decode_StreamSink_session_update_Sse(
     dynamic raw,
   );
@@ -335,16 +305,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
-  Adoption dco_decode_adoption(dynamic raw);
-
-  @protected
   AlertHold dco_decode_alert_hold(dynamic raw);
 
   @protected
   AlertLevel dco_decode_alert_level(dynamic raw);
-
-  @protected
-  AlertServer dco_decode_alert_server(dynamic raw);
 
   @protected
   AlertSettingsView dco_decode_alert_settings_view(dynamic raw);
@@ -378,9 +342,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Bowl dco_decode_bowl(dynamic raw);
-
-  @protected
-  AlertServer dco_decode_box_autoadd_alert_server(dynamic raw);
 
   @protected
   AppStore dco_decode_box_autoadd_app_store(dynamic raw);
@@ -426,9 +387,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FeedOutcome dco_decode_box_autoadd_feed_outcome(dynamic raw);
-
-  @protected
-  FeedRate dco_decode_box_autoadd_feed_rate(dynamic raw);
 
   @protected
   FeedRefusal dco_decode_box_autoadd_feed_refusal(dynamic raw);
@@ -479,9 +437,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InviteView dco_decode_box_autoadd_invite_view(dynamic raw);
 
   @protected
-  KnownServer dco_decode_box_autoadd_known_server(dynamic raw);
-
-  @protected
   MealAction dco_decode_box_autoadd_meal_action(dynamic raw);
 
   @protected
@@ -495,9 +450,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MuteTarget dco_decode_box_autoadd_mute_target(dynamic raw);
-
-  @protected
-  NewRefill dco_decode_box_autoadd_new_refill(dynamic raw);
 
   @protected
   NextMealView dco_decode_box_autoadd_next_meal_view(dynamic raw);
@@ -548,54 +500,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RestoreSpec dco_decode_box_autoadd_restore_spec(dynamic raw);
 
   @protected
-  RoutePath dco_decode_box_autoadd_route_path(dynamic raw);
-
-  @protected
-  RoutedReply dco_decode_box_autoadd_routed_reply(dynamic raw);
-
-  @protected
-  ServerAccount dco_decode_box_autoadd_server_account(dynamic raw);
-
-  @protected
-  ServerCommand dco_decode_box_autoadd_server_command(dynamic raw);
-
-  @protected
-  ServerEntry dco_decode_box_autoadd_server_entry(dynamic raw);
-
-  @protected
-  ServerError dco_decode_box_autoadd_server_error(dynamic raw);
-
-  @protected
-  ServerEvent dco_decode_box_autoadd_server_event(dynamic raw);
-
-  @protected
-  ServerFeeder dco_decode_box_autoadd_server_feeder(dynamic raw);
-
-  @protected
-  ServerFoodLeft dco_decode_box_autoadd_server_food_left(dynamic raw);
-
-  @protected
-  ServerFoodPeriod dco_decode_box_autoadd_server_food_period(dynamic raw);
-
-  @protected
-  ServerInstall dco_decode_box_autoadd_server_install(dynamic raw);
-
-  @protected
-  ServerLink dco_decode_box_autoadd_server_link(dynamic raw);
-
-  @protected
-  ServerNextMeal dco_decode_box_autoadd_server_next_meal(dynamic raw);
-
-  @protected
-  ServerRefill dco_decode_box_autoadd_server_refill(dynamic raw);
-
-  @protected
-  ServerSinceRefill dco_decode_box_autoadd_server_since_refill(dynamic raw);
-
-  @protected
-  ServerSnapshot dco_decode_box_autoadd_server_snapshot(dynamic raw);
-
-  @protected
   SetAside dco_decode_box_autoadd_set_aside(dynamic raw);
 
   @protected
@@ -609,9 +513,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SetupRefusal dco_decode_box_autoadd_setup_refusal(dynamic raw);
-
-  @protected
-  Skew dco_decode_box_autoadd_skew(dynamic raw);
 
   @protected
   Stats dco_decode_box_autoadd_stats(dynamic raw);
@@ -651,9 +552,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UpdateRefusal dco_decode_box_autoadd_update_refusal(dynamic raw);
-
-  @protected
-  WeighedIntake dco_decode_box_autoadd_weighed_intake(dynamic raw);
 
   @protected
   WifiCredentials dco_decode_box_autoadd_wifi_credentials(dynamic raw);
@@ -698,12 +596,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ClientView dco_decode_client_view(dynamic raw);
 
   @protected
-  CommandKind dco_decode_command_kind(dynamic raw);
-
-  @protected
-  CommandState dco_decode_command_state(dynamic raw);
-
-  @protected
   Counters dco_decode_counters(dynamic raw);
 
   @protected
@@ -732,9 +624,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FeedOutcome dco_decode_feed_outcome(dynamic raw);
-
-  @protected
-  FeedRate dco_decode_feed_rate(dynamic raw);
 
   @protected
   FeedReason dco_decode_feed_reason(dynamic raw);
@@ -812,9 +701,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InstallStart dco_decode_install_start(dynamic raw);
 
   @protected
-  InstallState dco_decode_install_state(dynamic raw);
-
-  @protected
   InstallUpdate dco_decode_install_update(dynamic raw);
 
   @protected
@@ -831,9 +717,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   KnownFeeder dco_decode_known_feeder(dynamic raw);
-
-  @protected
-  KnownServer dco_decode_known_server(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -861,9 +744,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
-
-  @protected
-  List<ListedFeeder> dco_decode_list_listed_feeder(dynamic raw);
 
   @protected
   List<MealView> dco_decode_list_meal_view(dynamic raw);
@@ -905,38 +785,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
-  List<ServerAnomaly> dco_decode_list_server_anomaly(dynamic raw);
-
-  @protected
-  List<ServerEntry> dco_decode_list_server_entry(dynamic raw);
-
-  @protected
-  List<ServerFeeder> dco_decode_list_server_feeder(dynamic raw);
-
-  @protected
-  List<ServerFeederPortions> dco_decode_list_server_feeder_portions(
-    dynamic raw,
-  );
-
-  @protected
-  List<ServerFood> dco_decode_list_server_food(dynamic raw);
-
-  @protected
-  List<ServerIntakeDay> dco_decode_list_server_intake_day(dynamic raw);
-
-  @protected
-  List<ServerIntakeFeeder> dco_decode_list_server_intake_feeder(dynamic raw);
-
-  @protected
-  List<ServerPet> dco_decode_list_server_pet(dynamic raw);
-
-  @protected
-  List<ServerRefill> dco_decode_list_server_refill(dynamic raw);
-
-  @protected
-  List<ServerWeight> dco_decode_list_server_weight(dynamic raw);
-
-  @protected
   List<SetupStep> dco_decode_list_setup_step(dynamic raw);
 
   @protected
@@ -947,9 +795,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Weekday> dco_decode_list_weekday(dynamic raw);
-
-  @protected
-  ListedFeeder dco_decode_listed_feeder(dynamic raw);
 
   @protected
   ListenFailure dco_decode_listen_failure(dynamic raw);
@@ -977,9 +822,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MuteTarget dco_decode_mute_target(dynamic raw);
-
-  @protected
-  NewRefill dco_decode_new_refill(dynamic raw);
 
   @protected
   NextMealView dco_decode_next_meal_view(dynamic raw);
@@ -1018,9 +860,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
-  AlertServer? dco_decode_opt_box_autoadd_alert_server(dynamic raw);
-
-  @protected
   Blocked? dco_decode_opt_box_autoadd_blocked(dynamic raw);
 
   @protected
@@ -1045,9 +884,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   FeedOutcome? dco_decode_opt_box_autoadd_feed_outcome(dynamic raw);
 
   @protected
-  FeedRate? dco_decode_opt_box_autoadd_feed_rate(dynamic raw);
-
-  @protected
   FeedRefusal? dco_decode_opt_box_autoadd_feed_refusal(dynamic raw);
 
   @protected
@@ -1058,9 +894,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
-
-  @protected
-  KnownServer? dco_decode_opt_box_autoadd_known_server(dynamic raw);
 
   @protected
   MealAction? dco_decode_opt_box_autoadd_meal_action(dynamic raw);
@@ -1096,48 +929,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Resets? dco_decode_opt_box_autoadd_resets(dynamic raw);
 
   @protected
-  RoutePath? dco_decode_opt_box_autoadd_route_path(dynamic raw);
-
-  @protected
-  ServerAccount? dco_decode_opt_box_autoadd_server_account(dynamic raw);
-
-  @protected
-  ServerError? dco_decode_opt_box_autoadd_server_error(dynamic raw);
-
-  @protected
-  ServerFoodLeft? dco_decode_opt_box_autoadd_server_food_left(dynamic raw);
-
-  @protected
-  ServerFoodPeriod? dco_decode_opt_box_autoadd_server_food_period(dynamic raw);
-
-  @protected
-  ServerNextMeal? dco_decode_opt_box_autoadd_server_next_meal(dynamic raw);
-
-  @protected
-  ServerRefill? dco_decode_opt_box_autoadd_server_refill(dynamic raw);
-
-  @protected
-  ServerSinceRefill? dco_decode_opt_box_autoadd_server_since_refill(
-    dynamic raw,
-  );
-
-  @protected
-  ServerSnapshot? dco_decode_opt_box_autoadd_server_snapshot(dynamic raw);
-
-  @protected
   SetAside? dco_decode_opt_box_autoadd_set_aside(dynamic raw);
 
   @protected
   SettingsView? dco_decode_opt_box_autoadd_settings_view(dynamic raw);
 
   @protected
-  Settlement? dco_decode_opt_box_autoadd_settlement(dynamic raw);
-
-  @protected
   SetupRefusal? dco_decode_opt_box_autoadd_setup_refusal(dynamic raw);
-
-  @protected
-  Skew? dco_decode_opt_box_autoadd_skew(dynamic raw);
 
   @protected
   TimeInfo? dco_decode_opt_box_autoadd_time_info(dynamic raw);
@@ -1162,9 +960,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UpdateInfo? dco_decode_opt_box_autoadd_update_info(dynamic raw);
-
-  @protected
-  WeighedIntake? dco_decode_opt_box_autoadd_weighed_intake(dynamic raw);
 
   @protected
   WifiCredentials? dco_decode_opt_box_autoadd_wifi_credentials(dynamic raw);
@@ -1209,9 +1004,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PortionChange dco_decode_portion_change(dynamic raw);
 
   @protected
-  PortionWeight dco_decode_portion_weight(dynamic raw);
-
-  @protected
   Portions dco_decode_portions(dynamic raw);
 
   @protected
@@ -1251,9 +1043,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RetryOutcome dco_decode_retry_outcome(dynamic raw);
 
   @protected
-  RoutePath dco_decode_route_path(dynamic raw);
-
-  @protected
   RoutedFeed dco_decode_routed_feed(dynamic raw);
 
   @protected
@@ -1261,105 +1050,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RouterUpdate dco_decode_router_update(dynamic raw);
-
-  @protected
-  ServerAccount dco_decode_server_account(dynamic raw);
-
-  @protected
-  ServerAnomaly dco_decode_server_anomaly(dynamic raw);
-
-  @protected
-  ServerCommand dco_decode_server_command(dynamic raw);
-
-  @protected
-  ServerConnection dco_decode_server_connection(dynamic raw);
-
-  @protected
-  ServerDevice dco_decode_server_device(dynamic raw);
-
-  @protected
-  ServerEntry dco_decode_server_entry(dynamic raw);
-
-  @protected
-  ServerError dco_decode_server_error(dynamic raw);
-
-  @protected
-  ServerErrorKind dco_decode_server_error_kind(dynamic raw);
-
-  @protected
-  ServerEvent dco_decode_server_event(dynamic raw);
-
-  @protected
-  ServerEventPage dco_decode_server_event_page(dynamic raw);
-
-  @protected
-  ServerFeeder dco_decode_server_feeder(dynamic raw);
-
-  @protected
-  ServerFeederDetail dco_decode_server_feeder_detail(dynamic raw);
-
-  @protected
-  ServerFeederFood dco_decode_server_feeder_food(dynamic raw);
-
-  @protected
-  ServerFeederPortions dco_decode_server_feeder_portions(dynamic raw);
-
-  @protected
-  ServerFood dco_decode_server_food(dynamic raw);
-
-  @protected
-  ServerFoodLeft dco_decode_server_food_left(dynamic raw);
-
-  @protected
-  ServerFoodPeriod dco_decode_server_food_period(dynamic raw);
-
-  @protected
-  ServerInstall dco_decode_server_install(dynamic raw);
-
-  @protected
-  ServerIntakeDay dco_decode_server_intake_day(dynamic raw);
-
-  @protected
-  ServerIntakeFeeder dco_decode_server_intake_feeder(dynamic raw);
-
-  @protected
-  ServerLink dco_decode_server_link(dynamic raw);
-
-  @protected
-  ServerNextMeal dco_decode_server_next_meal(dynamic raw);
-
-  @protected
-  ServerPet dco_decode_server_pet(dynamic raw);
-
-  @protected
-  ServerPetIntake dco_decode_server_pet_intake(dynamic raw);
-
-  @protected
-  ServerRefill dco_decode_server_refill(dynamic raw);
-
-  @protected
-  ServerRefillPage dco_decode_server_refill_page(dynamic raw);
-
-  @protected
-  ServerRefusal dco_decode_server_refusal(dynamic raw);
-
-  @protected
-  ServerRole dco_decode_server_role(dynamic raw);
-
-  @protected
-  ServerSinceRefill dco_decode_server_since_refill(dynamic raw);
-
-  @protected
-  ServerSnapshot dco_decode_server_snapshot(dynamic raw);
-
-  @protected
-  ServerUpdate dco_decode_server_update(dynamic raw);
-
-  @protected
-  ServerWeight dco_decode_server_weight(dynamic raw);
-
-  @protected
-  ServerWeightPage dco_decode_server_weight_page(dynamic raw);
 
   @protected
   SessionUpdate dco_decode_session_update(dynamic raw);
@@ -1387,9 +1077,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Skew dco_decode_skew(dynamic raw);
-
-  @protected
-  Species dco_decode_species(dynamic raw);
 
   @protected
   Stats dco_decode_stats(dynamic raw);
@@ -1482,9 +1169,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Weekday dco_decode_weekday(dynamic raw);
 
   @protected
-  WeighedIntake dco_decode_weighed_intake(dynamic raw);
-
-  @protected
   WifiCredentials dco_decode_wifi_credentials(dynamic raw);
 
   @protected
@@ -1518,6 +1202,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  FeederRouter
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   FeederSession
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederSession(
     SseDeserializer deserializer,
@@ -1542,12 +1232,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  PathRouter
-  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   Recovery
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     SseDeserializer deserializer,
@@ -1556,12 +1240,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RestoreRun
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerSession
-  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
     SseDeserializer deserializer,
   );
 
@@ -1590,6 +1268,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  FeederRouter
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   FeederSession
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederSession(
     SseDeserializer deserializer,
@@ -1614,12 +1298,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  PathRouter
-  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   Recovery
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     SseDeserializer deserializer,
@@ -1628,12 +1306,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RestoreRun
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerSession
-  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
     SseDeserializer deserializer,
   );
 
@@ -1652,6 +1324,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   FeederBrowse
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederBrowse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  FeederRouter
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
     SseDeserializer deserializer,
   );
 
@@ -1680,12 +1358,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  PathRouter
-  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   Recovery
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     SseDeserializer deserializer,
@@ -1694,12 +1366,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   RestoreRun
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerSession
-  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
     SseDeserializer deserializer,
   );
 
@@ -1735,11 +1401,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  RustStreamSink<ServerUpdate> sse_decode_StreamSink_server_update_Sse(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   RustStreamSink<SessionUpdate> sse_decode_StreamSink_session_update_Sse(
     SseDeserializer deserializer,
   );
@@ -1758,16 +1419,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
-  Adoption sse_decode_adoption(SseDeserializer deserializer);
-
-  @protected
   AlertHold sse_decode_alert_hold(SseDeserializer deserializer);
 
   @protected
   AlertLevel sse_decode_alert_level(SseDeserializer deserializer);
-
-  @protected
-  AlertServer sse_decode_alert_server(SseDeserializer deserializer);
 
   @protected
   AlertSettingsView sse_decode_alert_settings_view(
@@ -1803,9 +1458,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Bowl sse_decode_bowl(SseDeserializer deserializer);
-
-  @protected
-  AlertServer sse_decode_box_autoadd_alert_server(SseDeserializer deserializer);
 
   @protected
   AppStore sse_decode_box_autoadd_app_store(SseDeserializer deserializer);
@@ -1853,9 +1505,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FeedOutcome sse_decode_box_autoadd_feed_outcome(SseDeserializer deserializer);
-
-  @protected
-  FeedRate sse_decode_box_autoadd_feed_rate(SseDeserializer deserializer);
 
   @protected
   FeedRefusal sse_decode_box_autoadd_feed_refusal(SseDeserializer deserializer);
@@ -1914,9 +1563,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InviteView sse_decode_box_autoadd_invite_view(SseDeserializer deserializer);
 
   @protected
-  KnownServer sse_decode_box_autoadd_known_server(SseDeserializer deserializer);
-
-  @protected
   MealAction sse_decode_box_autoadd_meal_action(SseDeserializer deserializer);
 
   @protected
@@ -1934,9 +1580,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MuteTarget sse_decode_box_autoadd_mute_target(SseDeserializer deserializer);
-
-  @protected
-  NewRefill sse_decode_box_autoadd_new_refill(SseDeserializer deserializer);
 
   @protected
   NextMealView sse_decode_box_autoadd_next_meal_view(
@@ -1995,74 +1638,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RestoreSpec sse_decode_box_autoadd_restore_spec(SseDeserializer deserializer);
 
   @protected
-  RoutePath sse_decode_box_autoadd_route_path(SseDeserializer deserializer);
-
-  @protected
-  RoutedReply sse_decode_box_autoadd_routed_reply(SseDeserializer deserializer);
-
-  @protected
-  ServerAccount sse_decode_box_autoadd_server_account(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerCommand sse_decode_box_autoadd_server_command(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerEntry sse_decode_box_autoadd_server_entry(SseDeserializer deserializer);
-
-  @protected
-  ServerError sse_decode_box_autoadd_server_error(SseDeserializer deserializer);
-
-  @protected
-  ServerEvent sse_decode_box_autoadd_server_event(SseDeserializer deserializer);
-
-  @protected
-  ServerFeeder sse_decode_box_autoadd_server_feeder(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerFoodLeft sse_decode_box_autoadd_server_food_left(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerFoodPeriod sse_decode_box_autoadd_server_food_period(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerInstall sse_decode_box_autoadd_server_install(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerLink sse_decode_box_autoadd_server_link(SseDeserializer deserializer);
-
-  @protected
-  ServerNextMeal sse_decode_box_autoadd_server_next_meal(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerRefill sse_decode_box_autoadd_server_refill(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerSinceRefill sse_decode_box_autoadd_server_since_refill(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerSnapshot sse_decode_box_autoadd_server_snapshot(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   SetAside sse_decode_box_autoadd_set_aside(SseDeserializer deserializer);
 
   @protected
@@ -2082,9 +1657,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SetupRefusal sse_decode_box_autoadd_setup_refusal(
     SseDeserializer deserializer,
   );
-
-  @protected
-  Skew sse_decode_box_autoadd_skew(SseDeserializer deserializer);
 
   @protected
   Stats sse_decode_box_autoadd_stats(SseDeserializer deserializer);
@@ -2126,11 +1698,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UpdateRefusal sse_decode_box_autoadd_update_refusal(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  WeighedIntake sse_decode_box_autoadd_weighed_intake(
     SseDeserializer deserializer,
   );
 
@@ -2179,12 +1746,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ClientView sse_decode_client_view(SseDeserializer deserializer);
 
   @protected
-  CommandKind sse_decode_command_kind(SseDeserializer deserializer);
-
-  @protected
-  CommandState sse_decode_command_state(SseDeserializer deserializer);
-
-  @protected
   Counters sse_decode_counters(SseDeserializer deserializer);
 
   @protected
@@ -2213,9 +1774,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   FeedOutcome sse_decode_feed_outcome(SseDeserializer deserializer);
-
-  @protected
-  FeedRate sse_decode_feed_rate(SseDeserializer deserializer);
 
   @protected
   FeedReason sse_decode_feed_reason(SseDeserializer deserializer);
@@ -2293,9 +1851,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InstallStart sse_decode_install_start(SseDeserializer deserializer);
 
   @protected
-  InstallState sse_decode_install_state(SseDeserializer deserializer);
-
-  @protected
   InstallUpdate sse_decode_install_update(SseDeserializer deserializer);
 
   @protected
@@ -2312,9 +1867,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   KnownFeeder sse_decode_known_feeder(SseDeserializer deserializer);
-
-  @protected
-  KnownServer sse_decode_known_server(SseDeserializer deserializer);
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
@@ -2346,11 +1898,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Uint8List> sse_decode_list_list_prim_u_8_strict(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ListedFeeder> sse_decode_list_listed_feeder(
     SseDeserializer deserializer,
   );
 
@@ -2402,50 +1949,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
-  List<ServerAnomaly> sse_decode_list_server_anomaly(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ServerEntry> sse_decode_list_server_entry(SseDeserializer deserializer);
-
-  @protected
-  List<ServerFeeder> sse_decode_list_server_feeder(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ServerFeederPortions> sse_decode_list_server_feeder_portions(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ServerFood> sse_decode_list_server_food(SseDeserializer deserializer);
-
-  @protected
-  List<ServerIntakeDay> sse_decode_list_server_intake_day(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ServerIntakeFeeder> sse_decode_list_server_intake_feeder(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ServerPet> sse_decode_list_server_pet(SseDeserializer deserializer);
-
-  @protected
-  List<ServerRefill> sse_decode_list_server_refill(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  List<ServerWeight> sse_decode_list_server_weight(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<SetupStep> sse_decode_list_setup_step(SseDeserializer deserializer);
 
   @protected
@@ -2456,9 +1959,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Weekday> sse_decode_list_weekday(SseDeserializer deserializer);
-
-  @protected
-  ListedFeeder sse_decode_listed_feeder(SseDeserializer deserializer);
 
   @protected
   ListenFailure sse_decode_listen_failure(SseDeserializer deserializer);
@@ -2486,9 +1986,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MuteTarget sse_decode_mute_target(SseDeserializer deserializer);
-
-  @protected
-  NewRefill sse_decode_new_refill(SseDeserializer deserializer);
 
   @protected
   NextMealView sse_decode_next_meal_view(SseDeserializer deserializer);
@@ -2527,11 +2024,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
-  AlertServer? sse_decode_opt_box_autoadd_alert_server(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   Blocked? sse_decode_opt_box_autoadd_blocked(SseDeserializer deserializer);
 
   @protected
@@ -2564,9 +2056,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  FeedRate? sse_decode_opt_box_autoadd_feed_rate(SseDeserializer deserializer);
-
-  @protected
   FeedRefusal? sse_decode_opt_box_autoadd_feed_refusal(
     SseDeserializer deserializer,
   );
@@ -2581,11 +2070,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
-
-  @protected
-  KnownServer? sse_decode_opt_box_autoadd_known_server(
-    SseDeserializer deserializer,
-  );
 
   @protected
   MealAction? sse_decode_opt_box_autoadd_meal_action(
@@ -2637,51 +2121,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Resets? sse_decode_opt_box_autoadd_resets(SseDeserializer deserializer);
 
   @protected
-  RoutePath? sse_decode_opt_box_autoadd_route_path(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerAccount? sse_decode_opt_box_autoadd_server_account(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerError? sse_decode_opt_box_autoadd_server_error(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerFoodLeft? sse_decode_opt_box_autoadd_server_food_left(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerFoodPeriod? sse_decode_opt_box_autoadd_server_food_period(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerNextMeal? sse_decode_opt_box_autoadd_server_next_meal(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerRefill? sse_decode_opt_box_autoadd_server_refill(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerSinceRefill? sse_decode_opt_box_autoadd_server_since_refill(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerSnapshot? sse_decode_opt_box_autoadd_server_snapshot(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   SetAside? sse_decode_opt_box_autoadd_set_aside(SseDeserializer deserializer);
 
   @protected
@@ -2690,17 +2129,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  Settlement? sse_decode_opt_box_autoadd_settlement(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   SetupRefusal? sse_decode_opt_box_autoadd_setup_refusal(
     SseDeserializer deserializer,
   );
-
-  @protected
-  Skew? sse_decode_opt_box_autoadd_skew(SseDeserializer deserializer);
 
   @protected
   TimeInfo? sse_decode_opt_box_autoadd_time_info(SseDeserializer deserializer);
@@ -2729,11 +2160,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UpdateInfo? sse_decode_opt_box_autoadd_update_info(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  WeighedIntake? sse_decode_opt_box_autoadd_weighed_intake(
     SseDeserializer deserializer,
   );
 
@@ -2784,9 +2210,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PortionChange sse_decode_portion_change(SseDeserializer deserializer);
 
   @protected
-  PortionWeight sse_decode_portion_weight(SseDeserializer deserializer);
-
-  @protected
   Portions sse_decode_portions(SseDeserializer deserializer);
 
   @protected
@@ -2826,9 +2249,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RetryOutcome sse_decode_retry_outcome(SseDeserializer deserializer);
 
   @protected
-  RoutePath sse_decode_route_path(SseDeserializer deserializer);
-
-  @protected
   RoutedFeed sse_decode_routed_feed(SseDeserializer deserializer);
 
   @protected
@@ -2836,113 +2256,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RouterUpdate sse_decode_router_update(SseDeserializer deserializer);
-
-  @protected
-  ServerAccount sse_decode_server_account(SseDeserializer deserializer);
-
-  @protected
-  ServerAnomaly sse_decode_server_anomaly(SseDeserializer deserializer);
-
-  @protected
-  ServerCommand sse_decode_server_command(SseDeserializer deserializer);
-
-  @protected
-  ServerConnection sse_decode_server_connection(SseDeserializer deserializer);
-
-  @protected
-  ServerDevice sse_decode_server_device(SseDeserializer deserializer);
-
-  @protected
-  ServerEntry sse_decode_server_entry(SseDeserializer deserializer);
-
-  @protected
-  ServerError sse_decode_server_error(SseDeserializer deserializer);
-
-  @protected
-  ServerErrorKind sse_decode_server_error_kind(SseDeserializer deserializer);
-
-  @protected
-  ServerEvent sse_decode_server_event(SseDeserializer deserializer);
-
-  @protected
-  ServerEventPage sse_decode_server_event_page(SseDeserializer deserializer);
-
-  @protected
-  ServerFeeder sse_decode_server_feeder(SseDeserializer deserializer);
-
-  @protected
-  ServerFeederDetail sse_decode_server_feeder_detail(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerFeederFood sse_decode_server_feeder_food(SseDeserializer deserializer);
-
-  @protected
-  ServerFeederPortions sse_decode_server_feeder_portions(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerFood sse_decode_server_food(SseDeserializer deserializer);
-
-  @protected
-  ServerFoodLeft sse_decode_server_food_left(SseDeserializer deserializer);
-
-  @protected
-  ServerFoodPeriod sse_decode_server_food_period(SseDeserializer deserializer);
-
-  @protected
-  ServerInstall sse_decode_server_install(SseDeserializer deserializer);
-
-  @protected
-  ServerIntakeDay sse_decode_server_intake_day(SseDeserializer deserializer);
-
-  @protected
-  ServerIntakeFeeder sse_decode_server_intake_feeder(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerLink sse_decode_server_link(SseDeserializer deserializer);
-
-  @protected
-  ServerNextMeal sse_decode_server_next_meal(SseDeserializer deserializer);
-
-  @protected
-  ServerPet sse_decode_server_pet(SseDeserializer deserializer);
-
-  @protected
-  ServerPetIntake sse_decode_server_pet_intake(SseDeserializer deserializer);
-
-  @protected
-  ServerRefill sse_decode_server_refill(SseDeserializer deserializer);
-
-  @protected
-  ServerRefillPage sse_decode_server_refill_page(SseDeserializer deserializer);
-
-  @protected
-  ServerRefusal sse_decode_server_refusal(SseDeserializer deserializer);
-
-  @protected
-  ServerRole sse_decode_server_role(SseDeserializer deserializer);
-
-  @protected
-  ServerSinceRefill sse_decode_server_since_refill(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerSnapshot sse_decode_server_snapshot(SseDeserializer deserializer);
-
-  @protected
-  ServerUpdate sse_decode_server_update(SseDeserializer deserializer);
-
-  @protected
-  ServerWeight sse_decode_server_weight(SseDeserializer deserializer);
-
-  @protected
-  ServerWeightPage sse_decode_server_weight_page(SseDeserializer deserializer);
 
   @protected
   SessionUpdate sse_decode_session_update(SseDeserializer deserializer);
@@ -2970,9 +2283,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Skew sse_decode_skew(SseDeserializer deserializer);
-
-  @protected
-  Species sse_decode_species(SseDeserializer deserializer);
 
   @protected
   Stats sse_decode_stats(SseDeserializer deserializer);
@@ -3065,9 +2375,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Weekday sse_decode_weekday(SseDeserializer deserializer);
 
   @protected
-  WeighedIntake sse_decode_weighed_intake(SseDeserializer deserializer);
-
-  @protected
   WifiCredentials sse_decode_wifi_credentials(SseDeserializer deserializer);
 
   @protected
@@ -3107,6 +2414,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+    FeederRouter self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederSession(
     FeederSession self,
     SseSerializer serializer,
@@ -3135,13 +2449,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
-  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    PathRouter self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     Recovery self,
     SseSerializer serializer,
@@ -3151,13 +2458,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
     RestoreRun self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void
-  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
-    ServerSession self,
     SseSerializer serializer,
   );
 
@@ -3191,6 +2491,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+    FeederRouter self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederSession(
     FeederSession self,
     SseSerializer serializer,
@@ -3219,13 +2526,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
-  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    PathRouter self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     Recovery self,
     SseSerializer serializer,
@@ -3235,13 +2535,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
     RestoreRun self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void
-  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
-    ServerSession self,
     SseSerializer serializer,
   );
 
@@ -3263,6 +2556,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederBrowse(
     FeederBrowse self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+    FeederRouter self,
     SseSerializer serializer,
   );
 
@@ -3296,13 +2596,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
-  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    PathRouter self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     Recovery self,
     SseSerializer serializer,
@@ -3312,13 +2605,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun(
     RestoreRun self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void
-  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
-    ServerSession self,
     SseSerializer serializer,
   );
 
@@ -3360,12 +2646,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_StreamSink_server_update_Sse(
-    RustStreamSink<ServerUpdate> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_StreamSink_session_update_Sse(
     RustStreamSink<SessionUpdate> self,
     SseSerializer serializer,
@@ -3387,16 +2667,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
-  void sse_encode_adoption(Adoption self, SseSerializer serializer);
-
-  @protected
   void sse_encode_alert_hold(AlertHold self, SseSerializer serializer);
 
   @protected
   void sse_encode_alert_level(AlertLevel self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_alert_server(AlertServer self, SseSerializer serializer);
 
   @protected
   void sse_encode_alert_settings_view(
@@ -3433,12 +2707,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bowl(Bowl self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_box_autoadd_alert_server(
-    AlertServer self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_box_autoadd_app_store(
@@ -3503,12 +2771,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_feed_outcome(
     FeedOutcome self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_feed_rate(
-    FeedRate self,
     SseSerializer serializer,
   );
 
@@ -3600,12 +2862,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_box_autoadd_known_server(
-    KnownServer self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_box_autoadd_meal_action(
     MealAction self,
     SseSerializer serializer,
@@ -3629,12 +2885,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_mute_target(
     MuteTarget self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_new_refill(
-    NewRefill self,
     SseSerializer serializer,
   );
 
@@ -3726,102 +2976,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_box_autoadd_route_path(
-    RoutePath self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_routed_reply(
-    RoutedReply self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_account(
-    ServerAccount self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_command(
-    ServerCommand self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_entry(
-    ServerEntry self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_error(
-    ServerError self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_event(
-    ServerEvent self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_feeder(
-    ServerFeeder self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_food_left(
-    ServerFoodLeft self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_food_period(
-    ServerFoodPeriod self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_install(
-    ServerInstall self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_link(
-    ServerLink self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_next_meal(
-    ServerNextMeal self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_refill(
-    ServerRefill self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_since_refill(
-    ServerSinceRefill self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_server_snapshot(
-    ServerSnapshot self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_box_autoadd_set_aside(
     SetAside self,
     SseSerializer serializer,
@@ -3850,9 +3004,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     SetupRefusal self,
     SseSerializer serializer,
   );
-
-  @protected
-  void sse_encode_box_autoadd_skew(Skew self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_stats(Stats self, SseSerializer serializer);
@@ -3918,12 +3069,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_box_autoadd_weighed_intake(
-    WeighedIntake self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_box_autoadd_wifi_credentials(
     WifiCredentials self,
     SseSerializer serializer,
@@ -3978,12 +3123,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_client_view(ClientView self, SseSerializer serializer);
 
   @protected
-  void sse_encode_command_kind(CommandKind self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_command_state(CommandState self, SseSerializer serializer);
-
-  @protected
   void sse_encode_counters(Counters self, SseSerializer serializer);
 
   @protected
@@ -4012,9 +3151,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_feed_outcome(FeedOutcome self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_feed_rate(FeedRate self, SseSerializer serializer);
 
   @protected
   void sse_encode_feed_reason(FeedReason self, SseSerializer serializer);
@@ -4095,9 +3231,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_install_start(InstallStart self, SseSerializer serializer);
 
   @protected
-  void sse_encode_install_state(InstallState self, SseSerializer serializer);
-
-  @protected
   void sse_encode_install_update(InstallUpdate self, SseSerializer serializer);
 
   @protected
@@ -4114,9 +3247,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_known_feeder(KnownFeeder self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_known_server(KnownServer self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
@@ -4166,12 +3296,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_list_prim_u_8_strict(
     List<Uint8List> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_listed_feeder(
-    List<ListedFeeder> self,
     SseSerializer serializer,
   );
 
@@ -4248,66 +3372,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_server_anomaly(
-    List<ServerAnomaly> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_entry(
-    List<ServerEntry> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_feeder(
-    List<ServerFeeder> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_feeder_portions(
-    List<ServerFeederPortions> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_food(
-    List<ServerFood> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_intake_day(
-    List<ServerIntakeDay> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_intake_feeder(
-    List<ServerIntakeFeeder> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_pet(
-    List<ServerPet> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_refill(
-    List<ServerRefill> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_server_weight(
-    List<ServerWeight> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_setup_step(
     List<SetupStep> self,
     SseSerializer serializer,
@@ -4327,9 +3391,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_weekday(List<Weekday> self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_listed_feeder(ListedFeeder self, SseSerializer serializer);
 
   @protected
   void sse_encode_listen_failure(ListenFailure self, SseSerializer serializer);
@@ -4357,9 +3418,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_mute_target(MuteTarget self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_new_refill(NewRefill self, SseSerializer serializer);
 
   @protected
   void sse_encode_next_meal_view(NextMealView self, SseSerializer serializer);
@@ -4396,12 +3454,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_opt_box_autoadd_alert_server(
-    AlertServer? self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_opt_box_autoadd_blocked(
@@ -4449,12 +3501,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_opt_box_autoadd_feed_rate(
-    FeedRate? self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_opt_box_autoadd_feed_refusal(
     FeedRefusal? self,
     SseSerializer serializer,
@@ -4472,12 +3518,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_i_64(
     PlatformInt64? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_known_server(
-    KnownServer? self,
     SseSerializer serializer,
   );
 
@@ -4545,60 +3585,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_opt_box_autoadd_route_path(
-    RoutePath? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_account(
-    ServerAccount? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_error(
-    ServerError? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_food_left(
-    ServerFoodLeft? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_food_period(
-    ServerFoodPeriod? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_next_meal(
-    ServerNextMeal? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_refill(
-    ServerRefill? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_since_refill(
-    ServerSinceRefill? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_snapshot(
-    ServerSnapshot? self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_opt_box_autoadd_set_aside(
     SetAside? self,
     SseSerializer serializer,
@@ -4611,19 +3597,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_opt_box_autoadd_settlement(
-    Settlement? self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_opt_box_autoadd_setup_refusal(
     SetupRefusal? self,
     SseSerializer serializer,
   );
-
-  @protected
-  void sse_encode_opt_box_autoadd_skew(Skew? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_time_info(
@@ -4658,12 +3635,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_update_info(
     UpdateInfo? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_weighed_intake(
-    WeighedIntake? self,
     SseSerializer serializer,
   );
 
@@ -4731,9 +3702,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_portion_change(PortionChange self, SseSerializer serializer);
 
   @protected
-  void sse_encode_portion_weight(PortionWeight self, SseSerializer serializer);
-
-  @protected
   void sse_encode_portions(Portions self, SseSerializer serializer);
 
   @protected
@@ -4776,9 +3744,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_retry_outcome(RetryOutcome self, SseSerializer serializer);
 
   @protected
-  void sse_encode_route_path(RoutePath self, SseSerializer serializer);
-
-  @protected
   void sse_encode_routed_feed(RoutedFeed self, SseSerializer serializer);
 
   @protected
@@ -4786,153 +3751,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_router_update(RouterUpdate self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_account(ServerAccount self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_anomaly(ServerAnomaly self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_command(ServerCommand self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_connection(
-    ServerConnection self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_device(ServerDevice self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_entry(ServerEntry self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_error(ServerError self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_error_kind(
-    ServerErrorKind self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_event(ServerEvent self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_event_page(
-    ServerEventPage self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_feeder(ServerFeeder self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_feeder_detail(
-    ServerFeederDetail self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_feeder_food(
-    ServerFeederFood self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_feeder_portions(
-    ServerFeederPortions self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_food(ServerFood self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_food_left(
-    ServerFoodLeft self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_food_period(
-    ServerFoodPeriod self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_install(ServerInstall self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_intake_day(
-    ServerIntakeDay self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_intake_feeder(
-    ServerIntakeFeeder self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_link(ServerLink self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_next_meal(
-    ServerNextMeal self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_pet(ServerPet self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_pet_intake(
-    ServerPetIntake self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_refill(ServerRefill self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_refill_page(
-    ServerRefillPage self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_refusal(ServerRefusal self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_role(ServerRole self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_since_refill(
-    ServerSinceRefill self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_snapshot(
-    ServerSnapshot self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_server_update(ServerUpdate self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_weight(ServerWeight self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_weight_page(
-    ServerWeightPage self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_session_update(SessionUpdate self, SseSerializer serializer);
@@ -4963,9 +3781,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_skew(Skew self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_species(Species self, SseSerializer serializer);
 
   @protected
   void sse_encode_stats(Stats self, SseSerializer serializer);
@@ -5062,9 +3877,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_weekday(Weekday self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_weighed_intake(WeighedIntake self, SseSerializer serializer);
 
   @protected
   void sse_encode_wifi_credentials(
@@ -5168,6 +3980,40 @@ class RustLibWire implements BaseWire {
       );
   late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederBrowse =
       _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederBrowsePtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouterPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter',
+      );
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter =
+      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouterPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouterPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_wellfed_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter',
+      );
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouter =
+      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerFeederRouterPtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
   void
@@ -5307,40 +4153,6 @@ class RustLibWire implements BaseWire {
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
   void
-  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    ffi.Pointer<ffi.Void> ptr,
-  ) {
-    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-      ptr,
-    );
-  }
-
-  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-        'frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter',
-      );
-  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter =
-      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr
-          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
-
-  void
-  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-    ffi.Pointer<ffi.Void> ptr,
-  ) {
-    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-      ptr,
-    );
-  }
-
-  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-        'frbgen_wellfed_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter',
-      );
-  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter =
-      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr
-          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
-
-  void
   rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     ffi.Pointer<ffi.Void> ptr,
   ) {
@@ -5406,40 +4218,6 @@ class RustLibWire implements BaseWire {
       );
   late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun =
       _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRunPtr
-          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
-
-  void
-  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
-    ffi.Pointer<ffi.Void> ptr,
-  ) {
-    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
-      ptr,
-    );
-  }
-
-  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSessionPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-        'frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession',
-      );
-  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession =
-      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSessionPtr
-          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
-
-  void
-  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
-    ffi.Pointer<ffi.Void> ptr,
-  ) {
-    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
-      ptr,
-    );
-  }
-
-  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSessionPtr =
-      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-        'frbgen_wellfed_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession',
-      );
-  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession =
-      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSessionPtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
   void

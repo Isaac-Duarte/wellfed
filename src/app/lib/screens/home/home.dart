@@ -2,18 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:wellfed/screens/home/adopt_prompt.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/screens/home/todays_meals.dart';
-import 'package:wellfed/screens/server/server_words.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/install.dart' show PendingInstall;
-import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
-import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
-import 'package:wellfed/state/server/server.dart' show OtherDevice;
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -22,19 +17,9 @@ import 'package:wellfed/widgets/layout.dart';
 /// Feeder-first Home: one card per feeder this phone knows, large for one
 /// feeder and compact for several.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({
-    super.key,
-    required this.fleet,
-    required this.earlierInstall,
-    this.adopt,
-    this.pinsProblem,
-    this.askToNotify,
-  });
+  const HomeScreen({super.key, required this.fleet, required this.earlierInstall, this.pinsProblem, this.askToNotify});
 
   final FeederFleet fleet;
-
-  /// Putting a feeder this phone paired onto the home server, with one.
-  final AdoptFlow? adopt;
 
   /// Why the record of unconfirmed writes did not open: then nothing is sent.
   /// One that opened but did not read was set aside, and the start said so.
@@ -109,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final List<FeederController> feeders = widget.fleet.all.toList();
       final one = feeders.length == 1;
       // What needs the owner before the feeders: a write record that can't be
-      // trusted, an unfinished install, feeders to put on the server.
+      // trusted, an unfinished install.
       final List<Widget> notices = [
         if (widget.pinsProblem case final PinsProblem problem) ...[
           Notice(
@@ -137,12 +122,6 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: Space.s2),
           FilledButton(onPressed: () => unawaited(_openInstall()), child: const Text('Finish installing')),
           const SizedBox(height: Space.s4),
-        ],
-        if (widget.adopt case final AdoptFlow adopt?)
-          for (final KnownFeeder feeder in widget.fleet.adoptable) AdoptPrompt(feeder: feeder, flow: adopt),
-        for (final OtherDevice other in widget.fleet.others) ...[
-          Notice(tone: Tone.neutral, text: otherDeviceWords(other)),
-          const SizedBox(height: Space.s3),
         ],
       ];
       if (isDesktop) return _DesktopOverview(feeders: feeders, notices: notices);

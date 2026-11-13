@@ -4,7 +4,6 @@ members = [
     "src/product/*",
     "src/client/*",
     "src/sim/*",
-    "src/server/*",
     "src/tools/wellfed",
     "src/tools/wellfed-*",
     "src/tools/xtask",
@@ -53,15 +52,6 @@ wellfed-connect = { path = "src/client/wellfed-connect" }
 wellfed-install = { path = "src/client/wellfed-install" }
 wellfed-device-sim = { path = "src/sim/wellfed-device-sim" }
 wellfed-feeder-sim = { path = "src/sim/wellfed-feeder-sim" }
-wellfed-api = { path = "src/server/wellfed-api" }
-wellfed-store = { path = "src/server/wellfed-store" }
-wellfed-mirror = { path = "src/server/wellfed-mirror" }
-wellfed-releases = { path = "src/server/wellfed-releases" }
-wellfed-webhook = { path = "src/server/wellfed-webhook" }
-wellfed-service = { path = "src/server/wellfed-service" }
-wellfed-server = { path = "src/server/wellfed-server" }
-wellfed-server-client = { path = "src/client/wellfed-server-client" }
-wellfed-server-testkit = { path = "src/server/wellfed-server-testkit" }
 wellfed-formats = { path = "src/client/wellfed-formats" }
 wellfed-stock = { path = "src/client/wellfed-stock" }
 wellfed-emu = { path = "src/tools/wellfed-emu" }
@@ -85,46 +75,13 @@ proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 thiserror = "2.0.21"
 tokio = "1.53.3"
 uuid = "1.28.0"
-# The owner's server (src/server). Every server dependency is pinned here, so
-# its crates cannot drift apart on a shared one.
-argon2 = "0.5.3"
-# Signing update manifests in the server's tests, as the firmware checks
-# them: ed25519-dalek 2 hashes with sha2 0.10, a version behind the
-# server's own, so that one is named apart.
-ed25519-dalek = "2"
-sha2-0-10 = { package = "sha2", version = "0.10" }
-axum-extra = "0.12.6"
-chacha20poly1305 = { version = "0.10.1", default-features = false }
+# Shared host dependencies, pinned once so crates cannot drift apart on one.
 futures-util = "0.3.34"
-# Which address families the server's listening socket serves, for its mDNS announcement.
-socket2 = "0.6.5"
 getrandom = "0.3.4"
 http-body-util = "0.1.5"
 jiff = "0.2.38"
-jiff-tzdb = "0.1.9"
-# Feeder discovery (wellfed-connect) and the server's announcement.
+# Feeder discovery (wellfed-connect).
 mdns-sd = "0.21.6"
-reqwest = { version = "0.13.5", default-features = false }
-serde_path_to_error = "0.1.20"
-sha2 = "0.11"
-sqlx = { version = "0.9.0", default-features = false, features = ["sqlite", "runtime-tokio", "macros", "migrate"] }
-toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
-tokio-stream = "0.1.19"
-tokio-util = "0.7.20"
-tower = "0.5.3"
-tower-http = "0.6.11"
-# The server's own HTTPS on the LAN, whose certificate carries its identity
-# key, and the app's check of that key: the rustls reqwest already links,
-# with the same aws-lc provider, and rcgen to make the certificate.
-rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs"] }
-rcgen = { version = "0.14", default-features = false, features = ["crypto", "aws_lc_rs"] }
-hyper = { version = "1.12.0", features = ["server", "http1"] }
-hyper-util = { version = "0.1.21", features = ["tokio", "service"] }
-tracing = "0.1.44"
-tracing-subscriber = "0.3.23"
-utoipa = "6.0.0"
-utoipa-axum = "0.3.0"
 # Firmware targets.
 cortex-m = "0.7.7"
 

@@ -43,7 +43,6 @@ impl From<Lost> for FeederReply {
             Lost::Unanswered => Self::Unanswered,
             Lost::NotSent => Self::NotSent {
                 reason: NotSentReason::Session,
-                server: None,
             },
             Lost::Held => Self::NotAsked {
                 reason: NotAsked::Held,
@@ -596,9 +595,7 @@ fn portion_times(entries: &[TraceEntry], completed: u8) -> Vec<u32> {
 pub(crate) const fn refusal_of(refusal: Refusal) -> FeederRefusal {
     match refusal {
         Refusal::Forbidden => FeederRefusal::Forbidden,
-        Refusal::Stale { current } => FeederRefusal::Stale {
-            current: Some(current.0),
-        },
+        Refusal::Stale { current } => FeederRefusal::Stale { current: current.0 },
         Refusal::Busy => FeederRefusal::Busy,
         Refusal::Unavailable => FeederRefusal::Unavailable,
         Refusal::Invalid => FeederRefusal::Invalid,
@@ -610,10 +607,10 @@ pub(crate) const fn refusal_of(refusal: Refusal) -> FeederRefusal {
         Refusal::Fault => FeederRefusal::Fault,
         Refusal::Update(reason) => FeederRefusal::Update { reason },
         Refusal::Unverified => FeederRefusal::Unverified,
-        Refusal::Portions { asked } => FeederRefusal::Portions { asked: Some(asked) },
+        Refusal::Portions { asked } => FeederRefusal::Portions { asked },
         Refusal::NoClock => FeederRefusal::NoClock,
         // Only a conditional meal-call erase gets it, which the app never
-        // sends: the owner's server sends it.
+        // sends.
         Refusal::Replaced | Refusal::Unknown => FeederRefusal::Unknown,
     }
 }
@@ -819,7 +816,6 @@ mod tests {
             upload_call(&commands, &wav).await,
             FeederReply::NotSent {
                 reason: NotSentReason::Session,
-                server: None
             }
         ));
 

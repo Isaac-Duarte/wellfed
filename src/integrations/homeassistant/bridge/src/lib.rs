@@ -1,21 +1,16 @@
-//! Home Assistant's Rust half. The integration reaches each feeder one of
-//! two ways, chosen at setup: directly, as an ordinary device API client
-//! with no server between them, or through the owner's server, under a
-//! token of the owner's account. Everything the feeder or the server checks
-//! (the Noise session, the invite exchange, request ids, the event cursor,
-//! the server's API and its idempotency keys) is `wellfed-client`'s,
-//! `wellfed-connect`'s and `wellfed-server-client`'s, so Home Assistant's
-//! Python never holds a wire format or a key derivation of its own.
+//! Home Assistant's Rust half. The integration reaches each feeder
+//! directly, as an ordinary device API client, a member enrolled by an
+//! invite. Everything the feeder checks (the Noise session, the invite
+//! exchange, request ids, the event cursor) is `wellfed-client`'s and
+//! `wellfed-connect`'s, so Home Assistant's Python never holds a wire
+//! format or a key derivation of its own.
 //!
 //! - [`key`] makes or restores the integration's client key and redeems an
 //!   invite with it.
 //! - [`feeder`] runs one feeder's session on a thread of its own and hands
-//!   its status and events out as [`api::Update`]s, over either route
-//!   ([`server`] is the server's). A feed or lock change goes out once,
-//!   under a fresh request id or idempotency key, and an answer that never
+//!   its status and events out as [`api::Update`]s. A feed or lock change
+//!   goes out once, under a fresh request id, and an answer that never
 //!   came is reported as uncertain rather than sent again.
-//! - [`server`] also signs in to the owner's server at setup, lists its
-//!   feeders and revokes the token again.
 //! - With the `python` feature, `python` exposes them as the
 //!   `wellfed_homeassistant` module. Its calls block, so the integration
 //!   runs them in Home Assistant's executor; each releases the interpreter
@@ -30,7 +25,6 @@ mod hold;
 pub mod key;
 #[cfg(feature = "python")]
 mod python;
-pub mod server;
 mod writes;
 
 /// Why a call into the bridge failed.
@@ -62,8 +56,4 @@ pub enum Error {
     JoinUnchecked(#[source] wellfed_connect::Error),
     #[error("start the session thread: {0}")]
     Thread(std::io::Error),
-    #[error(transparent)]
-    Server(#[from] wellfed_server_client::Error),
-    #[error("a client key is 32 bytes, not {0}")]
-    KeyLength(usize),
 }

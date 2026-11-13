@@ -24,16 +24,6 @@ import io.flutter.plugin.common.MethodChannel
  * Runs on the main thread, as every engine must.
  */
 class BackgroundEngine(private val context: Context) {
-    // Before the engine starts Dart, as MainActivity does: WorkManager and
-    // the boot receiver start this in a process no activity ever ran in,
-    // and a catch-up through an https server panics on a verifier never
-    // given the context. Starting it again in a process that has changes
-    // nothing.
-    init {
-        TlsVerifier.start(context.applicationContext)
-        Uplink.start(context.applicationContext)
-    }
-
     private val engine = FlutterEngine(context, null, false)
     private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
     private val main = Handler(Looper.getMainLooper())

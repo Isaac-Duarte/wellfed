@@ -67,12 +67,11 @@ class _AlertSettingsScreenState extends State<AlertSettingsScreen> {
             const Notice(
               tone: Tone.neutral,
               glyph: Glyph.info,
-              lead: 'Away from home, alerts come through your server.',
+              lead: 'Alerts work at home.',
               text:
-                  'At home this phone hears from a feeder on the same Wi-Fi. Away, it asks your home server '
-                  "instead, if you use one and the feeder is on it; without one you won't get alerts away "
-                  'from home. The feeder decides what is wrong. This phone, or your server while you are '
-                  "away, decides one thing itself: that it can't reach a feeder.",
+                  "This phone hears from a feeder on the same Wi-Fi, so you won't get alerts away from home. "
+                  "The feeder decides what is wrong. This phone decides one thing itself: that it can't reach "
+                  'a feeder.',
             ),
             const SizedBox(height: Space.s5),
             switch (_settings.state) {

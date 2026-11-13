@@ -19,8 +19,6 @@ pub mod canonical;
 pub mod cli;
 pub mod credentials;
 pub mod device;
-#[cfg(feature = "export")]
-pub mod export;
 pub mod flash_plan;
 pub mod kept;
 pub mod layout;

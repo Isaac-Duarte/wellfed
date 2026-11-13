@@ -49,7 +49,7 @@ pub(crate) struct Tool {
 }
 
 /// Every binary whose commands the docs spell out.
-pub(crate) const TOOLS: [Tool; 8] = [
+pub(crate) const TOOLS: [Tool; 7] = [
     Tool {
         name: "wellfed",
         sources: &["src/tools/wellfed/src/"],
@@ -77,10 +77,6 @@ pub(crate) const TOOLS: [Tool; 8] = [
     Tool {
         name: "wellfed-audit",
         sources: &["src/tools/wellfed-audit/src/"],
-    },
-    Tool {
-        name: "wellfed-server",
-        sources: &["src/server/wellfed-server/src/"],
     },
     Tool {
         name: "wellfed-feeder-sim",
@@ -854,7 +850,7 @@ mod repository_tests {
 
         for (name, line) in [
             ("wellfed", "restore-stock --backup x --version 1"),
-            ("wellfed", "server login --server x --name y"),
+            ("wellfed", "plans add --at 07:30 --portions 2"),
             ("wellfed", "update-key enroll"),
             ("wellfed-bench", "itest --only x --off-seconds 2"),
             ("wellfed-bench", "--root . status"),
@@ -862,7 +858,6 @@ mod repository_tests {
             ("wellfed-flash", "read observe"),
             ("wellfed-build", "build --firmware bringup --variant optics"),
             ("wellfed-audit", "backup"),
-            ("wellfed-server", "reset-owner"),
             ("wellfed-feeder-sim", "--state x --listen y"),
         ] {
             let tool = TOOLS.iter().find(|tool| tool.name == name).unwrap();

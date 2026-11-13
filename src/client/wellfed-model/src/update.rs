@@ -2,7 +2,6 @@
 //! stands and why one was refused.
 
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 use crate::Hex;
 
@@ -62,7 +61,7 @@ pub struct UpdateView {
 /// Read by hand: serde's catch-all on an adjacently tagged enum fails on a
 /// newer state that carries a `reason`, and any newer state reads as
 /// [`Self::Unknown`] here, whatever it carries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", content = "reason", rename_all = "snake_case")]
 pub enum Bank0Check {
     /// Not checked yet this boot.
@@ -127,7 +126,7 @@ impl Bank0Check {
 }
 
 /// Why bank 1 will not give way to bank 0, in the order it checks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Bank0Blocked {
     /// Bank 0's loader marker is not valid.
@@ -182,7 +181,7 @@ pub enum UpdatePhase {
 }
 
 /// What the update store held about a candidate as a boot came up.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateCandidate {
     /// None, or a store that could not be read.
@@ -199,7 +198,7 @@ pub enum UpdateCandidate {
 
 /// Why an install stopped. Bank 1's marker was never written, so the
 /// feeder keeps running bank 0.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStop {
     /// No chunk came for a minute.
@@ -224,7 +223,7 @@ pub enum UpdateStop {
 }
 
 /// Why an update op was refused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", remote = "Self")]
 pub enum UpdateRefusal {
     /// Not a version 2 manifest, or an unknown image kind.

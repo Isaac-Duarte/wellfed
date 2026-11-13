@@ -33,9 +33,6 @@ skills-lock.json
 # The Kotlin compiler's session files, which an Android build leaves
 /src/app/android/.kotlin/
 
-# The server's release binaries (make server-dist)
-/dist/
-
 # The bench board: its firmware's own build output, KiCad's per-user state,
 # backups and autorouter files, and enclosure STLs (rendered from the .scad)
 /src/firmware/bench/wellfed-bench-board/target/

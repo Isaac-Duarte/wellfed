@@ -8,8 +8,9 @@ use wellfed_client::alerts::{Notice, NoticeKind, Tracked};
 use wellfed_model as model;
 
 view_enum! {
-    /// What an alert is about: a feeder's alert kind, or the owner's
-    /// server's judgement that it can't reach the feeder.
+    /// What an alert is about, as the app's tracker names it. `Unreachable`
+    /// is a relay's judgement that it can't reach the feeder, which a
+    /// direct session never makes: its Connected sensor says so.
     AlertKind {
         MealFailed => "meal_failed",
         MealUncertain => "meal_uncertain",
@@ -84,7 +85,7 @@ impl From<model::AlertLevel> for AlertLevel {
 )]
 pub struct Alert {
     /// The alert's identity on its feeder, the same in the event that opens
-    /// it and the one that clears it, and in the server's webhook.
+    /// it and the one that clears it.
     pub key: String,
     pub kind: AlertKind,
     pub level: AlertLevel,

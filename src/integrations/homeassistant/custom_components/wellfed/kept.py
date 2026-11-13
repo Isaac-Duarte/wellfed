@@ -4,21 +4,18 @@
   once, since the bridge sends it only once the record landed), and
   each feed whose answer was lost, until its answer clears it, an update
   settles it, or the bridge stops waiting on it; with whether it was
-  reported still unknown, when the owner released it, and through the
-  server the token it went under. The next session is handed them, on
-  either route, so a feed lost before a restart, or out when Home Assistant
-  stopped, is still settled rather than forgotten, one already reported is
-  not reported again, and one not released still holds new feeds back,
-  whichever route the entry is on now.
+  reported still unknown and when the owner released it. The next session
+  is handed them, so a feed lost before a restart, or out when Home
+  Assistant stopped, is still settled rather than forgotten, one already
+  reported is not reported again, and one not released still holds new
+  feeds back.
 - **Answered feeds:** the feed numbers this Home Assistant has the end of,
   as the bridge last listed them: each feed it was answered for, and each
   lost feed a `Fed` event settled, as many as the bridge needs kept.
-  Directly, a `Fed` event of one of them settles nothing, so the next
+  A `Fed` event of one of them settles nothing, so the next
   session must know them too: a feed answered just before a lost one went
   out may end after it, and the replay of a `Fed` that settled one lost
   feed must not settle another.
-- **Leftover keys:** each client key an entry held directly before it moved
-  to the server route, while the feeder may still list it.
 - **Unread:** the store before this one did not read, so a lost feed it
   kept is lost with it; every feed waits until the owner says the bowls
   are checked.
@@ -73,34 +70,21 @@ class PendingData(TypedDict):
     after: int | None
     reported: bool
     released_ms: int | None
-    token_id: str | None
 
 
 class KeptData(TypedDict):
     pending: list[PendingData]
     answered: list[int]
-    leftover_keys: list[str]
     unread: bool
 
 
 def _empty(unread: bool = False) -> KeptData:
-    return {"pending": [], "answered": [], "leftover_keys": [], "unread": unread}
+    return {"pending": [], "answered": [], "unread": unread}
 
 
 def _int(value: Any, low: int, high: int) -> bool:
     """Whether `value` is an integer from `low` to `high`, as the bridge takes it."""
     return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
-
-
-def _key(value: Any) -> bool:
-    """Whether `value` is a client key in hex, 32 bytes."""
-    if not isinstance(value, str) or len(value) != 64:
-        return False
-    try:
-        bytes.fromhex(value)
-    except ValueError:
-        return False
-    return True
 
 
 def _pending(item: Any) -> bool:
@@ -112,8 +96,6 @@ def _pending(item: Any) -> bool:
         and _optional(item, "after", 0, 2**64 - 1)
         and isinstance(item.get("reported"), bool)
         and _optional(item, "released_ms", -(2**63), 2**63 - 1)
-        and "token_id" in item
-        and (item["token_id"] is None or isinstance(item["token_id"], str))
     )
 
 
@@ -136,8 +118,6 @@ def _valid(data: Any) -> bool:
         and all(_pending(item) for item in data["pending"])
         and isinstance(data.get("answered"), list)
         and all(_int(feed, 0, 2**32 - 1) for feed in data["answered"])
-        and isinstance(data.get("leftover_keys"), list)
-        and all(_key(key) for key in data["leftover_keys"])
         and isinstance(data.get("unread"), bool)
     )
 
@@ -257,7 +237,6 @@ class Kept:
                 item["after"],
                 item["reported"],
                 item["released_ms"],
-                item["token_id"],
             )
             for item in self._data["pending"]
         ]
@@ -265,10 +244,6 @@ class Kept:
     @property
     def answered(self) -> list[int]:
         return list(self._data["answered"])
-
-    @property
-    def leftover_keys(self) -> list[bytes]:
-        return [bytes.fromhex(key) for key in self._data["leftover_keys"]]
 
     @property
     def read_only(self) -> bool:
@@ -298,7 +273,6 @@ class Kept:
                 "after": pending.after,
                 "reported": pending.reported,
                 "released_ms": pending.released_ms,
-                "token_id": pending.token_id,
             }
         )
         self._save()
@@ -325,16 +299,6 @@ class Kept:
     def set_answered(self, feeds: list[int]) -> None:
         """The feed numbers to keep, as the bridge listed them."""
         self._data["answered"] = list(feeds)
-        self._save()
-
-    def add_leftover_key(self, key: bytes) -> None:
-        """`key` may still be listed on the feeder: kept until it is not."""
-        if key.hex() not in self._data["leftover_keys"]:
-            self._data["leftover_keys"].append(key.hex())
-            self._save()
-
-    def remove_leftover_key(self, key: bytes) -> None:
-        self._data["leftover_keys"] = [k for k in self._data["leftover_keys"] if k != key.hex()]
         self._save()
 
     def bowls_checked(self) -> None:

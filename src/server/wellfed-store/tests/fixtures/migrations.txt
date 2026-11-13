@@ -1,6 +1,0 @@
-# Every released migration of the server database: version, SHA-384 of its
-# SQL as sqlx checksums it, and description. From the public beta a line
-# here is never changed or removed, only appended: a server whose
-# database ran a migration refuses to start once that migration's text
-# changes. Until then a migration may still be folded in place.
-1 68b6606fb496090ddc7421bb9041717f5002bb586402893280123835caf35d3343f0717fe5ec671eae700b8d09a63f9c initial

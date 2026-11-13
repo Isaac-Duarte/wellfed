@@ -138,7 +138,7 @@ def written(result: bridge.WriteResult, **fields: Any) -> SimpleNamespace:
 
 def pending(id: str = "a-lost-feed", portions: int = 1) -> bridge.Pending:
     """A feed whose answer was lost, as the bridge hands it out."""
-    return bridge.Pending(id, portions, 1_793_793_600_000, None, False, None, None)
+    return bridge.Pending(id, portions, 1_793_793_600_000, None, False, None)
 
 
 def uncertain(lost: bridge.Pending) -> SimpleNamespace:
@@ -232,7 +232,7 @@ class FakeFeeder:
         # As the bridge does: the feed's record first, and the feed only once
         # the store says it landed; dropped again if it did not.
         out = self.feed_result.pending or bridge.Pending(
-            f"sending-{len(self.calls)}", portions, 0, None, False, None, None
+            f"sending-{len(self.calls)}", portions, 0, None, False, None
         )
         self.push(update(bridge.UpdateKind.Sending, pending=out))
         with self.said:

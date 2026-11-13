@@ -6,7 +6,6 @@ import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
-import 'package:wellfed/screens/server/add_server.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -14,10 +13,7 @@ import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
-import 'package:wellfed/state/server/add_server.dart';
-import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/state/settings/backups.dart';
-import 'package:wellfed/widgets/desktop.dart';
 
 import '../feeder/feeder_support.dart';
 import '../support/fakes.dart';
@@ -193,22 +189,6 @@ void main() {
         await tester.tap(find.text('8:00 AM').first);
         await settle(tester);
         await matchesGolden('desktop_meal_edit', brightness);
-      });
-
-      _desktopGolden('adding a home server', (tester) async {
-        final FeederFleet fleet = await _fleet(tester);
-        final server = HomeServer(FakeBook(), FakeServerPorts(), FakeRouter(), FakeClientKey());
-        addTearDown(server.dispose);
-        await _desktop(
-          tester,
-          _window(
-            fleet,
-            const SettingsPlace(),
-            FormWidth(child: AddServerScreen(newFlow: () => AddServerFlow(server))),
-          ),
-          brightness,
-        );
-        await matchesGolden('desktop_server_add', brightness);
       });
 
       _desktopGolden('the feed dialog', (tester) async {

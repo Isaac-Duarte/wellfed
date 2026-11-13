@@ -106,7 +106,7 @@ class _List extends StatelessWidget {
       children: [
         Text(switch (shown.reachedMs) {
           final int at => 'Last checked ${atMomentTextMs(context, at)}.',
-          null => 'Not checked yet: this phone checks at home, or through your server.',
+          null => 'Not checked yet: this phone checks at home.',
         }, style: muted),
         const SizedBox(height: Space.s3),
         if (!shown.notificationsAllowed) ...[

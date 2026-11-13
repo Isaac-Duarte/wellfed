@@ -94,16 +94,15 @@ type RequestId = [u8; 16];
 pub(crate) const TURN: Duration = Duration::from_secs(30);
 /// How long after it went out a lost feed is reported still unknown at
 /// the latest, when the feeder never reads idle sooner: longer than the
-/// longest feed the feeder runs. Directly, the report lets the owner
-/// release the feed; it does not release it.
+/// longest feed the feeder runs. The report lets the owner release the
+/// feed; it does not release it.
 pub(crate) const SETTLE: Duration = Duration::from_secs(15 * 60);
 /// How long a feed whose answer never came stays open to its end once
-/// nothing holds on it: a `Fed` that turns up late, or a journal that
-/// settles it late, still settles it. Past this it is forgotten
-/// ([`UpdateKind::Forgotten`](crate::api::UpdateKind)), still unknown.
-/// Directly it counts from the owner's release, as the app counts a week
-/// from when the owner puts a lost feed away, so a feed still holding is
-/// never forgotten; through the server, which holds none, from the send.
+/// nothing holds on it: a `Fed` that turns up late still settles it. Past
+/// this it is forgotten ([`UpdateKind::Forgotten`](crate::api::UpdateKind)),
+/// still unknown. It counts from the owner's release, as the app counts a
+/// week from when the owner puts a lost feed away, so a feed still holding
+/// is never forgotten.
 pub(crate) const KEEP_MS: i64 = 7 * 24 * 3_600_000;
 /// Feeds kept for the day's facts: far more than a day holds.
 const FEEDS_KEPT: usize = 512;
@@ -259,37 +258,6 @@ impl Feeder {
     ) -> Result<Self, Error> {
         let shared = Shared::default();
         let session = Arc::clone(&shared);
-        Self::spawn(shared, move |inbox, outbox| {
-            run(key, target, clocks, carried, session, inbox, outbox)
-        })
-    }
-
-    /// Start the session thread for the feeder `target` names through the
-    /// owner's server ([`crate::server`]), on `clocks`. It connects, and
-    /// reconnects after every loss, until the handle is dropped, the server
-    /// refuses the token, or the server no longer holds the feeder.
-    /// `carried` is what the last run left unsettled; its answered numbers
-    /// are the direct route's, and unused here.
-    pub fn start_server(
-        target: crate::server::Target,
-        clocks: crate::server::Clocks,
-        carried: Carried,
-    ) -> Result<Self, Error> {
-        let client = crate::server::client(&target, clocks)?;
-        let shared = Shared::default();
-        let session = Arc::clone(&shared);
-        Self::spawn(shared, move |inbox, outbox| {
-            crate::server::run(client, target, clocks, carried, session, inbox, outbox)
-        })
-    }
-
-    /// Run the session `serve` makes on a thread of its own, on a
-    /// current-thread runtime.
-    fn spawn<F, S>(shared: Shared, serve: S) -> Result<Self, Error>
-    where
-        S: FnOnce(mpsc::UnboundedReceiver<Command>, std_mpsc::Sender<Update>) -> F + Send + 'static,
-        F: Future<Output = ()>,
-    {
         let (commands, inbox) = mpsc::unbounded_channel();
         let (outbox, updates) = std_mpsc::channel();
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -298,7 +266,9 @@ impl Feeder {
             .map_err(Error::Thread)?;
         std::thread::Builder::new()
             .name("wellfed-session".into())
-            .spawn(move || runtime.block_on(serve(inbox, outbox)))
+            .spawn(move || {
+                runtime.block_on(run(key, target, clocks, carried, session, inbox, outbox));
+            })
             .map_err(Error::Thread)?;
 
         Ok(Self {
@@ -472,7 +442,7 @@ struct Memory {
     uncertain: Vec<Uncertain>,
     /// The alert tables read so far; `None` until the first session.
     alerts: Option<Tracker>,
-    /// What holds feeds back besides this route's own lost feeds.
+    /// What holds feeds back besides this client's own lost feeds.
     holds: Holds,
 }
 
@@ -480,14 +450,9 @@ impl Memory {
     /// What the last run left: each feed, lost (one still sending when it
     /// stopped never had its answer). Which of its numbers came after which
     /// feed is not kept, so every one stays while any of its feeds is open.
-    /// A feed that went through the server is the other route's: held
-    /// until the owner releases it, never settled here.
     fn carried(carried: Carried, shared: Shared) -> Self {
-        let (direct, elsewhere): (Vec<_>, Vec<_>) = carried
+        let uncertain = carried
             .pending
-            .into_iter()
-            .partition(|pending| pending.token_id.is_none());
-        let uncertain = direct
             .into_iter()
             .map(|pending| Uncertain {
                 sent: sent_at(pending.sent_ms),
@@ -501,7 +466,7 @@ impl Memory {
             answered_total: carried.answered.len(),
             answered: carried.answered.into(),
             uncertain,
-            holds: Holds::new(shared, elsewhere, carried.unread),
+            holds: Holds::new(shared, carried.unread),
             ..Self::default()
         }
     }
@@ -675,7 +640,7 @@ pub(crate) fn fed(facts: &mut Facts, feed: Feed) {
     facts.feeds.push(feed);
 }
 
-/// How a route's own lost feed, carried from the last run, is announced
+/// How a lost feed carried from the last run is announced
 /// again while it holds feeds back: as pending until it is reported, then as
 /// still unknown, whose repair lets the owner release it.
 pub(crate) fn announced(pending: &Pending) -> Option<Update> {
@@ -703,14 +668,13 @@ async fn run(
     memory.alerts = Some(Tracker::new(fingerprint));
     // A lost feed carried from the last run that still holds feeds back is
     // announced again, so the integration's repairs say so: one not yet
-    // reported as pending, one reported as still unknown, whose repair
-    // lets the owner release it, and one from the other route as that.
-    let mut again: Vec<Update> = memory
+    // reported as pending, and one reported as still unknown, whose repair
+    // lets the owner release it.
+    let again: Vec<Update> = memory
         .uncertain
         .iter()
         .filter_map(|uncertain| announced(&uncertain.pending))
         .collect();
-    again.extend(memory.holds.announce());
     for update in again {
         if updates.send(update).is_err() {
             return;
@@ -785,8 +749,7 @@ pub(crate) async fn pause(
 }
 
 /// The session cannot go on: say why once, then refuse every write until
-/// the handle is dropped. A revoked key needs a new invite; a refused
-/// token, a new login.
+/// the handle is dropped. A revoked key needs a new invite.
 pub(crate) async fn stopped(
     why: Update,
     commands: &mut mpsc::UnboundedReceiver<Command>,
@@ -1182,7 +1145,6 @@ impl<'a> Session<'a> {
             after: self.newest(),
             reported: false,
             released_ms: None,
-            token_id: None,
         };
         let id = pending.id.clone();
         if self.memory.holds.kept_first(self.updates, &pending).await == Saved::Failed {
@@ -1591,9 +1553,6 @@ impl<'a> Session<'a> {
         for uncertain in self.memory.past_keep() {
             self.forget(uncertain.pending);
         }
-        for update in self.memory.holds.past_keep() {
-            self.send(update)?;
-        }
 
         let (now, settle) = (Instant::now(), self.settle);
         self.report(|uncertain| now.duration_since(uncertain.sent) >= settle)
@@ -1734,7 +1693,6 @@ mod tests {
             after: Some(4),
             reported: false,
             released_ms: None,
-            token_id: None,
         }
     }
 
@@ -1960,32 +1918,10 @@ mod tests {
         assert_eq!(memory.answered.len(), ANSWERED_MOST + 1);
     }
 
-    /// A lost feed that went through the server is held here, never
-    /// settled or forgotten by this route, until the owner releases it.
-    #[test]
-    fn a_server_feed_carried_to_the_direct_route_holds_until_released() {
-        let server = Pending {
-            token_id: Some("a-token".into()),
-            ..lost("server", now_ms() - KEEP_MS * 2)
-        };
-        let carried = Carried {
-            pending: vec![server],
-            ..Carried::default()
-        };
-        let shared = Shared::default();
-        let mut memory = Memory::carried(carried, Arc::clone(&shared));
-        assert!(memory.uncertain.is_empty(), "not this route's to settle");
-        assert!(memory.holds_feeds());
-
-        releases(&shared).push(Release::Feed("server".into()));
-        assert_eq!(memory.take_releases().len(), 1);
-        assert!(!memory.holds_feeds());
-    }
-
     /// A store that did not read holds every feed until the bowls are
     /// checked.
     #[test]
-    fn an_unread_store_holds_feeds_on_the_direct_route() {
+    fn an_unread_store_holds_feeds() {
         let carried = Carried {
             unread: true,
             ..Carried::default()

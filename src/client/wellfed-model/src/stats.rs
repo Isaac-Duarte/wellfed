@@ -1,12 +1,11 @@
 //! The feeder's statistics, one section at a time, as a host reads them.
 
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 use crate::{CurrentUnit, DeviceKind, TraceSummary};
 
 /// What a `Stats` request asks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StatsSection {
     Counters,
@@ -42,7 +41,7 @@ impl StatsSection {
 }
 
 /// One section of the statistics.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "section", rename_all = "snake_case")]
 pub enum Stats {
     Counters(Counters),
@@ -69,8 +68,7 @@ impl Stats {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[schema(as = CounterStats)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Counters {
     /// Since this boot.
     pub boot: Counts,
@@ -85,8 +83,7 @@ pub struct Counters {
     pub handshake_mean_ms: u32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[schema(as = StatsCounts)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Counts {
     pub uptime_s: u32,
     pub feeds: u32,
@@ -101,7 +98,7 @@ pub struct Counts {
 }
 
 /// Why a boot started.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResetCause {
     #[default]
@@ -115,7 +112,7 @@ pub enum ResetCause {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Resets {
     pub power_on: u32,
     pub watchdog: u32,
@@ -124,8 +121,7 @@ pub struct Resets {
     pub other: u32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[schema(as = MemoryStats)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Memory {
     pub heap_free: u32,
     pub heap_min: u32,
@@ -135,15 +131,14 @@ pub struct Memory {
     pub tasks_total: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskStack {
     pub name: String,
     /// The fewest free stack bytes since the task started.
     pub free_min: u32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[schema(as = FlashStats)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Flash {
     pub boot: Erases,
     pub lifetime: Option<Erases>,
@@ -151,8 +146,7 @@ pub struct Flash {
     pub events_capacity: u32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[schema(as = FlashErases)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Erases {
     /// Each storage sector's erases, by its index in the region.
     pub storage: Vec<u32>,
@@ -160,7 +154,7 @@ pub struct Erases {
     pub update: u32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PowerStats {
     pub adapter: Option<bool>,
     pub adapter_changes: u32,
@@ -174,8 +168,7 @@ pub struct PowerStats {
 }
 
 /// The portions since this boot, and what they weigh by the calibration.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[schema(as = PortionStats)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Portions {
     /// Credited by the feedback sensor, one a mark.
     pub portions: u32,
@@ -189,8 +182,7 @@ pub struct Portions {
     pub delivered_mg: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[schema(as = FoodStats)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Food {
     pub present: Option<bool>,
     pub ran_low: u32,
@@ -199,7 +191,7 @@ pub struct Food {
 }
 
 /// This boot's feeds, from their traces.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeedStats {
     pub traced: u32,
     pub drive_ms: u32,

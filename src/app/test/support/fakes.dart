@@ -11,9 +11,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/router.dart';
-import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/session.dart';
-import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/wifi/networks.dart';
@@ -27,7 +25,6 @@ export 'fake_book.dart';
 export 'fake_pairing.dart';
 export 'fake_phone.dart';
 export 'fake_router.dart';
-export 'fake_server.dart';
 
 /// Pump past transitions. Not `pumpAndSettle`: a screen waiting on the feeder
 /// shows a spinner, which never settles.
@@ -132,37 +129,13 @@ class FakeFeederPorts with FakeUpdateRules implements FeederPorts {
   bool hasRouter = true;
 
   @override
-  PathRouter? get router => hasRouter ? fakeRouter : null;
+  FeederRouter? get router => hasRouter ? fakeRouter : null;
 
   /// How long the fakes say a feed may take.
   static const feedDue = 60;
 
   @override
   int feedDueSeconds(int portions) => feedDue;
-
-  /// What each adoption step answers, and the steps asked, in order.
-  Adoption adoptAnswer = const Adoption.failed(
-    error: ServerError(kind: ServerErrorKind.closed, message: 'none', mayHaveRun: false),
-  );
-  final adoptSteps = <String>[];
-
-  @override
-  Future<Adoption> adopt(KnownFeeder feeder) async {
-    adoptSteps.add('adopt ${feeder.identity}');
-    return adoptAnswer;
-  }
-
-  @override
-  Future<Adoption> checkAdoption(String identity) async {
-    adoptSteps.add('check $identity');
-    return adoptAnswer;
-  }
-
-  @override
-  Future<Adoption> claimPhone(String identity) async {
-    adoptSteps.add('claim $identity');
-    return adoptAnswer;
-  }
 
   /// As the bridge's `settled_feed` reads a feed's end (its Rust tests pin
   /// it): an uncertain end, or one a newer feeder named, is a range up to

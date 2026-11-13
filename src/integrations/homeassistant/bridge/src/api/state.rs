@@ -116,17 +116,6 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
-    /// What a device of a kind this build does not know serves here:
-    /// nothing.
-    pub(crate) const NONE: Self = Self {
-        feed: false,
-        plans: false,
-        desiccant: false,
-        calibration: false,
-        time: false,
-        update: false,
-    };
-
     /// What a device of `kind` serves: the shared core (time, updates) for
     /// any kind, and the feeder's module (feeds, plans, the desiccant and
     /// the calibration) for a feeder.
@@ -168,9 +157,8 @@ pub struct State {
 
 impl State {
     /// The state `facts` come to, once the status is in. The day is the
-    /// feeder's, in its own zone, with `fallback` before the time is read:
-    /// this host's directly, the home's through the owner's server, which
-    /// keeps every feeder on the home's zone.
+    /// feeder's, in its own zone, with `fallback`, this host's, before the
+    /// time is read.
     pub fn of(
         facts: &Facts,
         calibration: Option<&model::CalibrationView>,

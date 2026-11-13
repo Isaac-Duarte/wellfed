@@ -1,7 +1,7 @@
 //! A feeder's device API session, as Dart holds it: everything the screens
 //! show comes out of the stream [`FeederSession::run`] feeds. Dart sends it
 //! no request of its own: every request and every feed goes through the
-//! path router ([`crate::api::router::PathRouter`]), which the app attaches
+//! router ([`crate::api::router::FeederRouter`]), which the app attaches
 //! the session to before it runs, so no write leaves unpinned.
 
 use std::net::SocketAddr;
@@ -345,7 +345,7 @@ struct Start {
 pub struct FeederSession {
     feeder: [u8; 32],
     commands: mpsc::UnboundedSender<Command>,
-    /// What the path router reads of this session.
+    /// What the router reads of this session.
     link: Arc<DirectLink>,
     start: Mutex<Option<Start>>,
 }
@@ -415,7 +415,7 @@ impl FeederSession {
         .await;
     }
 
-    /// What the path router reaches this session through.
+    /// What the router reaches this session through.
     pub(crate) fn direct(&self) -> Arc<DirectLink> {
         Arc::clone(&self.link)
     }

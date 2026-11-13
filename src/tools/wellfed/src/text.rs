@@ -17,8 +17,7 @@ use wellfed_client::history::Feed;
 use wellfed_model::{
     Bank0Check, Battery, Blocked, CoreEvent, DeviceStatus, EnrollPath, Event, EventBody, FeedFault,
     FeederEvent, FeederSettings, FeederStatus, FoodLevel, MealReminder, MissedReason, Plans, Power,
-    Pushed, Readiness, Sample, SampleValue, Settings, Source, Status, Supply, TimeOfDay,
-    UpdateView,
+    Pushed, Readiness, Sample, SampleValue, Source, Status, Supply, TimeOfDay, UpdateView,
 };
 
 /// The feeder's time in `zone`, with its offset so a line reads the same
@@ -267,13 +266,6 @@ fn uptime(ms: u32) -> String {
         (0, 0) => format!("{minutes} min {seconds} s"),
         (0, _) => format!("{hours} h {minutes} min"),
         _ => format!("{days} d {hours} h"),
-    }
-}
-
-pub(crate) fn settings(settings: &Settings) -> String {
-    match settings {
-        Settings::Feeder(settings) => feeder_settings(settings),
-        Settings::Unknown => UPDATE_FOR_DEVICE.trim_end().to_owned(),
     }
 }
 
@@ -778,7 +770,7 @@ mod tests {
 
     #[test]
     fn settings_and_plans_read_as_lines() {
-        let settings = Settings::Feeder(FeederSettings {
+        let settings = FeederSettings {
             generation: Some(Generation(7)),
             lights: true,
             sound: false,
@@ -792,15 +784,13 @@ mod tests {
             desiccant_replaced: None,
             meal_reminder: MealReminder::Before { minutes: 5 },
             writable: true,
-        });
+        };
         assert_eq!(
-            super::settings(&settings),
+            super::feeder_settings(&settings),
             "Generation 7: lights on (always), sound off (08:00-21:00), volume 40, meal reminder \
              5 min ahead, desiccant every 14 days (replaced -)"
         );
-        let Settings::Feeder(mut repairing) = settings else {
-            unreachable!("a feeder's settings")
-        };
+        let mut repairing = settings;
         repairing.generation = None;
         repairing.writable = false;
         assert_eq!(

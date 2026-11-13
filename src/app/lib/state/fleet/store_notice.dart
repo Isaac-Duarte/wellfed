@@ -33,11 +33,11 @@ class StoreNoticeFlow extends ChangeNotifier {
   /// `appRead` clears from that file, the alert file's (`alerts`), which
   /// `alertsRead` clears, and the router's record of writes, read from
   /// `router`.
-  StoreNoticeFlow({SetAside? app, SetAside? alerts, PathRouter? router, this._appRead, this._alertsRead})
+  StoreNoticeFlow({SetAside? app, SetAside? alerts, FeederRouter? router, this._appRead, this._alertsRead})
     : _router = router,
       _state = StoreNotice.of([app, alerts, router?.setAside()]);
 
-  final PathRouter? _router;
+  final FeederRouter? _router;
   final Future<void> Function()? _appRead;
 
   /// Clears the notice kept in the alert file (`alerts.json`).

@@ -48,7 +48,6 @@ object WifiNetworks {
         if (blocked(connectivity, network)) return null
         val found = describe(connectivity.getLinkProperties(network)) ?: return null
         if (bound == null && connectivity.bindProcessToNetwork(network)) ours = network
-        Uplink.refresh()
         return found
     }
 
@@ -61,7 +60,6 @@ object WifiNetworks {
             connectivity.bindProcessToNetwork(null)
         }
         ours = null
-        Uplink.refresh()
     }
 
     /**
@@ -82,7 +80,6 @@ object WifiNetworks {
                 ours = kept
                 connectivity.bindProcessToNetwork(kept)
             }
-        Uplink.refresh()
         return bound
     }
 

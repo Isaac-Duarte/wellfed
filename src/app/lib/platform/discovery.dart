@@ -10,45 +10,16 @@ import 'package:wellfed/src/rust/api/discovery.dart';
 
 export 'package:wellfed/src/rust/api/discovery.dart' show FoundFeeder;
 
-/// An owner's server answering on the LAN: the URL to log in at, the name
-/// it announces, and the identity key its HTTPS must prove.
-class FoundServer {
-  /// A server as NSD heard it.
-  const FoundServer({required this.url, required this.name, required this.key});
-
-  /// `https://ip:port`, IPv4: what mDNS gives is the LAN's own address,
-  /// and the port is the server's own HTTPS.
-  final String url;
-
-  /// The service instance name, the server's label.
-  final String name;
-
-  /// The identity key, 64 hex digits, from the TXT `key`. Anyone on the
-  /// network can announce one, so it proves nothing by itself: the login
-  /// checks the server's handshake against it before the password goes.
-  final String key;
-}
-
 /// Feeders on the LAN, `_wellfed._tcp`, each with its identity in the TXT
-/// `id`; and owner's servers, `_wellfed-server._tcp`. Android browses
-/// through NsdManager, which holds the multicast lock a phone needs. A
-/// desktop browses feeders through the bridge's mDNS, the same as the CLI's,
-/// and uses no `nsd` at all, which has no Linux side.
+/// `id`. Android browses through NsdManager, which holds the multicast lock
+/// a phone needs. A desktop browses through the bridge's mDNS, the same as
+/// the CLI's, and uses no `nsd` at all, which has no Linux side.
 class Discovery {
   /// The NSD service feeders advertise.
   static const serviceType = '_wellfed._tcp';
 
-  /// The NSD service an owner's server advertises.
-  static const serverType = '_wellfed-server._tcp';
-
   /// Every feeder found until the returned stream is cancelled.
   static Stream<FoundFeeder> browse() => onDesktopHost ? _bridge() : _nsd(serviceType, _feeder);
-
-  /// Every owner's server found until the returned stream is cancelled. The
-  /// bridge browses feeders only, so on a desktop nothing is found and the
-  /// server is entered by its address.
-  static Stream<FoundServer> browseServers() =>
-      onDesktopHost ? const Stream<FoundServer>.empty() : _nsd(serverType, _server);
 
   static Stream<FoundFeeder> _bridge() {
     late final StreamController<FoundFeeder> out;
@@ -157,16 +128,6 @@ class Discovery {
       timer.cancel();
       await browsing.cancel();
     }
-  }
-
-  static FoundServer? _server(nsd.Service service) {
-    final Uint8List? key = service.txt?['key'];
-    final InternetAddress? ip = service.addresses?.where((a) => a.type == InternetAddressType.IPv4).firstOrNull;
-    final int? port = service.port;
-    // A record with no key is an older server's plain http, which the app
-    // no longer speaks on the network.
-    if (key == null || ip == null || port == null) return null;
-    return FoundServer(url: 'https://${ip.address}:$port', name: service.name ?? 'Home server', key: utf8.decode(key));
   }
 
   static FoundFeeder? _feeder(nsd.Service service) {

@@ -112,21 +112,15 @@ void main() {
       expect(shown.problem, contains('disk'));
     });
 
-    test('a check the server turned away says so, and anything else thrown still stops the spinner', () async {
+    test('anything else thrown still stops the spinner', () async {
       final ports = FakeAlertPorts()..notices = [foodLow()];
       final alerts = FeederAlertsController(ports, kitchen);
       addTearDown(alerts.dispose);
       await alerts.load();
 
-      ports.fails = const ServerTurnedAway();
-      await alerts.check();
-      AlertsShown shown = alerts.state as AlertsShown;
-      expect(shown.checking, isFalse);
-      expect(shown.problem, contains('your server turned this phone away'));
-
       ports.fails = StateError('a bridge panic');
       await alerts.check();
-      shown = alerts.state as AlertsShown;
+      final shown = alerts.state as AlertsShown;
       expect(shown.checking, isFalse);
       expect(shown.problem, contains('a bridge panic'));
       expect(shown.notices, hasLength(1));
@@ -321,17 +315,12 @@ void main() {
       );
     });
 
-    testWidgets('the page says alerts come through the server away from home, and asks for notifications', (
-      tester,
-    ) async {
+    testWidgets('the page says alerts work at home only, and asks for notifications', (tester) async {
       final ports = FakeAlertPorts()..allowed = false;
       await _showSettings(tester, ports);
 
-      expect(
-        find.textContaining('Away from home, alerts come through your server.', findRichText: true),
-        findsOneWidget,
-      );
-      expect(find.textContaining("without one you won't get alerts away", findRichText: true), findsOneWidget);
+      expect(find.textContaining('Alerts work at home.', findRichText: true), findsOneWidget);
+      expect(find.textContaining("you won't get alerts away from home", findRichText: true), findsOneWidget);
       await tester.tap(find.text('Allow notifications'));
       await settle(tester);
       expect(find.text('Allow notifications'), findsNothing);

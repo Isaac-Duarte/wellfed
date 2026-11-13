@@ -1,6 +1,6 @@
-//! What one direct session tells the path router: whether it is open, the
-//! newest event it knows of on the feeder, and the feeds this phone's key
-//! asked for as the feeder's history records them. The session writes it as
+//! What one session tells the router: the newest event it knows of on
+//! the feeder, and the feeds this phone's key asked for as the feeder's
+//! history records them. The session writes it as
 //! it runs; the router reads it and hears each change through its listener.
 //!
 //! The listener is called with no lock held here, so the router may read
@@ -18,16 +18,9 @@ use crate::session::Command;
 /// attaches late: more than an uncertain feed waits behind.
 const SEEN_KEPT: usize = 64;
 
-/// A change the router hears.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum LinkNews {
-    Opened,
-    Closed,
-    /// One of this phone's feed ends, now in [`DirectLink::seen`].
-    Fed,
-}
-
-pub(crate) type Listener = Arc<dyn Fn(LinkNews) + Send + Sync>;
+/// What the router hears: one of this phone's feed ends is now in
+/// [`DirectLink::seen`].
+pub(crate) type Listener = Arc<dyn Fn() + Send + Sync>;
 
 /// One direct session, as the router reaches it.
 pub(crate) struct DirectLink {
@@ -43,7 +36,6 @@ pub(crate) struct DirectLink {
 
 #[derive(Default)]
 struct LinkState {
-    open: bool,
     newest: Option<u64>,
     seen: Vec<Feed>,
     listener: Option<Listener>,
@@ -71,10 +63,6 @@ impl DirectLink {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    pub(crate) fn is_open(&self) -> bool {
-        self.state().open
-    }
-
     /// The newest event the session knows the feeder holds.
     pub(crate) fn newest(&self) -> Option<u64> {
         self.state().newest
@@ -95,21 +83,11 @@ impl DirectLink {
         self.state().listener = Some(listener);
     }
 
-    fn tell(&self, news: LinkNews) {
+    fn tell(&self) {
         let listener = self.state().listener.clone();
         if let Some(listener) = listener {
-            listener(news);
+            listener();
         }
-    }
-
-    pub(crate) fn opened(&self) {
-        self.state().open = true;
-        self.tell(LinkNews::Opened);
-    }
-
-    pub(crate) fn closed(&self) {
-        self.state().open = false;
-        self.tell(LinkNews::Closed);
     }
 
     /// The feeder's newest event is at least `seq`.
@@ -136,6 +114,6 @@ impl DirectLink {
             }
             state.seen.push(*feed);
         }
-        self.tell(LinkNews::Fed);
+        self.tell();
     }
 }

@@ -92,8 +92,8 @@ class _Feeder {
   }
 }
 
-/// The real session and the real path router, with no server, so every
-/// request and feed goes through the router as the app sends it; the rest of
+/// The real session and the real router, so every request and feed goes
+/// through the router as the app sends it; the rest of
 /// what a feeder's screens reach is not in play.
 class _Ports implements FeederPorts {
   _Ports(this._key, this.router);
@@ -101,7 +101,7 @@ class _Ports implements FeederPorts {
   final ClientKey _key;
 
   @override
-  final PathRouter router;
+  final FeederRouter router;
 
   @override
   FeedResult? settledFeed(Settlement settlement) => settled_feed.settledFeed(settlement: settlement);
@@ -119,16 +119,6 @@ class _Ports implements FeederPorts {
 
   @override
   Future<void> answered(String identity, String build) async {}
-
-  // No server here: nothing is adopted.
-  @override
-  Future<Adoption> adopt(KnownFeeder feeder) => throw UnimplementedError();
-
-  @override
-  Future<Adoption> checkAdoption(String identity) => throw UnimplementedError();
-
-  @override
-  Future<Adoption> claimPhone(String identity) => throw UnimplementedError();
 
   @override
   Future<String?> locate(String identity, Duration wait) async => null;
@@ -237,7 +227,7 @@ void main() {
     sim = await _Feeder.start(target, owner);
     final known = KnownFeeder(identity: sim.identity, name: 'Smoke', address: sim.address);
     pins = await Directory.systemTemp.createTemp('wellfed-smoke-pins');
-    final router = PathRouter(pinsPath: '${pins.path}/pending.json');
+    final router = FeederRouter(pinsPath: '${pins.path}/pending.json');
     feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner, router), known);
     await _until(feeder, (state) => state.cardIsCurrent);
   });
@@ -252,7 +242,7 @@ void main() {
   // The screens' tests decide offers with a Dart copy of the rules; it must
   // answer as the app's Rust does, case by case.
   test("the update rules the screens are tested with are the app's", skip: absent, () {
-    final real = _Ports(owner, PathRouter(pinsPath: '${pins.path}/rules.json'));
+    final real = _Ports(owner, FeederRouter(pinsPath: '${pins.path}/rules.json'));
     final fake = FakeFeederPorts();
     UpdateInfo state({int bank = 1, int floor = 4, Bank0Check bank0 = const Bank0Check.match(), bool idle = true}) =>
         UpdateInfo(

@@ -40,10 +40,7 @@ class MainActivity : FlutterActivity() {
     // the default network while that Wi-Fi has no internet (a feeder's own
     // network, a hotspot), so the device API sessions Rust opens would go
     // out over mobile data and never arrive. So every socket the process
-    // opens follows the Wi-Fi network, the owner's server's among them: on a
-    // Wi-Fi with no way out (a captive portal, a hotspot with no uplink) the
-    // server is out of reach even with mobile data up, and a catch-up there
-    // reads as the server not answering.
+    // opens follows the Wi-Fi network.
     private val wifi =
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
@@ -67,10 +64,6 @@ class MainActivity : FlutterActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Before the engine starts Dart, so no login can reach the verifier
-        // first. Starting it again on a recreated activity changes nothing.
-        TlsVerifier.start(applicationContext)
-        Uplink.start(applicationContext)
         super.onCreate(savedInstanceState)
         current = this
         // The Bluetooth plugin's RxJava throws when a link drops as its stream is

@@ -1,11 +1,11 @@
 """The repairs that release a hold on feeds.
 
-A feed whose answer was lost holds new feeds back on either route until it
-settles, as the app holds one: it may have run, and the feeder's history
-names this Home Assistant, not the request. Once no record of it turns up,
-its repair lets the owner release it, so feeds go again though it may have
-run. An entry whose store did not read holds every feed, since any lost
-feed it kept went with it, until the owner says the bowls are checked.
+A feed whose answer was lost holds new feeds back until it settles, as the
+app holds one: it may have run, and the feeder's history names this Home
+Assistant, not the request. Once no record of it turns up, its repair lets
+the owner release it, so feeds go again though it may have run. An entry
+whose store did not read holds every feed, since any lost feed it kept went
+with it, until the owner says the bowls are checked.
 Nothing else releases either.
 """
 

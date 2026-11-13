@@ -1,29 +1,21 @@
-//! The server's crate layering, checked from `cargo metadata`.
+//! The workspace's crate layering, checked from `cargo metadata`.
 //!
-//! The compiler keeps the server's layers apart only if each crate's
-//! dependencies follow the drawn arrows, so a manifest change that adds a
-//! shortcut fails here instead of in review. The rules and their reasons are
-//! the API design's (docs/server/design.md#crates):
+//! The compiler keeps the layers apart only if each crate's dependencies
+//! follow them, so a manifest change that adds a shortcut fails here instead
+//! of in review:
 //!
-//! - only `wellfed-store` depends on sqlx, so SQL stays in one crate;
-//! - nothing below `wellfed-server` links axum, even through another crate;
-//! - a server crate depends only on the workspace crates its arrows name, and
-//!   a crate outside the server takes a server crate only where drawn;
-//! - `wellfed-api` builds for the app's Android library, so its own
-//!   dependencies come from an allow-list;
 //! - the SDK's device-neutral crates link no kind's own crate by any path,
 //!   so a fountain's image carries no feeder code
 //!   (docs/firmware/device-kinds.md);
 //! - a crate outside `src/tools/` links no host tool's crate, so what the
-//!   app, the server and the firmware build on is a library in its own
+//!   app, Home Assistant and the firmware build on is a library in its own
 //!   layer, never a tool's internals;
-//! - the simulators in `src/sim/` are linked by the tools, by the server's
-//!   test kit and by other crates' tests, never by a crate that ships, so no
-//!   build an owner runs carries a simulated feeder.
+//! - the simulators in `src/sim/` are linked by the tools and by other
+//!   crates' tests, never by a crate that ships, so no build an owner runs
+//!   carries a simulated feeder.
 //!
-//! The arrows name crates that do not exist yet, so a new crate is checked
-//! from its first manifest. Dev-dependencies are exempt from the arrows (a
-//! test may build a simulated feeder or a whole server), never from sqlx.
+//! Dev-dependencies are exempt (a test may build a simulated feeder or run
+//! a tool).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -31,101 +23,6 @@ use std::process::Command;
 use std::{env, io};
 
 use serde::Deserialize;
-
-/// The crate that owns the database.
-const STORE: &str = "wellfed-store";
-/// The HTTP crate every client of the server shares.
-const API: &str = "wellfed-api";
-
-/// Each server crate and the workspace crates it may depend on (normal and
-/// build dependencies). A crate is named here before it exists, so its first
-/// manifest is checked.
-const ARROWS: [(&str, &[&str]); 9] = [
-    (API, &["wellfed-model"]),
-    (STORE, &[API, "wellfed-formats"]),
-    (
-        "wellfed-mirror",
-        &[
-            STORE,
-            API,
-            "wellfed-connect",
-            "wellfed-client",
-            "wellfed-model",
-            "wellfed-proto",
-            "wellfed-session",
-        ],
-    ),
-    (
-        "wellfed-releases",
-        &[STORE, API, "wellfed-client", "wellfed-model"],
-    ),
-    (
-        "wellfed-webhook",
-        &[
-            "wellfed-mirror",
-            STORE,
-            API,
-            "wellfed-client",
-            "wellfed-model",
-            "wellfed-formats",
-        ],
-    ),
-    (
-        "wellfed-service",
-        &[
-            "wellfed-mirror",
-            "wellfed-releases",
-            "wellfed-webhook",
-            STORE,
-            API,
-            "wellfed-model",
-            "wellfed-formats",
-            "wellfed-session",
-        ],
-    ),
-    ("wellfed-server", &["wellfed-service", API, STORE]),
-    (
-        "wellfed-server-testkit",
-        &[
-            "wellfed-server",
-            "wellfed-service",
-            STORE,
-            API,
-            "wellfed-server-client",
-            "wellfed-feeder-sim",
-            "wellfed-client",
-            "wellfed-connect",
-            "wellfed-model",
-            "wellfed-proto",
-            "wellfed-session",
-            "wellfed-signed",
-        ],
-    ),
-    ("wellfed-server-client", &[API]),
-];
-
-/// The only edges into a server crate from a crate outside the server: the
-/// CLI speaks the server's API through its typed client, the app's
-/// flutter_rust_bridge crate does too, handing `wellfed-api`'s values to
-/// Dart, and so does Home Assistant's bridge, for a feeder reached through
-/// the server.
-const INTO_SERVER: [(&str, &str); 4] = [
-    ("wellfed", "wellfed-server-client"),
-    ("wellfed-app-bridge", "wellfed-server-client"),
-    ("wellfed-app-bridge", API),
-    ("wellfed-homeassistant", "wellfed-server-client"),
-];
-
-/// The crates below the binary, which must not link axum by any path.
-const BELOW_SERVER: [&str; 7] = [
-    API,
-    STORE,
-    "wellfed-mirror",
-    "wellfed-releases",
-    "wellfed-webhook",
-    "wellfed-service",
-    "wellfed-server-client",
-];
 
 /// The SDK crates every device kind builds on, which must not link a
 /// kind's own crate ([`is_kind_sdk`]) by any path. The board crates are
@@ -158,17 +55,6 @@ const TOOLS: &str = "src/tools/";
 /// The simulators' folder: a crate whose manifest is under it is a
 /// simulator.
 const SIM: &str = "src/sim/";
-
-/// The only edges from outside [`TOOLS`] and [`SIM`] that link a
-/// simulator: the server's test kit is the harness the server crates' tests
-/// start, and the simulated feeder is the feeder it serves them. Named
-/// edge by edge, so a new kit a shipped crate could link (and carry the
-/// simulator into its build) is refused until it is listed here.
-const INTO_SIM: [(&str, &str); 1] = [("wellfed-server-testkit", "wellfed-feeder-sim")];
-
-/// What `wellfed-api` may depend on: serde types, schemas, ids and times,
-/// all of which build for Android. A new entry needs that check.
-const API_ALLOWED: [&str; 5] = ["jiff", "wellfed-model", "serde", "utoipa", "uuid"];
 
 /// Running or reading `cargo metadata` failed, so no rule could be checked.
 #[derive(Debug, thiserror::Error)]
@@ -367,41 +253,19 @@ pub(crate) fn check(root: &Path) -> Result<Vec<String>, Error> {
     Ok(rules(&Graph::from_metadata(metadata)?))
 }
 
-/// axum or one of its own crates (`axum-core`, `axum-extra`, …): linking any
-/// of them brings HTTP below the binary.
-fn is_axum(name: &str) -> bool {
-    name.starts_with("axum")
-}
-
 /// Every broken rule, each naming the edge (or path) that breaks it.
 fn rules(graph: &Graph) -> Vec<String> {
-    let arrows: BTreeMap<&str, &[&str]> = ARROWS.into_iter().collect();
     let mut errors = Vec::new();
 
     for member in &graph.members {
         let from = graph.name(member);
 
         for (dep, used) in graph.deps(member) {
+            if *used == Use::TestsOnly || !graph.members.contains(dep) {
+                continue;
+            }
             let to = graph.name(dep);
 
-            if from != STORE && (to == "sqlx" || to.starts_with("sqlx-")) {
-                errors.push(format!(
-                    "dependency rule: {from} → {to}: only {STORE} depends on sqlx"
-                ));
-            }
-            if *used == Use::TestsOnly {
-                continue;
-            }
-
-            if from == API && !API_ALLOWED.contains(&to) {
-                errors.push(format!(
-                    "dependency rule: {from} → {to}: not on {API}'s allow-list ({}); it builds for Android",
-                    API_ALLOWED.join(", ")
-                ));
-            }
-            if !graph.members.contains(dep) {
-                continue;
-            }
             if !graph.tools.contains(member) && graph.tools.contains(dep) {
                 errors.push(format!(
                     "dependency rule: {from} → {to}: a crate outside {TOOLS} links no host tool's crate"
@@ -410,34 +274,13 @@ fn rules(graph: &Graph) -> Vec<String> {
             if !graph.tools.contains(member)
                 && !graph.sims.contains(member)
                 && graph.sims.contains(dep)
-                && !INTO_SIM.contains(&(from, to))
             {
                 errors.push(format!(
-                    "dependency rule: {from} → {to}: outside {TOOLS} and {SIM}, only the server's test kit links a simulator; others take one for their tests"
-                ));
-            }
-            if let Some(allowed) = arrows.get(from) {
-                if !allowed.contains(&to) {
-                    errors.push(format!(
-                        "dependency rule: {from} → {to} is not an allowed edge; {from} may depend on {}",
-                        allowed.join(", ")
-                    ));
-                }
-            } else if arrows.contains_key(to) && !INTO_SERVER.contains(&(from, to)) {
-                errors.push(format!(
-                    "dependency rule: {from} → {to} is not an allowed edge into the server's crates"
+                    "dependency rule: {from} → {to}: outside {TOOLS} and {SIM}, only tests link a simulator"
                 ));
             }
         }
 
-        if BELOW_SERVER.contains(&from)
-            && let Some(path) = graph.linked_path(member, is_axum)
-        {
-            errors.push(format!(
-                "dependency rule: {}: nothing below wellfed-server links axum",
-                path.join(" → ")
-            ));
-        }
         if NEUTRAL_SDK.contains(&from)
             && let Some(path) = graph.linked_path(member, is_kind_sdk)
         {
@@ -486,7 +329,7 @@ mod tests {
         graph
     }
 
-    /// The members of [`MEMBERS`] (and the tests' own) under `src/tools/`.
+    /// The tests' members under `src/tools/`.
     const TOOL_MEMBERS: [&str; 4] = [
         "wellfed",
         "wellfed-bench",
@@ -494,97 +337,8 @@ mod tests {
         "wellfed-stock-server",
     ];
 
-    /// The members of [`MEMBERS`] (and the tests' own) under `src/sim/`.
+    /// The tests' members under `src/sim/`.
     const SIM_MEMBERS: [&str; 3] = ["wellfed-device-sim", "wellfed-feeder-sim", "wellfed-sim"];
-
-    const MEMBERS: [&str; 13] = [
-        "wellfed",
-        "wellfed-api",
-        "wellfed-store",
-        "wellfed-mirror",
-        "wellfed-service",
-        "wellfed-server",
-        "wellfed-model",
-        "wellfed-client",
-        "wellfed-connect",
-        "wellfed-feeder-sim",
-        "wellfed-stock",
-        "wellfed-bench",
-        "wellfed-server-client",
-    ];
-
-    /// Today's server, plus the CLI on the typed client and a bench tool
-    /// that serves its own axum.
-    fn layered() -> Vec<(&'static str, &'static str, Use)> {
-        use Use::{Links, TestsOnly};
-        vec![
-            ("wellfed-api", "wellfed-model", Links),
-            ("wellfed-api", "utoipa", Links),
-            ("wellfed-api", "serde", Links),
-            ("wellfed-store", "wellfed-api", Links),
-            ("wellfed-store", "sqlx", Links),
-            ("wellfed-store", "tempfile", TestsOnly),
-            ("wellfed-mirror", "wellfed-store", Links),
-            ("wellfed-mirror", "wellfed-connect", Links),
-            ("wellfed-mirror", "wellfed-feeder-sim", TestsOnly),
-            ("wellfed-service", "wellfed-mirror", Links),
-            ("wellfed-service", "wellfed-store", Links),
-            ("wellfed-service", "wellfed-feeder-sim", TestsOnly),
-            ("wellfed-connect", "wellfed-client", Links),
-            ("wellfed-server", "wellfed-service", Links),
-            ("wellfed-server", "wellfed-api", Links),
-            ("wellfed-server", "utoipa-axum", Links),
-            ("wellfed-server", "wellfed-feeder-sim", TestsOnly),
-            ("utoipa-axum", "axum", Links),
-            ("wellfed-server-client", "wellfed-api", Links),
-            ("wellfed-server-client", "axum", TestsOnly),
-            ("wellfed", "wellfed-server-client", Links),
-            ("wellfed", "wellfed-connect", Links),
-            ("wellfed-stock", "axum", Links),
-        ]
-    }
-
-    #[test]
-    fn the_drawn_layers_pass() {
-        let errors = rules(&graph(&MEMBERS, &layered()));
-        assert!(errors.is_empty(), "{errors:?}");
-    }
-
-    #[test]
-    fn each_broken_rule_names_its_edge() {
-        let mut edges = layered();
-        edges.extend([
-            // SQL outside the store, in a test too.
-            ("wellfed-service", "sqlx", Use::Links),
-            ("wellfed-server", "sqlx", Use::TestsOnly),
-            // A dependency off the Android allow-list.
-            ("wellfed-api", "reqwest", Use::Links),
-            // An upward edge, a skipped layer and an edge in from outside.
-            ("wellfed-store", "wellfed-service", Use::Links),
-            ("wellfed-server", "wellfed-mirror", Use::Links),
-            ("wellfed-bench", "wellfed-api", Use::Links),
-            // axum through another crate, below the binary.
-            ("wellfed-mirror", "wellfed-store", Use::Links),
-            ("wellfed-mirror", "utoipa-axum", Use::Links),
-            // A test of a crate outside the server may take any of them.
-            ("wellfed-stock", "wellfed-server-client", Use::TestsOnly),
-        ]);
-
-        assert_eq!(
-            rules(&graph(&MEMBERS, &edges)),
-            [
-                "dependency rule: wellfed-api → reqwest: not on wellfed-api's allow-list (jiff, wellfed-model, serde, utoipa, uuid); it builds for Android",
-                "dependency rule: wellfed-bench → wellfed-api is not an allowed edge into the server's crates",
-                "dependency rule: wellfed-mirror → utoipa-axum → axum: nothing below wellfed-server links axum",
-                "dependency rule: wellfed-server → sqlx: only wellfed-store depends on sqlx",
-                "dependency rule: wellfed-server → wellfed-mirror is not an allowed edge; wellfed-server may depend on wellfed-service, wellfed-api, wellfed-store",
-                "dependency rule: wellfed-service → sqlx: only wellfed-store depends on sqlx",
-                "dependency rule: wellfed-service → wellfed-mirror → utoipa-axum → axum: nothing below wellfed-server links axum",
-                "dependency rule: wellfed-store → wellfed-service is not an allowed edge; wellfed-store may depend on wellfed-api, wellfed-formats",
-                "dependency rule: wellfed-store → wellfed-service → wellfed-mirror → utoipa-axum → axum: nothing below wellfed-server links axum",
-            ]
-        );
-    }
 
     #[test]
     fn the_neutral_sdk_links_no_kind_s_crate() {
@@ -654,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn only_tools_the_server_s_test_kit_and_tests_link_a_simulator() {
+    fn only_tools_and_tests_link_a_simulator() {
         use Use::{Links, TestsOnly};
         let members = [
             "wellfed",
@@ -664,7 +418,6 @@ mod tests {
             "wellfed-feeder-sim",
             "wellfed-fw-feeder",
             "wellfed-install",
-            "wellfed-server-testkit",
             "wellfed-sim",
         ];
         let mut edges = vec![
@@ -672,8 +425,6 @@ mod tests {
             ("wellfed-feeder-sim", "wellfed-device-sim", Links),
             ("wellfed-feeder-sim", "wellfed-fw-feeder", Links),
             ("wellfed-feeder-sim", "wellfed-core", Links),
-            // The server's test kit serves its tests the simulated feeder.
-            ("wellfed-server-testkit", "wellfed-feeder-sim", Links),
             // The tools run it, and other crates' tests may.
             ("wellfed", "wellfed-feeder-sim", Links),
             ("wellfed-install", "wellfed-feeder-sim", TestsOnly),
@@ -684,84 +435,17 @@ mod tests {
         edges.extend([
             ("wellfed-core", "wellfed-sim", Links),
             ("wellfed-fw-feeder", "wellfed-sim", Links),
-            // Another kit is no exception: a shipped crate could link it and
+            // A test kit is no exception: a shipped crate could link it and
             // carry the simulator into its build.
             ("wellfed-app-testkit", "wellfed-feeder-sim", Links),
         ]);
         assert_eq!(
             rules(&graph(&members, &edges)),
             [
-                "dependency rule: wellfed-app-testkit → wellfed-feeder-sim: outside src/tools/ and src/sim/, only the server's test kit links a simulator; others take one for their tests",
-                "dependency rule: wellfed-core → wellfed-sim: outside src/tools/ and src/sim/, only the server's test kit links a simulator; others take one for their tests",
-                "dependency rule: wellfed-fw-feeder → wellfed-sim: outside src/tools/ and src/sim/, only the server's test kit links a simulator; others take one for their tests",
+                "dependency rule: wellfed-app-testkit → wellfed-feeder-sim: outside src/tools/ and src/sim/, only tests link a simulator",
+                "dependency rule: wellfed-core → wellfed-sim: outside src/tools/ and src/sim/, only tests link a simulator",
+                "dependency rule: wellfed-fw-feeder → wellfed-sim: outside src/tools/ and src/sim/, only tests link a simulator",
             ]
-        );
-    }
-
-    #[test]
-    fn axum_through_the_api_is_named_from_every_crate_above_it() {
-        let mut edges = layered();
-        edges.push(("wellfed-api", "utoipa-axum", Use::Links));
-
-        let errors = rules(&graph(&MEMBERS, &edges));
-
-        let axum: Vec<_> = errors
-            .iter()
-            .filter(|e| e.ends_with("links axum"))
-            .collect();
-        assert_eq!(
-            axum,
-            [
-                "dependency rule: wellfed-api → utoipa-axum → axum: nothing below wellfed-server links axum",
-                "dependency rule: wellfed-mirror → wellfed-store → wellfed-api → utoipa-axum → axum: nothing below wellfed-server links axum",
-                "dependency rule: wellfed-server-client → wellfed-api → utoipa-axum → axum: nothing below wellfed-server links axum",
-                "dependency rule: wellfed-service → wellfed-store → wellfed-api → utoipa-axum → axum: nothing below wellfed-server links axum",
-                "dependency rule: wellfed-store → wellfed-api → utoipa-axum → axum: nothing below wellfed-server links axum",
-            ]
-        );
-    }
-
-    #[test]
-    fn axum_s_own_crates_count_as_axum() {
-        let mut edges = layered();
-        edges.extend([
-            ("wellfed-mirror", "axum-core", Use::Links),
-            ("wellfed-app-bridge", "wellfed-api", Use::Links),
-            ("wellfed-app-bridge", "wellfed-server-client", Use::Links),
-        ]);
-        let mut members = MEMBERS.to_vec();
-        members.push("wellfed-app-bridge");
-
-        assert_eq!(
-            rules(&graph(&members, &edges)),
-            [
-                "dependency rule: wellfed-mirror → axum-core: nothing below wellfed-server links axum",
-                "dependency rule: wellfed-service → wellfed-mirror → axum-core: nothing below wellfed-server links axum",
-            ]
-        );
-    }
-
-    #[test]
-    fn a_crate_that_does_not_exist_yet_is_held_to_its_arrows() {
-        let mut edges = layered();
-        edges.extend([
-            ("wellfed-releases", "wellfed-service", Use::Links),
-            ("wellfed-releases", "axum", Use::Links),
-        ]);
-        let mut members = MEMBERS.to_vec();
-        members.push("wellfed-releases");
-
-        let errors = rules(&graph(&members, &edges));
-
-        assert!(errors.contains(
-            &"dependency rule: wellfed-releases → wellfed-service is not an allowed edge; wellfed-releases may depend on wellfed-store, wellfed-api, wellfed-client, wellfed-model".to_string()
-        ), "{errors:?}");
-        assert!(
-            errors.contains(
-                &"dependency rule: wellfed-releases → axum: nothing below wellfed-server links axum"
-                    .to_string()
-            ),
-            "{errors:?}"
         );
     }
 
@@ -769,8 +453,8 @@ mod tests {
     fn metadata_kinds_decide_what_links() {
         let json = r#"{
             "packages": [
-                {"id": "a 0.1.0", "name": "wellfed-service", "manifest_path": "/w/src/server/wellfed-service/Cargo.toml"},
-                {"id": "b 0.9.0", "name": "sqlx", "manifest_path": "/r/sqlx/Cargo.toml"},
+                {"id": "a 0.1.0", "name": "wellfed-install", "manifest_path": "/w/src/client/wellfed-install/Cargo.toml"},
+                {"id": "b 3.0.0", "name": "tempfile", "manifest_path": "/r/tempfile/Cargo.toml"},
                 {"id": "c 0.8.0", "name": "axum", "manifest_path": "/r/axum/Cargo.toml"},
                 {"id": "d 1.0.0", "name": "cc", "manifest_path": "/r/cc/Cargo.toml"},
                 {"id": "e 0.1.0", "name": "wellfed-bench", "manifest_path": "/w/src/tools/wellfed-bench/Cargo.toml"},
@@ -780,10 +464,11 @@ mod tests {
             "workspace_root": "/w",
             "resolve": {"nodes": [
                 {"id": "a 0.1.0", "deps": [
-                    {"pkg": "b 0.9.0", "dep_kinds": [{"kind": "dev", "target": null}]},
+                    {"pkg": "b 3.0.0", "dep_kinds": [{"kind": "dev", "target": null}]},
                     {"pkg": "c 0.8.0", "dep_kinds": [{"kind": "dev", "target": null}]},
                     {"pkg": "d 1.0.0", "dep_kinds": [{"kind": "build", "target": null}]},
-                    {"pkg": "e 0.1.0", "dep_kinds": [{"kind": "dev", "target": null}]}
+                    {"pkg": "e 0.1.0", "dep_kinds": [{"kind": "dev", "target": null}]},
+                    {"pkg": "f 0.1.0", "dep_kinds": [{"kind": null, "target": null}, {"kind": "dev", "target": null}]}
                 ]}
             ]}
         }"#;
@@ -793,49 +478,20 @@ mod tests {
         assert_eq!(
             graph.deps("a 0.1.0"),
             [
-                ("b 0.9.0".to_string(), Use::TestsOnly),
+                ("b 3.0.0".to_string(), Use::TestsOnly),
                 ("c 0.8.0".to_string(), Use::TestsOnly),
                 ("d 1.0.0".to_string(), Use::Links),
                 ("e 0.1.0".to_string(), Use::TestsOnly),
+                ("f 0.1.0".to_string(), Use::Links),
             ]
         );
         assert_eq!(graph.tools, BTreeSet::from(["e 0.1.0".to_string()]));
         assert_eq!(graph.sims, BTreeSet::from(["f 0.1.0".to_string()]));
         assert_eq!(
             rules(&graph),
-            ["dependency rule: wellfed-service → sqlx: only wellfed-store depends on sqlx"]
+            [
+                "dependency rule: wellfed-install → wellfed-feeder-sim: outside src/tools/ and src/sim/, only tests link a simulator"
+            ]
         );
-    }
-
-    /// The design's table of allowed dependencies is the arrows written for
-    /// people, so the two may not drift: each row names exactly its crate's
-    /// arrows, and every crate with arrows has a row.
-    #[test]
-    fn the_design_table_names_the_arrows() {
-        let design = include_str!("../../../../docs/server/design.md");
-        let backticked = regex::Regex::new(r"`(wellfed-[a-z-]+)`").expect("a fixed pattern");
-
-        let table: BTreeMap<&str, BTreeSet<&str>> = design
-            .lines()
-            .skip_while(|line| !line.starts_with("| Crate | May depend on"))
-            .skip(2)
-            .take_while(|line| line.starts_with('|'))
-            .filter_map(|line| {
-                let mut cells = line.split('|').skip(1);
-                let name = backticked.captures(cells.next()?)?.get(1)?.as_str();
-                let allowed = backticked
-                    .captures_iter(cells.next()?)
-                    .filter_map(|capture| capture.get(1))
-                    .map(|found| found.as_str())
-                    .collect();
-                Some((name, allowed))
-            })
-            .collect();
-        let arrows: BTreeMap<&str, BTreeSet<&str>> = ARROWS
-            .iter()
-            .map(|(name, allowed)| (*name, allowed.iter().copied().collect()))
-            .collect();
-
-        assert_eq!(table, arrows);
     }
 }

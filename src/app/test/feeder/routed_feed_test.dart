@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/router.dart';
-import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -13,15 +12,8 @@ import '../support/fakes.dart';
 
 const _kitchen = KnownFeeder(identity: 'aa', name: 'Kitchen', address: 'lan:4747');
 
-PendingWrite _pending(String key, {int sentMs = 1000}) => PendingWrite(
-  key: key,
-  feeder: 'aa',
-  path: RoutePath.server,
-  kind: WriteKind.feed,
-  portions: 1,
-  sentMs: sentMs,
-  acknowledged: false,
-);
+PendingWrite _pending(String key, {int sentMs = 1000}) =>
+    PendingWrite(key: key, feeder: 'aa', kind: WriteKind.feed, portions: 1, sentMs: sentMs, acknowledged: false);
 
 /// The kitchen's fleet, its session open and its card read.
 Future<(FeederFleet, FakeFeederPorts)> _open() async {
@@ -42,16 +34,10 @@ void main() {
     expect(ports.fakeRouter.log, ['attach aa', 'run aa']);
   });
 
-  test('a feed through the server ends from the server, and the session closing loses nothing', () async {
+  test("the router's answer brings a feed's key, and the session closing leaves it adrift", () async {
     final (FeederFleet fleet, FakeFeederPorts ports) = await _open();
     final FeederController kitchen = fleet.all.single;
-    ports.fakeRouter.feedAnswer = const RoutedFeed.started(
-      key: 'k1',
-      path: RoutePath.server,
-      feed: 9,
-      portions: 1,
-      dueSeconds: 49,
-    );
+    ports.fakeRouter.feedAnswer = const RoutedFeed.started(key: 'k1', feed: 9, portions: 1, dueSeconds: 49);
 
     kitchen.feedNow(1);
     await pumpEventQueue();
@@ -59,46 +45,8 @@ void main() {
 
     await ports.session.updates.close();
     await pumpEventQueue();
-    expect(kitchen.state.feed, isA<FeedRunning>(), reason: 'its end comes on the server');
-
-    kitchen.serverHistory(
-      HistoryEntry(
-        seq: BigInt.from(4),
-        body: HistoryBody.fed(result: fakeFed(feed: 9)),
-      ),
-    );
-    expect(kitchen.state.feed, isA<FeedEnded>());
+    expect(kitchen.state.feed, isA<FeedAdrift>().having((feed) => feed.by, 'by', FeedLoss.link));
     expect(ports.fakeRouter.fed, [('aa', 1)]);
-  });
-
-  test("the router's word on a server feed's end stands in for a history entry that never came", () async {
-    final (FeederFleet fleet, FakeFeederPorts ports) = await _open();
-    final FeederController kitchen = fleet.all.single;
-    ports.fakeRouter.feedAnswer = const RoutedFeed.started(
-      key: 'k1',
-      path: RoutePath.server,
-      feed: 9,
-      portions: 2,
-      dueSeconds: 60,
-    );
-    kitchen.feedNow(2);
-    await pumpEventQueue();
-
-    ports.fakeRouter.said.add(
-      const RouterUpdate.feedEnded(
-        key: 'k1',
-        feeder: 'aa',
-        settlement: Settlement.fed(
-          feed: 9,
-          requested: 2,
-          completed: 2,
-          outcome: FeedOutcome.done,
-          reason: FeedReason.done,
-        ),
-      ),
-    );
-    await pumpEventQueue();
-    expect(kitchen.state.feed, isA<FeedEnded>().having((feed) => feed.result.feed, 'feed', 9));
   });
 
   test('an uncertain feed is checked only by reading, and putting it away lets the next one go', () async {
@@ -110,7 +58,7 @@ void main() {
     expect(kitchen.state.feed, isA<FeedUnanswered>().having((feed) => feed.key, 'key', 'k2'));
 
     ports.fakeRouter.retryAnswer = RetryOutcome.uncertain(pending: _pending('k2'));
-    await kitchen.checkFeed();
+    kitchen.checkFeed();
     expect(kitchen.state.feed, isA<FeedUnanswered>(), reason: 'still not known');
 
     kitchen.dismissFeed();
@@ -136,7 +84,7 @@ void main() {
         reason: FeedReason.done,
       ),
     );
-    await kitchen.checkFeed();
+    kitchen.checkFeed();
     expect(kitchen.state.feed, isA<FeedEnded>().having((feed) => feed.result.feed, 'feed', 4));
   });
 
@@ -168,16 +116,13 @@ void main() {
     );
   });
 
-  test('a token the server refused says to log in again', () async {
+  test('a feed held back by a set-aside record says to check the bowls', () async {
     final (FeederFleet fleet, FakeFeederPorts ports) = await _open();
     final FeederController kitchen = fleet.all.single;
-    ports.fakeRouter.feedAnswer = RoutedFeed.notSent(
-      reason: NotSentReason.server,
-      error: serverError(ServerErrorKind.tokenRevoked),
-    );
+    ports.fakeRouter.feedAnswer = const RoutedFeed.notSent(reason: NotSentReason.setAside);
     kitchen.feedNow(1);
     await pumpEventQueue();
-    expect(kitchen.state.feed, isA<FeedNotSent>().having((feed) => feed.why, 'why', NotSentWhy.signedOut));
+    expect(kitchen.state.feed, isA<FeedNotSent>().having((feed) => feed.why, 'why', NotSentWhy.setAside));
   });
 
   test('with no router nothing is sent, not even a read', () async {
@@ -204,20 +149,25 @@ void main() {
     await pumpEventQueue();
     expect(kitchen.state.feed, isA<FeedSending>());
 
-    // Feed A, uncertain and already put away, settles now: its journal says it never went.
+    // Feed A, uncertain and already put away, settles now from the history.
     final PendingWrite a = _pending('a');
     ports.fakeRouter.said.add(
-      RouterUpdate.settled(
+      RouterUpdate(
         pending: PendingWrite(
           key: a.key,
           feeder: a.feeder,
-          path: a.path,
           kind: a.kind,
           portions: a.portions,
           sentMs: a.sentMs,
           acknowledged: true,
         ),
-        settlement: const Settlement.notSent(),
+        settlement: const Settlement.fed(
+          feed: 3,
+          requested: 1,
+          completed: 1,
+          outcome: FeedOutcome.done,
+          reason: FeedReason.done,
+        ),
       ),
     );
     await pumpEventQueue();
@@ -229,7 +179,7 @@ void main() {
     expect(kitchen.state.feed, isA<FeedRunning>(), reason: 'B runs');
   });
 
-  testWidgets('a feed a check found started shows as uncertain once it is past due', (tester) async {
+  testWidgets('a feed the router later says started shows as uncertain once it is past due', (tester) async {
     final ports = FakeFeederPorts();
     final fleet = FeederFleet(FakeBook()..feeders = [_kitchen], ports);
     addTearDown(fleet.dispose);
@@ -243,11 +193,10 @@ void main() {
     kitchen.feedNow(1);
     await tester.pump();
 
-    ports.fakeRouter.retryAnswer = RetryOutcome.settled(
-      pending: _pending('k6'),
-      settlement: const Settlement.started(feed: 5),
-    );
-    await kitchen.checkFeed();
+    // A screen made again while the call was out holds only the pin, and
+    // hears the call's answer by its key.
+    ports.fakeRouter.said.add(RouterUpdate(pending: _pending('k6'), settlement: const Settlement.started(feed: 5)));
+    await tester.pump();
     expect(kitchen.state.feed, isA<FeedRunning>().having((feed) => feed.feed, 'feed', 5));
 
     await tester.pump(const Duration(seconds: FakeFeederPorts.feedDue + 1));

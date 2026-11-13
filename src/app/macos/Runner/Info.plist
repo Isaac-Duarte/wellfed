@@ -31,11 +31,10 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Wellfed records the meal call that the feeder plays to your pet.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Wellfed finds your feeders on the local network, and talks to them and to your home server there.</string>
+	<string>Wellfed finds your feeders on the local network, and talks to them there.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_wellfed._tcp</string>
-		<string>_wellfed-server._tcp</string>
 	</array>
 	<key>NSLocationUsageDescription</key>
 	<string>macOS shares the name of the Wi-Fi network only with apps allowed your location. Wellfed reads it to give a feeder your Wi-Fi, and never keeps where you are.</string>

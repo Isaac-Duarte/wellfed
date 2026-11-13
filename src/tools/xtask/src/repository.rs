@@ -51,25 +51,9 @@ const STOCK_LINKERS: [&str; 2] = [
 /// runs it as its own process, so a fault elsewhere never takes a write down
 /// with it. What other crates check of images and reviews is `wellfed-image`.
 const FLASH_CLIENT: &str = "src/tools/wellfed-flash/Cargo.toml";
-/// The server crates' clippy.toml, which Clippy reads instead of the root's
-/// (it takes the nearest file and merges none), so it must repeat every root
-/// setting before adding its own.
-const SERVER_CLIPPY: &str = "src/server/clippy.toml";
 /// The web workspace's dependency policy, whose release-age exceptions
 /// each name one exact version.
 const PNPM_WORKSPACE: &str = "src/web/pnpm-workspace.yaml";
-/// The server's release build, which names its own Rust image and
-/// toolchain: they must be the one `rust-toolchain.toml` pins, or a release
-/// builds with a compiler `make check` never ran.
-const SERVER_CONTAINERFILE: &str = "src/server/wellfed-server/packaging/Containerfile";
-/// The tree whose Rust sources are held to a size, so a domain that grows
-/// gets a module of its own rather than a longer file.
-const SIZED: &str = "src/server/";
-/// The most lines a Rust source under [`SIZED`] may have.
-const LINES: usize = 400;
-/// The same under a `tests/` directory, where each test keeps its setup
-/// and its assertions together.
-const TEST_LINES: usize = 600;
 /// Host crate roots allowed `unsafe`: the virtual feeder worker runs the
 /// firmware's own ports on the fake SDK, through their C-shaped interface.
 const UNSAFE_HOST_ROOTS: [&str; 1] = ["src/sim/wellfed-sim/src/main.rs"];
@@ -103,7 +87,6 @@ regex!(
     CARD,
     r"\b(?:FW|FP|SV|AR|NT|BT|PE)\d{1,3}[a-z]?\b|\bF-\d{3}\b"
 );
-regex!(CHANNEL, r#"(?m)^channel\s*=\s*"([^"]+)""#);
 
 // The raw output writers `wellfed-amebad-sys` marks `unsafe`; reads such
 // as `wdg_vendor` and `bank1_read` are not among them.
@@ -129,7 +112,7 @@ regex!(FORBIDS_UNSAFE, r"(?m)^#!\[forbid\(unsafe_code\)\]");
 // computer or phone, so they have no C interface or MMIO edge.
 regex!(
     HOST_ROOT,
-    r"^src/(?:(?:server|client|tools|sim)/[^/]+|integrations/homeassistant/bridge)/src/(?:lib\.rs|main\.rs|bin/[^/]+\.rs|bin/[^/]+/main\.rs)$"
+    r"^src/(?:(?:client|tools|sim)/[^/]+|integrations/homeassistant/bridge)/src/(?:lib\.rs|main\.rs|bin/[^/]+\.rs|bin/[^/]+/main\.rs)$"
 );
 regex!(LINK, r"\]\(([^)]+)\)");
 regex!(SCHEME, r"^[A-Za-z][A-Za-z0-9+.-]*:");
@@ -180,8 +163,6 @@ pub(crate) fn check(root: &Path) -> io::Result<Summary> {
     for name in &names {
         check_file(&root, name, &published, &mut summary);
     }
-    check_release_toolchain(&root, &mut summary);
-    check_container_context(&root, &mut summary);
     summary
         .errors
         .extend(crate::op_clients::check(&root, &names));
@@ -258,9 +239,6 @@ fn check_file(root: &Path, name: &str, published: &BTreeSet<&str>, summary: &mut
 
     if extension == "rs" {
         raw_outputs(name, &content, &mut summary.errors);
-        if let Some(error) = oversized(name, &content) {
-            summary.errors.push(error);
-        }
         if allows_unsafe(name, &content) {
             summary.errors.push(format!(
                 "{name}: a host crate root without `#![forbid(unsafe_code)]`"
@@ -294,29 +272,6 @@ fn check_file(root: &Path, name: &str, published: &BTreeSet<&str>, summary: &mut
                 "{name}: the release-age exception {entry} names no exact version; write name@version"
             ));
         }
-    }
-
-    if name == SERVER_CLIPPY {
-        match fs::read_to_string(root.join("clippy.toml")) {
-            Ok(root_settings) => {
-                for missing in missing_settings(&root_settings, &content) {
-                    summary.errors.push(format!(
-                        "{name}: lacks the root clippy.toml's `{missing}`; Clippy reads only the nearest file"
-                    ));
-                }
-            }
-            Err(error) => summary.errors.push(format!(
-                "{name}: cannot read the root clippy.toml it must repeat: {error}"
-            )),
-        }
-    } else if name.starts_with("src/server/")
-        && relative
-            .file_name()
-            .is_some_and(|f| f == "clippy.toml" || f == ".clippy.toml")
-    {
-        summary.errors.push(format!(
-            "{name}: would replace {SERVER_CLIPPY} and its one-clock rule; keep server settings there"
-        ));
     }
 
     if extension == "md" {
@@ -380,178 +335,6 @@ fn is_published(dest: &Path, published: &BTreeSet<&str>) -> bool {
         .is_some_and(|name| name.starts_with(&folder))
 }
 
-/// What the release Containerfile must say for `toolchain`'s channel (the
-/// Rust image's tag and the toolchain it selects) and does not. A
-/// toolchain file without a channel is reported as such.
-fn unpinned_toolchain(containerfile: &str, toolchain: &str) -> Vec<String> {
-    let Some(channel) = CHANNEL.captures(toolchain).map(|found| found[1].to_owned()) else {
-        return vec!["a channel in rust-toolchain.toml".to_owned()];
-    };
-
-    [
-        format!("rust:{channel}-alpine"),
-        format!("RUSTUP_TOOLCHAIN={channel}"),
-    ]
-    .into_iter()
-    .zip([
-        names_image(containerfile, &channel),
-        selects(containerfile, &channel),
-    ])
-    .filter(|(_, present)| !present)
-    .map(|(wanted, _)| wanted)
-    .collect()
-}
-
-/// A whole token naming `rust:<channel>-alpine`, after any registry path or
-/// `ARG` name, with nothing but an Alpine release (`3.24`) after it, so channel
-/// 1.99.1 is not met by 1.99.10.
-fn names_image(containerfile: &str, channel: &str) -> bool {
-    let image = format!("rust:{channel}-alpine");
-
-    containerfile.split_whitespace().any(|token| {
-        let reference = token.rsplit(['/', '=']).next().unwrap_or(token);
-        reference
-            .strip_prefix(image.as_str())
-            .is_some_and(|alpine| alpine.chars().all(|c| c.is_ascii_digit() || c == '.'))
-    })
-}
-
-/// A whole `RUSTUP_TOOLCHAIN=<channel>` token.
-fn selects(containerfile: &str, channel: &str) -> bool {
-    let selected = format!("RUSTUP_TOOLCHAIN={channel}");
-
-    containerfile
-        .split_whitespace()
-        .any(|token| token == selected)
-}
-
-/// The release Containerfile builds with rust-toolchain.toml's channel. It is
-/// read whether or not the listing has it, so a deleted or renamed
-/// Containerfile fails the check instead of skipping it.
-fn check_release_toolchain(root: &Path, summary: &mut Summary) {
-    let read = |file: &str| fs::read_to_string(root.join(file));
-
-    match (read(SERVER_CONTAINERFILE), read("rust-toolchain.toml")) {
-        (Ok(containerfile), Ok(toolchain)) => {
-            for missing in unpinned_toolchain(&containerfile, &toolchain) {
-                summary.errors.push(format!(
-                    "{SERVER_CONTAINERFILE}: lacks `{missing}`; build releases with rust-toolchain.toml's channel"
-                ));
-            }
-        }
-        (Err(error), _) | (_, Err(error)) => summary.errors.push(format!(
-            "{SERVER_CONTAINERFILE}: cannot compare its toolchain with rust-toolchain.toml: {error}"
-        )),
-    }
-}
-
-/// The container build loads the whole workspace, so every member's manifest
-/// must reach it through `.dockerignore`.
-fn check_container_context(root: &Path, summary: &mut Summary) {
-    let read = |file: &str| fs::read_to_string(root.join(file));
-
-    match (read(".dockerignore"), read("Cargo.toml")) {
-        (Ok(ignore), Ok(manifest)) => {
-            for member in left_out(&ignore, &workspace_members(&manifest)) {
-                summary.errors.push(format!(
-                    ".dockerignore: leaves out the workspace member {member}, so the server's container build cannot load the workspace"
-                ));
-            }
-        }
-        (Err(error), _) | (_, Err(error)) => summary.errors.push(format!(
-            ".dockerignore: cannot compare it with the workspace's members: {error}"
-        )),
-    }
-}
-
-/// The paths in the root manifest's `[workspace] members` list.
-fn workspace_members(manifest: &str) -> Vec<String> {
-    let Some(start) = manifest.find("members = [") else {
-        return Vec::new();
-    };
-    let list = &manifest[start + "members = [".len()..];
-    let list = &list[..list.find(']').unwrap_or(list.len())];
-    list.lines()
-        .map(|line| line.split('#').next().unwrap_or_default())
-        .flat_map(|line| line.split(','))
-        .map(|item| item.trim().trim_matches('"'))
-        .filter(|item| !item.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-/// The `members` whose `Cargo.toml` the ignore rules leave out of the build
-/// context. Docker reads the rules in order and the last one matching a path,
-/// or any directory above it, decides; `!` re-admits.
-fn left_out(ignore: &str, members: &[String]) -> Vec<String> {
-    let rules: Vec<(bool, Vec<&str>)> = ignore
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(|line| match line.strip_prefix('!') {
-            Some(rule) => (false, rule),
-            None => (true, line),
-        })
-        .map(|(excludes, rule)| {
-            let parts = rule.trim_matches('/').split('/').collect();
-            (excludes, parts)
-        })
-        .collect();
-
-    members
-        .iter()
-        .filter(|member| {
-            let path = format!("{member}/Cargo.toml");
-            let parts: Vec<&str> = path.split('/').collect();
-            let mut excluded = false;
-            for (excludes, rule) in &rules {
-                if (1..=parts.len()).any(|end| glob(rule, &parts[..end])) {
-                    excluded = *excludes;
-                }
-            }
-            excluded
-        })
-        .cloned()
-        .collect()
-}
-
-/// Whether the path components `path` match the rule's, where `*` in a
-/// component matches any run of characters and `**` any number of
-/// components.
-fn glob(rule: &[&str], path: &[&str]) -> bool {
-    match rule.split_first() {
-        None => path.is_empty(),
-        Some((&"**", rest)) => (0..=path.len()).any(|skip| glob(rest, &path[skip..])),
-        Some((first, rest)) => path
-            .split_first()
-            .is_some_and(|(part, others)| component(first, part) && glob(rest, others)),
-    }
-}
-
-fn component(pattern: &str, text: &str) -> bool {
-    match pattern.split_once('*') {
-        None => pattern == text,
-        Some((head, tail)) => {
-            text.starts_with(head)
-                && (head.len()..=text.len())
-                    .any(|at| text.is_char_boundary(at) && component(tail, &text[at..]))
-        }
-    }
-}
-
-/// The root's settings (its non-comment lines) that a nested clippy.toml lacks.
-/// Lines are compared whole, which assumes every root setting fits on one
-/// line; a multi-line array there would need a TOML-aware comparison.
-fn missing_settings<'a>(root: &'a str, nested: &str) -> Vec<&'a str> {
-    let nested: Vec<&str> = nested.lines().map(str::trim).collect();
-
-    root.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .filter(|line| !nested.contains(line))
-        .collect()
-}
-
 /// The local file a Markdown link names: no scheme, no host, a nonempty path.
 pub(crate) fn local_path(target: &str) -> Option<String> {
     if SCHEME.is_match(target) || target.starts_with("//") {
@@ -612,27 +395,6 @@ fn allows_unsafe(name: &str, source: &str) -> bool {
     let forbids = FORBIDS_UNSAFE.is_match(source)
         || (name == conditional && source.lines().any(|line| line.trim_end() == attribute));
     !forbids
-}
-
-/// A Rust source under [`SIZED`] longer than its limit: [`TEST_LINES`] under
-/// a `tests/` directory, [`LINES`] anywhere else (a `tests.rs` module beside
-/// the code it tests included). Generated files (`openapi.json`, the sqlx
-/// metadata) are not Rust, so their size follows what they describe.
-fn oversized(name: &str, source: &str) -> Option<String> {
-    let inside = name.strip_prefix(SIZED)?;
-    let directories = Path::new(inside).parent()?;
-    let limit = if directories.components().any(|c| c.as_os_str() == "tests") {
-        TEST_LINES
-    } else {
-        LINES
-    };
-
-    let lines = source.lines().count();
-    (lines > limit).then(|| {
-        format!(
-            "{name}: {lines} lines, over the {limit} a server source may have; split it by domain"
-        )
-    })
 }
 
 /// The line of the first code block in a `///` or `//!` comment that rustdoc
@@ -722,41 +484,6 @@ fn raw_outputs(name: &str, source: &str, errors: &mut Vec<String>) {
 mod tests {
     use super::*;
 
-    /// The rules decide by the last that matches a path or a directory
-    /// above it, so a member under an excluded directory needs its own
-    /// re-admission.
-    #[test]
-    fn a_workspace_member_the_container_context_leaves_out_is_named() {
-        let manifest =
-            "[workspace]\nmembers = [\n    \"src/tools/xtask\", # host\n    \"src/app/rust\",\n]\n";
-        let members = workspace_members(manifest);
-        assert_eq!(members, ["src/tools/xtask", "src/app/rust"]);
-
-        let ignore = "*\n!Cargo.toml\n!src/\nsrc/app/\n**/target/\n";
-        assert_eq!(left_out(ignore, &members), ["src/app/rust"]);
-        let admitted = format!("{ignore}!src/app/rust/\n**/target/\n");
-        assert!(left_out(&admitted, &members).is_empty());
-
-        assert!(glob(&["**", "target"], &["src", "a", "target"]));
-        assert!(component("*.md", "README.md"));
-        assert!(!component("*.md", "README.rs"));
-    }
-
-    /// The repository's own context holds every member.
-    #[test]
-    fn the_container_context_holds_every_workspace_member() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let ignore = fs::read_to_string(root.join(".dockerignore")).unwrap();
-        let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
-        let members = workspace_members(&manifest);
-        assert!(members.len() > 10, "{members:?}");
-        assert!(
-            left_out(&ignore, &members).is_empty(),
-            "{:?}",
-            left_out(&ignore, &members)
-        );
-    }
-
     #[test]
     fn card_and_finding_ids_are_caught() {
         // Built from halves, so this file does not cite one itself.
@@ -781,7 +508,7 @@ mod tests {
     fn a_host_crate_root_forbids_unsafe() {
         let forbidden = "//! A crate.\n\n#![forbid(unsafe_code)]\n";
         for root in [
-            "src/server/wellfed-webhook/src/lib.rs",
+            "src/client/wellfed-connect/src/lib.rs",
             "src/sim/wellfed-feeder-sim/src/main.rs",
             "src/tools/wellfed-bench/src/bin/report.rs",
             "src/client/wellfed-model/src/bin/gen/main.rs",
@@ -808,12 +535,13 @@ mod tests {
             conditional
         ));
         assert!(allows_unsafe(
-            "src/server/wellfed-webhook/src/lib.rs",
+            "src/client/wellfed-connect/src/lib.rs",
             conditional
         ));
 
         for not_held in [
-            "src/server/wellfed-webhook/src/body.rs",
+            "src/client/wellfed-connect/src/discover.rs",
+            "src/server/wellfed-store/src/lib.rs",
             "src/sdk/wellfed-core/src/lib.rs",
             "src/firmware/wellfed/feeder/src/lib.rs",
             "src/sim/wellfed-sim/src/main.rs",
@@ -961,10 +689,6 @@ mod tests {
         );
     }
 
-    fn lines(count: usize) -> String {
-        "x\n".repeat(count)
-    }
-
     #[test]
     fn a_release_age_exception_names_one_exact_version() {
         let workspace = "\
@@ -1023,35 +747,6 @@ savePrefix: \"\"
     }
 
     #[test]
-    fn a_server_source_over_its_limit_is_named_with_its_count() {
-        let source = "src/server/wellfed-store/src/lib.rs";
-        let test = "src/server/wellfed-store/tests/store.rs";
-
-        assert_eq!(oversized(source, &lines(400)), None);
-        assert_eq!(
-            oversized(source, &lines(401)).as_deref(),
-            Some(
-                "src/server/wellfed-store/src/lib.rs: 401 lines, over the 400 a server source may have; split it by domain"
-            )
-        );
-        assert_eq!(oversized(test, &lines(600)), None);
-        assert_eq!(
-            oversized(test, &lines(601)).as_deref(),
-            Some(
-                "src/server/wellfed-store/tests/store.rs: 601 lines, over the 600 a server source may have; split it by domain"
-            )
-        );
-        assert_eq!(
-            oversized(
-                "src/server/wellfed-server/tests/api/feeders.rs",
-                &lines(600)
-            ),
-            None,
-            "a module of an integration test is a test too"
-        );
-    }
-
-    #[test]
     fn a_doc_example_rustdoc_would_compile_is_named_by_its_line() {
         let fenced =
             |info: &str| format!("//! Intro.\n//!\n//! ```{info}\n//! let x = 1;\n//! ```\n");
@@ -1075,136 +770,6 @@ savePrefix: \"\"
             compiled_doc_example("// ```\nlet s = \"```\";\n"),
             None,
             "only doc comments hold doctests"
-        );
-    }
-
-    #[test]
-    fn a_unit_test_file_beside_the_code_keeps_the_source_limit() {
-        assert!(
-            oversized("src/server/wellfed-service/src/tests.rs", &lines(401)).is_some(),
-            "a tests.rs module under src/ is held to 400"
-        );
-        assert!(
-            oversized("src/server/wellfed-service/src/tests/hub.rs", &lines(401)).is_none(),
-            "a tests/ directory under src/ holds tests"
-        );
-        assert_eq!(
-            oversized("src/client/wellfed-client/src/api.rs", &lines(900)),
-            None
-        );
-        assert_eq!(
-            oversized("src/tools/xtask/src/layers.rs", &lines(900)),
-            None
-        );
-    }
-
-    #[test]
-    fn the_size_guard_reads_server_rust_sources_only() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir_all(root.join("src/server/wellfed-server/src")).unwrap();
-        fs::write(
-            root.join("src/server/wellfed-server/src/lib.rs"),
-            format!("#![forbid(unsafe_code)]\n{}", lines(400)),
-        )
-        .unwrap();
-        fs::write(
-            root.join("src/server/wellfed-server/openapi.json"),
-            lines(401),
-        )
-        .unwrap();
-        let mut summary = Summary {
-            files: 0,
-            links: 0,
-            errors: Vec::new(),
-        };
-
-        let published = BTreeSet::new();
-        check_file(
-            &root,
-            "src/server/wellfed-server/src/lib.rs",
-            &published,
-            &mut summary,
-        );
-        check_file(
-            &root,
-            "src/server/wellfed-server/openapi.json",
-            &published,
-            &mut summary,
-        );
-
-        assert_eq!(
-            summary.errors,
-            [
-                "src/server/wellfed-server/src/lib.rs: 401 lines, over the 400 a server source may have; split it by domain"
-            ]
-        );
-    }
-
-    #[test]
-    fn a_nested_clippy_toml_repeats_every_root_setting() {
-        let root =
-            "# comment\nallow-unwrap-in-tests = true\n\navoid-breaking-exported-api = false\n";
-        let nested = "# its own comment\nallow-unwrap-in-tests = true\ndisallowed-methods = []\n";
-
-        assert_eq!(
-            missing_settings(root, nested),
-            ["avoid-breaking-exported-api = false"]
-        );
-        assert!(missing_settings(root, &format!("{root}disallowed-methods = []\n")).is_empty());
-    }
-
-    #[test]
-    fn the_release_build_uses_the_pinned_toolchain() {
-        let toolchain = "[toolchain]\nchannel = \"1.99.1\"\nprofile = \"minimal\"\n";
-        let pinned = "ARG RUST_IMAGE=docker.io/library/rust:1.99.1-alpine3.24\nENV RUSTUP_TOOLCHAIN=1.99.1 CARGO_INCREMENTAL=0\n";
-        let stale = "ARG RUST_IMAGE=docker.io/library/rust:1.98.0-alpine3.24\nENV RUSTUP_TOOLCHAIN=1.99.1\n";
-        let longer = "ARG RUST_IMAGE=docker.io/library/rust:1.99.10-alpine3.24\nENV RUSTUP_TOOLCHAIN=1.99.10\n";
-
-        assert!(unpinned_toolchain(pinned, toolchain).is_empty());
-        assert_eq!(unpinned_toolchain(stale, toolchain), ["rust:1.99.1-alpine"]);
-        assert_eq!(
-            unpinned_toolchain(longer, toolchain),
-            ["rust:1.99.1-alpine", "RUSTUP_TOOLCHAIN=1.99.1"]
-        );
-        assert_eq!(
-            unpinned_toolchain(pinned, "[toolchain]\n"),
-            ["a channel in rust-toolchain.toml"]
-        );
-    }
-
-    #[test]
-    fn the_server_clippy_toml_needs_the_root_one_and_no_other_beside_it() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        fs::create_dir_all(root.join("src/server/wellfed-store")).unwrap();
-        fs::write(root.join(SERVER_CLIPPY), "disallowed-methods = []\n").unwrap();
-        fs::write(root.join("src/server/wellfed-store/clippy.toml"), "\n").unwrap();
-        let mut summary = Summary {
-            files: 0,
-            links: 0,
-            errors: Vec::new(),
-        };
-
-        let published = BTreeSet::new();
-        check_file(&root, SERVER_CLIPPY, &published, &mut summary);
-        check_file(
-            &root,
-            "src/server/wellfed-store/clippy.toml",
-            &published,
-            &mut summary,
-        );
-
-        assert_eq!(summary.errors.len(), 2);
-        assert!(
-            summary.errors[0]
-                .starts_with("src/server/clippy.toml: cannot read the root clippy.toml"),
-            "{}",
-            summary.errors[0]
-        );
-        assert_eq!(
-            summary.errors[1],
-            "src/server/wellfed-store/clippy.toml: would replace src/server/clippy.toml and its one-clock rule; keep server settings there"
         );
     }
 

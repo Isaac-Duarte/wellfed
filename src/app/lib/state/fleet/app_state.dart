@@ -4,12 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:wellfed/platform/secure_storage.dart';
-import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
-import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/one_at_a_time.dart';
 import 'package:wellfed/state/fleet/store_notice.dart';
@@ -60,14 +58,6 @@ abstract interface class FeederBook implements Listenable {
 
   /// This phone gave `identity` its clock, so it no longer owes it.
   void clockSynced(String identity);
-
-  /// The owner's server this phone logged in to, with the feeders it last
-  /// listed; `null` with none.
-  KnownServer? get server;
-
-  /// Keep `server`, or forget the server with `null`. The feeders this phone
-  /// holds its own key on stay either way.
-  Future<void> setServer(KnownServer? server);
 }
 
 /// Why the pins file (`pending.json`) did not open, so the app sends no
@@ -114,7 +104,7 @@ class AppState extends ChangeNotifier implements FeederBook {
     this.key,
     this._store,
     this._path,
-    (PathRouter?, PinsProblem?) opened,
+    (FeederRouter?, PinsProblem?) opened,
     SetAside? storeSetAside, {
     SetAside? alertsSetAside,
   }) : router = opened.$1,
@@ -138,17 +128,17 @@ class AppState extends ChangeNotifier implements FeederBook {
     required ClientKey key,
     required AppStore store,
     required String path,
-    PathRouter? router,
+    FeederRouter? router,
     SetAside? storeSetAside,
   }) : this._(key, store, path, (router, router == null ? PinsProblem.unavailable : null), storeSetAside);
 
   /// This phone's key.
   final ClientKey key;
 
-  /// The one path router, whose pins (`pending.json`) live beside the app's
+  /// The one router, whose pins (`pending.json`) live beside the app's
   /// file; `null` when they could not be opened, and then the app sends no
   /// request at all rather than an unpinned write.
-  final PathRouter? router;
+  final FeederRouter? router;
 
   /// Why [router] is `null`, for the owner to see.
   final PinsProblem? pinsProblem;
@@ -200,18 +190,11 @@ class AppState extends ChangeNotifier implements FeederBook {
     final Directory dir = await getApplicationSupportDirectory();
     final path = '${dir.path}/wellfed.json';
     final OpenedStore opened = await openStore(path: path);
-    final AppStore store = opened.store;
-    // The server's link went with the file, so its token's secret can never
-    // be used again, nor the token revoked from here: drop the secret, and a
-    // new login makes a new token. Every start does it until the owner reads
-    // the notice, so one that dies first still does, but never once a new
-    // login has kept a server, whose secret it would be.
-    if (opened.setAside?.kind == StoreKind.app && store.server == null) await _forgetServerSecret();
     return AppState._(
       key,
-      store,
+      opened.store,
       path,
-      _openRouter('${dir.path}/pending.json', store.server),
+      _openRouter('${dir.path}/pending.json'),
       opened.setAside,
       // Kept in the alert file until read: a catch-up in the background may
       // have been the one to set it aside.
@@ -219,36 +202,15 @@ class AppState extends ChangeNotifier implements FeederBook {
     );
   }
 
-  /// Best effort: a secret left behind is unused, and the start goes on.
-  static Future<void> _forgetServerSecret() async {
+  /// The router on `pins`.
+  static (FeederRouter?, PinsProblem?) _openRouter(String pins) {
     try {
-      await const AppServerPorts().forgetSecret();
-    } on Exception catch (error) {
-      debugPrint('the old server token secret could not be deleted: $error');
-    }
-  }
-
-  /// The router on `pins`, told at once of the server the app keeps, before
-  /// any feeder session exists: an account the server may have narrowed
-  /// never feeds on the phone's own key while the app reads its token.
-  static (PathRouter?, PinsProblem?) _openRouter(String pins, KnownServer? kept) {
-    try {
-      final router = PathRouter(pinsPath: pins);
-      if (kept != null) router.configureServer(kept: kept);
-      return (router, null);
+      return (FeederRouter(pinsPath: pins), null);
     } on BridgeError catch (error) {
       debugPrint('the pending writes could not be opened, so nothing is sent: ${error.message}');
       return (null, error.kind == ErrorKind.inUse ? PinsProblem.inUse : PinsProblem.unavailable);
     }
   }
-
-  @override
-  KnownServer? get server => _store.server;
-
-  @override
-  Future<void> setServer(KnownServer? server) => _update(
-    (store) => AppStore(label: store.label, feeders: store.feeders, appearance: store.appearance, server: server),
-  );
 
   @override
   String get label => _store.label;
@@ -266,14 +228,12 @@ class AppState extends ChangeNotifier implements FeederBook {
   Appearance get appearance => _store.appearance;
 
   @override
-  Future<void> setAppearance(Appearance appearance) => _update(
-    (store) => AppStore(label: store.label, feeders: store.feeders, appearance: appearance, server: store.server),
-  );
+  Future<void> setAppearance(Appearance appearance) =>
+      _update((store) => AppStore(label: store.label, feeders: store.feeders, appearance: appearance));
 
   @override
-  Future<void> setLabel(String label) => _update(
-    (store) => AppStore(label: label, feeders: store.feeders, appearance: store.appearance, server: store.server),
-  );
+  Future<void> setLabel(String label) =>
+      _update((store) => AppStore(label: label, feeders: store.feeders, appearance: store.appearance));
 
   @override
   Future<void> remember(KnownFeeder feeder, {bool paired = false, bool keepName = false}) {
@@ -295,7 +255,6 @@ class AppState extends ChangeNotifier implements FeederBook {
           ),
         ],
         appearance: store.appearance,
-        server: store.server,
       );
     });
   }
@@ -309,7 +268,6 @@ class AppState extends ChangeNotifier implements FeederBook {
           if (feeder.identity != identity) feeder,
       ],
       appearance: store.appearance,
-      server: store.server,
     ),
   );
 
@@ -330,7 +288,6 @@ class AppState extends ChangeNotifier implements FeederBook {
             feeder,
       ],
       appearance: store.appearance,
-      server: store.server,
     ),
   );
 
@@ -346,7 +303,6 @@ class AppState extends ChangeNotifier implements FeederBook {
             feeder,
       ],
       appearance: store.appearance,
-      server: store.server,
     ),
   );
 

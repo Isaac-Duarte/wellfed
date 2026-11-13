@@ -173,10 +173,6 @@ pub(crate) struct Slot {
 }
 
 impl Slot {
-    pub(crate) const fn slot(&self) -> u8 {
-        self.slot
-    }
-
     pub(crate) const fn enabled(&self, enabled: bool) -> Edit {
         Edit::Enabled {
             slot: self.slot,

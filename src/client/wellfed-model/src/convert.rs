@@ -2484,7 +2484,7 @@ mod tests {
 
     /// The feeder's "no generation" (its settings records apart, read-only
     /// until it repairs them) decodes to none; JSON keeps the number, so
-    /// `/api/v1` and its older readers see the field unchanged.
+    /// its older readers see the field unchanged.
     #[test]
     fn settings_with_no_generation_decode_to_none() {
         let wire = proto::Settings {

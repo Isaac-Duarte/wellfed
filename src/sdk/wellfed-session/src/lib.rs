@@ -1,11 +1,10 @@
 //! The device API's session layer, shared by the feeder and every client:
 //! the Noise handshakes and transport, the HMAC they and the setup code are
 //! built on, the setup code itself, the length-prefixed frames that carry
-//! them, and the strict hex and base64 text forms. Beside them, the proof a
-//! client gives the owner's server that it holds its static key's secret.
+//! them, and the strict hex and base64 text forms.
 //!
 //! It knows nothing of the feeder's hardware, storage or feeding, so a host
-//! client or the owner's server takes it without the firmware's SDK. It is
+//! client takes it without the firmware's SDK. It is
 //! `no_std`, allocates nothing and draws no randomness: the caller passes
 //! buffers and secrets in.
 //!
@@ -57,5 +56,4 @@ pub mod frame;
 pub mod hex;
 pub mod mac;
 pub mod noise;
-pub mod proof;
 pub mod setup_code;
