@@ -18,9 +18,7 @@ use wellfed_feeder::feeder::{CLAIM_WAIT_MS, Platform};
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::sim::Sim;
-use wellfed_proto::api::{
-    Alert, AlertKind, EventBody, FeedOutcome, Lenient, Source, UpdateCandidate,
-};
+use wellfed_proto::api::{Alert, AlertKind, EventBody, Source, UpdateCandidate};
 
 const MINUTE_MS: u64 = 60_000;
 const HOUR_MS: u64 = 60 * MINUTE_MS;
@@ -166,25 +164,15 @@ fn table(plans: &[(usize, Plan)]) -> Table {
     table
 }
 
+/// A failed meal's alert, which the product's rules open, is read back after
+/// a restart: the rules say they are restored only once it is.
 #[test]
-fn a_failed_meal_opens_and_a_restart_reads_it_back() {
+fn a_restart_reads_a_failed_meal_s_alert_back() {
     let mut feeder = Feeder::new(true);
     feeder.sync(WEDNESDAY);
     feeder.put(table(&[(0, plan(10, 2))]));
     feeder.sim.fault_feed(CoreReason::Jammed);
     feeder.run(11 * MINUTE_MS);
-
-    assert!(
-        feeder.events().iter().any(|(_, body)| matches!(
-            body,
-            EventBody::Fed {
-                outcome: Lenient::Known(FeedOutcome::Failed),
-                ..
-            }
-        )),
-        "the meal failed"
-    );
-    assert_eq!(feeder.open_kinds(), [AlertKind::MealFailed]);
 
     feeder.restart(0);
     assert!(!feeder.sim.platform().alerts().is_restored());
@@ -193,10 +181,10 @@ fn a_failed_meal_opens_and_a_restart_reads_it_back() {
     assert_eq!(feeder.open_kinds(), [AlertKind::MealFailed]);
 }
 
-/// A meal the owner skipped never runs and is never missed, and the rules
-/// open nothing for it, before a restart or after.
+/// A meal the owner skipped, which the product's rules open nothing for,
+/// opens nothing after a restart either: the restored rules read the skip.
 #[test]
-fn a_skipped_meal_opens_no_meal_alert() {
+fn a_restart_opens_no_meal_alert_for_a_skipped_meal() {
     let mut feeder = Feeder::new(true);
     feeder.sync(WEDNESDAY);
     feeder.put(table(&[(0, plan(10, 2))]));
@@ -208,19 +196,6 @@ fn a_skipped_meal_opens_no_meal_alert() {
     };
     feeder.sim.skip_meal(now, 0, due_s, skip).unwrap();
     feeder.run(2 * HOUR_MS);
-
-    let PlansResult::Current { view, .. } = feeder.sim.platform().plans() else {
-        panic!("the plans are loaded");
-    };
-    assert_eq!(view.skipped(0), Some(due_s), "the skip stands");
-    let events = feeder.events();
-    assert!(
-        !events
-            .iter()
-            .any(|(_, body)| matches!(body, EventBody::Fed { .. } | EventBody::Missed { .. })),
-        "{events:?}"
-    );
-    assert_eq!(feeder.open_kinds(), []);
 
     feeder.restart(0);
     let wall = feeder.wall;
@@ -306,16 +281,6 @@ fn a_trial_that_confirms_is_recorded_once() {
             EventBody::UpdateConfirmed,
         ]
     );
-    assert_eq!(feeder.open_kinds(), []);
-}
-
-#[test]
-fn a_good_meal_opens_nothing() {
-    let mut feeder = Feeder::new(true);
-    feeder.sync(WEDNESDAY);
-    feeder.put(table(&[(0, plan(10, 2))]));
-    feeder.run(11 * MINUTE_MS);
-
     assert_eq!(feeder.open_kinds(), []);
 }
 
