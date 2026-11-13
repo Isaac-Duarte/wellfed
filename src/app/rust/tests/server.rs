@@ -77,6 +77,12 @@ fn follow(
     receiver
 }
 
+/// One of a write's two stream events, with the stream's position after it.
+enum Heard {
+    Command(String),
+    Event(String),
+}
+
 /// The next update that `pick` takes, skipping the others.
 async fn heard<T>(
     updates: &mut mpsc::UnboundedReceiver<ServerUpdate>,
@@ -179,26 +185,34 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
         let feeder_id = feeders[0].id.parse().map(wellfed_api::FeederId).unwrap();
         server.caught_up(feeder_id).await;
         phone.set_lock(feeder_id, Lock::Locked, key).await.unwrap();
-        let resume = heard(&mut updates, "the lock's command", |update| match update {
-            ServerUpdate::Event {
-                resume,
-                event: ServerEvent::Command { command },
-            } if command.key == key.to_string() => {
-                assert_eq!(command.kind, CommandKind::Lock);
-                Some(resume)
+
+        // The command streams once the feeder's answer is recorded, and the
+        // history entry once the server reads the feeder's event, which the
+        // feeder may send first: either can come first on the stream.
+        let mut lock = Vec::new();
+        heard(&mut updates, "the lock's command and event", |update| {
+            match update {
+                ServerUpdate::Event {
+                    resume,
+                    event: ServerEvent::Command { command },
+                } if command.key == key.to_string() => {
+                    assert_eq!(command.kind, CommandKind::Lock);
+                    assert!(!resume.is_empty(), "a command names its stream position");
+                    lock.push(Heard::Command(resume));
+                }
+                ServerUpdate::Event {
+                    resume,
+                    event: ServerEvent::History { feeder, entry },
+                } if feeder == kitchen
+                    && matches!(entry.entry.body, HistoryBody::Lock { locked: true, .. }) =>
+                {
+                    lock.push(Heard::Event(resume));
+                }
+                _ => {}
             }
-            _ => None,
-        })
-        .await;
-        assert!(!resume.is_empty(), "a command names its stream position");
-        heard(&mut updates, "the lock's event", |update| match update {
-            ServerUpdate::Event {
-                event: ServerEvent::History { feeder, entry },
-                ..
-            } if feeder == kitchen => {
-                matches!(entry.entry.body, HistoryBody::Lock { locked: true, .. }).then_some(())
-            }
-            _ => None,
+            let command = lock.iter().any(|heard| matches!(heard, Heard::Command(_)));
+            let event = lock.iter().any(|heard| matches!(heard, Heard::Event(_)));
+            (command && event).then_some(())
         })
         .await;
 
@@ -230,8 +244,13 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
         let food = session.feeder_food(kitchen.clone()).await.unwrap();
         assert!(food.current.is_none(), "no food was set");
 
-        // Resumed from the command's position, the stream gives what came
-        // after it (the lock's event), or a resync when it keeps no more.
+        // Resumed from the position of whichever came first, the stream
+        // gives what came after it (the other one), or a resync when it
+        // keeps no more.
+        let (resume, event_next) = match lock.swap_remove(0) {
+            Heard::Command(resume) => (resume, true),
+            Heard::Event(resume) => (resume, false),
+        };
         let mut resumed = follow(&session, Some(resume));
         let caught_up =
             heard(
@@ -241,10 +260,14 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
                     ServerUpdate::Event {
                         event: ServerEvent::History { entry, .. },
                         ..
-                    } => Some(matches!(
-                        entry.entry.body,
-                        HistoryBody::Lock { locked: true, .. }
-                    )),
+                    } => Some(
+                        event_next
+                            && matches!(entry.entry.body, HistoryBody::Lock { locked: true, .. }),
+                    ),
+                    ServerUpdate::Event {
+                        event: ServerEvent::Command { command },
+                        ..
+                    } if !event_next => Some(command.key == key.to_string()),
                     ServerUpdate::Event {
                         event: ServerEvent::Resync,
                         resume,
@@ -256,7 +279,10 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
                 },
             )
             .await;
-        assert!(caught_up, "the first event after the command is the lock's");
+        assert!(
+            caught_up,
+            "the first event after the lock's first is its other"
+        );
 
         session.logout(ada_login().password, &own()).await.unwrap();
         heard(
