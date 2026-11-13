@@ -108,7 +108,8 @@ pub fn ready() -> bool {
 }
 
 /// Fill `out` from the generator; false (and `out` untouched) without one,
-/// or once it needs a reseed it cannot get.
+/// or past its request bound, which no boot reaches: it is seeded once per
+/// boot and never reseeded.
 pub fn fill(out: &mut [u8]) -> bool {
     with_generator(|generator| {
         generator

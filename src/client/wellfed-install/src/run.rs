@@ -1705,3 +1705,279 @@ mod tests {
         ));
     }
 }
+
+/// Each wait of the run, on tokio's paused clock: it looks again every poll
+/// and gives up once its own bound has passed, never sooner and at most a
+/// poll later. Nothing here answers (no stock server runs, no feeder is
+/// known and no radio finds one), and nothing does IO, so each wait runs
+/// to its bound in no real time.
+#[cfg(test)]
+mod waits {
+    use std::cell::RefCell;
+    use std::path::Path;
+    use std::rc::Rc;
+
+    use wellfed_formats::manifest::BuildManifest;
+    use wellfed_session::noise::Keypair;
+    use wellfed_stock::clock::StockPlans;
+    use wellfed_stock::server::{Api, Bind};
+
+    use super::*;
+    use crate::event::Wait;
+    use crate::platform::{PlatformError, SetupLink};
+    use crate::tests::Scripted;
+
+    /// A radio that finds no feeder in setup mode.
+    struct NoRadio;
+
+    struct NoLink;
+
+    impl SetupLink for NoLink {
+        async fn send(&mut self, _: &[u8]) -> Result<(), PlatformError> {
+            Err("no link".into())
+        }
+
+        async fn receive(&mut self, _: Duration) -> Result<Vec<u8>, PlatformError> {
+            Err("no link".into())
+        }
+
+        async fn close(self) {}
+    }
+
+    impl Bluetooth for NoRadio {
+        type Link = NoLink;
+
+        async fn open(&mut self) -> Result<NoLink, PlatformError> {
+            Err("no feeder advertises setup".into())
+        }
+    }
+
+    /// Discovery that finds nothing.
+    struct Unseen;
+
+    impl Discovery for Unseen {
+        async fn locate(&self, _: [u8; 32]) -> Option<SocketAddr> {
+            None
+        }
+    }
+
+    /// A client key that knows no feeder.
+    struct NoFeeders(Keypair);
+
+    impl Keys for NoFeeders {
+        fn keypair(&self) -> &Keypair {
+            &self.0
+        }
+
+        fn label(&self) -> &str {
+            "test"
+        }
+
+        fn feeder(&self, _: Option<&str>) -> Option<[u8; 32]> {
+            None
+        }
+
+        fn remember(&mut self, _: &[u8; 32]) -> Result<(), PlatformError> {
+            Ok(())
+        }
+    }
+
+    /// The events the run reported.
+    #[derive(Clone, Default)]
+    struct Events(Rc<RefCell<Vec<Event>>>);
+
+    impl Report for Events {
+        fn event(&self, event: Event) {
+            self.0.borrow_mut().push(event);
+        }
+    }
+
+    impl Events {
+        fn count(&self, matching: impl Fn(&Event) -> bool) -> usize {
+            self.0
+                .borrow()
+                .iter()
+                .filter(|event| matching(event))
+                .count()
+        }
+    }
+
+    type Waiting = Run<Scripted, NoRadio, Unseen, NoFeeders, Events>;
+
+    /// How long stock's broker trusts the first feeder in these runs.
+    const ENROLL: Duration = Duration::from_secs(60);
+
+    /// A run from `start` in `dir`, whose stock server never starts, at the
+    /// default poll; the install as it starts, and what the run reports.
+    fn run(dir: &Path, start: Start) -> (Waiting, Install, Events) {
+        let events = Events::default();
+        let plan = Plan {
+            review: Review {
+                directory: dir.to_path_buf(),
+                build: "ab".repeat(32),
+                manifest: BuildManifest::default(),
+                container: Vec::new(),
+            },
+            start,
+            manifest: Vec::new(),
+            version: 1,
+            home: None,
+            feeder: None,
+            unjoined: Unjoined::Wait,
+            address: None,
+            backups: dir.join("backups"),
+            stock: StockOptions {
+                config: dir.join("installer.json"),
+                enroll: ENROLL,
+                api: Api::Off,
+                bind: Bind::Configured,
+                stock_plans: StockPlans::Unknown,
+            },
+            poll: POLL,
+        };
+        let io = Platform {
+            prompter: Scripted::default(),
+            bluetooth: NoRadio,
+            discovery: Unseen,
+            keys: NoFeeders(Keypair::from_secret([0x5a; 32])),
+            report: events.clone(),
+        };
+        let (run, install) = Run::new(plan, io).unwrap();
+        (run, install, events)
+    }
+
+    /// `elapsed` is a wait of `bound`: no shorter, and at most a poll longer.
+    fn waited(elapsed: Duration, bound: Duration) {
+        assert!(
+            elapsed >= bound && elapsed < bound + POLL,
+            "{elapsed:?} for a bound of {bound:?}"
+        );
+    }
+
+    fn timed_out(install: &mut Install) {
+        let step = install.step();
+        assert!(
+            matches!(step, Step::Failed(InstallError::TimedOut(_))),
+            "{step:?}"
+        );
+    }
+
+    /// A frame stock never took: no feeder reaches the broker, and the wait
+    /// ends at the frame's arrival time, well inside the enrollment window.
+    #[tokio::test(start_paused = true)]
+    async fn a_frame_no_stock_takes_ends_the_wait_at_its_arrival_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut run, mut install, events) = run(dir.path(), Start::Stock(Provision::Done));
+        let began = Instant::now();
+        run.frame_out = Some(began);
+
+        run.await_stock(&mut install).await.unwrap();
+        waited(began.elapsed(), FRAME_ARRIVAL);
+        assert_eq!(install.step(), Step::Failed(InstallError::FrameNotTaken));
+        assert_eq!(
+            events.count(|event| *event == Event::Waiting(Wait::NoFeeder)),
+            1,
+            "said once"
+        );
+    }
+
+    /// With no frame of this run's, stock is waited for through the
+    /// enrollment window and its grace.
+    #[tokio::test(start_paused = true)]
+    async fn stock_is_waited_for_through_the_window_and_its_grace() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut run, mut install, _) = run(dir.path(), Start::Stock(Provision::Done));
+        let began = Instant::now();
+
+        run.await_stock(&mut install).await.unwrap();
+        waited(began.elapsed(), ENROLL + STOCK_GRACE);
+        timed_out(&mut install);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_install_is_waited_for_until_its_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut run, mut install, _) = run(dir.path(), Start::Stock(Provision::Done));
+        let began = Instant::now();
+
+        run.await_install(&mut install).await;
+        waited(began.elapsed(), INSTALL_WAIT);
+        timed_out(&mut install);
+    }
+
+    /// A feeder that never answers after Bluetooth setup is looked for until
+    /// the join's bound.
+    #[tokio::test(start_paused = true)]
+    async fn a_join_is_waited_for_until_its_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut run, mut install, _) = run(dir.path(), Start::Bank0);
+        run.identity = Some([0xcd; 32]);
+        let began = Instant::now();
+
+        run.await_join(&mut install).await.unwrap();
+        waited(began.elapsed(), JOIN_WAIT);
+        timed_out(&mut install);
+    }
+
+    /// No feeder advertising setup is looked for until the replacement's
+    /// bound, then said.
+    #[tokio::test(start_paused = true)]
+    async fn a_setup_link_is_looked_for_until_its_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut run, _, events) = run(dir.path(), Start::Bank0);
+        let began = Instant::now();
+
+        assert!(run.setup_link().await.is_none());
+        waited(began.elapsed(), REPLACEMENT_WAIT);
+        assert_eq!(
+            events.count(|event| matches!(event, Event::NoSetupFeeder { .. })),
+            1
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_floor_is_read_until_its_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let (run, mut install, events) = run(dir.path(), Start::Bank0);
+        let began = Instant::now();
+
+        run.read_floor(&mut install).await;
+        waited(began.elapsed(), READ_WAIT);
+        timed_out(&mut install);
+        assert_eq!(
+            events.count(|event| matches!(event, Event::FloorUnread { .. })),
+            1
+        );
+    }
+
+    /// The first look at bank 1 waits a few polls for the restart into it,
+    /// then the confirmation is looked for until its bound.
+    #[tokio::test(start_paused = true)]
+    async fn a_confirmation_is_waited_for_after_the_restart_until_its_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let (run, mut install, _) = run(dir.path(), Start::Bank0);
+        let began = Instant::now();
+
+        run.await_confirm(&mut install).await.unwrap();
+        waited(began.elapsed(), POLL * ACTIVATION_POLLS + CONFIRM_WAIT);
+        timed_out(&mut install);
+    }
+
+    /// A record the stock server will not close is asked again until the
+    /// close's bound, then left open and said.
+    #[tokio::test(start_paused = true)]
+    async fn a_trial_record_is_asked_closed_until_its_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut run, _, events) = run(dir.path(), Start::Bank0);
+        run.request = Some(uuid::Uuid::nil());
+        let began = Instant::now();
+
+        run.close_trial(&"ab".repeat(32)).await;
+        waited(began.elapsed(), CLOSE_WAIT);
+        assert_eq!(
+            events.count(|event| matches!(event, Event::TrialOpen { .. })),
+            1
+        );
+        assert_eq!(events.count(|event| *event == Event::TrialClosed), 0);
+    }
+}

@@ -27,6 +27,8 @@ use wellfed_feeder_sim::banks::{Banks, Trial};
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::serve::Control;
+use wellfed_hal::interlock::INTERLOCK;
+use wellfed_hal::ota::mailbox;
 use wellfed_model::{
     Alert, AlertsView, Answer, Client, ClientRole, CoreEvent, EventBody, Joined, Model, Op, Pushed,
     Refusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
@@ -596,6 +598,43 @@ fn a_build_that_never_confirms_gives_way_to_a_bank_0_that_answers() {
             .await
             .unwrap();
         assert_eq!(rig.bank().await, 1);
+        rig.sim.stop().await;
+    });
+}
+
+/// The update stage writes only while no feed holds the outputs, on the
+/// interlock the simulator's feeds claim as the firmware's do: a request
+/// that reaches the mailbox while a feed drives (the device API refuses
+/// one sent then, but one can race the feed's claim) waits there,
+/// unanswered, until the feed ends.
+#[test]
+fn the_update_stage_waits_for_a_feed_holding_the_outputs() {
+    paused(async {
+        let mut rig = Rig::start().await;
+        rig.sim.control(Control::StallFeeds(true));
+        let mut connection = rig.open().await;
+        let fed = connection
+            .ask(rig.id(), &Op::Feed { portions: 1 })
+            .await
+            .unwrap();
+        assert!(matches!(fed, Answer::Feeding { .. }), "{fed:?}");
+        while !INTERLOCK.outputs_claimed() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let ticket = mailbox::request(mailbox::Request::Cancel).unwrap();
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(mailbox::outcome(ticket), None, "it waits for the feed");
+        assert!(INTERLOCK.outputs_claimed());
+
+        rig.sim.control(Control::StallFeeds(false));
+        let mut waited = 0;
+        while mailbox::outcome(ticket).is_none() {
+            waited += 1;
+            assert!(waited < 500, "never answered once the feed ended");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(!INTERLOCK.outputs_claimed());
         rig.sim.stop().await;
     });
 }

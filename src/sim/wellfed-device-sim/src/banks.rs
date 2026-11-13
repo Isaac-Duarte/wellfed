@@ -14,6 +14,9 @@
 //!   counts, as it clears the backup register; a restart the device asked
 //!   for, or a boot that ran long enough, ends a storm's count, as the
 //!   runtime does.
+//! - **A storm's hold**: a boot with nothing to give way to that follows a
+//!   storm is held, and KM4's runtime releases it after its level's hold
+//!   ([`Banks::level`], [`Banks::release`]).
 //! - **A build's identity**: the one bank 0 last activated in bank 1, or
 //!   the image each bank started with.
 //!
@@ -89,6 +92,9 @@ pub struct Banks {
     /// when an update from elsewhere came between the activation and the
     /// boot. `None` boots the activated build.
     pub boots_instead: Option<[u8; 32]>,
+    /// No boot has run on these banks yet: the device the simulation
+    /// begins on.
+    fresh: bool,
 }
 
 /// A bank laid out as the reviewed builds are: five core images, each a
@@ -129,6 +135,7 @@ impl Banks {
             register: 0,
             trial: Trial::Confirms,
             boots_instead: None,
+            fresh: true,
         }))
     }
 
@@ -176,6 +183,13 @@ impl Banks {
         }
     }
 
+    /// Whether this is the first boot on these banks, taken once: the
+    /// simulation begins on a device that ran its first bank-1 build's
+    /// trial before it began.
+    pub(crate) fn take_fresh(&mut self) -> bool {
+        core::mem::take(&mut self.fresh)
+    }
+
     /// Power was lost: KM0's counts go with the backup register.
     pub fn power_cut(&mut self) {
         self.register = 0;
@@ -189,6 +203,17 @@ impl Banks {
     /// A boot of `bank` ran long enough to end a storm's count.
     pub fn settle(&mut self, bank: u8) {
         self.register = trial::settled(self.register, &self.build(bank));
+    }
+
+    /// The storm's backoff level for `bank`'s build, as KM0 left it.
+    pub fn level(&self, bank: u8) -> u32 {
+        trial::level(self.register, &self.build(bank))
+    }
+
+    /// A held boot of `bank` ran its hold: the owner opens, and the next
+    /// storm in a row holds a level longer.
+    pub fn release(&mut self, bank: u8) {
+        self.register = trial::released(self.register, &self.build(bank));
     }
 
     /// The build `bank` runs.

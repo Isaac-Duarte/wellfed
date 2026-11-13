@@ -12,14 +12,16 @@
 //!    output. A failure latches until reboot; nothing retries around it.
 //! 2. **The pool** ([`Pool`]) hashes tested samples with SHA-256 and gives a
 //!    32-byte input only once twice its length in claimed entropy went in.
-//! 3. **HMAC-DRBG** ([`Drbg`], SHA-256) stretches that input. It refuses to
-//!    run past [`RESEED_INTERVAL`] requests without fresh pool input: SP
-//!    800-90A's own bound, which no boot reaches. The firmware has no fresh
-//!    input after boot to reseed from, so a shorter interval would only stop
-//!    the generator, and with it every key, nonce and session, until a
-//!    restart; any peer that can make the feeder draw could bring that on.
+//! 3. **HMAC-DRBG** ([`Drbg`], SHA-256) stretches that input. It is seeded
+//!    once per boot and never reseeded: the firmware has no fresh input
+//!    after boot (the power monitor owns the ADC by then) to reseed from.
+//!    It refuses to run past [`RESEED_INTERVAL`] requests,
+//!    SP 800-90A's own bound, which no boot reaches; a shorter one would
+//!    only stop the generator, and with it every key, nonce and session,
+//!    until a restart, and any peer that can make the feeder draw could
+//!    bring that on.
 //!
-//! The stored seed ([`crate::store::seed`]) joins the first instantiation
+//! The stored seed ([`crate::store::seed`]) joins each boot's instantiation
 //! as its nonce, so even a source weaker than claimed does not repeat a
 //! stream across boots. The per-sample claim is the source's to make, from
 //! bench measurement; nothing here can check it.
@@ -32,8 +34,9 @@ use wellfed_session::mac::hmac_sha256;
 pub const STARTUP_SAMPLES: u32 = 1024;
 /// The Adaptive Proportion Test's window for non-binary samples.
 pub const APT_WINDOW: u32 = 512;
-/// Generate requests between reseeds: SP 800-90A's limit, 2^48. At a
-/// thousand draws a second that is thousands of years.
+/// Generate requests one instantiation serves: SP 800-90A's limit between
+/// reseeds, 2^48. At a thousand draws a second that is thousands of years,
+/// so a generator seeded once per boot never reaches it.
 pub const RESEED_INTERVAL: u64 = 1 << 48;
 /// The largest single request (SP 800-90A: 2^19 bits).
 pub const MAX_REQUEST: usize = 1 << 16;
@@ -49,7 +52,8 @@ pub enum Error {
     Health,
     /// The pool has not seen enough tested entropy yet.
     NotReady,
-    /// The DRBG needs fresh pool input first.
+    /// The DRBG served [`RESEED_INTERVAL`] requests: it stops until the
+    /// next boot instantiates a fresh one.
     ReseedRequired,
     /// A request over [`MAX_REQUEST`] bytes.
     TooLarge,
@@ -283,8 +287,8 @@ impl Pool {
     }
 }
 
-/// HMAC-DRBG with SHA-256 (SP 800-90A 10.1.2), without prediction resistance:
-/// the caller reseeds from the pool when told to, and may reseed sooner.
+/// HMAC-DRBG with SHA-256 (SP 800-90A 10.1.2), without prediction
+/// resistance, instantiated once per boot from the pool and never reseeded.
 #[derive(Clone)]
 pub struct Drbg {
     key: [u8; 32],
@@ -310,12 +314,6 @@ impl Drbg {
         };
         drbg.update(&[entropy, nonce, personalization]);
         drbg
-    }
-
-    /// Mix in fresh `entropy` (and optional `additional` input).
-    pub fn reseed(&mut self, entropy: &[u8], additional: &[u8]) {
-        self.update(&[entropy, additional]);
-        self.requests = 1;
     }
 
     /// Fill `out`, mixing in `additional` input if any.
@@ -374,13 +372,15 @@ mod tests {
     /// The bound holds where SP 800-90A puts it, without drawing 2^48 times
     /// to get there.
     #[test]
-    fn the_drbg_refuses_past_the_reseed_interval_and_runs_again_once_reseeded() {
+    fn the_drbg_refuses_past_the_request_bound_for_the_rest_of_the_boot() {
         let mut drbg = Drbg::new(&[1; 32], &[], &[]);
         drbg.requests = RESEED_INTERVAL;
         drbg.bytes().unwrap();
         assert_eq!(drbg.bytes(), Err(Error::ReseedRequired));
-
-        drbg.reseed(&[2; 32], &[]);
-        drbg.bytes().unwrap();
+        assert_eq!(
+            drbg.bytes(),
+            Err(Error::ReseedRequired),
+            "nothing restarts it"
+        );
     }
 }
