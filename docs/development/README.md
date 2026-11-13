@@ -40,7 +40,7 @@ The simulator, the `wellfed` CLI's device API commands, and `wellfed-bench` with
 
 | What | Why | On macOS |
 | --- | --- | --- |
-| `wellfed setup` | Its macOS Bluetooth, through CoreBluetooth, has not run against a feeder | It builds and runs, unproven. macOS asks for Bluetooth access for your terminal, and names the feeder by a UUID instead of its address |
+| `wellfed setup` | Its Bluetooth, through `btleplug`, has not run against a feeder on macOS | It builds and runs, unproven. macOS asks for Bluetooth access for your terminal, and names the feeder by a UUID instead of its address |
 | Finding the feeder in the hotspot's neighbour table | It uses `ip neigh` | Pass the feeder's address: `wellfed-bench serve --feeder-address` |
 | The bench hotspot | It is a NetworkManager connection | Not available |
 | Full firmware images | The vendor's compiler is a Linux x86_64 binary ([firmware builds](firmware-builds.md)) | `wellfed-build` refuses on another host; `make check`'s cross-builds still run |

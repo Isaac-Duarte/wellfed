@@ -3,14 +3,18 @@ import 'dart:async';
 import 'package:flutter/services.dart' show MethodChannel, MissingPluginException;
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 
+import 'package:wellfed/platform/desktop_bluetooth.dart';
+import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
 
-/// Whether this phone's Bluetooth is on, as far as setup can act on it.
+/// Whether this device's Bluetooth is on, as far as setup can act on it.
 enum BluetoothPower {
   /// On, or in a state the owner can't fix by turning it on (no permission,
   /// no radio): the scan says what is wrong. The plugin reports a missing
   /// Nearby devices permission before the adapter's power, so without it a
   /// phone with Bluetooth off reads as on: setup asks for the permission first.
+  /// A computer that has not said yet whether its app may use Bluetooth reads
+  /// as on too.
   on,
 
   /// Turned off: the owner can turn it on.
@@ -74,6 +78,10 @@ abstract interface class BleLink {
 /// The radio half of BLE setup: find a feeder in setup mode, connect, and
 /// carry the setup session's bytes over its control characteristic. What
 /// the bytes mean is the Rust session's business.
+///
+/// A phone's radio is `flutter_reactive_ble`. The plugin has no desktop
+/// side, so a computer's is the bridge's ([DesktopBluetooth]), behind the
+/// same static calls, so every port and state machine runs unchanged.
 class SetupLink implements BleLink {
   SetupLink._(this._ble, this._connection, this._control, this.notifications);
 
@@ -101,26 +109,34 @@ class SetupLink implements BleLink {
 
   /// Every advertisement of the setup service until cancelled; a feeder
   /// shows up again as its signal changes.
-  static Stream<DiscoveredDevice> scan() => FlutterReactiveBle().scanForDevices(
+  static Stream<DiscoveredDevice> scan() => onDesktopHost ? _desktop.scan() : _phoneScan();
+
+  static const _desktop = DesktopBluetooth();
+
+  static Stream<DiscoveredDevice> _phoneScan() => FlutterReactiveBle().scanForDevices(
     withServices: [Uuid.parse(setupService())],
     scanMode: ScanMode.lowLatency,
     // BLUETOOTH_SCAN is declared neverForLocation (Android 12+).
     requireLocationServicesEnabled: false,
   );
 
-  /// Whether this phone's Bluetooth is on, now and each time it changes. The
+  /// Whether this device's Bluetooth is on, now and each time it changes. The
   /// plugin's "not known yet" is left out.
-  static Stream<BluetoothPower> power() => FlutterReactiveBle().statusStream
+  static Stream<BluetoothPower> power() => onDesktopHost ? _desktop.power() : _phonePower();
+
+  static Stream<BluetoothPower> _phonePower() => FlutterReactiveBle().statusStream
       .where((status) => status != BleStatus.unknown)
       .map((status) => status == BleStatus.poweredOff ? BluetoothPower.off : BluetoothPower.on);
 
   /// Ask Android to turn Bluetooth on: its own dialog, or Bluetooth settings
-  /// where it can't show one. [power] says when it is on.
+  /// where it can't show one. A computer shows its Bluetooth settings where
+  /// it can. [power] says when it is on.
   static Future<void> askToTurnOn() async {
+    if (onDesktopHost) return _desktop.openSettings();
     try {
       await _bluetooth.invokeMethod<void>('turnOn');
     } on MissingPluginException {
-      // A desktop build has no Android to ask; its Bluetooth is the system's.
+      // An Android build without the app's own channel has nothing to ask.
     }
   }
 
@@ -128,7 +144,9 @@ class SetupLink implements BleLink {
   /// say when the subscription lands, so a first write may arrive before
   /// it; the feeder holds the message until the link opens and answers
   /// then.
-  static Future<SetupLink> open(DiscoveredDevice device) async {
+  static Future<BleLink> open(DiscoveredDevice device) => onDesktopHost ? _desktop.open(device) : _openPhone(device);
+
+  static Future<SetupLink> _openPhone(DiscoveredDevice device) async {
     final ble = FlutterReactiveBle();
     final connected = Completer<void>();
     final StreamSubscription<ConnectionStateUpdate> connection = ble

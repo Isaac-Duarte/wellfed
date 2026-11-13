@@ -49,6 +49,7 @@ wellfed-feeder-runtime = { path = "src/product/wellfed-feeder-runtime" }
 wellfed-client = { path = "src/client/wellfed-client" }
 wellfed-model = { path = "src/client/wellfed-model" }
 wellfed-connect = { path = "src/client/wellfed-connect" }
+wellfed-ble = { path = "src/client/wellfed-ble" }
 wellfed-install = { path = "src/client/wellfed-install" }
 wellfed-device-sim = { path = "src/sim/wellfed-device-sim" }
 wellfed-feeder-sim = { path = "src/sim/wellfed-feeder-sim" }
@@ -80,6 +81,8 @@ futures-util = "0.3.34"
 getrandom = "0.3.4"
 http-body-util = "0.1.5"
 jiff = "0.2.38"
+# Bluetooth setup on the desktops (wellfed-ble).
+btleplug = "0.13.5"
 # Feeder discovery (wellfed-connect).
 mdns-sd = "0.21.6"
 # Firmware targets.

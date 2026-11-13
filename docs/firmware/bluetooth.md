@@ -16,7 +16,7 @@ Nothing over Bluetooth can feed, play a sound, or change anything but the Wi-Fi 
 
 `wellfed setup --ssid NAME` reads the Wi-Fi passphrase from stdin, uses the computer's client key (`wellfed-owner.json` in the CLI's data directory; `--create-key` makes it the first time, mode 0600, and every command refuses it once other users can read it), prints the code with each button's position and name, and records the feeder's identity in the same file after `Done`. The protocol is `wellfed-client`'s, which the Android app shares.
 
-It uses BlueZ (`bluer`) on Linux and CoreBluetooth (`btleplug`) on macOS, finding the feeder by its service UUID among devices advertising now, or by `--address`. macOS never shows a Bluetooth address, so there `--address` takes the UUID the Mac assigns, which the CLI prints when it finds a device. The macOS path has not run against a feeder yet.
+Its radio is `wellfed-ble`, which the desktop app shares: `btleplug` over BlueZ on Linux, CoreBluetooth on macOS and WinRT on Windows. It finds the feeder by its service UUID among devices advertising now, or by `--address`. macOS never shows a Bluetooth address, so there `--address` takes the UUID the Mac assigns, which the CLI prints when it finds a device. Until it moved to `btleplug`, the CLI reached BlueZ through `bluer`, and that is what ran against the feeder on Linux; the `btleplug` path has not run against a feeder on any platform yet. It no longer turns the adapter on by itself: with Bluetooth off it stops and says so.
 
 > [!NOTE]
 > The CLI's own search can miss an advertising feeder. If it does, run `bluetoothctl scan le`, then pass the feeder's address with `--address`.

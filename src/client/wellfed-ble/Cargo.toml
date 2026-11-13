@@ -1,0 +1,22 @@
+[package]
+license.workspace = true
+name = "wellfed-ble"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "The feeder's Bluetooth setup service on the desktops, through btleplug: adapter power, the scan, the connection and the framed exchange, for the CLI and the app"
+publish.workspace = true
+
+[dependencies]
+btleplug.workspace = true
+futures-util.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+uuid.workspace = true
+wellfed-client.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "sync", "test-util"] }
+
+[lints]
+workspace = true

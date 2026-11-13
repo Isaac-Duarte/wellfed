@@ -4,7 +4,7 @@ name = "wellfed-app-bridge"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "The app's Rust half over flutter_rust_bridge: the client key, BLE setup and LAN recovery, LAN discovery on the desktops, device API sessions through wellfed-connect, and the install"
+description = "The app's Rust half over flutter_rust_bridge: the client key, BLE setup and LAN recovery, LAN discovery and the Bluetooth radio on the desktops, device API sessions through wellfed-connect, and the install"
 publish.workspace = true
 
 [lib]
@@ -45,6 +45,10 @@ wellfed-signing.workspace = true
 
 [lints]
 workspace = true
+
+# The desktops' Bluetooth (`api::bluetooth`); Android's is Dart's.
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+wellfed-ble.workspace = true
 
 # The JNI hook Kotlin calls (`android.rs`).
 [target.'cfg(target_os = "android")'.dependencies]
