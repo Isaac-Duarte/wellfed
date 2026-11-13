@@ -1,7 +1,7 @@
-// Every outbound link in one place, so moving the repository or the site is one edit.
+// Every outbound link the docs site adds to @wellfed/ui's, so moving the site is one edit.
+import { HOME, REPO } from "@wellfed/ui";
+
 export const SITE = "https://docs.well-fed.dev";
-export const HOME = "https://well-fed.dev";
-export const REPO = "https://github.com/Isaac-Duarte/wellfed";
 
 /** A file or folder in the repository on GitHub, from its path at the root. */
 export const blob = (path: string) => `${REPO}/blob/master/${path}`;

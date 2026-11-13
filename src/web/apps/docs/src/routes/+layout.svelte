@@ -6,8 +6,7 @@
   import { page } from "$app/state";
   import { GitHubMark } from "@wellfed/ui";
   import { onMount, type Snippet } from "svelte";
-  import { favicon, lockup, lockupOnLight, themeColor } from "#lib/brand.ts";
-  import { HOME, REPO } from "#lib/links.ts";
+  import { HOME, REPO, favicon, lockup, lockupOnLight, themeColor } from "@wellfed/ui";
   import Search from "#lib/Search.svelte";
   import { HEAD_HTML, mountTabs, syncTabs } from "#lib/tabs.ts";
   import type { LayoutProps } from "./$types";

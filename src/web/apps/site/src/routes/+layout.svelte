@@ -3,9 +3,18 @@
   import "#lib/site.css";
   import { resolve } from "$app/paths";
   import type { Snippet } from "svelte";
-  import { favicon, lockup, lockupOnLight, themeColor } from "#lib/brand.ts";
-  import { DISCORD, DOCS, REPO, SITE } from "#lib/links.ts";
-  import { DiscordMark as Discord, GitHubMark as GitHub } from "@wellfed/ui";
+  import {
+    DISCORD,
+    DiscordMark as Discord,
+    GitHubMark as GitHub,
+    HOME,
+    REPO,
+    favicon,
+    lockup,
+    lockupOnLight,
+    themeColor,
+  } from "@wellfed/ui";
+  import { DOCS } from "#lib/links.ts";
 
   let { children }: { children: Snippet } = $props();
 
@@ -17,7 +26,7 @@
 <svelte:head>
   <title>{title}</title>
   <meta name="description" content={description} />
-  <link rel="canonical" href="{SITE}/" />
+  <link rel="canonical" href="{HOME}/" />
   <link rel="icon" href={favicon} type="image/svg+xml" />
   <meta name="theme-color" content={themeColor.light} media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content={themeColor.dark} media="(prefers-color-scheme: dark)" />
@@ -25,8 +34,8 @@
   <meta property="og:site_name" content="Wellfed" />
   <meta property="og:title" content={title} />
   <meta property="og:description" content={description} />
-  <meta property="og:url" content="{SITE}/" />
-  <meta property="og:image" content="{SITE}/og.png" />
+  <meta property="og:url" content="{HOME}/" />
+  <meta property="og:image" content="{HOME}/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="The Wellfed logo and the line: open firmware for your pet feeder" />
@@ -75,20 +84,6 @@
 </footer>
 
 <style>
-  .skip {
-    position: absolute;
-    left: var(--space-4);
-    top: -100px;
-    z-index: 2;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-control);
-    background: var(--color-accent);
-    color: var(--color-accent-text);
-  }
-  .skip:focus {
-    top: var(--space-3);
-  }
-
   .bar {
     display: flex;
     align-items: center;

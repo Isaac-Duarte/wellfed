@@ -57,9 +57,9 @@
   --motion-base: 200ms;
 }
 
-/* Dark follows the system unless the page sets data-theme; both blocks define the same names. */
+/* Dark follows the system; both blocks define the same names. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
     color-scheme: dark;
     --color-background: #121417;
     --color-surface: #1C1F24;
@@ -83,29 +83,4 @@
     --color-food: #E0A13A;
     --color-scrim: #0B1424;
   }
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --color-background: #121417;
-  --color-surface: #1C1F24;
-  --color-sunken: #17191D;
-  --color-text: #ECEEF1;
-  --color-text-muted: #A6ACB5;
-  --color-line: #2E3238;
-  --color-line-strong: #676E79;
-  --color-accent: #5A96F7;
-  --color-accent-text: #121417;
-  --color-accent-soft: #1D2A40;
-  --color-focus: #5A96F7;
-  --color-ok: #4ADE80;
-  --color-ok-soft: #18301F;
-  --color-warning: #FBBF24;
-  --color-warning-soft: #352C17;
-  --color-fault: #F87171;
-  --color-fault-soft: #3A2022;
-  --color-info: #7FB0FF;
-  --color-info-soft: #1D2A40;
-  --color-food: #E0A13A;
-  --color-scrim: #0B1424;
 }
