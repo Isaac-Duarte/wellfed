@@ -5503,6 +5503,7 @@ dependencies = [
  "serde",
  "wellfed-core",
  "wellfed-core-feeder",
+ "wellfed-device-api",
  "wellfed-proto",
  "wellfed-session",
  "wellfed-signed",

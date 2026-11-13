@@ -24,7 +24,7 @@ thiserror.workspace = true
 ed25519-dalek = "2"
 serde_json.workspace = true
 wellfed-device.workspace = true
-wellfed-device-api.workspace = true
+wellfed-device-api = { workspace = true, features = ["fake"] }
 wellfed-testkit.workspace = true
 
 [lints]

@@ -15,8 +15,14 @@ wellfed-proto.workspace = true
 wellfed-session.workspace = true
 serde = { version = "1.0.229", default-features = false }
 
+[features]
+# `fake::Fake`, a fake device for host tests of the server: this crate's,
+# the client's and the fuzz targets'. Never built into firmware.
+fake = []
+
 [dev-dependencies]
 proptest.workspace = true
+wellfed-device-api = { path = ".", features = ["fake"] }
 
 [lints]
 workspace = true

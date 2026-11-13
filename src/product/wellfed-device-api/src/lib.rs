@@ -69,12 +69,18 @@
 //! exchange that BLE and the recovery window share ([`setup`]), and the
 //! client and Wi-Fi values the feeder's stores keep ([`clients`], [`wifi`]).
 //! Like the feeder's product crate above it, it knows no hardware, keeps no
-//! clock and allocates nothing.
+//! clock and allocates nothing. The `fake` feature adds the host tests'
+//! fake device (`fake`), which allocates; no firmware enables it.
 #![no_std]
 #![deny(unsafe_code)]
 
+#[cfg(feature = "fake")]
+extern crate alloc;
+
 pub mod clients;
 mod device;
+#[cfg(feature = "fake")]
+pub mod fake;
 pub mod mailbox;
 pub mod pairing;
 mod record;
