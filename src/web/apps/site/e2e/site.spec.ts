@@ -56,3 +56,9 @@ test("never scrolls sideways", async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test("the page carries the production policy from _headers", async ({ request }) => {
+  const policy = (await request.get("/")).headers()["content-security-policy"] ?? "";
+  expect(policy).toContain("default-src 'none'");
+  expect(policy).toContain("style-src 'self'");
+});

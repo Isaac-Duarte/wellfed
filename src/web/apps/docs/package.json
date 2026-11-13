@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "svelte-kit sync && vite dev",
     "build": "svelte-kit sync && vite build && pagefind --site build",
-    "preview": "node e2e/serve.ts",
+    "preview": "node ../../scripts/serve.ts",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "e2e": "playwright test"

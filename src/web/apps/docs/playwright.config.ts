@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// The built site, served by e2e/serve.ts as the Cloudflare Worker will
-// serve build/: static files and the Pagefind index, no server code.
+// The built site, served by scripts/serve.ts as the Cloudflare Worker will
+// serve build/: static files with static/_headers' headers, no server code.
 // `make check-web` builds first.
 const PORT = Number(process.env.E2E_PORT ?? 8799);
 
@@ -15,7 +15,7 @@ export default defineConfig({
     { name: "phone", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: `node e2e/serve.ts`,
+    command: `node ../../scripts/serve.ts`,
     env: { PORT: String(PORT) },
     url: `http://127.0.0.1:${PORT}/`,
     reuseExistingServer: false,

@@ -1,30 +1,25 @@
 <script lang="ts">
   let { text, label = "Copy" }: { text: string; label?: string } = $props();
 
-  let copied = $state(false);
+  // The docs site is served over HTTPS only, where the clipboard API exists;
+  // a refusal (a denied permission) says so rather than claim a copy.
+  let shown = $state<"idle" | "copied" | "failed">("idle");
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
+      shown = "copied";
     } catch {
-      // Plain HTTP over a tailnet has no clipboard API; select instead.
-      const area = document.createElement("textarea");
-      area.value = text;
-      document.body.append(area);
-      area.select();
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- the only copy that works outside a secure context
-      document.execCommand("copy");
-      area.remove();
+      shown = "failed";
     }
-    copied = true;
     clearTimeout(timer);
-    timer = setTimeout(() => (copied = false), 1400);
+    timer = setTimeout(() => (shown = "idle"), 1400);
   }
 </script>
 
 <button type="button" class="copy" onclick={copy} aria-live="polite">
-  {copied ? "Copied" : label}
+  {shown === "copied" ? "Copied" : shown === "failed" ? "Copy failed" : label}
 </button>
 
 <style>

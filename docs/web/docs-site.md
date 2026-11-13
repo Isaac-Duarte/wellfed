@@ -20,7 +20,7 @@ This page is for maintainers of the docs site, which serves people who own or mi
 | Images | A PNG beside a page is served beside its route, sized from the file's header; only images a published page shows are published. A missing file, missing alt text or any other format fails the build |
 | Search | Pagefind indexes the published pages in `build/` after the prerender and serves its index from `/pagefind/`, so a query never leaves the site |
 | Style | The [tokens](../../assets/brand/tokens.json) and `@wellfed/ui`'s base, as on [well-fed.dev](site.md): type and hairlines, no cards or gradients. Light or dark follows the system |
-| Requests | None off its own origin. Each page carries a CSP `<meta>` with a hash for every inline script, and `static/_headers` sets the rest |
+| Requests | None off its own origin. Each page carries a CSP `<meta>` with a hash for every inline script, and `static/_headers` sets the rest, allowing one inline style by hash: SvelteKit's route announcer. The e2e tests serve `_headers`, so a violation fails them |
 | Tests | `svelte-check`, ESLint and Prettier with the workspace; Vitest on the published list, routes, links, tabs, verdicts, images and diagrams, and that every Mermaid block under `docs/` parses (Mermaid in jsdom); and Playwright against the built site at desktop and phone width |
 
 ## Adding a page
@@ -41,7 +41,7 @@ pnpm -C src/web --filter @wellfed/docs build    # writes src/web/apps/docs/build
 pnpm -C src/web --filter @wellfed/docs e2e
 ```
 
-The dev server reloads when a doc changes. Search needs the index, so it works only in a build: `pnpm -C src/web --filter @wellfed/docs preview` serves `build/` the way the Worker does, from `e2e/serve.ts` (`vite preview` would miss the index). `make check-web` builds, checks and tests the site with the other app.
+The dev server reloads when a doc changes. Search needs the index, so it works only in a build: `pnpm -C src/web --filter @wellfed/docs preview` serves `build/` the way the Worker does, from `src/web/scripts/serve.ts` (`vite preview` would miss the index and `_headers`). `make check-web` builds, checks and tests the site with the other app.
 
 ## Deploy
 

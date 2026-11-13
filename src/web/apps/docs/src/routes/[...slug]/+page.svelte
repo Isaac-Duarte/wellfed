@@ -14,12 +14,18 @@
   // The page's Markdown, fetched once the page is up so the copy itself is
   // synchronous: a clipboard write after an await can lose the click's
   // permission in some browsers. Until it arrives there is no button.
+  // A fetch for a page already left can settle after the current page's, so
+  // only an answer for the page still shown is kept.
   let markdown = $state<{ slug: string; text: string }>();
   $effect(() => {
     const slug = doc.slug;
     loadMarkdown(slug).then(
-      (text) => (markdown = { slug, text }),
-      () => (markdown = undefined),
+      (text) => {
+        if (slug === doc.slug) markdown = { slug, text };
+      },
+      () => {
+        if (slug === doc.slug) markdown = undefined;
+      },
     );
   });
 </script>
