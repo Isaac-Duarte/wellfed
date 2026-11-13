@@ -100,8 +100,8 @@ pub const SESSIONS: usize = 4;
 pub const REMEMBERED: usize = 32;
 /// A connection that has not finished its handshake by then is dropped.
 pub const HANDSHAKE_MS: u32 = 10_000;
-/// A session that sends nothing for this long is dropped; clients send a
-/// `Status` as a keepalive.
+/// A session that sends nothing for this long is dropped; clients send the
+/// frozen `Alive` as a keepalive, which every build answers.
 pub const IDLE_MS: u32 = 90_000;
 /// A connection whose queued bytes do not move for this long is dropped, and
 /// its slot freed: its client has stopped reading, and is no longer listening

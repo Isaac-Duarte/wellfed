@@ -91,6 +91,7 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | `wellfed-hal` | The chip HAL: KM4 GPIO, ADC, timers, watchdog, flash leases, the update stage, and the buttons, lights, buzzer and audio drivers |
 | `wellfed-hal-feeder` | The feeder's drivers above the chip HAL: the motor, beams and feedback board, its timer events and the feeding owner |
 | `wellfed-sdk` | The KM4 runtime every firmware runs inside |
+| `wellfed-sdk-macros` | The attributes a firmware is written with (its start hook, tasks and log records), which `wellfed-sdk` re-exports |
 | `wellfed-probes` | The bench probes |
 | `wellfed-amebad-sys` | Bindings to the pinned AmebaD SDK, and its host fake |
 | `wellfed-board` | The board contract: the one board crate `WELLFED_BOARD` names, checked for every item |

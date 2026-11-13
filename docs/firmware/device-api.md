@@ -1,6 +1,6 @@
 # Device API
 
-This page explains how the feeder serves its encrypted API, for contributors working on the firmware or a client, and for owners who want to know what happens when they tap Feed. Each operation's answers and refusals are in [operations](device-api-ops.md), along with the parts of the firmware behind them: the settings writer and its record, Wi-Fi join and fallback, the lock's box and the hopper beam's filter. and statistics, traces, the log and the stock backup in [diagnostics](device-api-diagnostics.md). The types are in [`wellfed-proto`](../../src/product/wellfed-proto/src/lib.rs), and the server's use of the API in [the server docs](../server/README.md).
+This page explains how the feeder serves its encrypted API, for contributors working on the firmware or a client, and for owners who want to know what happens when they tap Feed. Each operation's answers and refusals are in [operations](device-api-ops.md), along with the parts of the firmware behind them: the settings writer and its record, Wi-Fi join and fallback, the lock's box and the hopper beam's filter. Statistics, traces, the log and the stock backup are in [diagnostics](device-api-diagnostics.md). The types are in [`wellfed-proto`](../../src/product/wellfed-proto/src/lib.rs), and the server's use of the API in [the server docs](../server/README.md).
 
 ## The one idea
 
