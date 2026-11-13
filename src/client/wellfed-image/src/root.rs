@@ -118,8 +118,8 @@ impl Root {
 }
 
 /// A builder for a directory only its owner can open: mode 0700 on Unix. Off
-/// Unix there are no modes, and a directory under the user's profile already
-/// carries that user's access list.
+/// Unix there are no modes; the directory takes the access list of the
+/// checkout it is made in.
 fn private_directory() -> fs::DirBuilder {
     #[cfg(unix)]
     {

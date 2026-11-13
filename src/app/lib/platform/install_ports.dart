@@ -6,7 +6,6 @@ import 'package:file_selector/file_selector.dart' show getSaveLocation;
 import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter/services.dart' show ByteData, MethodChannel, rootBundle;
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/alert_ports.dart';
@@ -166,7 +165,7 @@ class AppInstallPorts implements InstallPorts {
 
   @override
   Future<InstallPaths> paths() async {
-    final Directory support = await getApplicationSupportDirectory();
+    final Directory support = await appDataDirectory();
     return InstallPaths(
       store: '${support.path}/wellfed.json',
       image: '${support.path}/install/image',

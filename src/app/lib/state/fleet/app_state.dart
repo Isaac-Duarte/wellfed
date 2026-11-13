@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 
+import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/secure_storage.dart';
 import 'package:wellfed/src/rust/api/alerts.dart';
 import 'package:wellfed/src/rust/api/error.dart';
@@ -187,7 +187,7 @@ class AppState extends ChangeNotifier implements FeederBook {
       key = ClientKey.restore(secret: identityBytes(hex: saved));
     }
 
-    final Directory dir = await getApplicationSupportDirectory();
+    final Directory dir = await appDataDirectory();
     final path = '${dir.path}/wellfed.json';
     final OpenedStore opened = await openStore(path: path);
     return AppState._(
