@@ -255,6 +255,88 @@ fn an_ask_that_fails_ends_the_run_in_its_words() {
     });
 }
 
+/// A computer joins the feeder's network by hand and answers with its address
+/// there. The route to the feeder must still leave from it when the frame
+/// goes: here it never did (an address this host never had), so nothing is
+/// sent and the run says why.
+#[test]
+fn a_frame_goes_only_from_the_joined_address() {
+    // SAFETY: nextest runs each test in a process of its own, and no other
+    // thread is running yet.
+    unsafe { std::env::set_var("WELLFED_ALLOW_UNREVIEWED_OTA_BUILD", "1") };
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let (run, mut heard) = started(&fixture, fixture.spec(InstallStart::Reset, "127.41.8.3"));
+
+        let (id, ask) = next_ask(&mut heard).await;
+        assert_eq!(ask, InstallAsk::JoinFeederNetwork);
+        run.answer(
+            id,
+            InstallAnswer::Joined {
+                from: "192.0.2.77".into(),
+            },
+        );
+
+        let end = ended(&mut heard).await;
+        let InstallEnd::Stopped { case, detail, .. } = end else {
+            panic!("{end:?}");
+        };
+        assert_eq!(case, StopCase::HandoverFailed);
+        assert!(
+            detail.starts_with(
+                "the handover over the feeder's setup network: this computer's route to the \
+                 feeder no longer leaves from 192.0.2.77"
+            ),
+            "{detail}"
+        );
+    });
+}
+
+/// A joined address that is no IPv4 address ends the run before anything is
+/// sent.
+#[test]
+fn a_joined_address_that_does_not_parse_ends_the_run() {
+    // SAFETY: nextest runs each test in a process of its own, and no other
+    // thread is running yet.
+    unsafe { std::env::set_var("WELLFED_ALLOW_UNREVIEWED_OTA_BUILD", "1") };
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let (run, mut heard) = started(&fixture, fixture.spec(InstallStart::Reset, "127.41.8.4"));
+
+        let (id, _) = next_ask(&mut heard).await;
+        run.answer(
+            id,
+            InstallAnswer::Joined {
+                from: "nowhere".into(),
+            },
+        );
+
+        let end = ended(&mut heard).await;
+        let InstallEnd::Stopped { detail, .. } = end else {
+            panic!("{end:?}");
+        };
+        assert_eq!(
+            detail,
+            "the handover over the feeder's setup network: the app joined at nowhere, which is \
+             no IPv4 address"
+        );
+    });
+}
+
+/// The route toward loopback goes from loopback, and an address that is none
+/// has no route.
+#[test]
+fn a_route_source_reads_the_routing_table() {
+    assert_eq!(
+        wellfed_app_bridge::api::install::route_source("127.0.0.1".into()).as_deref(),
+        Some("127.0.0.1")
+    );
+    assert_eq!(
+        wellfed_app_bridge::api::install::route_source("nowhere".into()),
+        None
+    );
+}
+
 /// A stream with nobody on it fails the ask at once, so the run does not
 /// wait forever for a person who is gone.
 #[test]

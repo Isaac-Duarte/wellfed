@@ -49,6 +49,9 @@ class RestoreFlow extends ChangeNotifier {
   CheckState _restarting = CheckState.waiting;
   bool _sessionDropped = false;
   bool _holdRefused = false;
+
+  /// A computer's hold giving way mid-run.
+  StreamSubscription<void>? _lapses;
   RestoreStop? _stop;
   UncertainWhy? _uncertain;
   String? _detail;
@@ -147,6 +150,11 @@ class RestoreFlow extends ChangeNotifier {
     _changed();
 
     _holding = true;
+    _lapses ??= _ports.holdLapsed().listen((_) {
+      if (!_holding) return;
+      _holdRefused = true;
+      _changed();
+    });
     _holdRefused = !await _ports.holdProcess('Putting the original firmware back on $feederName');
     if (_disposed) {
       // The screen went away during the wait, and its release ran before this
@@ -381,6 +389,7 @@ class RestoreFlow extends ChangeNotifier {
     _disposed = true;
     _stopLook();
     unawaited(_power?.cancel());
+    unawaited(_lapses?.cancel());
     if (_run case final run?) {
       // Its end does the rest: the key goes once the run can no longer use it.
       run.stop();

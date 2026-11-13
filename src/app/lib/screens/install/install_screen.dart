@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/install/install_before.dart';
+import 'package:wellfed/screens/install/install_handover.dart';
 import 'package:wellfed/screens/install/install_progress.dart';
 import 'package:wellfed/screens/install/install_stopped.dart';
 import 'package:wellfed/screens/setup/name_step.dart';
@@ -145,9 +146,9 @@ class InstallUnavailablePage extends StatelessWidget {
         tone: Tone.fault,
         lead: 'This $deviceName cannot install Wellfed.',
         text:
-            "The install joins the feeder's own Wi-Fi, which only the Android "
-            'app can do. Install from an Android phone, then recover the feeder '
-            'here or join it with an invite.',
+            "The install joins the feeder's own Wi-Fi, which this $deviceName "
+            "can't do. Install from another phone or computer, then recover the "
+            'feeder here or join it with an invite.',
       ),
     ],
   );

@@ -12,7 +12,7 @@
 //! cleanup rather than leaving it waiting for a person who is gone.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -251,6 +251,19 @@ pub const fn listen_wait() -> Duration {
     UNCERTAIN_WAIT
 }
 
+/// The IPv4 address this host sends from toward `to`, by its own routing
+/// table, or `None` with no route there. Connecting a UDP socket only picks
+/// the route: nothing is sent.
+pub fn route_source(to: Ipv4Addr) -> Option<Ipv4Addr> {
+    // The discard port: any port picks the same route.
+    let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    socket.connect((to, 9)).ok()?;
+    match socket.local_addr().ok()?.ip() {
+        IpAddr::V4(from) if !from.is_unspecified() => Some(from),
+        IpAddr::V4(_) | IpAddr::V6(_) => None,
+    }
+}
+
 /// `error` and its causes on one line.
 pub(crate) fn text(error: &(dyn std::error::Error + 'static)) -> String {
     let mut text = error.to_string();
@@ -346,7 +359,22 @@ impl Asks {
 }
 
 /// The person at the feeder, on Dart's screens.
-pub(crate) struct AppPrompter(pub(crate) Arc<Asks>);
+pub(crate) struct AppPrompter {
+    asks: Arc<Asks>,
+    /// Where a computer joined the feeder's network by hand: its address on
+    /// that link, which the frame goes from. `None` on a phone, whose own
+    /// network API holds the process's sockets to the link.
+    feeder_link: Option<Ipv4Addr>,
+}
+
+impl AppPrompter {
+    pub(crate) const fn new(asks: Arc<Asks>) -> Self {
+        Self {
+            asks,
+            feeder_link: None,
+        }
+    }
+}
 
 impl Prompter for AppPrompter {
     async fn done(&mut self, prompt: Prompt) -> Result<(), PlatformError> {
@@ -359,7 +387,40 @@ impl Prompter for AppPrompter {
             // never waited on.
             other => return Err(format!("the app does not show {other:?}").into()),
         };
-        self.0.done(ask).await
+        if ask != InstallAsk::JoinFeederNetwork {
+            return self.asks.done(ask).await;
+        }
+        self.feeder_link = None;
+        match self.asks.ask(ask).await? {
+            InstallAnswer::Done => Ok(()),
+            InstallAnswer::Joined { from } => {
+                let from = from
+                    .parse::<Ipv4Addr>()
+                    .map_err(|_| format!("the app joined at {from}, which is no IPv4 address"))?;
+                self.feeder_link = Some(from);
+                Ok(())
+            }
+            InstallAnswer::Failed { reason } => Err(reason.into()),
+            other => Err(format!("the app answered {other:?}").into()),
+        }
+    }
+
+    async fn frame_source(&mut self) -> Result<Option<Ipv4Addr>, PlatformError> {
+        let Some(from) = self.feeder_link.take() else {
+            return Ok(None);
+        };
+        // A bound address does not pin the interface, since the system routes
+        // by destination: with the cable plugged back in, the frame would leave
+        // over it. So the route itself must still go from the joined address.
+        let feeder = *wellfed_client::install::SETUP_ADDRESS.ip();
+        match route_source(feeder) {
+            Some(now) if now == from => Ok(Some(from)),
+            now => Err(format!(
+                "this computer's route to the feeder no longer leaves from {from}, but from {}",
+                now.map_or_else(|| "nowhere".to_string(), |now| now.to_string())
+            )
+            .into()),
+        }
     }
 
     async fn yes(&mut self, prompt: Prompt) -> Result<bool, PlatformError> {
@@ -369,7 +430,7 @@ impl Prompter for AppPrompter {
             }
             other => return Err(format!("the app does not ask {other:?}").into()),
         };
-        match self.0.ask(ask).await? {
+        match self.asks.ask(ask).await? {
             InstallAnswer::Yes { yes } => Ok(yes),
             InstallAnswer::Failed { reason } => Err(reason.into()),
             other => Err(format!("the app answered {other:?}").into()),
@@ -388,7 +449,7 @@ impl Prompter for AppPrompter {
             },
             Announcement::PressDispense { .. } => InstallEvent::PressDispense,
         };
-        self.0.update(InstallUpdate::Event { event });
+        self.asks.update(InstallUpdate::Event { event });
         Ok(())
     }
 
@@ -1205,7 +1266,7 @@ fn run_on_this_thread(
     };
     let config = plan.stock.config.clone();
     let platform = Platform {
-        prompter: AppPrompter(asks.clone()),
+        prompter: AppPrompter::new(asks.clone()),
         bluetooth: AppBluetooth(asks.clone()),
         discovery: AppDiscovery(asks.clone()),
         keys,

@@ -5,6 +5,7 @@ import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
+import 'package:wellfed/state/install/install_state.dart' show FeederJoin;
 import 'package:wellfed/state/wifi/networks.dart';
 
 import 'fakes.dart';
@@ -74,9 +75,13 @@ class FakeInstallPorts implements InstallPorts {
     this.pendingInstall = PendingInstall.nothing,
   });
 
-  /// False to stand in for a desktop.
+  /// False to stand in for a device that cannot install.
   @override
   bool joinsFeederNetwork = true;
+
+  /// [FeederJoin.byHand] to stand in for a computer.
+  @override
+  FeederJoin feederJoin = FeederJoin.picker;
 
   ImageCheck image;
   BuildCheck build;
@@ -157,24 +162,63 @@ class FakeInstallPorts implements InstallPorts {
   /// The address after leaving, when it is not [ip].
   String? ipAfterLeaving;
 
+  /// The home address each join was given.
+  final joinedFrom = <String?>[];
+
+  /// A computer's join by hand, until the test completes it with its address
+  /// on the feeder's link, or [stopJoining] fails it.
+  Completer<String?>? joining;
+  int joinStops = 0;
+
+  /// The Wi-Fi this device is on, as the system says.
+  String? network;
+
+  /// A computer's leave by hand, until the test completes it.
+  Completer<String?>? leaving;
+
   @override
-  Future<void> joinFeederNetwork() async {
+  Future<String?> joinFeederNetwork(String? home) async {
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (joinFails case final error?) throw error;
+    joinedFrom.add(home);
     joined++;
+    if (feederJoin == FeederJoin.picker) return null;
+    final waiting = Completer<String?>();
+    joining = waiting;
+    return waiting.future;
+  }
+
+  @override
+  void stopJoining() {
+    joinStops++;
+    final Completer<String?>? waiting = joining;
+    joining = null;
+    if (waiting != null && !waiting.isCompleted) waiting.completeError(StateError('stopped'));
   }
 
   @override
   Future<String?> leaveFeederNetwork() async {
     left++;
+    if (leaving case final waiting?) return waiting.future;
     return ipAfterLeaving ?? ip;
   }
 
   @override
   Future<String?> phoneModel() async => null;
 
+  /// Holds [currentNetwork] open until the test completes it.
+  Completer<void>? networkGate;
+
+  /// Thrown by [currentNetwork], as a Linux with no NetworkManager can.
+  Object? networkFails;
+
   @override
-  Future<String?> currentNetwork() async => null;
+  Future<String?> currentNetwork() async {
+    await networkGate?.future;
+    // ignore: only_throw_errors, this stands in for a plugin, whose errors aren't all Exceptions.
+    if (networkFails case final error?) throw error;
+    return network;
+  }
 
   @override
   Future<NetworkScan> scanNetworks() async => const NetworksUnread(ScanProblem.unavailable);
@@ -260,6 +304,13 @@ class FakeInstallPorts implements InstallPorts {
 
   @override
   Future<String?> locate(String identity) async => located;
+
+  /// A computer's hold giving way: add to it.
+  // ignore: close_sinks, the test ends with it
+  final lapses = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> holdLapsed() => lapses.stream;
 
   @override
   Future<bool> holdProcess(String text) async {

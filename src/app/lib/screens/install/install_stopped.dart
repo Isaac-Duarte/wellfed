@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wellfed/screens/install/firewall.dart';
 import 'package:wellfed/screens/install/install_before.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -34,6 +35,13 @@ class InstallStoppedPage extends StatelessWidget {
   String _stockHeld() => state.promotionMayHaveGone
       ? 'the backup of its original firmware stays on this $deviceName'
       : 'still holds its original firmware';
+
+  /// The feeder never reached this computer's broker, or its image server:
+  /// stock's error 2003 is a download that could not connect.
+  static bool _keptOut(StopCase stop) => switch (stop) {
+    StopCase_FrameNotTaken() || StopCase_NoFeederCame() || StopCase_StockRefused(code: 2003) => true,
+    _ => false,
+  };
 
   (String, String) _words(StopCase stop) => switch (stop) {
     StopCase_Uncertain() => switch (state.listening) {
@@ -325,6 +333,7 @@ class InstallStoppedPage extends StatelessWidget {
         ],
         if (state.bluetoothRefused) ...[const InstallBluetoothRefused(), const SizedBox(height: Space.s4)],
         if (state.bluetoothOff) ...[InstallBluetoothOff(flow: flow), const SizedBox(height: Space.s4)],
+        if (isDesktop && _keptOut(stop.case_)) ...[const FirewallNotice(), const SizedBox(height: Space.s4)],
         ..._nextSteps(context, stop),
         if (flow.mayForget &&
             state.pending == PendingInstall.ledgerDamaged &&

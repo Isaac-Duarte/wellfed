@@ -80,6 +80,13 @@ String? keptBackup({required String dataDir, required List<int> identity}) =>
       identity: identity,
     );
 
+/// The IPv4 address this computer sends from toward `to`, by its routing
+/// table, or `None` when `to` is no IPv4 address or has no route. A computer
+/// joins the feeder's setup network by hand, so the app reads which link it
+/// is on, and where the feeder reaches it, this way. Nothing is sent.
+String? routeSource({required String to}) =>
+    RustLib.instance.api.crateApiInstallRouteSource(to: to);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<InstallListener>>
 abstract class InstallListener implements RustOpaqueInterface {
   factory InstallListener({required String dataDir}) =>
@@ -186,6 +193,16 @@ sealed class InstallAnswer with _$InstallAnswer {
   const factory InstallAnswer.located({String? address}) =
       InstallAnswer_Located;
 
+  /// The answer to [`InstallAsk::JoinFeederNetwork`] where the owner joins
+  /// it by hand, as on a computer: this computer's IPv4 address on the
+  /// feeder's link. Right before the frame, the run checks that the route
+  /// to the feeder still leaves from it, and fails the step otherwise; the
+  /// frame's socket is then bound to it, so an address gone by the send
+  /// fails it too. Binding does not pin the interface: the system still
+  /// routes by destination, which is why the route is read again.
+  const factory InstallAnswer.joined({required String from}) =
+      InstallAnswer_Joined;
+
   /// It could not be done; `reason` reaches the person as written.
   const factory InstallAnswer.failed({required String reason}) =
       InstallAnswer_Failed;
@@ -199,7 +216,8 @@ sealed class InstallAsk with _$InstallAsk {
   const factory InstallAsk.restartFeeder() = InstallAsk_RestartFeeder;
 
   /// Join the feeder's setup network, answered done once this process's
-  /// sockets go over it. The broker already listens.
+  /// sockets go over it, or [`InstallAnswer::Joined`] once this computer has
+  /// an address on it. The broker already listens.
   const factory InstallAsk.joinFeederNetwork() = InstallAsk_JoinFeederNetwork;
 
   /// The frame went out: leave the feeder's setup network, answered done

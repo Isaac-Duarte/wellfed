@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/discovery.dart';
-import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/recorder.dart';
@@ -86,20 +85,25 @@ abstract interface class FeederPorts {
     required bool ready,
   });
 
-  /// Whether this device may update a feeder's firmware. Only the Android
-  /// app has: the run keeps its process alive through the install's
-  /// foreground service, which has no desktop side.
+  /// Whether this device may update a feeder's firmware. A phone keeps its
+  /// process alive through the install's foreground service, and a computer
+  /// holds off sleep for the run.
   bool get updatesFeeder;
 
   /// One update of the feeder to that image, which goes once.
   UpdatePush pushUpdate(String identity, String? address);
 
   /// Keep this process alive with a notification while the firmware goes
-  /// across. `false` when Android refused.
+  /// across, or a computer awake. `false` when Android or the computer
+  /// refused.
   Future<bool> holdProcess(String text);
 
   /// Let this process go, once the firmware is across.
   Future<void> releaseProcess();
+
+  /// Each time a computer's hold gave way while a run still held: the run's
+  /// screen then says to keep it awake. Nothing on a phone.
+  Stream<void> holdLapsed();
 
   /// What the restore screen reaches outside Dart.
   RestorePorts get restore;
@@ -129,7 +133,7 @@ class AppFeederPorts implements FeederPorts {
   final FeederRouter? router;
 
   @override
-  bool get updatesFeeder => !onDesktopHost;
+  bool get updatesFeeder => true;
 
   @override
   FeedResult? settledFeed(Settlement settlement) => router_api.settledFeed(settlement: settlement);
@@ -230,6 +234,9 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   Future<void> releaseProcess() => _install.releaseFor(AlertHold.update);
+
+  @override
+  Stream<void> holdLapsed() => _install.holdLapsed();
 
   @override
   late final RestorePorts restore = AppRestorePorts(_key);

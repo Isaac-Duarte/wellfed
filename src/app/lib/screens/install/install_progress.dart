@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/install/install_before.dart';
 import 'package:wellfed/screens/install/install_screen.dart';
-import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
@@ -12,104 +11,6 @@ import 'package:wellfed/widgets/code_tiles.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
-
-/// 2.3: this phone joins the feeder's network, sends the Wi-Fi once and comes
-/// back, then waits for the feeder to reach it.
-class InstallHandoverPage extends StatelessWidget {
-  const InstallHandoverPage({super.key, required this.flow, required this.state, required this.onLeave});
-
-  final InstallFlow flow;
-  final InstallHandover state;
-  final Future<void> Function() onLeave;
-
-  @override
-  Widget build(BuildContext context) {
-    final String? stateText = switch (state.handover) {
-      Handover.starting => 'Getting ready…',
-      Handover.join || Handover.joining => null,
-      Handover.sending => 'Sending your Wi-Fi to the feeder…',
-      Handover.waiting => 'Waiting for the feeder to join your Wi-Fi…',
-    };
-    return StepScaffold(
-      stepLabel: 'Step 2 of 5',
-      progress: 0.35,
-      leading: Leading.close,
-      onLeading: () => unawaited(onLeave()),
-      title: 'Tell the feeder how to reach this $deviceName',
-      body:
-          "This $deviceName joins the feeder's setup network for a few seconds, "
-          'sends your Wi-Fi once, then comes back to your network.',
-      content: [
-        const Notice(
-          tone: Tone.neutral,
-          lead: 'Your password goes unencrypted.',
-          text:
-              "The feeder's setup network has no password, so someone close "
-              'by could read it during those few seconds. The feeder also '
-              'needs a 2.4 GHz Wi-Fi.',
-        ),
-        if (state.joinFailed) ...[
-          const SizedBox(height: Space.s3),
-          Notice(
-            tone: Tone.warning,
-            lead: "This $deviceName didn't join the feeder's network.",
-            text:
-                'Its name starts with PL-AF103. It can take a minute to appear '
-                "after the reset. If this $deviceName set it up in the vendor's app, "
-                "forget that network in the $deviceName's Wi-Fi settings, then try "
-                'again. If it never appears, hold Reset again.',
-          ),
-        ],
-        if (state.restartAgain || state.waitReason != null) ...[
-          const SizedBox(height: Space.s4),
-          _StillWaiting(state: state),
-        ] else if (stateText != null) ...[
-          const SizedBox(height: Space.s4),
-          Searching(stateText),
-        ],
-      ],
-      actions: [
-        if (state.handover == Handover.join || state.handover == Handover.joining)
-          FilledButton(
-            onPressed: state.handover == Handover.join ? () => unawaited(flow.joinFeeder()) : null,
-            child: const Text("Join the feeder's network"),
-          ),
-      ],
-    );
-  }
-}
-
-/// Why stock has not moved on, and the restart its lost reports need.
-class _StillWaiting extends StatelessWidget {
-  const _StillWaiting({required this.state});
-
-  final InstallHandover state;
-
-  @override
-  Widget build(BuildContext context) {
-    final String text = switch (state.waitReason) {
-      WaitReason.notOnAdapter => 'A feeder connected, but it is on batteries. Plug it in.',
-      WaitReason.noVersion || WaitReason.offline => 'A feeder is connecting…',
-      _ => 'Waiting for the feeder to connect…',
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (state.restartAgain) ...[
-          const Notice(
-            tone: Tone.warning,
-            lead: 'Restart the feeder once more:',
-            text:
-                'unplug it for 10 seconds (take the batteries out too, if '
-                'fitted) and plug it back in.',
-          ),
-          const SizedBox(height: Space.s4),
-        ],
-        Searching(text),
-      ],
-    );
-  }
-}
 
 /// 2.4: trust on first use. The owner compares what connected with the
 /// label and the router's list before anything is sent to it.
@@ -179,10 +80,12 @@ class InstallSendingPage extends StatelessWidget {
         _Step('Restarting into Wellfed', state.restarting ? CheckState.running : CheckState.waiting),
         const SizedBox(height: Space.s2),
         if (state.holdRefused) ...[
-          const Notice(
+          Notice(
             tone: Tone.fault,
-            lead: "Android won't keep Wellfed running in the background.",
-            text: 'Keep it on the screen until this finishes.',
+            lead: isDesktop
+                ? "This computer wouldn't promise to stay awake."
+                : "Android won't keep Wellfed running in the background.",
+            text: isDesktop ? stayAwakeWords : 'Keep it on the screen until this finishes.',
           ),
           const SizedBox(height: Space.s3),
         ],
@@ -190,8 +93,8 @@ class InstallSendingPage extends StatelessWidget {
           tone: Tone.warning,
           lead: 'Keep Wellfed open.',
           text:
-              'This $deviceName is serving the firmware, and closing the app stops '
-              "it. Don't unplug the feeder.",
+              'This $deviceName is serving the firmware, and closing the app '
+              "${isDesktop ? 'or the lid ' : ''}stops it. Don't unplug the feeder.",
         ),
         WaitWords(flow.waitWords, progress: state.percent),
       ],

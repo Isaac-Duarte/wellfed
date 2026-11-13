@@ -216,6 +216,19 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('a hold that gives way mid-run says so', (tester) async {
+    final ports = FakeRestorePorts();
+    await restoreOpen(tester, ports);
+    final FakeRestoreRun run = await restoreStarted(tester, ports);
+    expect(find.textContaining('Keep this screen open'), findsNothing);
+
+    ports.lapses.add(null);
+    await settle(tester);
+    expect(find.textContaining('Keep this screen open'), findsOneWidget);
+    run.stopped(RestoreStop.cancelled);
+    await settle(tester);
+  });
+
   testWidgets('leaving during the hold lets the process go once it takes', (tester) async {
     final ports = FakeRestorePorts()..holding = Completer<void>();
     final RestoreFlow flow = await restoreOpen(tester, ports);

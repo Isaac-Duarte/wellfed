@@ -101,6 +101,7 @@ fn answered(id: u32, answer: &InstallAnswer) -> String {
         InstallAnswer::Done
         | InstallAnswer::Yes { yes: _ }
         | InstallAnswer::Located { address: _ }
+        | InstallAnswer::Joined { from: _ }
         | InstallAnswer::Failed { reason: _ } => format!("answer {id}: {answer:?}"),
     }
 }

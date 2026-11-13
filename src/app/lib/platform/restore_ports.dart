@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
-import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
@@ -16,9 +15,9 @@ import 'package:wellfed/src/rust/api/store.dart' show identityHex;
 /// service, the kept backup and the file picker. Behind this, so every screen
 /// is tested with no Rust and no phone.
 abstract interface class RestorePorts {
-  /// Whether this device may put the vendor's firmware back. Only the
-  /// Android app has: the run keeps its process alive through the install's
-  /// foreground service, which has no desktop side.
+  /// Whether this device may put the vendor's firmware back. A phone keeps
+  /// its process alive through the install's foreground service, and a
+  /// computer holds off sleep for the run.
   bool get restoresFeeder;
 
   /// The installer's own folder.
@@ -62,14 +61,19 @@ abstract interface class RestorePorts {
   void forgetKey(String dataDir, List<int> identity);
 
   /// Keep this process alive with a notification while the firmware goes
-  /// across. `false` when Android refused.
+  /// across, or a computer awake. `false` when Android or the computer
+  /// refused.
   Future<bool> holdProcess(String text);
 
   /// Let this process go, once the run has ended.
   Future<void> releaseProcess();
+
+  /// Each time a computer's hold gave way while a run still held: the run's
+  /// screen then says to keep it awake. Nothing on a phone.
+  Stream<void> holdLapsed();
 }
 
-/// [RestorePorts] on Android, with this phone's key.
+/// [RestorePorts] on Android and the desktops, with this device's key.
 class AppRestorePorts implements RestorePorts {
   /// Ports signed by `_key`.
   AppRestorePorts(this._key) : _install = AppInstallPorts(_key);
@@ -80,7 +84,7 @@ class AppRestorePorts implements RestorePorts {
   final AppInstallPorts _install;
 
   @override
-  bool get restoresFeeder => !onDesktopHost;
+  bool get restoresFeeder => true;
 
   @override
   Future<String> dataDir() async => (await _install.paths()).data;
@@ -131,4 +135,7 @@ class AppRestorePorts implements RestorePorts {
 
   @override
   Future<void> releaseProcess() => _install.releaseFor(AlertHold.restore);
+
+  @override
+  Stream<void> holdLapsed() => _install.holdLapsed();
 }

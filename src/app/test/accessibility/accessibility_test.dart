@@ -24,6 +24,7 @@ import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
 import 'package:wellfed/screens/install/install_before.dart';
+import 'package:wellfed/screens/install/install_handover.dart';
 import 'package:wellfed/screens/install/install_progress.dart';
 import 'package:wellfed/screens/install/install_stopped.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';

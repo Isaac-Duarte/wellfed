@@ -71,12 +71,9 @@ class AddFeederWays extends StatelessWidget {
   );
 }
 
-/// What the install does, and what does it: only the Android app installs,
-/// so a desktop sends the owner there rather than promising it can.
-String get _installWords => isDesktop
-    ? "For a feeder still on the vendor's app. The Android app replaces its firmware and keeps a backup of the "
-          'original.'
-    : "For a feeder still on the vendor's app. This phone replaces its firmware and keeps a backup of the original.";
+/// What the install does: a phone and a computer both run it.
+String get _installWords =>
+    "For a feeder still on the vendor's app. This $deviceName replaces its firmware and keeps a backup of the original.";
 
 /// The common case, led by the feeder it is for.
 class _InstallCard extends StatelessWidget {

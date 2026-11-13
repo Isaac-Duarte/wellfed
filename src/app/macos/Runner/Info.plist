@@ -38,6 +38,8 @@
 	</array>
 	<key>NSLocationUsageDescription</key>
 	<string>macOS shares the name of the Wi-Fi network only with apps allowed your location. Wellfed reads it to give a feeder your Wi-Fi, and never keeps where you are.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>macOS shares the name of the Wi-Fi network only with apps allowed your location. Wellfed reads it to give a feeder your Wi-Fi, and never keeps where you are.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

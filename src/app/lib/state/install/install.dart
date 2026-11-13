@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:wellfed/platform/feeder_network.dart' show JoinRefused;
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/setup_link.dart' show BluetoothPower, bluetoothNow, bluetoothOffSoon;
 import 'package:wellfed/src/rust/api/error.dart';
@@ -54,6 +55,17 @@ class InstallFlow extends ChangeNotifier {
   /// Android's picker ended with no network: the feeder's network is not up
   /// yet, or the owner cancelled.
   bool _joinFailed = false;
+
+  /// Why a computer was not counted as on the feeder's network.
+  FeederJoinProblem? _joinProblem;
+
+  /// The owner stopped waiting for a computer's join, perhaps before the
+  /// watch began.
+  bool _joinStopAsked = false;
+
+  /// The Wi-Fi a computer was on before the owner joined the feeder's, when
+  /// the system said: the one to go back to.
+  String? _homeNetwork;
 
   /// The owner said they held Reset, so the feeder needs no second hold.
   bool _feederReset = false;
@@ -162,6 +174,9 @@ class InstallFlow extends ChangeNotifier {
   // ignore: cancel_subscriptions, _stopListening cancels it, in install_listen.dart.
   StreamSubscription<void>? _heard;
   bool _holding = false;
+
+  /// A computer's hold giving way mid-run.
+  StreamSubscription<void>? _lapses;
   Timer? _holdHintTimer;
 
   /// This process's sockets go over the feeder's setup network.
@@ -405,6 +420,9 @@ class InstallFlow extends ChangeNotifier {
         joinFailed: _joinFailed,
         restartAgain: _restartAgain,
         waitReason: _waitReason,
+        join: _ports.feederJoin,
+        homeNetwork: _homeNetwork,
+        joinProblem: _joinProblem,
       ),
       InstallStage.confirm => InstallConfirm(facts, device: _device, deviceAddress: _deviceAddress),
       InstallStage.which => InstallWhich(facts),
@@ -458,6 +476,8 @@ class InstallFlow extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _run?.stop();
+    // A computer waiting for its owner to join would wait on for nobody.
+    if (_handover == Handover.joining) _ports.stopJoining();
     if (_onFeederNetwork) {
       _onFeederNetwork = false;
       unawaited(_ports.leaveFeederNetwork());
@@ -467,6 +487,7 @@ class InstallFlow extends ChangeNotifier {
     _closeLink();
     _holdHintTimer?.cancel();
     unawaited(_power?.cancel());
+    unawaited(_lapses?.cancel());
     unawaited(_release());
     super.dispose();
   }

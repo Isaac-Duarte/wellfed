@@ -312,6 +312,16 @@ void main() {
     expect(ports.releases, 1);
   });
 
+  testWidgets('a hold that gives way mid-run says so', (tester) async {
+    final (FakeFeederPorts ports, _) = await _show(tester);
+    await tapIn(tester, find.text('Install on Kitchen'));
+    expect(find.textContaining('Keep this app open'), findsNothing);
+
+    ports.lapses.add(null);
+    await settle(tester);
+    expect(find.textContaining('Keep this app open'), findsOneWidget);
+  });
+
   testWidgets('a run that asks where the feeder is hears what NSD says', (tester) async {
     final (FakeFeederPorts ports, _) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));

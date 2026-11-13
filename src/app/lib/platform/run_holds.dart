@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:wellfed/src/rust/api/alerts.dart' show AlertHold;
 
 /// The runs that hold this process up (an install, an update, a restore),
@@ -18,6 +20,17 @@ class RunHolds {
 
   /// The runs holding now.
   Set<AlertHold> get held => Set.unmodifiable(_held.keys);
+
+  final _lapsed = StreamController<void>.broadcast();
+
+  /// Each time the hold gave way while runs still held: a computer's helper
+  /// that ended by itself. A run's screen then says to keep it awake.
+  Stream<void> get lapsed => _lapsed.stream;
+
+  /// The hold gave way under the runs holding now. Nothing while none holds.
+  void lapse() {
+    if (_held.isNotEmpty) _lapsed.add(null);
+  }
 
   /// Hold the process for `run`, saying `text`. Whether Android went along.
   Future<bool> hold(AlertHold run, String text) {

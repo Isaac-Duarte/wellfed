@@ -48,7 +48,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -632942352;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1737992589;
 
 // Section: executor
 
@@ -4414,6 +4414,36 @@ fn wire__crate__api__restore__read_restore_feeder_impl(
         },
     )
 }
+fn wire__crate__api__install__route_source_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "route_source",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_to = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::install::route_source(api_to))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__alerts__save_instant_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -6953,6 +6983,10 @@ impl SseDecode for crate::api::install::InstallAnswer {
                 };
             }
             3 => {
+                let mut var_from = <String>::sse_decode(deserializer);
+                return crate::api::install::InstallAnswer::Joined { from: var_from };
+            }
+            4 => {
                 let mut var_reason = <String>::sse_decode(deserializer);
                 return crate::api::install::InstallAnswer::Failed { reason: var_reason };
             }
@@ -10333,16 +10367,16 @@ fn pde_ffi_dispatcher_primary_impl(
         99 => {
             wire__crate__api__restore__read_restore_feeder_impl(port, ptr, rust_vec_len, data_len)
         }
-        100 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
-        103 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
-        104 => wire__crate__api__feeder__settings_changes_default_impl(
+        101 => wire__crate__api__alerts__save_instant_impl(port, ptr, rust_vec_len, data_len),
+        104 => wire__crate__api__alerts__set_mute_impl(port, ptr, rust_vec_len, data_len),
+        105 => wire__crate__api__feeder__settings_changes_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        105 => wire__crate__api__setup__settle_setup_impl(port, ptr, rust_vec_len, data_len),
-        110 => wire__crate__api__store__swap_store_impl(port, ptr, rust_vec_len, data_len),
+        106 => wire__crate__api__setup__settle_setup_impl(port, ptr, rust_vec_len, data_len),
+        111 => wire__crate__api__store__swap_store_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -10421,14 +10455,15 @@ fn pde_ffi_dispatcher_sync_impl(
         88 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
         89 => wire__crate__api__install__kept_backups_impl(ptr, rust_vec_len, data_len),
         97 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
-        101 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
-        102 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
-        106 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
-        107 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
-        108 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
-        109 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
-        111 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
-        112 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
+        100 => wire__crate__api__install__route_source_impl(ptr, rust_vec_len, data_len),
+        102 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
+        103 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
+        107 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
+        108 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
+        109 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
+        110 => wire__crate__api__store__store_notice_read_impl(ptr, rust_vec_len, data_len),
+        112 => wire__crate__api__update__unknown_end_impl(ptr, rust_vec_len, data_len),
+        113 => wire__crate__api__update__update_offer_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -12141,8 +12176,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::install::InstallAnswer {
             crate::api::install::InstallAnswer::Located { address } => {
                 [2.into_dart(), address.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::install::InstallAnswer::Joined { from } => {
+                [3.into_dart(), from.into_into_dart().into_dart()].into_dart()
+            }
             crate::api::install::InstallAnswer::Failed { reason } => {
-                [3.into_dart(), reason.into_into_dart().into_dart()].into_dart()
+                [4.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -16546,8 +16584,12 @@ impl SseEncode for crate::api::install::InstallAnswer {
                 <i32>::sse_encode(2, serializer);
                 <Option<String>>::sse_encode(address, serializer);
             }
-            crate::api::install::InstallAnswer::Failed { reason } => {
+            crate::api::install::InstallAnswer::Joined { from } => {
                 <i32>::sse_encode(3, serializer);
+                <String>::sse_encode(from, serializer);
+            }
+            crate::api::install::InstallAnswer::Failed { reason } => {
+                <i32>::sse_encode(4, serializer);
                 <String>::sse_encode(reason, serializer);
             }
             _ => {

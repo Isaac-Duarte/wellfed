@@ -321,7 +321,7 @@ fn run_on_this_thread(
     };
 
     let platform = Platform {
-        prompter: AppPrompter(asks.clone()),
+        prompter: AppPrompter::new(asks.clone()),
         discovery: AppDiscovery(asks.clone()),
         keypair,
         report: AppReport(asks),

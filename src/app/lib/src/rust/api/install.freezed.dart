@@ -693,13 +693,14 @@ extension InstallAnswerPatterns on InstallAnswer {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( InstallAnswer_Done value)?  done,TResult Function( InstallAnswer_Yes value)?  yes,TResult Function( InstallAnswer_Located value)?  located,TResult Function( InstallAnswer_Failed value)?  failed,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( InstallAnswer_Done value)?  done,TResult Function( InstallAnswer_Yes value)?  yes,TResult Function( InstallAnswer_Located value)?  located,TResult Function( InstallAnswer_Joined value)?  joined,TResult Function( InstallAnswer_Failed value)?  failed,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case InstallAnswer_Done() when done != null:
 return done(_that);case InstallAnswer_Yes() when yes != null:
 return yes(_that);case InstallAnswer_Located() when located != null:
-return located(_that);case InstallAnswer_Failed() when failed != null:
+return located(_that);case InstallAnswer_Joined() when joined != null:
+return joined(_that);case InstallAnswer_Failed() when failed != null:
 return failed(_that);case _:
   return orElse();
 
@@ -718,13 +719,14 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( InstallAnswer_Done value)  done,required TResult Function( InstallAnswer_Yes value)  yes,required TResult Function( InstallAnswer_Located value)  located,required TResult Function( InstallAnswer_Failed value)  failed,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( InstallAnswer_Done value)  done,required TResult Function( InstallAnswer_Yes value)  yes,required TResult Function( InstallAnswer_Located value)  located,required TResult Function( InstallAnswer_Joined value)  joined,required TResult Function( InstallAnswer_Failed value)  failed,}){
 final _that = this;
 switch (_that) {
 case InstallAnswer_Done():
 return done(_that);case InstallAnswer_Yes():
 return yes(_that);case InstallAnswer_Located():
-return located(_that);case InstallAnswer_Failed():
+return located(_that);case InstallAnswer_Joined():
+return joined(_that);case InstallAnswer_Failed():
 return failed(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -739,13 +741,14 @@ return failed(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( InstallAnswer_Done value)?  done,TResult? Function( InstallAnswer_Yes value)?  yes,TResult? Function( InstallAnswer_Located value)?  located,TResult? Function( InstallAnswer_Failed value)?  failed,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( InstallAnswer_Done value)?  done,TResult? Function( InstallAnswer_Yes value)?  yes,TResult? Function( InstallAnswer_Located value)?  located,TResult? Function( InstallAnswer_Joined value)?  joined,TResult? Function( InstallAnswer_Failed value)?  failed,}){
 final _that = this;
 switch (_that) {
 case InstallAnswer_Done() when done != null:
 return done(_that);case InstallAnswer_Yes() when yes != null:
 return yes(_that);case InstallAnswer_Located() when located != null:
-return located(_that);case InstallAnswer_Failed() when failed != null:
+return located(_that);case InstallAnswer_Joined() when joined != null:
+return joined(_that);case InstallAnswer_Failed() when failed != null:
 return failed(_that);case _:
   return null;
 
@@ -763,12 +766,13 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  done,TResult Function( bool yes)?  yes,TResult Function( String? address)?  located,TResult Function( String reason)?  failed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  done,TResult Function( bool yes)?  yes,TResult Function( String? address)?  located,TResult Function( String from)?  joined,TResult Function( String reason)?  failed,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case InstallAnswer_Done() when done != null:
 return done();case InstallAnswer_Yes() when yes != null:
 return yes(_that.yes);case InstallAnswer_Located() when located != null:
-return located(_that.address);case InstallAnswer_Failed() when failed != null:
+return located(_that.address);case InstallAnswer_Joined() when joined != null:
+return joined(_that.from);case InstallAnswer_Failed() when failed != null:
 return failed(_that.reason);case _:
   return orElse();
 
@@ -787,12 +791,13 @@ return failed(_that.reason);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  done,required TResult Function( bool yes)  yes,required TResult Function( String? address)  located,required TResult Function( String reason)  failed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  done,required TResult Function( bool yes)  yes,required TResult Function( String? address)  located,required TResult Function( String from)  joined,required TResult Function( String reason)  failed,}) {final _that = this;
 switch (_that) {
 case InstallAnswer_Done():
 return done();case InstallAnswer_Yes():
 return yes(_that.yes);case InstallAnswer_Located():
-return located(_that.address);case InstallAnswer_Failed():
+return located(_that.address);case InstallAnswer_Joined():
+return joined(_that.from);case InstallAnswer_Failed():
 return failed(_that.reason);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -807,12 +812,13 @@ return failed(_that.reason);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  done,TResult? Function( bool yes)?  yes,TResult? Function( String? address)?  located,TResult? Function( String reason)?  failed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  done,TResult? Function( bool yes)?  yes,TResult? Function( String? address)?  located,TResult? Function( String from)?  joined,TResult? Function( String reason)?  failed,}) {final _that = this;
 switch (_that) {
 case InstallAnswer_Done() when done != null:
 return done();case InstallAnswer_Yes() when yes != null:
 return yes(_that.yes);case InstallAnswer_Located() when located != null:
-return located(_that.address);case InstallAnswer_Failed() when failed != null:
+return located(_that.address);case InstallAnswer_Joined() when joined != null:
+return joined(_that.from);case InstallAnswer_Failed() when failed != null:
 return failed(_that.reason);case _:
   return null;
 
@@ -983,6 +989,74 @@ class _$InstallAnswer_LocatedCopyWithImpl<$Res>
   return _then(InstallAnswer_Located(
 address: freezed == address ? _self.address : address // ignore: cast_nullable_to_non_nullable
 as String?,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class InstallAnswer_Joined extends InstallAnswer {
+  const InstallAnswer_Joined({required this.from}): super._();
+  
+
+ final  String from;
+
+/// Create a copy of InstallAnswer
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$InstallAnswer_JoinedCopyWith<InstallAnswer_Joined> get copyWith => _$InstallAnswer_JoinedCopyWithImpl<InstallAnswer_Joined>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is InstallAnswer_Joined&&(identical(other.from, from) || other.from == from));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,from);
+}
+
+@override
+String toString() {
+    return 'InstallAnswer.joined(from: $from)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $InstallAnswer_JoinedCopyWith<$Res> implements $InstallAnswerCopyWith<$Res> {
+  factory $InstallAnswer_JoinedCopyWith(InstallAnswer_Joined value, $Res Function(InstallAnswer_Joined) _then) = _$InstallAnswer_JoinedCopyWithImpl;
+@useResult
+$Res call({
+ String from
+});
+
+
+
+
+}
+/// @nodoc
+class _$InstallAnswer_JoinedCopyWithImpl<$Res>
+    implements $InstallAnswer_JoinedCopyWith<$Res> {
+  _$InstallAnswer_JoinedCopyWithImpl(this._self, this._then);
+
+  final InstallAnswer_Joined _self;
+  final $Res Function(InstallAnswer_Joined) _then;
+
+/// Create a copy of InstallAnswer
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? from = null,}) {
+  return _then(InstallAnswer_Joined(
+from: null == from ? _self.from : from // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 

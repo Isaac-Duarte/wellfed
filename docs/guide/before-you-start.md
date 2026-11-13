@@ -18,12 +18,12 @@ Do these checks first, because the installer can only read the feeder after Rese
 
 | You need | Why |
 | --- | --- |
-| An Android 12 or newer phone that can leave your Wi-Fi briefly | It runs the install and serves the firmware. The app's route on a phone that can't hold both networks hasn't been run |
+| An Android 12 or newer phone that can leave your Wi-Fi briefly, or a Mac, Linux or Windows computer with Wi-Fi | It runs the install and serves the firmware. The app's route on a phone that can't hold both networks hasn't been run, and neither has the computer's, where you switch networks yourself |
 | A 2.4 GHz Wi-Fi network and its password | The feeder has no other way onto your network |
 | About 10 minutes | Keep the app open throughout, since your phone is the server |
 | A second place to keep a file | You'll want a copy of the vendor's firmware away from your phone |
 
-Your phone must be on the same network as the feeder. Client isolation or a guest network will block it.
+Your phone or computer must be on the same network as the feeder. Client isolation or a guest network will block it.
 
 ## What the install erases
 
