@@ -259,7 +259,8 @@ impl ServerSession {
     /// leaked token cannot keep the keys it enrolled: `password` is the
     /// account's, used once for a login that ends here, and never kept. A
     /// token the server already dropped counts as logged out. Every follow
-    /// ends once it is; a wrong password changes nothing.
+    /// ends once the login takes the password, whatever the revoke then
+    /// answers; a wrong password changes nothing.
     pub async fn logout(&self, password: String, key: &ClientKey) -> Result<(), ServerError> {
         let id = TokenId(ids::parse(&self.link.token_id)?);
         // The server keeps only the keys the phone names as its own: one
@@ -273,6 +274,12 @@ impl ServerSession {
             password,
         };
         login.login(&credentials).await?;
+
+        // Past the password the phone leaves, whatever the revoke answers.
+        // The revoke ends the token's stream on the server, so the follows
+        // close first: that end then reads as closed, not as a stream the
+        // server broke off.
+        self.close();
         let ended = login.log_out_token(id, &request).await;
         // The login was only the way to the logout; one that never ends
         // expires on the server.
@@ -284,7 +291,6 @@ impl ServerSession {
                 return Err(error);
             }
         }
-        self.close();
         Ok(())
     }
 
@@ -642,9 +648,12 @@ impl ServerHandle {
         }
 
         loop {
+            // A close first: a logout closes before its revoke ends the
+            // stream, and the two may be ready together.
             let next = tokio::select! {
-                next = stream.next() => next,
+                biased;
                 _ = closed.wait_for(|closed| *closed) => return Ok(()),
+                next = stream.next() => next,
             };
             let Some(update) = next else {
                 return Err(ServerError::new(

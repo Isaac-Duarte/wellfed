@@ -22356,7 +22356,8 @@ class ServerSessionImpl extends RustOpaque implements ServerSession {
   /// leaked token cannot keep the keys it enrolled: `password` is the
   /// account's, used once for a login that ends here, and never kept. A
   /// token the server already dropped counts as logged out. Every follow
-  /// ends once it is; a wrong password changes nothing.
+  /// ends once the login takes the password, whatever the revoke then
+  /// answers; a wrong password changes nothing.
   Future<void> logout({required String password, required ClientKey key}) =>
       RustLib.instance.api.crateApiServerServerSessionLogout(
         that: this,
