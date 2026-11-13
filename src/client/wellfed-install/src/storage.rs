@@ -85,9 +85,7 @@ pub(crate) fn write_new(path: &Path, bytes: &[u8]) -> Result<(), Error> {
         std::fs::create_dir_all(directory).map_err(created)?;
         for made in missing {
             if let Some(parent) = made.parent().filter(|p| !p.as_os_str().is_empty()) {
-                std::fs::File::open(parent)
-                    .and_then(|parent| parent.sync_all())
-                    .map_err(created)?;
+                wellfed_formats::private::sync_entries(parent).map_err(created)?;
             }
         }
     }

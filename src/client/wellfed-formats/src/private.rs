@@ -212,8 +212,22 @@ fn too_many() -> std::io::Error {
 
 fn sync_parent(path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::File::open(parent)?.sync_all()?;
+        sync_entries(parent)?;
     }
+    Ok(())
+}
+
+/// Make the entries just created, renamed or removed in `directory` durable.
+///
+/// On Unix that is an fsync of the directory itself. Windows can't open a
+/// directory as a file to flush it, and NTFS journals directory entries on
+/// its own, so there it does nothing: every caller has already synced the
+/// file's data before the entry changed, which is what a crash must not lose.
+pub fn sync_entries(directory: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    fs::File::open(directory)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = directory;
     Ok(())
 }
 
@@ -298,7 +312,7 @@ pub fn copy_aside(path: &Path, data: &[u8]) -> std::io::Result<std::path::PathBu
 
 /// Fsync a directory, so the entries just created in it are durable.
 pub fn sync_directory(path: &Path) -> Result<()> {
-    fs::File::open(path)?.sync_all()?;
+    sync_entries(path)?;
     Ok(())
 }
 
@@ -326,7 +340,7 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
         file.write_all(b"\n")?;
         file.sync_all()?;
         fs::rename(&temp, path)?;
-        fs::File::open(parent)?.sync_all()?;
+        sync_entries(parent)?;
         Ok(())
     })();
 
