@@ -62,7 +62,15 @@
 //!   `Fault` until it ends.
 //!
 //! What only the board has stays out: traces, the trial's proof, the
-//! recovery restart and the install lease.
+//! recovery restart and the install lease. And one ordering: on a trial
+//! boot the firmware's owner opens only once the confirmation has armed
+//! the flash hooks (after its healthy window), then proves itself and the
+//! record is written; here the hooks are always armed, so the owner opens
+//! at the boot's first step. It still opens, and resolves a feed a reset
+//! interrupted, before the confirmation, as on the feeder, and readiness
+//! says `Starting` and food readings wait throughout, so what differs is
+//! only that the journal is opened (and a new one created) earlier in the
+//! window than the firmware would.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -143,7 +151,7 @@ impl SimFeeds {
 
     /// What the runtime says of this boot from now on: a trial build that
     /// has not confirmed (`confirming`), and a reset storm's hold (`held`).
-    pub fn gate(&mut self, confirming: bool, held: bool) {
+    pub(crate) fn gate(&mut self, confirming: bool, held: bool) {
         let runtime = self.feeding.runtime();
         runtime.confirming.set(confirming);
         runtime.held.set(held);

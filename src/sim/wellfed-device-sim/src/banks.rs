@@ -92,6 +92,9 @@ pub struct Banks {
     /// when an update from elsewhere came between the activation and the
     /// boot. `None` boots the activated build.
     pub boots_instead: Option<[u8; 32]>,
+    /// No boot has run on these banks yet: the device the simulation
+    /// begins on.
+    fresh: bool,
 }
 
 /// A bank laid out as the reviewed builds are: five core images, each a
@@ -132,6 +135,7 @@ impl Banks {
             register: 0,
             trial: Trial::Confirms,
             boots_instead: None,
+            fresh: true,
         }))
     }
 
@@ -177,6 +181,13 @@ impl Banks {
             let storm = Storm::of(trial::resets(self.register, &identity));
             return Boot { bank, trial, storm };
         }
+    }
+
+    /// Whether this is the first boot on these banks, taken once: the
+    /// simulation begins on a device that ran its first bank-1 build's
+    /// trial before it began.
+    pub(crate) fn take_fresh(&mut self) -> bool {
+        core::mem::take(&mut self.fresh)
     }
 
     /// Power was lost: KM0's counts go with the backup register.

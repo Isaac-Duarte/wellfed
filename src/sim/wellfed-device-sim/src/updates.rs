@@ -26,8 +26,13 @@
 //! the device API; the simulator does not model it and boots it as usual.
 //!
 //! The simulation begins on a device whose first bank-1 build has run its
-//! trial already: an erased confirmation sector names that build, as its
-//! first boot's confirmation would have.
+//! trial already: at the first boot on new banks, an erased confirmation
+//! sector is written to name that build, as its first boot's confirmation
+//! would have. A sector erased later is left erased.
+//!
+//! The settings writer starts on bank 1 only once the confirmation ends,
+//! confirmed now or already (bank 0 starts it at once); the feeder's
+//! simulator skips the writer's turn while [`Updates::confirming`] holds.
 //!
 //! Nothing here reads a clock: every call takes the time, so a test can run
 //! virtual time and a driver real time through the same code.
@@ -294,8 +299,14 @@ fn boot(flash: &Rc<Flash>, banks: &mut Banks, key: Option<[u8; 32]>) -> (Boot, [
         record = [0xff; CONFIRM_LEN];
     }
     // The device the simulation begins on confirmed its first bank-1 build
-    // before it began.
-    if record == [0xff; CONFIRM_LEN] && banks.bank1_valid() && banks.bank1_build == BANK1_BUILD {
+    // before it began. Only then: an erase later (bank 0's handover, say)
+    // leaves that build to a trial of its own.
+    let fresh = banks.take_fresh();
+    if fresh
+        && record == [0xff; CONFIRM_LEN]
+        && banks.bank1_valid()
+        && banks.bank1_build == BANK1_BUILD
+    {
         record = ota::confirm_record(&BANK1_BUILD, 0);
         if !sector.program(0, 0, &record) {
             record = [0xff; CONFIRM_LEN];

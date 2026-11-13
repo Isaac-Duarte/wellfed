@@ -8,8 +8,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wellfed_board::storage;
+use wellfed_core::store::slot::SlotIo;
+use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
+use wellfed_device_api::mailbox::{PlansChange, PlansResult};
+use wellfed_feeder::feeder::Platform;
 use wellfed_feeder_sim::banks::{Banks, TRIAL_LIMIT, Trial};
-use wellfed_feeder_sim::flash::Flash;
+use wellfed_feeder_sim::flash::{Flash, Region};
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::sim::{CONFIRM_MS, Record, Sim, TRIAL_MS};
 use wellfed_hal::ota::update::Floor;
@@ -93,6 +97,28 @@ impl Feeder {
                 _ => None,
             })
             .collect()
+    }
+}
+
+/// A table with one breakfast plan.
+fn breakfast() -> Table {
+    let mut table: Table = [None; PLANS];
+    table[0] = Some(Plan {
+        minute: 7 * 60,
+        portions: 1,
+        days: Weekdays::EVERY_DAY,
+        enabled: true,
+        call: 0,
+    });
+    table
+}
+
+/// Whether the stored plans hold `table`, and a change still waits for the
+/// writer.
+fn plans(sim: &mut Sim) -> (Table, bool) {
+    match sim.platform().plans() {
+        PlansResult::Current { view, pending } => (view.table, pending),
+        other => panic!("{other:?}"),
     }
 }
 
@@ -221,4 +247,102 @@ fn a_boot_a_storm_holds_reads_fault_until_its_hold_ends() {
     );
     assert!(!feeder.run(1_000));
     assert_eq!(feeder.sim.readiness(), Readiness::Ready);
+}
+
+/// The settings writer starts only once a trial build confirms, as the
+/// firmware's runtime starts it: a plans change queued in the window waits
+/// in its slot and lands after the confirmation, and the boot's lifetime
+/// totals are published only then.
+#[test]
+fn a_store_write_in_the_trial_window_lands_only_after_the_confirmation() {
+    let mut feeder = Feeder::on_trial();
+    assert!(!feeder.run(100));
+    let queued = feeder.sim.platform().plans_change(
+        PlansChange::Replace {
+            table: breakfast(),
+            at_s: None,
+        },
+        None,
+    );
+    assert!(
+        matches!(queued, PlansResult::Current { pending: true, .. }),
+        "{queued:?}"
+    );
+
+    assert!(!feeder.run(CONFIRM_MS - 200));
+    assert!(feeder.confirmations().is_empty());
+    assert_eq!(plans(&mut feeder.sim), ([None; PLANS], true), "it waits");
+    assert_eq!(feeder.sim.platform().totals(), None);
+
+    assert!(!feeder.run(TRIAL_MS - CONFIRM_MS));
+    assert_eq!(feeder.confirmations(), [Floor::Unchanged]);
+    assert_eq!(plans(&mut feeder.sim), (breakfast(), false));
+    assert!(feeder.sim.platform().totals().is_some());
+}
+
+/// A build that never confirms never starts its writer: a change queued
+/// during its trial is never written, and the boot is not counted in the
+/// lifetime totals the next boot reads.
+#[test]
+fn a_build_that_never_confirms_writes_no_store() {
+    let mut feeder = Feeder::on_trial();
+    feeder.banks.borrow_mut().trial = Trial::NeverConfirms;
+    feeder.restart();
+    assert!(!feeder.run(100));
+    let queued = feeder.sim.platform().plans_change(
+        PlansChange::Replace {
+            table: breakfast(),
+            at_s: None,
+        },
+        None,
+    );
+    assert!(
+        matches!(queued, PlansResult::Current { pending: true, .. }),
+        "{queued:?}"
+    );
+    assert!(feeder.run(TRIAL_MS), "reset at the trial's deadline");
+    assert_eq!(feeder.sim.platform().totals(), None);
+
+    // Every trial boot resets so (this was the second), and bank 0 then
+    // boots with its writer.
+    for _ in 2..TRIAL_LIMIT {
+        feeder.restart();
+        assert!(feeder.run(TRIAL_MS + 1_000));
+    }
+    feeder.restart();
+    assert!(!feeder.run(1_000));
+    assert_eq!(feeder.booted().0, 0);
+    assert_eq!(
+        plans(&mut feeder.sim),
+        ([None; PLANS], false),
+        "never written"
+    );
+    let totals = feeder
+        .sim
+        .platform()
+        .totals()
+        .expect("bank 0's writer runs");
+    assert_eq!(
+        totals.resets.power_on, 1,
+        "bank 0's boot alone: no trial boot was counted"
+    );
+}
+
+/// Only the device the simulation begins on had confirmed its first build:
+/// a confirmation sector erased later (as bank 0's handover erases it)
+/// leaves that build to a trial of its own when it boots again.
+#[test]
+fn a_confirmation_erased_after_the_first_boot_is_not_written_again() {
+    let mut feeder = Feeder::boot(Flash::memory(), Banks::new());
+    assert!(!feeder.run(1_000));
+    assert_eq!(feeder.booted(), (1, false, Storm::Normal));
+
+    assert!(Region::new(&feeder.flash, storage::CONFIRM).erase(0));
+    feeder.restart();
+    assert!(!feeder.run(1));
+    assert_eq!(feeder.booted(), (1, true, Storm::Normal));
+    assert_eq!(
+        feeder.sim.readiness(),
+        Readiness::Blocked(Blocked::Starting)
+    );
 }

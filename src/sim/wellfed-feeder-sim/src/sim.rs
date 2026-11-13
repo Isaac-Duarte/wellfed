@@ -9,7 +9,9 @@
 //! [`CONFIRM_MS`], unless the banks say it never will or its confirmation
 //! fails, in which case it resets after [`TRIAL_MS`] as the supervisor's
 //! deadline makes it. Until it confirms, readiness says `Starting` and every
-//! feed is refused so; while a reset storm holds the boot, readiness says
+//! feed is refused so, and the settings writer takes no turn, as the
+//! firmware starts it only once the build confirmed: changes a client
+//! queues wait in their slots, and a build that never confirms writes none; while a reset storm holds the boot, readiness says
 //! `Fault` and the feeding owner stays closed, as the firmware's adapter
 //! reports them. Button presses come from the caller ([`Sim::gesture`]) and
 //! wait for the next pass, as the button service's queued gestures do.
@@ -334,7 +336,12 @@ impl Sim {
             .pass(now_ms, self.feeds.feeds(), |r| record(Record::Feeder(r)));
         self.platform().answer_read();
         let delay = feed_delay.map_or(delay, |feed| delay.min(feed));
-        if let Some(result) = self.platform().write() {
+        // The firmware starts its settings writer on bank 1 only once the
+        // confirmation ends confirmed: until then no store is written, and
+        // the lifetime totals are neither counted nor published.
+        if !self.updates.confirming()
+            && let Some(result) = self.platform().write()
+        {
             record(Record::Keys(result));
         }
         let updating = self.update(now_ms, &mut record);
