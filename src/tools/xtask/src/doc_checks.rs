@@ -36,20 +36,19 @@ const WORDING_PAGES: [&str; 2] = [ROADMAP, WRITING_GUIDE];
 const STATUS_WORDS: [&str; 4] = ["works", "partial", "experimental", "not started"];
 
 /// Wording that is true for a while and then quietly wrong.
-const TIME_BOUND: [&str; 6] = [
+const TIME_BOUND: [&str; 11] = [
     "come next",
     "comes next",
     "on the way",
     "not built",
     "aren't built",
     "isn't built",
+    "haven't been built",
+    "hasn't been built",
+    "haven't been designed",
+    "hasn't been designed",
+    "not something that runs today",
 ];
-
-/// A dated promise kept on purpose, as `(page, phrase)`.
-const KEPT_DATES: [(&str, &str); 1] = [("AGENTS.md", "until October 26")];
-
-/// A command named on a page as history, whose tool is gone: `(page, tool)`.
-const RETIRED_TOOLS: [(&str, &str); 1] = [("AGENTS.md", "wellfed-local")];
 
 /// Shell fences hold commands; a `text` fence may just start with a crate name.
 const SHELL_FENCES: [&str; 5] = ["sh", "bash", "shell", "console", "zsh"];
@@ -286,7 +285,7 @@ fn check_commands(
             && arguments
                 .first()
                 .is_some_and(|word| word.starts_with("--") || is_plain_word(word));
-        if names_a_tool && !RETIRED_TOOLS.contains(&(name, program)) && trees.is_unknown(program) {
+        if names_a_tool && trees.is_unknown(program) {
             errors.push(format!(
                 "{name}:{number}: `{command}`: no tool called `{program}`"
             ));
@@ -528,12 +527,6 @@ fn check_wording(name: &str, lines: &[Line<'_>], today: Date, errors: &mut Vec<S
         }
 
         for capture in UNTIL_DATE.captures_iter(line.text) {
-            if KEPT_DATES.contains(&(
-                name,
-                &capture[0][..capture[0].find(',').unwrap_or(capture[0].len())],
-            )) {
-                continue;
-            }
             // A date without its year cannot be dated: read as this year, a
             // December "until January 5" would be refused at once, and a
             // passed one would stop being refused each January.
@@ -918,6 +911,14 @@ mod tests {
             wording("docs/page.md", "Schedules aren't built.\n").len(),
             1
         );
+        assert_eq!(
+            wording(
+                "docs/guide/page.md",
+                "Alerts are planned, but they haven't been designed or built.\n"
+            )
+            .len(),
+            1
+        );
         assert!(wording(ROADMAP, "Schedules come next.\n").is_empty());
         assert!(wording("docs/page.md", "## Evidence\n\nNot built then.\n").is_empty());
         assert!(wording("docs/page.md", "Only one for now. Not yet.\n").is_empty());
@@ -943,7 +944,10 @@ mod tests {
                 "{errors:?}"
             );
         }
-        assert!(wording("AGENTS.md", "Only until October 26, this.\n").is_empty());
+        assert_eq!(
+            wording("AGENTS.md", "Only until October 26, 2026, this.\n").len(),
+            1
+        );
     }
 
     #[test]

@@ -55,7 +55,7 @@ You can lock the buttons and still answer a pairing: the presses for a code, and
 | --- | --- | --- |
 | Owner | Everything, including Wi-Fi, updates, restart, and removing people | |
 | Member | Feed, edit meals and settings, set the portion weight, lock the buttons, and invite members | Change Wi-Fi or time settings, restart, remove people, install updates, enroll update keys, upload or delete the meal call, read logs, or read the backup |
-| Server | The same as a member, except inviting | The same as a member, and invite anyone |
+| Server | The same as a member, except inviting and setting the portion weight | The same as a member, and invite anyone or set the portion weight |
 | Update key | Sign firmware, once an owner has enrolled it | Open a session |
 
 So the server has the owner's powers only if you adopt it with an owner's invite. That's the supported setup, since it's the only one where every route works, so expect a normal server to hold full authority. Treat its data directory like your own key. Removing someone closes their connection at once. It doesn't remove what they did from History.

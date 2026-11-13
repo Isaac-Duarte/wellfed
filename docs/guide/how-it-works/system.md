@@ -23,9 +23,9 @@ flowchart LR
 | Part | What it does | What it doesn't do |
 | --- | --- | --- |
 | The feeder | Runs meals by itself, drives the motor, checks every request, and keeps its plans and recent history | Talk to a cloud. It never downloads anything from the internet: an update has to be offered by a client |
-| The app | A screen for each thing the feeder offers, on Android: install, setup, meals, history, settings, people, updates and going back | Hold any meals or feeding logic of its own. It has no alerts yet: they're planned, and haven't been designed |
+| The app | A screen for each thing the feeder offers, on Android: install, setup, meals, history, settings, people, updates and going back. It notifies the feeder's alerts, and with a server it reaches the feeder away from home | Hold any meals or feeding logic of its own, or decide an alert: it shows what the feeder reports |
 | The CLI | The same actions from a Linux computer, with text for people and JSON for scripts | Run as a service. It's one command at a time |
-| The server | Adds long history, remote access, accounts, pets and food, and firmware releases. It's optional, and a heavy work in progress | Show a web page, or install from stock. The app doesn't connect to it yet |
+| The server | Adds long history, remote access, accounts, pets and food, and firmware releases. It's optional, and a heavy work in progress | Show a web page, or install from stock |
 
 The app and the CLI share their protocol code in Rust, so they can't disagree about what goes over the wire. Each phone or computer has its own key, and a feeder lists up to eight. [Who can talk to your feeder](access.md) covers those keys.
 
@@ -43,7 +43,7 @@ The feeder depends on two things in that list: the clock and its own flash. It d
 
 ## What keeps working
 
-The clock is the catch. The feeder has no battery-backed clock, and it keeps track of how far off it could be. Once that passes 2 minutes, the clock reads invalid and scheduled meals hold, rather than guess. That limit counts from the last time the clock was fully set, not from the last poll, so after Wi-Fi drops it can come any time up to about 6.6 hours later. Dispense still feeds on an unlocked panel, though a press can be refused while the feeder tries to rejoin.
+The clock is the catch. The feeder has no battery-backed clock, and it keeps track of how far off it could be. Once that passes 2 minutes, the clock reads invalid and scheduled meals hold, rather than guess. That limit counts from the last time the clock was fully set, not from the last poll, so after Wi-Fi drops it can come any time up to about 6.6 hours later. That's with the time from your router, which never teaches the feeder how fast its clock drifts; once your own syncs have taught it, the window grows to about a week ([clock](../../firmware/clock.md#the-clock)). Dispense still feeds on an unlocked panel, though a press can be refused while the feeder tries to rejoin.
 
 ```mermaid
 %% svg: system-outage.svg
@@ -84,15 +84,15 @@ The server can install a firmware release on a feeder already running Wellfed, a
 
 The server adopts a feeder with an invite, and stores everything the feeder reports. An owner's invite gives it the feeder's full authority, so protect its data directory as you would your own key. [Running the server](../../server/running.md) covers setting it up.
 
-The app will go through a server first once it can connect to one, and straight to the feeder when the server is down. That's a design, not something that runs today. A retry never crosses paths: a feed whose answer was lost on one path is never resent on the other, since that could feed twice. [Two paths, one feed](../../server/README.md#two-paths-one-feed) explains it.
+Once you sign in to a server, the app goes through it first, and straight to the feeder when the server is down. A retry never crosses paths: a feed whose answer was lost on one path is never resent on the other, since that could feed twice. [Two paths, one feed](../../server/README.md#two-paths-one-feed) explains it.
 
 ## Home Assistant
 
-Home Assistant pairs with the feeder by an invite, as a second phone does, and holds its own session. It needs no server and no code on the feeder. Its session runs in the same Rust as the app's and the CLI's, so each press goes out once under its own request id, and a feed whose answer was lost is reported, never resent. It's a proof of concept that has run against the simulated feeder only. [The integration](../../../src/integrations/homeassistant/README.md) covers what it offers and how to install it.
+Home Assistant pairs with the feeder by an invite, as a second phone does, and holds its own session, or goes through your server by signing in to it, with the same entities either way. It needs no code on the feeder. Its session runs in the same Rust as the app's and the CLI's, so each press goes out once under its own request id, and a feed whose answer was lost is reported, never resent. It's a proof of concept that has run against the simulated feeder only. [The integration](../../../src/integrations/homeassistant/README.md) covers what it offers and how to install it.
 
 ## What this doesn't protect against
 
-- **A long outage.** The feeder can only feed on schedule while it knows the time. A power cut with no time source, or a day without Wi-Fi, holds meals. No alert reaches you when that happens.
+- **A long outage.** The feeder can only feed on schedule while it knows the time. A power cut with no time source, or a day without Wi-Fi, holds meals. A feeder off your network can't send an alert either, so the app can only say it can't reach it.
 - **A wrong answer about the time.** The time from your router isn't authenticated. Someone on your network can shift a set clock only within its error bound, but whoever answers first can set a clock that has none. An owner's sync is the check. [Clock](../../firmware/clock.md#the-clock) has the limits.
 - **Losing the phone that holds the keys.** If every client is lost, you need the recovery hold at the feeder. If the phone held the only backup of stock, that's gone with it.
 - **An untested server.** Feeds, accounts and release installs through the server have run in simulation only. So has the server following the feeder's events alongside a phone that talks to it directly.

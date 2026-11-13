@@ -3,7 +3,7 @@
 This page lists what to check before you install Wellfed, what the install erases, and what could go wrong. It is for owners deciding whether to go ahead. Nothing here touches your feeder.
 
 > [!NOTE]
-> There's no public build to install yet: a release needs a signing key that doesn't exist yet. This page describes the install as it runs on our test feeder.
+> There's no public build to install yet: no release has been published. This page describes the install as it runs on our test feeder.
 
 ## Check your feeder
 
