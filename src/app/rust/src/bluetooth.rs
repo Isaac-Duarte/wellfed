@@ -46,6 +46,25 @@ mod desktop {
             .await
     }
 
+    /// The most a link's open may take: the radio's own open, then
+    /// `wellfed_ble::OPEN_LIMIT`, whose steps are bounded one by one. This
+    /// bounds the whole as well, since the stack's calls between those steps
+    /// have no bound of their own, and it ends before Dart stops waiting
+    /// (`DesktopBluetooth.openWait`, 90 s). A connection cut short by it
+    /// hangs up by itself.
+    const OPEN_BOUND: Duration = Duration::from_secs(75);
+
+    /// `opening`, or [`wellfed_ble::Error::OpenTimeout`] once `bound` has
+    /// passed.
+    async fn within<T>(
+        bound: Duration,
+        opening: impl Future<Output = Result<T, wellfed_ble::Error>>,
+    ) -> Result<T, wellfed_ble::Error> {
+        timeout(bound, opening)
+            .await
+            .map_err(|_| wellfed_ble::Error::OpenTimeout)?
+    }
+
     impl From<wellfed_ble::Error> for BridgeError {
         fn from(error: wellfed_ble::Error) -> Self {
             Self::new(ErrorKind::Bluetooth, error)
@@ -167,10 +186,11 @@ mod desktop {
 
     impl Link {
         pub(crate) async fn open(id: &str) -> Result<Self, BridgeError> {
-            // Each step is bounded, so this ends within the radio's open and
-            // `wellfed_ble::OPEN_LIMIT`, before Dart stops waiting.
-            let radio = radio().await?;
-            let (connection, notifications) = radio.open_heard(id).await?;
+            let (connection, notifications) = within(OPEN_BOUND, async {
+                let radio = radio().await?;
+                radio.open_heard(id).await
+            })
+            .await?;
             Ok(Self {
                 connection,
                 notifications: Mutex::new(Some(notifications)),
@@ -351,12 +371,20 @@ mod desktop {
             ));
         }
 
-        #[test]
-        fn an_open_ends_before_dart_stops_waiting() {
-            // `DesktopBluetooth.openWait` in Dart is 90 s, and its comment
-            // says 75 s: the radio's open, then `open_heard`.
-            let bounded = wellfed_ble::CONNECT_TIMEOUT + wellfed_ble::OPEN_LIMIT;
-            assert_eq!(bounded, Duration::from_secs(75));
+        #[tokio::test(start_paused = true)]
+        async fn an_open_with_a_step_that_never_answers_ends_at_its_bound() {
+            let started = tokio::time::Instant::now();
+
+            // A stack call that never returns, as one between the bounded
+            // steps could.
+            let stalled = within(OPEN_BOUND, std::future::pending::<Result<(), _>>()).await;
+
+            assert!(matches!(stalled, Err(wellfed_ble::Error::OpenTimeout)));
+            assert_eq!(started.elapsed(), OPEN_BOUND);
+            // Dart's `DesktopBluetooth.openWait` is 90 s.
+            assert!(OPEN_BOUND < Duration::from_secs(90));
+            // Every bounded step fits inside it.
+            assert!(wellfed_ble::CONNECT_TIMEOUT + wellfed_ble::OPEN_LIMIT <= OPEN_BOUND);
         }
 
         #[tokio::test]

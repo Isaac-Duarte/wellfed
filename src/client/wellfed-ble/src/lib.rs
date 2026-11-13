@@ -78,6 +78,8 @@ pub enum Error {
     Off,
     #[error("this computer's Bluetooth did not say what state it is in")]
     State(#[source] btleplug::Error),
+    #[error("the scan for feeders did not start in time")]
+    ScanTimeout,
     #[error("the scan for feeders failed")]
     Scan(#[source] btleplug::Error),
     #[error(

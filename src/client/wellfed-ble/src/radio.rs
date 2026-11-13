@@ -35,7 +35,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 use wellfed_client::setup::{CONTROL, SERVICE};
 
-use crate::shared::{Discovery, Scans, Sightings, look_again};
+use crate::shared::{Discovery, Links, Scans, Sightings, look_again};
 use crate::{
     Address, CLOSE_TIMEOUT, CONNECT_TIMEOUT, Control, Error, FIND_TIMEOUT, Notifications,
     RESCAN_WAIT,
@@ -71,6 +71,7 @@ pub struct Radio {
     adapter: Adapter,
     sightings: Arc<StdMutex<Sightings>>,
     scans: Arc<Scans<AdapterDiscovery>>,
+    links: Arc<StdMutex<Links>>,
 }
 
 impl Radio {
@@ -87,14 +88,20 @@ impl Radio {
             .ok_or(Error::NoAdapter)?;
 
         let sightings = Arc::new(StdMutex::new(Sightings::default()));
+        let scans = Arc::new(Scans::new(AdapterDiscovery {
+            adapter: adapter.clone(),
+        }));
         let events = adapter.events().await.map_err(Error::State)?;
-        tokio::spawn(record_sightings(events, Arc::downgrade(&sightings)));
+        tokio::spawn(follow_adapter(
+            events,
+            Arc::downgrade(&sightings),
+            Arc::downgrade(&scans),
+        ));
         Ok(Self {
-            scans: Arc::new(Scans::new(AdapterDiscovery {
-                adapter: adapter.clone(),
-            })),
             adapter,
             sightings,
+            scans,
+            links: Arc::new(StdMutex::new(Links::default())),
         })
     }
 
@@ -185,25 +192,50 @@ impl Radio {
     }
 
     /// Connect to `feeder`, find its control characteristic and turn its
-    /// notifications on. A connection that fails partway is hung up.
+    /// notifications on. A connection that fails partway, or whose caller
+    /// stops waiting for it, is hung up, unless a newer one to the same
+    /// feeder has begun: the stack has one link per device, which both share.
     pub async fn connect(&self, feeder: &Heard) -> Result<(Connection, Notifications), Error> {
         let peripheral = feeder.peripheral.clone();
+        let hang_up = HangUp::claim(&self.links, &peripheral);
         // Before connecting, so a drop during the setup is not missed.
         let events = self.adapter.events().await.map_err(Error::State)?;
-        let opened = open(&peripheral, events).await;
-        if opened.is_err() {
-            let _ = timeout(CLOSE_TIMEOUT, peripheral.disconnect()).await;
+        match open(&peripheral, events).await {
+            Ok((control, notifications)) => {
+                let connection = Connection {
+                    peripheral,
+                    control,
+                    hang_up,
+                };
+                Ok((connection, notifications))
+            }
+            Err(error) => {
+                hang_up.now().await;
+                Err(error)
+            }
         }
-        opened
     }
 }
 
-/// Note when each device is heard advertising, until the radio goes.
-async fn record_sightings(
+/// Follow the adapter until the radio goes: note when each device is heard
+/// advertising, and start discovery again when the adapter comes back on,
+/// since turning it off ends discovery on every stack while scans still
+/// hold it.
+async fn follow_adapter(
     mut events: Pin<Box<dyn Stream<Item = CentralEvent> + Send>>,
     sightings: Weak<StdMutex<Sightings>>,
+    scans: Weak<Scans<AdapterDiscovery>>,
 ) {
     while let Some(event) = events.next().await {
+        if let CentralEvent::StateUpdate(CentralState::PoweredOn) = event {
+            let Some(scans) = scans.upgrade() else { return };
+            scans.resume().await;
+            continue;
+        }
+        // Read on macOS and Windows alone (`Scan::advertising`).
+        if cfg!(target_os = "linux") {
+            continue;
+        }
         let id = match event {
             CentralEvent::DeviceDiscovered(id)
             | CentralEvent::DeviceUpdated(id)
@@ -229,28 +261,32 @@ struct AdapterDiscovery {
 }
 
 impl Discovery for AdapterDiscovery {
+    /// Bounded, since every other scan waits on it.
     async fn start(&self) -> Result<(), Error> {
         let services = if cfg!(target_os = "linux") {
             Vec::new()
         } else {
             vec![Uuid::from_u128(SERVICE)]
         };
-        self.adapter
-            .start_scan(ScanFilter { services })
-            .await
-            .map_err(Error::Scan)
+        timeout(
+            CONNECT_TIMEOUT,
+            self.adapter.start_scan(ScanFilter { services }),
+        )
+        .await
+        .map_err(|_| Error::ScanTimeout)?
+        .map_err(Error::Scan)
     }
 
     async fn stop(&self) {
-        // A stack that fails to stop has nothing more to say.
-        let _ = self.adapter.stop_scan().await;
+        // A stack that fails to stop, or doesn't say, has nothing more to say.
+        let _ = timeout(CONNECT_TIMEOUT, self.adapter.stop_scan()).await;
     }
 }
 
 async fn open(
     peripheral: &Peripheral,
     events: Pin<Box<dyn Stream<Item = CentralEvent> + Send>>,
-) -> Result<(Connection, Notifications), Error> {
+) -> Result<(Characteristic, Notifications), Error> {
     if !peripheral.is_connected().await.map_err(Error::Connect)? {
         timeout(CONNECT_TIMEOUT, peripheral.connect())
             .await
@@ -285,13 +321,7 @@ async fn open(
             (notification.uuid == wanted).then_some(notification.value)
         })
         .take_until(dropped);
-    let connection = Connection {
-        peripheral: peripheral.clone(),
-        control,
-        runtime: Handle::try_current().ok(),
-        closed: AtomicBool::new(false),
-    };
-    Ok((connection, Box::pin(notifications)))
+    Ok((control, Box::pin(notifications)))
 }
 
 fn control(peripheral: &Peripheral) -> Result<Characteristic, Error> {
@@ -443,24 +473,71 @@ impl Heard {
 pub struct Connection {
     peripheral: Peripheral,
     control: Characteristic,
-    runtime: Option<Handle>,
-    closed: AtomicBool,
+    hang_up: HangUp,
 }
 
 impl Connection {
-    /// Hang up, waiting at most [`CLOSE_TIMEOUT`].
+    /// Hang up, waiting at most [`CLOSE_TIMEOUT`], unless a newer
+    /// connection to the same feeder has begun since.
     pub async fn disconnect(&self) {
-        self.closed.store(true, Ordering::SeqCst);
-        let _ = timeout(CLOSE_TIMEOUT, self.peripheral.disconnect()).await;
+        self.hang_up.now().await;
     }
 }
 
-impl Drop for Connection {
-    fn drop(&mut self) {
-        if self.closed.load(Ordering::SeqCst) {
-            return;
+/// One connection's hang-up, which happens once: when asked, or when it is
+/// dropped unasked (a connection whose caller stopped waiting, or that
+/// nobody holds), on the runtime it began on. Only the newest connection
+/// to a feeder hangs up: the stacks keep one link per device, so an older
+/// one hanging up late would cut the newer one.
+struct HangUp {
+    peripheral: Peripheral,
+    links: Arc<StdMutex<Links>>,
+    id: String,
+    claim: u64,
+    runtime: Option<Handle>,
+    armed: AtomicBool,
+}
+
+impl HangUp {
+    fn claim(links: &Arc<StdMutex<Links>>, peripheral: &Peripheral) -> Self {
+        let id = peripheral.id().to_string();
+        let claim = links
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .claim(&id);
+        Self {
+            peripheral: peripheral.clone(),
+            links: links.clone(),
+            id,
+            claim,
+            runtime: Handle::try_current().ok(),
+            armed: AtomicBool::new(true),
         }
-        if let Some(runtime) = &self.runtime {
+    }
+
+    /// Whether this is the one to hang up: armed, and still the newest.
+    fn take(&self) -> bool {
+        self.armed.swap(false, Ordering::SeqCst)
+            && self
+                .links
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .release(&self.id, self.claim)
+    }
+
+    async fn now(&self) {
+        if self.take() {
+            let _ = timeout(CLOSE_TIMEOUT, self.peripheral.disconnect()).await;
+        }
+    }
+}
+
+impl Drop for HangUp {
+    fn drop(&mut self) {
+        let Some(runtime) = self.runtime.clone() else {
+            return;
+        };
+        if self.take() {
             let peripheral = self.peripheral.clone();
             runtime.spawn(async move {
                 let _ = timeout(CLOSE_TIMEOUT, peripheral.disconnect()).await;

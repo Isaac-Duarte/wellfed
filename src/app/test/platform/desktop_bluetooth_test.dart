@@ -58,7 +58,7 @@ class _FakeWatch extends _FakeHandle<AdapterPower> implements PowerWatch {
 
 /// A connected feeder through the bridge: what was written, and the
 /// notifications the test sends.
-class _FakeLink with FakeOpaque implements BluetoothLink {
+class _FakeLink implements BluetoothLink {
   // ignore: close_sinks, the test ends with it
   final notified = StreamController<Uint8List>();
   final written = <List<int>>[];
@@ -80,6 +80,14 @@ class _FakeLink with FakeOpaque implements BluetoothLink {
 
   @override
   Future<void> close() async => closes++;
+
+  int disposals = 0;
+
+  @override
+  void dispose() => disposals++;
+
+  @override
+  bool get isDisposed => disposals > 0;
 }
 
 const _broken = BridgeError(kind: ErrorKind.bluetooth, message: 'the feeder dropped the link');
@@ -190,6 +198,22 @@ void main() {
         [9, 8],
       ]);
       expect(link.closes, 1);
+    });
+
+    testWidgets('a link that opens after the wait is hung up as it comes', (tester) async {
+      final late = Completer<BluetoothLink>();
+      final link = _FakeLink();
+      final radio = DesktopBluetooth(openLink: (id) => late.future);
+      Object? failed;
+
+      unawaited(radio.open(feederNearby('feeder-1')).then<void>((_) {}, onError: (Object error) => failed = error));
+      await tester.pump(DesktopBluetooth.openWait);
+      expect(failed, isA<TimeoutException>());
+
+      late.complete(link);
+      await tester.pump();
+      expect(link.closes, 1);
+      expect(link.disposals, 1);
     });
 
     testWidgets('a write the bridge never answers gives up after its own wait', (tester) async {

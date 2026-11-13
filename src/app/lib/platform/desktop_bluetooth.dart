@@ -40,7 +40,7 @@ class DesktopBluetooth {
   /// feeder the stack forgot, connecting, discovering its services and
   /// subscribing, each bounded), so its own error comes first; this only
   /// catches a bridge that never answers. A link it opens after this is
-  /// hung up when it is dropped.
+  /// hung up as it comes.
   static const openWait = Duration(seconds: 90);
 
   /// How long one write may take. The bridge bounds it at
@@ -99,13 +99,25 @@ class DesktopBluetooth {
 
   /// Connect to `device`, a feeder [scan] heard, with notifications on.
   Future<BleLink> open(DiscoveredDevice device) async {
+    final Future<BluetoothLink> opening = openLink(device.id);
     final BluetoothLink link;
     try {
-      link = await openLink(device.id).timeout(openWait);
+      link = await opening.timeout(openWait);
     } on BridgeError catch (error) {
       throw BluetoothFailure(error.message);
+    } on TimeoutException {
+      // Nobody will use a link that opens after this: hang it up as it
+      // comes rather than when it is collected. The bridge hangs up only the
+      // newest link to a feeder, so a retry's own link stays.
+      unawaited(opening.then(_hangUp, onError: (Object _) {}));
+      rethrow;
     }
     return DesktopLink(link);
+  }
+
+  static Future<void> _hangUp(BluetoothLink link) async {
+    await link.close();
+    link.dispose();
   }
 
   static DiscoveredDevice _device(HeardFeeder feeder) => DiscoveredDevice(

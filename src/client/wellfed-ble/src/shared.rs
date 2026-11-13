@@ -25,7 +25,11 @@ pub(crate) struct Sightings {
 }
 
 impl Sightings {
+    /// `id` was heard `at`. Devices not heard lately are let go here, so
+    /// the passers-by an unfiltered scan hears don't pile up.
     pub(crate) fn heard(&mut self, id: String, at: Instant) {
+        self.last
+            .retain(|_, last| at.saturating_duration_since(*last) <= RECENT);
         self.last.insert(id, at);
     }
 
@@ -34,6 +38,33 @@ impl Sightings {
         self.last
             .get(id)
             .is_some_and(|at| now.saturating_duration_since(*at) <= RECENT)
+    }
+}
+
+/// Which connection to each device is the newest, by the stack's id for it:
+/// the stacks keep one link per device, which every connection to it
+/// shares, so only the newest may hang it up.
+#[derive(Default)]
+pub(crate) struct Links {
+    newest: HashMap<String, u64>,
+    claims: u64,
+}
+
+impl Links {
+    /// A new connection to `id`, now the newest.
+    pub(crate) fn claim(&mut self, id: &str) -> u64 {
+        self.claims += 1;
+        self.newest.insert(id.to_owned(), self.claims);
+        self.claims
+    }
+
+    /// Whether `claim` is still the newest to `id`, which it then lets go.
+    pub(crate) fn release(&mut self, id: &str, claim: u64) -> bool {
+        let newest = self.newest.get(id) == Some(&claim);
+        if newest {
+            self.newest.remove(id);
+        }
+        newest
     }
 }
 
@@ -69,6 +100,16 @@ impl<D: Discovery> Scans<D> {
         }
         *running += 1;
         Ok(())
+    }
+
+    /// Start discovery again for the scans still running: turning the
+    /// adapter off ended it under them. A start that fails leaves them
+    /// hearing nothing until the next time it comes on.
+    pub(crate) async fn resume(&self) {
+        let running = self.running.lock().await;
+        if *running > 0 {
+            let _ = self.discovery.start().await;
+        }
     }
 
     /// One scan fewer; discovery stops with the last.
@@ -188,6 +229,51 @@ mod tests {
         scans.join().await.unwrap();
         assert_eq!(counted.stops.load(Ordering::SeqCst), 1);
         assert_eq!(counted.starts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn discovery_starts_again_when_bluetooth_comes_back_on_under_a_scan() {
+        let counted = Arc::new(Counted::default());
+        let scans = Scans::new(counted.clone());
+
+        // Nothing held: coming back on starts nothing.
+        scans.resume().await;
+        assert_eq!(counted.starts.load(Ordering::SeqCst), 0);
+
+        scans.join().await.unwrap();
+        // Bluetooth went off, which ended discovery, and came back on.
+        scans.resume().await;
+        assert_eq!(counted.starts.load(Ordering::SeqCst), 2);
+
+        scans.leave().await;
+        assert_eq!(counted.stops.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn only_the_newest_connection_to_a_feeder_hangs_it_up() {
+        let mut links = Links::default();
+        let late = links.claim("feeder");
+        let retry = links.claim("feeder");
+        let other = links.claim("another");
+
+        assert!(
+            !links.release("feeder", late),
+            "the retry holds the link now"
+        );
+        assert!(links.release("feeder", retry));
+        assert!(!links.release("feeder", retry), "a hang-up happens once");
+        assert!(links.release("another", other));
+    }
+
+    #[test]
+    fn sightings_let_go_of_devices_not_heard_lately() {
+        let start = Instant::now();
+        let mut sightings = Sightings::default();
+        sightings.heard("passer-by".into(), start);
+        sightings.heard("feeder".into(), start + RECENT * 2);
+
+        assert_eq!(sightings.last.len(), 1);
+        assert!(sightings.recent("feeder", start + RECENT * 2));
     }
 
     #[tokio::test]
