@@ -1136,6 +1136,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void dco_decode_unit(dynamic raw);
 
   @protected
+  UnjoinedFeeder dco_decode_unjoined_feeder(dynamic raw);
+
+  @protected
   UnknownEnd dco_decode_unknown_end(dynamic raw);
 
   @protected
@@ -2340,6 +2343,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_decode_unit(SseDeserializer deserializer);
+
+  @protected
+  UnjoinedFeeder sse_decode_unjoined_feeder(SseDeserializer deserializer);
 
   @protected
   UnknownEnd sse_decode_unknown_end(SseDeserializer deserializer);
@@ -3841,6 +3847,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_unjoined_feeder(
+    UnjoinedFeeder self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_unknown_end(UnknownEnd self, SseSerializer serializer);

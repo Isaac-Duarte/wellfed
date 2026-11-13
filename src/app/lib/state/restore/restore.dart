@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/platform/setup_link.dart' show BluetoothPower;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/restore.dart';
 import 'package:wellfed/state/install/install_state.dart' show CheckState;
@@ -59,6 +60,11 @@ class RestoreFlow extends ChangeNotifier {
   int _looks = 0;
   StreamSubscription<void>? _setup;
   bool _sighted = false;
+
+  /// This phone's Bluetooth is off, so a look can't hear a feeder in setup
+  /// mode, and its finding nothing says nothing.
+  bool _bluetoothOff = false;
+  StreamSubscription<BluetoothPower>? _power;
 
   /// How long a feeder has to come back: a restart, then its join.
   static const lookFor = Duration(minutes: 3);
@@ -263,6 +269,8 @@ class RestoreFlow extends ChangeNotifier {
   /// its people in place, or Bluetooth setup with them cleared; stock does
   /// neither. This reads and listens, and offers the feeder nothing.
   void _startLook() {
+    // A run that ends after the owner left has no screen to show a look on.
+    if (_disposed) return;
     _stopLook();
     _looks++;
     _look = RestoreLook.looking;
@@ -270,6 +278,33 @@ class RestoreFlow extends ChangeNotifier {
     _lookEnd = Timer(lookFor, () => _looked(_sighted ? RestoreLook.sighted : RestoreLook.nothing));
     _setup = _ports.setupHeard().listen((_) => _looked(RestoreLook.setup), onError: (Object _) {});
     unawaited(_locate(_looks));
+    _watchBluetooth();
+  }
+
+  /// Ask Android to turn this phone's Bluetooth on.
+  Future<void> turnOnBluetooth() => _ports.turnOnBluetooth();
+
+  /// Follow this phone's Bluetooth while a look may need it. Off at any point,
+  /// the look could miss a feeder in setup mode, so its finding nothing says
+  /// nothing: the screen says Bluetooth is off. Back on, a look without a
+  /// verdict it could trust starts again from the start.
+  void _watchBluetooth() {
+    if (_power != null) return;
+    _power = _ports.bluetooth().listen(
+      (power) {
+        final bool wasOff = _bluetoothOff;
+        _bluetoothOff = power == BluetoothPower.off;
+        if (wasOff && !_bluetoothOff && _stage == _Stage.uncertain) {
+          if (_look case RestoreLook.looking || RestoreLook.nothing || RestoreLook.sighted) _startLook();
+        }
+        _changed();
+      },
+      onError: (Object _) {
+        // A plugin that can no longer say leaves the look's own verdict shown.
+        _bluetoothOff = false;
+        _changed();
+      },
+    );
   }
 
   /// One round of look `look`, which a later look's start leaves to lapse:
@@ -332,7 +367,12 @@ class RestoreFlow extends ChangeNotifier {
       holdRefused: _holdRefused,
     ),
     _Stage.done => RestoreDone(version: _version),
-    _Stage.uncertain => RestoreUncertain(why: _uncertain ?? UncertainWhy.failed, detail: _detail, look: _look),
+    _Stage.uncertain => RestoreUncertain(
+      why: _uncertain ?? UncertainWhy.failed,
+      detail: _detail,
+      look: _look,
+      bluetoothOff: _bluetoothOff,
+    ),
     _Stage.stopped => RestoreStopped(stop: _stop ?? RestoreStop.other, detail: _detail),
   };
 
@@ -340,6 +380,7 @@ class RestoreFlow extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _stopLook();
+    unawaited(_power?.cancel());
     if (_run case final run?) {
       // Its end does the rest: the key goes once the run can no longer use it.
       run.stop();

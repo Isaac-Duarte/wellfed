@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/restore/restore_screen.dart';
@@ -40,6 +42,11 @@ class RestoreUncertainPage extends StatelessWidget {
             'that one, and $name may be on the original firmware: check in the '
             "vendor's app.",
       ),
+      RestoreLook.nothing when state.bluetoothOff => (
+        'Bluetooth is off',
+        "$name didn't show up on your Wi-Fi. With Bluetooth off, a feeder waiting for setup can't "
+            "be heard, so this can't tell yet. Turn it on, and it looks again.",
+      ),
       RestoreLook.nothing => (
         "It's probably on the original firmware",
         "$name didn't show up on your Wi-Fi or over Bluetooth. Check in the "
@@ -52,7 +59,10 @@ class RestoreUncertainPage extends StatelessWidget {
       body: body,
       content: [
         switch (state.look) {
+          RestoreLook.looking when state.bluetoothOff => const Searching('Looking for it on your Wi-Fi…'),
           RestoreLook.looking => const Searching('Looking for it on your Wi-Fi and over Bluetooth…'),
+          // Its Reset advice holds only once Bluetooth could have heard the feeder.
+          RestoreLook.nothing when state.bluetoothOff => const SizedBox.shrink(),
           RestoreLook.wellfed || RestoreLook.sighted => const SizedBox.shrink(),
           RestoreLook.setup => const Notice(
             tone: Tone.warning,
@@ -73,6 +83,8 @@ class RestoreUncertainPage extends StatelessWidget {
         if (state.detail case final detail?) ...[const SizedBox(height: Space.s3), RestoreSmall(detail)],
       ],
       actions: [
+        if (state.bluetoothOff)
+          FilledButton(onPressed: () => unawaited(flow.turnOnBluetooth()), child: const Text('Turn on Bluetooth')),
         if (state.look == RestoreLook.wellfed) FilledButton(onPressed: flow.again, child: const Text('Restore again')),
         if (state.look == RestoreLook.setup)
           FilledButton(onPressed: () => context.push('/setup'), child: const Text('Set it up')),

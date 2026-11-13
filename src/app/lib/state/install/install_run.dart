@@ -9,6 +9,12 @@ extension InstallRunning on InstallFlow {
     if (paths == null || _run != null) return;
     final bool forget = _forget;
     _forget = false;
+    final UnjoinedFeeder unjoined = _settingUpAgain
+        ? UnjoinedFeeder.setUpAgain
+        : _keepWaiting
+        ? UnjoinedFeeder.waitForPick
+        : UnjoinedFeeder.wait;
+    _keepWaiting = false;
     final InstallRun run = _ports.newRun(
       InstallSpec(
         start: start,
@@ -23,7 +29,7 @@ extension InstallRunning on InstallFlow {
         dataDir: paths.data,
         forgetEnrollment: forget,
         feeder: _pickedFeeder,
-        setupAgain: _settingUpAgain,
+        unjoined: unjoined,
       ),
     );
     _run = run;
@@ -98,11 +104,25 @@ extension InstallRunning on InstallFlow {
       case InstallAsk_OpenLink():
         _stage = InstallStage.claim;
         _searchBluetooth();
+        // Nothing can be found with Bluetooth off. The run asks again every few
+        // seconds, so the screen only has to say to turn it on.
+        final BluetoothPower power = await bluetoothNow(_ports.bluetooth());
+        // The run ended, or the screen went, while the plugin answered: the
+        // ask has nobody to answer, and nothing is left to watch for.
+        if (_disposed || !identical(_run, run)) return;
+        if (power == BluetoothPower.off) {
+          _watchBluetooth();
+          answer(const InstallAnswer.failed(reason: "this phone's Bluetooth is off"));
+          return;
+        }
         final InstallLink link;
         try {
           link = await _ports.openLink(
             onBytes: (bytes) => run.notified(bytes: bytes),
-            onLost: run.linkLost,
+            onLost: () {
+              run.linkLost();
+              unawaited(_lostWithBluetooth(run));
+            },
           );
         } on Object catch (error) {
           answer(InstallAnswer.failed(reason: '$error'));
@@ -275,6 +295,39 @@ extension InstallRunning on InstallFlow {
         }
     }
     _notify();
+  }
+
+  /// A link `run` lost because this phone's Bluetooth went off says so, as a
+  /// search with it off does: the owner turns it on, not moves closer.
+  Future<void> _lostWithBluetooth(InstallRun run) async {
+    final bool off = await bluetoothOffSoon(_ports.bluetooth());
+    if (!off || _disposed || !identical(_run, run)) return;
+    _watchBluetooth();
+    _notify();
+  }
+
+  /// Say Bluetooth is off until it comes on.
+  void _watchBluetooth() {
+    _bluetoothOff = true;
+    if (_power != null) return;
+    _power = _ports.bluetooth().listen(
+      (power) {
+        _bluetoothOff = power == BluetoothPower.off;
+        if (!_bluetoothOff) {
+          unawaited(_power?.cancel());
+          _power = null;
+        }
+        _notify();
+      },
+      // A plugin that can no longer say can't say it is still off: the search
+      // that follows says what is wrong.
+      onError: (Object _) {
+        _bluetoothOff = false;
+        unawaited(_power?.cancel());
+        _power = null;
+        _notify();
+      },
+    );
   }
 
   /// A feeder still linked does not advertise, so a pick-up would never find

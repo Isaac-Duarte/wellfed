@@ -16,6 +16,7 @@ use wellfed_app_bridge::api::install::PendingInstall;
 use wellfed_app_bridge::api::install::{
     ImageCheck, ImageProvisioning, InstallAnswer, InstallAsk, InstallEnd, InstallEvent,
     InstallSpec, InstallStart, InstallUpdate, ListenFailure, ListenUpdate, Resume, StopCase,
+    UnjoinedFeeder,
 };
 use wellfed_app_bridge::api::model::SetupRefusal;
 use wellfed_app_bridge::api::setup::WifiCredentials;
@@ -155,7 +156,7 @@ impl Fixture {
             data_dir: path("install"),
             forget_enrollment: false,
             feeder: None,
-            setup_again: false,
+            unjoined: UnjoinedFeeder::Wait,
         }
     }
 }
@@ -1156,7 +1157,7 @@ fn a_run_that_cannot_start_says_why_and_touches_nothing() {
         // A new Wi-Fi for a feeder that never joined needs one too.
         let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.30");
         spec.home = None;
-        spec.setup_again = true;
+        spec.unjoined = UnjoinedFeeder::SetUpAgain;
         let (_run, mut heard) = started(&fixture, spec);
         let InstallEnd::Stopped { case, resume, .. } = ended(&mut heard).await else {
             panic!("a run with no Wi-Fi started");
@@ -1292,7 +1293,7 @@ fn a_new_wifi_goes_through_setup_again_for_a_feeder_that_never_joined() {
         let fixture = Fixture::new(Provisioning::Consumer);
         let feeder = Keypair::from_secret([0x71; 32]);
         let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.33");
-        spec.setup_again = true;
+        spec.unjoined = UnjoinedFeeder::SetUpAgain;
         paired_unjoined(&spec, feeder.public());
         let record = fixture.spec(InstallStart::Bank0, "127.41.8.33");
 
@@ -1320,7 +1321,7 @@ fn setup_again_on_another_feeder_stops_and_keeps_the_record() {
         let ours = Keypair::from_secret([0x71; 32]);
         let other = Keypair::from_secret([0x72; 32]);
         let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.35");
-        spec.setup_again = true;
+        spec.unjoined = UnjoinedFeeder::SetUpAgain;
         paired_unjoined(&spec, ours.public());
         let record = fixture.spec(InstallStart::Bank0, "127.41.8.35");
 
@@ -1417,6 +1418,91 @@ async fn known_feeder_is_left_alone(ip: &str) {
 #[test]
 fn a_known_feeder_that_answers_gets_nothing_unless_picked() {
     local(known_feeder_is_left_alone("127.41.8.56"));
+}
+
+/// A feeder this phone paired and never saw join, with no record to name it,
+/// goes to the run as the owner's pick. Picked from a list, a feeder that does not
+/// answer stops the run at once; when the owner keeps waiting for the one this
+/// phone paired, the run waits for it to join, as it would for a record's. Once it
+/// joins it is still a pick: it takes no record for the device stock enrolled,
+/// whose trial a record would close on its word.
+#[test]
+fn keeping_waiting_for_a_paired_feeder_with_no_record_waits_for_it() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let keys = Keypair::from_secret([0x51; 32]);
+        let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
+        let hex = wellfed_session::hex::Lower(&sim.identity).to_string();
+        let spec = |unjoined| {
+            let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.60");
+            spec.known_feeders = vec![KnownFeeder {
+                identity: hex.clone(),
+                name: "Kitchen".into(),
+                address: None,
+                manual_address: None,
+            }];
+            spec.feeder = Some(hex.clone());
+            spec.unjoined = unjoined;
+            spec
+        };
+        let data = Path::new(&spec(UnjoinedFeeder::Wait).data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        with_enrolled(&data, "AF_TEST");
+        let record = data.join("backups/installing.json");
+
+        let (run, mut heard) = started(&fixture, spec(UnjoinedFeeder::Wait));
+        let end = loop {
+            match next(&mut heard).await {
+                InstallUpdate::Ask { id, .. } => {
+                    run.answer(id, InstallAnswer::Located { address: None });
+                }
+                InstallUpdate::Ended { end } => break end,
+                InstallUpdate::Event { .. } => {}
+            }
+        };
+        let InstallEnd::Stopped { case, .. } = end else {
+            panic!("{end:?}");
+        };
+        assert_eq!(case, StopCase::NotAnswering);
+
+        let (run, mut heard) = started(&fixture, spec(UnjoinedFeeder::WaitForPick));
+        let mut joining = false;
+        loop {
+            match next(&mut heard).await {
+                // Not on the network until the run has said it waits.
+                InstallUpdate::Ask { id, .. } => {
+                    let address = joining.then(|| sim.address.to_string());
+                    run.answer(id, InstallAnswer::Located { address });
+                }
+                InstallUpdate::Event {
+                    event:
+                        InstallEvent::Paired {
+                            identity,
+                            rebooting,
+                            ..
+                        },
+                } => {
+                    assert_eq!(wellfed_session::hex::Lower(&identity).to_string(), hex);
+                    assert!(rebooting, "waited for as one still joining");
+                    joining = true;
+                }
+                InstallUpdate::Event {
+                    event: InstallEvent::Joined { .. },
+                } => break,
+                InstallUpdate::Ended { end } => panic!("{end:?}"),
+                InstallUpdate::Event { .. } => {}
+            }
+        }
+        assert!(joining, "joined before the run waited");
+        assert!(
+            !record.exists(),
+            "a pick that joined took the device's record"
+        );
+        run.stop();
+        ended(&mut heard).await;
+        assert!(!record.exists());
+        sim.stop().await;
+    });
 }
 
 /// Forgetting leaves no record, and a feeder this phone knows on bank 0 is still
@@ -1624,8 +1710,20 @@ fn a_pick_up_that_reads_the_build_lets_the_next_install_ask() {
 /// no trial on its word, unless the record already names it.
 #[test]
 fn a_picked_feeder_leaves_another_devices_record_and_trial() {
+    picked_feeder_leaves_the_record(Provisioning::Consumer);
+}
+
+/// The same on a bench image, which pairs through the recovery window: a wrong
+/// pick that goes on to the end leaves the record of the feeder the install
+/// really went to, for a later pick-up to match.
+#[test]
+fn a_picked_bench_feeder_leaves_another_devices_record_and_trial() {
+    picked_feeder_leaves_the_record(Provisioning::Bench);
+}
+
+fn picked_feeder_leaves_the_record(provisioning: Provisioning) {
     local(async {
-        let fixture = Fixture::new(Provisioning::Consumer);
+        let fixture = Fixture::new(provisioning);
         let keys = Keypair::from_secret([0x51; 32]);
         let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
         let hex = wellfed_session::hex::Lower(&sim.identity).to_string();
@@ -1685,6 +1783,69 @@ fn a_picked_feeder_leaves_another_devices_record_and_trial() {
         paired(&data, "AF_TEST", &sim.identity);
         pick_up().await;
         assert!(!wellfed_install::stock::open_request(&config));
+        sim.stop().await;
+    });
+}
+
+/// A bench feeder the owner picked whose key it no longer knows pairs through its
+/// recovery window. The code proves the owner is at that feeder's panel, not that
+/// stock's install went to it, so the record naming the device's real feeder stays.
+#[test]
+fn a_picked_bench_feeder_paired_by_its_window_leaves_the_record() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Bench);
+        let sim = Running::start(&Flash::memory(), None).await;
+        let hex = wellfed_session::hex::Lower(&sim.identity).to_string();
+        let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.61");
+        spec.known_feeders = vec![KnownFeeder {
+            identity: hex.clone(),
+            name: "Kitchen".into(),
+            address: Some(sim.address.to_string()),
+            manual_address: None,
+        }];
+        spec.feeder = Some(hex.clone());
+        let data = Path::new(&spec.data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        with_enrolled(&data, "AF_TEST");
+        let replacement = [0x77; 32];
+        paired(&data, "AF_TEST", &replacement);
+        let recorded = || recorded_identity(&fixture.spec(InstallStart::Bank0, "127.41.8.61"));
+        let (run, mut heard) = started(&fixture, spec);
+
+        let paired_with = loop {
+            match next(&mut heard).await {
+                InstallUpdate::Ask {
+                    id,
+                    ask: InstallAsk::OpenRecoveryWindow,
+                } => {
+                    sim.type_line("hold lock").unwrap();
+                    sim.type_line("hold lock+dispense").unwrap();
+                    run.answer(id, InstallAnswer::Done);
+                }
+                InstallUpdate::Ask { id, .. } => {
+                    run.answer(id, InstallAnswer::Located { address: None });
+                }
+                InstallUpdate::Event {
+                    event: InstallEvent::Code { code, .. },
+                } => {
+                    let presses: Vec<String> = code.iter().map(u8::to_string).collect();
+                    sim.type_line(&format!("press {}", presses.join(" ")))
+                        .unwrap();
+                }
+                InstallUpdate::Event {
+                    event: InstallEvent::Paired { identity, .. },
+                } => break identity,
+                InstallUpdate::Ended { end } => panic!("{end:?}"),
+                InstallUpdate::Event { .. } => {}
+            }
+        };
+        let theirs = wellfed_session::hex::Lower(&replacement).to_string();
+        assert_eq!(paired_with, sim.identity.to_vec());
+        assert_eq!(recorded(), theirs);
+
+        run.stop();
+        ended(&mut heard).await;
+        assert_eq!(recorded(), theirs);
         sim.stop().await;
     });
 }

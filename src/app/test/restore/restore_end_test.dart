@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/restore.dart';
 import 'package:wellfed/state/restore/restore.dart';
@@ -122,6 +123,68 @@ void main() {
       expect(find.text("It's probably on the original firmware"), findsOneWidget);
       expect(find.textContaining('hold Reset', findRichText: true), findsOneWidget);
     });
+
+    testWidgets('with Bluetooth off, nothing found is no verdict, and the look starts again once it is on', (
+      tester,
+    ) async {
+      final ports = FakeRestorePorts()..power = BluetoothPower.off;
+      await uncertain(tester, ports);
+      await tester.pump();
+      expect(find.text('Looking for it on your Wi-Fi…'), findsOneWidget);
+
+      await tester.pump(RestoreFlow.lookFor);
+      await tester.pump();
+      expect(find.text('Bluetooth is off'), findsOneWidget);
+      expect(find.text("It's probably on the original firmware"), findsNothing);
+      expect(find.textContaining('hold Reset', findRichText: true), findsNothing);
+
+      await tester.tap(find.text('Turn on Bluetooth'));
+      await tester.pump();
+      expect(ports.turnOnAsks, 1);
+      ports.setPower(BluetoothPower.on);
+      await tester.pump();
+      expect(find.text('Looking for it on your Wi-Fi and over Bluetooth…'), findsOneWidget);
+      ports.heard.add(null);
+      await tester.pump();
+      expect(find.text('Set it up'), findsOneWidget);
+    });
+
+    testWidgets('Bluetooth going off during the look is no verdict either, and back on it looks again', (tester) async {
+      final ports = FakeRestorePorts();
+      await uncertain(tester, ports);
+      await tester.pump();
+      expect(find.text('Looking for it on your Wi-Fi and over Bluetooth…'), findsOneWidget);
+
+      ports.setPower(BluetoothPower.off);
+      await tester.pump(RestoreFlow.lookFor);
+      await tester.pump();
+      expect(find.text('Bluetooth is off'), findsOneWidget);
+      expect(find.textContaining('hold Reset', findRichText: true), findsNothing);
+
+      ports.setPower(BluetoothPower.on);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Looking for it on your Wi-Fi and over Bluetooth…'), findsOneWidget);
+      await tester.pump(RestoreFlow.lookFor);
+      await tester.pump();
+      expect(find.text("It's probably on the original firmware"), findsOneWidget);
+    });
+  });
+
+  testWidgets('a run that ends uncertain after the owner left looks for nothing', (tester) async {
+    final ports = FakeRestorePorts();
+    await restoreOpen(tester, ports);
+    final FakeRestoreRun run = await restoreStarted(tester, ports);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    run.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
+    await tester.pump();
+
+    expect(ports.powerListeners, 0);
+    ports.setPower(BluetoothPower.off);
+    ports.setPower(BluetoothPower.on);
+    await tester.pump(RestoreFlow.lookFor);
+    expect(ports.powerListeners, 0);
   });
 
   testWidgets('leaving after a stopped run forgets the key', (tester) async {

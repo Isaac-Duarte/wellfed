@@ -324,6 +324,7 @@ class InstallStoppedPage extends StatelessWidget {
           const SizedBox(height: Space.s5),
         ],
         if (state.bluetoothRefused) ...[const InstallBluetoothRefused(), const SizedBox(height: Space.s4)],
+        if (state.bluetoothOff) ...[InstallBluetoothOff(flow: flow), const SizedBox(height: Space.s4)],
         ..._nextSteps(context, stop),
         if (flow.mayForget &&
             state.pending == PendingInstall.ledgerDamaged &&

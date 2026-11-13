@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/install/install.dart';
@@ -311,6 +312,8 @@ void main() {
       await settle(tester);
       ports.onLost!();
       expect(run.lost, 1);
+      // Whether Bluetooth went with it is read for a moment after.
+      await tester.pump(SetupLink.powerSettle);
     });
 
     testWidgets('NSD answers the run', (tester) async {

@@ -1,8 +1,63 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart' show MethodChannel, MissingPluginException;
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 
 import 'package:wellfed/src/rust/api/setup.dart';
+
+/// Whether this phone's Bluetooth is on, as far as setup can act on it.
+enum BluetoothPower {
+  /// On, or in a state the owner can't fix by turning it on (no permission,
+  /// no radio): the scan says what is wrong. The plugin reports a missing
+  /// Nearby devices permission before the adapter's power, so without it a
+  /// phone with Bluetooth off reads as on: setup asks for the permission first.
+  on,
+
+  /// Turned off: the owner can turn it on.
+  off,
+}
+
+const _bluetooth = MethodChannel('io.github.isaacduarte.wellfed/bluetooth');
+
+/// Whether Bluetooth is on now, by the first word of `power`. A plugin that says
+/// nothing in [SetupLink.powerWait] is taken as on: the scan says what is wrong.
+/// The answer never waits for the stream's cancel, which a plugin may finish late.
+Future<BluetoothPower> bluetoothNow(Stream<BluetoothPower> power) {
+  final now = Completer<BluetoothPower>();
+  void answer(BluetoothPower power) {
+    if (!now.isCompleted) now.complete(power);
+  }
+
+  final StreamSubscription<BluetoothPower> reading = power.listen(
+    answer,
+    onError: (Object _) => answer(BluetoothPower.on),
+    onDone: () => answer(BluetoothPower.on),
+  );
+  return now.future
+      .timeout(SetupLink.powerWait, onTimeout: () => BluetoothPower.on)
+      .whenComplete(() => unawaited(reading.cancel()));
+}
+
+/// Whether Bluetooth is off now or goes off within [SetupLink.powerSettle]: a
+/// scan or a link fails a moment before the plugin reports the adapter going
+/// down, so a failure read at once would still see it on.
+Future<bool> bluetoothOffSoon(Stream<BluetoothPower> power) {
+  final off = Completer<bool>();
+  void answer(bool answer) {
+    if (!off.isCompleted) off.complete(answer);
+  }
+
+  final StreamSubscription<BluetoothPower> reading = power.listen(
+    (power) {
+      if (power == BluetoothPower.off) answer(true);
+    },
+    onError: (Object _) => answer(false),
+    onDone: () => answer(false),
+  );
+  return off.future
+      .timeout(SetupLink.powerSettle, onTimeout: () => false)
+      .whenComplete(() => unawaited(reading.cancel()));
+}
 
 /// A connected feeder's control characteristic.
 abstract interface class BleLink {
@@ -28,6 +83,15 @@ class SetupLink implements BleLink {
   /// How long a feeder gets to answer a connection.
   static const connectTimeout = Duration(seconds: 15);
 
+  /// The plugin first says whether Bluetooth is on about 0.5 s after it
+  /// starts listening (its own delay), and at once after that. Past this it is
+  /// taken as on, and the scan says what is wrong.
+  static const powerWait = Duration(seconds: 2);
+
+  /// How long after a failed scan or link the adapter's going down may still
+  /// be reported: Android stops the radio's work before it says why.
+  static const powerSettle = Duration(seconds: 1);
+
   final FlutterReactiveBle _ble;
   final StreamSubscription<ConnectionStateUpdate> _connection;
   final QualifiedCharacteristic _control;
@@ -43,6 +107,22 @@ class SetupLink implements BleLink {
     // BLUETOOTH_SCAN is declared neverForLocation (Android 12+).
     requireLocationServicesEnabled: false,
   );
+
+  /// Whether this phone's Bluetooth is on, now and each time it changes. The
+  /// plugin's "not known yet" is left out.
+  static Stream<BluetoothPower> power() => FlutterReactiveBle().statusStream
+      .where((status) => status != BleStatus.unknown)
+      .map((status) => status == BleStatus.poweredOff ? BluetoothPower.off : BluetoothPower.on);
+
+  /// Ask Android to turn Bluetooth on: its own dialog, or Bluetooth settings
+  /// where it can't show one. [power] says when it is on.
+  static Future<void> askToTurnOn() async {
+    try {
+      await _bluetooth.invokeMethod<void>('turnOn');
+    } on MissingPluginException {
+      // A desktop build has no Android to ask; its Bluetooth is the system's.
+    }
+  }
 
   /// Connect to `device` and ask for notifications. The plugin does not
   /// say when the subscription lands, so a first write may arrive before

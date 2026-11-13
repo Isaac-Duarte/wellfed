@@ -39,7 +39,7 @@ use wellfed_session::noise::Keypair;
 use crate::api::install::{
     ImageCheck, ImageProvisioning, InstallAnswer, InstallAsk, InstallEnd, InstallEvent,
     InstallSpec, InstallStart, InstallUpdate, ListenFailure, ListenUpdate, PendingInstall,
-    RequestRefusal, Resume, StopCase, UncertainWrite, WaitReason,
+    RequestRefusal, Resume, StopCase, UncertainWrite, UnjoinedFeeder, WaitReason,
 };
 use crate::api::model::SetupRefusal;
 use crate::api::setup::CONTROL_PIECE;
@@ -898,10 +898,10 @@ fn plan(
     let plans = stock_plans(&spec.start);
     let from_stock = matches!(spec.start, InstallStart::Reset | InstallStart::FrameTaken);
     let sends_frame = matches!(spec.start, InstallStart::Reset);
-    let unjoined = if spec.setup_again {
-        Unjoined::SetUpAgain
-    } else {
-        Unjoined::Wait
+    let unjoined = match spec.unjoined {
+        UnjoinedFeeder::Wait => Unjoined::Wait,
+        UnjoinedFeeder::WaitForPick => Unjoined::WaitForPick,
+        UnjoinedFeeder::SetUpAgain => Unjoined::SetUpAgain,
     };
 
     // A bench image joins its build network, and takes no Wi-Fi. A consumer

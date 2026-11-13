@@ -80,8 +80,10 @@ class FakePairingPorts implements PairingPorts {
 
   final drivers = <FakeDriver>[];
   final recoveries = <FakeRecovery>[];
+
+  /// The scan running now; a test gives a second scan its own.
   // ignore: close_sinks, the test ends with it
-  final scans = StreamController<DiscoveredDevice>(onCancel: () async {});
+  StreamController<DiscoveredDevice> scans = StreamController<DiscoveredDevice>(onCancel: () async {});
   final opened = <DiscoveredDevice>[];
   FakeBleLink link = FakeBleLink();
   String? located = '192.168.1.40:4747';
@@ -105,6 +107,36 @@ class FakePairingPorts implements PairingPorts {
 
   @override
   Stream<DiscoveredDevice> scan() => scans.stream;
+
+  /// This phone's Bluetooth, and its changes to each listener. `null` is the
+  /// plugin on a cold start, which says nothing until its first status
+  /// arrives (its "not known yet" never reaches the app).
+  BluetoothPower? power = BluetoothPower.on;
+  final _powerChanges = StreamController<BluetoothPower>.broadcast();
+  int turnOnAsks = 0;
+
+  /// Listeners to [bluetooth] not yet cancelled.
+  int powerListeners = 0;
+
+  /// Turn Bluetooth to `to`, as the owner would in Android.
+  void setPower(BluetoothPower to) {
+    power = to;
+    _powerChanges.add(to);
+  }
+
+  @override
+  Stream<BluetoothPower> bluetooth() => Stream.multi((listener) {
+    if (power case final now?) listener.add(now);
+    final StreamSubscription<BluetoothPower> changes = _powerChanges.stream.listen(listener.add);
+    powerListeners++;
+    listener.onCancel = () {
+      powerListeners--;
+      return changes.cancel();
+    };
+  });
+
+  @override
+  Future<void> turnOnBluetooth() async => turnOnAsks++;
 
   @override
   Future<BleLink> open(DiscoveredDevice device) async {

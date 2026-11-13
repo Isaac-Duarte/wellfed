@@ -306,6 +306,27 @@ class InstallBluetoothRefused extends StatelessWidget {
   );
 }
 
+/// This phone's Bluetooth is off while the run looks for the feeder over it.
+class InstallBluetoothOff extends StatelessWidget {
+  const InstallBluetoothOff({super.key, required this.flow});
+
+  final InstallFlow flow;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Notice(
+        tone: Tone.warning,
+        lead: 'Bluetooth is off.',
+        text: 'The install finds the feeder over Bluetooth. Turn it on, and the install goes on by itself.',
+      ),
+      const SizedBox(height: Space.s2),
+      OutlinedButton(onPressed: () => unawaited(flow.turnOnBluetooth()), child: const Text('Turn on Bluetooth')),
+    ],
+  );
+}
+
 /// 2.2: hold Reset. It erases the feeder's settings, so the owner says they
 /// understand first.
 class InstallResetPage extends StatefulWidget {

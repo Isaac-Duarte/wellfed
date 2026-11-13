@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wellfed/screens/install/install_before.dart';
 import 'package:wellfed/screens/install/install_screen.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/state/install/install.dart';
@@ -227,7 +228,8 @@ class InstallClaimPage extends StatelessWidget {
           ]),
           const SizedBox(height: Space.s4),
         ],
-        if (state.setupHint && !state.settingUpAgain) ...[
+        if (state.bluetoothOff) ...[InstallBluetoothOff(flow: flow), const SizedBox(height: Space.s4)],
+        if (state.setupHint && !state.settingUpAgain && !state.bluetoothOff) ...[
           const Notice(
             tone: Tone.warning,
             lead: 'Hold Lock + Mic for 5 s on the feeder.',

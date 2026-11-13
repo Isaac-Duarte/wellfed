@@ -67,10 +67,22 @@ pub struct InstallSpec {
     /// The known feeder the owner picked for a run from bank 0, by its identity
     /// in hex. With none, a known feeder that answers is left alone.
     pub feeder: Option<String>,
-    /// The owner gave a new Wi-Fi for a feeder that paired and never joined,
-    /// and put it back in setup mode: Bluetooth setup goes again rather than
-    /// waiting for it.
-    pub setup_again: bool,
+    /// What the run does about a feeder that paired and never joined.
+    pub unjoined: UnjoinedFeeder,
+}
+
+/// What a run does about a feeder an earlier run paired that never joined.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnjoinedFeeder {
+    /// Wait for the feeder this install's record names. A picked feeder that
+    /// does not answer stops the run.
+    Wait,
+    /// The owner keeps waiting for the feeder this phone paired, given as
+    /// [`InstallSpec::feeder`] since no record names it: it is waited for too.
+    WaitForPick,
+    /// The owner gave a new Wi-Fi and put the feeder back in setup mode:
+    /// Bluetooth setup goes again rather than waiting for it.
+    SetUpAgain,
 }
 
 /// Why the run still waits for stock.

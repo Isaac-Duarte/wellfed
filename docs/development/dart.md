@@ -59,7 +59,7 @@ The smoke tests run when `WELLFED_SMOKE_TARGET` names the directory holding the 
 
 The host checks do not prove the app works on a phone. Run these by hand on a real phone and feeder:
 
-1. Set up a new feeder over Bluetooth, from setup mode to the Home card.
+1. Set up a new feeder over Bluetooth, from setup mode to the Home card. Start with the phone's Bluetooth off: the app should say so, offer **Turn on Bluetooth**, and go on to the search once it is on.
 2. Recover a feeder over the LAN with its window open.
 3. Feed one portion. Check the bowl against what the app says.
 4. Add a meal, edit it, and delete it.
