@@ -36,16 +36,25 @@ const GENERATED: &str = "frb_generated.rs";
 const BOUND_INVITE: &str = "the server sends it for a phone key it records; a client on the LAN \
      invites a new client whose key it does not know, with CreateInvite";
 
+/// Why a client on the LAN erases the meal call with `DeleteCall`.
+const CONDITIONAL_ERASE: &str = "the server sends it, because it reads the clip and retries a \
+     delete whose answer was lost; a client on the LAN sends one erase and never resends a write \
+     it did not hear answered";
+
 /// What the CLI does not do, with why.
-const NOT_IN_CLI: [(&str, &str); 1] = [("CreateBoundInvite", BOUND_INVITE)];
+const NOT_IN_CLI: [(&str, &str); 2] = [
+    ("CreateBoundInvite", BOUND_INVITE),
+    ("DeleteCallIf", CONDITIONAL_ERASE),
+];
 /// What the app does not do, with why.
-const NOT_IN_APP: [(&str, &str); 2] = [
+const NOT_IN_APP: [(&str, &str); 3] = [
     (
         "UpdateKeyStatement",
         "a statement is signed offline by a built-in or the release key, and the phone holds \
          no key a feeder trusts; the owner's computer carries one to the feeder",
     ),
     ("CreateBoundInvite", BOUND_INVITE),
+    ("DeleteCallIf", CONDITIONAL_ERASE),
 ];
 
 /// The variants `source` declares for `enum`, in order.

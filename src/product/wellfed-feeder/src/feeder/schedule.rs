@@ -694,6 +694,7 @@ const fn blocked(refusal: Refusal) -> Blocked {
         | Refusal::Unverified
         | Refusal::Portions { .. }
         | Refusal::NoClock
+        | Refusal::Replaced
         | Refusal::Update(_) => Blocked::Feeding,
     }
 }

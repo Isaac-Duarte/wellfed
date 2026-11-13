@@ -9,6 +9,7 @@ use std::time::Duration;
 use wellfed_api::{
     CallClip, ClientRole, CommandOutcome, CommandState, Connection as Link, FeederRefusal,
 };
+use wellfed_mirror::Clip;
 use wellfed_model::{Answer, CALL_CHUNK_MAX, Op, Refusal};
 use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::{TestService, ada, config, local, until};
@@ -355,6 +356,67 @@ fn a_retried_delete_erases_only_the_clip_it_found() {
         server.shutdown().await;
         sim.stop().await;
     });
+}
+
+/// An upload lands between a delete's read of the clip and its erase. The
+/// erase names the clip the read found, so the feeder refuses it, the
+/// later clip stays, and the delete settles as superseded.
+#[test]
+fn a_delete_never_erases_a_clip_uploaded_after_its_read() {
+    local(async {
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let server = TestService::start_with(quick()).await;
+        let id = server
+            .adopt_as(&sim, &relay.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let caller = ada().into();
+
+        service
+            .upload_call(&caller, id, stream(1_000), Some([0x60; 16]))
+            .await
+            .unwrap();
+        let before = relay.passed();
+        service.call(id).await.unwrap();
+        let read = relay.passed() - before;
+
+        // The delete's read reaches the feeder and its answer waits in the
+        // relay while another client uploads.
+        let key: IdempotencyKey = [0x61; 16];
+        let before = relay.passed();
+        relay.hold_answers_after(read);
+        let later = stream(400);
+        let (deleted, stored) = tokio::join!(service.delete_call(&caller, id, Some(key)), async {
+            until("the delete's read reaches the feeder", || async {
+                relay.passed() >= before + read
+            })
+            .await;
+            let stored = upload_directly(&sim, &later).await;
+            relay.resume();
+            stored
+        });
+        assert!(
+            matches!(deleted, Err(Error::Command(CommandError::Superseded))),
+            "{deleted:?}"
+        );
+        assert_eq!(service.call(id).await.unwrap(), stored);
+        let entry = service.command(&ada(), key).await.unwrap();
+        assert_eq!(entry.outcome, Some(CommandOutcome::Superseded));
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// Upload `clip` whole over the owner's own session, and wait until the
+/// feeder stores it.
+async fn upload_directly(sim: &feeder::Running, clip: &[u8]) -> wellfed_api::CallView {
+    let start = Clip::from_stream(clip.to_vec()).unwrap().start();
+    let mut owner = feeder::open_owner(sim).await;
+    let started = owner.ask([0x5f; 16], &start).await.unwrap();
+    assert_eq!(started, Answer::Done { generation: None });
+    finish_directly(sim, clip).await
 }
 
 /// Send a delete under `key` whose answer the relay holds back: its read

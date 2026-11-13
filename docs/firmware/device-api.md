@@ -51,7 +51,7 @@ Subscribe { after, samples }          Events [{ seq, at, body }, …]   // as ma
 
 - **Two tasks.** The feeder runs the button service and the loop ([task slots](../../src/firmware/wellfed/README.md#what-the-sdk-runtime-guarantees)). `wellfed-fw-feeder`'s `api` module steps the API inside the loop, after the panel's owner.
 - **Nothing blocks.** Every socket call is non-blocking (`wellfed_api_*` in `example_entry.c`), so the loop takes what is ready and moves on.
-- **Sockets:** one listener, four session slots, the mDNS socket and the NTP socket. A fifth connection is closed at accept.
+- **Sockets:** one listener, four session slots, the mDNS socket and the NTP socket. With every slot taken, a fifth connection takes the slot of the open session that has gone longest without sending a frame, whose connection closes (recorded as `evicted`). So a phone that walked off without closing never shuts the next client out until its 90 s idle limit. A session is passed over while it's busy: a request read and not yet answered (a write waiting for the store, a retry waiting for one under way, a Dispense press), a frame not yet read, a feed it asked for while the outputs are held, or an install its last update answer showed under way. So is a connection still opening, a join and the recovery window. With every session busy, the fifth connection is closed at accept, as before.
 - **One frame per pass.** A slot reads one frame per pass, and writes again only once its last frame is out, so a flooding client costs only its own turn. That is why events go in batches: a subscriber catching up gets a frame of them a pass, not one event.
 
 ### Sessions that stop reading

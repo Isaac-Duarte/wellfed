@@ -47,6 +47,10 @@ impl Service {
                     seconds: made.seconds,
                 }
             }
+            // A conditional write whose subject another change replaced,
+            // on any attempt: nothing of it ran, and the later change
+            // stands.
+            Ok(Answer::Refused(Refusal::Replaced)) => CommandOutcome::Superseded,
             // A resend that finds the feeder no longer remembers its id
             // runs again, and its refusal says nothing of the first send,
             // which may have landed: a settings change refused stale

@@ -651,6 +651,7 @@ fn the_traced_refusal_is_the_device_api_s() {
             "Unverified",
             "Portions",
             "NoClock",
+            "Replaced",
         ]
         .as_slice()
     );

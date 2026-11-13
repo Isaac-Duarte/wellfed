@@ -15,7 +15,7 @@ use crate::mailbox::{NtpResult, NtpServer, Origin, SaveOutcome, TimeSettingsResu
 use crate::pairing::{self, Pairing, Path};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record, UpdateAnswer, UpdateKeyChange};
 use wellfed_proto::api::{
-    self as proto, DeviceMessage, Outcome, Refusal, RequestId, TimeView, UpdateRefusal,
+    self as proto, DeviceMessage, Outcome, Refusal, RequestId, TimeView, UpdatePhase, UpdateRefusal,
 };
 use wellfed_signed::offer::key_id;
 
@@ -244,12 +244,20 @@ impl Server {
             });
         }
 
+        match reply {
+            Reply::Feeder(FeederReply::Feeding(_)) => self.fed[index] = true,
+            Reply::Update(view) => self.installing[index] = view.phase != UpdatePhase::Idle,
+            _ => {}
+        }
+
         // The client list encodes itself, so neither it nor the line above
         // sits under `seal_answer`'s frame.
-        match reply {
+        let sealed = match reply {
             Reply::Clients => self.list_clients(index, id),
             reply => self.seal_answer(index, id, reply, now_ms, device),
-        }
+        };
+        self.answering[index] = sealed.is_ok() && !self.slots[index].wire.tx_idle();
+        sealed
     }
 
     /// Seal one request's answer. Kept out of line: the wire message is as

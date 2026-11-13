@@ -189,6 +189,17 @@ pub struct Server {
     /// Each session's next frame came while a write of its own was
     /// pending, so it may have waited there for as long as the write did.
     held: [bool; SESSIONS],
+    /// Each session asked a feed that was reserved, and no pass has seen
+    /// the outputs free since: an eviction passes over it.
+    fed: [bool; SESSIONS],
+    /// Each session's last answer about an update showed one under way:
+    /// an eviction passes over it.
+    installing: [bool; SESSIONS],
+    /// Each session's queued frame is a request's answer, not all of it
+    /// sent yet: an eviction passes over it, since its client could not
+    /// tell what the request did. Pushed events and samples never set it,
+    /// so a client that stopped reading them is still evicted.
+    answering: [bool; SESSIONS],
     /// A feed is prepared or driven this pass.
     feeding: bool,
     /// The last step ran a handshake operation.
@@ -235,6 +246,9 @@ impl Server {
             prune_invites: false,
             readers_left: [false; SESSIONS],
             held: [false; SESSIONS],
+            fed: [false; SESSIONS],
+            installing: [false; SESSIONS],
+            answering: [false; SESSIONS],
             feeding: false,
             handshook: false,
             struck: false,
@@ -275,12 +289,17 @@ impl Server {
     }
 
     /// A new connection: its slot, or `None` to refuse it (close at once).
+    ///
+    /// With every slot taken, the open session idle longest gives its slot
+    /// up (recorded `evicted`), so a client that went away without closing
+    /// never shuts the next one out until it times out. The driver closes
+    /// the connection it held on that slot before taking the new one.
     pub fn accept(&mut self, now_ms: u32, mut record: impl FnMut(Record)) -> Option<usize> {
-        let Some(index) = self
+        let free = self
             .slots
             .iter()
-            .position(|slot| matches!(slot.phase, Phase::Free))
-        else {
+            .position(|slot| matches!(slot.phase, Phase::Free));
+        let Some(index) = free.or_else(|| self.evict(now_ms, &mut record)) else {
             record(Record::Ended {
                 slot: u8::MAX,
                 reason: Reason::Full,
@@ -288,6 +307,9 @@ impl Server {
             return None;
         };
         self.held[index] = false;
+        self.fed[index] = false;
+        self.installing[index] = false;
+        self.answering[index] = false;
         let slot = &mut self.slots[index];
         *slot = Slot::FREE;
         slot.phase = Phase::Opening;
@@ -296,6 +318,34 @@ impl Server {
             slot: slot_id(index),
         });
         Some(index)
+    }
+
+    /// End the open session idle longest to free its slot, and name it;
+    /// `None` when every session is busy. Busy is anything an ending would
+    /// cut short or leave the client unsure of: a request waiting to be
+    /// read, for its write (a retry's wait for one under way among them)
+    /// or for its answer to finish going out, a feed it asked for still
+    /// holding the outputs, an install it drives, and every session not yet
+    /// open (which the handshake limit ends) or no longer (a join or the
+    /// recovery window, each mid-write or waiting for the owner). A write
+    /// whose session already ended goes on in its client's memory,
+    /// whichever of that key's sessions ends.
+    fn evict(&mut self, now_ms: u32, record: &mut impl FnMut(Record)) -> Option<usize> {
+        let index = (0..SESSIONS)
+            .filter(|&index| self.idle(index))
+            .max_by_key(|&index| now_ms.wrapping_sub(self.slots[index].since_ms))?;
+        self.end(index, Reason::Evicted, record);
+        Some(index)
+    }
+
+    /// Whether the session on `index` is open and busy with nothing.
+    fn idle(&self, index: usize) -> bool {
+        let slot = &self.slots[index];
+        matches!(slot.phase, Phase::Open { pending: None, .. })
+            && slot.wire.rx_len == 0
+            && !self.answering[index]
+            && !self.fed[index]
+            && !self.installing[index]
     }
 
     /// Room for received bytes in `slot`.
@@ -316,7 +366,11 @@ impl Server {
     }
 
     pub fn sent(&mut self, slot: usize, len: usize) {
-        self.slots[slot].wire.sent(len);
+        let wire = &mut self.slots[slot].wire;
+        wire.sent(len);
+        if wire.tx_idle() {
+            self.answering[slot] = false;
+        }
     }
 
     /// The driver should close `slot` now: it ended and its last bytes are
@@ -436,6 +490,9 @@ impl Server {
         self.signer = self.signer.or(signer);
         self.feeding = feeding;
         self.struck &= feeding;
+        if !feeding {
+            self.fed = [false; SESSIONS];
+        }
         self.identity_public = identity.map(|keys| *keys.public());
         if core::mem::take(&mut self.cancel_rescue) {
             pairing.cancel(Path::Recovery);

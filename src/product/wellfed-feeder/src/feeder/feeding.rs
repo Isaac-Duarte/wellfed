@@ -339,6 +339,7 @@ pub(super) const fn refusal_name(refusal: Refusal) -> &'static str {
         | Refusal::Muted
         | Refusal::Time
         | Refusal::NoClock
+        | Refusal::Replaced
         | Refusal::Update(_) => "other",
     }
 }

@@ -70,6 +70,7 @@ Some conventions hold across the API:
 - **The meal call** goes up as the feeder's own stream (`PUT /feeders/{id}/call`, `application/octet-stream`), converted on the client. The server converts nothing and checks only its length, as the feeder does. It sends the clip a chunk at a time beside feeds and status reads, and answers once the feeder stores it.
   - A retry under the same key after `outcome_unknown` sends only what the feeder lacks.
   - A retry never undoes a later change. It is `409 superseded`, and sends nothing, if the feeder holds another clip than its first send found. The same goes for an upload the feeder had begun, once the feeder no longer holds its clip.
+  - A delete erases only the clip it read: the feeder checks it, so an upload that lands between the read and the erase stays, and the delete is `409 superseded`.
 - **The stream** resumes from `Last-Event-ID`. When that id is too old, the server sends `resync` and the client fetches again.
 
 ## Alerts

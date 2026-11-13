@@ -1,5 +1,5 @@
 {
-  "revision": 3,
+  "revision": 4,
   "registry": {
     "Alert": {
       "ENUM": {
@@ -1445,6 +1445,18 @@
               }
             ]
           }
+        },
+        "19": {
+          "DeleteCallIf": {
+            "STRUCT": [
+              {
+                "bytes": "U32"
+              },
+              {
+                "crc": "U32"
+              }
+            ]
+          }
         }
       }
     },
@@ -2380,6 +2392,9 @@
         },
         "14": {
           "NoClock": "UNIT"
+        },
+        "15": {
+          "Replaced": "UNIT"
         }
       }
     },

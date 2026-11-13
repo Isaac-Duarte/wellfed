@@ -12,13 +12,13 @@
 //!   one that finds the feeder still holding what the first send found
 //!   starts over, and anything else is a later change too. A later change
 //!   settles the entry as `superseded`, with nothing sent.
-//! - A delete that finds no clip is done. One that finds the clip the
-//!   first send found erases it again under its request id; another clip
-//!   is a later upload, and the entry settles as `superseded`. The read
-//!   and the erase are two requests, and the erase names no clip, so an
-//!   upload that lands between them is erased, as it would be by a first
-//!   send: closing that needs an erase the feeder checks against the clip
-//!   it holds.
+//! - A delete that finds no clip is done. Otherwise it erases the clip
+//!   it read and no other ([`Op::DeleteCallIf`]): the feeder checks the
+//!   clip it holds, so an upload that lands between the read and the
+//!   erase stays, and the entry settles as `superseded`. A retry that
+//!   finds the clip the first send found erases it again under its request
+//!   id; another clip is a later upload, and the entry settles as
+//!   `superseded` with nothing sent.
 //!
 //! An upload the feeder took and then lost to a restart finds no clip of
 //! its own, so it is superseded too: the caller uploads again under a new
@@ -190,8 +190,8 @@ impl Service {
         }
     }
 
-    /// Erase the meal call, once the feeder's clip is read: as the first
-    /// send found it, or on a retry, only while the feeder still holds it.
+    /// Erase the meal call, once the feeder's clip is read: the clip the
+    /// first send found, and only while the feeder still holds it.
     pub(crate) async fn send_delete(
         &self,
         key: IdempotencyKey,
@@ -206,6 +206,14 @@ impl Service {
             Err(error) => return Err(self.nothing_sent(&key, attempt, error.into()).await),
         };
 
+        // Erased already: by this delete, or by another; either way what
+        // it asked, with nothing left to send.
+        let CallBefore::Clip { bytes, crc } = held(&view) else {
+            let outcome = CommandOutcome::Done;
+            self.record_answer(&key, &outcome, self.shared.clock.now())
+                .await?;
+            return Ok(outcome);
+        };
         match attempt {
             Attempt::First => {
                 if let Err(error) = self
@@ -217,13 +225,6 @@ impl Service {
                     return Err(self.nothing_sent(&key, attempt, error.into()).await);
                 }
             }
-            // Erased: by this delete, or by another; either way what it asked.
-            Attempt::Retry if view.clip == CallClip::None => {
-                let outcome = CommandOutcome::Done;
-                self.record_answer(&key, &outcome, self.shared.clock.now())
-                    .await?;
-                return Ok(outcome);
-            }
             Attempt::Retry => {
                 let write = self.shared.store.call_write(&key).await?;
                 if write.and_then(|write| write.before) != Some(held(&view)) {
@@ -231,9 +232,8 @@ impl Service {
                 }
             }
         }
-        let (outcome, _) = self
-            .send(key, feeder, request, Op::DeleteCall, attempt)
-            .await?;
+        let op = Op::DeleteCallIf { bytes, crc };
+        let (outcome, _) = self.send(key, feeder, request, op, attempt).await?;
         Ok(outcome)
     }
 

@@ -124,7 +124,7 @@ fn the_dart_limits_are_the_feeder_s() {
 
 /// Each kind of op the app may send, `name` numbering it: one per variant,
 /// and one per statistics section, whose rows differ.
-const KINDS: usize = 45;
+const KINDS: usize = 46;
 
 /// The op's name in Dart. It matches every variant with no wildcard, so an
 /// op added to the model fails to compile here until it has a name, and
@@ -178,6 +178,7 @@ fn name(op: &Op) -> &'static str {
         Op::SkipMeal { .. } => "skipMeal",
         Op::UnskipMeal { .. } => "unskipMeal",
         Op::GetAlerts => "getAlerts",
+        Op::DeleteCallIf { .. } => "deleteCallIf",
     }
 }
 
@@ -268,6 +269,7 @@ fn ops() -> Vec<Op> {
             due: Timestamp::UNIX_EPOCH,
         },
         Op::GetAlerts,
+        Op::DeleteCallIf { bytes: 0, crc: 0 },
     ];
     ops.extend(StatsSection::ALL.map(|section| Op::Stats { section }));
     ops

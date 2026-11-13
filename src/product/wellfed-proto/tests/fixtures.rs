@@ -1038,6 +1038,19 @@ fn messages() -> Vec<Fixture> {
             }),
             event,
         ),
+        (
+            "op-delete-call-if",
+            entry(&request(Op::Feeder(FeederOp::DeleteCallIf {
+                bytes: 32_256,
+                crc: 0xcbf4_3926,
+            }))),
+            client,
+        ),
+        (
+            "refused-replaced",
+            entry(&response(Outcome::Refused(Refusal::Replaced))),
+            feeder,
+        ),
     ]
 }
 

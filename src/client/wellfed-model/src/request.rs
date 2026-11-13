@@ -181,6 +181,13 @@ pub enum Op {
     },
     /// The feeder's table of open alerts.
     GetAlerts,
+    /// Erase the meal call only while it is still the clip of `bytes` and
+    /// `crc`; `Done` with no clip stored, refused [`Refusal::Replaced`]
+    /// when another clip replaced it, which stays. Owners only.
+    DeleteCallIf {
+        bytes: u32,
+        crc: u32,
+    },
 }
 
 /// What the owner measured, as the feeder keeps it.
@@ -455,6 +462,9 @@ pub enum Refusal {
     /// The feeder's clock is invalid, so it cannot date the change: sync
     /// its time first.
     NoClock,
+    /// What the request named was replaced since it was read, and is kept:
+    /// another upload replaced the meal call a conditional erase named.
+    Replaced,
     /// A refusal a newer feeder build added, which this build cannot name.
     Unknown,
 }

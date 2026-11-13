@@ -103,6 +103,7 @@ fn every_op() -> Vec<Op> {
             role: ClientRole::Member,
             key: [0; 32],
         },
+        Op::DeleteCallIf { bytes: 1, crc: 0 },
     ];
     let mut kinds: Vec<_> = ops.iter().map(kind).collect();
     kinds.sort_unstable();
@@ -116,7 +117,7 @@ fn every_op() -> Vec<Op> {
 
 /// The last kind [`kind`] gives. A new operation takes the next number and
 /// moves this to it.
-const LAST: u8 = 38;
+const LAST: u8 = 39;
 
 /// The operation's kind, by an exhaustive match.
 fn kind(op: &Op) -> u8 {
@@ -159,7 +160,8 @@ fn kind(op: &Op) -> u8 {
         Op::SkipMeal { .. } => 35,
         Op::UnskipMeal { .. } => 36,
         Op::GetAlerts => 37,
-        Op::CreateBoundInvite { .. } => LAST,
+        Op::CreateBoundInvite { .. } => 38,
+        Op::DeleteCallIf { .. } => LAST,
     }
 }
 

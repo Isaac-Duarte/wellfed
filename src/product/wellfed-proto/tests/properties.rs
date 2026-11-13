@@ -163,6 +163,8 @@ fn op() -> impl Strategy<Value = Op<'static>> {
             .prop_map(|(slot, due_s)| Op::Feeder(FeederOp::SkipMeal { slot, due_s })),
         (any::<u8>(), any::<u32>())
             .prop_map(|(slot, due_s)| Op::Feeder(FeederOp::UnskipMeal { slot, due_s })),
+        (any::<u32>(), any::<u32>())
+            .prop_map(|(bytes, crc)| Op::Feeder(FeederOp::DeleteCallIf { bytes, crc })),
     ]
 }
 
@@ -504,6 +506,26 @@ proptest! {
             prop_assert_eq!(&out[..len], &body[..len]);
         }
     }
+}
+
+/// A body whose variant index is an overlong varint (`0x96 0x00` for 22,
+/// `Invited`) decodes as postcard reads it but is no record any build
+/// writes: it is refused, and the canonical body still reads.
+#[test]
+fn a_padded_body_is_read_only_in_its_canonical_bytes() {
+    let mut overlong = [0u8; 16];
+    overlong[0] = 0x96;
+    assert_eq!(decode_padded::<EventBody>(&overlong), None);
+
+    let mut canonical = [0u8; 16];
+    canonical[0] = 0x16;
+    assert_eq!(
+        decode_padded::<EventBody>(&canonical),
+        Some(EventBody::Invited {
+            client: [0; 7],
+            by: [0; 7],
+        })
+    );
 }
 
 /// What an encode drops on purpose: a struct's tail a later build filled

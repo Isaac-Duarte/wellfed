@@ -15,7 +15,8 @@ use wellfed_session::frame;
 use wellfed_session::noise::Keypair;
 
 use crate::support::{
-    EPOCH, FEEDER, MEMBER, OWNER, Rig, STRANGER, ask, connect, drive, live, open, public,
+    Client_, EPOCH, FEEDER, MEMBER, OWNER, Rig, STRANGER, ask, connect, drive, live, open, public,
+    receiving, send_unwritten, view,
 };
 
 #[test]
@@ -392,4 +393,158 @@ fn a_request_pending_when_the_session_ends_is_reported_unanswered() {
         Some(Event::Unanswered { id: [5; 16] })
     );
     assert_eq!(owner.connection.poll_event(), None);
+}
+
+/// The slot each `Ended` record with `reason` names, in order.
+fn ended_slots(rig: &Rig, reason: Reason) -> Vec<u8> {
+    rig.records
+        .iter()
+        .filter_map(|r| match r {
+            Record::Ended { slot, reason: got } if *got == reason => Some(*slot),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A feeder with every slot taken lets a new client in by ending the
+/// session that has gone longest without a frame, and that alone.
+#[test]
+fn a_full_feeder_ends_its_longest_idle_session_for_a_new_client() {
+    let mut rig = Rig::new();
+    let mut sessions: Vec<_> = (0..SESSIONS).map(|_| open(&mut rig, OWNER)).collect();
+    // The first opened, but it has spoken since: the second is idlest.
+    let status = ask(&mut rig, &mut sessions[0], 1, Op::Status);
+    assert!(matches!(status, Answer::Status(_)), "{status:?}");
+    assert!(ended_slots(&rig, Reason::Evicted).is_empty());
+
+    let newcomer = open(&mut rig, MEMBER);
+    assert_eq!(newcomer.slot, sessions[1].slot);
+    let evicted = u8::try_from(sessions[1].slot).unwrap();
+    assert_eq!(ended_slots(&rig, Reason::Evicted), vec![evicted]);
+    assert!(!rig.ended(Reason::Full));
+
+    for (index, session) in sessions.iter_mut().enumerate() {
+        if index == 1 {
+            continue;
+        }
+        let status = ask(&mut rig, session, 2, Op::Status);
+        assert!(matches!(status, Answer::Status(_)), "session {index}");
+    }
+}
+
+/// An eviction passes over a session with a write under way, one whose
+/// feed holds the outputs and one an install answered from; with only
+/// those left, a new connection is closed as before.
+#[test]
+fn an_eviction_passes_over_sessions_a_write_a_feed_or_an_install_holds() {
+    let mut rig = Rig::new();
+    rig.device.update = true;
+    let mut sessions: Vec<_> = (0..SESSIONS).map(|_| open(&mut rig, OWNER)).collect();
+
+    rig.feeding = true;
+    let feed = ask(&mut rig, &mut sessions[0], 1, Op::Feed { portions: 1 });
+    assert!(matches!(feed, Answer::Feeding { .. }), "{feed:?}");
+    let install = ask(&mut rig, &mut sessions[1], 2, Op::UpdateState);
+    assert_eq!(install, view(receiving()));
+    let put = Op::PutSettings {
+        base: Generation(7),
+        changes: model::FeederSettingsPatch {
+            volume: Some(50),
+            ..model::FeederSettingsPatch::default()
+        },
+    };
+    send_unwritten(&mut rig, &mut sessions[2], 3, put);
+    assert!(rig.device.settings_pending.is_some(), "the write is queued");
+
+    // The fourth went quiet before the three: it alone may go.
+    let first = rig.accept();
+    assert_eq!(first, Some(sessions[3].slot));
+    assert_eq!(rig.accept(), None, "the rest are busy, and so is a new one");
+    assert!(rig.ended(Reason::Full));
+
+    // Once the feed has let the outputs go, its session is idle again.
+    rig.feeding = false;
+    rig.pass();
+    assert_eq!(rig.accept(), Some(sessions[0].slot));
+    let evicted = [sessions[3].slot, sessions[0].slot].map(|slot| u8::try_from(slot).unwrap());
+    assert_eq!(ended_slots(&rig, Reason::Evicted), evicted);
+}
+
+/// Four open sessions, the first with a write answered and none of the
+/// answer sent, then the others speaking after it, so it is the quietest.
+fn quietest_with_its_answer_unsent(rig: &mut Rig) -> Vec<Client_> {
+    let mut sessions: Vec<_> = (0..SESSIONS).map(|_| open(rig, OWNER)).collect();
+
+    let put = Op::PutSettings {
+        base: Generation(7),
+        changes: model::FeederSettingsPatch {
+            volume: Some(50),
+            ..model::FeederSettingsPatch::default()
+        },
+    };
+    let writer = &mut sessions[0];
+    let request = writer.session.request([1; 16], &put).unwrap();
+    writer.outbox.extend(request);
+    rig.deliver(writer.slot, &mut writer.outbox);
+    for _ in 0..5 {
+        rig.pass();
+        rig.device.write();
+    }
+    assert!(
+        !rig.server.tx(writer.slot).is_empty(),
+        "the answer waits to go out"
+    );
+
+    for (index, session) in sessions.iter_mut().enumerate().skip(1) {
+        let status = ask(rig, session, 2, Op::Status);
+        assert!(matches!(status, Answer::Status(_)), "session {index}");
+    }
+    sessions
+}
+
+/// A session whose write's answer is sealed but not yet all sent keeps
+/// its slot even as the quietest: ending it would leave its client unsure
+/// whether the write ran.
+#[test]
+fn an_eviction_passes_over_a_session_whose_answer_is_still_going_out() {
+    let mut rig = Rig::new();
+    let mut sessions = quietest_with_its_answer_unsent(&mut rig);
+    assert_eq!(rig.accept(), Some(sessions[1].slot));
+
+    let writer = &mut sessions[0];
+    let answer = rig.collect(writer.slot);
+    writer.session.receive(&answer).unwrap();
+    let mut answered = None;
+    while let Some(incoming) = writer.session.next_incoming().unwrap() {
+        if let Incoming::Answer { id, answer } = incoming
+            && id == [1; 16]
+        {
+            answered = Some(answer);
+        }
+    }
+    assert_eq!(
+        answered,
+        Some(Answer::Done {
+            generation: Some(Generation(8))
+        })
+    );
+}
+
+/// Part of the answer sent still holds the slot; once the rest is out, the
+/// quietest session is the one evicted again.
+#[test]
+fn a_session_is_evictable_again_once_its_answer_is_out() {
+    let mut rig = Rig::new();
+    let sessions = quietest_with_its_answer_unsent(&mut rig);
+    let writer = sessions[0].slot;
+
+    rig.server.sent(writer, 1);
+    assert!(
+        !rig.server.tx(writer).is_empty(),
+        "part of the answer is left"
+    );
+    assert_eq!(rig.accept(), Some(sessions[1].slot));
+
+    rig.collect(writer);
+    assert_eq!(rig.accept(), Some(writer));
 }

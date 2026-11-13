@@ -1806,6 +1806,7 @@ impl From<proto::Refusal> for Refusal {
             proto::Refusal::Unverified => Self::Unverified,
             proto::Refusal::Portions { asked } => Self::Portions { asked },
             proto::Refusal::NoClock => Self::NoClock,
+            proto::Refusal::Replaced => Self::Replaced,
         }
     }
 }
@@ -1839,7 +1840,8 @@ impl Op {
             | Self::DeleteCall
             | Self::PlayCall
             | Self::SkipMeal { .. }
-            | Self::UnskipMeal { .. } => Some(DeviceKind::Feeder),
+            | Self::UnskipMeal { .. }
+            | Self::DeleteCallIf { .. } => Some(DeviceKind::Feeder),
             Self::Status
             | Self::PutWifi { .. }
             | Self::TimeSync(_)
@@ -2005,6 +2007,10 @@ impl Op {
                 due_s: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
             }),
             Self::GetAlerts => proto::Op::GetAlerts,
+            Self::DeleteCallIf { bytes, crc } => proto::Op::Feeder(proto::FeederOp::DeleteCallIf {
+                bytes: *bytes,
+                crc: *crc,
+            }),
         })
     }
 }
@@ -2302,6 +2308,7 @@ mod tests {
             Op::SkipMeal { slot: 0, due: at },
             Op::UnskipMeal { slot: 0, due: at },
             Op::GetAlerts,
+            Op::DeleteCallIf { bytes: 1, crc: 1 },
         ];
         for op in &ops {
             // A statistics section names its own kind, inside the shared op.

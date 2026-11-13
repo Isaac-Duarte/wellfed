@@ -9728,7 +9728,7 @@
           },
           {
             "type": "object",
-            "description": "Another change to the meal call reached the feeder between this\nwrite's first send and its retry. The retry sent nothing, since it\nwould have undone that change.",
+            "description": "Another change to the meal call reached the feeder after this write\nread the clip it held: a later upload, before a delete's erase or\nbetween a write's first send and its retry. Nothing that would undo\nthat change ran.",
             "required": [
               "result"
             ],

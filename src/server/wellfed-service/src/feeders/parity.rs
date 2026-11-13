@@ -83,7 +83,9 @@ pub const fn parity(op: &Op) -> Parity {
         // The server takes the clip converted, and sends it a chunk at a
         // time on the long lane.
         Op::StartCall { .. } | Op::CallChunk { .. } => Route(Put, "/feeders/{id}/call"),
-        Op::DeleteCall => Route(Delete, "/feeders/{id}/call"),
+        // The server erases only the clip it read, so a retry never
+        // erases an upload that came after it.
+        Op::DeleteCall | Op::DeleteCallIf { .. } => Route(Delete, "/feeders/{id}/call"),
         Op::PlayCall => Route(Post, "/feeders/{id}/call/play"),
         Op::SkipMeal { .. } => Route(Post, "/feeders/{id}/meals/skip"),
         Op::UnskipMeal { .. } => Route(Post, "/feeders/{id}/meals/unskip"),

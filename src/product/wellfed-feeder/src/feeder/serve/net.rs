@@ -64,7 +64,13 @@ impl<S: Copy> Serve<S> {
             }
             Accepted::Socket(socket) => {
                 match self.server.accept(now_ms, |r| record(Record::Server(r))) {
-                    Some(slot) => self.sockets[slot] = Some(socket),
+                    // A slot still holding a socket was taken from the
+                    // session idle longest: its connection closes now.
+                    Some(slot) => {
+                        if let Some(evicted) = self.sockets[slot].replace(socket) {
+                            platform.close(evicted);
+                        }
+                    }
                     None => platform.close(socket),
                 }
             }

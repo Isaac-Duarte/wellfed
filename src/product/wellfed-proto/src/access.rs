@@ -101,9 +101,10 @@ impl Access {
                 | FeederOp::SkipMeal { .. }
                 | FeederOp::UnskipMeal { .. } => Self::Clients,
                 FeederOp::PutCalibration { .. } => Self::People,
-                FeederOp::StartCall { .. } | FeederOp::CallChunk { .. } | FeederOp::DeleteCall => {
-                    Self::Owner
-                }
+                FeederOp::StartCall { .. }
+                | FeederOp::CallChunk { .. }
+                | FeederOp::DeleteCall
+                | FeederOp::DeleteCallIf { .. } => Self::Owner,
             },
         }
     }
@@ -291,6 +292,10 @@ mod tests {
             Op::Feeder(FeederOp::UnskipMeal { slot: 0, due_s: 0 }),
             [true, true, true],
         ),
+        (
+            Op::Feeder(FeederOp::DeleteCallIf { bytes: 0, crc: 0 }),
+            [true, false, false],
+        ),
     ];
 
     const fn stats(section: StatsSection) -> Op<'static> {
@@ -298,7 +303,7 @@ mod tests {
     }
 
     /// Each kind of op its own number, `0..KINDS`.
-    const KINDS: usize = 46;
+    const KINDS: usize = 47;
 
     const fn kind(op: &Op<'_>) -> usize {
         match op {
@@ -352,6 +357,7 @@ mod tests {
                 FeederOp::PlayCall => 42,
                 FeederOp::SkipMeal { .. } => 43,
                 FeederOp::UnskipMeal { .. } => 44,
+                FeederOp::DeleteCallIf { .. } => 46,
             },
             Op::CreateBoundInvite { .. } => 45,
         }

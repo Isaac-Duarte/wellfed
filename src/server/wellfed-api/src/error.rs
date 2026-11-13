@@ -120,9 +120,9 @@ pub enum ErrorCode {
     /// The `Idempotency-Key` already names another request (another
     /// body, feeder, kind of write or user). Nothing was sent.
     KeyReused,
-    /// Another change to the feeder's meal call came between a write's
-    /// first send and its retry, so the retry sent nothing: it would have
-    /// undone that change. Final for the key.
+    /// Another change to the feeder's meal call came after a write read
+    /// the clip it held, so nothing that would undo that change ran. Final
+    /// for the key.
     Superseded,
     /// The file is not a release the server keeps; `release` says why.
     ReleaseRefused,
@@ -245,6 +245,9 @@ impl From<Refusal> for FeederRefusal {
             // could arrive. Any other path that meets one has no name for
             // it here, and a role it does not lack would mislead.
             Refusal::Update(_) => Self::Unknown,
+            // Only the server's own meal-call delete sends the op that
+            // gets it, and settles the command as superseded.
+            Refusal::Replaced => Self::Unknown,
         }
     }
 }

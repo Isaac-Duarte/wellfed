@@ -1025,7 +1025,8 @@ fn every_frozen_variant_has_a_line() {
             | Refusal::Fault
             | Refusal::Unverified
             | Refusal::Portions { .. }
-            | Refusal::NoClock => return None,
+            | Refusal::NoClock
+            | Refusal::Replaced => return None,
         })
     }
 
