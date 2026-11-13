@@ -135,3 +135,41 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use wellfed_connect::update::Steps;
+
+    use super::*;
+
+    /// A feeder that never answers after a restart is tried again every
+    /// poll, on tokio's paused clock, until the reopen's bound has passed.
+    #[tokio::test(start_paused = true)]
+    async fn a_reopen_tries_until_its_bound() {
+        let tries = Cell::new(0u32);
+        let report = |event| panic!("nothing is reported: {event:?}");
+        let mut session = Session {
+            connect: async || -> Result<wellfed_connect::Connection, Error> {
+                tries.set(tries.get() + 1);
+                Err(Error::NoIdentity)
+            },
+            activated: |_, _: &str| false,
+            report: &report,
+            connection: None,
+            written: 0,
+            found: false,
+        };
+        let began = Instant::now();
+
+        assert!(session.reopen().await.unwrap().is_none());
+        let elapsed = began.elapsed();
+        assert!(
+            elapsed >= REOPEN_WAIT && elapsed < REOPEN_WAIT + POLL,
+            "{elapsed:?}"
+        );
+        let polls = u32::try_from(REOPEN_WAIT.as_secs() / POLL.as_secs()).unwrap();
+        assert_eq!(tries.get(), polls + 1, "at once, then every poll");
+    }
+}
