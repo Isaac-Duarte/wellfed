@@ -249,23 +249,40 @@ pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
 }
 
 /// [`set_aside`], running `moved` once the file is under its new name: a
-/// test's other writer, placing a new file at `path` then. A rename leaves
-/// nothing at `path`, so only a link's old name is removed, and a file
-/// another writer put there after the move stays.
+/// test's other writer, placing a new file at `path` then. A file another
+/// writer puts at `path` after the move stays, and the one set aside keeps
+/// what `path` held.
+///
+/// Where [`move_new`] is a link, linking `path` itself would leave its name
+/// on the set-aside file until the old name goes, and a writer at `path` in
+/// between would write into the file being kept. So the file first moves to
+/// a private name only this call knows (a plain rename: nothing is there to
+/// replace), and the link is made from that. A crash in between leaves the
+/// file under that `.aside-` name, never deleted.
 fn set_aside_then(path: &Path, moved: impl FnOnce()) -> std::io::Result<std::path::PathBuf> {
+    let from = if MOVE_LEAVES_SOURCE {
+        let mut held = path
+            .file_name()
+            .ok_or_else(|| std::io::Error::other("the path names no file"))?
+            .to_owned();
+        let tag = random::<8>().map_err(std::io::Error::other)?;
+        held.push(format!(".aside-{}", wellfed_session::hex::Lower(&tag)));
+        let held = path.with_file_name(held);
+        fs::rename(path, &held)?;
+        held
+    } else {
+        path.to_path_buf()
+    };
+
     let mut moved = Some(moved);
     for aside in aside_names(path)? {
-        match move_new(path, &aside) {
+        match move_new(&from, &aside) {
             Ok(()) => {
                 if let Some(moved) = moved.take() {
                     moved();
                 }
                 if MOVE_LEAVES_SOURCE {
-                    match fs::remove_file(path) {
-                        Ok(()) => {}
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(error) => return Err(error),
-                    }
+                    fs::remove_file(&from)?;
                 }
                 sync_parent(path)?;
                 return Ok(aside);
@@ -273,6 +290,12 @@ fn set_aside_then(path: &Path, moved: impl FnOnce()) -> std::io::Result<std::pat
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error),
         }
+    }
+
+    // Every numbered name is taken: put the file back where it was, unless
+    // something new is there now, in which case it stays under its private name.
+    if MOVE_LEAVES_SOURCE && move_new(&from, path).is_ok() {
+        fs::remove_file(&from)?;
     }
     Err(too_many())
 }
