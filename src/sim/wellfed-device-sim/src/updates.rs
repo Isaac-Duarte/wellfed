@@ -11,9 +11,10 @@
 //!   confirmation does once its healthy window and the feeding owner's
 //!   proof are over. Until then it is confirming ([`Updates::confirming`]),
 //!   and the firmware takes no feed. A build that never confirms, or whose
-//!   confirmation fails (the floor or the record not written), stays in
-//!   trial and resets after [`TRIAL_MS`], as the supervisor's deadline makes
-//!   it; one that storms resets the same way. KM0 then counts the reset.
+//!   confirmation record is not written (or whose floor fails with no valid
+//!   bank 0), stays in trial and resets after [`TRIAL_MS`], as the
+//!   supervisor's deadline makes it; one that storms resets the same way.
+//!   KM0 then counts the reset.
 //! - **A trial no boot of it could confirm gives way** at once, as the
 //!   firmware's runtime does (`wellfed_sdk::give_way`): its floor could
 //!   not be raised, it has no network to join (no build network and none

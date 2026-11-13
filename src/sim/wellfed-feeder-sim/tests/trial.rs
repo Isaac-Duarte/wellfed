@@ -3,8 +3,8 @@
 //! confirms, and resets at its deadline if it never does, until KM0 gives
 //! way to bank 0; one no boot of it could confirm (an update store it
 //! cannot read, no network to join) or whose owner holds Reset gives way
-//! at once, given a valid bank 0; a boot a reset storm holds reads `Fault`, its feeding owner
-//! closed, until its hold has run.
+//! at once, given a valid bank 0; a boot a reset storm holds reads
+//! `Fault`, its feeding owner closed, until its hold has run.
 
 use std::cell::RefCell;
 use std::rc::Rc;
