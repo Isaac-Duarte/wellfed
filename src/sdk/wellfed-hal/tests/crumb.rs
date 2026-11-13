@@ -336,3 +336,28 @@ fn letters_and_digits_round_trip_in_lower_case() {
         assert_eq!(decoded.name, name.map(|b| b.to_ascii_lowercase()));
     }
 }
+
+/// A paced run of writes takes its next step only once the watchdog
+/// feeder has checkpointed since its last, and only while one supervises.
+#[test]
+fn a_paced_run_waits_for_a_checkpoint_between_steps() {
+    use wellfed_hal::supervision::{self, Pace};
+
+    let _guard = start();
+    supervision::reset();
+    let mut pace = Pace::default();
+    assert!(pace.ready(), "the first step never waits");
+    pace.wrote();
+    assert!(pace.ready(), "no feeder supervises yet");
+
+    supervision::pace_writes();
+    assert!(!pace.ready(), "no checkpoint since the step");
+    supervision::checkpointed();
+    assert!(pace.ready());
+    pace.wrote();
+    assert!(!pace.ready());
+    supervision::checkpointed();
+    supervision::checkpointed();
+    assert!(pace.ready(), "any checkpoint since will do");
+    supervision::reset();
+}

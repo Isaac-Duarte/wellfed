@@ -450,6 +450,8 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
             supervision::stopping();
             return force_reset(sdk::uptime_ms(), || false).unwrap_or(0);
         }
+        // From here a paced run of writes waits for this task's checkpoints.
+        supervision::pace_writes();
     }
 
     let now = sdk::uptime_ms();
@@ -516,6 +518,7 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
             let gap = feed_gap();
             if watchdog.checkpoint(u64::from(progress)) {
                 FED_MS.store(now, Ordering::Relaxed);
+                supervision::checkpointed();
             } else {
                 // Keyed to the refusal, not to `STOPPED`: a transient stop
                 // that recovered set that already, and this reset still needs

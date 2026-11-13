@@ -148,6 +148,57 @@ pub fn reset_certain(restarting: bool, checkpoint_refused: bool) -> bool {
     restarting || checkpoint_refused || STOPPING.load(Ordering::Acquire)
 }
 
+/// Checkpoints the watchdog feeder has made this boot.
+static CHECKPOINTS: AtomicU32 = AtomicU32::new(0);
+/// The watchdog feeder supervises this boot, so [`Pace`] waits for it.
+static PACING: AtomicBool = AtomicBool::new(false);
+
+/// The watchdog opened: from now on a [`Pace`]d run of writes waits for the
+/// feeder's checkpoints. Feeder task only, once.
+pub fn pace_writes() {
+    PACING.store(true, Ordering::Release);
+}
+
+/// The watchdog feeder made a checkpoint. Feeder task only.
+pub fn checkpointed() {
+    CHECKPOINTS.fetch_add(1, Ordering::AcqRel);
+}
+
+/// A run of flash writes stepped back to back (a factory reset's erases,
+/// a handover's), paced by the watchdog feeder.
+///
+/// Every flash lease masks IRQs and so stops SysTick: the feeder's wait
+/// between checkpoints, counted in ticks, stretches by the masked time of
+/// every lease inside it, while the watchdog's progress gap is measured
+/// on the system timer. Steps a millisecond apart fit most of a second of
+/// masked time into one feed period: a factory reset's forty erases did
+/// (`gap_ms=1063` on a feed period of 250 ticks). So a paced run takes its
+/// next step only once the feeder has checkpointed since its last, and one
+/// feed period holds at most one step's leases.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Pace {
+    /// The feeder's checkpoint count when the last step's writes ended.
+    after: Option<u32>,
+}
+
+impl Pace {
+    /// Whether the next step may write: none ran yet, the feeder has
+    /// checkpointed since the last, or no watchdog feeder supervises.
+    pub fn ready(&self) -> bool {
+        match self.after {
+            None => true,
+            Some(mark) => {
+                !PACING.load(Ordering::Acquire) || CHECKPOINTS.load(Ordering::Acquire) != mark
+            }
+        }
+    }
+
+    /// The step's writes ended.
+    pub fn wrote(&mut self) {
+        self.after = Some(CHECKPOINTS.load(Ordering::Acquire));
+    }
+}
+
 /// Host tests only: no stop open, none certain.
 #[cfg(not(target_os = "none"))]
 pub fn reset() {
@@ -156,4 +207,6 @@ pub fn reset() {
     GRACE_AT.store(0, Ordering::Relaxed);
     FLUSHED.store(false, Ordering::Relaxed);
     GRACE_ENDED.store(false, Ordering::Relaxed);
+    CHECKPOINTS.store(0, Ordering::Relaxed);
+    PACING.store(false, Ordering::Relaxed);
 }
