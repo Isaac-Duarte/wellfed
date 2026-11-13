@@ -5,7 +5,7 @@ use wellfed_core::ota::{CONFIRM_LEN, confirm_record};
 use wellfed_hal_common::trial::{
     CONFIRM_SECTOR, Decision, HALT_LIMIT, HALT_MS, LIMIT, MAX_LEVEL, STABLE_MS, STORM_LIMIT,
     STORM_STATE, Storm, confirmation, decide, deliberate, halt_over, hold_ms, level, past_trial,
-    released, resets, settled,
+    released, resets, settled, spent,
 };
 use wellfed_signed::MARKER;
 
@@ -421,4 +421,34 @@ fn the_glue_reads_the_boards_confirmation_sector() {
     if let Some(sector) = CONFIRM_SECTOR {
         assert_eq!(offset, wellfed_board::STORAGE_OFFSET + sector * 0x1000);
     }
+}
+
+/// A trial build that can never confirm sets its count to the limit before
+/// its restart: the next boot gives way at once onto a valid bank 0, or,
+/// with none, runs on held as one that ran out, whatever count it had.
+#[test]
+fn a_spent_trial_gives_way_at_the_next_boot() {
+    for counted in 1..=LIMIT {
+        let km4 = |value: u32| (value >> 16 & 0xf == counted).then(|| spent(value, &ID));
+        let n = counted as usize + 1;
+        let out = boots_from(n, &MARKER, MARKER, NONE, km4);
+        assert_eq!(out.last(), Some(&Decision::GiveWay), "after boot {counted}");
+
+        let out = boots_from(n, &MARKER, CLEARED, NONE, km4);
+        assert_eq!(
+            out.last(),
+            Some(&Decision::NoFallback(LIMIT)),
+            "no fallback after boot {counted}"
+        );
+    }
+}
+
+/// The spent count is this build's: another build's trial in bank 1 (a
+/// reinstall) still starts at its first boot.
+#[test]
+fn a_spent_count_is_only_its_own_builds() {
+    let register = spent(bump(0), &ID);
+    let other = [0x11; 32];
+    let (decision, _) = decide(&MARKER, &MARKER, &NONE, bump(register), &other);
+    assert_eq!(decision, Decision::Counted(1));
 }

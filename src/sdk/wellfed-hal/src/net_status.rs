@@ -149,6 +149,24 @@ fn channel(result: i32) -> u32 {
         .unwrap_or(0)
 }
 
+/// This boot has no network to join: the image has no build network, and
+/// the credential store read as holding none (not one that could not be
+/// read, nor one a factory reset or handover has yet to clear).
+static UNPROVISIONED: AtomicBool = AtomicBool::new(false);
+
+/// The product's join half, before each attempt: whether this boot has
+/// no network to join, as [`UNPROVISIONED`] says.
+pub fn set_unprovisioned(unprovisioned: bool) {
+    UNPROVISIONED.store(unprovisioned, Ordering::Release);
+}
+
+/// Whether the last join attempt found no network to join, neither the
+/// build's nor a stored one. A trial build can never confirm then: only the
+/// settings writer saves credentials, and it starts once the trial has.
+pub fn unprovisioned() -> bool {
+    UNPROVISIONED.load(Ordering::Acquire)
+}
+
 /// The current join's liveness (the Wi-Fi task's watch only).
 pub(crate) fn set_live(live: bool) {
     LIVE.store(live, Ordering::Release);
@@ -194,4 +212,5 @@ pub fn reset() {
     LAST_LOSS.store(LossCause::None.code(), Ordering::Relaxed);
     RSSI.store(0, Ordering::Relaxed);
     LIVE.store(false, Ordering::Relaxed);
+    UNPROVISIONED.store(false, Ordering::Relaxed);
 }

@@ -197,6 +197,50 @@ fn confirmation_records_decode_to_what_they_say() {
         },
         Some(Event::Confirm(Confirm::Error { stage: "write" })),
     );
+    for &reason in confirm::GiveWayReason::ALL {
+        confirm_decodes(
+            confirm::Record::GiveWay { reason },
+            Some(Event::Confirm(Confirm::GiveWay {
+                reason: reason.as_str(),
+            })),
+        );
+    }
+}
+
+/// Only a confirmation no later boot could pass either gives the trial up
+/// at once: a floor it cannot raise. A failed read or write of the record,
+/// or arming that failed (a skip after a hang arms again next boot), keeps
+/// the trial's deadline and KM0's count.
+#[test]
+fn only_a_lasting_failure_gives_the_trial_up() {
+    use confirm::{ErrorStage, GiveWayReason, Record};
+    use wellfed_hal::flash_lock::arming::Event as Arming;
+
+    let floor = Record::Error {
+        stage: ErrorStage::Floor,
+    };
+    assert_eq!(GiveWayReason::lasting(floor), Some(GiveWayReason::Floor));
+
+    let confirmed = Record::Confirmed {
+        healthy_ms: 30_000,
+        version: 0,
+    };
+    let passing = [
+        Record::Already,
+        confirmed,
+        Record::Error {
+            stage: ErrorStage::Read,
+        },
+        Record::Error {
+            stage: ErrorStage::Write,
+        },
+        Record::Arming(Arming::Timeout),
+        Record::Arming(Arming::Clock),
+        Record::Arming(Arming::Skip { marker: 0x100 }),
+    ];
+    for record in passing {
+        assert_eq!(GiveWayReason::lasting(record), None, "{record:?}");
+    }
 }
 
 /// The words the bench matches, as they were when these fields were plain

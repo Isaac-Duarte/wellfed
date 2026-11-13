@@ -802,3 +802,121 @@ fn no_call_plays_while_a_reset_erases_its_clip() {
     assert!(sectors(storage::CALL).iter().all(|&byte| byte == 0xff));
     assert_eq!(audio::request_call(1), PlayResult::Busy, "no clip after");
 }
+
+/// The feeder task's period between watchdog checkpoints, in FreeRTOS
+/// ticks (the runtime's `FEED_MS`).
+const FEED_TICKS: u32 = 250;
+/// One erase lease with IRQs masked, as installs measured it on the bench
+/// (`masked_max_ms` 42 to 46), and one page program's.
+const ERASE_MASKED_MS: u32 = 43;
+const PROGRAM_MASKED_MS: u32 = 3;
+
+/// The service task stepping a reset boot's writer beside the watchdog
+/// feeder, on two clocks: the system timer the watchdog's progress gap is
+/// measured on, and the FreeRTOS tick the feeder waits in. A lease masks
+/// IRQs, so its time passes on the system timer while the tick stands
+/// (one pended tick at the unmask); the writer's waits pass on both. The
+/// feeder, the highest priority, checkpoints as soon as its period has
+/// passed in ticks. Runs the boot to `ResetDone`; its records and the
+/// longest gap between checkpoints on the system timer.
+fn reset_boot_beside_the_feeder(provider: &mut Provider, paced: bool) -> (Vec<Record>, u32) {
+    use crate::support::{LEASES, Unreached};
+    use wellfed_hal::supervision;
+
+    restart_mailboxes();
+    if paced {
+        supervision::pace_writes();
+    }
+    let mut writer = Writer::<Armed>::default();
+    let mut clocks = Clocks::default();
+
+    let mut records = Vec::new();
+    for _ in 0..10_000 {
+        // A feeder already due runs before the next step.
+        if clocks.tick - clocks.fed_tick >= FEED_TICKS {
+            clocks.feed();
+        }
+
+        LEASES.with(|l| l.set((0, 0)));
+        // SAFETY: the provider outlives the run.
+        let step = unsafe { writer.step::<Unreached, Armed>(provider) };
+        let (erases, programs) = LEASES.with(Cell::get);
+        let masked = erases * ERASE_MASKED_MS + programs * PROGRAM_MASKED_MS;
+        clocks.wall += masked;
+        clocks.tick += u32::from(masked > 0);
+        let done = matches!(step.record, Some(Record::ResetDone { .. }));
+        records.extend(step.record);
+        if done {
+            return (records, clocks.worst);
+        }
+
+        // The step's wait, unmasked: the feeder runs at each period's end.
+        let mut wait = step.delay_ms.max(1);
+        while clocks.tick - clocks.fed_tick + wait >= FEED_TICKS {
+            let to_due = FEED_TICKS.saturating_sub(clocks.tick - clocks.fed_tick);
+            clocks.wall += to_due;
+            clocks.tick += to_due;
+            wait -= to_due;
+            clocks.feed();
+        }
+        clocks.wall += wait;
+        clocks.tick += wait;
+    }
+    panic!("the reset never finished: {records:?}");
+}
+
+/// [`reset_boot_beside_the_feeder`]'s clocks, in milliseconds.
+#[derive(Default)]
+struct Clocks {
+    /// The system timer.
+    wall: u32,
+    /// The FreeRTOS tick.
+    tick: u32,
+    fed_wall: u32,
+    fed_tick: u32,
+    /// The longest gap between checkpoints on the system timer.
+    worst: u32,
+}
+
+impl Clocks {
+    fn feed(&mut self) {
+        self.worst = self.worst.max(self.wall - self.fed_wall);
+        self.fed_wall = self.wall;
+        self.fed_tick = self.tick;
+        wellfed_hal::supervision::checkpointed();
+    }
+}
+
+/// The long erase path of a Reset hold over an unreadable update store
+/// (simulation): forty erases a millisecond apart hold the feeder off its
+/// checkpoint past the watchdog's progress gap, as on a beta feeder
+/// (`watchdog_fault=4 gap_ms=1063`); paced by the feeder's checkpoints,
+/// one feed period holds one step's leases, well inside the gap.
+#[test]
+fn a_reset_over_a_corrupt_update_store_keeps_the_watchdog_fed() {
+    use wellfed_hal::supervision::config::WATCHDOG;
+
+    let (_guard, mut provider) = filled_then_reset();
+    corrupt_update_store();
+    let image = fake::with(|h| h.storage.clone());
+
+    let (_, unpaced) = reset_boot_beside_the_feeder(&mut provider, false);
+    assert!(
+        unpaced > WATCHDOG.max_progress_gap_ms,
+        "the model reproduces the fault: {unpaced} ms"
+    );
+
+    fake::with(|h| h.storage = image);
+    let (records, paced) = reset_boot_beside_the_feeder(&mut provider, true);
+    assert!(records.contains(&Record::ResetUpdateCleared), "{records:?}");
+    assert_eq!(
+        records.last(),
+        Some(&Record::ResetDone { erased: 38 }),
+        "{records:?}"
+    );
+    // A feed period and the update store's two erases, at most.
+    assert!(
+        paced <= FEED_TICKS + 2 * ERASE_MASKED_MS + 1,
+        "the longest gap between checkpoints: {paced} ms"
+    );
+}

@@ -183,6 +183,10 @@ pub struct SimPlatform {
     reset_flags: u32,
     /// A reset storm holds this boot, as the simulated runtime says.
     held: bool,
+    /// The simulated runtime would give the trial up for bank 0 now.
+    can_give_way: bool,
+    /// The loop asked the trial to give way to bank 0.
+    give_way: bool,
     /// The radio the loop last asked for: while off, no connection is
     /// taken and those open are dropped, as the network leaves.
     radio: Radio,
@@ -279,6 +283,8 @@ impl SimPlatform {
             supply: SimSupply::MAINS,
             reset_flags: 0,
             held: false,
+            can_give_way: false,
+            give_way: false,
             radio: Radio::On,
             build_wifi: BuildWifi::Present,
             alerts: Alerts::new(),
@@ -314,6 +320,22 @@ impl SimPlatform {
     /// A reset storm holds this boot (`true`), or its hold ended.
     pub(crate) fn set_held(&mut self, held: bool) {
         self.held = held;
+    }
+
+    /// Whether the simulated runtime would give the trial up now: it is
+    /// confirming over a valid bank 0.
+    pub(crate) fn set_can_give_way(&mut self, can: bool) {
+        self.can_give_way = can;
+    }
+
+    /// Whether the loop asked the trial to give way, taken once.
+    pub(crate) fn take_give_way(&mut self) -> bool {
+        core::mem::take(&mut self.give_way)
+    }
+
+    /// The image's build network.
+    pub(crate) const fn build_wifi_of(&self) -> BuildWifi {
+        self.build_wifi
     }
 
     /// Report `flags` as this boot's reset flags (bit 18 a brownout), from
@@ -631,6 +653,13 @@ impl Platform for SimPlatform {
 
     fn reset(&mut self) {
         self.reboot = true;
+    }
+
+    /// The simulated runtime gives way on the update stage's turn later
+    /// in this pass, which the answer already holds to.
+    fn give_way(&mut self) -> bool {
+        self.give_way |= self.can_give_way;
+        self.can_give_way
     }
 
     fn restarting(&self) -> bool {

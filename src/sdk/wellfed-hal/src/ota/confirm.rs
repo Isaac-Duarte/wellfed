@@ -105,6 +105,45 @@ named_enum! {
     }
 }
 
+named_enum! {
+    /// Why a trial build gives way to bank 0 before its trial runs out
+    /// (`give_way=1 reason=`): no later boot of it could confirm either, or
+    /// the owner held Reset, which only bank 0 can carry out while the
+    /// trial lasts.
+    pub enum GiveWayReason {
+        /// No network to join: no build network and none stored. Only the
+        /// settings writer saves one, and it starts once the trial confirms.
+        NoNetwork = "no_network",
+        /// The update store's floor could not be raised: a store this build
+        /// cannot read stays so until bank 0's Reset clears it.
+        Floor = "floor",
+        /// A Reset hold on the panel.
+        Reset = "reset",
+    }
+}
+
+impl GiveWayReason {
+    /// Whether a confirmation that ended with `record` leaves the trial
+    /// unable to confirm on any later boot too, and why. A failed read or
+    /// write of the record, or arming that failed (a skip after a hang
+    /// clears the attempt marker for the next boot), may pass next boot:
+    /// those keep KM0's count, and the trial's deadline resets the boot.
+    pub const fn lasting(record: Record) -> Option<Self> {
+        match record {
+            Record::GiveWay { reason } => Some(reason),
+            Record::Error {
+                stage: ErrorStage::Floor,
+            } => Some(Self::Floor),
+            Record::Already
+            | Record::Confirmed { .. }
+            | Record::Arming(_)
+            | Record::Error {
+                stage: ErrorStage::Read | ErrorStage::Write,
+            } => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record {
     /// The record already names this build.
@@ -118,6 +157,10 @@ pub enum Record {
     },
     Error {
         stage: ErrorStage,
+    },
+    /// The trial gives way to bank 0 at once, for `reason`.
+    GiveWay {
+        reason: GiveWayReason,
     },
 }
 
@@ -150,6 +193,7 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
             version,
         } => write!(f, "confirmed=1 healthy_ms={healthy_ms} version={version}"),
         Record::Error { stage } => write!(f, "error stage={stage}"),
+        Record::GiveWay { reason } => write!(f, "give_way=1 reason={reason}"),
     }
 }
 

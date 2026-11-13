@@ -200,6 +200,16 @@ impl Platform for Plaf103 {
         wellfed_sdk::request_reset();
     }
 
+    /// The runtime's trial runs on the target only; a host build has none
+    /// to give up.
+    fn give_way(&mut self) -> bool {
+        #[cfg(target_os = "none")]
+        let gave_way = wellfed_sdk::give_way(wellfed_sdk::hal::ota::confirm::GiveWayReason::Reset);
+        #[cfg(not(target_os = "none"))]
+        let gave_way = false;
+        gave_way
+    }
+
     fn restarting(&self) -> bool {
         wellfed_sdk::hal::supervision::restart_requested()
     }

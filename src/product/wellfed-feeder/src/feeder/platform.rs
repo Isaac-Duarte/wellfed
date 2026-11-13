@@ -182,6 +182,11 @@ pub trait Platform {
     fn held(&self) -> bool;
     /// Restart the feeder (a watchdog reset on hardware).
     fn reset(&mut self);
+    /// Give an unconfirmed trial build up for bank 0, whose settings writer
+    /// runs at once (a trial's starts only once it confirms, so it would
+    /// never take a factory reset), and restart into it. Whether it gave
+    /// way: not on a boot that runs no trial, nor without a valid bank 0.
+    fn give_way(&mut self) -> bool;
     /// A restart was asked for ([`Self::reset`]) and has not come yet: no
     /// feed may start, since the restart would leave it uncertain.
     fn restarting(&self) -> bool;

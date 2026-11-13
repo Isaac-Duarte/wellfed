@@ -381,3 +381,50 @@ fn an_attempt_holds_the_join_turn_from_select_to_outcome() {
     assert_eq!(INTERLOCK.turn(), Turn::Free);
     forget();
 }
+
+/// Only a consumer image whose credential store reads as holding no
+/// network has none to join, which a trial build gives way on: not a bench
+/// image, not a store holding one, and not one a handover still withholds.
+#[test]
+fn only_a_consumer_image_with_nothing_stored_is_unprovisioned() {
+    use wellfed_hal::net_status;
+
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    fake::reset_hardware();
+    forget();
+    assert_eq!(select_consumer(), None, "an erased store");
+    assert!(net_status::unprovisioned());
+    outcome(Attempt::Failed);
+
+    forget();
+    store(None);
+    assert_eq!(select_consumer(), None, "a cleared store");
+    assert!(net_status::unprovisioned());
+    outcome(Attempt::Failed);
+
+    forget();
+    select();
+    assert!(!net_status::unprovisioned(), "the build's network");
+    outcome(Attempt::Failed);
+
+    forget();
+    store(Some(
+        Credentials::new(b"stored-net", b"stored-pass").unwrap(),
+    ));
+    assert!(select_consumer().is_some());
+    assert!(
+        !net_status::unprovisioned(),
+        "a stored network, even absent"
+    );
+    outcome(Attempt::Failed);
+
+    forget();
+    let at = wellfed_hal::board::storage::RESET.first as usize * 0x1000;
+    fake::with(|h| {
+        h.storage[at..at + 16].copy_from_slice(&wellfed_core::store::handover::MARKER);
+    });
+    assert_eq!(select_consumer(), None, "withheld by the handover");
+    assert!(!net_status::unprovisioned(), "what is stored is unread");
+    outcome(Attempt::Failed);
+    forget();
+}

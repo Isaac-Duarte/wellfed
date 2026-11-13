@@ -39,6 +39,8 @@ thread_local! {
     /// Programs of these sectors fail, as a store whose writes stopped
     /// working (or one a power cut stopped before) would.
     pub(crate) static PROGRAMS_FAIL_IN: Cell<Option<Sectors>> = const { Cell::new(None) };
+    /// Erases and programs asked for, each a flash lease on the device.
+    pub(crate) static LEASES: Cell<(u32, u32)> = const { Cell::new((0, 0)) };
 }
 
 pub(crate) struct Armed;
@@ -68,6 +70,7 @@ impl FlashOps for Armed {
     fn erase(sector: u32) -> bool {
         // Every write runs inside a marked attempt.
         ATTEMPT_SEEN.with(|s| s.set(sdk::backup_read(MARKER_REGISTER) != 0));
+        LEASES.with(|l| l.set((l.get().0 + 1, l.get().1)));
         if ERASE_FAILS.with(Cell::get) == Some(sector) {
             return false;
         }
@@ -75,6 +78,7 @@ impl FlashOps for Armed {
         unsafe { sdk::storage_erase(sector) }
     }
     fn program(sector: u32, offset: u32, data: &[u8]) -> bool {
+        LEASES.with(|l| l.set((l.get().0, l.get().1 + 1)));
         let stats = wellfed_hal::board::storage::STATS;
         let worn = STATS_PROGRAMS_FAIL.with(Cell::get)
             && (stats.first..stats.first + stats.count).contains(&sector);

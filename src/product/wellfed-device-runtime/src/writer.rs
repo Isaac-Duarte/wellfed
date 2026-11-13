@@ -30,7 +30,12 @@
 //! rewrite what it keeps of a cleared store if it keeps any
 //! ([`Product::keep_on_reset`]), erases the marker last, and only then opens
 //! the stores, empty. The feed journal, a readable update store and the
-//! seed are never touched, nor any store the product opens as kept.
+//! seed are never touched, nor any store the product opens as kept. Each
+//! of its steps, and each of a handover's that writes, waits until the
+//! watchdog feeder has checkpointed since the last (`supervision::Pace`), so
+//! a feed period holds one step's leases: every lease stops the tick the
+//! feeder's wait is counted in, so forty erase steps a millisecond apart
+//! once held off its checkpoint past the watchdog's progress gap.
 //!
 //! It keeps the time settings too (sectors 27 and 28,
 //! `wellfed_device::store::time`): the owner's zone and the NTP server,
@@ -110,6 +115,10 @@ const CONFIRM_SECTOR: u32 = wellfed_hal::board::storage::CONFIRM.first;
 pub const POLL_MS: u32 = 200;
 /// Between a factory reset's erases, each its own step and write turn.
 pub const RESET_POLL_MS: u32 = 1;
+/// While a factory reset's or a handover's next step waits for the
+/// watchdog feeder to checkpoint (`supervision::Pace`): a feed period is
+/// 250 ms, so this costs at most a few milliseconds a step.
+pub const PACE_POLL_MS: u32 = 10;
 /// While events wait to be written or read.
 pub const EVENTS_POLL_MS: u32 = 5;
 /// Polls at [`EVENTS_POLL_MS`] after the last answered read: about 1 s.
@@ -693,6 +702,9 @@ pub struct Core<F> {
     handing_over: Option<u8>,
     /// This boot recorded its attempt in the marker sector.
     reset_attempted: bool,
+    /// The factory reset's and the handover's erases, one step per feed
+    /// period of the watchdog feeder.
+    pace: supervision::Pace,
     /// Arming skipped this boot: the boot before reset inside a write.
     skipped: bool,
     /// When the settings records are next checked for a shared generation,
@@ -742,6 +754,7 @@ impl<F> Default for Core<F> {
             reset_stopped: false,
             handing_over: None,
             reset_attempted: false,
+            pace: supervision::Pace::default(),
             skipped: false,
             settings_repair: RepairDue::Boot,
         }
@@ -1230,6 +1243,9 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         if self.core.unarmed::<H>() {
             return self.handover_end(Record::HandoverStopped { stage: step });
         }
+        if !self.core.pace.ready() {
+            return next(PACE_POLL_MS, None);
+        }
         let Some(turn) = self.core.take_turn() else {
             return next(WRITE_WAIT_POLL_MS, None);
         };
@@ -1239,8 +1255,13 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         let clients = HANDOVER_CLEARED_SECTORS;
         let index = u32::from(step);
         let clears = !cfg!(build_wifi);
+        // The steps that write nothing: a build with its own Wi-Fi keeps
+        // its stores, and only bank 0 erases the confirmation. They need
+        // no feed period after them.
+        let idle = (index <= clients && !clears)
+            || (index == clients + 2 && sdk::running_bank() != Some(0));
         arming::set_attempt();
-        let done = if index <= clients && !clears {
+        let done = if idle {
             true
         } else if let Some(sector) = handover_cleared(index) {
             F::erase(sector) && blank::<F>(sector)
@@ -1269,8 +1290,6 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 wellfed_hal::ota::update::store_started_over();
             }
             started
-        } else if index == clients + 2 && sdk::running_bank() != Some(0) {
-            true
         } else if index == clients + 2 {
             F::erase(CONFIRM_SECTOR) && blank::<F>(CONFIRM_SECTOR)
         } else {
@@ -1278,6 +1297,9 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         };
         arming::clear_attempt();
         drop(turn);
+        if !idle {
+            self.core.pace.wrote();
+        }
 
         if !done {
             return self.handover_end(Record::HandoverStopped { stage: step });
@@ -1326,6 +1348,9 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         let Some(index) = core.resetting else {
             return next(POLL_MS, None);
         };
+        if !core.pace.ready() {
+            return next(PACE_POLL_MS, None);
+        }
         let Some(turn) = core.take_turn() else {
             return next(WRITE_WAIT_POLL_MS, None);
         };
@@ -1373,6 +1398,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         };
         arming::clear_attempt();
         drop(turn);
+        core.pace.wrote();
         core.reset_attempted = noted;
 
         // An attempt that did not land is a store this boot cannot count

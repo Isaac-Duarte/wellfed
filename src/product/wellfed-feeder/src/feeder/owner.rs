@@ -71,6 +71,10 @@ pub enum Record<D> {
     ResetRefused {
         reason: ResetRefusal,
     },
+    /// An allowed Reset hold on a trial build that has not confirmed: no
+    /// settings writer runs to take it, so the trial gives way to bank 0,
+    /// where the owner holds Reset again.
+    ResetGaveWay,
     /// The writer's answer to the reset: `Done` once its marker is down and
     /// the clients forgotten, and the feeder restarts to finish it.
     ResetWritten {
@@ -96,6 +100,7 @@ pub fn describe<D: fmt::Display>(record: Record<D>, f: &mut impl fmt::Write) -> 
         Record::Pairing(event) => pair(event, f),
         Record::Reset { requested } => write!(f, "reset keys={requested}"),
         Record::ResetRefused { reason } => write!(f, "reset refused={reason}"),
+        Record::ResetGaveWay => f.write_str("reset give_way=1"),
         Record::ResetWritten { result } => write!(f, "reset result={result}"),
         Record::Setup(record) => setup::describe(record, f),
     }
@@ -364,7 +369,11 @@ impl Owner {
 }
 
 /// An allowed Reset hold: the factory reset, queued for the settings
-/// writer unless `refusal` names why not; `ticket` takes its ticket.
+/// writer unless `refusal` names why not; `ticket` takes its ticket. On a
+/// trial build still confirming, no writer would take it, so the trial
+/// gives way to bank 0 instead (and bank 0 then counts it as a trial that
+/// failed). With no bank 0 to give way to it is queued as on any boot, and
+/// runs if the trial confirms.
 fn reset_hold<P: Platform>(
     platform: &mut P,
     refusal: Option<ResetRefusal>,
@@ -373,6 +382,10 @@ fn reset_hold<P: Platform>(
 ) {
     if let Some(reason) = refusal {
         record(Record::ResetRefused { reason });
+        return;
+    }
+    if platform.give_way() {
+        record(Record::ResetGaveWay);
         return;
     }
 

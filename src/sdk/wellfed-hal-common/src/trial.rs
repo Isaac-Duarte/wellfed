@@ -123,6 +123,13 @@ pub fn fallback(read: impl FnMut(u32, &mut [u8; 32]) -> bool) -> [u8; 8] {
     }
 }
 
+/// Whether bank 0 is one a give-way may land on ([`fallback`]): KM4 asks
+/// before it gives a trial up, since KM0 would otherwise run the build on
+/// held, feeding nothing, rather than give way.
+pub fn has_fallback(read: impl FnMut(u32, &mut [u8; 32]) -> bool) -> bool {
+    fallback(read) == MARKER
+}
+
 /// The backup register KM0 counts in; KM4 reads and settles it.
 pub const REGISTER: u32 = 4;
 pub const BOOT_MASK: u32 = 0xffff;
@@ -516,6 +523,16 @@ pub fn released(register: u32, identity: &[u8; 32]) -> u32 {
 pub fn halt_over(register: u32, identity: &[u8; 32]) -> u32 {
     let level = level(register, identity) + 1;
     storm_stamp(register, identity, level, STORM_LIMIT) | FORGIVEN
+}
+
+/// The register before a trial build that can never confirm this boot
+/// restarts: its count at [`LIMIT`], so KM0's next boot gives way to bank 0
+/// as after a trial's last boot ([`decide`]), or, with no valid bank 0,
+/// runs it on held, as one that ran out. The storm field stays: KM0's
+/// give-way clears it, and the hold counts it.
+pub fn spent(register: u32, identity: &[u8; 32]) -> u32 {
+    let (_, storm) = fields(register, identity);
+    stamp(register, identity, LIMIT, storm)
 }
 
 /// The register before an activation's or a give-way's restart: the next

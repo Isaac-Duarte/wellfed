@@ -113,6 +113,9 @@ pub enum Confirm<'a> {
     /// Confirming failed at `stage`: the HAL's word (`read`, `write`,
     /// `floor`) or its flash hooks' (`timeout`, `clock`).
     Error { stage: &'a str },
+    /// The trial gave way to bank 0 before running out, for `reason`
+    /// (`no_network`, `read`, `write`, `floor`, `arming`, `reset`).
+    GiveWay { reason: &'a str },
 }
 
 /// Bank 1's offer check (`PLWCH1`).
@@ -315,6 +318,11 @@ impl<'a> Record<'a> {
     }
 
     fn confirm(&self) -> Option<Confirm<'a>> {
+        if self.flag("give_way") == Some(true) {
+            return Some(Confirm::GiveWay {
+                reason: self.field("reason")?,
+            });
+        }
         if self.first == "error" {
             return Some(Confirm::Error {
                 stage: self.field("stage")?,
