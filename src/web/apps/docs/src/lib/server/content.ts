@@ -559,10 +559,9 @@ export function render(file: string, markdown: string): Doc {
  * absolute, by the same rule as the page (a published doc to its page on this
  * site, anything else to GitHub), and the tabs markers dropped, so both
  * sections read in order. All of it is found with remark, so a `](` or a marker
- * inside code is left alone.
+ * inside code is left alone. The source is the doc's own unless a test passes one.
  */
-export function portableMarkdown(file: string): string | undefined {
-  const markdown = files.get(file);
+export function portableMarkdown(file: string, markdown = files.get(file)): string | undefined {
   if (markdown === undefined) return undefined;
 
   const edits: { start: number; end: number; text: string }[] = [];

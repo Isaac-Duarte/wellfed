@@ -19,8 +19,15 @@ describe("publishing", () => {
 });
 
 describe("diagrams", () => {
+  // The pages own their drawings and may move them; the rules are pinned with
+  // Markdown of the test's own, naming drawings that live in docs/.
+  const drawing = (name: string) => `\`\`\`mermaid\n%% svg: ${name}\nflowchart LR\n  a --> b\n\`\`\`\n`;
+
   test("a mermaid block becomes the drawing it names, inline", () => {
-    const html = rendered("devices/plaf103/README.md").html;
+    const { html } = render(
+      "devices/plaf103/test.md",
+      `# Page\n\n${drawing("food-path.svg")}\n${drawing("parts.svg")}`,
+    );
 
     expect(html).toContain('<div class="diagram"><svg xmlns="http://www.w3.org/2000/svg"');
     expect(html).toContain('<title id="food-path-title">');
@@ -29,14 +36,27 @@ describe("diagrams", () => {
   });
 
   test("pages in different folders draw the same file", () => {
-    for (const file of ["devices/plaf103/flash-layout.md", "firmware/bank-policy.md"])
-      expect(rendered(file).html, file).toContain('<title id="boot-flow-title">');
+    for (const [file, name] of [
+      ["devices/plaf103/test.md", "../../firmware/boot-flow.svg"],
+      ["firmware/test.md", "boot-flow.svg"],
+    ] as const)
+      expect(render(file, drawing(name)).html, file).toContain('<title id="boot-flow-title">');
+  });
+
+  test.each([
+    ["no drawing named", "```mermaid\nflowchart LR\n  a --> b\n```\n", 'must start with "%% svg: <file>.svg"'],
+    ["a missing drawing", drawing("nope.svg"), "which doesn't exist"],
+  ])("%s fails the build", (_name, markdown, message) => {
+    expect(() => render("firmware/test.md", markdown)).toThrow(message);
   });
 
   test("a mermaid fence quoted in a longer one stays code", () => {
-    const html = rendered("development/writing.md").html;
+    const html = render(
+      "development/test.md",
+      `\`\`\`\`markdown\n${drawing("../firmware/boot-flow.svg")}\`\`\`\`\n`,
+    ).html;
 
-    expect(html).toContain("%% svg: boot-flow.svg");
+    expect(html).toContain("%% svg: ../firmware/boot-flow.svg");
     expect(html).not.toContain('class="diagram"');
   });
 });
@@ -171,8 +191,9 @@ describe("portable markdown", () => {
   });
 
   test("code is left alone", () => {
-    expect(markdown).toContain("%% svg: food-path.svg");
-    expect(portableMarkdown("development/writing.md")).toContain("%% svg: boot-flow.svg");
+    const source = "```mermaid\n%% svg: food-path.svg\nflowchart LR\n  a[link.md] --> b\n```\n";
+
+    expect(portableMarkdown("devices/plaf103/test.md", source)).toBe(source);
   });
 
   test("a file that isn't a doc has none", () => {
