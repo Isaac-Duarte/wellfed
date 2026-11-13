@@ -7,6 +7,8 @@
 //! [`wellfed_sim::run_scenario`]. The report is evidence, so an existing
 //! file is never replaced.
 
+#![forbid(unsafe_code)]
+
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;

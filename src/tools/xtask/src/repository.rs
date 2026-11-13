@@ -70,6 +70,9 @@ const LINES: usize = 400;
 /// The same under a `tests/` directory, where each test keeps its setup
 /// and its assertions together.
 const TEST_LINES: usize = 600;
+/// Host crate roots allowed `unsafe`: the virtual feeder worker runs the
+/// firmware's own ports on the fake SDK, through their C-shaped interface.
+const UNSAFE_HOST_ROOTS: [&str; 1] = ["src/sim/wellfed-sim/src/main.rs"];
 /// Sources under `src/` that must not cite a board card.
 const CARD_FREE: [&str; 13] = [
     "rs", "c", "h", "toml", "md", "ts", "py", "dart", "svelte", "kt", "sh", "yml", "yaml",
@@ -115,6 +118,12 @@ regex!(
     r#"(?m)^\s*(?:wellfed-flash\s*[=.]|\[[^\]#]*\.wellfed-flash\s*\]|[^#\n]*\bpackage\s*=\s*"wellfed-flash")"#
 );
 
+// A host crate's root: the crates under these folders run only on a
+// computer or phone, so they have no C interface or MMIO edge.
+regex!(
+    HOST_ROOT,
+    r"^src/(?:(?:server|client|tools|sim)/[^/]+|integrations/homeassistant/bridge)/src/(?:lib\.rs|main\.rs|bin/[^/]+\.rs|bin/[^/]+/main\.rs)$"
+);
 regex!(LINK, r"\]\(([^)]+)\)");
 regex!(SCHEME, r"^[A-Za-z][A-Za-z0-9+.-]*:");
 
@@ -244,6 +253,11 @@ fn check_file(root: &Path, name: &str, published: &BTreeSet<&str>, summary: &mut
         raw_outputs(name, &content, &mut summary.errors);
         if let Some(error) = oversized(name, &content) {
             summary.errors.push(error);
+        }
+        if allows_unsafe(name, &content) {
+            summary.errors.push(format!(
+                "{name}: a host crate root without `#![forbid(unsafe_code)]`"
+            ));
         }
         if let Some(line) = compiled_doc_example(&content) {
             summary.errors.push(format!(
@@ -579,6 +593,16 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
     out
 }
 
+/// A host crate's root (`src/lib.rs`, `src/main.rs`, or a binary under
+/// `src/bin/`) that doesn't forbid `unsafe`, and isn't a listed exception.
+/// A `cfg_attr` form counts: Home Assistant's bridge forbids it except when
+/// built with PyO3, whose macros expand to `unsafe`.
+fn allows_unsafe(name: &str, source: &str) -> bool {
+    HOST_ROOT.is_match(name)
+        && !UNSAFE_HOST_ROOTS.contains(&name)
+        && !source.contains("forbid(unsafe_code)")
+}
+
 /// A Rust source under [`SIZED`] longer than its limit: [`TEST_LINES`] under
 /// a `tests/` directory, [`LINES`] anywhere else (a `tests.rs` module beside
 /// the code it tests included). Generated files (`openapi.json`, the sqlx
@@ -740,6 +764,30 @@ mod tests {
             assert!(!CARD.is_match(text), "{text}");
         }
         assert!(DATED.is_match(&format!("private/captures-{}/x", "20261112")));
+    }
+
+    #[test]
+    fn a_host_crate_root_forbids_unsafe() {
+        let forbidden = "//! A crate.\n\n#![forbid(unsafe_code)]\n";
+        for root in [
+            "src/server/wellfed-webhook/src/lib.rs",
+            "src/sim/wellfed-feeder-sim/src/main.rs",
+            "src/tools/wellfed-bench/src/bin/report.rs",
+            "src/client/wellfed-model/src/bin/gen/main.rs",
+            "src/integrations/homeassistant/bridge/src/lib.rs",
+        ] {
+            assert!(allows_unsafe(root, "//! A crate.\n"), "{root}");
+            assert!(!allows_unsafe(root, forbidden), "{root}");
+        }
+
+        for not_held in [
+            "src/server/wellfed-webhook/src/body.rs",
+            "src/sdk/wellfed-core/src/lib.rs",
+            "src/firmware/wellfed/feeder/src/lib.rs",
+            "src/sim/wellfed-sim/src/main.rs",
+        ] {
+            assert!(!allows_unsafe(not_held, "//! A crate.\n"), "{not_held}");
+        }
     }
 
     #[test]
@@ -1025,7 +1073,7 @@ savePrefix: \"\"
         fs::create_dir_all(root.join("src/server/wellfed-server/src")).unwrap();
         fs::write(
             root.join("src/server/wellfed-server/src/lib.rs"),
-            lines(401),
+            format!("#![forbid(unsafe_code)]\n{}", lines(400)),
         )
         .unwrap();
         fs::write(
