@@ -198,7 +198,7 @@ pub const CONFIG: OwnerConfig = OwnerConfig {
 
 /// The shortest drive between two marks' rises: 9.1 s with the hopper
 /// empty on the adapter, 9.8-9.9 s with food (bench, October 25,
-/// docs/firmware/motor-pulse.md, "Food and a full turn").
+/// docs/firmware/motor-and-feeds.md, "Food and a full turn").
 pub const MARK_PERIOD_MIN_MS: u32 = 9100;
 
 // A homing mark is uncredited, so its window must never hold a whole

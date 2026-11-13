@@ -13,7 +13,7 @@ These hold here and on the two companion pages.
 - **Relay 1 is feeder power and the kill switch.** All four relays are normally open, so a relay board that loses USB leaves the feeder off and the strap released ([wiring](#wiring)).
 - **One tool drives the bench at a time.** The server holds the [bench lease](bench-server.md#bench-lease) for its life and runs one job at a time; a second is refused, not queued. A killed server leaves a lease the next one refuses to override.
 - **Unattended motion follows the owner's rules:** hopper empty, the D cells out so relay 1 is the kill switch, nobody at the bench, the bench lease free, and at most 3 portions a feed. Only `feed-writes` and `sustained`, under `--feeds`, ask the feeder to feed ([sustained run](integration-suite.md#sustained-run)).
-- **Motion builds stay manual.** The bench never offers a startup-motion build, refuses the motor pulse under `--build`, and needs `--attended-motion` for any image whose manifest names a motion policy.
+- **Motion builds stay manual.** The bench never offers a startup-motion build, refuses the motor firmware under `--build`, and needs `--attended-motion` for any image whose manifest names a motion policy.
 - **A halt cuts relay 1 and leaves it off.** A person looks before power returns.
 - **The bench never changes routing or the firewall.** Stock reaches a broker only where a setup frame named it, and an install needs TCP 1883 and 8088 from the hotspot admitted by the owner's permanent rule ([the bench host's firewall](../../development/stock-server.md#the-bench-hosts-firewall)).
 - **Don't rebuild `wellfed-flash` between prepare and execute.** A plan binds the SHA-256 of the binary that prepared it.
@@ -204,9 +204,9 @@ target/release/wellfed-bench ota stock-01 --review private/verification/<stock r
 
 **Choosing a build.** `--firmware qa|optics|buttons|adc|speaker|blink|trial|feeder` picks the build (default `qa`), and `--variant` a variant of it: `stall|fail` with `--firmware trial`; `entropy|owner-stall|held-stall|gap-probe|feed-stall|stop-fail|owner-fail|feed-jam|sensor-fault|buzzer|twin|virtual-panel` with `--firmware feeder`.
 
-- `feed-stall`, `stop-fail`, `feed-jam` and `sensor-fault` move the motor only for a feed request, like the feeder, and inject a fault into it ([motor pulse](../../firmware/motor-pulse.md), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md)). `owner-fail` never opens its feeding owner, so its trial must fall back. `owner-stall` resets about 3 minutes into every boot once confirmed, a reset storm ([OTA design](../../firmware/ota-design.md)).
+- `feed-stall`, `stop-fail`, `feed-jam` and `sensor-fault` move the motor only for a feed request, like the feeder, and inject a fault into it ([motor and feeds](../../firmware/motor-and-feeds.md), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md)). `owner-fail` never opens its feeding owner, so its trial must fall back. `owner-stall` resets about 3 minutes into every boot once confirmed, a reset storm ([OTA design](../../firmware/ota-design.md)).
 - The bring-up areas and the trial images are variants of one `bringup` firmware: `--firmware optics` builds `wellfed-build build --device plaf103 --firmware bringup --variant optics` (likewise `buttons`, `adc` and `speaker`), `--firmware trial --variant stall` builds `--firmware bringup --variant stall`, and `--firmware trial` alone its normal image. `qa`, `blink` and `feeder` pass through unchanged.
-- The motor pulse (`--firmware motor`, `--variant pulse`) is refused: motion builds stay manual, and go through `--review` with `--attended-motion`.
+- The motor firmware (`--firmware motor`) is refused: motion builds stay manual, and go through `--review` with `--attended-motion`.
 
 **Refused before anything runs:** an existing `NAME-review`, `--firmware` or `--variant` without `--build`, `--variant` without the firmware that declares it, and `--build` with `--review`.
 

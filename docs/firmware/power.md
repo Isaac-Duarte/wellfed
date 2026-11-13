@@ -178,7 +178,7 @@ The chip doesn't sleep (recovered):
 - **Health.** Observed, October 23: `"adapter":true,"battery_mv":4862` (meter 4.85 V) and `"adapter":false,"battery_mv":4755` (4.77 V). With no pack, `PLBAT1 open ok=1` came only after the startup probe, then `sample pin_mv=15 adapter=1`.
 - **A feed on fresh cells.** Observed, November 1 (full hopper, press after a relay-1 cut): 1 of 1, no reset, 10,189 ms drive, peak current 268 and mean 86 on the feeder's scale. Pack 4,839 mV at rest on the adapter, 4,586 mV lowest by the feeder's own samples (no meter, so a dip between samples wouldn't show). The radio went off 35–46 s after the cut (about 45 s after boot), likely the 60 s minimum on time, unconfirmed.
 - **Surge.** Observed: one 20 ms poll on the adapter.
-- **Power cut mid-drive.** Observed: uncertain at the next boot, never resumed ([motor and feeds](motor-pulse.md#a-power-cut-mid-feed)).
+- **Power cut mid-drive.** Observed: uncertain at the next boot, never resumed ([motor and feeds](motor-and-feeds.md#a-power-cut-mid-feed)).
 - **Stock's floor and battery behavior.** Recovered.
 - **Phantom at a cut.** Observed, October 28, before the fix: a no-cell cut recorded `Supply { adapter: false, battery: Reading 3861 mV }`, the decaying rail. The fix is modeled only.
 - **Brownout bit on hardware.** Unknown.

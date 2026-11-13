@@ -130,11 +130,11 @@ fn ota_build_takes_a_no_motion_image_and_config() {
 
 #[test]
 fn ota_refuses_motion_and_mixed_sources() {
-    for motion in [&["--variant", "pulse"], &["--firmware", "motor"]] {
-        let args = [&["--build"][..], motion].concat();
-        let error = ota(&args).err().unwrap().to_string();
-        assert!(error.contains("motion builds stay manual"), "{error}");
-    }
+    let error = ota(&["--build", "--firmware", "motor"])
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("motion builds stay manual"), "{error}");
 
     // --firmware and --variant without --build are refused by the
     // command.

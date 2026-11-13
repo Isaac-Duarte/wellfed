@@ -2320,8 +2320,7 @@ fn build_options_without_build_are_refused() {
 }
 
 #[test]
-fn the_motor_firmware_and_its_variant_are_refused() {
-    assert_eq!(ota::parse_variant("pulse"), Err(ArgError::PulseVariant));
+fn the_motor_firmware_is_refused() {
     assert_eq!(ota::parse_firmware("motor"), Err(ArgError::MotorFirmware));
 
     assert_eq!(ota::parse_variant("fail"), Ok(Variant::Fail));

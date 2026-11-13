@@ -27,8 +27,6 @@ pub enum PolicyError {
     ClockWithoutStopped,
     #[error("Transport requires the keep policy")]
     TransportWithoutKeep,
-    #[error("Motion and optics probes are exclusive")]
-    MotionWithOptics,
     #[error("The trial test runs alone")]
     TrialNotAlone,
 }
@@ -86,7 +84,6 @@ crate::outcomes! {
     pub enum Probe {
         Wifi => "Wi-Fi",
         Optics => "Optics",
-        Motion => "Motion",
         Adc => "ADC",
         Transport => "Transport",
         Trial => "Trial",
@@ -336,17 +333,7 @@ fn bind_unclassified(
     )?;
     after_led(optics.is_some(), led, Probe::Optics)?;
 
-    let motion = version(
-        manifest.startup_motion_policy.as_deref(),
-        &[("fw16-pulse-v1", ())],
-        Policy::Motion,
-    )?
-    .is_some();
-    agree(motion == has(MOTION_MARK), Declaration::Motion)?;
-    require(!(motion && optics.is_some()), || {
-        PolicyError::MotionWithOptics
-    })?;
-    after_led(motion, led, Probe::Motion)?;
+    refuse_retired_motion(manifest, &has)?;
 
     let trial = version(
         manifest.startup_trial_policy.as_deref(),
@@ -355,9 +342,7 @@ fn bind_unclassified(
     )?
     .is_some();
     agree(trial == has(TRIAL_RESET_MARK), Declaration::Trial)?;
-    require(!(trial && (optics.is_some() || motion)), || {
-        PolicyError::TrialNotAlone
-    })?;
+    require(!(trial && optics.is_some()), || PolicyError::TrialNotAlone)?;
 
     let adc = version(
         manifest.startup_adc_policy.as_deref(),
@@ -375,13 +360,24 @@ fn bind_unclassified(
         (wifi.is_some(), Probe::Wifi),
         (transport, Probe::Transport),
         (optics.is_some(), Probe::Optics),
-        (motion, Probe::Motion),
         (trial, Probe::Trial),
         (adc.is_some(), Probe::Adc),
     ]
     .into_iter()
     .filter_map(|(declared, probe)| declared.then_some(probe))
     .collect())
+}
+
+/// The motor pulse probe is retired and no motion policy is known: no image
+/// may drive the motor at startup, so a manifest declaring one, or an image
+/// carrying the probe's records, is refused.
+fn refuse_retired_motion(manifest: &BuildManifest, has: &dyn Fn(&[u8]) -> bool) -> Result<()> {
+    version::<()>(
+        manifest.startup_motion_policy.as_deref(),
+        &[],
+        Policy::Motion,
+    )?;
+    agree(!has(MOTION_MARK), Declaration::Motion)
 }
 
 /// The flash-coordination probes are retired and no version of them is known:

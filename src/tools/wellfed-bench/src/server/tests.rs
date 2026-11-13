@@ -409,7 +409,7 @@ async fn the_server_parses_every_job_and_refuses_what_clap_refuses() {
         &["itest", "i1", "--rebuild"],
         &["itest", "i1", "--build", "--review", "r"],
         &["flash-prepare", "f1", "--target", "t", "--bank", "2"],
-        &["ota", "o1", "--build", "--variant", "pulse"],
+        &["ota", "o1", "--build", "--firmware", "motor"],
         &["serve"],
     ] {
         let refused = refusal(server.submit(words).await);

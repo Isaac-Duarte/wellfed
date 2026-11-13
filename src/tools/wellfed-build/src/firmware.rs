@@ -343,7 +343,7 @@ name = "wellfed-fw-demo"
 
 [features]
 km4 = []
-pulse = []
+motor = []
 quiet = []
 
 [package.metadata.wellfed]
@@ -351,7 +351,7 @@ devices = ["plaf103"]
 policies = { optics = "fw13-optics-v2" }
 
 [package.metadata.wellfed.variants]
-pulse = { summary = "Pulses the motor", policies = { motion = "fw16-pulse-v1" } }
+motor = { summary = "Drives the motor", policies = { motion = "demo-motion-v1" } }
 quiet = { summary = "No probes" }
 "#;
 
@@ -363,9 +363,9 @@ quiet = { summary = "No probes" }
             Some("fw13-optics-v2")
         );
 
-        let pulse = firmware.variant("pulse").unwrap();
-        assert!(pulse.motion());
-        assert_eq!(firmware.policies(Some(&pulse)).optics, None);
+        let motor = firmware.variant("motor").unwrap();
+        assert!(motor.motion());
+        assert_eq!(firmware.policies(Some(&motor)).optics, None);
         let quiet = firmware.variant("quiet").unwrap();
         assert!(!quiet.motion());
         assert_eq!(*firmware.policies(Some(&quiet)), Policies::default());
@@ -379,7 +379,7 @@ quiet = { summary = "No probes" }
             matches!(
                 &error,
                 Error::Firmware(FirmwareError::UnknownVariant { variant, known, .. })
-                    if variant == "speaker" && known == &["pulse", "quiet"]
+                    if variant == "speaker" && known == &["motor", "quiet"]
             ),
             "{error}"
         );
@@ -417,7 +417,7 @@ quiet = { summary = "No probes" }
 
         let moving = MANIFEST.replace(
             "policies = { optics = \"fw13-optics-v2\" }",
-            "policies = { motion = \"fw16-pulse-v1\" }",
+            "policies = { motion = \"demo-motion-v1\" }",
         );
         assert!(matches!(
             firmware_error(&moving),
@@ -487,13 +487,6 @@ quiet = { summary = "No probes" }
             ),
             ("speaker", Policies::default()),
             (
-                "pulse",
-                Policies {
-                    motion: some("fw16-pulse-v1"),
-                    ..Policies::default()
-                },
-            ),
-            (
                 "stall",
                 Policies {
                     trial: some("fw11-reset-v1"),
@@ -511,13 +504,10 @@ quiet = { summary = "No probes" }
             assert_eq!(policy(variant), expected, "{variant}");
         }
 
-        let motion: Vec<&str> = bringup
-            .variants
-            .iter()
-            .filter(|v| v.motion())
-            .map(Variant::name)
-            .collect();
-        assert_eq!(motion, ["pulse"]);
+        assert!(
+            !bringup.variants.iter().any(Variant::motion),
+            "no bring-up variant drives the motor"
+        );
     }
 
     /// Every declared variant is one the crate's start selection knows: the

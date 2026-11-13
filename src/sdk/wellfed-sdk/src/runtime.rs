@@ -112,9 +112,8 @@ pub fn __started(startup: crate::Startup) {
     }
 }
 
-/// The firmware's startup work that holds the KM0 flash handshake (an
-/// optics or pulse probe) has ended, so another flash writer may
-/// bind it. The runtime does not confirm the build before this is reported.
+/// The firmware's startup work that holds the KM0 flash handshake (the
+/// optics probe) has ended, so another flash writer may bind it. The runtime does not confirm the build before this is reported.
 /// A firmware with no such work returns `Startup::Done` from its start
 /// hook instead.
 pub fn startup_done(done: bool) {
@@ -272,7 +271,7 @@ static CONFIRM_DONE: AtomicBool = AtomicBool::new(false);
 /// the platform.
 static RESTART: AtomicBool = AtomicBool::new(false);
 static UPDATE_RUNNING: AtomicBool = AtomicBool::new(false);
-/// The startup optics (or pulse) probe has ended and released the KM0
+/// The startup optics probe has ended and released the KM0
 /// handshake, so another writer may bind it.
 static PROBE_DONE: AtomicBool = AtomicBool::new(false);
 

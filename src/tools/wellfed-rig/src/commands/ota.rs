@@ -226,8 +226,6 @@ fn or_unknown(value: Option<u32>) -> String {
 pub enum ArgError {
     #[error("motor {}", MOTION_MANUAL)]
     MotorFirmware,
-    #[error("pulse {}", MOTION_MANUAL)]
-    PulseVariant,
     #[error("unknown firmware {text:?}; use {}", Firmware::known())]
     UnknownFirmware { text: String },
     #[error(
@@ -436,7 +434,6 @@ pub fn parse_variant(text: &str) -> std::result::Result<Variant, ArgError> {
         "buzzer" => Ok(Variant::Buzzer),
         "twin" => Ok(Variant::Twin),
         "virtual-panel" => Ok(Variant::VirtualPanel),
-        "pulse" => Err(ArgError::PulseVariant),
         other => Err(ArgError::UnknownVariant { text: other.into() }),
     }
 }

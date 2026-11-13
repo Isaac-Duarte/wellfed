@@ -46,8 +46,8 @@ Feeder components:
 
 | Page | What it covers |
 | --- | --- |
-| [Motor pulse](firmware/motor-pulse.md) | The supervised motor drive |
-| [Motor bench checks](firmware/motor-bench-checks.md) | Rerunning the first pulse, the stall, failed-stop, jam and sensor-fault checks on the bench |
+| [Motor and feeds](firmware/motor-and-feeds.md) | The supervised motor drive |
+| [Motor bench checks](firmware/motor-bench-checks.md) | Rerunning the stall, failed-stop, jam and sensor-fault checks on the bench |
 | [Schedules](firmware/schedules.md) | Feeding plans, the meal reminder and the meal call |
 | [Portions and calibration](firmware/calibration.md) | Counting portions and calibrating them |
 | [Weighing session](firmware/weighing-session.md) | Measuring what one portion weighs and storing it |

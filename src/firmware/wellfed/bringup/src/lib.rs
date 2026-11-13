@@ -1,6 +1,5 @@
 //! EXPERIMENTAL bring-up firmware for the PLAF103 on the Wellfed SDK. Each
-//! image variant brings up one area, with the motor at STOP throughout
-//! unless the variant is `pulse`:
+//! image variant brings up one area, with the motor at STOP throughout:
 //!
 //! - `optics`: the optics probe (`wellfed_probes::optics`), once per boot.
 //!   It drives the infrared emitters and reads the food, outlet and feedback
@@ -11,9 +10,6 @@
 //! - `adc`: the read-only power-input probe (`wellfed_probes::adc`), sampling
 //!   once a second for as long as the build runs.
 //! - `speaker`: the startup chime and the tune player (`wellfed_hal::audio`).
-//! - `pulse`: the first supervised motor pulse (`wellfed_probes::pulse`),
-//!   once per cold boot. Only this variant's motion policy marks an image
-//!   that can drive the motor; motion builds stay a manual, attended step.
 //! - `stall` and `fail`: trial images that must never confirm, so KM0 rolls
 //!   each back. `stall` stops feeding the watchdog right after startup, as a
 //!   hung candidate would, so KM0 counts the reset; `fail` fails the

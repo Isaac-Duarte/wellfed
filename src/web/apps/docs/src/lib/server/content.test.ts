@@ -13,7 +13,7 @@ const TABS = "<!-- tabs -->\n\n### App\n\nTap it.\n\n### CLI\n\nRun it.\n\n<!-- 
 
 describe("publishing", () => {
   test("an unlisted doc is not rendered", () => {
-    expect(docs.has("firmware/motor-pulse.md")).toBe(false);
+    expect(docs.has("firmware/motor-and-feeds.md")).toBe(false);
     expect(docs.has("development/rust.md")).toBe(false);
   });
 });
