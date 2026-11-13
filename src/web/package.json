@@ -9,7 +9,7 @@
   },
   "scripts": {
     "generate": "pnpm -r --filter @wellfed/tokens generate",
-    "build": "pnpm generate && pnpm -r --filter './apps/*' build",
+    "build": "pnpm -r --filter './apps/*' build",
     "check": "pnpm run lint && pnpm run format:check && pnpm run licenses && tsc -p . && pnpm -r check",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
