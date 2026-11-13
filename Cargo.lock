@@ -3963,6 +3963,7 @@ dependencies = [
 name = "wellfed-ble"
 version = "0.1.0"
 dependencies = [
+ "bluez-async",
  "btleplug",
  "futures-util",
  "thiserror 2.0.21",

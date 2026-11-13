@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::time::{Duration, Instant};
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 use tokio::time::timeout;
 
 use crate::Error;
@@ -48,6 +48,8 @@ impl Sightings {
 pub(crate) struct Links {
     newest: HashMap<String, u64>,
     claims: u64,
+    /// Hang-ups under way, each done when its sender is dropped.
+    hanging_up: HashMap<String, watch::Receiver<()>>,
 }
 
 impl Links {
@@ -58,13 +60,24 @@ impl Links {
         self.claims
     }
 
-    /// Whether `claim` is still the newest to `id`, which it then lets go.
-    pub(crate) fn release(&mut self, id: &str, claim: u64) -> bool {
-        let newest = self.newest.get(id) == Some(&claim);
-        if newest {
-            self.newest.remove(id);
+    /// If `claim` is still the newest to `id`, let it go and put its
+    /// hang-up on record, which lasts until the sender returned is dropped.
+    /// `None` when a newer connection holds the link.
+    pub(crate) fn release(&mut self, id: &str, claim: u64) -> Option<watch::Sender<()>> {
+        if self.newest.get(id) != Some(&claim) {
+            return None;
         }
-        newest
+        self.newest.remove(id);
+        let (hanging_up, done) = watch::channel(());
+        self.hanging_up.insert(id.to_owned(), done);
+        Some(hanging_up)
+    }
+
+    /// A hang-up of `id` still under way, to wait on: its `changed` ends
+    /// when the hang-up does. Finished ones are let go here.
+    pub(crate) fn hanging_up(&mut self, id: &str) -> Option<watch::Receiver<()>> {
+        self.hanging_up.retain(|_, done| done.has_changed().is_ok());
+        self.hanging_up.get(id).cloned()
     }
 }
 
@@ -257,12 +270,35 @@ mod tests {
         let other = links.claim("another");
 
         assert!(
-            !links.release("feeder", late),
+            links.release("feeder", late).is_none(),
             "the retry holds the link now"
         );
-        assert!(links.release("feeder", retry));
-        assert!(!links.release("feeder", retry), "a hang-up happens once");
-        assert!(links.release("another", other));
+        assert!(links.release("feeder", retry).is_some());
+        assert!(
+            links.release("feeder", retry).is_none(),
+            "a hang-up happens once"
+        );
+        assert!(links.release("another", other).is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_connection_waits_for_the_hang_up_before_it() {
+        let mut links = Links::default();
+        let first = links.claim("feeder");
+        let hanging_up = links.release("feeder", first).unwrap();
+        let mut done = links.hanging_up("feeder").expect("on record");
+        assert!(links.hanging_up("another").is_none());
+
+        let waiting = tokio::spawn(async move { done.changed().await });
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished(), "the hang-up is still going");
+
+        drop(hanging_up);
+        assert!(
+            waiting.await.unwrap().is_err(),
+            "done when the hang-up ends"
+        );
+        assert!(links.hanging_up("feeder").is_none(), "and let go after");
     }
 
     #[test]

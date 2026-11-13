@@ -31,6 +31,7 @@ use btleplug::api::{
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use futures_util::{Stream, StreamExt, stream};
 use tokio::runtime::Handle;
+use tokio::sync::watch;
 use tokio::time::timeout;
 use uuid::Uuid;
 use wellfed_client::setup::{CONTROL, SERVICE};
@@ -197,6 +198,16 @@ impl Radio {
     /// feeder has begun: the stack has one link per device, which both share.
     pub async fn connect(&self, feeder: &Heard) -> Result<(Connection, Notifications), Error> {
         let peripheral = feeder.peripheral.clone();
+        // An earlier connection's hang-up still going would land in the
+        // middle of this one: it goes first, bounded as a hang-up is.
+        let hanging_up = self
+            .links
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .hanging_up(&peripheral.id().to_string());
+        if let Some(mut done) = hanging_up {
+            let _ = timeout(CLOSE_TIMEOUT, done.changed()).await;
+        }
         let hang_up = HangUp::claim(&self.links, &peripheral);
         // Before connecting, so a drop during the setup is not missed.
         let events = self.adapter.events().await.map_err(Error::State)?;
@@ -229,7 +240,8 @@ async fn follow_adapter(
     while let Some(event) = events.next().await {
         if let CentralEvent::StateUpdate(CentralState::PoweredOn) = event {
             let Some(scans) = scans.upgrade() else { return };
-            scans.resume().await;
+            // Apart, so the sightings go on while discovery starts.
+            tokio::spawn(async move { scans.resume().await });
             continue;
         }
         // Read on macOS and Windows alone (`Scan::advertising`).
@@ -261,26 +273,56 @@ struct AdapterDiscovery {
 }
 
 impl Discovery for AdapterDiscovery {
-    /// Bounded, since every other scan waits on it.
+    /// Bounded, since every other scan waits on it. A start that times out
+    /// may still go through in the stack, so it is stopped again, as far as
+    /// the stack answers in time.
     async fn start(&self) -> Result<(), Error> {
         let services = if cfg!(target_os = "linux") {
             Vec::new()
         } else {
             vec![Uuid::from_u128(SERVICE)]
         };
-        timeout(
+        let started = timeout(
             CONNECT_TIMEOUT,
             self.adapter.start_scan(ScanFilter { services }),
         )
-        .await
-        .map_err(|_| Error::ScanTimeout)?
-        .map_err(Error::Scan)
+        .await;
+        match started {
+            Err(_) => {
+                let _ = timeout(CLOSE_TIMEOUT, self.adapter.stop_scan()).await;
+                Err(Error::ScanTimeout)
+            }
+            Ok(Err(error)) if already_discovering(&error) => Ok(()),
+            Ok(Err(error)) => Err(Error::Scan(error)),
+            Ok(Ok(())) => Ok(()),
+        }
     }
 
     async fn stop(&self) {
         // A stack that fails to stop, or doesn't say, has nothing more to say.
         let _ = timeout(CONNECT_TIMEOUT, self.adapter.stop_scan()).await;
     }
+}
+
+/// Whether BlueZ refused a start because discovery already runs for this
+/// client: one an earlier start left behind, cut short after the stack took
+/// it. That is what a start wants, so it counts as started.
+#[cfg(target_os = "linux")]
+fn already_discovering(error: &btleplug::Error) -> bool {
+    let btleplug::Error::Other(inner) = error else {
+        return false;
+    };
+    matches!(
+        inner.downcast_ref::<bluez_async::BluetoothError>(),
+        Some(bluez_async::BluetoothError::DbusError(dbus))
+            if dbus.name() == Some("org.bluez.Error.InProgress")
+    )
+}
+
+/// CoreBluetooth and WinRT start a running scan again without complaint.
+#[cfg(not(target_os = "linux"))]
+const fn already_discovering(_error: &btleplug::Error) -> bool {
+    false
 }
 
 async fn open(
@@ -516,17 +558,19 @@ impl HangUp {
     }
 
     /// Whether this is the one to hang up: armed, and still the newest.
-    fn take(&self) -> bool {
-        self.armed.swap(false, Ordering::SeqCst)
-            && self
-                .links
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .release(&self.id, self.claim)
+    /// If so, the hang-up is on record until what comes back is dropped.
+    fn take(&self) -> Option<watch::Sender<()>> {
+        if !self.armed.swap(false, Ordering::SeqCst) {
+            return None;
+        }
+        self.links
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .release(&self.id, self.claim)
     }
 
     async fn now(&self) {
-        if self.take() {
+        if let Some(_hanging_up) = self.take() {
             let _ = timeout(CLOSE_TIMEOUT, self.peripheral.disconnect()).await;
         }
     }
@@ -537,10 +581,11 @@ impl Drop for HangUp {
         let Some(runtime) = self.runtime.clone() else {
             return;
         };
-        if self.take() {
+        if let Some(hanging_up) = self.take() {
             let peripheral = self.peripheral.clone();
             runtime.spawn(async move {
                 let _ = timeout(CLOSE_TIMEOUT, peripheral.disconnect()).await;
+                drop(hanging_up);
             });
         }
     }

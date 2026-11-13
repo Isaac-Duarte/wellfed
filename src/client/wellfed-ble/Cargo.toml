@@ -15,6 +15,11 @@ tokio = { workspace = true, features = ["rt", "sync", "time"] }
 uuid.workspace = true
 wellfed-client.workspace = true
 
+# To read BlueZ's own refusals inside btleplug's errors; the version
+# btleplug brings.
+[target.'cfg(target_os = "linux")'.dependencies]
+bluez-async = "0.9.0"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "sync", "test-util"] }
 
