@@ -16,6 +16,7 @@
 //! - CoreBluetooth knows a peripheral only through the central that heard
 //!   it, so the connection goes through the same [`Radio`] that scanned.
 
+use std::pin::Pin;
 use std::time::Duration;
 
 use btleplug::api::{
@@ -148,7 +149,9 @@ impl Radio {
     /// notifications on. A connection that fails partway is hung up.
     pub async fn connect(&self, feeder: &Heard) -> Result<(Connection, Notifications), Error> {
         let peripheral = feeder.peripheral.clone();
-        let opened = open(&peripheral).await;
+        // Before connecting, so a drop during the setup is not missed.
+        let events = self.adapter.events().await.map_err(Error::Connect)?;
+        let opened = open(&peripheral, events).await;
         if opened.is_err() {
             let _ = timeout(CLOSE_TIMEOUT, peripheral.disconnect()).await;
         }
@@ -156,7 +159,10 @@ impl Radio {
     }
 }
 
-async fn open(peripheral: &Peripheral) -> Result<(Connection, Notifications), Error> {
+async fn open(
+    peripheral: &Peripheral,
+    events: Pin<Box<dyn Stream<Item = CentralEvent> + Send>>,
+) -> Result<(Connection, Notifications), Error> {
     if !peripheral.is_connected().await.map_err(Error::Connect)? {
         timeout(CONNECT_TIMEOUT, peripheral.connect())
             .await
@@ -175,10 +181,22 @@ async fn open(peripheral: &Peripheral) -> Result<(Connection, Notifications), Er
         .map_err(|_| Error::SubscribeTimeout)?
         .map_err(Error::Connect)?;
 
+    // Neither BlueZ nor CoreBluetooth ends the notifications when the
+    // feeder drops the link, so its disconnection ends them here.
+    let id = peripheral.id();
+    let dropped = events
+        .filter(move |event| {
+            std::future::ready(
+                matches!(event, CentralEvent::DeviceDisconnected(gone) if *gone == id),
+            )
+        })
+        .into_future();
     let wanted = control.uuid;
-    let notifications = stream.filter_map(move |notification| async move {
-        (notification.uuid == wanted).then_some(notification.value)
-    });
+    let notifications = stream
+        .filter_map(move |notification| async move {
+            (notification.uuid == wanted).then_some(notification.value)
+        })
+        .take_until(dropped);
     let connection = Connection {
         peripheral: peripheral.clone(),
         control,
