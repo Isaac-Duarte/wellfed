@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE installs SET state = ?, finished_ms = ? WHERE state = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "13f9612ba6c9f336dc5ae023f0334a540c44aa6f51861d75c7036bd4cc739376"
+}

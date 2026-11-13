@@ -1,5 +1,5 @@
-//! The HTTP server in process, on a localhost port, in front of a
-//! [`TestService`].
+//! The HTTP server in process, on a localhost port and its own HTTPS on
+//! another, in front of a [`TestService`].
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -8,8 +8,9 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use wellfed_api::FeederId;
-use wellfed_server::{Beside, Jobs, Serving, TrustedProxies};
-use wellfed_server_client::{Client, Url};
+use wellfed_server::identity::Identity;
+use wellfed_server::{Beside, Jobs, Listeners, Serving, Tls, TrustedProxies};
+use wellfed_server_client::{Client, Options, Trust, Url};
 use wellfed_service::{Clock, Config, Service};
 
 use crate::service::{TempStore, TestService, config};
@@ -24,6 +25,8 @@ pub const STREAM_CHECK: Duration = Duration::from_millis(100);
 pub struct TestServer {
     service: TestService,
     address: SocketAddr,
+    tls_address: SocketAddr,
+    identity: [u8; 32],
     shutdown: CancellationToken,
     served: JoinHandle<std::io::Result<()>>,
 }
@@ -95,10 +98,23 @@ impl TestServer {
         let address = listener
             .local_addr()
             .expect("a bound listener has an address");
+        // The identity a server on [`config`]'s key has.
+        let identity = Identity::derive(&config().key);
+        let https = tokio::net::TcpListener::bind((address.ip(), 0))
+            .await
+            .expect("bind the server's HTTPS port");
+        let tls_address = https.local_addr().expect("a bound listener has an address");
+        let listeners = Listeners {
+            http: listener,
+            https: Some(Tls {
+                listener: https,
+                config: identity.tls().expect("the identity makes its certificate"),
+            }),
+        };
         let serving = Serving {
             proxies,
             stream_check: STREAM_CHECK,
-            ..Serving::default()
+            ..Serving::new(identity.public())
         };
         let beside = Beside {
             jobs,
@@ -108,7 +124,7 @@ impl TestServer {
         let stop = shutdown.clone();
         let served = tokio::spawn(wellfed_server::serve(
             service.service().clone(),
-            listener,
+            listeners,
             serving,
             beside,
             async move { stop.cancelled().await },
@@ -117,6 +133,8 @@ impl TestServer {
         Self {
             service,
             address,
+            tls_address,
+            identity: identity.public(),
             shutdown,
             served,
         }
@@ -126,11 +144,37 @@ impl TestServer {
         self.address
     }
 
+    /// Where the server's own HTTPS listens.
+    pub fn tls_address(&self) -> SocketAddr {
+        self.tls_address
+    }
+
+    /// The server's identity key, which its HTTPS proves.
+    pub fn identity(&self) -> [u8; 32] {
+        self.identity
+    }
+
     /// A client of this server with no credentials.
     pub fn client(&self) -> Client {
         let base =
             Url::parse(&format!("http://{}", self.address)).expect("a socket address makes a URL");
         Client::new(&base).expect("an http URL makes a client")
+    }
+
+    /// A client of this server's own HTTPS with no credentials, checking
+    /// it as `trust` says.
+    pub fn https_client(&self, trust: Trust) -> Client {
+        let base = self.https_base();
+        let options = Options {
+            trust,
+            ..Options::default()
+        };
+        Client::with_options(&base, options).expect("an https URL makes a client")
+    }
+
+    /// The base URL of this server's own HTTPS.
+    pub fn https_base(&self) -> Url {
+        Url::parse(&format!("https://{}", self.tls_address)).expect("a socket address makes a URL")
     }
 
     pub fn service(&self) -> &Service {

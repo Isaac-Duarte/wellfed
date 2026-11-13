@@ -25,13 +25,14 @@ use wellfed_api::{
     ClientRole, Connection as Link, FeederId, FeederRefusal, Install, InstallFailure, InstallId,
     InstallRequest, InstallState, InstallTarget, StreamEvent,
 };
-use wellfed_mirror::{PushError, Pushed, Restore, Update, UpdateError};
+use wellfed_mirror::{Operation, PushError, Pushed, Restore, Update, UpdateError};
 use wellfed_model::{Refusal, UpdatePhase, UpdateView};
 use wellfed_releases::{STOCK_VERSION, StockBackup};
 
 use crate::{Caller, CommandError, Error, InternalError, Resource, Result, Service, lock};
 
 mod claim;
+mod ending;
 mod error;
 
 pub(crate) use claim::Slot;
@@ -228,18 +229,32 @@ impl Service {
         let now = self.shared.clock.now();
         let interrupted = self.shared.store.interrupt_installs(now).await?;
         if interrupted > 0 {
-            warn!("an install was running when the server stopped: marked failed");
+            warn!("an install was running when the server stopped: marked as it stood");
         }
         Ok(())
     }
 
-    /// Run the install to its end, keep that, and free the slot.
+    /// Run the install to its end, keep that, and free the slot. A
+    /// release's activation is followed through its trial on the same
+    /// turn, so the session that answered it is the one the follow counts
+    /// from.
     async fn run_install(&self, mut claim: Claim, offer: Offer) {
         let feeder = claim.install.feeder;
-        let ended = self.push(&mut claim, feeder, &offer).await;
+        let Ok(mut operation) = self.mirror.operation(feeder).await else {
+            // The only refusal: the feeder was let go before the turn came.
+            let failure = InstallFailure::Unreachable { offered: false };
+            return self.end(claim, InstallState::Failed, Some(failure)).await;
+        };
+        let ended = self.push(&mut claim, &mut operation, &offer).await;
         let failed = |failure| (InstallState::Failed, Some(failure));
         let (state, failure) = match ended {
-            Ok(Pushed::Activated) => (InstallState::Activated, None),
+            Ok(Pushed::Activated) => match offer {
+                Offer::Release { build, .. } => {
+                    self.follow_trial(&mut claim, &mut operation, build).await
+                }
+                // Stock serves no device API to follow.
+                Offer::Stock { .. } => (InstallState::Activated, None),
+            },
             Ok(Pushed::AlreadyRunning) => (InstallState::AlreadyRunning, None),
             Ok(Pushed::Failed(error)) => failed(failure(error)),
             Ok(Pushed::Gone { offered }) => failed(InstallFailure::Unreachable { offered }),
@@ -251,63 +266,18 @@ impl Service {
             }
         };
 
-        let now = self.shared.clock.now();
-        let install = claim.update(|install| {
-            install.state = state;
-            install.failure = failure;
-            install.finished = Some(now);
-        });
-        match (state, failure) {
-            (_, Some(failure)) => warn!("the install failed: {failure:?}"),
-            (InstallState::AlreadyRunning, None) => info!(
-                "the feeder already runs version {}: nothing was sent",
-                install.version
-            ),
-            (_, None) => match install.target {
-                InstallTarget::Release { .. } => info!(
-                    "activated: the feeder restarts into version {}",
-                    install.version
-                ),
-                InstallTarget::Stock { .. } => info!(
-                    "activated: the feeder restarts into stock {STOCK_VERSION}, which serves no \
-                     device API"
-                ),
-                InstallTarget::Unknown => {}
-            },
-        }
-
-        self.save_end(&claim, install).await;
-        self.publish_install(install);
-        drop(claim);
+        drop(operation);
+        self.end(claim, state, failure).await;
     }
 
-    /// Store the install's end, trying twice; an end the store would not
-    /// take stays in memory, so `GET` does not read the row's `running`.
-    async fn save_end(&self, claim: &Claim, install: Install) {
-        for attempt in 1..=2 {
-            match self.shared.store.save_install(&install).await {
-                Ok(()) => return,
-                Err(error) => {
-                    warn!("the install's end was not stored (attempt {attempt}): {error}");
-                }
-            }
-        }
-        claim.unsaved(install);
-    }
-
-    /// Wait for the feeder's long-operation turn and push the offer over
-    /// it, publishing the progress as it goes.
+    /// Push the offer over the feeder's long-operation turn, publishing
+    /// the progress as it goes.
     async fn push(
         &self,
         claim: &mut Claim,
-        feeder: FeederId,
+        operation: &mut Operation,
         offer: &Offer,
     ) -> Result<Pushed, PushError> {
-        let Ok(mut operation) = self.mirror.operation(feeder).await else {
-            // The only refusal: the feeder was let go before the turn came.
-            return Ok(Pushed::Gone { offered: false });
-        };
-
         // Once the feeder took the offer, the row says so, so a restart
         // before the end reads the install as uncertain, not as one that
         // changed nothing. The note is kept beside the push, which a store

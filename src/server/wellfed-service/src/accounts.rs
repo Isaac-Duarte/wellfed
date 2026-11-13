@@ -7,6 +7,7 @@ mod audit;
 mod limits;
 mod permissions;
 pub(crate) mod sessions;
+pub(crate) mod setup;
 pub(crate) mod tokens;
 mod users;
 
@@ -32,6 +33,12 @@ pub(crate) struct State {
 pub enum AccountError {
     #[error("setup is closed: an account exists")]
     SetupClosed,
+    /// A server with no account takes a setup only for a while after it
+    /// starts.
+    #[error(
+        "setup is closed: it is open for an hour after the server starts, so restart the server and set it up then"
+    )]
+    SetupExpired,
     #[error("wrong name or password")]
     BadCredentials,
     #[error("too many failed logins: try again in {} s", retry_after.as_secs())]
@@ -56,7 +63,7 @@ pub enum AccountError {
 impl AccountError {
     pub(crate) fn code(&self) -> ErrorCode {
         match self {
-            Self::SetupClosed => ErrorCode::SetupClosed,
+            Self::SetupClosed | Self::SetupExpired => ErrorCode::SetupClosed,
             Self::BadCredentials => ErrorCode::BadCredentials,
             Self::Limited { .. } => ErrorCode::LoginLimited,
             Self::Disabled => ErrorCode::AccountDisabled,

@@ -560,11 +560,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ServerCommand dco_decode_box_autoadd_server_command(dynamic raw);
 
   @protected
-  ServerCommandOutcome dco_decode_box_autoadd_server_command_outcome(
-    dynamic raw,
-  );
-
-  @protected
   ServerEntry dco_decode_box_autoadd_server_entry(dynamic raw);
 
   @protected
@@ -1107,11 +1102,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ServerAccount? dco_decode_opt_box_autoadd_server_account(dynamic raw);
 
   @protected
-  ServerCommandOutcome? dco_decode_opt_box_autoadd_server_command_outcome(
-    dynamic raw,
-  );
-
-  @protected
   ServerError? dco_decode_opt_box_autoadd_server_error(dynamic raw);
 
   @protected
@@ -1139,6 +1129,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsView? dco_decode_opt_box_autoadd_settings_view(dynamic raw);
+
+  @protected
+  Settlement? dco_decode_opt_box_autoadd_settlement(dynamic raw);
 
   @protected
   SetupRefusal? dco_decode_opt_box_autoadd_setup_refusal(dynamic raw);
@@ -1277,9 +1270,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerCommand dco_decode_server_command(dynamic raw);
-
-  @protected
-  ServerCommandOutcome dco_decode_server_command_outcome(dynamic raw);
 
   @protected
   ServerConnection dco_decode_server_connection(dynamic raw);
@@ -2021,11 +2011,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ServerCommandOutcome sse_decode_box_autoadd_server_command_outcome(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   ServerEntry sse_decode_box_autoadd_server_entry(SseDeserializer deserializer);
 
   @protected
@@ -2662,11 +2647,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ServerCommandOutcome? sse_decode_opt_box_autoadd_server_command_outcome(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   ServerError? sse_decode_opt_box_autoadd_server_error(
     SseDeserializer deserializer,
   );
@@ -2706,6 +2686,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsView? sse_decode_opt_box_autoadd_settings_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  Settlement? sse_decode_opt_box_autoadd_settlement(
     SseDeserializer deserializer,
   );
 
@@ -2860,11 +2845,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerCommand sse_decode_server_command(SseDeserializer deserializer);
-
-  @protected
-  ServerCommandOutcome sse_decode_server_command_outcome(
-    SseDeserializer deserializer,
-  );
 
   @protected
   ServerConnection sse_decode_server_connection(SseDeserializer deserializer);
@@ -3770,12 +3750,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_box_autoadd_server_command_outcome(
-    ServerCommandOutcome self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_box_autoadd_server_entry(
     ServerEntry self,
     SseSerializer serializer,
@@ -4583,12 +4557,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_opt_box_autoadd_server_command_outcome(
-    ServerCommandOutcome? self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_opt_box_autoadd_server_error(
     ServerError? self,
     SseSerializer serializer,
@@ -4639,6 +4607,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_settings_view(
     SettingsView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_settlement(
+    Settlement? self,
     SseSerializer serializer,
   );
 
@@ -4821,12 +4795,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_server_command(ServerCommand self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_server_command_outcome(
-    ServerCommandOutcome self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_server_connection(

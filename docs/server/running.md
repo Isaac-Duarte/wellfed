@@ -108,7 +108,8 @@ To go back to an older build after an upgrade migrated the database, start the o
 
 | Key | Default | What |
 | --- | --- | --- |
-| `listen` | `127.0.0.1:8080` | Where the API listens. `0.0.0.0:8080` serves the household's other devices. |
+| `listen` | `127.0.0.1:8080` | Where the API listens over plain HTTP: this computer, a reverse proxy in front, and today's CLI and Home Assistant. `0.0.0.0:8080` serves the household's other devices. |
+| `tls_listen` | none | Where the API also listens over HTTPS, with a certificate the server's identity key signs ([server identity](README.md#server-identity)). The app reaches the server on the home network only here, and mDNS announces only this port. `0.0.0.0:8443` serves the household's phones. |
 | `hosts` | none | Names the server is reached by, besides IP addresses and `localhost`. Any other name is refused `421 unknown_host`, which stops DNS rebinding. |
 | `label` | `wellfed-server` | The label the server enrolls under on each feeder, 1-16 bytes. |
 | `discovery` | `mdns` | `off` adopts and reconnects by address only. |
@@ -122,7 +123,7 @@ To go back to an older build after an upgrade migrated the database, start the o
 | `webhook.url` | none | Where each alert's opening and clearing is POSTed as JSON ([alert webhook](README.md#alert-webhook)): `https://` anywhere, plain `http://` only to this computer or the home network. |
 | `webhook.allow_plain_http` | `false` | Take a plain `http://` webhook off the home network. Anyone between the server and that host then sees the URL and every alert. |
 
-Every key has a flag, and every flag an environment variable: `--listen` (`WELLFED_SERVER_LISTEN`), `--host` (`WELLFED_SERVER_HOSTS`, comma-separated), `--label`, `--discovery` (or `--no-discovery`), `--advertise` (or `--no-advertise`), `--trusted-proxy` (`WELLFED_SERVER_TRUSTED_PROXIES`), `--raw-sample-days`, `--releases-fetch true|false`, `--release-project-key` and `--release-owner-key` (`WELLFED_SERVER_RELEASE_PROJECT_KEYS` and `..._OWNER_KEYS`, comma-separated), `--backups-keep`, `--webhook-url` and `--webhook-allow-plain-http true|false`. Each variable is `WELLFED_SERVER_` and the flag's name.
+Every key has a flag, and every flag an environment variable: `--listen` (`WELLFED_SERVER_LISTEN`), `--tls-listen` (`WELLFED_SERVER_TLS_LISTEN`), `--host` (`WELLFED_SERVER_HOSTS`, comma-separated), `--label`, `--discovery` (or `--no-discovery`), `--advertise` (or `--no-advertise`), `--trusted-proxy` (`WELLFED_SERVER_TRUSTED_PROXIES`), `--raw-sample-days`, `--releases-fetch true|false`, `--release-project-key` and `--release-owner-key` (`WELLFED_SERVER_RELEASE_PROJECT_KEYS` and `..._OWNER_KEYS`, comma-separated), `--backups-keep`, `--webhook-url` and `--webhook-allow-plain-http true|false`. Each variable is `WELLFED_SERVER_` and the flag's name.
 
 - **A flag beats its variable,** and either replaces the file's value whole. `--host` given once replaces the file's `hosts`.
 - **An override can't clear a list.** No flag or an empty variable means "not given". To drop every host or proxy, edit the file.
@@ -143,18 +144,19 @@ The next start reads it, and `--help` never shows its value. Other `WELLFED_SERV
 
 ## Find it from the app
 
-The server announces itself on the home network over mDNS, so the app can list it without a typed address, but only while it listens beyond this computer: at the default `127.0.0.1:8080` nothing is announced.
+The server announces its own HTTPS on the home network over mDNS, so the app can list it without a typed address. The app reaches the server on the home network only over that HTTPS, so set `tls_listen`, such as `tls_listen = "0.0.0.0:8443"`. Without it, or while it listens on this computer alone, nothing is announced, and the log says so.
 
-- **The record** is `_wellfed-server._tcp`, with the HTTP port. Its instance and host names are `label` (`wellfed-server` by default) and the start of the server's id, such as `wellfed-server-1a2b3c4d` and `wellfed-server-1a2b3c4d.local`, so two servers never announce the same name, and neither clashes with the machine's own.
-- **Its TXT record** holds only the server's version (`version`) and id (`id`, from `server.id`). Anyone on the network can hear it, so it names no household, account, feeder or machine.
-- **The app connects by the address it resolves,** and recognizes the server by `id` when that address changes. The server always answers to an IP address, so `hosts` needs nothing for it.
+- **The record** is `_wellfed-server._tcp`, with the `tls_listen` port. Its instance and host names are `label` (`wellfed-server` by default) and the start of the server's id, such as `wellfed-server-1a2b3c4d` and `wellfed-server-1a2b3c4d.local`, so two servers never announce the same name, and neither clashes with the machine's own.
+- **Its TXT record** holds only the server's version (`version`), id (`id`, from `server.id`) and identity key (`key`, 64 hex digits). Anyone on the network can hear it, so it names no household, account, feeder or machine.
+- **The app connects by the address it resolves** as `https://`, and checks the server's handshake against the announced key before it sends the password ([server identity](README.md#server-identity)). It recognizes the server by `id` when that address changes. The server always answers to an IP address, so `hosts` needs nothing for it.
+- **To add the server by its address** instead, type the `https://` address the log prints at the start (`serving on https://…`), such as `https://192.168.1.20:8443`. The app pins the key that address proves, and shows its fingerprint under the address: compare it with the one the log prints.
 - **On `0.0.0.0`** the record carries the machine's IPv4 addresses, following them as they change; on `[::]`, IPv6 addresses, and IPv4 too when the socket also takes IPv4; on one address, only that one.
 - **At shutdown** the server withdraws the record, so the app drops it at once.
 - **`advertise = "off"`** (or `--no-advertise`) turns it off, separately from `discovery`, which finds feeders. On a container's bridged network the announcement doesn't leave the bridge, so turn it off there too.
 
 ## Add the first owner
 
-A fresh server has no accounts, and the first visitor creates the first owner, over the API since the server has no web UI. Until then, anyone who reaches the server can claim it, through setup or by importing an archive, so add the owner while it still listens on `127.0.0.1` alone, before you [reach it from outside](#reach-it-from-outside).
+A fresh server has no accounts, and the first visitor creates the first owner, over the API since the server has no web UI. Until then, anyone who reaches the server can claim it, through setup or by importing an archive, so add the owner while it still listens on `127.0.0.1` alone, before you [reach it from outside](#reach-it-from-outside). To keep that window short, a server with no account takes a setup or an import only for an hour after it starts, and its log says so at the start. Past the hour, `GET /api/v1/setup` answers `"open": false` and setup is refused `409 setup_closed`; restart the server to open the hour again.
 
 1. Run `curl http://127.0.0.1:8080/api/v1/setup`. You should see `"open": true`, and the host's time zone as `zone` if it has one.
 2. Create the owner with a name, a password of at least 10 characters, and the home's IANA zone:
@@ -167,13 +169,13 @@ A fresh server has no accounts, and the first visitor creates the first owner, o
 
 3. Run `wellfed server login --server http://127.0.0.1:8080 --name alex` and type the password. You should see the CLI keep a token, after which `wellfed server feeders` works.
 
-Setup closes as soon as any account exists. The zone must be one the feeder can follow on its own, since the server writes its daylight-saving rule to each feeder: a zone with irregular changes no rule describes is refused `422 zone_unsupported`, and an unknown name `400 invalid`.
+Setup closes as soon as any account exists, or an hour after the start with none. The zone must be one the feeder can follow on its own, since the server writes its daylight-saving rule to each feeder: a zone with irregular changes no rule describes is refused `422 zone_unsupported`, and an unknown name `400 invalid`.
 
 ## Reach it from outside
 
-The app and the CLI speak plain `http://` only to this computer or the home network: a loopback, private or link-local address, `localhost`, or a `.local` name, as the [alert webhook](README.md#alert-webhook) does. Any other name takes the server's `https://` address, since a login sends the password and every later call a token that can feed. An address typed into the app with no scheme is `http://` for a home-network host and `https://` for any other. A name only your router resolves (`nas.lan`) counts as off the home network, so use the server's IP address or its `.local` name. Home Assistant asks you to confirm a plain `http://` address instead.
+The app speaks plain `http://` only to the device it runs on, and reaches a server on the home network over the server's own HTTPS ([server identity](README.md#server-identity)). An address typed into the app with no scheme is `https://`. The CLI speaks plain `http://` only to this computer or the home network: a loopback, private or link-local address, `localhost`, or a `.local` name, as the [alert webhook](README.md#alert-webhook) does. Any other name takes the server's `https://` address, since a login sends the password and every later call a token that can feed. A name only your router resolves (`nas.lan`) counts as off the home network, so use the server's IP address or its `.local` name. Home Assistant asks you to confirm a plain `http://` address instead.
 
-The server speaks plain HTTP. On your home network, reach it directly: set `listen = "0.0.0.0:8080"` and leave `trusted_proxies` empty. From outside, a VPN works over plain HTTP only when it routes your LAN's own addresses, so the phone still reaches the server at a private address such as `192.168.1.20`. A VPN that gives the server an address of its own instead (Tailscale's `100.x` addresses, which are carrier-grade NAT space, or its `*.ts.net` names) counts as off the home network, and the app and the CLI refuse plain `http://` to it. Use `https://` there: Tailscale's own HTTPS, or a reverse proxy that terminates HTTPS, such as Caddy:
+On your home network, reach the server directly: set `tls_listen = "0.0.0.0:8443"` for the app, `listen = "0.0.0.0:8080"` for the CLI and Home Assistant until they pin the key too, and leave `trusted_proxies` empty. From outside, a VPN works over plain HTTP only when it routes your LAN's own addresses, so the phone still reaches the server at a private address such as `192.168.1.20`. A VPN that gives the server an address of its own instead (Tailscale's `100.x` addresses, which are carrier-grade NAT space, or its `*.ts.net` names) counts as off the home network, and the app and the CLI refuse plain `http://` to it. Use `https://` there: Tailscale's own HTTPS, or a reverse proxy that terminates HTTPS, such as Caddy:
 
 ```caddyfile
 feeder.example.org {
@@ -196,12 +198,21 @@ Caddy obtains and renews the certificate, preserves `Host` and sets `X-Forwarded
 
 - **The client's address** comes from `X-Forwarded-For` (or `Forwarded` when that is absent), read right to left, each comma-separated entry on its own: the first hop that isn't a trusted proxy is the client, and anything a client wrote to its left is ignored. If `X-Forwarded-For` is present at all, `Forwarded` is ignored, so your proxy must set or append to `X-Forwarded-For`, as Caddy does, and nginx with `$proxy_add_x_forwarded_for`. The address drives the per-address login limit and is recorded with each login in the audit log. A proxy missing from `trusted_proxies` makes every request come from the proxy's own address, so the per-address limit of 20 failed logins a minute becomes one limit for everyone, and anyone can use it up to stop everyone's logins.
 - **The scheme** is `X-Forwarded-Proto`'s last value (or the last `Forwarded` element's `proto`), and `https` makes the session cookie `Secure`. Behind a chain of proxies, the front one sets it from the client's connection and each one behind passes it on.
-- **From any other peer** these headers are ignored: the address is the connection's and the scheme plain HTTP, so a server reached both directly and through the proxy keeps its direct clients' real addresses.
+- **From any other peer** these headers are ignored: the address and the scheme are the connection's (HTTPS on `tls_listen`, plain HTTP on `listen`), so a server reached both directly and through the proxy keeps its direct clients' real addresses.
 
 > [!WARNING]
 > Anyone listed in `trusted_proxies` can claim to be any client. List only the proxy's own address, or a container network's range such as `172.16.0.0/12` when the proxy runs in one. Never list your LAN or the internet.
 
 The public name goes in `hosts`, since the server refuses names it wasn't given. The `Origin` check compares the request's `Origin` with `Host`, so the proxy must pass the client's `Host` on, as Caddy does. nginx does not by default: add `proxy_set_header Host $host;`, or every login and setup is refused `403 cross_origin`. A request's own `x-request-id` is kept when it is one plain id (at most 64 bytes of letters, digits, `.`, `_` and `-`), so the proxy's id appears in both logs; anything else gets a fresh UUID.
+
+### A phone on a Wi-Fi with no way out
+
+The Android app keeps its connections on the Wi-Fi, so it reaches feeders there even while that Wi-Fi has no internet: a feeder's own network, a hotspot with no uplink, a captive portal. Android then routes the rest of the phone over mobile data. A server reached by a public name would be out of reach, so for it alone the app goes over mobile data instead, through a relay inside the app.
+
+- **When.** Only while the Wi-Fi the app uses has no validated internet and another network has, and only for a server whose address is off the home network. A server at a home-network address, and every feeder, stay on the Wi-Fi.
+- **How.** The relay is a SOCKS5 proxy on the phone's loopback, open only to the app (it takes a user and password the app makes at each start). It opens each connection, and looks up each name, on the network Android routes by default. The request is the same HTTPS as ever, end to end with the server.
+
+The CLI and Home Assistant run on machines that route on their own, so they have no relay.
 
 ## Add a member's phone
 

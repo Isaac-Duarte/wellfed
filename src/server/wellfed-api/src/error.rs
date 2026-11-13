@@ -10,7 +10,9 @@ use utoipa::ToSchema;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
-    /// The first owner exists; setup is closed.
+    /// The first owner exists, or the hour after the server started
+    /// passed with none; setup is closed. A restart opens it again on a
+    /// server with no account.
     SetupClosed,
     /// No valid session or token.
     Unauthenticated,
@@ -152,7 +154,8 @@ pub enum ErrorCode {
     /// The restore's manifest does not offer the kept backup as the stock
     /// image: nothing was sent.
     RestoreMismatch,
-    /// An account exists: only a fresh server takes an import.
+    /// An account exists, or the hour after the server started passed:
+    /// only a fresh server takes an import, as it does a setup.
     ImportClosed,
     /// The upload is not an archive this server imports, or does not
     /// match its own manifest; `detail` says how. Nothing was imported.

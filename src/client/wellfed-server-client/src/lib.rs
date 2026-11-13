@@ -23,6 +23,12 @@
 //! How long a client waits on a server that goes quiet is its
 //! [`Timeouts`]; by default only the connection's opening is bounded.
 //!
+//! Over HTTPS a client checks the server as its [`Trust`] says: the
+//! system's authorities, or the server's own identity key pinned
+//! ([`trust`]), which a server on the home network proves in its handshake.
+//! [`identify`] learns the key of a server first reached by a typed
+//! address.
+//!
 //! [`Client::request`] is the escape hatch for a request the typed methods
 //! cannot make (a malformed one, in a test), with the same base, origin
 //! and credentials.
@@ -49,9 +55,11 @@ mod releases;
 mod stock;
 mod stream;
 mod tokens;
+mod trust;
 mod users;
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::header::{self, HeaderValue};
@@ -66,6 +74,7 @@ pub use error::{Error, Failure};
 pub use feeders::Lock;
 pub use reqwest::{self, Method, StatusCode, Url};
 pub use stream::{Update, Updates};
+pub use trust::Trust;
 /// The API's bodies, for a caller that may not depend on `wellfed-api`
 /// itself: the CLI reaches the server through this crate alone.
 pub use wellfed_api as api;
@@ -87,6 +96,20 @@ pub struct Timeouts {
     /// The longest a whole request may take, from sending to the end of
     /// its answer. Event streams are exempt, since they stay open.
     pub request: Option<Duration>,
+}
+
+/// How a client reaches its server.
+#[derive(Clone, Debug, Default)]
+pub struct Options {
+    pub timeouts: Timeouts,
+    /// Whether plain `http://` goes beyond this computer and the home
+    /// network: only a caller that asked the owner allows it.
+    pub plain: PlainHttp,
+    /// How the server's HTTPS is checked.
+    pub trust: Trust,
+    /// A proxy every request goes through, when the caller has to route
+    /// around the network the system picked.
+    pub proxy: Option<reqwest::Proxy>,
 }
 
 /// How a client proves who it is.
@@ -137,6 +160,25 @@ impl Client {
     /// [`PlainHttp::Allowed`]: only a caller that asked the owner passes
     /// that.
     pub fn with_timeouts(base: &Url, timeouts: Timeouts, plain: PlainHttp) -> Result<Self, Error> {
+        Self::with_options(
+            base,
+            Options {
+                timeouts,
+                plain,
+                ..Options::default()
+            },
+        )
+    }
+
+    /// [`Self::with_timeouts`], checking the server's HTTPS as `options`
+    /// trust it, through its proxy if it names one.
+    pub fn with_options(base: &Url, options: Options) -> Result<Self, Error> {
+        let Options {
+            timeouts,
+            plain,
+            trust,
+            proxy,
+        } = options;
         let http_url = matches!(base.scheme(), "http" | "https") && base.host().is_some();
         if !http_url || base.query().is_some() || base.fragment().is_some() {
             return Err(Error::Base(base.clone()));
@@ -155,6 +197,13 @@ impl Client {
             .redirect(reqwest::redirect::Policy::none());
         if let Some(read) = timeouts.read {
             http = http.read_timeout(read);
+        }
+        if let Trust::Pinned(key) = trust {
+            let verifier = Arc::new(trust::KeyVerifier::pinned(key));
+            http = http.tls_backend_preconfigured(trust::config(verifier).map_err(Error::Tls)?);
+        }
+        if let Some(proxy) = proxy {
+            http = http.proxy(proxy);
         }
         let http = http.build().map_err(Error::Build)?;
 
@@ -239,6 +288,34 @@ impl Client {
         self.api(method, path)
             .header(IDEMPOTENCY_KEY, key.to_string())
     }
+}
+
+/// The identity key the server at `base`, an `https` URL, proves in its
+/// handshake, on first contact: any key is accepted and returned, for the
+/// caller to pin ([`Trust::Pinned`]) once the owner has added the server.
+/// [`Error::NoIdentity`] when the server proves none, as a site with a
+/// public certificate does.
+pub async fn identify(base: &Url, options: Options) -> Result<[u8; 32], Error> {
+    if base.scheme() != "https" {
+        return Err(Error::Base(base.clone()));
+    }
+    let verifier = Arc::new(trust::KeyVerifier::first_use());
+    let mut http = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .tls_backend_preconfigured(trust::config(verifier.clone()).map_err(Error::Tls)?);
+    if let Some(request) = options.timeouts.request {
+        http = http.timeout(request);
+    }
+    if let Some(proxy) = options.proxy {
+        http = http.proxy(proxy);
+    }
+    let http = http.build().map_err(Error::Build)?;
+
+    // Any answer will do: the handshake is what proves the key.
+    let url = format!("{}/health", base.as_str().trim_end_matches('/'));
+    http.get(url).send().await?;
+    verifier.proved().ok_or(Error::NoIdentity)
 }
 
 /// The header a write's key travels in.

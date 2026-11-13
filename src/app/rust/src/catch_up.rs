@@ -557,6 +557,7 @@ mod tests {
 
                 let link = ServerLink {
                     url: url.clone(),
+                    key: "00".repeat(32),
                     user: "ada".into(),
                     token_id: "00000000-0000-0000-0000-000000000001".into(),
                 };

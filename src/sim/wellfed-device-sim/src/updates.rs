@@ -164,7 +164,7 @@ fn boot(flash: &Rc<Flash>, banks: &mut Banks, key: Option<[u8; 32]>) -> (Boot, [
         if banks.stock_reinstalls && candidate.kind == ImageKind::Stock {
             banks.stock_gave_way();
         } else {
-            banks.bank1_build = candidate.build_id;
+            banks.bank1_build = banks.boots_instead.unwrap_or(candidate.build_id);
         }
     }
 

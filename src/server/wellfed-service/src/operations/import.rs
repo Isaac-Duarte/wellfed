@@ -2,9 +2,10 @@
 //! as it is uploaded.
 //!
 //! Import is a fresh server's other way in besides setup, so it has setup's
-//! rule rather than a login: it runs only while no account exists, and an
-//! account appearing meanwhile (a setup racing it) refuses it at the
-//! transaction's start. It logs no one in. The archive holds no password
+//! rule rather than a login: it runs only while no account exists and
+//! within the setup window after the server started, and an account
+//! appearing meanwhile (a setup racing it) refuses it at the transaction's
+//! start. It logs no one in. The archive holds no password
 //! hashes, so every imported account starts with none: no password opens
 //! it until the host's `wellfed-server reset-owner` gives an owner a
 //! temporary one, and that owner gives each other account its own. The
@@ -22,6 +23,7 @@ use wellfed_formats::export::{Item, Reader};
 use wellfed_mirror::{stored_body, stored_sample};
 use wellfed_store::Decoders;
 
+use crate::accounts::setup::SetupShut;
 use crate::operations::export::ExportError;
 use crate::{Result, Service};
 
@@ -37,8 +39,10 @@ impl Service {
         B: AsRef<[u8]>,
         E: Into<Box<dyn std::error::Error + Send + Sync>>,
     {
-        if !self.setup_open().await? {
-            return Err(ExportError::ImportClosed.into());
+        match self.setup_shut().await? {
+            None => {}
+            Some(SetupShut::Owned) => return Err(ExportError::ImportClosed.into()),
+            Some(SetupShut::Expired) => return Err(ExportError::ImportExpired.into()),
         }
         let decoders = Decoders {
             event: |body| stored_body(body).is_some(),

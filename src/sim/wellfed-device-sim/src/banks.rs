@@ -85,6 +85,10 @@ pub struct Banks {
     register: u32,
     /// How a newly activated build behaves.
     pub trial: Trial,
+    /// A build bank 1 boots instead of the one bank 0 activated there, as
+    /// when an update from elsewhere came between the activation and the
+    /// boot. `None` boots the activated build.
+    pub boots_instead: Option<[u8; 32]>,
 }
 
 /// A bank laid out as the reviewed builds are: five core images, each a
@@ -124,6 +128,7 @@ impl Banks {
             bank0_build: BANK0_BUILD,
             register: 0,
             trial: Trial::Confirms,
+            boots_instead: None,
         }))
     }
 

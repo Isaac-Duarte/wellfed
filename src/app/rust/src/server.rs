@@ -5,17 +5,14 @@
 
 use jiff::Timestamp;
 use wellfed_api::{
-    Command, CommandOutcome, EventPage, FeedAnomaly, Feeder, FeederDetail, FeederFood,
-    FeederRefusal, Food, FoodLeft, FoodPeriod, HistoryEvent, Install, IntakeDay, IntakeFeeder, Pet,
-    PetIntake, Refill, RefillPage, Role, SinceRefill, StatusSnapshot, StreamEvent, User, Weight,
-    WeightPage,
+    Command, EventPage, FeedAnomaly, Feeder, FeederDetail, FeederFood, FeederRefusal, Food,
+    FoodLeft, FoodPeriod, HistoryEvent, Install, IntakeDay, IntakeFeeder, Pet, PetIntake, Refill,
+    RefillPage, Role, SinceRefill, StatusSnapshot, StreamEvent, User, Weight, WeightPage,
 };
 use wellfed_model::{DeviceKind, Event, Gap, MaybeKnown};
 use wellfed_server_client::Error;
 
-use crate::api::server::{
-    ServerCommand, ServerCommandOutcome, ServerEvent, ServerInstall, ServerRefusal,
-};
+use crate::api::server::{ServerCommand, ServerEvent, ServerInstall, ServerRefusal};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::{
     ServerAccount, ServerAnomaly, ServerConnection, ServerDevice, ServerEntry, ServerEventPage,
@@ -24,6 +21,7 @@ use crate::api::server_views::{
     ServerPet, ServerPetIntake, ServerRefill, ServerRefillPage, ServerRole, ServerSinceRefill,
     ServerSnapshot, ServerWeight, ServerWeightPage,
 };
+use crate::route::core::settled_by_command;
 use crate::today::{Facts, event_entry, gap_entry};
 
 /// Ids as Dart passes them back: the UUID strings the views gave.
@@ -120,6 +118,15 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
     use wellfed_api::ErrorCode;
     use wellfed_server_client::Failure;
 
+    // Refused in the handshake: nothing was sent, but the server is not
+    // the one the phone pinned, which is no outage to wait out.
+    match error {
+        Error::KeyChanged { .. } => return ServerErrorKind::KeyChanged,
+        Error::NoIdentity => return ServerErrorKind::NoIdentity,
+        _ if error.untrusted_certificate() => return ServerErrorKind::UntrustedCertificate,
+        _ => {}
+    }
+
     match error.failure() {
         Failure::Connect => return ServerErrorKind::Unreachable,
         // An answer this app cannot read, or a status no call expects, is
@@ -142,6 +149,8 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
 
     match error {
         Error::Base(_) => ServerErrorKind::Address,
+        Error::KeyChanged { .. } => ServerErrorKind::KeyChanged,
+        Error::NoIdentity => ServerErrorKind::NoIdentity,
         Error::PlainHttp { .. } => ServerErrorKind::PlainHttp,
         Error::Redirect { .. } => ServerErrorKind::Redirected,
         Error::Problem { problem, .. } => match problem.code {
@@ -156,6 +165,7 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
             ErrorCode::NoCurrentFood => ServerErrorKind::NoCurrentFood,
             ErrorCode::AlreadyAdopted => ServerErrorKind::AlreadyAdopted,
             ErrorCode::InviteExpired => ServerErrorKind::InviteExpired,
+            ErrorCode::FeederBusy => ServerErrorKind::FeederBusy,
             // A proof whose challenge ran out is settled by claiming
             // again with a new one, as an unconfirmed key is.
             ErrorCode::PhoneKeyUnconfirmed | ErrorCode::PhoneKeyProofRefused => {
@@ -178,6 +188,7 @@ pub(crate) fn kind(error: &Error) -> ServerErrorKind {
         // unreadable answer returned above.
         Error::Http(_)
         | Error::Build(_)
+        | Error::Tls(_)
         | Error::Unexpected { .. }
         | Error::Decode(_)
         | Error::NoSession => ServerErrorKind::Protocol,
@@ -351,49 +362,11 @@ impl From<Command> for ServerCommand {
             feeder: command.feeder.to_string(),
             kind: command.kind,
             state: command.state,
-            outcome: command
-                .outcome
-                .as_ref()
-                .and_then(ServerCommandOutcome::known),
+            settlement: settled_by_command(command.state, command.outcome.as_ref()),
             feed: command.feed,
             sent_ms: ms(command.sent),
             updated_ms: ms(command.updated),
         }
-    }
-}
-
-impl ServerCommandOutcome {
-    /// The outcome as the app shows it; `None` for one a newer server
-    /// added, which reads as not known.
-    fn known(outcome: &CommandOutcome) -> Option<Self> {
-        Some(match *outcome {
-            CommandOutcome::Done => Self::Done,
-            CommandOutcome::Settings { .. } => Self::Settings,
-            CommandOutcome::Plans { .. } => Self::Plans,
-            CommandOutcome::Calibration { .. } => Self::Calibration,
-            CommandOutcome::Call { .. } => Self::Call,
-            CommandOutcome::Superseded => Self::Superseded,
-            CommandOutcome::Refused { refusal } => Self::Refused {
-                refusal: refusal.into(),
-            },
-            CommandOutcome::Invited { invite, seconds } => Self::Invited { invite, seconds },
-            CommandOutcome::Feeding { feed } => Self::Feeding { feed },
-            CommandOutcome::Fed {
-                feed,
-                requested,
-                completed,
-                outcome,
-                reason,
-            } => Self::Fed {
-                feed,
-                requested,
-                completed,
-                outcome,
-                reason,
-            },
-            CommandOutcome::Unrecorded => Self::Unrecorded,
-            CommandOutcome::Unknown => return None,
-        })
     }
 }
 
@@ -756,6 +729,33 @@ mod tests {
             let error = ServerError::from(error);
             assert!(!error.may_have_run, "{error}");
         }
+    }
+
+    /// A server busy with another adoption of the feeder did nothing, and
+    /// gets its own words: check the list rather than adopt again.
+    #[test]
+    fn a_feeder_busy_with_another_adoption_is_its_own_kind_and_did_not_run() {
+        use wellfed_api::{ErrorCode, Problem};
+        use wellfed_server_client::StatusCode;
+
+        let busy = Error::Problem {
+            status: StatusCode::CONFLICT,
+            problem: Box::new(Problem {
+                kind: "about:blank".into(),
+                title: "Busy".into(),
+                status: StatusCode::CONFLICT.as_u16(),
+                code: ErrorCode::FeederBusy,
+                detail: None,
+                refusal: None,
+                release: None,
+            }),
+            retry_after: None,
+        };
+
+        let error = ServerError::from(busy);
+
+        assert_eq!(error.kind, ServerErrorKind::FeederBusy);
+        assert!(!error.may_have_run, "{error}");
     }
 
     #[test]

@@ -45,6 +45,7 @@ fn no_file_is_the_defaults() {
     let config = ServerConfig::load(data.path(), Overrides::default()).unwrap();
 
     assert_eq!(config.listen, SocketAddr::from((Ipv4Addr::LOCALHOST, 8080)));
+    assert_eq!(config.tls_listen, None, "no HTTPS unless asked for");
     assert!(config.hosts.is_empty());
     assert_eq!(config.label.as_str(), "wellfed-server");
     assert_eq!(config.discovery, Discovery::Mdns);
@@ -149,6 +150,7 @@ fn the_file_sets_every_setting() {
         data.path().join(FILE),
         r#"
 listen = "0.0.0.0:9000"
+tls_listen = "0.0.0.0:9443"
 hosts = ["Feeder.LAN", "pets.home.arpa"]
 label = "kitchen-server"
 discovery = "off"
@@ -172,6 +174,7 @@ keep = 3
     let config = ServerConfig::load(data.path(), Overrides::default()).unwrap();
 
     assert_eq!(config.listen, "0.0.0.0:9000".parse().unwrap());
+    assert_eq!(config.tls_listen, Some("0.0.0.0:9443".parse().unwrap()));
     let hosts: Vec<&str> = config.hosts.iter().map(HostName::as_str).collect();
     assert_eq!(
         hosts,
@@ -203,6 +206,7 @@ fn flags_override_the_file() {
         data.path().join(FILE),
         r#"
 listen = "0.0.0.0:9000"
+tls_listen = "0.0.0.0:9443"
 hosts = ["feeder.lan", "pets.lan"]
 discovery = "mdns"
 advertise = "mdns"
@@ -223,6 +227,8 @@ owner_keys = ["1111111111111111111111111111111111111111111111111111111111111111"
         "2222222222222222222222222222222222222222222222222222222222222222",
         "--listen",
         "127.0.0.1:7000",
+        "--tls-listen",
+        "192.168.1.5:7443",
         "--host",
         "other.lan",
         "--no-discovery",
@@ -237,6 +243,7 @@ owner_keys = ["1111111111111111111111111111111111111111111111111111111111111111"
     let config = ServerConfig::load(data.path(), overrides).unwrap();
 
     assert_eq!(config.listen, "127.0.0.1:7000".parse().unwrap());
+    assert_eq!(config.tls_listen, Some("192.168.1.5:7443".parse().unwrap()));
     assert_eq!(config.hosts, ["other.lan".parse::<HostName>().unwrap()]);
     assert_eq!(config.discovery, Discovery::Off);
     assert_eq!(config.advertise, Advertise::Off);

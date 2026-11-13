@@ -191,7 +191,9 @@ async fn restore(
             eprintln!("The feeder already runs this stock image from bank 1: nothing was sent.");
             Ok(Settled::Known)
         }
-        Ended::Done => {
+        // A restore's activation is its end (stock serves nothing to
+        // follow), so it never reads as a release left unconfirmed.
+        Ended::Done | Ended::Unconfirmed => {
             eprintln!(
                 "Activated: the feeder restarts into stock {STOCK_VERSION} from bank 1, with its \
                  own settings. Stock serves no device API, so the server no longer reaches it."

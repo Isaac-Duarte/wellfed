@@ -48,6 +48,7 @@ object WifiNetworks {
         if (blocked(connectivity, network)) return null
         val found = describe(connectivity.getLinkProperties(network)) ?: return null
         if (bound == null && connectivity.bindProcessToNetwork(network)) ours = network
+        Uplink.refresh()
         return found
     }
 
@@ -60,6 +61,7 @@ object WifiNetworks {
             connectivity.bindProcessToNetwork(null)
         }
         ours = null
+        Uplink.refresh()
     }
 
     /**
@@ -71,13 +73,17 @@ object WifiNetworks {
     @Synchronized
     fun bindForActivity(connectivity: ConnectivityManager, network: Network?): Boolean {
         activity = network
-        if (network != null) {
-            ours = null
-            return connectivity.bindProcessToNetwork(network)
-        }
-        val kept = if (users.isEmpty()) null else wifi(connectivity)
-        ours = kept
-        return connectivity.bindProcessToNetwork(kept)
+        val bound =
+            if (network != null) {
+                ours = null
+                connectivity.bindProcessToNetwork(network)
+            } else {
+                val kept = if (users.isEmpty()) null else wifi(connectivity)
+                ours = kept
+                connectivity.bindProcessToNetwork(kept)
+            }
+        Uplink.refresh()
+        return bound
     }
 
     /** The network the app's own engine uses now, described, binding nothing. */

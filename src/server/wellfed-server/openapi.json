@@ -5777,6 +5777,36 @@
         }
       }
     },
+    "/api/v1/identity": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "The server's identity key, without authentication: what the app pins\nwhen it reaches the server by a name with a public certificate, as its\nown HTTPS on the home network proves the key in the handshake. The key\nis public, and the same for every caller.",
+        "operationId": "identity",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerIdentity"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "A host name this server does not answer to: `unknown_host`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/import": {
       "post": {
         "tags": [
@@ -5825,7 +5855,7 @@
             }
           },
           "409": {
-            "description": "import_closed: an account exists",
+            "description": "import_closed: an account exists, or the hour after the server started has passed",
             "content": {
               "application/json": {
                 "schema": {
@@ -7387,7 +7417,7 @@
             }
           },
           "409": {
-            "description": "setup_closed",
+            "description": "setup_closed: an account exists, or the hour after the server started has passed",
             "content": {
               "application/json": {
                 "schema": {
@@ -12540,6 +12570,36 @@
           },
           {
             "type": "object",
+            "description": "The release was activated and its trial failed: the feeder gave way\nto bank 0's recovery copy, which may be older than what it ran\nbefore the install.",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "rolled_back"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The release was activated, and bank 1 then ran another build: an\nupdate from elsewhere came between.",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "wrong_build"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "A value a newer server added, which this client cannot name. The\nserver never sends it.",
             "required": [
               "reason"
@@ -12580,6 +12640,8 @@
           "activated",
           "already_running",
           "failed",
+          "confirming",
+          "confirmed",
           "unknown"
         ]
       },
@@ -14840,6 +14902,19 @@
           }
         ]
       },
+      "ServerIdentity": {
+        "type": "object",
+        "description": "`GET /identity`: the server's identity key.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The Ed25519 public key, as 64 lowercase hex digits."
+          }
+        }
+      },
       "ServerStatus": {
         "type": "object",
         "description": "Readiness, for an owner.",
@@ -14950,7 +15025,8 @@
         ],
         "properties": {
           "open": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "No account exists, and the server started within the last hour:\na restart opens setup again on a server with no account."
           },
           "zone": {
             "type": [

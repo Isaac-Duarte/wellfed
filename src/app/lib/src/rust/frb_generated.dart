@@ -85,7 +85,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -579292934;
+  int get rustContentHash => -1571391320;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -426,6 +426,7 @@ abstract class RustLibApi extends BaseApi {
     required String name,
     required String password,
     required String phone,
+    String? key,
   });
 
   Future<void> crateApiServerServerSessionLogout({
@@ -647,6 +648,8 @@ abstract class RustLibApi extends BaseApi {
     required String dir,
     required bool enabled,
   });
+
+  String crateApiServerServerFingerprint({required String key});
 
   void crateApiInstallSetAsideBackup({
     required String dataDir,
@@ -3439,6 +3442,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String name,
     required String password,
     required String phone,
+    String? key,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3448,6 +3452,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(name, serializer);
           sse_encode_String(password, serializer);
           sse_encode_String(phone, serializer);
+          sse_encode_opt_String(key, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3461,7 +3466,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_server_error,
         ),
         constMeta: kCrateApiServerServerSessionLoginConstMeta,
-        argValues: [url, name, password, phone],
+        argValues: [url, name, password, phone, key],
         apiImpl: this,
       ),
     );
@@ -3470,7 +3475,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiServerServerSessionLoginConstMeta =>
       const TaskConstMeta(
         debugName: "ServerSession_login",
-        argNames: ["url", "name", "password", "phone"],
+        argNames: ["url", "name", "password", "phone", "key"],
       );
 
   @override
@@ -5336,6 +5341,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  String crateApiServerServerFingerprint({required String key}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(key, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 135,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerFingerprintConstMeta,
+        argValues: [key],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerFingerprintConstMeta =>
+      const TaskConstMeta(debugName: "server_fingerprint", argNames: ["key"]);
+
+  @override
   void crateApiInstallSetAsideBackup({
     required String dataDir,
     required String path,
@@ -5351,7 +5383,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 135,
+            funcId: 136,
           )!;
         },
         codec: SseCodec(
@@ -5381,7 +5413,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 136,
+            funcId: 137,
           )!;
         },
         codec: SseCodec(
@@ -5417,7 +5449,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 137,
+            funcId: 138,
             port: port_,
           );
         },
@@ -5446,7 +5478,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 138,
+            funcId: 139,
             port: port_,
           );
         },
@@ -5483,7 +5515,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 139,
+            funcId: 140,
             port: port_,
           );
         },
@@ -5513,7 +5545,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 140,
+            funcId: 141,
           )!;
         },
         codec: SseCodec(
@@ -5539,7 +5571,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 141,
+            funcId: 142,
           )!;
         },
         codec: SseCodec(
@@ -5565,7 +5597,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 142,
+            funcId: 143,
           )!;
         },
         codec: SseCodec(
@@ -5592,7 +5624,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 143,
+            funcId: 144,
           )!;
         },
         codec: SseCodec(
@@ -5625,7 +5657,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 144,
+            funcId: 145,
             port: port_,
           );
         },
@@ -5665,7 +5697,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 145,
+            funcId: 146,
           )!;
         },
         codec: SseCodec(
@@ -5704,7 +5736,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 146,
+            funcId: 147,
           )!;
         },
         codec: SseCodec(
@@ -6720,14 +6752,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ServerCommand dco_decode_box_autoadd_server_command(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_server_command(raw);
-  }
-
-  @protected
-  ServerCommandOutcome dco_decode_box_autoadd_server_command_outcome(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_server_command_outcome(raw);
   }
 
   @protected
@@ -8722,16 +8746,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ServerCommandOutcome? dco_decode_opt_box_autoadd_server_command_outcome(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw == null
-        ? null
-        : dco_decode_box_autoadd_server_command_outcome(raw);
-  }
-
-  @protected
   ServerError? dco_decode_opt_box_autoadd_server_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_server_error(raw);
@@ -8785,6 +8799,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SettingsView? dco_decode_opt_box_autoadd_settings_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_settings_view(raw);
+  }
+
+  @protected
+  Settlement? dco_decode_opt_box_autoadd_settlement(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_settlement(raw);
   }
 
   @protected
@@ -9338,53 +9358,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       feeder: dco_decode_String(arr[1]),
       kind: dco_decode_command_kind(arr[2]),
       state: dco_decode_command_state(arr[3]),
-      outcome: dco_decode_opt_box_autoadd_server_command_outcome(arr[4]),
+      settlement: dco_decode_opt_box_autoadd_settlement(arr[4]),
       feed: dco_decode_opt_box_autoadd_u_32(arr[5]),
       sentMs: dco_decode_i_64(arr[6]),
       updatedMs: dco_decode_i_64(arr[7]),
     );
-  }
-
-  @protected
-  ServerCommandOutcome dco_decode_server_command_outcome(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    switch (raw[0]) {
-      case 0:
-        return ServerCommandOutcome_Done();
-      case 1:
-        return ServerCommandOutcome_Settings();
-      case 2:
-        return ServerCommandOutcome_Plans();
-      case 3:
-        return ServerCommandOutcome_Calibration();
-      case 4:
-        return ServerCommandOutcome_Call();
-      case 5:
-        return ServerCommandOutcome_Superseded();
-      case 6:
-        return ServerCommandOutcome_Refused(
-          refusal: dco_decode_server_refusal(raw[1]),
-        );
-      case 7:
-        return ServerCommandOutcome_Invited(
-          invite: dco_decode_u_32(raw[1]),
-          seconds: dco_decode_u_16(raw[2]),
-        );
-      case 8:
-        return ServerCommandOutcome_Feeding(feed: dco_decode_u_32(raw[1]));
-      case 9:
-        return ServerCommandOutcome_Fed(
-          feed: dco_decode_u_32(raw[1]),
-          requested: dco_decode_u_8(raw[2]),
-          completed: dco_decode_u_8(raw[3]),
-          outcome: dco_decode_feed_outcome(raw[4]),
-          reason: dco_decode_feed_reason(raw[5]),
-        );
-      case 10:
-        return ServerCommandOutcome_Unrecorded();
-      default:
-        throw Exception("unreachable");
-    }
   }
 
   @protected
@@ -9629,12 +9607,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ServerLink dco_decode_server_link(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ServerLink(
       url: dco_decode_String(arr[0]),
-      user: dco_decode_String(arr[1]),
-      tokenId: dco_decode_String(arr[2]),
+      key: dco_decode_String(arr[1]),
+      user: dco_decode_String(arr[2]),
+      tokenId: dco_decode_String(arr[3]),
     );
   }
 
@@ -11619,14 +11598,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_server_command(deserializer));
-  }
-
-  @protected
-  ServerCommandOutcome sse_decode_box_autoadd_server_command_outcome(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_server_command_outcome(deserializer));
   }
 
   @protected
@@ -14214,19 +14185,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ServerCommandOutcome? sse_decode_opt_box_autoadd_server_command_outcome(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_server_command_outcome(deserializer));
-    } else {
-      return null;
-    }
-  }
-
-  @protected
   ServerError? sse_decode_opt_box_autoadd_server_error(
     SseDeserializer deserializer,
   ) {
@@ -14336,6 +14294,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_settings_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Settlement? sse_decode_opt_box_autoadd_settlement(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_settlement(deserializer));
     } else {
       return null;
     }
@@ -15053,9 +15024,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_feeder = sse_decode_String(deserializer);
     var var_kind = sse_decode_command_kind(deserializer);
     var var_state = sse_decode_command_state(deserializer);
-    var var_outcome = sse_decode_opt_box_autoadd_server_command_outcome(
-      deserializer,
-    );
+    var var_settlement = sse_decode_opt_box_autoadd_settlement(deserializer);
     var var_feed = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_sentMs = sse_decode_i_64(deserializer);
     var var_updatedMs = sse_decode_i_64(deserializer);
@@ -15064,64 +15033,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       feeder: var_feeder,
       kind: var_kind,
       state: var_state,
-      outcome: var_outcome,
+      settlement: var_settlement,
       feed: var_feed,
       sentMs: var_sentMs,
       updatedMs: var_updatedMs,
     );
-  }
-
-  @protected
-  ServerCommandOutcome sse_decode_server_command_outcome(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var tag_ = sse_decode_i_32(deserializer);
-    switch (tag_) {
-      case 0:
-        return ServerCommandOutcome_Done();
-      case 1:
-        return ServerCommandOutcome_Settings();
-      case 2:
-        return ServerCommandOutcome_Plans();
-      case 3:
-        return ServerCommandOutcome_Calibration();
-      case 4:
-        return ServerCommandOutcome_Call();
-      case 5:
-        return ServerCommandOutcome_Superseded();
-      case 6:
-        var var_refusal = sse_decode_server_refusal(deserializer);
-        return ServerCommandOutcome_Refused(refusal: var_refusal);
-      case 7:
-        var var_invite = sse_decode_u_32(deserializer);
-        var var_seconds = sse_decode_u_16(deserializer);
-        return ServerCommandOutcome_Invited(
-          invite: var_invite,
-          seconds: var_seconds,
-        );
-      case 8:
-        var var_feed = sse_decode_u_32(deserializer);
-        return ServerCommandOutcome_Feeding(feed: var_feed);
-      case 9:
-        var var_feed = sse_decode_u_32(deserializer);
-        var var_requested = sse_decode_u_8(deserializer);
-        var var_completed = sse_decode_u_8(deserializer);
-        var var_outcome = sse_decode_feed_outcome(deserializer);
-        var var_reason = sse_decode_feed_reason(deserializer);
-        return ServerCommandOutcome_Fed(
-          feed: var_feed,
-          requested: var_requested,
-          completed: var_completed,
-          outcome: var_outcome,
-          reason: var_reason,
-        );
-      case 10:
-        return ServerCommandOutcome_Unrecorded();
-      default:
-        throw UnimplementedError('');
-    }
   }
 
   @protected
@@ -15402,9 +15318,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ServerLink sse_decode_server_link(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_url = sse_decode_String(deserializer);
+    var var_key = sse_decode_String(deserializer);
     var var_user = sse_decode_String(deserializer);
     var var_tokenId = sse_decode_String(deserializer);
-    return ServerLink(url: var_url, user: var_user, tokenId: var_tokenId);
+    return ServerLink(
+      url: var_url,
+      key: var_key,
+      user: var_user,
+      tokenId: var_tokenId,
+    );
   }
 
   @protected
@@ -17673,15 +17595,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_server_command(self, serializer);
-  }
-
-  @protected
-  void sse_encode_box_autoadd_server_command_outcome(
-    ServerCommandOutcome self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_server_command_outcome(self, serializer);
   }
 
   @protected
@@ -20009,19 +19922,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_opt_box_autoadd_server_command_outcome(
-    ServerCommandOutcome? self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    sse_encode_bool(self != null, serializer);
-    if (self != null) {
-      sse_encode_box_autoadd_server_command_outcome(self, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_opt_box_autoadd_server_error(
     ServerError? self,
     SseSerializer serializer,
@@ -20135,6 +20035,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_settings_view(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_settlement(
+    Settlement? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_settlement(self, serializer);
     }
   }
 
@@ -20754,60 +20667,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.feeder, serializer);
     sse_encode_command_kind(self.kind, serializer);
     sse_encode_command_state(self.state, serializer);
-    sse_encode_opt_box_autoadd_server_command_outcome(self.outcome, serializer);
+    sse_encode_opt_box_autoadd_settlement(self.settlement, serializer);
     sse_encode_opt_box_autoadd_u_32(self.feed, serializer);
     sse_encode_i_64(self.sentMs, serializer);
     sse_encode_i_64(self.updatedMs, serializer);
-  }
-
-  @protected
-  void sse_encode_server_command_outcome(
-    ServerCommandOutcome self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    switch (self) {
-      case ServerCommandOutcome_Done():
-        sse_encode_i_32(0, serializer);
-      case ServerCommandOutcome_Settings():
-        sse_encode_i_32(1, serializer);
-      case ServerCommandOutcome_Plans():
-        sse_encode_i_32(2, serializer);
-      case ServerCommandOutcome_Calibration():
-        sse_encode_i_32(3, serializer);
-      case ServerCommandOutcome_Call():
-        sse_encode_i_32(4, serializer);
-      case ServerCommandOutcome_Superseded():
-        sse_encode_i_32(5, serializer);
-      case ServerCommandOutcome_Refused(refusal: final refusal):
-        sse_encode_i_32(6, serializer);
-        sse_encode_server_refusal(refusal, serializer);
-      case ServerCommandOutcome_Invited(
-        invite: final invite,
-        seconds: final seconds,
-      ):
-        sse_encode_i_32(7, serializer);
-        sse_encode_u_32(invite, serializer);
-        sse_encode_u_16(seconds, serializer);
-      case ServerCommandOutcome_Feeding(feed: final feed):
-        sse_encode_i_32(8, serializer);
-        sse_encode_u_32(feed, serializer);
-      case ServerCommandOutcome_Fed(
-        feed: final feed,
-        requested: final requested,
-        completed: final completed,
-        outcome: final outcome,
-        reason: final reason,
-      ):
-        sse_encode_i_32(9, serializer);
-        sse_encode_u_32(feed, serializer);
-        sse_encode_u_8(requested, serializer);
-        sse_encode_u_8(completed, serializer);
-        sse_encode_feed_outcome(outcome, serializer);
-        sse_encode_feed_reason(reason, serializer);
-      case ServerCommandOutcome_Unrecorded():
-        sse_encode_i_32(10, serializer);
-    }
   }
 
   @protected
@@ -21017,6 +20880,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_server_link(ServerLink self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.url, serializer);
+    sse_encode_String(self.key, serializer);
     sse_encode_String(self.user, serializer);
     sse_encode_String(self.tokenId, serializer);
   }
@@ -22492,7 +22356,8 @@ class ServerSessionImpl extends RustOpaque implements ServerSession {
   /// leaked token cannot keep the keys it enrolled: `password` is the
   /// account's, used once for a login that ends here, and never kept. A
   /// token the server already dropped counts as logged out. Every follow
-  /// ends once it is; a wrong password changes nothing.
+  /// ends once the login takes the password, whatever the revoke then
+  /// answers; a wrong password changes nothing.
   Future<void> logout({required String password, required ClientKey key}) =>
       RustLib.instance.api.crateApiServerServerSessionLogout(
         that: this,

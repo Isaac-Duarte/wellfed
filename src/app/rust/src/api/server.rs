@@ -8,6 +8,17 @@
 //! The password is used once, to mint the token, and never kept. Dart keeps
 //! the token's secret in secure storage beside the client secret, and the
 //! [`ServerLink`] in the app's own file.
+//!
+//! On the home network the phone reaches the server only over the server's
+//! own HTTPS, and pins its identity key ([server identity]): the key mDNS
+//! announced, or for a typed address the key the first handshake proved.
+//! Every later connection must prove that key, or ends as
+//! [`ServerErrorKind::KeyChanged`] before anything is sent. Plain `http://`
+//! is taken only on this device itself. A server reached by a public name
+//! is checked by the system's authorities, and its key read from
+//! `GET /identity` at each login.
+//!
+//! [server identity]: ../../../../../docs/server/README.md#server-identity
 
 use std::time::Duration;
 
@@ -18,10 +29,11 @@ use wellfed_api::{
     NewWeight, PageQuery, PetPatch, StreamQuery, TokenId, at_home,
 };
 pub use wellfed_server_client::Timeouts;
-use wellfed_server_client::{Auth, Client, PlainHttp, Url};
+use wellfed_server_client::{Auth, Client, Options, PlainHttp, Trust, Url};
 
 use crate::api::keys::ClientKey;
 pub use crate::api::model::{FeedOutcome, FeedReason};
+use crate::api::router::Settlement;
 use crate::api::server_error::{ServerError, ServerErrorKind};
 pub use crate::api::server_views::{
     CommandKind, CommandState, InstallState, NewRefill, ServerAccount, ServerConnection,
@@ -36,7 +48,7 @@ use crate::server::{date, event_page, ids, stream_event, timestamp};
 /// connection ends in an error instead of a screen that waits for good.
 /// A stream hears a keep-alive every 15 s, so three missed is a dead link;
 /// a plain call outlasts the server's own 15 s wait for a feeder's answer.
-const TIMEOUTS: Timeouts = Timeouts {
+pub(crate) const TIMEOUTS: Timeouts = Timeouts {
     read: Some(Duration::from_secs(45)),
     request: Some(Duration::from_secs(30)),
 };
@@ -81,45 +93,14 @@ pub struct ServerCommand {
     pub feeder: String,
     pub kind: CommandKind,
     pub state: CommandState,
-    pub outcome: Option<ServerCommandOutcome>,
+    /// What its outcome settles of the write, by the reading every server
+    /// client shares; `None` while it is unknown or in flight, or for an
+    /// outcome a newer server added.
+    pub settlement: Option<Settlement>,
     /// The feed it started, for a feed.
     pub feed: Option<u32>,
     pub sent_ms: i64,
     pub updated_ms: i64,
-}
-
-/// How a command ended, as the feeder answered.
-pub enum ServerCommandOutcome {
-    Done,
-    /// The settings the write left.
-    Settings,
-    /// The plans the write left.
-    Plans,
-    /// The calibration the write left.
-    Calibration,
-    /// The meal call the upload stored.
-    Call,
-    /// Another change to the meal call came first; the retry sent nothing.
-    Superseded,
-    Refused {
-        refusal: ServerRefusal,
-    },
-    Invited {
-        invite: u32,
-        seconds: u16,
-    },
-    Feeding {
-        feed: u32,
-    },
-    Fed {
-        feed: u32,
-        requested: u8,
-        completed: u8,
-        outcome: FeedOutcome,
-        reason: FeedReason,
-    },
-    /// The answer was lost and the feeder's history never named it.
-    Unrecorded,
 }
 
 /// A firmware install the server runs on a feeder.
@@ -167,16 +148,47 @@ impl ServerSession {
     /// Log in to the server at `url` as `name`, mint a token for this phone
     /// named `phone` (the phone's name, as feeders list it), and end the
     /// login: from here the token alone speaks for the phone. A `url` with
-    /// no scheme is `http://` for a host on the home network and `https://`
-    /// for any other, and is kept so.
+    /// no scheme is `https://`, but on this device itself, and is kept so.
+    ///
+    /// `key` is the identity key the server's mDNS record named, or the
+    /// link's when the owner logs in again; `None` for an address typed
+    /// first, whose key is learned from its handshake. Either way it is
+    /// checked before the password is sent, and pinned in the link.
     pub async fn login(
         url: String,
         name: String,
         password: String,
         phone: String,
+        key: Option<String>,
     ) -> Result<Self, ServerError> {
         let url = with_scheme(&url);
-        let mut client = open(&url, TIMEOUTS)?;
+        let key = key.as_deref().map(parse_key).transpose()?;
+        let base = base(&url)?;
+        let pinned = pins(&base);
+        let key = match (pinned, key) {
+            (true, None) => {
+                let first = options(None, TIMEOUTS);
+                Some(wellfed_server_client::identify(&base, first).await?)
+            }
+            (_, key) => key,
+        };
+        let mut client = open(&url, key, TIMEOUTS)?;
+        // Over the server's own HTTPS the handshake proved the key; over
+        // the system's authorities, or plain http on this device, the key
+        // is the server's own word.
+        let key = match key {
+            Some(key) if pinned => key,
+            expected => {
+                let named = client.identity().await?;
+                if expected.is_some_and(|expected| expected != named) {
+                    let changed = wellfed_server_client::Error::KeyChanged {
+                        offered: Some(named),
+                    };
+                    return Err(changed.into());
+                }
+                named
+            }
+        };
 
         let user = client.login(&Credentials { name, password }).await?;
         let created = client
@@ -192,6 +204,7 @@ impl ServerSession {
 
         let link = ServerLink {
             url,
+            key: Hex(key).to_string(),
             user: user.name,
             token_id: created.token.id.to_string(),
         };
@@ -213,7 +226,7 @@ impl ServerSession {
         secret: String,
         timeouts: Timeouts,
     ) -> Result<Self, ServerError> {
-        let client = open(&link.url, timeouts)?;
+        let client = open(&link.url, Some(parse_key(&link.key)?), timeouts)?;
         Ok(Self::with_token(client, link, secret))
     }
 
@@ -246,7 +259,8 @@ impl ServerSession {
     /// leaked token cannot keep the keys it enrolled: `password` is the
     /// account's, used once for a login that ends here, and never kept. A
     /// token the server already dropped counts as logged out. Every follow
-    /// ends once it is; a wrong password changes nothing.
+    /// ends once the login takes the password, whatever the revoke then
+    /// answers; a wrong password changes nothing.
     pub async fn logout(&self, password: String, key: &ClientKey) -> Result<(), ServerError> {
         let id = TokenId(ids::parse(&self.link.token_id)?);
         // The server keeps only the keys the phone names as its own: one
@@ -254,12 +268,18 @@ impl ServerSession {
         let request = LogOut {
             keys: vec![Hex(*key.keypair().public())],
         };
-        let mut login = open(&self.link.url, TIMEOUTS)?;
+        let mut login = open(&self.link.url, Some(parse_key(&self.link.key)?), TIMEOUTS)?;
         let credentials = Credentials {
             name: self.link.user.clone(),
             password,
         };
         login.login(&credentials).await?;
+
+        // Past the password the phone leaves, whatever the revoke answers.
+        // The revoke ends the token's stream on the server, so the follows
+        // close first: that end then reads as closed, not as a stream the
+        // server broke off.
+        self.close();
         let ended = login.log_out_token(id, &request).await;
         // The login was only the way to the logout; one that never ends
         // expires on the server.
@@ -271,7 +291,6 @@ impl ServerSession {
                 return Err(error);
             }
         }
-        self.close();
         Ok(())
     }
 
@@ -629,9 +648,12 @@ impl ServerHandle {
         }
 
         loop {
+            // A close first: a logout closes before its revoke ends the
+            // stream, and the two may be ready together.
             let next = tokio::select! {
-                next = stream.next() => next,
+                biased;
                 _ = closed.wait_for(|closed| *closed) => return Ok(()),
+                next = stream.next() => next,
             };
             let Some(update) = next else {
                 return Err(ServerError::new(
@@ -656,39 +678,131 @@ impl ServerHandle {
 /// A client of the server in `link` under the phone token `secret`, for a
 /// catch-up's one read of a feeder's alerts.
 pub(crate) fn alert_client(link: &ServerLink, secret: &str) -> Result<Client, ServerError> {
-    let client = open(&link.url, TIMEOUTS)?;
+    let client = open(&link.url, Some(parse_key(&link.key)?), TIMEOUTS)?;
     Ok(client.with_auth(Some(Auth::Token(secret.to_owned()))))
 }
 
-/// A client of the server at `url`. Plain `http://` is taken only on this
-/// phone or the home network: a login carries the password, and every call
-/// a token that never expires and can feed, so an address beyond takes
-/// `https://`, with no way around it here.
-fn open(url: &str, timeouts: Timeouts) -> Result<Client, ServerError> {
-    let base = Url::parse(url.trim())
-        .map_err(|error| ServerError::new(ServerErrorKind::Address, error))?;
-    Ok(Client::with_timeouts(&base, timeouts, PlainHttp::Refused)?)
+/// How many hex digits of the identity key the owner compares.
+#[frb(sync)]
+pub fn server_fingerprint(key: String) -> Result<String, ServerError> {
+    Ok(wellfed_api::fingerprint(&parse_key(&key)?))
+}
+
+/// Where a server address leads, which decides how it is checked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reach {
+    /// This device itself (`localhost`, a loopback address): plain
+    /// `http://` crosses no network.
+    Device,
+    /// The home network: only the server's own HTTPS.
+    Home,
+    /// Anywhere else: `https://` the system's authorities vouch for.
+    Public,
+}
+
+fn reach(base: &Url) -> Reach {
+    let host = base.host_str().unwrap_or_default();
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    let loopback = bare.eq_ignore_ascii_case("localhost")
+        || bare
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    if loopback {
+        Reach::Device
+    } else if at_home(host) || home_name(bare) {
+        Reach::Home
+    } else {
+        Reach::Public
+    }
+}
+
+/// A name only the home network resolves, which no public authority
+/// certifies, so only the server's own HTTPS answers it: `home.arpa` and
+/// the common router suffixes `.lan` and `.internal`, and a single label
+/// (`nas`). This decides the check only: plain `http://` to one is refused
+/// all the same, since anyone can claim such a name on a network.
+pub(crate) fn home_name(host: &str) -> bool {
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return false;
+    }
+    let name = host.trim_end_matches('.').to_ascii_lowercase();
+    !name.contains('.')
+        || [".home.arpa", ".lan", ".internal"]
+            .iter()
+            .any(|suffix| name.ends_with(suffix))
+        || name == "home.arpa"
+}
+
+fn base(url: &str) -> Result<Url, ServerError> {
+    Url::parse(url.trim()).map_err(|error| ServerError::new(ServerErrorKind::Address, error))
+}
+
+/// The identity key a link or a record names.
+fn parse_key(key: &str) -> Result<[u8; 32], ServerError> {
+    wellfed_session::hex::decode_array_either_case::<32>(key.trim().as_bytes()).ok_or_else(|| {
+        ServerError::new(
+            ServerErrorKind::NoIdentity,
+            "a server identity key is 64 hex digits",
+        )
+    })
+}
+
+fn options(key: Option<[u8; 32]>, timeouts: Timeouts) -> Options {
+    Options {
+        timeouts,
+        plain: PlainHttp::Refused,
+        trust: key.map_or(Trust::Platform, Trust::Pinned),
+        // Around a Wi-Fi with no way out, for a server off the home
+        // network only: the relay decides per request. Only Android binds
+        // the process to one network; a desktop keeps its proxy settings.
+        proxy: cfg!(target_os = "android").then(crate::relay::proxy),
+    }
+}
+
+/// Whether the server at `base` is checked by its pinned key: its own
+/// HTTPS, on the home network or this device. Beyond, a name the system's
+/// authorities vouch for.
+fn pins(base: &Url) -> bool {
+    base.scheme() == "https" && reach(base) != Reach::Public
+}
+
+/// A client of the server at `url`, `key` pinned when [`pins`] says so.
+/// Plain `http://` is refused but on this device itself: a login carries
+/// the password, and every call a token that never expires and can feed.
+fn open(url: &str, key: Option<[u8; 32]>, timeouts: Timeouts) -> Result<Client, ServerError> {
+    let base = base(url)?;
+    if base.scheme() == "http" && reach(&base) != Reach::Device {
+        return Err(ServerError::new(
+            ServerErrorKind::PlainHttp,
+            "plain http:// is taken only on this device: use the server's https:// address",
+        ));
+    }
+    let key = if pins(&base) {
+        Some(key.ok_or_else(|| {
+            ServerError::new(ServerErrorKind::NoIdentity, "no identity key to check")
+        })?)
+    } else {
+        None
+    };
+    Ok(Client::with_options(&base, options(key, timeouts))?)
 }
 
 /// The server's address as the owner typed it, given a scheme if it names
-/// none: `http://` for a host on the home network (an address there, or a
-/// `.local` name), as a server on the LAN usually is, and `https://` for any
-/// other, so a name typed bare never sends the password in the clear.
+/// none: `https://`, so a name typed bare never sends the password in the
+/// clear, but on this device itself, where plain `http://` crosses no
+/// network.
 pub(crate) fn with_scheme(typed: &str) -> String {
     let typed = typed.trim();
     if typed.contains("://") {
         return typed.to_owned();
     }
 
-    let plain = format!("http://{typed}");
-    let home = Url::parse(&plain)
-        .ok()
-        .and_then(|url| url.host_str().map(at_home))
-        .unwrap_or(false);
-    if home {
-        plain
+    let secure = format!("https://{typed}");
+    let device = Url::parse(&secure).is_ok_and(|url| reach(&url) == Reach::Device);
+    if device {
+        format!("http://{typed}")
     } else {
-        format!("https://{typed}")
+        secure
     }
 }
 
@@ -697,12 +811,41 @@ mod tests {
     use super::with_scheme;
 
     #[test]
-    fn a_bare_address_is_plain_http_only_at_home() {
+    fn a_name_only_the_home_network_resolves_is_reached_by_its_pinned_key() {
+        use super::{Reach, reach};
+
+        let at = |url: &str| reach(&super::Url::parse(url).unwrap());
+        for home in [
+            "https://192.168.1.20:8443",
+            "https://wellfed.local:8443",
+            "https://nas.home.arpa:8443",
+            "https://nas.lan:8443",
+            "https://NAS.Internal.:8443",
+            "https://nas:8443",
+        ] {
+            assert_eq!(at(home), Reach::Home, "{home}");
+        }
+        for public in [
+            "https://feeder.example.org",
+            "https://203.0.113.4:8443",
+            "https://lan.example.com",
+        ] {
+            assert_eq!(at(public), Reach::Public, "{public}");
+        }
+        assert_eq!(at("http://localhost:8080"), Reach::Device);
+        assert_eq!(at("http://[::1]:8080"), Reach::Device);
+    }
+
+    #[test]
+    fn a_bare_address_is_plain_http_only_on_this_device() {
         for (typed, full) in [
-            ("192.168.1.20:8080", "http://192.168.1.20:8080"),
-            (" 10.0.0.4 ", "http://10.0.0.4"),
-            ("wellfed.local:8080", "http://wellfed.local:8080"),
-            ("[fd00::4]:8080", "http://[fd00::4]:8080"),
+            ("192.168.1.20:8443", "https://192.168.1.20:8443"),
+            (" 10.0.0.4 ", "https://10.0.0.4"),
+            ("wellfed.local:8443", "https://wellfed.local:8443"),
+            ("[fd00::4]:8443", "https://[fd00::4]:8443"),
+            ("127.0.0.1:8080", "http://127.0.0.1:8080"),
+            ("localhost:8080", "http://localhost:8080"),
+            ("[::1]:8080", "http://[::1]:8080"),
             ("feeder.example", "https://feeder.example"),
             (
                 "203.0.113.4:8443/wellfed",

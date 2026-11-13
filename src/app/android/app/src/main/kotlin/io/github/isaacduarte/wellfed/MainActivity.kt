@@ -70,6 +70,7 @@ class MainActivity : FlutterActivity() {
         // Before the engine starts Dart, so no login can reach the verifier
         // first. Starting it again on a recreated activity changes nothing.
         TlsVerifier.start(applicationContext)
+        Uplink.start(applicationContext)
         super.onCreate(savedInstanceState)
         current = this
         // The Bluetooth plugin's RxJava throws when a link drops as its stream is

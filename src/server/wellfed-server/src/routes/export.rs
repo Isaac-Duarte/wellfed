@@ -84,7 +84,7 @@ pub(crate) async fn export(
     request_body(content = Archive, content_type = "application/x-tar"),
     responses(
         (status = 201, body = Imported),
-        (status = 409, body = Problem, description = "import_closed: an account exists"),
+        (status = 409, body = Problem, description = "import_closed: an account exists, or the hour after the server started has passed"),
         (status = 422, body = Problem, description = "archive_invalid: not an archive this server imports, or not what its manifest says; nothing was imported"),
     ),
 )]

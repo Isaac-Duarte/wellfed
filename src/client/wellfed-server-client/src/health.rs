@@ -1,7 +1,7 @@
-//! The server's liveness and readiness.
+//! The server's liveness, identity and readiness.
 
 use reqwest::{Method, StatusCode};
-use wellfed_api::{Health, ServerSkew, ServerStatus};
+use wellfed_api::{Health, ServerIdentity, ServerSkew, ServerStatus};
 
 use crate::{Client, Error, decode};
 
@@ -16,6 +16,14 @@ impl Client {
     /// its liveness answer: which side to update. Needs no login.
     pub async fn skew(&self) -> Result<ServerSkew, Error> {
         Ok(ServerSkew::of(self.health().await?.revision))
+    }
+
+    /// The server's identity key, as it answers it; needs no login. Over
+    /// [`crate::Trust::Pinned`] the handshake already proved it.
+    pub async fn identity(&self) -> Result<[u8; 32], Error> {
+        let response = self.api(Method::GET, "/identity").send().await?;
+        let identity: ServerIdentity = decode(response, StatusCode::OK).await?;
+        Ok(identity.key.0)
     }
 
     /// Readiness: the database, each feeder's link and the background

@@ -10,17 +10,23 @@ import 'package:wellfed/src/rust/api/discovery.dart';
 
 export 'package:wellfed/src/rust/api/discovery.dart' show FoundFeeder;
 
-/// An owner's server answering on the LAN: the URL to log in at, and the
-/// name it announces.
+/// An owner's server answering on the LAN: the URL to log in at, the name
+/// it announces, and the identity key its HTTPS must prove.
 class FoundServer {
   /// A server as NSD heard it.
-  const FoundServer({required this.url, required this.name});
+  const FoundServer({required this.url, required this.name, required this.key});
 
-  /// `http://ip:port`, IPv4: what mDNS gives is the LAN's own address.
+  /// `https://ip:port`, IPv4: what mDNS gives is the LAN's own address,
+  /// and the port is the server's own HTTPS.
   final String url;
 
   /// The service instance name, the server's label.
   final String name;
+
+  /// The identity key, 64 hex digits, from the TXT `key`. Anyone on the
+  /// network can announce one, so it proves nothing by itself: the login
+  /// checks the server's handshake against it before the password goes.
+  final String key;
 }
 
 /// Feeders on the LAN, `_wellfed._tcp`, each with its identity in the TXT
@@ -154,10 +160,13 @@ class Discovery {
   }
 
   static FoundServer? _server(nsd.Service service) {
+    final Uint8List? key = service.txt?['key'];
     final InternetAddress? ip = service.addresses?.where((a) => a.type == InternetAddressType.IPv4).firstOrNull;
     final int? port = service.port;
-    if (ip == null || port == null) return null;
-    return FoundServer(url: 'http://${ip.address}:$port', name: service.name ?? 'Home server');
+    // A record with no key is an older server's plain http, which the app
+    // no longer speaks on the network.
+    if (key == null || ip == null || port == null) return null;
+    return FoundServer(url: 'https://${ip.address}:$port', name: service.name ?? 'Home server', key: utf8.decode(key));
   }
 
   static FoundFeeder? _feeder(nsd.Service service) {

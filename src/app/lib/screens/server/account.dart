@@ -100,6 +100,7 @@ class AccountScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: Space.s1),
                 Muted(state.link.url),
+                if (server.fingerprint(state.link.key) case final String fingerprint) Muted('Key $fingerprint'),
                 if (account != null) Muted(roleWords(account.role)),
               ],
             ),
@@ -107,7 +108,9 @@ class AccountScreen extends StatelessWidget {
           const SizedBox(height: Space.s3),
           if (state.problem case final ServerProblem problem) ...[
             Notice(
-              tone: problem == ServerProblem.signedOut ? Tone.fault : Tone.warning,
+              tone: problem == ServerProblem.signedOut || problem == ServerProblem.keyChanged
+                  ? Tone.fault
+                  : Tone.warning,
               text: switch (problem) {
                 ServerProblem.unreachable =>
                   'The server is not answering. Feeders this $deviceName reaches go directly.',
@@ -116,13 +119,18 @@ class AccountScreen extends StatelessWidget {
                       'Log in again, or remove the server.',
                 ServerProblem.other => 'The server answered something this app does not read.',
                 ServerProblem.plainHttp =>
-                  "This server's address is plain http:// beyond the home network, so this $deviceName's "
+                  "This server's address is plain http://, so this $deviceName's "
                       'token has already crossed the network unencrypted, and it never expires. '
                       'Remove the server, add it again by its https:// address, then revoke the old '
                       "token for this $deviceName from the server's token list.",
                 ServerProblem.storage =>
                   "This $deviceName's storage couldn't read the server's sign-in. Nothing was deleted. "
                       'Close the app and open it again; if this stays, restart the $deviceName.',
+                ServerProblem.keyChanged =>
+                  'The server at this address proved a different key from the one this $deviceName added, '
+                      'so it may not be your server. Nothing was sent to it. Feeders this $deviceName reaches '
+                      'go directly. If you set the server up again, remove it here and add it again; '
+                      'if you did not, find out what answers at this address first.',
               },
             ),
             const SizedBox(height: Space.s3),
@@ -142,14 +150,20 @@ class AccountScreen extends StatelessWidget {
             ),
             const SizedBox(height: Space.s3),
           ],
-          if (household case final VoidCallback open)
-            OutlinedButton(onPressed: open, child: const Text('Pets and foods')),
-          const SizedBox(height: Space.s5),
-          Muted(keptKeysWords),
-          const SizedBox(height: Space.s3),
-          FilledButton(onPressed: () => unawaited(_logOut(context)), child: const Text('Log out')),
-          const SizedBox(height: Space.s2),
-          OutlinedButton(onPressed: () => unawaited(_remove(context)), child: const Text('Remove server')),
+          // A server that proved another key gets nothing more from this
+          // phone: removing it is the one way on.
+          if (state.problem == ServerProblem.keyChanged)
+            FilledButton(onPressed: () => unawaited(_remove(context)), child: const Text('Remove server'))
+          else ...[
+            if (household case final VoidCallback open)
+              OutlinedButton(onPressed: open, child: const Text('Pets and foods')),
+            const SizedBox(height: Space.s5),
+            Muted(keptKeysWords),
+            const SizedBox(height: Space.s3),
+            FilledButton(onPressed: () => unawaited(_logOut(context)), child: const Text('Log out')),
+            const SizedBox(height: Space.s2),
+            OutlinedButton(onPressed: () => unawaited(_remove(context)), child: const Text('Remove server')),
+          ],
         ],
       );
     },

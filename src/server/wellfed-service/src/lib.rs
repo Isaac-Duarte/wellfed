@@ -82,7 +82,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 pub use accounts::{AccountError, BearerToken, Caller, Permission, SessionToken, can, reset_owner};
-pub use config::{Config, Timing};
+pub use config::{Config, Timing, identity_seed};
 pub use error::{Error, InternalError, Invalid, Reply, Resource, Result};
 pub use feeders::{
     ClientError, CommandError, FeederError, LogFollow, Method, NoRoute, Parity, parity, seal_key,
@@ -124,6 +124,9 @@ struct Shared {
     hub: Arc<Hub>,
     /// When this run started, by the service's clock.
     started: Timestamp,
+    /// When this run started, by a clock that never steps: a wall clock
+    /// set back never stretches a window counted from the start.
+    started_steady: tokio::time::Instant,
 }
 
 impl Shared {
@@ -198,6 +201,7 @@ impl Service {
                 random,
                 hub,
                 started,
+                started_steady: tokio::time::Instant::now(),
             }),
             mirror,
             releases: Arc::new(releases),
@@ -226,6 +230,7 @@ impl Service {
             }
         }
         service.start_webhook()?;
+        service.note_setup_window().await?;
         Ok(service)
     }
 

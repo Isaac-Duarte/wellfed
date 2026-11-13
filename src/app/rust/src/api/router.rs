@@ -74,7 +74,7 @@ use crate::api::server_views::{KnownServer, ServerAccount, ServerFeeder};
 use crate::api::session::{FedBy, FeedRefusal, FeedResult, FeederSession};
 use crate::api::store::SetAside;
 use crate::frb_generated::StreamSink;
-use crate::route::core::UNFOUND_GRACE_MS;
+use crate::route::core::Graces;
 use crate::route::io::Router;
 
 /// The way a request reaches a feeder. Stored in `pending.json`, like
@@ -291,6 +291,14 @@ pub enum Adoption {
     /// feeder when read: it may still be adopting it. Nothing more is sent
     /// for it; [`PathRouter::check_adoption`] reads the list again, and a
     /// new adoption only reads too until the router's grace has passed.
+    /// `error` is how it was lost: a server still looking for the feeder's
+    /// join answer is [`ServerErrorKind::OutcomeUnknown`]. Also a server
+    /// busy with another adoption of the feeder
+    /// ([`ServerErrorKind::FeederBusy`]), which did nothing: the list
+    /// shows the feeder once that adoption lands.
+    ///
+    /// [`ServerErrorKind::OutcomeUnknown`]: crate::api::server_error::ServerErrorKind::OutcomeUnknown
+    /// [`ServerErrorKind::FeederBusy`]: crate::api::server_error::ServerErrorKind::FeederBusy
     Unsettled { error: ServerError },
     /// The feeder made no invite: `reply` says how that request ended.
     NoInvite { reply: RoutedReply },
@@ -355,15 +363,22 @@ impl PathRouter {
     /// [`ErrorKind::InUse`]: crate::api::error::ErrorKind::InUse
     #[frb(sync)]
     pub fn new(pins_path: String) -> Result<Self, BridgeError> {
-        Self::open_with(pins_path, UNFOUND_GRACE_MS)
+        Ok(Self {
+            router: Router::open(std::path::Path::new(&pins_path), Graces::APP)?,
+        })
     }
 
-    /// [`Self::new`], taking a server write its journal lacks as never sent
-    /// `grace_ms` after its attempt, for Rust tests.
+    /// [`Self::new`], taking a server write its journal lacks as never sent,
+    /// and a lost adoption's feeder the server's list lacks as never
+    /// adopted, `grace_ms` after its attempt, for Rust tests.
     #[frb(ignore)]
     pub fn open_with(pins_path: String, grace_ms: i64) -> Result<Self, BridgeError> {
+        let graces = Graces {
+            unfound_ms: grace_ms,
+            adoption_ms: grace_ms,
+        };
         Ok(Self {
-            router: Router::open(std::path::Path::new(&pins_path), grace_ms)?,
+            router: Router::open(std::path::Path::new(&pins_path), graces)?,
         })
     }
 

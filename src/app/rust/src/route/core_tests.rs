@@ -343,6 +343,22 @@ const fn waited(ms: i64) -> Waited {
     }
 }
 
+/// A lost adoption is never read as missing while the server may still
+/// find its key on the feeder: the search, then its last session attempt
+/// (a connection and a handshake answer), then the phone's own request.
+#[test]
+fn the_adoption_grace_outlasts_the_servers_search_for_a_lost_join() {
+    let last_attempt = wellfed_connect::CONNECT + wellfed_connect::ANSWER;
+    let request = crate::api::server::TIMEOUTS
+        .request
+        .expect("the app bounds its server requests");
+    let server = wellfed_api::LOST_JOIN_SEARCH + last_attempt + request;
+
+    let grace = std::time::Duration::from_millis(ADOPTION_GRACE_MS.unsigned_abs());
+
+    assert!(grace > server, "{grace:?} against {server:?}");
+}
+
 #[test]
 fn a_server_write_the_journal_lacks_is_unsent_only_from_its_own_journal_once_old() {
     let pin = feed_pin(1, "a", RoutePath::Server);

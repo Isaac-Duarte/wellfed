@@ -106,11 +106,12 @@ impl Store {
         Ok(())
     }
 
-    /// Mark every install still running as failed at `at`: only the server
-    /// that started one can run it, so at a start none is. One whose offer
-    /// the feeder took ends uncertain (`unreachable`, `offered`), since
-    /// bank 1 may be partly written or activated; any other `interrupted`,
-    /// having changed nothing. How many there were.
+    /// End every install a stopped server left running at `at`: only the
+    /// server that started one can run it, so at a start none is. One whose
+    /// offer the feeder took ends uncertain (`unreachable`, `offered`),
+    /// since bank 1 may be partly written or activated; any other
+    /// `interrupted`, having changed nothing; one whose trial it followed
+    /// `activated`, the verdict unseen. How many there were.
     pub async fn interrupt_installs(&self, at: Timestamp) -> Result<u64> {
         let running = InstallState::Running.code();
         let failed = InstallState::Failed.code();
@@ -132,7 +133,20 @@ impl Store {
         )
         .execute(&self.writer)
         .await?;
-        Ok(done.rows_affected())
+
+        // Activated, its trial followed by a server that stopped: the
+        // verdict was never seen, which `activated` with an end says.
+        let confirming = InstallState::Confirming.code();
+        let activated = InstallState::Activated.code();
+        let unseen = sqlx::query!(
+            "UPDATE installs SET state = ?, finished_ms = ? WHERE state = ?",
+            activated,
+            at,
+            confirming,
+        )
+        .execute(&self.writer)
+        .await?;
+        Ok(done.rows_affected() + unseen.rows_affected())
     }
 }
 

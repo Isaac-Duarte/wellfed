@@ -32,11 +32,17 @@ final class AdoptUnclaimed extends AdoptStatus {
   final ServerError error;
 }
 
-/// The answer was lost, and the server may still be adopting it: a check
-/// reads the server's list, and sends nothing new.
+/// The answer was lost, and the server may still be adopting it, or the
+/// server is busy with another adoption of it: a check reads the server's
+/// list, and sends nothing new.
 final class AdoptUnsettled extends AdoptStatus {
   /// An adoption not known to have gone through or not.
-  const AdoptUnsettled();
+  const AdoptUnsettled(this.error);
+
+  /// How it was left: [ServerErrorKind.outcomeUnknown] while the server
+  /// still looks for the feeder, [ServerErrorKind.feederBusy] while another
+  /// adoption holds it.
+  final ServerError error;
 }
 
 /// The feeder made no invite, so nothing went to the server.
@@ -85,7 +91,7 @@ class AdoptFlow extends ChangeNotifier {
     _set(identity, switch (adoption) {
       Adoption_Adopted() => const AdoptDone(),
       Adoption_Unclaimed(:final ServerError error) => AdoptUnclaimed(error),
-      Adoption_Unsettled() => const AdoptUnsettled(),
+      Adoption_Unsettled(:final ServerError error) => AdoptUnsettled(error),
       Adoption_NoInvite() => const AdoptNoInvite(),
       Adoption_Failed(:final ServerError error) => AdoptFailed(error),
     });

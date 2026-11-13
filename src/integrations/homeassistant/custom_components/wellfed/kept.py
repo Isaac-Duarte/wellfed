@@ -271,6 +271,17 @@ class Kept:
         return [bytes.fromhex(key) for key in self._data["leftover_keys"]]
 
     @property
+    def read_only(self) -> bool:
+        """The store is a newer integration's, or could not be set aside: it is
+        left as it is, nothing is saved, and so no feed is sent."""
+        return self._read_only
+
+    @property
+    def path(self) -> str:
+        """Where the store lives, for the owner to remove it."""
+        return str(self._store.path)
+
+    @property
     def unread(self) -> bool:
         """The store before this one did not read, and the bowls are not yet
         checked: every feed waits."""

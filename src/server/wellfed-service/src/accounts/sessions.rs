@@ -1,4 +1,4 @@
-//! First-owner setup, login and browser sessions.
+//! Login and browser sessions.
 //!
 //! Passwords are argon2id hashes, computed off the async threads and at
 //! most [`HASHING`] at a time: each takes about 19 MiB, and logins need no
@@ -20,13 +20,8 @@ use argon2::Argon2;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use jiff::Timestamp;
 use sha2::{Digest, Sha256};
-use wellfed_api::{
-    AuditAction, Credentials, Home, HomeId, LoginFailure, PasswordChange, Role, Setup, SetupState,
-    TimeFormat, Units, User, UserId,
-};
-use wellfed_mirror::Zone;
+use wellfed_api::{AuditAction, Credentials, LoginFailure, PasswordChange, User, UserId};
 use wellfed_session::hex;
-use wellfed_store::NewUser;
 
 use crate::accounts::tokens::session_only;
 use crate::names::bounded;
@@ -42,9 +37,6 @@ const PASSWORD_MIN: usize = 10;
 /// How stale a session's last use may be before a request records it
 /// again, so a busy page does not write on every request.
 pub(crate) const TOUCH: Duration = Duration::from_secs(60);
-
-/// The name a setup gives the home it makes.
-const HOME_NAME: &str = "Home";
 
 /// A browser session's secret, as its cookie carries it.
 #[derive(Clone, PartialEq, Eq)]
@@ -74,71 +66,6 @@ impl std::fmt::Debug for SessionToken {
 }
 
 impl Service {
-    /// Whether a fresh server is waiting for its first owner.
-    pub async fn setup_open(&self) -> Result<bool> {
-        Ok(!self.shared.store.users_exist().await?)
-    }
-
-    /// Whether setup is open, and the host's zone for the page to offer.
-    pub async fn setup_state(&self) -> Result<SetupState> {
-        Ok(SetupState {
-            open: self.setup_open().await?,
-            zone: self.shared.config.host_zone.clone(),
-        })
-    }
-
-    /// Create the first owner and the household in its zone, and log the
-    /// owner in. Refused once any user exists, even when two setups race.
-    pub async fn setup(&self, setup: Setup) -> Result<(User, SessionToken)> {
-        let name = user_name(&setup.name)?;
-        password(&setup.password)?;
-        let now = self.shared.clock.now();
-        let zone = Zone::new(&setup.zone, now)?;
-        if !self.setup_open().await? {
-            return Err(AccountError::SetupClosed.into());
-        }
-
-        let hash = self.hash_password(setup.password).await?;
-        let _one_at_a_time = self.owner_data.home.lock().await;
-        let user = User {
-            id: UserId(self.shared.new_id()?),
-            name: name.to_owned(),
-            role: Role::Owner,
-            expires: None,
-        };
-        let home = Home {
-            id: HomeId(self.shared.new_id()?),
-            name: HOME_NAME.into(),
-            units: Units::Grams,
-            time_format: TimeFormat::H24,
-            zone: zone.name().to_owned(),
-        };
-        let created = self
-            .shared
-            .store
-            .create_first_owner(
-                NewUser {
-                    id: user.id,
-                    name: &user.name,
-                    password_hash: &hash,
-                    role: user.role,
-                    expires: None,
-                    created: now,
-                },
-                &home,
-            )
-            .await?;
-        if created.is_none() {
-            return Err(AccountError::SetupClosed.into());
-        }
-
-        self.mirror.set_zone(zone);
-        let token = self.open_session(user.id, &hash).await?;
-        let token = token.ok_or(AccountError::BadCredentials)?;
-        self.record_as(Some(&user), None, AuditAction::Setup).await;
-        Ok((user, token))
-    }
-
     /// Check a name and password from the client at `from` and open a
     /// session. An unknown name costs the same hash as a wrong password, so
     /// the hash's time does not reveal names; a wrong password for a real
@@ -304,7 +231,11 @@ impl Service {
 
     /// A new session for `user`, unless their password hash is no longer
     /// `verified` or the account expired or went since it was checked.
-    async fn open_session(&self, user: UserId, verified: &str) -> Result<Option<SessionToken>> {
+    pub(super) async fn open_session(
+        &self,
+        user: UserId,
+        verified: &str,
+    ) -> Result<Option<SessionToken>> {
         let secret = self.shared.random::<32>()?;
         let token = SessionToken(hex::Lower(&secret).to_string());
         let hash: [u8; 32] = Sha256::digest(secret).into();

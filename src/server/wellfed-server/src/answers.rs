@@ -8,8 +8,10 @@ use utoipa::openapi::path::{Operation, ParameterIn};
 use utoipa::openapi::{Content, OpenApi, Ref, RefOr, Response};
 
 /// The operations a request needs no login or token for: the first owner's
-/// setup, an import onto a fresh server, and the login itself.
+/// setup, an import onto a fresh server, the login itself, and the
+/// server's public identity key.
 const OPEN: &[(&str, Method)] = &[
+    ("/identity", Method::Get),
     ("/setup", Method::Get),
     ("/setup", Method::Post),
     ("/import", Method::Post),

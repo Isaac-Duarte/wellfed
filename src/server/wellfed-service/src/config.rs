@@ -6,8 +6,20 @@ use std::time::Duration;
 
 use crate::{AlertReads, Backups, Diagnostics, Discovery, ReleasesConfig, WebhookTarget};
 
+/// What the sealing key is keyed with to give the identity key's seed.
+const IDENTITY: &[u8] = b"wellfed server identity key v1";
+
+/// The seed of the server's Ed25519 identity key, which its sealing key
+/// `key` gives: the identity lasts as long as the sealing key, with no file
+/// of its own, and the derivation is one-way, so the public key the LAN
+/// hears says nothing of the sealing key.
+pub fn identity_seed(key: &[u8; 32]) -> [u8; 32] {
+    wellfed_session::mac::hmac_sha256(key, &[IDENTITY])
+}
+
 pub struct Config {
-    /// Seals the server's feeder keys at rest.
+    /// Seals the server's feeder keys at rest, and gives the server's
+    /// identity key ([`identity_seed`]).
     pub key: [u8; 32],
     /// The host's IANA zone, offered at setup as the household's.
     pub host_zone: Option<String>,
@@ -60,6 +72,7 @@ impl Config {
             sample_wait: timing.sample_wait,
             pace: timing.pace,
             join_settle: timing.join_settle,
+            trial: timing.trial,
             // The rest of the feeder's own session clocks; nothing the
             // owner sets.
             ..wellfed_mirror::Timing::default()
@@ -102,6 +115,13 @@ pub struct Timing {
     /// How long an adoption whose join answer was lost looks for its key
     /// enrolled, as a running feed holds the enrollment.
     pub join_settle: Duration,
+    /// How long after an activation the server follows the new build's
+    /// restart and trial, up to its verdict.
+    pub trial: Duration,
+    /// How long after it starts a server with no account takes a setup or
+    /// an import: whoever reaches it first could claim it, so the window
+    /// is short, and a restart opens it again.
+    pub setup_window: Duration,
 }
 
 impl Default for Timing {
@@ -118,6 +138,8 @@ impl Default for Timing {
             transfer_idle: Duration::from_secs(30),
             pace: mirror.pace,
             join_settle: mirror.join_settle,
+            trial: mirror.trial,
+            setup_window: Duration::from_secs(3600),
         }
     }
 }

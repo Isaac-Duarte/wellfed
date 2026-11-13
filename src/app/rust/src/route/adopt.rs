@@ -135,6 +135,11 @@ impl Router {
                 Some(id) => self.claim(feeder, id, phone).await,
                 None => Adoption::Failed { error },
             },
+            // Another adoption holds the feeder, perhaps one whose join
+            // answer the server is still looking for: nothing was done, and
+            // the list says once it lands. A new invite now would only be
+            // refused the same way.
+            ServerErrorKind::FeederBusy => Adoption::Unsettled { error },
             // Adopted, with the claim of this phone's key left to finish.
             ServerErrorKind::PhoneKeyUnconfirmed | ServerErrorKind::PhoneKeyRefused => {
                 match self.listed_feeder(feeder).await {
@@ -166,7 +171,11 @@ impl Router {
             Err(error) => return Adoption::Failed { error },
         }
         match lost_at {
-            Some(at) if !self.adoption_waited(feeder, at).passed(self.grace_ms()) => {
+            Some(at)
+                if !self
+                    .adoption_waited(feeder, at)
+                    .passed(self.adoption_grace_ms()) =>
+            {
                 Adoption::Unsettled { error: unsettled() }
             }
             _ => {

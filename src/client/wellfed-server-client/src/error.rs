@@ -19,10 +19,23 @@ pub enum Error {
     PlainHttp { host: String },
     #[error("could not build the HTTP client")]
     Build(#[source] reqwest::Error),
+    #[error("could not set up the client's TLS")]
+    Tls(#[source] rustls::Error),
+    /// The server proved another identity key than the pinned one: another
+    /// server, or this one reset with a new key. Nothing was sent.
+    #[error(
+        "the server's identity key is not the one this client pinned{}",
+        offered.map(|key| format!(": it offers {}", wellfed_api::fingerprint(&key))).unwrap_or_default()
+    )]
+    KeyChanged { offered: Option<[u8; 32]> },
+    /// The server proved no identity key in its handshake: not a Wellfed
+    /// server's own HTTPS. Nothing was sent.
+    #[error("the server proves no identity key: is this its own https:// address?")]
+    NoIdentity,
     /// The request failed on the way, or its answer was cut off. A keyed
     /// write may have run: retry it under the same key, never a new one.
     #[error("the request to the server failed")]
-    Http(#[from] reqwest::Error),
+    Http(#[source] reqwest::Error),
     /// The server refused, with its typed reason. `retry_after` is the
     /// wait its `Retry-After` named, as on `429 login_limited`.
     #[error("the server answered {status}: {}", problem.title)]
@@ -62,7 +75,36 @@ pub enum Error {
     NoSession,
 }
 
+impl From<reqwest::Error> for Error {
+    /// A handshake refused for its key is its own error, whatever reqwest
+    /// wrapped it in.
+    fn from(error: reqwest::Error) -> Self {
+        if let Some(mismatch) = crate::trust::carried::<crate::trust::KeyMismatch>(&error) {
+            return Self::KeyChanged {
+                offered: mismatch.offered,
+            };
+        }
+        if crate::trust::carried::<crate::trust::NoIdentity>(&error).is_some() {
+            return Self::NoIdentity;
+        }
+        Self::Http(error)
+    }
+}
+
 impl Error {
+    /// Whether the server's certificate was refused as no authority the
+    /// system trusts vouches for it: a server's own HTTPS reached as if
+    /// by a public name, say. Nothing was sent.
+    pub fn untrusted_certificate(&self) -> bool {
+        let Self::Http(http) = self else {
+            return false;
+        };
+        matches!(
+            crate::trust::carried::<rustls::Error>(http),
+            Some(rustls::Error::InvalidCertificate(_))
+        )
+    }
+
     /// How long the server asked to wait before trying again.
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
@@ -107,9 +149,12 @@ impl Error {
                 _ => Failure::Rejected,
             },
             Self::Stale(_) | Self::StalePlans(_) | Self::StaleCalibration(_) => Failure::Stale,
+            // Refused in the handshake, before the request was written.
+            Self::KeyChanged { .. } | Self::NoIdentity => Failure::Connect,
             Self::Base(_)
             | Self::PlainHttp { .. }
             | Self::Build(_)
+            | Self::Tls(_)
             | Self::Redirect { .. }
             | Self::NoSession => Failure::Rejected,
         }

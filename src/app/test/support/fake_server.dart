@@ -10,7 +10,8 @@ import 'package:wellfed/src/rust/api/server_views.dart';
 import 'fakes.dart';
 
 const serverLink = ServerLink(
-  url: 'http://home.lan:8080',
+  url: 'https://192.168.1.20:8443',
+  key: 'abababababababababababababababababababababababababababababababab',
   user: 'ada',
   tokenId: '00000000-0000-0000-0000-000000000001',
 );
@@ -205,7 +206,7 @@ class FakeServerPorts implements ServerPorts {
   ServerError? loginFails;
 
   /// Every login's arguments, the password among them, as the phone sent them.
-  final logins = <({String url, String name, String password, String phone})>[];
+  final logins = <({String url, String name, String password, String phone, String? key})>[];
   String? kept;
   int forgets = 0;
 
@@ -219,8 +220,9 @@ class FakeServerPorts implements ServerPorts {
     required String name,
     required String password,
     required String phone,
+    String? key,
   }) async {
-    logins.add((url: url, name: name, password: password, phone: phone));
+    logins.add((url: url, name: name, password: password, phone: phone, key: key));
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (loginFails case final error?) throw error;
     return session;
@@ -269,6 +271,13 @@ class FakeServerPorts implements ServerPorts {
 
   @override
   Stream<FoundServer> browse() => found.stream;
+
+  @override
+  String fingerprint(String key) {
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
+    if (key.length != 64) throw serverError(ServerErrorKind.noIdentity);
+    return 'fp ${key.substring(0, 4)}';
+  }
 }
 
 /// The records of a [FakeServerSession]'s home, and every change asked of it.

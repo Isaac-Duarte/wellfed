@@ -149,6 +149,7 @@ fn an_alert_heard_away_and_then_at_home_posts_once() {
             credentials.name,
             credentials.password,
             "pixel".into(),
+            None,
         )
         .await
         .unwrap();

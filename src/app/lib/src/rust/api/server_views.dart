@@ -63,7 +63,15 @@ class FeedRate {
           gramsPerDay == other.gramsPerDay;
 }
 
-enum InstallState { running, activated, alreadyRunning, failed, unknown }
+enum InstallState {
+  running,
+  activated,
+  alreadyRunning,
+  failed,
+  confirming,
+  confirmed,
+  unknown,
+}
 
 /// The server this phone logged in to, as the app's file keeps it: the link,
 /// and the feeders its last list gave, so a cold start with the server down
@@ -595,12 +603,17 @@ class ServerIntakeFeeder {
           shared == other.shared;
 }
 
-/// What the app keeps of a server in its own file: where it is, and which
-/// token is this phone's. The token's secret is not here; it lives in
-/// secure storage beside the client secret.
+/// What the app keeps of a server in its own file: where it is, which key
+/// proves it, and which token is this phone's. The token's secret is not
+/// here; it lives in secure storage beside the client secret.
 class ServerLink {
   /// The base URL, as the owner typed it or discovery found it.
   final String url;
+
+  /// The server's identity key, 64 lowercase hex digits, pinned when the
+  /// owner added it: its own HTTPS on the home network must prove it, and
+  /// a server reached by a public name must name it.
+  final String key;
 
   /// The account's name, for the account screen while offline.
   final String user;
@@ -610,12 +623,14 @@ class ServerLink {
 
   const ServerLink({
     required this.url,
+    required this.key,
     required this.user,
     required this.tokenId,
   });
 
   @override
-  int get hashCode => url.hashCode ^ user.hashCode ^ tokenId.hashCode;
+  int get hashCode =>
+      url.hashCode ^ key.hashCode ^ user.hashCode ^ tokenId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -623,6 +638,7 @@ class ServerLink {
       other is ServerLink &&
           runtimeType == other.runtimeType &&
           url == other.url &&
+          key == other.key &&
           user == other.user &&
           tokenId == other.tokenId;
 }

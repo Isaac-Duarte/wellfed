@@ -46,14 +46,21 @@ final class AddServerFailed extends AddServerStage {
 /// A server heard announcing itself on the LAN.
 @immutable
 final class HeardServer {
-  /// The server at `url`, announced as `name`.
-  const HeardServer({required this.url, required this.name});
+  /// The server at `url`, announced as `name` with identity `key`.
+  const HeardServer({required this.url, required this.name, required this.key, this.fingerprint});
 
   /// Where to log in.
   final String url;
 
   /// The name it announces, its label.
   final String name;
+
+  /// The identity key it announces, which the login checks.
+  final String key;
+
+  /// What a person compares of [key] with what the server logs; `null`
+  /// for a key that does not read.
+  final String? fingerprint;
 }
 
 /// The add-server screen's state: the servers heard on the LAN, and the login.
@@ -92,16 +99,25 @@ class AddServerFlow extends ChangeNotifier {
 
   void _heard(FoundServer server) {
     if (_state.found.any((found) => found.url == server.url)) return;
-    final heard = HeardServer(url: server.url, name: server.name);
+    final heard = HeardServer(
+      url: server.url,
+      name: server.name,
+      key: server.key,
+      fingerprint: _server.fingerprint(server.key),
+    );
     _set(AddServerState(found: List.unmodifiable([..._state.found, heard]), stage: _state.stage));
   }
 
   /// Log in to `url` as `name`. A URL with no scheme gets one in Rust:
-  /// plain `http://` only for a host on the home network.
+  /// `https://`, plain `http://` only on this device itself. A server heard
+  /// at `url` must prove the key it announced; a typed one is pinned by its
+  /// first handshake.
   Future<void> logIn({required String url, required String name, required String password}) async {
     if (_state.stage is AddServerLoggingIn) return;
     _stage(const AddServerLoggingIn());
-    final LoginOutcome outcome = await _server.logIn(url: url.trim(), name: name.trim(), password: password);
+    final String typed = url.trim();
+    final String? key = _state.found.where((found) => found.url == typed).firstOrNull?.key;
+    final LoginOutcome outcome = await _server.logIn(url: typed, name: name.trim(), password: password, key: key);
     if (_disposed) return;
     if (outcome is LoginDone) {
       // Nothing listens for another server once one is in: a server heard

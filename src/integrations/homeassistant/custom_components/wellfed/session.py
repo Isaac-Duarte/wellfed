@@ -64,6 +64,10 @@ UNKNOWN_ISSUE = "unknown_feed"
 # The entry's store did not read: every feed waits until the owner says,
 # through this repair, that the bowls are checked.
 STORE_UNREAD_ISSUE = "store_unread"
+# The entry's store is a newer integration's, or could not be set aside: it
+# is left as it is and nothing is saved, so no feed goes until the
+# integration is updated or the store removed. No repair releases that.
+STORE_READ_ONLY_ISSUE = "store_read_only"
 # An entry was deleted while it held feeds: the hold went with it.
 HOLD_DROPPED_ISSUE = "hold_dropped"
 # A feeder of an older API revision: what it lacks needs it updated.
@@ -291,10 +295,22 @@ class FeederSession:
         # left that still holds feeds back, and the repairs follow those.
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
         ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNKNOWN_ISSUE))
-        if self.kept.unread:
+        # A read-only store refuses every feed whether or not the bowls are
+        # checked, so it asks for no check: only an update or removing the
+        # store lets feeds go.
+        if self.kept.read_only:
+            self._issue(
+                STORE_READ_ONLY_ISSUE,
+                ir.IssueSeverity.ERROR,
+                {"path": str(self.kept.path)},
+            )
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(STORE_UNREAD_ISSUE))
+        elif self.kept.unread:
             self._issue(STORE_UNREAD_ISSUE, ir.IssueSeverity.WARNING, {}, fixable=True)
         else:
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(STORE_UNREAD_ISSUE))
+        if not self.kept.read_only:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(STORE_READ_ONLY_ISSUE))
         self._pump = threading.Thread(target=self._run, name="wellfed-pump", daemon=True)
         self._pump.start()
 

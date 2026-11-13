@@ -46,9 +46,15 @@ async fn started() -> (TestServer, Client) {
 }
 
 async fn login(server: &TestServer, name: &str, password: &str) -> ServerSession {
-    ServerSession::login(url(server), name.into(), password.into(), "pixel".into())
-        .await
-        .unwrap()
+    ServerSession::login(
+        url(server),
+        name.into(),
+        password.into(),
+        "pixel".into(),
+        None,
+    )
+    .await
+    .unwrap()
 }
 
 async fn ada(server: &TestServer) -> ServerSession {
@@ -69,6 +75,12 @@ fn follow(
             .await;
     });
     receiver
+}
+
+/// One of a write's two stream events, with the stream's position after it.
+enum Heard {
+    Command(String),
+    Event(String),
 }
 
 /// The next update that `pick` takes, skipping the others.
@@ -173,26 +185,34 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
         let feeder_id = feeders[0].id.parse().map(wellfed_api::FeederId).unwrap();
         server.caught_up(feeder_id).await;
         phone.set_lock(feeder_id, Lock::Locked, key).await.unwrap();
-        let resume = heard(&mut updates, "the lock's command", |update| match update {
-            ServerUpdate::Event {
-                resume,
-                event: ServerEvent::Command { command },
-            } if command.key == key.to_string() => {
-                assert_eq!(command.kind, CommandKind::Lock);
-                Some(resume)
+
+        // The command streams once the feeder's answer is recorded, and the
+        // history entry once the server reads the feeder's event, which the
+        // feeder may send first: either can come first on the stream.
+        let mut lock = Vec::new();
+        heard(&mut updates, "the lock's command and event", |update| {
+            match update {
+                ServerUpdate::Event {
+                    resume,
+                    event: ServerEvent::Command { command },
+                } if command.key == key.to_string() => {
+                    assert_eq!(command.kind, CommandKind::Lock);
+                    assert!(!resume.is_empty(), "a command names its stream position");
+                    lock.push(Heard::Command(resume));
+                }
+                ServerUpdate::Event {
+                    resume,
+                    event: ServerEvent::History { feeder, entry },
+                } if feeder == kitchen
+                    && matches!(entry.entry.body, HistoryBody::Lock { locked: true, .. }) =>
+                {
+                    lock.push(Heard::Event(resume));
+                }
+                _ => {}
             }
-            _ => None,
-        })
-        .await;
-        assert!(!resume.is_empty(), "a command names its stream position");
-        heard(&mut updates, "the lock's event", |update| match update {
-            ServerUpdate::Event {
-                event: ServerEvent::History { feeder, entry },
-                ..
-            } if feeder == kitchen => {
-                matches!(entry.entry.body, HistoryBody::Lock { locked: true, .. }).then_some(())
-            }
-            _ => None,
+            let command = lock.iter().any(|heard| matches!(heard, Heard::Command(_)));
+            let event = lock.iter().any(|heard| matches!(heard, Heard::Event(_)));
+            (command && event).then_some(())
         })
         .await;
 
@@ -224,8 +244,13 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
         let food = session.feeder_food(kitchen.clone()).await.unwrap();
         assert!(food.current.is_none(), "no food was set");
 
-        // Resumed from the command's position, the stream gives what came
-        // after it (the lock's event), or a resync when it keeps no more.
+        // Resumed from the position of whichever came first, the stream
+        // gives what came after it (the other one), or a resync when it
+        // keeps no more.
+        let (resume, event_next) = match lock.swap_remove(0) {
+            Heard::Command(resume) => (resume, true),
+            Heard::Event(resume) => (resume, false),
+        };
         let mut resumed = follow(&session, Some(resume));
         let caught_up =
             heard(
@@ -235,10 +260,14 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
                     ServerUpdate::Event {
                         event: ServerEvent::History { entry, .. },
                         ..
-                    } => Some(matches!(
-                        entry.entry.body,
-                        HistoryBody::Lock { locked: true, .. }
-                    )),
+                    } => Some(
+                        event_next
+                            && matches!(entry.entry.body, HistoryBody::Lock { locked: true, .. }),
+                    ),
+                    ServerUpdate::Event {
+                        event: ServerEvent::Command { command },
+                        ..
+                    } if !event_next => Some(command.key == key.to_string()),
                     ServerUpdate::Event {
                         event: ServerEvent::Resync,
                         resume,
@@ -250,7 +279,10 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
                 },
             )
             .await;
-        assert!(caught_up, "the first event after the command is the lock's");
+        assert!(
+            caught_up,
+            "the first event after the lock's first is its other"
+        );
 
         session.logout(ada_login().password, &own()).await.unwrap();
         heard(
@@ -509,24 +541,40 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
                 .err()
         };
 
-        for address in ["ftp://192.0.2.7", "not a url", "http://192.0.2.7/?a=1"] {
-            let result =
-                ServerSession::login(address.into(), "ada".into(), "x".into(), "pixel".into())
-                    .await;
+        for address in ["ftp://192.0.2.7", "not a url", "https://192.0.2.7/?a=1"] {
+            let result = ServerSession::login(
+                address.into(),
+                "ada".into(),
+                "x".into(),
+                "pixel".into(),
+                None,
+            )
+            .await;
             assert_eq!(kind(result), Some(ServerErrorKind::Address), "{address}");
         }
 
-        // Plain http beyond the home network sends nothing: no password, no
-        // token.
+        // Plain http anywhere but this device sends nothing: no password,
+        // no token.
         let link = |url: &str| ServerLink {
             url: url.into(),
+            key: "00".repeat(32),
             user: "ada".into(),
             token_id: "t".into(),
         };
-        for address in ["http://feeder.example", "http://203.0.113.4:8080"] {
-            let result =
-                ServerSession::login(address.into(), "ada".into(), "x".into(), "pixel".into())
-                    .await;
+        for address in [
+            "http://feeder.example",
+            "http://203.0.113.4:8080",
+            "http://192.168.1.20:8080",
+            "http://wellfed.local:8080",
+        ] {
+            let result = ServerSession::login(
+                address.into(),
+                "ada".into(),
+                "x".into(),
+                "pixel".into(),
+                None,
+            )
+            .await;
             assert_eq!(kind(result), Some(ServerErrorKind::PlainHttp), "{address}");
             assert_eq!(
                 kind(ServerSession::restore(link(address), "secret".into())),
@@ -534,7 +582,11 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
                 "{address}"
             );
         }
-        for address in ["http://192.168.1.20:8080", "https://feeder.example"] {
+        for address in [
+            "https://192.168.1.20:8443",
+            "https://feeder.example",
+            "http://127.0.0.1:8080",
+        ] {
             assert!(
                 ServerSession::restore(link(address), "secret".into()).is_ok(),
                 "{address}"
@@ -545,7 +597,8 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
         let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let closed = format!("http://{}", listener.local_addr().unwrap());
         drop(listener);
-        let result = ServerSession::login(closed, "ada".into(), "x".into(), "pixel".into()).await;
+        let result =
+            ServerSession::login(closed, "ada".into(), "x".into(), "pixel".into(), None).await;
         assert_eq!(kind(result), Some(ServerErrorKind::Unreachable));
 
         let session = Rc::new(ada(&server).await);
@@ -597,6 +650,7 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
                 "ada".into(),
                 "wrong password".into(),
                 "pixel".into(),
+                None,
             )
         };
         assert_eq!(kind(wrong().await), Some(ServerErrorKind::BadCredentials));

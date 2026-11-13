@@ -82,6 +82,27 @@ pub enum ServerErrorKind {
     /// would carry the password and the phone's token unencrypted. Nothing
     /// was sent; the server's `https://` address works.
     PlainHttp,
+    /// Another adoption or a removal of the feeder is running on the server
+    /// (`409 feeder_busy`), such as an adoption whose join answer was lost,
+    /// which the server looks for up to twelve minutes: nothing was done.
+    /// The server's feeder list shows the feeder once it is found.
+    FeederBusy,
+    /// The server at the link's address proved another identity key than
+    /// the one the phone pinned when the owner added it: another machine
+    /// answers there, or the server was set up again with a new key.
+    /// Nothing was sent, the token included. The phone never takes the new
+    /// key by itself: the only way on is to remove the server and add it
+    /// again, which the owner does only once they know why it changed.
+    KeyChanged,
+    /// The address answers HTTPS with no identity key of a Wellfed server:
+    /// not the server's own `https://` port on the home network. Nothing
+    /// was sent.
+    NoIdentity,
+    /// The address answers HTTPS with a certificate no authority the phone
+    /// trusts vouches for, at a name the app takes for a public one: most
+    /// likely the server's own HTTPS by a name only the home network
+    /// resolves. Nothing was sent; its IP address or `.local` name works.
+    UntrustedCertificate,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

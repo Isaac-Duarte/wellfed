@@ -201,6 +201,14 @@ sealed class Adoption with _$Adoption {
   /// feeder when read: it may still be adopting it. Nothing more is sent
   /// for it; [`PathRouter::check_adoption`] reads the list again, and a
   /// new adoption only reads too until the router's grace has passed.
+  /// `error` is how it was lost: a server still looking for the feeder's
+  /// join answer is [`ServerErrorKind::OutcomeUnknown`]. Also a server
+  /// busy with another adoption of the feeder
+  /// ([`ServerErrorKind::FeederBusy`]), which did nothing: the list
+  /// shows the feeder once that adoption lands.
+  ///
+  /// [`ServerErrorKind::OutcomeUnknown`]: crate::api::server_error::ServerErrorKind::OutcomeUnknown
+  /// [`ServerErrorKind::FeederBusy`]: crate::api::server_error::ServerErrorKind::FeederBusy
   const factory Adoption.unsettled({required ServerError error}) =
       Adoption_Unsettled;
 

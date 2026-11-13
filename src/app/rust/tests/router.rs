@@ -213,7 +213,7 @@ impl Phone {
     /// Log in to `server` as `name` and route through it.
     async fn log_in(&self, server: &TestServer, name: &str, password: &str) -> Rc<ServerSession> {
         let url = format!("http://{}", server.address());
-        let session = ServerSession::login(url, name.into(), password.into(), "pixel".into())
+        let session = ServerSession::login(url, name.into(), password.into(), "pixel".into(), None)
             .await
             .unwrap();
         let account = session.account().await.unwrap();
@@ -1518,12 +1518,21 @@ fn a_refused_token_stays_refused_when_the_server_then_goes_down() {
     });
 }
 
-/// An address nothing listens on: a server that is down.
-fn nobody() -> String {
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    format!("http://{address}")
+/// A server address nothing answers: a socket bound there and never
+/// listening, which refuses every connection for as long as the caller
+/// holds it. A port bound and let go is free again, and a call to it can
+/// then reach something: another test's listener, or the call itself, when
+/// the kernel picks that same port as the call's own source and the
+/// connection opens onto itself. Its own request then reads back as the
+/// answer, which fails as `Interrupted`, not `Unreachable`. A bound port is
+/// never handed out as a source.
+fn nobody() -> (String, tokio::net::TcpSocket) {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket
+        .bind((std::net::Ipv4Addr::LOCALHOST, 0).into())
+        .unwrap();
+    let address = socket.local_addr().unwrap();
+    (format!("http://{address}"), socket)
 }
 
 #[test]
@@ -1569,8 +1578,10 @@ fn a_cold_start_with_the_server_down_goes_by_the_kept_account() {
     local(async {
         let sim = feeder::start().await;
         let kitchen = identity(&sim);
+        let (nobody, _refusing) = nobody();
         let down = ServerLink {
-            url: nobody(),
+            url: nobody,
+            key: "00".repeat(32),
             user: "ada".into(),
             token_id: "00000000-0000-0000-0000-000000000001".into(),
         };
@@ -1670,6 +1681,7 @@ fn a_server_read_begun_under_a_replaced_session_is_never_applied() {
             "vic".into(),
             "temporary pass".into(),
             "pixel".into(),
+            None,
         )
         .await
         .unwrap();
@@ -1714,6 +1726,7 @@ fn a_late_refusal_of_a_replaced_token_never_closes_the_phones_own_keys() {
             login.name.clone(),
             login.password.clone(),
             "pixel".into(),
+            None,
         )
         .await
         .unwrap();
@@ -1918,6 +1931,7 @@ fn a_viewer_never_feeds_direct_while_its_cold_start_waits_for_the_server() {
         let phone = Rc::new(Phone::new());
         let link = ServerLink {
             url: silent(),
+            key: "00".repeat(32),
             user: "ada".into(),
             token_id: "00000000-0000-0000-0000-000000000001".into(),
         };
@@ -1988,6 +2002,7 @@ fn a_kept_server_with_no_kept_account_uses_no_own_key_until_it_answers() {
         phone.router.configure_server(KnownServer {
             link: ServerLink {
                 url: silent(),
+                key: "00".repeat(32),
                 user: "ada".into(),
                 token_id: "00000000-0000-0000-0000-000000000001".into(),
             },
@@ -2090,6 +2105,7 @@ fn a_login_uses_no_own_key_while_the_server_is_asked_who_the_account_is() {
         // account, then handed over while its answer is out.
         let link = ServerLink {
             url: silent(),
+            key: "00".repeat(32),
             user: "sam".into(),
             token_id: "00000000-0000-0000-0000-000000000001".into(),
         };

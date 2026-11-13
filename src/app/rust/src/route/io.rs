@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Instant;
 
 use jiff::Timestamp;
@@ -24,9 +24,7 @@ use crate::api::router::{
     NotSentReason, PendingWrite, RetryOutcome, RoutePath, RoutedFeed, RoutedReply, RouterUpdate,
     Settlement,
 };
-use crate::api::server::{
-    ServerCommand, ServerCommandOutcome, ServerEvent, ServerHandle, ServerRefusal, ServerUpdate,
-};
+use crate::api::server::{ServerCommand, ServerEvent, ServerHandle, ServerRefusal, ServerUpdate};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::{
     KnownServer, ServerAccount, ServerConnection, ServerFeeder, ServerRole,
@@ -36,8 +34,8 @@ use crate::api::store::SetAside;
 use crate::link::{DirectLink, LinkNews};
 use crate::requests;
 use crate::route::core::{
-    self, Access, Book, Ended, Held, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
-    Waited, settled_by_command, settled_by_history, settled_unfound,
+    self, Access, Book, Ended, Graces, Held, Keys, Reach, RetryPlan, ServerFailure, ServerReach,
+    Standing, Waited, settled_by_command, settled_by_history, settled_unfound,
 };
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
 use crate::route::server as calls;
@@ -53,9 +51,7 @@ pub(crate) struct Router {
 struct Inner {
     state: Mutex<State>,
     closed: watch::Sender<bool>,
-    /// How long after its attempt a server write its journal lacks is
-    /// taken as never sent.
-    grace_ms: i64,
+    graces: Graces,
 }
 
 struct State {
@@ -466,7 +462,7 @@ impl State {
 }
 
 impl Router {
-    pub(crate) fn open(pins_path: &Path, grace_ms: i64) -> Result<Self, BridgeError> {
+    pub(crate) fn open(pins_path: &Path, graces: Graces) -> Result<Self, BridgeError> {
         let (store, mut book) = PinStore::open(pins_path)?;
         if book.expire(now_ms()) {
             store.save(&book)?;
@@ -495,7 +491,7 @@ impl Router {
             inner: Arc::new(Inner {
                 state: Mutex::new(state),
                 closed: watch::Sender::new(false),
-                grace_ms,
+                graces,
             }),
         })
     }
@@ -703,10 +699,10 @@ impl Router {
         saved
     }
 
-    /// How long after a lost attempt the server's silence counts as never
-    /// sent.
-    pub(crate) fn grace_ms(&self) -> i64 {
-        self.inner.grace_ms
+    /// How long after a lost adoption the server's list lacking the feeder
+    /// counts as never adopted.
+    pub(crate) fn adoption_grace_ms(&self) -> i64 {
+        self.inner.graces.adoption_ms
     }
 
     /// The server's client, when one is configured.
@@ -794,9 +790,10 @@ impl Router {
         let feeder = link.feeder.clone();
         let weak = Arc::downgrade(&self.inner);
         let heard = feeder.clone();
+        let own = Arc::downgrade(&link);
         link.listen(Arc::new(move |news| {
             if let Some(inner) = weak.upgrade() {
-                Self { inner }.link_news(&heard, news);
+                Self { inner }.link_news(&heard, &own, news);
             }
         }));
 
@@ -806,14 +803,15 @@ impl Router {
         state.announce();
     }
 
-    fn link_news(&self, feeder: &str, news: LinkNews) {
+    /// News from `from`, a session attached for `feeder`.
+    fn link_news(&self, feeder: &str, from: &Weak<DirectLink>, news: LinkNews) {
         let mut state = self.state();
-        // A session the router no longer holds says nothing of the feeder.
+        // A session another attach replaced says nothing of the feeder.
         let current = state
             .feeders
             .get(feeder)
             .and_then(|entry| entry.direct.as_ref());
-        if current.is_none() {
+        if !current.is_some_and(|current| std::ptr::eq(Arc::as_ptr(current), from.as_ptr())) {
             return;
         }
         if let LinkNews::Fed = news {
@@ -1074,9 +1072,7 @@ impl Router {
             Err(_) | Ok(Heard::Unanswered) => FeedTry::Uncertain,
             Ok(Heard::NotSent | Heard::Held) => FeedTry::Unsent(NotSentReason::Session, None),
             Ok(Heard::Answer(Answer::Feeding { feed })) => FeedTry::Started(feed),
-            Ok(Heard::Answer(Answer::Refused(refusal))) => {
-                FeedTry::Refused(calls::feed_refusal(requests::refusal_of(refusal)))
-            }
+            Ok(Heard::Answer(Answer::Refused(refusal))) => FeedTry::Refused(refusal.into()),
             // An answer that fits no feed says nothing of whether it ran.
             Ok(Heard::Answer(_)) => FeedTry::Uncertain,
         }
@@ -1377,7 +1373,7 @@ impl Router {
                 state.reach = ServerReach::Up;
                 state.note_attempts();
                 let since = state.tried.waited(&pin.key, pin.tried_ms, now_ms());
-                settled_unfound(pin, mark, since, self.inner.grace_ms)
+                settled_unfound(pin, mark, since, self.inner.graces.unfound_ms)
             }
             Err(error) => {
                 state.heard_failure(session, error.failure(), now_ms());
@@ -1528,7 +1524,7 @@ fn commanded(state: &mut State, command: &ServerCommand) {
     let Ok(key) = Uuid::parse_str(&command.key) else {
         return;
     };
-    let settlement = view_settlement(command);
+    let settlement = command.settlement.clone();
 
     match state.book.get(key).map(|pin| pin.state) {
         Some(PinState::Uncertain) => {
@@ -1640,41 +1636,6 @@ fn no_route() -> ServerError {
         ServerErrorKind::Refused,
         "the server has no route for this request, and this phone holds no key of its own",
     )
-}
-
-/// What a journal entry the stream carried settles; `None` while unknown
-/// or in flight.
-fn view_settlement(command: &ServerCommand) -> Option<Settlement> {
-    use wellfed_api::CommandState;
-    if matches!(command.state, CommandState::Sent | CommandState::Unknown) {
-        return None;
-    }
-    let outcome = command.outcome.as_ref()?;
-    Some(match outcome {
-        ServerCommandOutcome::Done
-        | ServerCommandOutcome::Settings
-        | ServerCommandOutcome::Plans
-        | ServerCommandOutcome::Calibration
-        | ServerCommandOutcome::Call
-        | ServerCommandOutcome::Invited { .. } => Settlement::Done,
-        ServerCommandOutcome::Superseded => Settlement::Superseded,
-        ServerCommandOutcome::Refused { refusal } => Settlement::Refused { refusal: *refusal },
-        ServerCommandOutcome::Feeding { feed } => Settlement::Started { feed: *feed },
-        ServerCommandOutcome::Fed {
-            feed,
-            requested,
-            completed,
-            outcome,
-            reason,
-        } => Settlement::Fed {
-            feed: *feed,
-            requested: *requested,
-            completed: *completed,
-            outcome: *outcome,
-            reason: *reason,
-        },
-        ServerCommandOutcome::Unrecorded => Settlement::Unrecorded,
-    })
 }
 
 /// What a feed call's answer settles of its pin, for a screen that holds

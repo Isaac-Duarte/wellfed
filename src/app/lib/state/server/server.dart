@@ -12,107 +12,10 @@ import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/server/log_in.dart';
 import 'package:wellfed/state/server/log_out.dart';
+import 'package:wellfed/state/server/server_state.dart';
 
 export 'package:wellfed/state/server/log_in.dart';
-
-/// Why the owner's server is not serving this phone right now.
-enum ServerProblem {
-  /// Nothing answered at its address: the phone goes to its feeders directly.
-  unreachable,
-
-  /// The server no longer takes this phone's token (revoked, expired or the
-  /// account deleted), or the account is disabled. The phone's own keys stop
-  /// too, until the owner logs in again or removes the server.
-  signedOut,
-
-  /// It answered something this app does not read.
-  other,
-
-  /// The kept address is plain `http://` beyond the home network, which
-  /// this app no longer uses. The token already crossed the network in the
-  /// clear and never expires, so the owner adds the server again by its
-  /// `https://` address and revokes the old token on the server: removing
-  /// the server here only forgets its secret.
-  plainHttp,
-
-  /// This phone's secure storage failed to read the server's token, which
-  /// is still kept: a new start reads it again. Not signed out, so nothing
-  /// asks for a login that would write over it.
-  storage,
-}
-
-/// The owner's server as this phone knows it.
-sealed class ServerState {
-  const ServerState();
-}
-
-/// No server: the app works with its own feeders, as it always has.
-final class ServerAbsent extends ServerState {
-  /// The state with no server.
-  const ServerAbsent();
-}
-
-/// Logged in to a server.
-final class ServerLinked extends ServerState {
-  /// A server at `link`.
-  const ServerLinked({
-    required this.link,
-    required this.feeders,
-    this.others = const [],
-    this.account,
-    this.listed = false,
-    this.problem,
-  });
-
-  /// Where it is, and as whom.
-  final ServerLink link;
-
-  /// Who the phone's token speaks for, once the server has said.
-  final ServerAccount? account;
-
-  /// The feeders it lists: the last list it gave, kept on the phone, until it
-  /// gives a new one.
-  final List<ListedFeeder> feeders;
-
-  /// The devices it lists that this app does not serve as feeders, from
-  /// its last list this run: each is shown with what it needs.
-  final List<OtherDevice> others;
-
-  /// [feeders] is what the server said since the app started, not only the
-  /// kept copy.
-  final bool listed;
-
-  /// What stops it serving the phone now; `null` while it does.
-  final ServerProblem? problem;
-
-  /// The same server with the named parts changed.
-  ServerLinked copyWith({
-    ServerAccount? account,
-    List<ListedFeeder>? feeders,
-    List<OtherDevice>? others,
-    bool? listed,
-    ServerProblem? Function()? problem,
-  }) => ServerLinked(
-    link: link,
-    account: account ?? this.account,
-    feeders: feeders == null ? this.feeders : List.unmodifiable(feeders),
-    others: others == null ? this.others : List.unmodifiable(others),
-    listed: listed ?? this.listed,
-    problem: problem == null ? this.problem : problem(),
-  );
-}
-
-/// A device the server lists that this app does not serve as a feeder.
-final class OtherDevice {
-  /// The device named `name`, and what it is to this app.
-  const OtherDevice({required this.name, required this.device});
-
-  /// What the household calls it.
-  final String name;
-
-  /// Why the app does not serve it: never [ServerDevice.feeder].
-  final ServerDevice device;
-}
+export 'package:wellfed/state/server/server_state.dart';
 
 /// The owner's server: the login, the phone's token, the feeders it lists
 /// and its live stream, which goes through the path router so the router
@@ -170,6 +73,16 @@ class HomeServer extends ChangeNotifier {
   /// Owner's servers announcing themselves on the LAN, until cancelled.
   Stream<FoundServer> browse() => _ports.browse();
 
+  /// What a person compares of the identity `key` with what the server
+  /// logs at its start; `null` for a key that does not read.
+  String? fingerprint(String key) {
+    try {
+      return _ports.fingerprint(key);
+    } on ServerError {
+      return null;
+    }
+  }
+
   /// The account may only look: no feeder takes a feed or a change from
   /// this phone, through the server or its own key. A role a newer server
   /// added grants nothing here, so it only looks too.
@@ -187,11 +100,18 @@ class HomeServer extends ChangeNotifier {
   };
 
   /// Log in to the server at `url` as `name`. The password is used once, to
-  /// mint this phone's own token, and never kept.
-  Future<LoginOutcome> logIn({required String url, required String name, required String password}) async {
+  /// mint this phone's own token, and never kept. It goes only to a server
+  /// that proves the kept server's key, when logging in to it again, or
+  /// else `key`, when the server announced one on the LAN.
+  Future<LoginOutcome> logIn({required String url, required String name, required String password, String? key}) async {
+    // A server kept stays pinned: another key means removing it first.
+    final String? pinned = switch (_state) {
+      ServerLinked(:final ServerLink link) => link.key,
+      ServerAbsent() => key,
+    };
     final ServerSession session;
     try {
-      session = await _ports.login(url: url, name: name, password: password, phone: _phone);
+      session = await _ports.login(url: url, name: name, password: password, phone: _phone, key: pinned);
     } on ServerError catch (error) {
       return LoginFailed(error);
     }
@@ -432,10 +352,11 @@ class HomeServer extends ChangeNotifier {
     final ServerProblem problem = switch (error.kind) {
       ServerErrorKind.tokenRevoked || ServerErrorKind.accountDisabled => ServerProblem.signedOut,
       ServerErrorKind.unreachable || ServerErrorKind.interrupted || ServerErrorKind.closed => ServerProblem.unreachable,
+      ServerErrorKind.keyChanged => ServerProblem.keyChanged,
       _ => ServerProblem.other,
     };
     if (_state case final ServerLinked linked) _set(linked.copyWith(problem: () => problem));
-    if (problem != ServerProblem.signedOut) {
+    if (problem != ServerProblem.signedOut && problem != ServerProblem.keyChanged) {
       _again?.cancel();
       _again = Timer(retryWait, _retryNow);
     }

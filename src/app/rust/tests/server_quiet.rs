@@ -69,6 +69,7 @@ async fn read_head(socket: &mut TcpStream) {
 fn session(url: String) -> ServerSession {
     let link = ServerLink {
         url,
+        key: "00".repeat(32),
         user: "ada".into(),
         token_id: "0192c5d0-0000-7000-8000-000000000001".into(),
     };
@@ -143,8 +144,14 @@ fn a_redirect_is_not_followed_and_names_the_address_to_use() {
         .await;
         let elsewhere = format!("{url}/elsewhere");
 
-        let result =
-            ServerSession::login(url, "ada".into(), "correct horse".into(), "pixel".into()).await;
+        let result = ServerSession::login(
+            url,
+            "ada".into(),
+            "correct horse".into(),
+            "pixel".into(),
+            None,
+        )
+        .await;
 
         let Err(error) = result else {
             panic!("a redirect logged in");

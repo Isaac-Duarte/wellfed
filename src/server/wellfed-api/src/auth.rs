@@ -44,6 +44,8 @@ impl Role {
 /// Whether a fresh server is waiting for its first owner.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SetupState {
+    /// No account exists, and the server started within the last hour:
+    /// a restart opens setup again on a server with no account.
     pub open: bool,
     /// The server host's IANA zone, when it has one: the setup page offers
     /// it as the home's zone.

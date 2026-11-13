@@ -26,6 +26,7 @@ mod feeders;
 mod foods;
 mod health;
 mod home;
+mod identity;
 mod installs;
 mod pets;
 mod plain_http;
@@ -72,6 +73,7 @@ pub use health::{
     FeederLink, Health, Job, JobOutcome, JobRun, ServerSkew, ServerStatus, StoreState,
 };
 pub use home::{Home, HomePatch, TimeFormat, Units};
+pub use identity::{ServerIdentity, TXT_KEY, fingerprint};
 pub use installs::{Install, InstallFailure, InstallRequest, InstallState, InstallTarget};
 // The feeder's own values are the model's, served as they are; the HTTP
 // API adds only what the server knows (when it received them, its own ids).
@@ -119,7 +121,15 @@ pub const PREFIX: &str = "/api/v1";
 /// document to that ([API evolution]).
 ///
 /// [API evolution]: ../../../../docs/server/README.md#api-evolution
-pub const REVISION: u32 = 7;
+pub const REVISION: u32 = 9;
+
+/// How long the server looks for its key enrolled on a feeder after an
+/// adoption's join answer was lost (`504 outcome_unknown`): the feeder
+/// holds a join's enrollment until a running feed ends, the longest some
+/// ten minutes. A client that lost an adoption's answer reads a feeder
+/// missing from the list as never adopted only once this, the search's
+/// last session attempt and the request itself have passed.
+pub const LOST_JOIN_SEARCH: std::time::Duration = std::time::Duration::from_secs(12 * 60);
 
 /// The cookie a login sets: an opaque session token, `HttpOnly` and
 /// `SameSite=Strict`. A non-browser client sends it back as it came.

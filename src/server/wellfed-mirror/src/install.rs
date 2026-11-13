@@ -20,10 +20,14 @@ use wellfed_client::release::MANIFEST_LEN;
 use wellfed_client::release::manifest_digest;
 use wellfed_client::update::Image;
 use wellfed_connect::update::{self, Opened, Steps, Way};
-use wellfed_model::{Answer, Op, UpdateView};
+use wellfed_model::{Answer, Op, UpdatePhase, UpdateView};
 use wellfed_session::hex::Lower;
 
 use crate::{AskError, Operation, RandomFailed};
+
+mod trial;
+
+pub use trial::Trial;
 
 pub use wellfed_client::install::ReadError;
 pub use wellfed_client::update::InstallError as UpdateError;
@@ -241,6 +245,11 @@ impl<P: FnMut(&UpdateView)> Steps for Lane<'_, P> {
     }
 
     fn progress(&mut self, view: &UpdateView) {
+        // The session answering the activation is the last before the
+        // restart: what follows the trial counts sessions from here.
+        if view.phase == UpdatePhase::Activated {
+            self.operation.build.borrow_and_update();
+        }
         (self.progress)(view);
     }
 }

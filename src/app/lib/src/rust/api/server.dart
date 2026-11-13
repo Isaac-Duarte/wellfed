@@ -11,15 +11,20 @@ import 'model.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 
+import 'router.dart';
 import 'server_error.dart';
 import 'server_views.dart';
 import 'session.dart';
 part 'server.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `alert_client`, `follow`, `handle`, `open`, `stream`, `with_scheme`, `with_token`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ServerHandle`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `eq`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `alert_client`, `base`, `follow`, `handle`, `home_name`, `open`, `options`, `parse_key`, `pins`, `reach`, `stream`, `with_scheme`, `with_token`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Reach`, `ServerHandle`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `fmt`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `restore_with`
+
+/// How many hex digits of the identity key the owner compares.
+String serverFingerprint({required String key}) =>
+    RustLib.instance.api.crateApiServerServerFingerprint(key: key);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<ServerSession>>
 abstract class ServerSession implements RustOpaqueInterface {
@@ -110,18 +115,24 @@ abstract class ServerSession implements RustOpaqueInterface {
   /// Log in to the server at `url` as `name`, mint a token for this phone
   /// named `phone` (the phone's name, as feeders list it), and end the
   /// login: from here the token alone speaks for the phone. A `url` with
-  /// no scheme is `http://` for a host on the home network and `https://`
-  /// for any other, and is kept so.
+  /// no scheme is `https://`, but on this device itself, and is kept so.
+  ///
+  /// `key` is the identity key the server's mDNS record named, or the
+  /// link's when the owner logs in again; `None` for an address typed
+  /// first, whose key is learned from its handshake. Either way it is
+  /// checked before the password is sent, and pinned in the link.
   static Future<ServerSession> login({
     required String url,
     required String name,
     required String password,
     required String phone,
+    String? key,
   }) => RustLib.instance.api.crateApiServerServerSessionLogin(
     url: url,
     name: name,
     password: password,
     phone: phone,
+    key: key,
   );
 
   /// Log this phone out: revoke its token on the server while its own key
@@ -131,7 +142,8 @@ abstract class ServerSession implements RustOpaqueInterface {
   /// leaked token cannot keep the keys it enrolled: `password` is the
   /// account's, used once for a login that ends here, and never kept. A
   /// token the server already dropped counts as logged out. Every follow
-  /// ends once it is; a wrong password changes nothing.
+  /// ends once the login takes the password, whatever the revoke then
+  /// answers; a wrong password changes nothing.
   Future<void> logout({required String password, required ClientKey key});
 
   /// A pet's intake over the last `days` (1-31, default 7).
@@ -206,7 +218,11 @@ class ServerCommand {
   final String feeder;
   final CommandKind kind;
   final CommandState state;
-  final ServerCommandOutcome? outcome;
+
+  /// What its outcome settles of the write, by the reading every server
+  /// client shares; `None` while it is unknown or in flight, or for an
+  /// outcome a newer server added.
+  final Settlement? settlement;
 
   /// The feed it started, for a feed.
   final int? feed;
@@ -218,7 +234,7 @@ class ServerCommand {
     required this.feeder,
     required this.kind,
     required this.state,
-    this.outcome,
+    this.settlement,
     this.feed,
     required this.sentMs,
     required this.updatedMs,
@@ -230,7 +246,7 @@ class ServerCommand {
       feeder.hashCode ^
       kind.hashCode ^
       state.hashCode ^
-      outcome.hashCode ^
+      settlement.hashCode ^
       feed.hashCode ^
       sentMs.hashCode ^
       updatedMs.hashCode;
@@ -244,53 +260,10 @@ class ServerCommand {
           feeder == other.feeder &&
           kind == other.kind &&
           state == other.state &&
-          outcome == other.outcome &&
+          settlement == other.settlement &&
           feed == other.feed &&
           sentMs == other.sentMs &&
           updatedMs == other.updatedMs;
-}
-
-@freezed
-sealed class ServerCommandOutcome with _$ServerCommandOutcome {
-  const ServerCommandOutcome._();
-
-  const factory ServerCommandOutcome.done() = ServerCommandOutcome_Done;
-
-  /// The settings the write left.
-  const factory ServerCommandOutcome.settings() = ServerCommandOutcome_Settings;
-
-  /// The plans the write left.
-  const factory ServerCommandOutcome.plans() = ServerCommandOutcome_Plans;
-
-  /// The calibration the write left.
-  const factory ServerCommandOutcome.calibration() =
-      ServerCommandOutcome_Calibration;
-
-  /// The meal call the upload stored.
-  const factory ServerCommandOutcome.call() = ServerCommandOutcome_Call;
-
-  /// Another change to the meal call came first; the retry sent nothing.
-  const factory ServerCommandOutcome.superseded() =
-      ServerCommandOutcome_Superseded;
-  const factory ServerCommandOutcome.refused({required ServerRefusal refusal}) =
-      ServerCommandOutcome_Refused;
-  const factory ServerCommandOutcome.invited({
-    required int invite,
-    required int seconds,
-  }) = ServerCommandOutcome_Invited;
-  const factory ServerCommandOutcome.feeding({required int feed}) =
-      ServerCommandOutcome_Feeding;
-  const factory ServerCommandOutcome.fed({
-    required int feed,
-    required int requested,
-    required int completed,
-    required FeedOutcome outcome,
-    required FeedReason reason,
-  }) = ServerCommandOutcome_Fed;
-
-  /// The answer was lost and the feeder's history never named it.
-  const factory ServerCommandOutcome.unrecorded() =
-      ServerCommandOutcome_Unrecorded;
 }
 
 @freezed

@@ -4,15 +4,18 @@
 //!
 //! An install is not a keyed write: the server runs one at a time and
 //! refuses another while it runs, and the feeder reports what it already
-//! runs, so nothing installs twice. A failed install exits 1 with the
-//! server's reason and is not started again. One whose offer may have
-//! taken (the feeder went silent after it, or the server stopped while it
-//! ran), and one this build cannot read the end of, exits 3.
+//! runs, so nothing installs twice. The server follows a release through
+//! its trial, so the command waits for the verdict. A failed install
+//! (a trial that rolled back among them) exits 1 with the server's reason
+//! and is not started again. One whose offer may have taken (the feeder
+//! went silent after it, or the server stopped while it ran), one
+//! activated with no verdict seen, and one this build cannot read the end
+//! of, exit 3.
 
 use anyhow::{Result, bail};
 use clap::Args;
 use wellfed_server_client::api::{
-    Hex, Install, InstallFailure, InstallState, StreamEvent, StreamQuery,
+    Hex, Install, InstallFailure, InstallState, InstallTarget, StreamEvent, StreamQuery,
 };
 use wellfed_server_client::{Client, Updates};
 
@@ -47,12 +50,20 @@ pub(super) async fn install(client: &Client, args: InstallArgs, out: Output) -> 
         // The stream ended first: read where it stands.
         None => client.install_state(feeder).await?,
     };
-    if ended.id != started.id || ended.state == InstallState::Running {
+    if ended.id != started.id || under_way(ended.state) {
         out.show(&ended, text::install)?;
     }
     match settled(&started, &ended) {
         Ended::Done => Ok(Settled::Known),
         Ended::Failed(failure) => bail!("the install failed: {}", text::word(&failure)),
+        Ended::Unconfirmed => {
+            eprintln!(
+                "Activated, and the server saw no verdict of the release's trial: the feeder did \
+                 not come back in time, or the server stopped. Nothing is sent again; the \
+                 feeder's status, or a rolled_back alert, tells."
+            );
+            Ok(Settled::Unknown)
+        }
         Ended::Running => {
             eprintln!(
                 "The stream ended while the install ran; nothing is sent again. `install` \
@@ -83,8 +94,11 @@ pub(super) async fn install(client: &Client, args: InstallArgs, out: Output) -> 
 /// How an install the server ran ended, as this command reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Ended {
-    /// Bank 1 is activated, or already ran the build.
+    /// The release runs and confirmed itself, bank 1 already ran the
+    /// build, or stock is activated.
     Done,
+    /// The release is activated, and no verdict of its trial was seen.
+    Unconfirmed,
     /// It ended before anything could take: the feeder keeps its build.
     Failed(InstallFailure),
     /// The last word the command has says it still runs.
@@ -105,24 +119,39 @@ pub(super) fn settled(started: &Install, ended: &Install) -> Ended {
         return Ended::Another;
     }
     match (ended.state, ended.failure) {
-        (InstallState::Activated | InstallState::AlreadyRunning, _) => Ended::Done,
-        (InstallState::Running, _) => Ended::Running,
-        (InstallState::Failed, Some(failure)) if !took(failure) => Ended::Failed(failure),
+        (InstallState::Confirmed | InstallState::AlreadyRunning, _) => Ended::Done,
+        // Stock serves no device API, so its activation is its end; a
+        // release's ends there only when its trial's verdict went unseen.
+        (InstallState::Activated, _) => match ended.target {
+            InstallTarget::Stock { .. } => Ended::Done,
+            InstallTarget::Release { .. } | InstallTarget::Unknown => Ended::Unconfirmed,
+        },
+        (InstallState::Running | InstallState::Confirming, _) => Ended::Running,
+        (InstallState::Failed, Some(failure)) if !open(failure) => Ended::Failed(failure),
         (InstallState::Failed | InstallState::Unknown, failure) => Ended::Uncertain(failure),
     }
 }
 
-/// Whether the offer may have taken all the same when an install ended
-/// in `failure`. No wildcard, so a new failure cannot land without its
-/// decision.
-fn took(failure: InstallFailure) -> bool {
+/// Whether an install in `state` is still under way: pushing, or
+/// following the release's trial.
+pub(super) const fn under_way(state: InstallState) -> bool {
+    matches!(state, InstallState::Running | InstallState::Confirming)
+}
+
+/// Whether an install that ended in `failure` leaves open what the feeder
+/// runs: the offer may have taken all the same. A trial's verdict is the
+/// feeder's own word. No wildcard, so a new failure cannot land without
+/// its decision.
+fn open(failure: InstallFailure) -> bool {
     match failure {
         InstallFailure::UpdateRefused { .. }
         | InstallFailure::Refused { .. }
         | InstallFailure::Stopped { .. }
         | InstallFailure::Lost
         | InstallFailure::Unreachable { offered: false }
-        | InstallFailure::Interrupted => false,
+        | InstallFailure::Interrupted
+        | InstallFailure::RolledBack
+        | InstallFailure::WrongBuild => false,
         // An older server recorded an answer it could not read after the
         // offer as `unexpected`, so one may follow an offer that took.
         InstallFailure::Unreachable { offered: true }
@@ -163,7 +192,7 @@ pub(super) async fn follow(
             continue;
         }
         out.show(&install, text::install)?;
-        if install.state != InstallState::Running {
+        if !under_way(install.state) {
             return Ok(Some(install));
         }
     }
@@ -185,7 +214,7 @@ struct NotReleaseId;
 mod tests {
     use uuid::Uuid;
     use wellfed_model::UpdateRefusal;
-    use wellfed_server_client::api::{FeederId, InstallId, InstallTarget, UserId};
+    use wellfed_server_client::api::{FeederId, InstallId, UserId};
 
     use super::*;
 
@@ -197,9 +226,18 @@ mod tests {
         let started = install(InstallState::Running, None);
         let ended = |state, failure| settled(&started, &install(state, failure));
 
-        assert_eq!(ended(InstallState::Activated, None), Ended::Done);
+        assert_eq!(ended(InstallState::Confirmed, None), Ended::Done);
         assert_eq!(ended(InstallState::AlreadyRunning, None), Ended::Done);
         assert_eq!(ended(InstallState::Running, None), Ended::Running);
+        assert_eq!(ended(InstallState::Confirming, None), Ended::Running);
+        // A release activated with no verdict seen is not a success; stock,
+        // which serves nothing to follow, ends there.
+        assert_eq!(ended(InstallState::Activated, None), Ended::Unconfirmed);
+        let mut stock = install(InstallState::Activated, None);
+        stock.target = InstallTarget::Stock {
+            sha256: Hex([0; 32]),
+        };
+        assert_eq!(settled(&started, &stock), Ended::Done);
         for definite in [
             InstallFailure::UpdateRefused {
                 refusal: UpdateRefusal::Key,
@@ -207,6 +245,8 @@ mod tests {
             InstallFailure::Lost,
             InstallFailure::Unreachable { offered: false },
             InstallFailure::Interrupted,
+            InstallFailure::RolledBack,
+            InstallFailure::WrongBuild,
         ] {
             assert_eq!(
                 ended(InstallState::Failed, Some(definite)),
@@ -237,7 +277,9 @@ mod tests {
         Install {
             id: InstallId(Uuid::from_u128(1)),
             feeder: FeederId(Uuid::nil()),
-            target: InstallTarget::Unknown,
+            target: InstallTarget::Release {
+                release: Hex([0; 32]),
+            },
             version: 7,
             by: UserId(Uuid::nil()),
             started: jiff::Timestamp::UNIX_EPOCH,

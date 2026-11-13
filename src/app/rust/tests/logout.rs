@@ -27,9 +27,15 @@ fn own() -> ClientKey {
 async fn log_in(server: &TestServer) -> ServerSession {
     let credentials = ada_login();
     let url = format!("http://{}", server.address());
-    ServerSession::login(url, credentials.name, credentials.password, "pixel".into())
-        .await
-        .unwrap()
+    ServerSession::login(
+        url,
+        credentials.name,
+        credentials.password,
+        "pixel".into(),
+        None,
+    )
+    .await
+    .unwrap()
 }
 
 /// The server with a feeder its owner adopted, the owner's client, and
