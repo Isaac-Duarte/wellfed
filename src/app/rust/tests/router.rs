@@ -1518,12 +1518,14 @@ fn a_refused_token_stays_refused_when_the_server_then_goes_down() {
     });
 }
 
-/// An address nothing listens on: a server that is down.
 /// A server address nothing answers: a socket bound there and never
-/// listening, which refuses every connection, and which keeps the port from
-/// any other test's listener for as long as the caller holds it. A port
-/// bound and let go could be taken meanwhile, and a call to it then reaches
-/// something that answers.
+/// listening, which refuses every connection for as long as the caller
+/// holds it. A port bound and let go is free again, and a call to it can
+/// then reach something: another test's listener, or the call itself, when
+/// the kernel picks that same port as the call's own source and the
+/// connection opens onto itself. Its own request then reads back as the
+/// answer, which fails as `Interrupted`, not `Unreachable`. A bound port is
+/// never handed out as a source.
 fn nobody() -> (String, tokio::net::TcpSocket) {
     let socket = tokio::net::TcpSocket::new_v4().unwrap();
     socket
