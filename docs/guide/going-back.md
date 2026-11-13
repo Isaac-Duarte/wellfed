@@ -18,45 +18,17 @@ This page walks through putting the vendor's firmware back on a feeder running W
 
 ## Step 1: Check the backup
 
-<!-- tabs -->
-
-### App
-
 Open the feeder, then **Settings**, **Firmware** and **Restore original firmware**. You should see the backup's date, **Vendor 1.1.15**, and **Matches the original**.
 
 If it says **No backup on this phone**, tap **Pick the file** and choose the copy you saved. A file that doesn't match the vendor's 1.1.15 exactly is refused, and nothing is sent.
 
-### CLI
-
-```sh
-wellfed backup show
-```
-
-This reads a copy `wellfed backup read` kept. Run it from the folder you ran that from, or pass `--keys` and `--backups`. Run from anywhere else, it makes a new key and finds no backup, which doesn't mean the backup is gone.
-
-You should see `stock_version` 1.1.15 and `verified` true. To use the copy you saved from the app, add `--backup <file>` in the next step. A file that doesn't match the pinned image exactly is refused.
-
-<!-- /tabs -->
-
 ## Step 2: Start the restore
-
-<!-- tabs -->
-
-### App
 
 Read the two warnings, tick **I understand** and tap **Restore original firmware**.
 
-### CLI
-
-```sh
-wellfed restore-stock
-```
-
-<!-- /tabs -->
-
 ## Step 3: Press Dispense once
 
-Wait until the app or the run asks. Then press Dispense on the feeder, once, within 60 seconds. This shows someone is at the feeder, and it approves a temporary key that signs this one restore.
+Wait until the app asks. Then press Dispense on the feeder, once, within 60 seconds. This shows someone is at the feeder, and it approves a temporary key that signs this one restore.
 
 The press works whether or not the buttons are locked, and it feeds nothing. A press before the prompt doesn't count: on an unlocked panel, it starts a feed.
 
@@ -82,7 +54,7 @@ flowchart LR
 
 ## Step 5: Set it up in the vendor's app
 
-Do this only once the restore has reported success: the app says **The original firmware is going back**, or the CLI says `Activated`.
+Do this only once the restore has reported success: the app says **The original firmware is going back**.
 
 The vendor's firmware now runs, and it keeps trying to reach your phone or computer, forever. Wellfed can't talk to it any more.
 
@@ -114,8 +86,6 @@ Nothing here sends the restore again by itself. If the feeder stops answering on
 | **A feeder nearby is waiting to be set up** | Probably this one, with Wellfed's Wi-Fi, phones and meals already cleared, and the restore unfinished. It could also be another feeder of yours | **Don't hold Reset.** Check the vendor's app first. If it isn't there, tap **Set it up**. Your backup is still good, so you can restore from there |
 | **It's probably on the original firmware** | It answered on neither Wi-Fi nor Bluetooth | Check the vendor's app. If it can't find the feeder and you're sure it isn't on Wellfed, unlock the panel if the lock light is on, hold Reset for about 5 seconds and set it up there |
 
-On the CLI, a stop or an uncertain end prints what it knows. An uncertain end exits with status 3. If it's uncertain, look for the feeder first. If a session opens, Wellfed still runs, and `wellfed restore-stock` may go again. If it advertises Bluetooth setup, run `wellfed setup`, and don't hold Reset. Only if neither shows after a few minutes is it probably on stock.
-
 > [!WARNING]
 > The restored firmware doesn't run on trial. If it's valid but won't boot, nothing falls back to Wellfed, and only [UART recovery](../devices/plaf103/recovery.md) could bring the feeder back. Those tools are pinned to our one test feeder, so don't count on them for yours. Nothing here protects against it.
 
@@ -138,4 +108,4 @@ An interrupted restore can leave Wellfed running with its Wi-Fi, phones and meal
 - **Observed, once, October 31, 2026.** Setup in the vendor's app completed after a restore, with the vendor's firmware on the vendor's cloud.
 - **Recovered.** That the loader doesn't fall back from a valid stock that won't boot comes from analysis of the boot path, not from a test. The Lock and Reset sequence for disabled buttons comes from analysis of the vendor's firmware, and hasn't been pressed on the feeder.
 - **Static analysis.** What stays in Wellfed's storage comes from the design and code. Nobody has read a chip back after a restore.
-- **Modeled.** The app's screens for a stop or an uncertain end are covered by host tests, and not every one has happened on the feeder. We have no record of **Pick the file** or `--backup` running on the feeder.
+- **Modeled.** The app's screens for a stop or an uncertain end are covered by host tests, and not every one has happened on the feeder. We have no record of **Pick the file** running on the feeder.

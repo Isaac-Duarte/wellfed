@@ -5,10 +5,9 @@
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { GitHubMark } from "@wellfed/ui";
-  import { onMount, type Snippet } from "svelte";
+  import type { Snippet } from "svelte";
   import { HOME, REPO, favicon, lockup, lockupOnLight, themeColor } from "@wellfed/ui";
   import Search from "#lib/Search.svelte";
-  import { HEAD_HTML, mountTabs, syncTabs } from "#lib/tabs.ts";
   import type { LayoutProps } from "./$types";
 
   let { data, children }: LayoutProps & { children: Snippet } = $props();
@@ -16,15 +15,9 @@
   // On phones the sidebar is a drawer under the header, closed after each move.
   let menuOpen = $state(false);
   afterNavigate(() => (menuOpen = false));
-
-  // Each navigation brings in a page's own tabs, in their server-written state.
-  onMount(mountTabs);
-  afterNavigate(syncTabs);
 </script>
 
 <svelte:head>
-  <!-- eslint-disable-next-line svelte/no-at-html-tags -- a constant, hashed into the CSP by vite.config.ts -->
-  {@html HEAD_HTML}
   <link rel="icon" href={favicon} type="image/svg+xml" />
   <meta name="theme-color" content={themeColor.light} media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content={themeColor.dark} media="(prefers-color-scheme: dark)" />

@@ -363,62 +363,6 @@ body {
 }
 
 /*
- * App | CLI tabs (content.ts, tabs.ts). data-tab is set before first paint, and
- * never without JavaScript, when both panels show and there is nothing to
- * switch. The tab's own heading stays for a screen reader's outline and for a
- * link into the panel, but the tab already shows its name.
- */
-.tabs {
-  margin: var(--space-5) 0;
-}
-:root:not([data-tab]) .tab-bar {
-  display: none;
-}
-.tab-bar {
-  display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-pill);
-}
-.tab {
-  padding: 3px var(--space-3);
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: none;
-  color: var(--color-text-muted);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-}
-.tab:hover {
-  color: var(--color-text);
-}
-:root[data-tab="app"] .tab[data-tab="app"],
-:root[data-tab="cli"] .tab[data-tab="cli"] {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-.tab:focus-visible,
-.tab-panel:focus-visible {
-  outline: none;
-  box-shadow: var(--focus);
-}
-:root[data-tab="app"] .tab-panel[data-tab-panel="cli"],
-:root[data-tab="cli"] .tab-panel[data-tab-panel="app"] {
-  display: none;
-}
-:root[data-tab] .prose .tab-heading {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/*
  * An image beside a page: mostly a phone's screen, which at the column's full
  * width would be taller than the window. Height follows the width, whatever the
  * file's own size attributes say.

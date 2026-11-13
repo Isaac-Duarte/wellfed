@@ -90,60 +90,6 @@ test("search knows nothing of an unpublished page", async ({ page }) => {
   await expect(page.getByRole("option")).toHaveCount(0);
 });
 
-test.describe("App and CLI tabs", () => {
-  test("show one panel and remember the choice across pages", async ({ page }) => {
-    const errors = collectErrors(page);
-    await page.goto("/going-back");
-
-    const app = page.locator('.tab-panel[data-tab-panel="app"]').first();
-    const cli = page.locator('.tab-panel[data-tab-panel="cli"]').first();
-    await expect(app).toBeVisible();
-    await expect(cli).toBeHidden();
-
-    await page.getByRole("tab", { name: "CLI" }).first().click();
-    await expect(cli).toBeVisible();
-    await expect(app).toBeHidden();
-    await expect(page.getByRole("tab", { name: "CLI" }).first()).toHaveAttribute("aria-selected", "true");
-
-    await page.goto("/roadmap");
-    await page.goto("/going-back");
-    await expect(cli).toBeVisible();
-    await expect(app).toBeHidden();
-    expect(errors).toEqual([]);
-  });
-
-  test("move with the arrow keys", async ({ page }) => {
-    await page.goto("/going-back");
-
-    // The keys work once the layout has mounted, which can come after "load".
-    await expect(async () => {
-      await page.getByRole("tab", { name: "App" }).first().focus();
-      await page.keyboard.press("ArrowRight");
-      await expect(page.getByRole("tab", { name: "CLI" }).first()).toBeFocused({ timeout: 500 });
-    }).toPass();
-    await expect(page.locator('.tab-panel[data-tab-panel="cli"]').first()).toBeVisible();
-  });
-
-  test("a link into the other panel opens it", async ({ page }) => {
-    await page.goto("/going-back#cli");
-
-    await expect(page.locator('.tab-panel[data-tab-panel="cli"]').first()).toBeVisible();
-    await expect(page.locator('.tab-panel[data-tab-panel="app"]').first()).toBeHidden();
-  });
-
-  test("without JavaScript both show, with no switch", async ({ browser, baseURL }) => {
-    const context = await browser.newContext({ javaScriptEnabled: false, baseURL });
-    const page = await context.newPage();
-
-    await page.goto("/going-back");
-
-    await expect(page.locator('.tab-panel[data-tab-panel="app"]').first()).toBeVisible();
-    await expect(page.locator('.tab-panel[data-tab-panel="cli"]').first()).toBeVisible();
-    await expect(page.locator(".tab-bar").first()).toBeHidden();
-    await context.close();
-  });
-});
-
 test("a page's image loads and fits the column", async ({ page }) => {
   await page.goto("/install");
   const image = page.locator(".prose img").first();

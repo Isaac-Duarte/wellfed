@@ -2,11 +2,11 @@
 
 This page shows you how to put your Wellfed feeder in Home Assistant: install the integration, set it up, and use what it adds. It is for owners who already run Home Assistant and have a feeder on Wellfed.
 
-Home Assistant joins the feeder as its own client, as a second phone does, with a member invite. It talks to the feeder directly over your network, encrypted, and needs no server and no cloud. You still use the app or the CLI to set the feeder up.
+Home Assistant joins the feeder as its own client, as a second phone does, with a member invite. It talks to the feeder directly over your network, encrypted, and needs no server and no cloud. You still use the app to set the feeder up.
 
 ## Before you start
 
-- A feeder running Wellfed, and the app or the `wellfed` CLI paired with it as an owner.
+- A feeder running Wellfed, and the app paired with it as an owner, on a phone or a computer.
 - Home Assistant 2026.10 or later, with [HACS](https://hacs.xyz) installed.
 - The feeder on the same network as Home Assistant, and ten minutes, since an invite runs out after that.
 
@@ -20,17 +20,7 @@ Home Assistant joins the feeder as its own client, as a second phone does, with 
 
 1. Make a **member** invite. Home Assistant joins only as a member: it can feed, change the settings, the lock, the plans and the portion weight, and read everything. It can't change the Wi-Fi, remove people, restart the feeder or install firmware. If you paste an owner invite, Home Assistant removes the key it was given and asks for a member invite.
 
-<!-- tabs -->
-
-### App
-
-Open **Settings**, then **People**, and tap **Invite someone**. Choose **Member**, then share the link and copy its text.
-
-### CLI
-
-Run `wellfed invite --role member`. It prints the invite.
-
-<!-- /tabs -->
+   In the app, open **Settings**, then **People**, and tap **Invite someone**. Choose **Member**, then share the link and copy its text.
 
 2. In Home Assistant, open **Settings**, **Devices & services**. If the feeder shows as discovered, choose **Add** on it; otherwise choose **Add integration**, and search for Wellfed.
 3. Paste the invite. If Home Assistant didn't discover the feeder, also give its IP address, or leave it empty to find it on the network. You should see the feeder's device with its entities.
@@ -112,7 +102,7 @@ It supports the PETLIBRO Granary PLAF103 running Wellfed, the one feeder Wellfed
 Known limits:
 
 - Home Assistant holds one of the feeder's four client connections while it runs.
-- Meal plans can be switched on and off here, but you add and edit them in the app or the CLI.
+- Meal plans can be switched on and off here, but you add and edit them in the app.
 - Cancel feed stops only a feed Home Assistant started; `wellfed.cancel_feed` with a feed number stops any.
 
 ## When a feed's answer is lost
@@ -126,7 +116,7 @@ Home Assistant doesn't install firmware: that takes an owner, and Home Assistant
 ## Remove it
 
 1. In **Devices & services**, open Wellfed, and **Delete** the feeder's entry.
-2. In the app or with `wellfed clients`, find Home Assistant's key (listed as `home-assistant`) and revoke it. Deleting the entry doesn't remove the key from the feeder.
+2. In the app, open **Settings**, then **People**, and remove Home Assistant's key (listed as `home-assistant`). Deleting the entry doesn't remove the key from the feeder.
 3. Optionally remove the integration in HACS.
 
 ## Common mistakes

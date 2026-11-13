@@ -24,13 +24,13 @@ flowchart TD
 
 ## One feed, start to finish
 
-Say you press Dispense on an unlocked panel. The same path serves the app, the CLI and a scheduled meal.
+Say you press Dispense on an unlocked panel. The same path serves the app, Home Assistant and a scheduled meal.
 
 ```mermaid
 %% svg: feed-journey.svg
 flowchart LR
   press["1. Press: Dispense"] --> check["2. Checks: lock, then ready to feed"]
-  others["The app, the CLI and meals join here"] --> check
+  others["Clients and meals join here"] --> check
   check --> reserve["3. Reserve: written before the motor may start"]
   reserve --> drive["4. Drive: on a short renewed lease"]
   drive --> mark["5. Mark: counts a portion"]
@@ -101,7 +101,7 @@ The limits of that promise matter:
 
 ## Uncertain is an answer
 
-When an answer is lost, no client resends a feed. If your phone loses the connection after sending, the app asks whether the feeder fed and tells you to look at the bowl. If the feeder stayed on, it finishes by itself and keeps the result in its history. The CLI does the same, and `wellfed feeds` reads the result later. The CLI can also stop waiting on a long feed after 2 minutes, while the feed carries on. Whenever it can't tell whether a feed ran, it exits with status 3, not 1, so a script doesn't read it as a feed that never happened.
+When an answer is lost, no client resends a feed. If your phone loses the connection after sending, the app asks whether the feeder fed and tells you to look at the bowl. If the feeder stayed on, it finishes by itself and keeps the result in its history. Home Assistant does the same: a feed whose answer was lost becomes a repair, and it's never sent again ([Home Assistant](../home-assistant.md#when-a-feeds-answer-is-lost)).
 
 A refusal is different, because nothing moved. The app offers **Start over**, which is a new feed you ask for.
 

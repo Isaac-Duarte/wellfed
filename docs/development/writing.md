@@ -6,7 +6,7 @@ This page is how we write Wellfed's docs. Most readers own a feeder and want to 
 
 Every page does one of three things:
 
-- A **guide** walks you through a task: build the firmware, read the flash, pair the CLI.
+- A **guide** walks you through a task: build the firmware, read the flash, install Wellfed from the app.
 - A **reference** holds facts you look up: the pin map, the flash layout, the HTTP routes.
 - An **explanation** says how something works and why it was built that way: the feeding owner, OTA banks, pairing.
 
@@ -64,27 +64,7 @@ Lead with the one idea that makes the rest make sense. Then follow one concrete 
 
 ## Owner pages
 
-[`docs/guide/`](../guide/README.md) holds the pages written for someone who owns a feeder or is deciding whether to run Wellfed. They are the heart of the [docs site](../web/docs-site.md), and every other page stays on GitHub unless the site lists it. Assume a reader comfortable with a terminal and a home network, but not with this firmware. Define a term where it first appears, and link to a technical page rather than repeating it.
-
-### App and CLI steps
-
-Where the app and the CLI differ, write both under these markers, each on its own line:
-
-```markdown
-<!-- tabs -->
-
-### App
-
-Tap **Feed now**.
-
-### CLI
-
-Run `wellfed feed`.
-
-<!-- /tabs -->
-```
-
-GitHub hides the comments and shows both sections. The site shows a switch that remembers the reader's choice. App comes first, and both sections are required.
+[`docs/guide/`](../guide/README.md) holds the pages written for someone who owns a feeder or is deciding whether to run Wellfed. They are the heart of the [docs site](../web/docs-site.md), and every other page stays on GitHub unless the site lists it. Assume a reader comfortable with a home network, but not with a terminal or this firmware. Owners use the app and Home Assistant, so a guide page gives the app's steps. The `wellfed` command line is a developer and bench tool, and stays out of these pages. Define a term where it first appears, and link to a technical page rather than repeating it.
 
 ### Test log verdicts
 

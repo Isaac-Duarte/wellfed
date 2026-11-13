@@ -46,6 +46,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 - **Stock firmware is used only to install and roll back.** Ongoing stock control would mean two device protocols forever.
 - **One app in Flutter, over a sans-IO Rust core, for phones and computers.** Android comes first, then macOS and Linux, then iPhone, then Windows ([frontends](#frontends)). It talks to feeders directly. Tauri was rejected: one UI, but mobile BLE and Wi-Fi need native plugins, and the app feels like a web page. Native Swift and Kotlin would mean two or three UIs for one maintainer.
 - **No web UI for owners, and the browser never talks to the feeder.** Browsers have no raw TCP, no mDNS, and no Web Bluetooth on iOS or Firefox, and Chrome restricts HTTPS pages from reaching LAN devices. A UI served by the feeder would cost flash and a second listener, and arrive over plain HTTP.
+- **Owners use the app and Home Assistant.** The `wellfed` command line is a developer and bench tool, decided on November 13, 2026. It builds for macOS and Linux and isn't packaged for owners. It stays because the bench server runs it to restore stock, Home Assistant's tests make a key with it, and the bench checks use its commands. Owner pages don't mention it.
 - **The installer** is the app. Every install from stock runs from the app. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
 - **Distribution:** APKs and Home Assistant wheels as GitHub releases. App stores and F-Droid come later. Apple's review of an app that replaces a feeder's firmware is an open question, to settle before any public iPhone release.
 - **Every client goes straight to the feeder.** A write goes out once, on the client's own session, and one whose answer was lost is settled only by reading the feeder's history. The app keeps such a feed on disk across restarts and holds the next feed until it settles or the owner has checked the bowl ([the app](../../src/app/README.md)).
@@ -63,7 +64,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
                                                └────────┘
                                                    ▲
   Home Assistant ──────── Noise stream ────────────┤
-  the CLI ─────────────── Noise stream ────────────┘
+  the CLI (bench) ─────── Noise stream ────────────┘
 ```
 
 | Part | Where | What it holds |
@@ -75,14 +76,14 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 | Product runtime | `src/product/wellfed-feeder-runtime` | The settings stage over the shared writer and the feeder's stores. Every PLAF103 firmware links it, so a firmware swap keeps the owner's data |
 | Firmware | `src/firmware/wellfed/feeder` | The `Platform` (pins, drivers, sockets, mailboxes), stepping the feeding owner before the product's pass. Each model gets its own thin firmware |
 | Client core | `wellfed-client` | Bytes in, bytes out: the Noise handshake, pairing, invites, requests, event-cursor sync and the installer's steps. No socket or radio |
-| Client drivers | `wellfed-connect`, `wellfed-install`, `wellfed-ble` | Device API sessions over tokio TCP for the app, Home Assistant and the CLI; the install from stock for the CLI and the app, with stock's server in its own process; BLE setup's radio on a computer, through `btleplug`, for the CLI and the desktop app |
+| Client drivers | `wellfed-connect`, `wellfed-install`, `wellfed-ble` | Device API sessions over tokio TCP for the app, Home Assistant and the CLI; the install from stock for the app, with stock's server in its own process, and the restore of stock for the app and the CLI; BLE setup's radio on a computer, through `btleplug`, for the CLI and the desktop app |
 | Home Assistant | `src/integrations/homeassistant` | The integration's Python, and its PyO3 bridge over `wellfed-connect` |
 
 ## Frontends
 
 - **The Android app** (`src/app/`) does platform IO in Dart through maintained, permissively licensed plugins: BLE (`flutter_reactive_ble`, carrying the setup bytes; on a computer, the bridge's `wellfed-ble` instead, behind the same Dart calls), NSD and notifications, with its background work (WorkManager and one foreground service) in a little Kotlin of its own, since the plugins for those start engines that take over the Bluetooth plugin. Its Rust half, `wellfed-app-bridge`, runs every protocol step through `wellfed-client` and LAN sessions through `wellfed-connect`, over `flutter_rust_bridge`, which also generates the Dart types. An install runs `wellfed-install` on its own thread, asking Dart for what only the phone has. It runs the stock installer through stock's setup access point and the `DL` frame ([consumer installation](consumer-installation.md)). Every request goes to the feeder directly.
-- **Other platforms** are the same app and Rust, each with its own Bluetooth, discovery, network joining and keep-alive. In order: macOS and Linux, which run the install and can hand a feeder to a phone with an owner's invite; iPhone, for setup and daily use; Windows, once there is a machine to test it on. WASM can run the client core later.
-- **The CLI** (`wellfed`) speaks the device API. It keeps and restores stock's backup but doesn't install from stock, and stays the bench's tool, on Linux.
+- **Other platforms** are the same app and Rust, each with its own Bluetooth, discovery, network joining and keep-alive. In order: macOS and Linux, which run the install and can hand a feeder to a phone with an owner's invite; iPhone, for setup and daily use; Windows, whose build is in the app but hasn't run on a Windows machine. WASM can run the client core later.
+- **The CLI** (`wellfed`) is the developer's and the bench's client, on macOS and Linux, and isn't shipped to owners. It speaks the device API, and keeps and restores stock's backup, but doesn't install from stock.
 - **One UI** means one codebase for one maintainer. The device API is documented for anyone building another client ([device API](device-api.md)).
 
 ## Setup and pairing

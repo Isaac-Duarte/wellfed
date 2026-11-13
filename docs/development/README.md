@@ -58,9 +58,9 @@ Under `nohup`, macOS doesn't show that SIGHUP is ignored, so `wellfed restore-st
 | --- | --- |
 | `src/sdk/` | The SDK every firmware builds on: runtime, feeding core, hardware ports and board map ([firmware architecture](../firmware/README.md)) |
 | `src/product/` | Product policy shared by the firmware and the simulators: the device protocol and the feeder's stores |
-| `src/client/` | The clients the CLI, the Android app and Home Assistant share, and the libraries host programs share: file formats, image checks, signing and stock's protocol |
+| `src/client/` | The clients the app, Home Assistant and the CLI share, and the libraries host programs share: file formats, image checks, signing and stock's protocol |
 | `src/sim/` | The simulated devices, which the tools and other crates' tests run ([simulators](../../src/tools/README.md#simulators)) |
-| `src/tools/` | Host tools, including the `wellfed` CLI ([tool list](../../src/tools/README.md)) |
+| `src/tools/` | Host tools, including the `wellfed` CLI, the developer and bench client ([tool list](../../src/tools/README.md)) |
 | `src/firmware/wellfed/` | One crate per firmware: `feeder`, `qa`, `bringup` and `blink` ([firmware guide](../../src/firmware/wellfed/README.md)) |
 | `src/firmware/vendor/` | The vendor SDK side: C hooks and ports, pinned SDK and toolchain locks, the stock layout, simulator scenarios and the image build (`make -C src/firmware/vendor`) |
 | `src/firmware/devices/` | Per-device descriptions and layouts |
@@ -105,7 +105,7 @@ Every host tool is Rust. [src/tools/README.md](../../src/tools/README.md) lists 
 
 | I want to… | Use | Read |
 | --- | --- | --- |
-| Pair with a feeder, feed, plans, settings, history and status | `wellfed` | [commands](../../src/tools/README.md#the-wellfed-command-line), [device API](../firmware/device-api.md) |
+| Pair a computer with a feeder as a developer, and feed, read or change it from a terminal | `wellfed`, the developer and bench client (owners use the app) | [commands](../../src/tools/README.md#the-wellfed-command-line), [device API](../firmware/device-api.md) |
 | Run against a feeder without hardware | `wellfed-feeder-sim` | [simulators](../../src/tools/README.md#simulators) |
 | Build a firmware image | `wellfed-build` | [firmware builds](firmware-builds.md) |
 | Freeze a build for installing, or sign it as an update | `wellfed-build review`, `sign` | [development updates](uart-development.md) |
