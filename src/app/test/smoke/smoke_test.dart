@@ -53,7 +53,7 @@ class _Feeder {
         'feeders': <String>[],
       }),
     );
-    final Process process = await Process.start('$target/wellfed-feeder-sim', [
+    final Process process = await Process.start('$target/wellfed-feeder-sim${Platform.isWindows ? '.exe' : ''}', [
       '--state',
       '${state.path}/flash',
       '--listen',
@@ -221,7 +221,11 @@ void main() {
   setUpAll(() async {
     if (target == null) return;
     // Cargo names the bridge's shared library by the host's convention.
-    final String library = Platform.isMacOS ? 'libwellfed_app_bridge.dylib' : 'libwellfed_app_bridge.so';
+    final String library = Platform.isMacOS
+        ? 'libwellfed_app_bridge.dylib'
+        : Platform.isWindows
+        ? 'wellfed_app_bridge.dll'
+        : 'libwellfed_app_bridge.so';
     await RustLib.init(externalLibrary: ExternalLibrary.open('$target/$library'));
     owner = ClientKey.generate();
     sim = await _Feeder.start(target, owner);
