@@ -46,6 +46,10 @@ describe("routes", () => {
       ]),
     ).toThrow("docs/roadmap.md and docs/guide/roadmap.md both publish /roadmap");
   });
+
+  test("a doc on the root's index route is refused", () => {
+    expect(() => routeTable([[routeOf("guide/index.md"), "guide/index.md"]])).toThrow("the root's file");
+  });
 });
 
 describe("links", () => {
@@ -66,6 +70,10 @@ describe("links", () => {
 
   test("a doc that doesn't exist fails the build", () => {
     expect(() => resolveLink("../firmware/nope.md", "guide/install.md")).toThrow("doesn't exist");
+  });
+
+  test("a link from the repository's root fails the build", () => {
+    expect(() => resolveLink("/src/x.rs", "development/rust.md")).toThrow("must be relative to the page");
   });
 
   test("a link outside docs/ goes to GitHub", () => {

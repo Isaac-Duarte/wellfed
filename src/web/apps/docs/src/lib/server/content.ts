@@ -71,6 +71,9 @@ export const sourceOf = (file: string) => files.get(file);
  */
 export function resolveLink(url: string, file: string): string {
   if (url === "" || url.startsWith("#") || /^[a-z][a-z\d+.-]*:/i.test(url)) return url;
+  // GitHub reads `/src/x.rs` from the repository's root and the site from its
+  // own, so no one rewrite serves both: write it relative to the page.
+  if (url.startsWith("/")) throw new Error(`docs/${file}: link "${url}" must be relative to the page`);
 
   const [target = "", ...rest] = url.split("#");
   const hash = rest.length > 0 ? `#${rest.join("#")}` : "";
@@ -88,9 +91,18 @@ export function resolveLink(url: string, file: string): string {
   return `${blob(path.replace(/\/$/, ""))}${hash}`;
 }
 
+// A title can repeat its URL, and portableMarkdown finds a URL by its text in
+// the source, so a titled link could be rewritten in the wrong place. GitHub
+// shows a title only as a hover, so the docs go without.
+function refuseTitle(node: { url: string; title?: string | null }, file: string) {
+  if (node.title != null) throw new Error(`docs/${file}: link "${node.url}" has a title; drop it`);
+}
+
 const rewriteLinks: Plugin<[string], Mdast> = (file) => (tree) => {
   visit(tree, (node) => {
-    if (node.type === "link" || node.type === "definition") node.url = resolveLink(node.url, file);
+    if (node.type !== "link" && node.type !== "definition") return;
+    refuseTitle(node, file);
+    node.url = resolveLink(node.url, file);
   });
 };
 
@@ -240,6 +252,7 @@ const rewritePictures: Plugin<[string, string[]], Mdast> = (file, routes) => (tr
     if (node.type === "imageReference")
       throw new Error(`docs/${file}: write the image "${node.identifier}" inline, as ![Alt](name.png)`);
     if (node.type !== "image") return;
+    refuseTitle(node, file);
 
     const path = checkedPicture(node.url, node.alt, file);
     const route = atSiteRoot(path);
@@ -576,6 +589,7 @@ export function portableMarkdown(file: string, markdown = files.get(file)): stri
       return;
     }
     if (node.type !== "link" && node.type !== "definition" && node.type !== "image") return;
+    refuseTitle(node, file);
 
     // The URL is the last occurrence in the node's source: after the text of
     // an inline link, after the label of a definition.
@@ -599,11 +613,13 @@ export function portableMarkdown(file: string, markdown = files.get(file)): stri
 /**
  * Routes against what publishes them, refusing two sources on one route: the
  * guide drops its prefix, so `guide/roadmap.md` and `roadmap.md` would otherwise
- * overwrite each other without a word.
+ * overwrite each other without a word. The route `index` is the root's own
+ * `index.html` and `index.md`, so a doc can't take it.
  */
 export function routeTable(entries: Iterable<readonly [route: string, source: string]>): Map<string, string> {
   const table = new Map<string, string>();
   for (const [route, source] of entries) {
+    if (route === "index") throw new Error(`docs/${source} would publish /index, which is the root's file`);
     const taken = table.get(route);
     if (taken !== undefined && taken !== source)
       throw new Error(`docs/${taken} and docs/${source} both publish /${route}`);

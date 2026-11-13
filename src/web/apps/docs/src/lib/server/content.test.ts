@@ -196,6 +196,15 @@ describe("portable markdown", () => {
     expect(portableMarkdown("devices/plaf103/test.md", source)).toBe(source);
   });
 
+  test.each([
+    ["a link", '[a](../roadmap.md "../roadmap.md")'],
+    ["a definition", '[a]\n\n[a]: ../roadmap.md "../roadmap.md"'],
+    ["an image", '![A picture](app-installing.png "app-installing.png")'],
+  ])("%s with a title fails the build", (_name, markdown) => {
+    expect(() => portableMarkdown("guide/test.md", markdown)).toThrow("has a title");
+    expect(() => render("guide/test.md", markdown)).toThrow("has a title");
+  });
+
   test("a file that isn't a doc has none", () => {
     expect(portableMarkdown("nope.md")).toBeUndefined();
   });
