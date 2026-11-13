@@ -195,6 +195,11 @@ pub struct Server {
     /// Each session's last answer about an update showed one under way:
     /// an eviction passes over it.
     installing: [bool; SESSIONS],
+    /// Each session's queued frame is a request's answer, not all of it
+    /// sent yet: an eviction passes over it, since its client could not
+    /// tell what the request did. Pushed events and samples never set it,
+    /// so a client that stopped reading them is still evicted.
+    answering: [bool; SESSIONS],
     /// A feed is prepared or driven this pass.
     feeding: bool,
     /// The last step ran a handshake operation.
@@ -243,6 +248,7 @@ impl Server {
             held: [false; SESSIONS],
             fed: [false; SESSIONS],
             installing: [false; SESSIONS],
+            answering: [false; SESSIONS],
             feeding: false,
             handshook: false,
             struck: false,
@@ -303,6 +309,7 @@ impl Server {
         self.held[index] = false;
         self.fed[index] = false;
         self.installing[index] = false;
+        self.answering[index] = false;
         let slot = &mut self.slots[index];
         *slot = Slot::FREE;
         slot.phase = Phase::Opening;
@@ -316,8 +323,8 @@ impl Server {
     /// End the open session idle longest to free its slot, and name it;
     /// `None` when every session is busy. Busy is anything an ending would
     /// cut short or leave the client unsure of: a request waiting to be
-    /// read or for its write (a retry's wait for one under way among
-    /// them), a feed it asked for still holding the outputs, an install it
+    /// read, for its write (a retry's wait for one under way among them)
+    /// or for its answer to finish going out, a feed it asked for still holding the outputs, an install it
     /// drives, and every session not yet open (which the handshake limit
     /// ends) or no longer (a join or the recovery window, each mid-write or
     /// waiting for the owner). A write whose session already ended goes on
@@ -335,6 +342,7 @@ impl Server {
         let slot = &self.slots[index];
         matches!(slot.phase, Phase::Open { pending: None, .. })
             && slot.wire.rx_len == 0
+            && !self.answering[index]
             && !self.fed[index]
             && !self.installing[index]
     }
@@ -357,7 +365,11 @@ impl Server {
     }
 
     pub fn sent(&mut self, slot: usize, len: usize) {
-        self.slots[slot].wire.sent(len);
+        let wire = &mut self.slots[slot].wire;
+        wire.sent(len);
+        if wire.tx_idle() {
+            self.answering[slot] = false;
+        }
     }
 
     /// The driver should close `slot` now: it ended and its last bytes are

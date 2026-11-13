@@ -252,10 +252,12 @@ impl Server {
 
         // The client list encodes itself, so neither it nor the line above
         // sits under `seal_answer`'s frame.
-        match reply {
+        let sealed = match reply {
             Reply::Clients => self.list_clients(index, id),
             reply => self.seal_answer(index, id, reply, now_ms, device),
-        }
+        };
+        self.answering[index] = sealed.is_ok() && !self.slots[index].wire.tx_idle();
+        sealed
     }
 
     /// Seal one request's answer. Kept out of line: the wire message is as

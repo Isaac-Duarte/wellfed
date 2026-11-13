@@ -469,3 +469,58 @@ fn an_eviction_passes_over_sessions_a_write_a_feed_or_an_install_holds() {
     let evicted = [sessions[3].slot, sessions[0].slot].map(|slot| u8::try_from(slot).unwrap());
     assert_eq!(ended_slots(&rig, Reason::Evicted), evicted);
 }
+
+/// A session whose write's answer is sealed but not yet all sent keeps
+/// its slot even as the quietest: ending it would leave its client unsure
+/// whether the write ran.
+#[test]
+fn an_eviction_passes_over_a_session_whose_answer_is_still_going_out() {
+    let mut rig = Rig::new();
+    let mut sessions: Vec<_> = (0..SESSIONS).map(|_| open(&mut rig, OWNER)).collect();
+
+    // The write is answered, and its socket has taken none of the answer.
+    let put = Op::PutSettings {
+        base: Generation(7),
+        changes: model::FeederSettingsPatch {
+            volume: Some(50),
+            ..model::FeederSettingsPatch::default()
+        },
+    };
+    let writer = &mut sessions[0];
+    let request = writer.session.request([1; 16], &put).unwrap();
+    writer.outbox.extend(request);
+    rig.deliver(writer.slot, &mut writer.outbox);
+    for _ in 0..5 {
+        rig.pass();
+        rig.device.write();
+    }
+    assert!(
+        !rig.server.tx(writer.slot).is_empty(),
+        "the answer waits to go out"
+    );
+
+    // The others speak after it, so it is the quietest.
+    for (index, session) in sessions.iter_mut().enumerate().skip(1) {
+        let status = ask(&mut rig, session, 2, Op::Status);
+        assert!(matches!(status, Answer::Status(_)), "session {index}");
+    }
+    assert_eq!(rig.accept(), Some(sessions[1].slot));
+
+    let writer = &mut sessions[0];
+    let answer = rig.collect(writer.slot);
+    writer.session.receive(&answer).unwrap();
+    let mut answered = None;
+    while let Some(incoming) = writer.session.next_incoming().unwrap() {
+        if let Incoming::Answer { id, answer } = incoming
+            && id == [1; 16]
+        {
+            answered = Some(answer);
+        }
+    }
+    assert_eq!(
+        answered,
+        Some(Answer::Done {
+            generation: Some(Generation(8))
+        })
+    );
+}
