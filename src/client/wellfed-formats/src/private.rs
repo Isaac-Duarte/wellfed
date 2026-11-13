@@ -54,6 +54,7 @@ pub fn require_unshared(path: &Path) -> Result<()> {
 }
 
 /// Whether a filesystem records each file's Unix mode.
+#[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Modes {
     Kept,
@@ -62,6 +63,7 @@ enum Modes {
 }
 
 /// The permission bits others hold on a file of `mode`, if any matter.
+#[cfg(unix)]
 fn shared(mode: u32, modes: Modes) -> Option<u32> {
     (modes == Modes::Kept && mode & 0o077 != 0).then_some(mode & 0o777)
 }
